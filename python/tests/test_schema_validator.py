@@ -1053,3 +1053,169 @@ def test_string_numeric_validation_keywords(string_numeric_type):
     source_text = json.dumps(schema)
     errors = validate_json_structure_schema_core(schema, source_text, extended=True)
     assert errors == [], f"String-based numeric validation on '{string_numeric_type}' should be valid but got errors: {errors}"
+
+
+# =============================================================================
+# External Schemas (Sideloading) Tests
+# =============================================================================
+
+
+def test_external_schemas_single_import():
+    """Test sideloading a single external schema via external_schemas parameter."""
+    from json_structure.schema_validator import JSONStructureSchemaCoreValidator
+    
+    # External schema to sideload
+    people_schema = {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/people.json",
+        "name": "Person",
+        "type": "object",
+        "properties": {
+            "firstName": {"type": "string"},
+            "lastName": {"type": "string"}
+        }
+    }
+    
+    # Main schema importing the external one
+    main_schema = {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/main",
+        "name": "MainSchema",
+        "type": "object",
+        "properties": {
+            "person": {"$ref": "#/definitions/People/Person"}
+        },
+        "definitions": {
+            "People": {
+                "$import": "https://example.com/people.json"
+            }
+        }
+    }
+    
+    source_text = json.dumps(main_schema)
+    validator = JSONStructureSchemaCoreValidator(
+        allow_import=True,
+        external_schemas=[people_schema]
+    )
+    errors = validator.validate(main_schema, source_text)
+    assert errors == [], f"Expected no errors but got: {errors}"
+
+
+def test_external_schemas_multiple_imports():
+    """Test sideloading multiple external schemas for multiple imports."""
+    from json_structure.schema_validator import JSONStructureSchemaCoreValidator
+    
+    address_schema = {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/address.json",
+        "name": "Address",
+        "type": "object",
+        "properties": {
+            "street": {"type": "string"},
+            "city": {"type": "string"}
+        }
+    }
+    
+    person_schema = {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/person.json",
+        "name": "Person",
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"}
+        }
+    }
+    
+    main_schema = {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/main",
+        "name": "MainSchema",
+        "type": "object",
+        "properties": {
+            "person": {"$ref": "#/definitions/People/Person"},
+            "location": {"$ref": "#/definitions/Addresses/Address"}
+        },
+        "definitions": {
+            "People": {
+                "$import": "https://example.com/person.json"
+            },
+            "Addresses": {
+                "$import": "https://example.com/address.json"
+            }
+        }
+    }
+    
+    source_text = json.dumps(main_schema)
+    validator = JSONStructureSchemaCoreValidator(
+        allow_import=True,
+        external_schemas=[address_schema, person_schema]
+    )
+    errors = validator.validate(main_schema, source_text)
+    assert errors == [], f"Expected no errors but got: {errors}"
+
+
+def test_external_schemas_missing_import():
+    """Test that missing external schemas still produce errors."""
+    from json_structure.schema_validator import JSONStructureSchemaCoreValidator
+    
+    main_schema = {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/main",
+        "name": "MainSchema",
+        "type": "object",
+        "properties": {
+            "thing": {"$ref": "#/definitions/Stuff/Missing"}
+        },
+        "definitions": {
+            "Stuff": {
+                "$import": "https://example.com/missing.json"
+            }
+        }
+    }
+    
+    source_text = json.dumps(main_schema)
+    validator = JSONStructureSchemaCoreValidator(
+        allow_import=True,
+        external_schemas=[]
+    )
+    errors = validator.validate(main_schema, source_text)
+    assert any("unable to fetch" in err.lower() for err in errors)
+
+
+def test_external_schemas_priority_over_simulated():
+    """Test that external_schemas takes priority over simulated schemas."""
+    from json_structure.schema_validator import JSONStructureSchemaCoreValidator
+    
+    # Override the simulated people.json with our own version
+    custom_people_schema = {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/people.json",
+        "name": "CustomPerson",
+        "type": "object",
+        "properties": {
+            "customField": {"type": "boolean"}
+        }
+    }
+    
+    main_schema = {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/main",
+        "name": "MainSchema",
+        "type": "object",
+        "properties": {
+            "person": {"$ref": "#/definitions/People/CustomPerson"}
+        },
+        "definitions": {
+            "People": {
+                "$import": "https://example.com/people.json"
+            }
+        }
+    }
+    
+    source_text = json.dumps(main_schema)
+    validator = JSONStructureSchemaCoreValidator(
+        allow_import=True,
+        external_schemas=[custom_people_schema]
+    )
+    errors = validator.validate(main_schema, source_text)
+    assert errors == [], f"Expected no errors but got: {errors}"

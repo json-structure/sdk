@@ -120,10 +120,11 @@ json-structure-validate instance.json schema.json
 from json_structure import SchemaValidator
 
 validator = SchemaValidator(
-    allow_dollar=False,   # Allow '$' in property names
-    allow_import=False,   # Enable $import/$importdefs
-    import_map=None,      # Dict mapping URIs to local files
-    extended=False        # Enable extended validation features
+    allow_dollar=False,      # Allow '$' in property names
+    allow_import=False,      # Enable $import/$importdefs
+    import_map=None,         # Dict mapping URIs to local files
+    extended=False,          # Enable extended validation features
+    external_schemas=None    # List of schema dicts to sideload (matched by $id)
 )
 
 errors = validator.validate(schema_dict, source_text=None)
@@ -135,14 +136,70 @@ errors = validator.validate(schema_dict, source_text=None)
 from json_structure import InstanceValidator
 
 validator = InstanceValidator(
-    root_schema,          # The JSON Structure schema dict
-    allow_import=False,   # Enable $import/$importdefs
-    import_map=None,      # Dict mapping URIs to local files
-    extended=False        # Enable extended validation features
+    root_schema,             # The JSON Structure schema dict
+    allow_import=False,      # Enable $import/$importdefs
+    import_map=None,         # Dict mapping URIs to local files
+    extended=False,          # Enable extended validation features
+    external_schemas=None    # List of schema dicts to sideload (matched by $id)
 )
 
 errors = validator.validate_instance(instance)
 ```
+
+### Sideloading External Schemas
+
+When using `$import` to reference external schemas, you can provide those schemas
+directly instead of fetching them from URIs:
+
+```python
+from json_structure import InstanceValidator
+
+# External schema that would normally be fetched from https://example.com/address.json
+address_schema = {
+    "$schema": "https://json-structure.org/meta/core/v0/#",
+    "$id": "https://example.com/address.json",
+    "name": "Address",
+    "type": "object",
+    "properties": {
+        "street": {"type": "string"},
+        "city": {"type": "string"}
+    }
+}
+
+# Main schema that imports the address schema
+main_schema = {
+    "$schema": "https://json-structure.org/meta/core/v0/#",
+    "$id": "https://example.com/person",
+    "name": "Person",
+    "type": "object",
+    "properties": {
+        "name": {"type": "string"},
+        "address": {"$ref": "#/definitions/Imported/Address"}
+    },
+    "definitions": {
+        "Imported": {
+            "$import": "https://example.com/address.json"
+        }
+    }
+}
+
+# Sideload the address schema - matched by $id
+validator = InstanceValidator(
+    main_schema,
+    allow_import=True,
+    external_schemas=[address_schema]
+)
+
+instance = {
+    "name": "Alice",
+    "address": {"street": "123 Main St", "city": "Seattle"}
+}
+
+errors = validator.validate_instance(instance)
+```
+
+You can supply multiple schemas to satisfy multiple imports. The schemas are matched
+by their `$id` field against the import URIs.
 
 ## Development
 
