@@ -1044,7 +1044,6 @@ class JSONStructureInstanceValidator:
         Resolution order:
         1. Check external_schemas (pre-loaded schemas matched by $id)
         2. Check import_map (URI to file path mapping)
-        3. Fall back to simulated schemas (for testing)
         """
         # First check sideloaded schemas by $id
         if uri in self.external_schemas:
@@ -1057,40 +1056,8 @@ class JSONStructureInstanceValidator:
             except Exception as e:
                 self.errors.append(f"Failed to load imported schema from {self.import_map[uri]}: {e}")
                 return None
-        SIMULATED_SCHEMAS = {
-            "https://example.com/people.json": {
-                "$schema": "https://json-structure.org/meta/core/v0/#",
-                "$id": "https://example.com/people.json",
-                "name": "Person",
-                "type": "object",
-                "properties": {
-                    "firstName": {"type": "string"},
-                    "lastName": {"type": "string"},
-                    "address": {"$ref": "#/Address"}
-                },
-                "definitions": {
-                    "Address": {
-                        "name": "Address",
-                        "type": "object",
-                        "properties": {
-                            "street": {"type": "string"},
-                            "city": {"type": "string"}
-                        }
-                    }
-                }
-            },
-            "https://example.com/importdefs.json": {
-                "$schema": "https://json-structure.org/meta/core/v0/#",
-                "$id": "https://example.com/importdefs.json",
-                "definitions": {
-                    "LibraryType": {
-                        "name": "LibraryType",
-                        "type": "string"
-                    }
-                }
-            }
-        }
-        return SIMULATED_SCHEMAS.get(uri)
+        # URI not found in external_schemas or import_map
+        return None
 
     def _apply_uses(self, schema, instance):
         """

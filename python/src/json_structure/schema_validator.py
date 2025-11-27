@@ -300,7 +300,6 @@ class JSONStructureSchemaCoreValidator:
         Resolution order:
         1. Check external_schemas (pre-loaded schemas matched by $id)
         2. Check import_map (URI to file path mapping)
-        3. Fall back to simulated schemas (for testing)
         """
         # First check sideloaded schemas by $id
         if uri in self.external_schemas:
@@ -313,41 +312,8 @@ class JSONStructureSchemaCoreValidator:
             except Exception as e:
                 self._err(f"Failed to load imported schema from {self.import_map[uri]}: {e}", "#/import")
                 return None
-        # Simulated external schemas for testing purposes.
-        EXTERNAL_SCHEMAS = {
-            "https://example.com/people.json": {
-                "$schema": "https://json-structure.org/meta/core/v0/#",
-                "$id": "https://example.com/people.json",
-                "name": "Person",
-                "type": "object",
-                "properties": {
-                    "firstName": {"type": "string"},
-                    "lastName": {"type": "string"},
-                    "address": {"$ref": "#/definitions/Address"}
-                },
-                "definitions": {
-                    "Address": {
-                        "name": "Address",
-                        "type": "object",
-                        "properties": {
-                            "street": {"type": "string"},
-                            "city": {"type": "string"}
-                        }
-                    }
-                }
-            },
-            "https://example.com/address.json": {
-                "$schema": "https://json-structure.org/meta/core/v0/#",
-                "$id": "https://example.com/address.json",
-                "name": "Address",
-                "type": "object",
-                "properties": {
-                    "street": {"type": "string"},
-                    "city": {"type": "string"}
-                }
-            }
-        }
-        return EXTERNAL_SCHEMAS.get(uri)
+        # URI not found in external_schemas or import_map
+        return None
 
     def _validate_namespace(self, obj, path):
         """
