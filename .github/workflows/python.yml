@@ -90,30 +90,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          name: python-package
-          path: dist/
+          python-version: '3.11'
 
-      - name: Check for PyPI token
-        id: check-secret
+      - name: Install build tools
         run: |
-          if [ -z "${{ secrets.PYPI_API_TOKEN }}" ]; then
-            echo "has_token=false" >> $GITHUB_OUTPUT
-            echo "::warning::PYPI_API_TOKEN secret is not set. Skipping PyPI publish."
-          else
-            echo "has_token=true" >> $GITHUB_OUTPUT
-          fi
+          python -m pip install --upgrade pip
+          pip install build
 
-      - name: Publish to PyPI
-        if: steps.check-secret.outputs.has_token == 'true'
+      - name: Extract version from tag
+        id: get_version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Extracted version: $VERSION"
+
+      - name: Update version in pyproject.toml
+        working-directory: python
+        run: |
+          sed -i "s/^version = .*/version = \"${{ steps.get_version.outputs.VERSION }}\"/" pyproject.toml
+
+      - name: Build package
+        working-directory: python
+        run: python -m build
+
+      - name: Publish to PyPI (trusted publishing)
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          password: ${{ secrets.PYPI_API_TOKEN }}
-
-      - name: Skip publish warning
-        if: steps.check-secret.outputs.has_token == 'false'
-        run: |
-          echo "⚠️ Skipping PyPI publish: PYPI_API_TOKEN secret is not configured."
-          echo "To enable publishing, add the PYPI_API_TOKEN secret to the repository settings."
+          packages-dir: python/dist/

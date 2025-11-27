@@ -620,7 +620,7 @@ export class JSONPointer {
  * const data = JSON.parse(jsonString, jsonStructureReviver);
  * ```
  */
-export function jsonStructureReviver(key: string, value: unknown): unknown {
+export function jsonStructureReviver(_key: string, value: unknown): unknown {
   if (typeof value !== 'string') {
     return value;
   }
@@ -664,7 +664,7 @@ export function jsonStructureReviver(key: string, value: unknown): unknown {
  * Replacer function for JSON.stringify to handle JSON Structure types.
  * Most wrapper types already have toJSON(), but this handles edge cases.
  */
-export function jsonStructureReplacer(key: string, value: unknown): unknown {
+export function jsonStructureReplacer(_key: string, value: unknown): unknown {
   if (value instanceof Int64 || value instanceof UInt64 || 
       value instanceof Int128 || value instanceof UInt128 ||
       value instanceof Decimal || value instanceof Duration ||

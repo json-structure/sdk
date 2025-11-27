@@ -65,6 +65,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: read
+      id-token: write  # Required for npm trusted publishing (OIDC)
 
     steps:
       - uses: actions/checkout@v4
@@ -77,6 +80,20 @@ jobs:
           node-version: '20.x'
           registry-url: 'https://registry.npmjs.org'
 
+      - name: Update npm for trusted publishing
+        run: npm install -g npm@latest
+
+      - name: Extract version from tag
+        id: get_version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Extracted version: $VERSION"
+
+      - name: Update package.json version
+        working-directory: typescript
+        run: npm version ${{ steps.get_version.outputs.VERSION }} --no-git-tag-version
+
       - name: Install dependencies
         working-directory: typescript
         run: npm ci
@@ -85,25 +102,6 @@ jobs:
         working-directory: typescript
         run: npm run build
 
-      - name: Check for npm token
-        id: check-secret
-        run: |
-          if [ -z "${{ secrets.NPM_TOKEN }}" ]; then
-            echo "has_token=false" >> $GITHUB_OUTPUT
-            echo "::warning::NPM_TOKEN secret is not set. Skipping npm publish."
-          else
-            echo "has_token=true" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Publish to npm
-        if: steps.check-secret.outputs.has_token == 'true'
+      - name: Publish to npm (trusted publishing)
         working-directory: typescript
         run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Skip publish warning
-        if: steps.check-secret.outputs.has_token == 'false'
-        run: |
-          echo "⚠️ Skipping npm publish: NPM_TOKEN secret is not configured."
-          echo "To enable publishing, add the NPM_TOKEN secret to the repository settings."

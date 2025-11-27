@@ -1,5 +1,5 @@
 {
-  "name": "json-structure",
+  "name": "@json-structure/sdk",
   "version": "0.1.0",
   "description": "TypeScript/JavaScript SDK for validating JSON documents against JSON Structure schemas",
   "main": "dist/index.js",

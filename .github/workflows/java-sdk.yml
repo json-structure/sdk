@@ -163,6 +163,17 @@ jobs:
             echo "has_credentials=true" >> $GITHUB_OUTPUT
           fi
 
+      - name: Extract version from tag
+        id: get_version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Extracted version: $VERSION"
+
+      - name: Set version in pom.xml
+        if: steps.check-secret.outputs.has_credentials == 'true'
+        run: mvn -B versions:set -DnewVersion=${{ steps.get_version.outputs.VERSION }} -DgenerateBackupPoms=false
+
       - name: Publish to Maven Central
         if: steps.check-secret.outputs.has_credentials == 'true'
         run: mvn -B deploy -DskipTests -Prelease
