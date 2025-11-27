@@ -10,7 +10,42 @@ npm install json-structure
 
 ## Usage
 
-### Schema Validation
+The package works with both TypeScript and plain JavaScript, and supports both ES modules and CommonJS.
+
+### JavaScript (CommonJS)
+
+```javascript
+const { SchemaValidator, InstanceValidator } = require('json-structure');
+
+const schema = {
+  type: 'object',
+  properties: {
+    name: { type: 'string' },
+    age: { type: 'int32' }
+  },
+  required: ['name']
+};
+
+// Validate schema
+const schemaValidator = new SchemaValidator();
+console.log(schemaValidator.validate(schema));
+
+// Validate instance
+const instanceValidator = new InstanceValidator();
+console.log(instanceValidator.validate({ name: 'Alice', age: 30 }, schema));
+```
+
+### JavaScript (ES Modules)
+
+```javascript
+import { SchemaValidator, InstanceValidator } from 'json-structure';
+
+// Same usage as above
+```
+
+### TypeScript
+
+#### Schema Validation
 
 Validate that a schema document follows the JSON Structure specification:
 
