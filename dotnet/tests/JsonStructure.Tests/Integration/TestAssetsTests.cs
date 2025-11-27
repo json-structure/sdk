@@ -45,20 +45,32 @@ public class TestAssetsTests
         _schemaValidator = new SchemaValidator();
         _instanceValidator = new InstanceValidator();
         
-        // Find the sdk/test-assets directory relative to test execution
+        // Find the test-assets directory relative to test execution
         var currentDir = Directory.GetCurrentDirectory();
         var searchDir = currentDir;
         
-        // Walk up to find the json-structure repo root
+        // Walk up to find the repository root (look for test-assets or dotnet folder)
         while (searchDir != null)
         {
-            var candidatePath = Path.Combine(searchDir, "sdk", "test-assets");
-            if (Directory.Exists(candidatePath))
+            // Check for test-assets at this level (sdk repo structure)
+            var testAssetsPath = Path.Combine(searchDir, "test-assets");
+            if (Directory.Exists(testAssetsPath))
             {
-                _testAssetsPath = candidatePath;
+                _testAssetsPath = testAssetsPath;
+                // primer-and-samples is a sibling submodule in the sdk repo
                 _samplesPath = Path.Combine(searchDir, "primer-and-samples", "samples", "core");
                 break;
             }
+            
+            // Also check for sdk/test-assets (when running from a parent directory)
+            var sdkTestAssetsPath = Path.Combine(searchDir, "sdk", "test-assets");
+            if (Directory.Exists(sdkTestAssetsPath))
+            {
+                _testAssetsPath = sdkTestAssetsPath;
+                _samplesPath = Path.Combine(searchDir, "primer-and-samples", "samples", "core");
+                break;
+            }
+            
             searchDir = Directory.GetParent(searchDir)?.FullName;
         }
     }
@@ -73,12 +85,22 @@ public class TestAssetsTests
         
         while (searchDir != null)
         {
-            var candidatePath = Path.Combine(searchDir, "sdk", "test-assets", "schemas", "invalid");
+            // Check for test-assets at this level (sdk repo structure)
+            var candidatePath = Path.Combine(searchDir, "test-assets", "schemas", "invalid");
             if (Directory.Exists(candidatePath))
             {
                 testAssetsPath = candidatePath;
                 break;
             }
+            
+            // Also check for sdk/test-assets (when running from a parent directory)
+            var sdkCandidatePath = Path.Combine(searchDir, "sdk", "test-assets", "schemas", "invalid");
+            if (Directory.Exists(sdkCandidatePath))
+            {
+                testAssetsPath = sdkCandidatePath;
+                break;
+            }
+            
             searchDir = Directory.GetParent(searchDir)?.FullName;
         }
         
@@ -143,12 +165,22 @@ public class TestAssetsTests
         
         while (searchDir != null)
         {
-            var candidatePath = Path.Combine(searchDir, "sdk", "test-assets", "instances", "invalid");
+            // Check for test-assets at this level (sdk repo structure)
+            var candidatePath = Path.Combine(searchDir, "test-assets", "instances", "invalid");
             if (Directory.Exists(candidatePath))
             {
                 invalidInstancesPath = candidatePath;
                 break;
             }
+            
+            // Also check for sdk/test-assets (when running from a parent directory)
+            var sdkCandidatePath = Path.Combine(searchDir, "sdk", "test-assets", "instances", "invalid");
+            if (Directory.Exists(sdkCandidatePath))
+            {
+                invalidInstancesPath = sdkCandidatePath;
+                break;
+            }
+            
             searchDir = Directory.GetParent(searchDir)?.FullName;
         }
         
