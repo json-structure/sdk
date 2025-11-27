@@ -162,8 +162,8 @@ describe('Test Assets Integration', () => {
           return;
         }
 
-        // Try to find matching sample schema
-        const sampleSchemaFile = join(samplesDir, `${categoryName}.struct.json`);
+        // Try to find matching sample schema - look in the category subdirectory
+        const sampleSchemaFile = join(samplesDir, categoryName, 'schema.struct.json');
         
         if (!existsSync(sampleSchemaFile)) {
           it.skip(`Schema not found for ${categoryName}`, () => {});
