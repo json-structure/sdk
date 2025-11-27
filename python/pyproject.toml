@@ -1,10 +1,10 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [project]
 name = "json-structure"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Validators for JSON Structure schemas and instances"
 readme = "README.md"
 license = "MIT"
@@ -76,3 +76,10 @@ exclude_lines = [
     "if __name__ == .__main__.:",
     "raise NotImplementedError"
 ]
+
+[tool.hatch.version]
+source = "vcs"
+raw-options = { root = ".." }
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/json_structure/_version.py"
