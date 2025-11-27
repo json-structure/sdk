@@ -1,0 +1,836 @@
+/**
+ * JSON Structure Instance Validator
+ * 
+ * Validates JSON instances against JSON Structure schemas, including
+ * all core types, validation addins, and conditional composition.
+ */
+
+import {
+  ValidationResult,
+  ValidationError,
+  InstanceValidatorOptions,
+  JsonValue,
+  JsonObject,
+} from './types';
+
+// Regular expressions for format validation
+const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+const DATETIME_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+const TIME_REGEX = /^\d{2}:\d{2}:\d{2}(?:\.\d+)?$/;
+const DURATION_REGEX = /^P(?:\d+Y)?(?:\d+M)?(?:\d+D)?(?:T(?:\d+H)?(?:\d+M)?(?:\d+(?:\.\d+)?S)?)?$|^P\d+W$/;
+const UUID_REGEX = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+const JSON_POINTER_REGEX = /^#(\/[^/]+)*$/;
+
+/**
+ * Validates JSON instances against JSON Structure schemas.
+ */
+export class InstanceValidator {
+  private readonly options: InstanceValidatorOptions;
+  private errors: ValidationError[] = [];
+  private rootSchema: JsonObject | null = null;
+  private enabledExtensions: Set<string> = new Set();
+
+  constructor(options: InstanceValidatorOptions = {}) {
+    this.options = { extended: false, allowImport: false, ...options };
+  }
+
+  /**
+   * Validates a JSON instance against a JSON Structure schema.
+   * @param instance The instance to validate.
+   * @param schema The schema to validate against.
+   * @returns Validation result with any errors.
+   */
+  validate(instance: JsonValue, schema: JsonValue): ValidationResult {
+    this.errors = [];
+    this.enabledExtensions = new Set();
+
+    if (!this.isObject(schema)) {
+      this.addError('#', 'Schema must be an object');
+      return this.result();
+    }
+
+    this.rootSchema = schema;
+    this.detectEnabledExtensions();
+
+    // Handle $root
+    let targetSchema: JsonObject = schema;
+    if ('$root' in schema && typeof schema.$root === 'string') {
+      const rootRef = schema.$root;
+      if (rootRef.startsWith('#/')) {
+        const resolved = this.resolveRef(rootRef);
+        if (resolved === null) {
+          this.addError('#', `Cannot resolve $root reference: ${rootRef}`);
+          return this.result();
+        }
+        targetSchema = resolved;
+      }
+    }
+
+    this.validateInstance(instance, targetSchema, '#');
+
+    return this.result();
+  }
+
+  private detectEnabledExtensions(): void {
+    if (!this.rootSchema) return;
+
+    const schemaUri = this.rootSchema.$schema;
+    const uses = this.rootSchema.$uses;
+
+    // Check schema URI for extended/validation metaschema
+    if (typeof schemaUri === 'string') {
+      if (schemaUri.includes('extended') || schemaUri.includes('validation')) {
+        this.enabledExtensions.add('JSONStructureConditionalComposition');
+        this.enabledExtensions.add('JSONStructureValidation');
+      }
+    }
+
+    // Check $uses
+    if (Array.isArray(uses)) {
+      for (const ext of uses) {
+        if (typeof ext === 'string') {
+          this.enabledExtensions.add(ext);
+        }
+      }
+    }
+
+    // If extended=true option, enable all validation extensions
+    if (this.options.extended) {
+      this.enabledExtensions.add('JSONStructureConditionalComposition');
+      this.enabledExtensions.add('JSONStructureValidation');
+    }
+  }
+
+  private validateInstance(instance: JsonValue, schema: JsonObject, path: string): void {
+    // Handle $ref
+    if ('$ref' in schema && typeof schema.$ref === 'string') {
+      const resolved = this.resolveRef(schema.$ref);
+      if (resolved === null) {
+        this.addError(path, `Cannot resolve $ref: ${schema.$ref}`);
+        return;
+      }
+      this.validateInstance(instance, resolved, path);
+      return;
+    }
+
+    // Handle type with $ref
+    const type = schema.type;
+    if (this.isObject(type) && '$ref' in type) {
+      const resolved = this.resolveRef(type.$ref as string);
+      if (resolved === null) {
+        this.addError(path, `Cannot resolve type $ref: ${type.$ref}`);
+        return;
+      }
+      // Merge the resolved type with the current schema
+      const merged: JsonObject = { ...resolved, ...schema };
+      merged.type = resolved.type;
+      if ('properties' in resolved || 'properties' in schema) {
+        merged.properties = { ...(resolved.properties as JsonObject || {}), ...(schema.properties as JsonObject || {}) };
+      }
+      this.validateInstance(instance, merged, path);
+      return;
+    }
+
+    // Handle $extends
+    if ('$extends' in schema && typeof schema.$extends === 'string') {
+      const base = this.resolveRef(schema.$extends);
+      if (base === null) {
+        this.addError(path, `Cannot resolve $extends: ${schema.$extends}`);
+        return;
+      }
+      // Merge base with derived
+      const merged: JsonObject = { ...base, ...schema };
+      if ('properties' in base || 'properties' in schema) {
+        merged.properties = { ...(base.properties as JsonObject || {}), ...(schema.properties as JsonObject || {}) };
+      }
+      delete merged.$extends;
+      this.validateInstance(instance, merged, path);
+      return;
+    }
+
+    // Handle union types
+    if (Array.isArray(type)) {
+      let valid = false;
+      for (const t of type) {
+        const tempErrors = [...this.errors];
+        this.errors = [];
+        this.validateInstance(instance, { ...schema, type: t }, path);
+        if (this.errors.length === 0) {
+          valid = true;
+          this.errors = tempErrors;
+          break;
+        }
+        this.errors = tempErrors;
+      }
+      if (!valid) {
+        this.addError(path, `Instance does not match any type in union`);
+      }
+      return;
+    }
+
+    // Type is required unless this is a constraint-only schema
+    if (typeof type !== 'string') {
+      // Check for conditional-only schema
+      const conditionalKeywords = ['allOf', 'anyOf', 'oneOf', 'not', 'if'];
+      if (conditionalKeywords.some(k => k in schema)) {
+        this.validateConditionals(instance, schema, path);
+        return;
+      }
+      
+      // Check for enum or const only (valid type-less schemas)
+      if ('enum' in schema || 'const' in schema) {
+        // Validate enum
+        if ('enum' in schema && Array.isArray(schema.enum)) {
+          if (!schema.enum.some(e => this.deepEqual(instance, e))) {
+            this.addError(path, `Value must be one of: ${JSON.stringify(schema.enum)}`);
+          }
+        }
+        // Validate const
+        if ('const' in schema) {
+          if (!this.deepEqual(instance, schema.const)) {
+            this.addError(path, `Value must equal const: ${JSON.stringify(schema.const)}`);
+          }
+        }
+        return;
+      }
+      
+      this.addError(path, "Schema must have a 'type' property");
+      return;
+    }
+
+    // Validate abstract
+    if (schema.abstract === true) {
+      this.addError(path, 'Cannot validate instance against abstract schema');
+      return;
+    }
+
+    // Validate by type
+    this.validateByType(instance, type, schema, path);
+
+    // Validate const
+    if ('const' in schema) {
+      if (!this.deepEqual(instance, schema.const)) {
+        this.addError(path, `Value must equal const: ${JSON.stringify(schema.const)}`);
+      }
+    }
+
+    // Validate enum
+    if ('enum' in schema && Array.isArray(schema.enum)) {
+      if (!schema.enum.some(e => this.deepEqual(instance, e))) {
+        this.addError(path, `Value must be one of: ${JSON.stringify(schema.enum)}`);
+      }
+    }
+
+    // Validate conditionals if enabled
+    if (this.enabledExtensions.has('JSONStructureConditionalComposition')) {
+      this.validateConditionals(instance, schema, path);
+    }
+
+    // Validate validation addins if enabled
+    if (this.enabledExtensions.has('JSONStructureValidation')) {
+      this.validateValidationAddins(instance, type, schema, path);
+    }
+  }
+
+  private validateByType(instance: JsonValue, type: string, schema: JsonObject, path: string): void {
+    switch (type) {
+      case 'any':
+        // Any type accepts all values
+        break;
+
+      case 'null':
+        if (instance !== null) {
+          this.addError(path, `Expected null, got ${typeof instance}`);
+        }
+        break;
+
+      case 'boolean':
+        if (typeof instance !== 'boolean') {
+          this.addError(path, `Expected boolean, got ${typeof instance}`);
+        }
+        break;
+
+      case 'string':
+        if (typeof instance !== 'string') {
+          this.addError(path, `Expected string, got ${typeof instance}`);
+        }
+        break;
+
+      case 'number':
+        if (typeof instance !== 'number' || typeof instance === 'boolean') {
+          this.addError(path, `Expected number, got ${typeof instance}`);
+        }
+        break;
+
+      case 'integer':
+      case 'int32':
+        this.validateInt32(instance, path);
+        break;
+
+      case 'int8':
+        this.validateIntRange(instance, -128, 127, 'int8', path);
+        break;
+
+      case 'uint8':
+        this.validateIntRange(instance, 0, 255, 'uint8', path);
+        break;
+
+      case 'int16':
+        this.validateIntRange(instance, -32768, 32767, 'int16', path);
+        break;
+
+      case 'uint16':
+        this.validateIntRange(instance, 0, 65535, 'uint16', path);
+        break;
+
+      case 'uint32':
+        this.validateIntRange(instance, 0, 4294967295, 'uint32', path);
+        break;
+
+      case 'int64':
+        this.validateStringInt(instance, -(2n ** 63n), 2n ** 63n - 1n, 'int64', path);
+        break;
+
+      case 'uint64':
+        this.validateStringInt(instance, 0n, 2n ** 64n - 1n, 'uint64', path);
+        break;
+
+      case 'int128':
+        this.validateStringInt(instance, -(2n ** 127n), 2n ** 127n - 1n, 'int128', path);
+        break;
+
+      case 'uint128':
+        this.validateStringInt(instance, 0n, 2n ** 128n - 1n, 'uint128', path);
+        break;
+
+      case 'float':
+      case 'float8':
+      case 'double':
+        if (typeof instance !== 'number') {
+          this.addError(path, `Expected ${type}, got ${typeof instance}`);
+        }
+        break;
+
+      case 'decimal':
+        if (typeof instance !== 'string') {
+          this.addError(path, `Expected decimal as string, got ${typeof instance}`);
+        } else if (isNaN(parseFloat(instance))) {
+          this.addError(path, 'Invalid decimal format');
+        }
+        break;
+
+      case 'date':
+        if (typeof instance !== 'string' || !DATE_REGEX.test(instance)) {
+          this.addError(path, 'Expected date in YYYY-MM-DD format');
+        }
+        break;
+
+      case 'datetime':
+        if (typeof instance !== 'string' || !DATETIME_REGEX.test(instance)) {
+          this.addError(path, 'Expected datetime in RFC3339 format');
+        }
+        break;
+
+      case 'time':
+        if (typeof instance !== 'string' || !TIME_REGEX.test(instance)) {
+          this.addError(path, 'Expected time in HH:MM:SS format');
+        }
+        break;
+
+      case 'duration':
+        if (typeof instance !== 'string') {
+          this.addError(path, 'Expected duration as string');
+        } else if (!DURATION_REGEX.test(instance)) {
+          this.addError(path, 'Expected duration in ISO 8601 format');
+        }
+        break;
+
+      case 'uuid':
+        if (typeof instance !== 'string') {
+          this.addError(path, 'Expected uuid as string');
+        } else if (!UUID_REGEX.test(instance)) {
+          this.addError(path, 'Invalid uuid format');
+        }
+        break;
+
+      case 'uri':
+        if (typeof instance !== 'string') {
+          this.addError(path, 'Expected uri as string');
+        } else {
+          try {
+            new URL(instance);
+          } catch {
+            this.addError(path, 'Invalid uri format');
+          }
+        }
+        break;
+
+      case 'binary':
+        if (typeof instance !== 'string') {
+          this.addError(path, 'Expected binary as base64 string');
+        }
+        break;
+
+      case 'jsonpointer':
+        if (typeof instance !== 'string' || !JSON_POINTER_REGEX.test(instance)) {
+          this.addError(path, 'Expected JSON pointer format');
+        }
+        break;
+
+      case 'object':
+        this.validateObject(instance, schema, path);
+        break;
+
+      case 'array':
+        this.validateArray(instance, schema, path);
+        break;
+
+      case 'set':
+        this.validateSet(instance, schema, path);
+        break;
+
+      case 'map':
+        this.validateMap(instance, schema, path);
+        break;
+
+      case 'tuple':
+        this.validateTuple(instance, schema, path);
+        break;
+
+      case 'choice':
+        this.validateChoice(instance, schema, path);
+        break;
+
+      default:
+        this.addError(path, `Unknown type: ${type}`);
+    }
+  }
+
+  private validateInt32(instance: JsonValue, path: string): void {
+    if (typeof instance !== 'number' || !Number.isInteger(instance)) {
+      this.addError(path, 'Expected integer');
+    } else if (instance < -2147483648 || instance > 2147483647) {
+      this.addError(path, 'int32 value out of range');
+    }
+  }
+
+  private validateIntRange(instance: JsonValue, min: number, max: number, type: string, path: string): void {
+    if (typeof instance !== 'number' || !Number.isInteger(instance)) {
+      this.addError(path, `Expected ${type}`);
+    } else if (instance < min || instance > max) {
+      this.addError(path, `${type} value out of range`);
+    }
+  }
+
+  private validateStringInt(instance: JsonValue, min: bigint, max: bigint, type: string, path: string): void {
+    if (typeof instance !== 'string') {
+      this.addError(path, `Expected ${type} as string`);
+      return;
+    }
+    try {
+      const value = BigInt(instance);
+      if (value < min || value > max) {
+        this.addError(path, `${type} value out of range`);
+      }
+    } catch {
+      this.addError(path, `Invalid ${type} format`);
+    }
+  }
+
+  private validateObject(instance: JsonValue, schema: JsonObject, path: string): void {
+    if (!this.isObject(instance)) {
+      this.addError(path, `Expected object, got ${Array.isArray(instance) ? 'array' : typeof instance}`);
+      return;
+    }
+
+    const properties = schema.properties as JsonObject | undefined;
+    const required = schema.required as string[] | undefined;
+    const additionalProperties = schema.additionalProperties;
+
+    // Validate required properties
+    if (required && Array.isArray(required)) {
+      for (const prop of required) {
+        if (!(prop in instance)) {
+          this.addError(path, `Missing required property: ${prop}`);
+        }
+      }
+    }
+
+    // Validate properties
+    if (properties) {
+      for (const [propName, propSchema] of Object.entries(properties)) {
+        if (propName in instance) {
+          if (this.isObject(propSchema)) {
+            this.validateInstance(instance[propName], propSchema, `${path}/${propName}`);
+          }
+        }
+      }
+    }
+
+    // Validate additionalProperties
+    if (additionalProperties === false) {
+      for (const key of Object.keys(instance)) {
+        if (properties && !(key in properties)) {
+          this.addError(path, `Additional property not allowed: ${key}`);
+        }
+      }
+    } else if (this.isObject(additionalProperties)) {
+      for (const key of Object.keys(instance)) {
+        if (!properties || !(key in properties)) {
+          this.validateInstance(instance[key], additionalProperties, `${path}/${key}`);
+        }
+      }
+    }
+  }
+
+  private validateArray(instance: JsonValue, schema: JsonObject, path: string): void {
+    if (!Array.isArray(instance)) {
+      this.addError(path, `Expected array, got ${typeof instance}`);
+      return;
+    }
+
+    const items = schema.items as JsonObject | undefined;
+    if (items) {
+      for (let i = 0; i < instance.length; i++) {
+        this.validateInstance(instance[i], items, `${path}[${i}]`);
+      }
+    }
+  }
+
+  private validateSet(instance: JsonValue, schema: JsonObject, path: string): void {
+    if (!Array.isArray(instance)) {
+      this.addError(path, `Expected set (array), got ${typeof instance}`);
+      return;
+    }
+
+    // Check for duplicates
+    const seen = new Set<string>();
+    for (let i = 0; i < instance.length; i++) {
+      const serialized = JSON.stringify(instance[i]);
+      if (seen.has(serialized)) {
+        this.addError(path, 'Set contains duplicate items');
+        break;
+      }
+      seen.add(serialized);
+    }
+
+    // Validate items
+    const items = schema.items as JsonObject | undefined;
+    if (items) {
+      for (let i = 0; i < instance.length; i++) {
+        this.validateInstance(instance[i], items, `${path}[${i}]`);
+      }
+    }
+  }
+
+  private validateMap(instance: JsonValue, schema: JsonObject, path: string): void {
+    if (!this.isObject(instance)) {
+      this.addError(path, `Expected map (object), got ${typeof instance}`);
+      return;
+    }
+
+    const values = schema.values as JsonObject | undefined;
+    if (values) {
+      for (const [key, val] of Object.entries(instance)) {
+        this.validateInstance(val, values, `${path}/${key}`);
+      }
+    }
+  }
+
+  private validateTuple(instance: JsonValue, schema: JsonObject, path: string): void {
+    if (!Array.isArray(instance)) {
+      this.addError(path, `Expected tuple (array), got ${typeof instance}`);
+      return;
+    }
+
+    const tupleOrder = schema.tuple as string[] | undefined;
+    const properties = schema.properties as JsonObject | undefined;
+
+    if (!tupleOrder || !Array.isArray(tupleOrder)) {
+      this.addError(path, "Tuple schema must have 'tuple' array");
+      return;
+    }
+
+    if (instance.length !== tupleOrder.length) {
+      this.addError(path, `Tuple length mismatch: expected ${tupleOrder.length}, got ${instance.length}`);
+      return;
+    }
+
+    if (properties) {
+      for (let i = 0; i < tupleOrder.length; i++) {
+        const propName = tupleOrder[i];
+        const propSchema = properties[propName];
+        if (this.isObject(propSchema)) {
+          this.validateInstance(instance[i], propSchema, `${path}/${propName}`);
+        }
+      }
+    }
+  }
+
+  private validateChoice(instance: JsonValue, schema: JsonObject, path: string): void {
+    if (!this.isObject(instance)) {
+      this.addError(path, `Expected choice (object), got ${typeof instance}`);
+      return;
+    }
+
+    const choices = schema.choices as JsonObject | undefined;
+    const selector = schema.selector as string | undefined;
+    const extendsRef = schema.$extends as string | undefined;
+
+    if (!choices) {
+      this.addError(path, "Choice schema must have 'choices'");
+      return;
+    }
+
+    if (extendsRef && selector) {
+      // Inline union: use selector property
+      const selectorValue = instance[selector];
+      if (typeof selectorValue !== 'string') {
+        this.addError(path, `Selector '${selector}' must be a string`);
+        return;
+      }
+      if (!(selectorValue in choices)) {
+        this.addError(path, `Selector value '${selectorValue}' not in choices`);
+        return;
+      }
+      const choiceSchema = choices[selectorValue] as JsonObject;
+      // Validate remaining properties against choice
+      const remaining: JsonObject = { ...instance };
+      delete remaining[selector];
+      this.validateInstance(remaining, choiceSchema, path);
+    } else {
+      // Tagged union: exactly one property matching a choice key
+      const keys = Object.keys(instance);
+      if (keys.length !== 1) {
+        this.addError(path, 'Tagged union must have exactly one property');
+        return;
+      }
+      const key = keys[0];
+      if (!(key in choices)) {
+        this.addError(path, `Property '${key}' not in choices`);
+        return;
+      }
+      const choiceSchema = choices[key] as JsonObject;
+      this.validateInstance(instance[key], choiceSchema, `${path}/${key}`);
+    }
+  }
+
+  private validateConditionals(instance: JsonValue, schema: JsonObject, path: string): void {
+    // allOf
+    if ('allOf' in schema && Array.isArray(schema.allOf)) {
+      for (let i = 0; i < schema.allOf.length; i++) {
+        const subschema = schema.allOf[i];
+        if (this.isObject(subschema)) {
+          this.validateInstance(instance, subschema, `${path}/allOf[${i}]`);
+        }
+      }
+    }
+
+    // anyOf
+    if ('anyOf' in schema && Array.isArray(schema.anyOf)) {
+      let valid = false;
+      const allErrors: ValidationError[] = [];
+      for (let i = 0; i < schema.anyOf.length; i++) {
+        const subschema = schema.anyOf[i];
+        if (this.isObject(subschema)) {
+          const tempErrors = [...this.errors];
+          this.errors = [];
+          this.validateInstance(instance, subschema, `${path}/anyOf[${i}]`);
+          if (this.errors.length === 0) {
+            valid = true;
+            this.errors = tempErrors;
+            break;
+          }
+          allErrors.push(...this.errors);
+          this.errors = tempErrors;
+        }
+      }
+      if (!valid) {
+        this.addError(path, 'Instance does not satisfy anyOf');
+      }
+    }
+
+    // oneOf
+    if ('oneOf' in schema && Array.isArray(schema.oneOf)) {
+      let validCount = 0;
+      for (let i = 0; i < schema.oneOf.length; i++) {
+        const subschema = schema.oneOf[i];
+        if (this.isObject(subschema)) {
+          const tempErrors = [...this.errors];
+          this.errors = [];
+          this.validateInstance(instance, subschema, `${path}/oneOf[${i}]`);
+          if (this.errors.length === 0) {
+            validCount++;
+          }
+          this.errors = tempErrors;
+        }
+      }
+      if (validCount !== 1) {
+        this.addError(path, `Instance must match exactly one schema in oneOf, matched ${validCount}`);
+      }
+    }
+
+    // not
+    if ('not' in schema && this.isObject(schema.not)) {
+      const tempErrors = [...this.errors];
+      this.errors = [];
+      this.validateInstance(instance, schema.not, `${path}/not`);
+      if (this.errors.length === 0) {
+        this.errors = tempErrors;
+        this.addError(path, 'Instance must not match "not" schema');
+      } else {
+        this.errors = tempErrors;
+      }
+    }
+
+    // if/then/else
+    if ('if' in schema && this.isObject(schema.if)) {
+      const tempErrors = [...this.errors];
+      this.errors = [];
+      this.validateInstance(instance, schema.if, `${path}/if`);
+      const ifValid = this.errors.length === 0;
+      this.errors = tempErrors;
+
+      if (ifValid) {
+        if ('then' in schema && this.isObject(schema.then)) {
+          this.validateInstance(instance, schema.then, `${path}/then`);
+        }
+      } else {
+        if ('else' in schema && this.isObject(schema.else)) {
+          this.validateInstance(instance, schema.else, `${path}/else`);
+        }
+      }
+    }
+  }
+
+  private validateValidationAddins(instance: JsonValue, type: string, schema: JsonObject, path: string): void {
+    // String constraints
+    if (type === 'string' && typeof instance === 'string') {
+      if ('minLength' in schema && typeof schema.minLength === 'number') {
+        if (instance.length < schema.minLength) {
+          this.addError(path, `String length ${instance.length} is less than minLength ${schema.minLength}`);
+        }
+      }
+      if ('maxLength' in schema && typeof schema.maxLength === 'number') {
+        if (instance.length > schema.maxLength) {
+          this.addError(path, `String length ${instance.length} exceeds maxLength ${schema.maxLength}`);
+        }
+      }
+      if ('pattern' in schema && typeof schema.pattern === 'string') {
+        try {
+          const regex = new RegExp(schema.pattern);
+          if (!regex.test(instance)) {
+            this.addError(path, `String does not match pattern: ${schema.pattern}`);
+          }
+        } catch {
+          // Invalid regex, skip
+        }
+      }
+    }
+
+    // Numeric constraints
+    const numericTypes = [
+      'number', 'integer', 'float', 'double', 'decimal', 'float8',
+      'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32',
+    ];
+    if (numericTypes.includes(type) && typeof instance === 'number') {
+      if ('minimum' in schema && typeof schema.minimum === 'number') {
+        if (instance < schema.minimum) {
+          this.addError(path, `Value ${instance} is less than minimum ${schema.minimum}`);
+        }
+      }
+      if ('maximum' in schema && typeof schema.maximum === 'number') {
+        if (instance > schema.maximum) {
+          this.addError(path, `Value ${instance} exceeds maximum ${schema.maximum}`);
+        }
+      }
+      if ('multipleOf' in schema && typeof schema.multipleOf === 'number') {
+        if (Math.abs(instance % schema.multipleOf) > 1e-10) {
+          this.addError(path, `Value ${instance} is not a multiple of ${schema.multipleOf}`);
+        }
+      }
+    }
+
+    // Array constraints
+    if ((type === 'array' || type === 'set') && Array.isArray(instance)) {
+      if ('minItems' in schema && typeof schema.minItems === 'number') {
+        if (instance.length < schema.minItems) {
+          this.addError(path, `Array has ${instance.length} items, less than minItems ${schema.minItems}`);
+        }
+      }
+      if ('maxItems' in schema && typeof schema.maxItems === 'number') {
+        if (instance.length > schema.maxItems) {
+          this.addError(path, `Array has ${instance.length} items, more than maxItems ${schema.maxItems}`);
+        }
+      }
+      if ('uniqueItems' in schema && schema.uniqueItems === true) {
+        const seen = new Set<string>();
+        for (const item of instance) {
+          const serialized = JSON.stringify(item);
+          if (seen.has(serialized)) {
+            this.addError(path, 'Array items are not unique');
+            break;
+          }
+          seen.add(serialized);
+        }
+      }
+    }
+
+    // Object constraints
+    if (type === 'object' && this.isObject(instance)) {
+      if ('minProperties' in schema && typeof schema.minProperties === 'number') {
+        const count = Object.keys(instance).length;
+        if (count < schema.minProperties) {
+          this.addError(path, `Object has ${count} properties, less than minProperties ${schema.minProperties}`);
+        }
+      }
+      if ('maxProperties' in schema && typeof schema.maxProperties === 'number') {
+        const count = Object.keys(instance).length;
+        if (count > schema.maxProperties) {
+          this.addError(path, `Object has ${count} properties, more than maxProperties ${schema.maxProperties}`);
+        }
+      }
+    }
+  }
+
+  private resolveRef(ref: string): JsonObject | null {
+    if (!this.rootSchema || !ref.startsWith('#/')) {
+      return null;
+    }
+
+    const parts = ref.substring(2).split('/');
+    let current: JsonValue = this.rootSchema;
+
+    for (const part of parts) {
+      if (!this.isObject(current)) {
+        return null;
+      }
+      const unescaped = part.replace(/~1/g, '/').replace(/~0/g, '~');
+      if (!(unescaped in current)) {
+        return null;
+      }
+      current = current[unescaped];
+    }
+
+    return this.isObject(current) ? current : null;
+  }
+
+  private isObject(value: JsonValue): value is JsonObject {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+  }
+
+  private deepEqual(a: JsonValue, b: JsonValue): boolean {
+    return JSON.stringify(a) === JSON.stringify(b);
+  }
+
+  private addError(path: string, message: string, code?: string): void {
+    this.errors.push({ path, message, code });
+  }
+
+  private result(): ValidationResult {
+    return {
+      isValid: this.errors.length === 0,
+      errors: [...this.errors],
+    };
+  }
+}
