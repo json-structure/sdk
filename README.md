@@ -13,6 +13,7 @@ that can be validated and mapped to programming language types.
 | [.NET](./dotnet/) | `JsonStructure` | ✅ Available |
 | [Java](./java/) | `json-structure` | ✅ Available |
 | [TypeScript/JavaScript](./typescript/) | `json-structure` | ✅ Available |
+| [Go](./go/) | `github.com/json-structure/sdk-go` | ✅ Available |
 
 ## Features
 
@@ -152,6 +153,53 @@ const schemaResult = schemaValidator.validate(schema);
 const instance = { name: 'Alice', age: 30 };
 const instanceValidator = new InstanceValidator();
 const instanceResult = instanceValidator.validate(instance, schema);
+```
+
+### Go
+
+```bash
+go get github.com/json-structure/sdk-go
+```
+
+```go
+package main
+
+import (
+    "encoding/json"
+    "fmt"
+    jsonstructure "github.com/json-structure/sdk-go"
+)
+
+func main() {
+    // Define a schema
+    schemaJSON := `{
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "name": "Person",
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "age": {"type": "int32"}
+        }
+    }`
+
+    var schema map[string]interface{}
+    json.Unmarshal([]byte(schemaJSON), &schema)
+
+    // Validate the schema
+    schemaValidator := jsonstructure.NewSchemaValidator(nil)
+    schemaResult := schemaValidator.Validate(schema)
+    fmt.Printf("Schema valid: %v\n", schemaResult.IsValid)
+
+    // Validate an instance
+    instance := map[string]interface{}{
+        "name": "Alice",
+        "age":  float64(30),
+    }
+
+    instanceValidator := jsonstructure.NewInstanceValidator(nil)
+    instanceResult := instanceValidator.Validate(instance, schema)
+    fmt.Printf("Instance valid: %v\n", instanceResult.IsValid)
+}
 ```
 
 ## Documentation
