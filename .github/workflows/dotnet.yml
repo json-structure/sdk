@@ -99,6 +99,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -128,12 +130,35 @@ jobs:
         working-directory: dotnet
         run: dotnet pack --no-build --configuration Release -p:Version=${{ steps.get_version.outputs.VERSION }} --output ./nupkg
 
+      - name: Check publishing method
+        id: check-publish
+        run: |
+          if [ -n "${{ secrets.NUGET_USER }}" ]; then
+            echo "method=oidc" >> $GITHUB_OUTPUT
+          elif [ -n "${{ secrets.NUGET_API_KEY }}" ]; then
+            echo "method=apikey" >> $GITHUB_OUTPUT
+          else
+            echo "method=none" >> $GITHUB_OUTPUT
+          fi
+
       - name: NuGet login (OIDC → temp API key)
+        if: steps.check-publish.outputs.method == 'oidc'
         uses: NuGet/login@v1
         id: nuget-login
         with:
           user: ${{ secrets.NUGET_USER }}
 
       - name: Publish to NuGet (trusted publishing)
+        if: steps.check-publish.outputs.method == 'oidc'
         working-directory: dotnet
         run: dotnet nuget push ./nupkg/*.nupkg --api-key ${{ steps.nuget-login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+
+      - name: Publish to NuGet (API key)
+        if: steps.check-publish.outputs.method == 'apikey'
+        working-directory: dotnet
+        run: dotnet nuget push ./nupkg/*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+
+      - name: Skip publish warning
+        if: steps.check-publish.outputs.method == 'none'
+        run: |
+          echo "⚠️ Skipping NuGet publish: neither NUGET_USER (for trusted publishing) nor NUGET_API_KEY is configured."
