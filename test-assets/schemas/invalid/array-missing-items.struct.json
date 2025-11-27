@@ -1,0 +1,5 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "type": "array",
+  "description": "Invalid: array type without items definition"
+}

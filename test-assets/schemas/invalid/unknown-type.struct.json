@@ -1,0 +1,5 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "type": "invalid-type-name",
+  "description": "Invalid: unrecognized type name"
+}

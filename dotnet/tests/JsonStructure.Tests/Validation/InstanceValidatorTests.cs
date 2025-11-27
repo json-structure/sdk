@@ -713,4 +713,57 @@ public class InstanceValidatorTests
 
         result.IsValid.Should().BeFalse();
     }
+
+    [Fact]
+    public void Validate_Time_ValidISOFormat_ReturnsSuccess()
+    {
+        var schema = new JsonObject { ["type"] = "time" };
+        var instance = JsonValue.Create("09:00:00");
+
+        var result = _validator.Validate(instance, schema);
+
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Validate_Time_InvalidFormat_ReturnsError()
+    {
+        var schema = new JsonObject { ["type"] = "time" };
+        var instance = JsonValue.Create("9:00 AM");  // 12-hour format is not valid ISO time
+
+        var result = _validator.Validate(instance, schema);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle()
+            .Which.Message.Should().Contain("time");
+    }
+
+    [Fact]
+    public void Validate_MapWithTimeValues_InvalidTime_ReturnsError()
+    {
+        var schema = new JsonObject
+        {
+            ["type"] = "map",
+            ["values"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["open"] = new JsonObject { ["type"] = "time" }
+                }
+            }
+        };
+        
+        var instance = new JsonObject
+        {
+            ["monday"] = new JsonObject
+            {
+                ["open"] = "9:00 AM"  // Invalid time format
+            }
+        };
+
+        var result = _validator.Validate(instance, schema);
+
+        result.IsValid.Should().BeFalse();
+    }
 }

@@ -1,0 +1,7 @@
+{
+  "_description": "Invalid instance for 02-address: country not in enum",
+  "_schema": "02-address/schema.struct.json",
+  "street": "123 Main St",
+  "city": "New York",
+  "country": "XX"
+}

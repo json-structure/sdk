@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "type": "array",
+  "minItems": 10,
+  "maxItems": 5,
+  "description": "Invalid: minItems greater than maxItems"
+}

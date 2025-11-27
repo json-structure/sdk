@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "type": "string",
+  "enum": "not-an-array",
+  "description": "Invalid: enum must be an array"
+}

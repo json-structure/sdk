@@ -1,0 +1,6 @@
+{
+  "_description": "Invalid instance for 02-address: missing required city field",
+  "_schema": "02-address/schema.struct.json",
+  "street": "123 Main St",
+  "country": "US"
+}

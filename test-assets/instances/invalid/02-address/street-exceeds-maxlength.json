@@ -1,0 +1,7 @@
+{
+  "_description": "Invalid instance for 02-address: street exceeds maxLength of 100",
+  "_schema": "02-address/schema.struct.json",
+  "street": "This is a very long street address that exceeds the maximum allowed length of 100 characters and should cause validation to fail",
+  "city": "New York",
+  "country": "US"
+}

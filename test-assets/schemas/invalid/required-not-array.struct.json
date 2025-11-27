@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "type": "object",
+  "properties": {
+    "value": { "type": "string" }
+  },
+  "required": "value",
+  "description": "Invalid: required must be an array, not a string"
+}

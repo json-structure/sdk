@@ -94,6 +94,7 @@ public class SchemaValidatorTests
         var schema = new JsonObject
         {
             ["type"] = "array",
+            ["items"] = new JsonObject { ["type"] = "string" },
             ["minItems"] = -1
         };
 
@@ -161,6 +162,31 @@ public class SchemaValidatorTests
         foreach (var type in SchemaValidator.CompoundTypes)
         {
             var schema = new JsonObject { ["type"] = type };
+            
+            // Add required structure for compound types
+            if (type == "array" || type == "set")
+            {
+                schema["items"] = new JsonObject { ["type"] = "string" };
+            }
+            else if (type == "map")
+            {
+                schema["values"] = new JsonObject { ["type"] = "string" };
+            }
+            else if (type == "tuple")
+            {
+                schema["prefixItems"] = new JsonArray
+                {
+                    new JsonObject { ["type"] = "string" }
+                };
+            }
+            else if (type == "choice")
+            {
+                schema["options"] = new JsonObject
+                {
+                    ["opt1"] = new JsonObject { ["type"] = "string" }
+                };
+            }
+            
             var result = _validator.Validate(schema);
             result.IsValid.Should().BeTrue($"Type '{type}' should be valid");
         }

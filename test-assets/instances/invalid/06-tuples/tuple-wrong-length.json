@@ -1,0 +1,12 @@
+{
+  "_description": "Invalid instance for 06-tuples: tuple has wrong number of elements",
+  "_schema": "06-tuples/schema.struct.json",
+  "name": "Test Dataset",
+  "dataPoints": [
+    {
+      "id": "point1",
+      "location": [40.7128],
+      "measurements": []
+    }
+  ]
+}

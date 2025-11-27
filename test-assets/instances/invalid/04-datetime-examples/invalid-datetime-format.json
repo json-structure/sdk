@@ -1,0 +1,12 @@
+{
+  "_description": "Invalid instance for 04-datetime-examples: invalid datetime format",
+  "_schema": "04-datetime-examples/schema.struct.json",
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "title": "Team Meeting",
+  "timeSlot": {
+    "startTime": "not-a-datetime",
+    "endTime": "2024-01-15T11:00:00Z"
+  },
+  "organizerEmail": "organizer@example.com",
+  "createdAt": "2024-01-10T09:00:00Z"
+}

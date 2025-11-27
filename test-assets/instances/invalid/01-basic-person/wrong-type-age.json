@@ -1,0 +1,8 @@
+{
+  "_description": "Invalid instance for 01-basic-person: wrong type for age (string instead of int8)",
+  "_schema": "01-basic-person/schema.struct.json",
+  "firstName": "John",
+  "lastName": "Doe",
+  "email": "john.doe@example.com",
+  "age": "thirty"
+}

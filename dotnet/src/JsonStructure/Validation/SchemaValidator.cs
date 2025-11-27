@@ -84,6 +84,9 @@ public sealed class SchemaValidator
         RegexOptions.Compiled);
 
     private readonly ValidationOptions _options;
+    private HashSet<string> _definedRefs = new();
+    private HashSet<string> _importNamespaces = new();
+    private JsonNode? _rootSchema;
 
     static SchemaValidator()
     {
@@ -115,8 +118,56 @@ public sealed class SchemaValidator
             return result;
         }
 
-        ValidateSchemaCore(schema, result, "", 0);
+        // Store root schema for ref resolution
+        _rootSchema = schema;
+        
+        // Collect all defined references for $ref validation
+        _definedRefs = CollectDefinedRefs(schema);
+        
+        // Collect namespaces with $import/$importdefs for lenient $ref validation
+        _importNamespaces = CollectImportNamespaces(schema);
+
+        ValidateSchemaCore(schema, result, "", 0, new HashSet<string>());
         return result;
+    }
+    
+    /// <summary>
+    /// Resolves a local JSON Pointer reference to its target schema.
+    /// </summary>
+    private JsonNode? ResolveLocalRef(string refPath)
+    {
+        if (_rootSchema is null || !refPath.StartsWith("#/"))
+            return null;
+            
+        var path = refPath[2..]; // Remove "#/"
+        var segments = path.Split('/');
+        
+        JsonNode? current = _rootSchema;
+        foreach (var segment in segments)
+        {
+            if (current is null) return null;
+            
+            // Handle JSON Pointer escaping
+            var unescaped = segment.Replace("~1", "/").Replace("~0", "~");
+            
+            if (current is JsonObject obj)
+            {
+                if (!obj.TryGetPropertyValue(unescaped, out current))
+                    return null;
+            }
+            else if (current is JsonArray arr && int.TryParse(unescaped, out var index))
+            {
+                if (index < 0 || index >= arr.Count)
+                    return null;
+                current = arr[index];
+            }
+            else
+            {
+                return null;
+            }
+        }
+        
+        return current;
     }
 
     /// <summary>
@@ -137,7 +188,75 @@ public sealed class SchemaValidator
         }
     }
 
-    private void ValidateSchemaCore(JsonNode node, ValidationResult result, string path, int depth)
+    private HashSet<string> CollectDefinedRefs(JsonNode schema)
+    {
+        var refs = new HashSet<string>();
+        CollectDefinedRefsRecursive(schema, "#", refs);
+        return refs;
+    }
+
+    private void CollectDefinedRefsRecursive(JsonNode? node, string path, HashSet<string> refs)
+    {
+        if (node is not JsonObject obj) return;
+
+        if (obj.TryGetPropertyValue("$defs", out var defs) && defs is JsonObject defsObj)
+        {
+            foreach (var prop in defsObj)
+            {
+                var refPath = $"{path}/$defs/{prop.Key}";
+                refs.Add(refPath);
+                CollectDefinedRefsRecursive(prop.Value, refPath, refs);
+            }
+        }
+
+        if (obj.TryGetPropertyValue("definitions", out var definitions) && definitions is JsonObject defsObj2)
+        {
+            foreach (var prop in defsObj2)
+            {
+                var refPath = $"{path}/definitions/{prop.Key}";
+                refs.Add(refPath);
+                CollectDefinedRefsRecursive(prop.Value, refPath, refs);
+            }
+        }
+    }
+
+    private HashSet<string> CollectImportNamespaces(JsonNode schema)
+    {
+        var namespaces = new HashSet<string>();
+        CollectImportNamespacesRecursive(schema, "#", namespaces);
+        return namespaces;
+    }
+
+    private void CollectImportNamespacesRecursive(JsonNode? node, string path, HashSet<string> namespaces)
+    {
+        if (node is not JsonObject obj) return;
+
+        // Check if this node has $import or $importdefs
+        if (obj.ContainsKey("$import") || obj.ContainsKey("$importdefs"))
+        {
+            namespaces.Add(path);
+        }
+
+        // Recurse into $defs
+        if (obj.TryGetPropertyValue("$defs", out var defs) && defs is JsonObject defsObj)
+        {
+            foreach (var prop in defsObj)
+            {
+                CollectImportNamespacesRecursive(prop.Value, $"{path}/$defs/{prop.Key}", namespaces);
+            }
+        }
+
+        // Recurse into definitions
+        if (obj.TryGetPropertyValue("definitions", out var definitions) && definitions is JsonObject defsObj2)
+        {
+            foreach (var prop in defsObj2)
+            {
+                CollectImportNamespacesRecursive(prop.Value, $"{path}/definitions/{prop.Key}", namespaces);
+            }
+        }
+    }
+
+    private void ValidateSchemaCore(JsonNode node, ValidationResult result, string path, int depth, HashSet<string> visitedRefs)
     {
         if (depth > _options.MaxValidationDepth)
         {
@@ -188,10 +307,43 @@ public sealed class SchemaValidator
             ValidateStringProperty(idValue, "$id", path, result);
         }
 
-        // Validate $ref if present
+        // Validate $ref if present - check if target exists and isn't circular
         if (schema.TryGetPropertyValue("$ref", out var refValue))
         {
             ValidateReference(refValue, "$ref", path, result);
+            if (refValue is JsonValue rv && rv.TryGetValue<string>(out var refStr))
+            {
+                if (refStr.StartsWith("#/"))
+                {
+                    if (!_definedRefs.Contains(refStr))
+                    {
+                        // Check if this ref points into an import namespace
+                        var isImportedRef = _importNamespaces.Any(ns => refStr.StartsWith(ns + "/"));
+                        if (!isImportedRef)
+                        {
+                            result.AddError($"$ref target does not exist: {refStr}", AppendPath(path, "$ref"));
+                        }
+                    }
+                    else
+                    {
+                        // Check for circular reference
+                        if (visitedRefs.Contains(refStr))
+                        {
+                            result.AddError($"Circular reference detected: {refStr}", AppendPath(path, "$ref"));
+                        }
+                        else
+                        {
+                            // Follow the ref to validate its target (with this ref in visited set)
+                            var targetSchema = ResolveLocalRef(refStr);
+                            if (targetSchema is JsonObject targetObj)
+                            {
+                                var newVisited = new HashSet<string>(visitedRefs) { refStr };
+                                ValidateSchemaCore(targetObj, result, refStr, depth + 1, newVisited);
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // Validate $anchor if present
@@ -203,13 +355,13 @@ public sealed class SchemaValidator
         // Validate $defs if present
         if (schema.TryGetPropertyValue("$defs", out var defsValue))
         {
-            ValidateDefinitions(defsValue, "$defs", path, result, depth);
+            ValidateDefinitions(defsValue, "$defs", path, result, depth, visitedRefs);
         }
 
         // Validate definitions if present (alternate name for $defs)
         if (schema.TryGetPropertyValue("definitions", out var definitionsValue))
         {
-            ValidateDefinitions(definitionsValue, "definitions", path, result, depth);
+            ValidateDefinitions(definitionsValue, "definitions", path, result, depth, visitedRefs);
         }
 
         // Validate $import if present
@@ -230,11 +382,46 @@ public sealed class SchemaValidator
             ValidateReference(extendsValue, "$extends", path, result);
         }
 
+        // Check if type is required - schemas defining data should have a type
+        // Root schemas can have $root OR type, non-root schemas need type or composition keywords
+        var isRootSchema = string.IsNullOrEmpty(path);
+        var hasSchemaDefiningKeyword = schema.ContainsKey("type") || schema.ContainsKey("$ref") ||
+            schema.ContainsKey("allOf") || schema.ContainsKey("anyOf") || schema.ContainsKey("oneOf") ||
+            schema.ContainsKey("enum") || schema.ContainsKey("const") || schema.ContainsKey("$root") ||
+            schema.ContainsKey("if") || schema.ContainsKey("then") || schema.ContainsKey("properties") ||
+            schema.ContainsKey("items") || schema.ContainsKey("not") || schema.ContainsKey("$extends") ||
+            schema.ContainsKey("required") || schema.ContainsKey("minItems") || schema.ContainsKey("maxItems") ||
+            schema.ContainsKey("minLength") || schema.ContainsKey("maxLength") || schema.ContainsKey("minimum") ||
+            schema.ContainsKey("maximum") || schema.ContainsKey("pattern") || schema.ContainsKey("format");
+        
+        // For root schemas, we need either $root or type/composition keywords
+        // For non-root schemas in nested positions, we need type/composition keywords
+        if (isRootSchema)
+        {
+            // Root schema should have $root, type, or other schema-defining keywords
+            // But skip if it's just $defs (pure definition container)
+            var hasOnlyMeta = schema.All(p => 
+                p.Key == "$schema" || p.Key == "description" || p.Key == "title" || 
+                p.Key == "$id" || p.Key == "$comment");
+            
+            if (hasOnlyMeta && !hasSchemaDefiningKeyword)
+            {
+                result.AddError("Root schema must have 'type', '$root', or other schema-defining keyword", path);
+            }
+        }
+        else if (!hasSchemaDefiningKeyword && 
+            !schema.ContainsKey("$import") && !schema.ContainsKey("$importdefs") &&
+            !schema.ContainsKey("abstract") && !schema.ContainsKey("$abstract"))
+        {
+            result.AddError("Schema must have a 'type' keyword or other schema-defining keyword", path);
+        }
+
         // Validate type if present
+        string? typeStr = null;
         if (schema.TryGetPropertyValue("type", out var typeValue))
         {
             ValidateType(typeValue, path, result);
-            var typeStr = GetTypeString(typeValue);
+            typeStr = GetTypeString(typeValue);
             
             // Type-specific validation
             if (typeStr is not null)
@@ -242,20 +429,20 @@ public sealed class SchemaValidator
                 switch (typeStr)
                 {
                     case "object":
-                        ValidateObjectSchema(schema, path, result, depth);
+                        ValidateObjectSchema(schema, path, result, depth, visitedRefs);
                         break;
                     case "array":
                     case "set":
-                        ValidateArraySchema(schema, path, result, depth);
+                        ValidateArraySchema(schema, path, result, depth, visitedRefs);
                         break;
                     case "tuple":
-                        ValidateTupleSchema(schema, path, result, depth);
+                        ValidateTupleSchema(schema, path, result, depth, visitedRefs);
                         break;
                     case "map":
-                        ValidateMapSchema(schema, path, result, depth);
+                        ValidateMapSchema(schema, path, result, depth, visitedRefs);
                         break;
                     case "choice":
-                        ValidateChoiceSchema(schema, path, result, depth);
+                        ValidateChoiceSchema(schema, path, result, depth, visitedRefs);
                         break;
                     case "string":
                         ValidateStringSchema(schema, path, result);
@@ -267,6 +454,12 @@ public sealed class SchemaValidator
             }
         }
 
+        // Cross-type constraint validation
+        ValidateCrossTypeConstraints(schema, typeStr, path, result);
+
+        // Range consistency validation
+        ValidateRangeConsistency(schema, path, result);
+
         // Validate enum if present
         if (schema.TryGetPropertyValue("enum", out var enumValue))
         {
@@ -274,13 +467,13 @@ public sealed class SchemaValidator
         }
 
         // Validate const if present  
-        if (schema.TryGetPropertyValue("const", out _))
+        if (schema.ContainsKey("const"))
         {
             // const can be any value
         }
 
         // Validate conditional composition keywords
-        ValidateConditionalComposition(schema, path, result, depth);
+        ValidateConditionalComposition(schema, path, result, depth, visitedRefs);
 
         // Validate altnames if present
         if (schema.TryGetPropertyValue("altnames", out var altnamesValue))
@@ -362,7 +555,7 @@ public sealed class SchemaValidator
         result.AddError($"{keyword} must be a string, array, or object", AppendPath(path, keyword));
     }
 
-    private void ValidateDefinitions(JsonNode? value, string keyword, string path, ValidationResult result, int depth)
+    private void ValidateDefinitions(JsonNode? value, string keyword, string path, ValidationResult result, int depth, HashSet<string> visitedRefs)
     {
         if (value is not JsonObject defs)
         {
@@ -374,12 +567,12 @@ public sealed class SchemaValidator
         {
             if (prop.Value is not null)
             {
-                ValidateDefinitionOrNamespace(prop.Value, AppendPath(path, $"{keyword}/{prop.Key}"), result, depth + 1);
+                ValidateDefinitionOrNamespace(prop.Value, AppendPath(path, $"{keyword}/{prop.Key}"), result, depth + 1, visitedRefs);
             }
         }
     }
 
-    private void ValidateDefinitionOrNamespace(JsonNode value, string path, ValidationResult result, int depth)
+    private void ValidateDefinitionOrNamespace(JsonNode value, string path, ValidationResult result, int depth, HashSet<string> visitedRefs)
     {
         // Check if this is a namespace (object without 'type' but containing nested schemas)
         // or a schema definition (object with 'type' or other schema keywords)
@@ -391,7 +584,7 @@ public sealed class SchemaValidator
                 obj.ContainsKey("items") || obj.ContainsKey("enum") || obj.ContainsKey("const") ||
                 obj.ContainsKey("$extends") || obj.ContainsKey("abstract"))
             {
-                ValidateSchemaCore(value, result, path, depth);
+                ValidateSchemaCore(value, result, path, depth, visitedRefs);
             }
             else if (obj.ContainsKey("$import") || obj.ContainsKey("$importdefs"))
             {
@@ -412,14 +605,14 @@ public sealed class SchemaValidator
                 {
                     if (prop.Value is not null)
                     {
-                        ValidateDefinitionOrNamespace(prop.Value, AppendPath(path, prop.Key), result, depth + 1);
+                        ValidateDefinitionOrNamespace(prop.Value, AppendPath(path, prop.Key), result, depth + 1, visitedRefs);
                     }
                 }
             }
         }
         else
         {
-            ValidateSchemaCore(value, result, path, depth);
+            ValidateSchemaCore(value, result, path, depth, visitedRefs);
         }
     }
 
@@ -506,8 +699,107 @@ public sealed class SchemaValidator
         "float16" or "float32" or "float64" or "float128" or
         "decimal" or "decimal64" or "decimal128";
 
-    private void ValidateObjectSchema(JsonObject schema, string path, ValidationResult result, int depth)
+    private void ValidateCrossTypeConstraints(JsonObject schema, string? typeStr, string path, ValidationResult result)
     {
+        var isString = typeStr == "string";
+        var isNumeric = IsNumericType(typeStr);
+        var isArray = typeStr is "array" or "set";
+
+        // String constraints on non-string types
+        if (!isString && typeStr is not null)
+        {
+            if (schema.ContainsKey("minLength"))
+                result.AddError($"'minLength' constraint is only valid for string type, not '{typeStr}'", AppendPath(path, "minLength"));
+            if (schema.ContainsKey("maxLength"))
+                result.AddError($"'maxLength' constraint is only valid for string type, not '{typeStr}'", AppendPath(path, "maxLength"));
+            if (schema.ContainsKey("pattern"))
+                result.AddError($"'pattern' constraint is only valid for string type, not '{typeStr}'", AppendPath(path, "pattern"));
+        }
+
+        // Numeric constraints on non-numeric types  
+        if (!isNumeric && typeStr is not null)
+        {
+            if (schema.ContainsKey("minimum"))
+                result.AddError($"'minimum' constraint is only valid for numeric types, not '{typeStr}'", AppendPath(path, "minimum"));
+            if (schema.ContainsKey("maximum"))
+                result.AddError($"'maximum' constraint is only valid for numeric types, not '{typeStr}'", AppendPath(path, "maximum"));
+            if (schema.ContainsKey("exclusiveMinimum"))
+                result.AddError($"'exclusiveMinimum' constraint is only valid for numeric types, not '{typeStr}'", AppendPath(path, "exclusiveMinimum"));
+            if (schema.ContainsKey("exclusiveMaximum"))
+                result.AddError($"'exclusiveMaximum' constraint is only valid for numeric types, not '{typeStr}'", AppendPath(path, "exclusiveMaximum"));
+        }
+
+        // Array constraints on non-array types
+        if (!isArray && typeStr is not "tuple" and not null)
+        {
+            if (schema.ContainsKey("minItems"))
+                result.AddError($"'minItems' constraint is only valid for array/set/tuple types, not '{typeStr}'", AppendPath(path, "minItems"));
+            if (schema.ContainsKey("maxItems"))
+                result.AddError($"'maxItems' constraint is only valid for array/set/tuple types, not '{typeStr}'", AppendPath(path, "maxItems"));
+        }
+    }
+
+    private void ValidateRangeConsistency(JsonObject schema, string path, ValidationResult result)
+    {
+        // Check minimum <= maximum
+        if (schema.TryGetPropertyValue("minimum", out var minNode) && schema.TryGetPropertyValue("maximum", out var maxNode))
+        {
+            var min = GetNumber(minNode);
+            var max = GetNumber(maxNode);
+            if (min.HasValue && max.HasValue && min.Value > max.Value)
+            {
+                result.AddError("'minimum' cannot be greater than 'maximum'", path);
+            }
+        }
+
+        // Check minLength <= maxLength
+        if (schema.TryGetPropertyValue("minLength", out var minLenNode) && schema.TryGetPropertyValue("maxLength", out var maxLenNode))
+        {
+            var minLen = GetInteger(minLenNode);
+            var maxLen = GetInteger(maxLenNode);
+            if (minLen.HasValue && maxLen.HasValue && minLen.Value > maxLen.Value)
+            {
+                result.AddError("'minLength' cannot be greater than 'maxLength'", path);
+            }
+        }
+
+        // Check minItems <= maxItems
+        if (schema.TryGetPropertyValue("minItems", out var minItemsNode) && schema.TryGetPropertyValue("maxItems", out var maxItemsNode))
+        {
+            var minItems = GetInteger(minItemsNode);
+            var maxItems = GetInteger(maxItemsNode);
+            if (minItems.HasValue && maxItems.HasValue && minItems.Value > maxItems.Value)
+            {
+                result.AddError("'minItems' cannot be greater than 'maxItems'", path);
+            }
+        }
+    }
+
+    private static double? GetNumber(JsonNode? node)
+    {
+        if (node is JsonValue jv)
+        {
+            if (jv.TryGetValue<double>(out var d)) return d;
+            if (jv.TryGetValue<int>(out var i)) return i;
+            if (jv.TryGetValue<long>(out var l)) return l;
+        }
+        return null;
+    }
+
+    private static int? GetInteger(JsonNode? node)
+    {
+        if (node is JsonValue jv)
+        {
+            if (jv.TryGetValue<int>(out var i)) return i;
+            if (jv.TryGetValue<long>(out var l)) return (int)l;
+        }
+        return null;
+    }
+
+    private void ValidateObjectSchema(JsonObject schema, string path, ValidationResult result, int depth, HashSet<string> visitedRefs)
+    {
+        var definedProps = new HashSet<string>();
+        
         // Validate properties
         if (schema.TryGetPropertyValue("properties", out var propsValue))
         {
@@ -519,9 +811,34 @@ public sealed class SchemaValidator
             {
                 foreach (var prop in props)
                 {
+                    definedProps.Add(prop.Key);
                     if (prop.Value is not null)
                     {
-                        ValidateSchemaCore(prop.Value, result, AppendPath(path, $"properties/{prop.Key}"), depth + 1);
+                        ValidateSchemaCore(prop.Value, result, AppendPath(path, $"properties/{prop.Key}"), depth + 1, visitedRefs);
+                    }
+                }
+            }
+        }
+
+        // Validate required - check that required properties are defined
+        if (schema.TryGetPropertyValue("required", out var requiredValue))
+        {
+            if (requiredValue is not JsonArray reqArr)
+            {
+                result.AddError("required must be an array", AppendPath(path, "required"));
+            }
+            else
+            {
+                foreach (var item in reqArr)
+                {
+                    if (item is not JsonValue itemValue || !itemValue.TryGetValue<string>(out var reqProp))
+                    {
+                        result.AddError("required array items must be strings", AppendPath(path, "required"));
+                        break;
+                    }
+                    else if (definedProps.Count > 0 && !definedProps.Contains(reqProp))
+                    {
+                        result.AddError($"Required property '{reqProp}' is not defined in properties", AppendPath(path, "required"));
                     }
                 }
             }
@@ -536,31 +853,11 @@ public sealed class SchemaValidator
             }
             else if (additionalValue is JsonObject)
             {
-                ValidateSchemaCore(additionalValue, result, AppendPath(path, "additionalProperties"), depth + 1);
+                ValidateSchemaCore(additionalValue, result, AppendPath(path, "additionalProperties"), depth + 1, visitedRefs);
             }
             else
             {
                 result.AddError("additionalProperties must be a boolean or schema", AppendPath(path, "additionalProperties"));
-            }
-        }
-
-        // Validate required
-        if (schema.TryGetPropertyValue("required", out var requiredValue))
-        {
-            if (requiredValue is not JsonArray reqArr)
-            {
-                result.AddError("required must be an array", AppendPath(path, "required"));
-            }
-            else
-            {
-                foreach (var item in reqArr)
-                {
-                    if (item is not JsonValue itemValue || !itemValue.TryGetValue<string>(out _))
-                    {
-                        result.AddError("required array items must be strings", AppendPath(path, "required"));
-                        break;
-                    }
-                }
             }
         }
 
@@ -569,12 +866,18 @@ public sealed class SchemaValidator
         ValidateNonNegativeInteger(schema, "maxProperties", path, result);
     }
 
-    private void ValidateArraySchema(JsonObject schema, string path, ValidationResult result, int depth)
+    private void ValidateArraySchema(JsonObject schema, string path, ValidationResult result, int depth, HashSet<string> visitedRefs)
     {
+        // Array type requires items schema
+        if (!schema.ContainsKey("items") && !schema.ContainsKey("contains"))
+        {
+            result.AddError("array type requires 'items' or 'contains' schema", path);
+        }
+
         // Validate items
         if (schema.TryGetPropertyValue("items", out var itemsValue))
         {
-            ValidateSchemaCore(itemsValue!, result, AppendPath(path, "items"), depth + 1);
+            ValidateSchemaCore(itemsValue!, result, AppendPath(path, "items"), depth + 1, visitedRefs);
         }
 
         // Validate minItems/maxItems
@@ -593,15 +896,24 @@ public sealed class SchemaValidator
         // Validate contains
         if (schema.TryGetPropertyValue("contains", out var containsValue))
         {
-            ValidateSchemaCore(containsValue!, result, AppendPath(path, "contains"), depth + 1);
+            ValidateSchemaCore(containsValue!, result, AppendPath(path, "contains"), depth + 1, visitedRefs);
         }
 
         ValidateNonNegativeInteger(schema, "minContains", path, result);
         ValidateNonNegativeInteger(schema, "maxContains", path, result);
     }
 
-    private void ValidateTupleSchema(JsonObject schema, string path, ValidationResult result, int depth)
+    private void ValidateTupleSchema(JsonObject schema, string path, ValidationResult result, int depth, HashSet<string> visitedRefs)
     {
+        var hasPrefixItems = schema.ContainsKey("prefixItems");
+        var hasTupleProperties = schema.ContainsKey("tuple") && schema.ContainsKey("properties");
+        
+        // Tuple requires either prefixItems or (tuple + properties) format
+        if (!hasPrefixItems && !hasTupleProperties)
+        {
+            result.AddError("tuple type requires 'prefixItems' or 'tuple' with 'properties'", path);
+        }
+        
         // Validate prefixItems
         if (schema.TryGetPropertyValue("prefixItems", out var prefixValue))
         {
@@ -616,7 +928,26 @@ public sealed class SchemaValidator
                     var item = prefixArr[i];
                     if (item is not null)
                     {
-                        ValidateSchemaCore(item, result, AppendPath(path, $"prefixItems/{i}"), depth + 1);
+                        ValidateSchemaCore(item, result, AppendPath(path, $"prefixItems/{i}"), depth + 1, visitedRefs);
+                    }
+                }
+            }
+        }
+        
+        // Validate tuple + properties format
+        if (hasTupleProperties)
+        {
+            if (schema.TryGetPropertyValue("tuple", out var tupleValue) && tupleValue is JsonArray tupleArr)
+            {
+                if (schema.TryGetPropertyValue("properties", out var propsValue) && propsValue is JsonObject props)
+                {
+                    foreach (var propName in tupleArr)
+                    {
+                        var name = propName?.GetValue<string>();
+                        if (name is not null && props.TryGetPropertyValue(name, out var propSchema))
+                        {
+                            ValidateSchemaCore(propSchema!, result, AppendPath(path, $"properties/{name}"), depth + 1, visitedRefs);
+                        }
                     }
                 }
             }
@@ -631,7 +962,7 @@ public sealed class SchemaValidator
             }
             else if (itemsValue is JsonObject)
             {
-                ValidateSchemaCore(itemsValue, result, AppendPath(path, "items"), depth + 1);
+                ValidateSchemaCore(itemsValue, result, AppendPath(path, "items"), depth + 1, visitedRefs);
             }
             else
             {
@@ -640,26 +971,41 @@ public sealed class SchemaValidator
         }
     }
 
-    private void ValidateMapSchema(JsonObject schema, string path, ValidationResult result, int depth)
+    private void ValidateMapSchema(JsonObject schema, string path, ValidationResult result, int depth, HashSet<string> visitedRefs)
     {
+        // Map type requires values schema
+        if (!schema.ContainsKey("values"))
+        {
+            result.AddError("map type requires 'values' schema", path);
+        }
+
         // Validate values schema
         if (schema.TryGetPropertyValue("values", out var valuesValue))
         {
-            ValidateSchemaCore(valuesValue!, result, AppendPath(path, "values"), depth + 1);
+            ValidateSchemaCore(valuesValue!, result, AppendPath(path, "values"), depth + 1, visitedRefs);
         }
 
         // Validate propertyNames (for key constraints)
         if (schema.TryGetPropertyValue("propertyNames", out var propNamesValue))
         {
-            ValidateSchemaCore(propNamesValue!, result, AppendPath(path, "propertyNames"), depth + 1);
+            ValidateSchemaCore(propNamesValue!, result, AppendPath(path, "propertyNames"), depth + 1, visitedRefs);
         }
 
         ValidateNonNegativeInteger(schema, "minProperties", path, result);
         ValidateNonNegativeInteger(schema, "maxProperties", path, result);
     }
 
-    private void ValidateChoiceSchema(JsonObject schema, string path, ValidationResult result, int depth)
+    private void ValidateChoiceSchema(JsonObject schema, string path, ValidationResult result, int depth, HashSet<string> visitedRefs)
     {
+        // Choice type requires options, choices, or oneOf
+        var hasOptions = schema.ContainsKey("options");
+        var hasChoices = schema.ContainsKey("choices");
+        var hasOneOf = schema.ContainsKey("oneOf");
+        if (!hasOptions && !hasChoices && !hasOneOf)
+        {
+            result.AddError("choice type requires 'options', 'choices', or 'oneOf'", path);
+        }
+
         // Validate options (legacy keyword)
         if (schema.TryGetPropertyValue("options", out var optionsValue))
         {
@@ -673,7 +1019,7 @@ public sealed class SchemaValidator
                 {
                     if (opt.Value is not null)
                     {
-                        ValidateSchemaCore(opt.Value, result, AppendPath(path, $"options/{opt.Key}"), depth + 1);
+                        ValidateSchemaCore(opt.Value, result, AppendPath(path, $"options/{opt.Key}"), depth + 1, visitedRefs);
                     }
                 }
             }
@@ -692,7 +1038,7 @@ public sealed class SchemaValidator
                 {
                     if (choice.Value is not null)
                     {
-                        ValidateSchemaCore(choice.Value, result, AppendPath(path, $"choices/{choice.Key}"), depth + 1);
+                        ValidateSchemaCore(choice.Value, result, AppendPath(path, $"choices/{choice.Key}"), depth + 1, visitedRefs);
                     }
                 }
             }
@@ -776,53 +1122,66 @@ public sealed class SchemaValidator
         if (arr.Count == 0)
         {
             result.AddError("enum array cannot be empty", AppendPath(path, "enum"));
+            return;
+        }
+
+        // Check for duplicate enum values
+        var seen = new HashSet<string>();
+        foreach (var item in arr)
+        {
+            var itemJson = item?.ToJsonString() ?? "null";
+            if (!seen.Add(itemJson))
+            {
+                result.AddError("enum array contains duplicate values", AppendPath(path, "enum"));
+                break;
+            }
         }
     }
 
-    private void ValidateConditionalComposition(JsonObject schema, string path, ValidationResult result, int depth)
+    private void ValidateConditionalComposition(JsonObject schema, string path, ValidationResult result, int depth, HashSet<string> visitedRefs)
     {
         // Validate allOf
         if (schema.TryGetPropertyValue("allOf", out var allOfValue))
         {
-            ValidateSchemaArray(allOfValue, "allOf", path, result, depth);
+            ValidateSchemaArray(allOfValue, "allOf", path, result, depth, visitedRefs);
         }
 
         // Validate anyOf
         if (schema.TryGetPropertyValue("anyOf", out var anyOfValue))
         {
-            ValidateSchemaArray(anyOfValue, "anyOf", path, result, depth);
+            ValidateSchemaArray(anyOfValue, "anyOf", path, result, depth, visitedRefs);
         }
 
         // Validate oneOf
         if (schema.TryGetPropertyValue("oneOf", out var oneOfValue))
         {
-            ValidateSchemaArray(oneOfValue, "oneOf", path, result, depth);
+            ValidateSchemaArray(oneOfValue, "oneOf", path, result, depth, visitedRefs);
         }
 
         // Validate not
         if (schema.TryGetPropertyValue("not", out var notValue))
         {
-            ValidateSchemaCore(notValue!, result, AppendPath(path, "not"), depth + 1);
+            ValidateSchemaCore(notValue!, result, AppendPath(path, "not"), depth + 1, visitedRefs);
         }
 
         // Validate if/then/else
         if (schema.TryGetPropertyValue("if", out var ifValue))
         {
-            ValidateSchemaCore(ifValue!, result, AppendPath(path, "if"), depth + 1);
+            ValidateSchemaCore(ifValue!, result, AppendPath(path, "if"), depth + 1, visitedRefs);
         }
 
         if (schema.TryGetPropertyValue("then", out var thenValue))
         {
-            ValidateSchemaCore(thenValue!, result, AppendPath(path, "then"), depth + 1);
+            ValidateSchemaCore(thenValue!, result, AppendPath(path, "then"), depth + 1, visitedRefs);
         }
 
         if (schema.TryGetPropertyValue("else", out var elseValue))
         {
-            ValidateSchemaCore(elseValue!, result, AppendPath(path, "else"), depth + 1);
+            ValidateSchemaCore(elseValue!, result, AppendPath(path, "else"), depth + 1, visitedRefs);
         }
     }
 
-    private void ValidateSchemaArray(JsonNode? value, string keyword, string path, ValidationResult result, int depth)
+    private void ValidateSchemaArray(JsonNode? value, string keyword, string path, ValidationResult result, int depth, HashSet<string> visitedRefs)
     {
         var keywordPath = AppendPath(path, keyword);
 
@@ -843,7 +1202,7 @@ public sealed class SchemaValidator
             var item = arr[i];
             if (item is not null)
             {
-                ValidateSchemaCore(item, result, AppendPath(keywordPath, i.ToString()), depth + 1);
+                ValidateSchemaCore(item, result, AppendPath(keywordPath, i.ToString()), depth + 1, visitedRefs);
             }
         }
     }

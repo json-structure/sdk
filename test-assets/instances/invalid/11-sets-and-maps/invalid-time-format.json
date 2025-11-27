@@ -1,0 +1,16 @@
+{
+  "_description": "Invalid instance for 11-sets-and-maps: invalid time format in opening hours",
+  "_schema": "11-sets-and-maps/schema.struct.json",
+  "name": "Central Library",
+  "books": {},
+  "authors": {},
+  "categories": ["fiction"],
+  "memberIds": [],
+  "openingHours": {
+    "monday": {
+      "open": "9:00 AM",
+      "close": "5:00 PM",
+      "isClosed": false
+    }
+  }
+}

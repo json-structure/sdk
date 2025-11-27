@@ -1,0 +1,14 @@
+{
+  "_description": "Invalid instance for 06-tuples: uint8 exceeds range (0-255)",
+  "_schema": "06-tuples/schema.struct.json",
+  "name": "Test Dataset",
+  "dataPoints": [
+    {
+      "id": "point1",
+      "location": [40.7128, -74.0060],
+      "measurements": [
+        ["2024-01-15T10:00:00Z", 42.5, 300]
+      ]
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "_description": "Invalid instance for 11-sets-and-maps: genre not in enum",
+  "_schema": "11-sets-and-maps/schema.struct.json",
+  "name": "Central Library",
+  "books": {
+    "978-0-13-468599-1": {
+      "isbn": "978-0-13-468599-1",
+      "title": "The Art of Programming",
+      "authors": ["550e8400-e29b-41d4-a716-446655440000"],
+      "genres": ["fiction", "cooking"],
+      "publishYear": 2020
+    }
+  },
+  "authors": {},
+  "categories": ["fiction", "non-fiction"],
+  "memberIds": []
+}

@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "type": "int32",
+  "minimum": 100,
+  "maximum": 50,
+  "description": "Invalid: minimum greater than maximum"
+}

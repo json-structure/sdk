@@ -32,12 +32,16 @@ import datetime
 import uuid
 from urllib.parse import urlparse
 
-# Regular expressions for date, datetime, time and JSON pointer.
+# Regular expressions for date, datetime, time, duration and JSON pointer.
 _DATE_REGEX = re.compile(r'^\d{4}-\d{2}-\d{2}$')
 _DATETIME_REGEX = re.compile(
     r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+\-]\d{2}:\d{2})$'
 )
 _TIME_REGEX = re.compile(r'^\d{2}:\d{2}:\d{2}(?:\.\d+)?$')
+# ISO 8601 duration pattern: P[n]Y[n]M[n]DT[n]H[n]M[n]S or P[n]W
+_DURATION_REGEX = re.compile(
+    r'^P(?:\d+Y)?(?:\d+M)?(?:\d+D)?(?:T(?:\d+H)?(?:\d+M)?(?:\d+(?:\.\d+)?S)?)?$|^P\d+W$'
+)
 _JSONPOINTER_REGEX = re.compile(r'^#(\/[^\/]+)*$')
 
 
@@ -86,6 +90,10 @@ class JSONStructureInstanceValidator:
         if isinstance(uses, list):
             for ext in uses:
                 self.enabled_extensions.add(ext)
+        # If extended=True was passed to constructor, enable validation extensions
+        if self.extended:
+            self.enabled_extensions.add("JSONStructureConditionalComposition")
+            self.enabled_extensions.add("JSONStructureValidation")
 
     def validate_instance(self, instance, schema=None, path="#", meta=None):
         """
@@ -389,6 +397,8 @@ class JSONStructureInstanceValidator:
         elif schema_type == "duration":
             if not isinstance(instance, str):
                 self.errors.append(f"Expected duration as string at {path}")
+            elif not _DURATION_REGEX.match(instance):
+                self.errors.append(f"Expected duration (ISO 8601 format) at {path}")
         elif schema_type == "uuid":
             if not isinstance(instance, str):
                 self.errors.append(f"Expected uuid as string at {path}")

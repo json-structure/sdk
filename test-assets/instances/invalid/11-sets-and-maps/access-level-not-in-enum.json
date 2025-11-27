@@ -1,0 +1,16 @@
+{
+  "_description": "Invalid instance for 11-sets-and-maps: accessLevel not in enum",
+  "_schema": "11-sets-and-maps/schema.struct.json",
+  "name": "Central Library",
+  "books": {},
+  "authors": {},
+  "categories": ["fiction"],
+  "memberIds": [],
+  "specialCollections": {
+    "rare-books": {
+      "description": "Collection of rare books",
+      "bookIsbns": ["978-0-13-468599-1"],
+      "accessLevel": "vip-only"
+    }
+  }
+}

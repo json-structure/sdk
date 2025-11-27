@@ -1,0 +1,8 @@
+{
+  "_description": "Invalid instance for 01-basic-person: age exceeds int8 range (max 127)",
+  "_schema": "01-basic-person/schema.struct.json",
+  "firstName": "John",
+  "lastName": "Doe",
+  "email": "john.doe@example.com",
+  "age": 200
+}

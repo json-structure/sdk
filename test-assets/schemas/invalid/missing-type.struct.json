@@ -1,0 +1,4 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "description": "Invalid: object with properties but missing type keyword"
+}

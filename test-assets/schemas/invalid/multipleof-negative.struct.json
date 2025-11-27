@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "type": "int32",
+  "multipleOf": -5,
+  "description": "Invalid: multipleOf must be positive"
+}

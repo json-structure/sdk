@@ -1,0 +1,6 @@
+{
+  "_description": "Invalid instance for 01-basic-person: missing required firstName field",
+  "_schema": "01-basic-person/schema.struct.json",
+  "lastName": "Doe",
+  "email": "john.doe@example.com"
+}

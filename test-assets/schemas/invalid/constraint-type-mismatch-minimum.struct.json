@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "type": "string",
+  "minimum": 10,
+  "description": "Invalid: minimum constraint on string type (should be on numeric types)"
+}

@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "type": "object",
+  "$defs": {
+    "recursive": { "$ref": "#/$defs/recursive" }
+  },
+  "properties": {
+    "value": { "$ref": "#/$defs/recursive" }
+  },
+  "description": "Invalid: direct circular reference without base case"
+}

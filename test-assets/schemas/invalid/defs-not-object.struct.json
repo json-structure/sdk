@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$defs": [],
+  "type": "object",
+  "description": "Invalid: $defs must be an object, not an array"
+}

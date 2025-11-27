@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "type": "string",
+  "enum": [],
+  "description": "Invalid: enum array is empty"
+}

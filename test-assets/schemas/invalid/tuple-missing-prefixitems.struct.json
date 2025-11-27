@@ -1,0 +1,5 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "type": "tuple",
+  "description": "Invalid: tuple type without prefixItems definition"
+}

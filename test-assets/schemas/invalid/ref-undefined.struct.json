@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "type": "object",
+  "properties": {
+    "value": { "$ref": "#/$defs/undefined" }
+  },
+  "description": "Invalid: $ref points to non-existent definition"
+}

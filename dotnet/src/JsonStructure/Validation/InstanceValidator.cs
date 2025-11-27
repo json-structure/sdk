@@ -154,6 +154,24 @@ public sealed class InstanceValidator
         // Get type constraint
         var typeConstraint = GetTypeConstraint(schemaObj);
 
+        // Handle type: { "$ref": ... } format
+        if (schemaObj.TryGetPropertyValue("type", out var typeNode) && typeNode is JsonObject typeRefObj)
+        {
+            if (typeRefObj.TryGetPropertyValue("$ref", out var typeRefValue))
+            {
+                var typeRefStr = typeRefValue?.GetValue<string>();
+                if (!string.IsNullOrEmpty(typeRefStr))
+                {
+                    var resolvedTypeSchema = ResolveRef(typeRefStr, rootSchema);
+                    if (resolvedTypeSchema is not null)
+                    {
+                        ValidateInstance(instance, resolvedTypeSchema, rootSchema, result, path, depth + 1);
+                        return;
+                    }
+                }
+            }
+        }
+
         // Handle const
         if (schemaObj.TryGetPropertyValue("const", out var constValue))
         {
@@ -300,6 +318,11 @@ public sealed class InstanceValidator
             {
                 return typeStr;
             }
+            // Handle type: { "$ref": "..." } format
+            if (typeValue is JsonObject typeObj && typeObj.TryGetPropertyValue("$ref", out _))
+            {
+                return null; // Will be handled as $ref resolution in ValidateInstance
+            }
         }
         return null;
     }
@@ -319,6 +342,7 @@ public sealed class InstanceValidator
                 ValidateString(instance, schema, result, path);
                 break;
             case "number":
+            case "integer":  // Alias
             case "int8":
             case "int16":
             case "int32":
@@ -329,10 +353,13 @@ public sealed class InstanceValidator
             case "uint32":
             case "uint64":
             case "uint128":
+            case "float8":   // Alias
             case "float16":
             case "float32":
             case "float64":
+            case "double":   // Alias
             case "float128":
+            case "float":    // Alias
             case "decimal":
             case "decimal64":
             case "decimal128":
@@ -1024,13 +1051,23 @@ public sealed class InstanceValidator
             }
         }
 
-        // Validate propertyNames
+        // Validate propertyNames (JSON Schema) or keys (JSON Structure)
+        JsonNode? keySchema = null;
         if (schema.TryGetPropertyValue("propertyNames", out var propNamesValue) && propNamesValue is not null)
+        {
+            keySchema = propNamesValue;
+        }
+        else if (schema.TryGetPropertyValue("keys", out var keysValue) && keysValue is not null)
+        {
+            keySchema = keysValue;
+        }
+        
+        if (keySchema is not null)
         {
             foreach (var prop in obj)
             {
                 var keyNode = JsonValue.Create(prop.Key);
-                ValidateInstance(keyNode, propNamesValue, rootSchema, result,
+                ValidateInstance(keyNode, keySchema, rootSchema, result,
                     AppendPath(path, $"[key:{prop.Key}]"), depth + 1);
             }
         }
@@ -1064,9 +1101,29 @@ public sealed class InstanceValidator
             return;
         }
 
-        // Validate prefixItems
+        // Validate prefixItems format
         if (schema.TryGetPropertyValue("prefixItems", out var prefixValue) && prefixValue is JsonArray prefixArr)
         {
+            // Validate tuple length (exact match required for prefixItems format)
+            if (arr.Count != prefixArr.Count)
+            {
+                // Check if additional items are allowed
+                if (schema.TryGetPropertyValue("items", out var itemsValue))
+                {
+                    if (itemsValue is JsonValue jv && jv.TryGetValue<bool>(out var allowed) && !allowed)
+                    {
+                        if (arr.Count != prefixArr.Count)
+                        {
+                            result.AddError($"Tuple has {arr.Count} items but schema defines {prefixArr.Count}", path);
+                        }
+                    }
+                }
+                else if (arr.Count < prefixArr.Count)
+                {
+                    result.AddError($"Tuple has {arr.Count} items but schema defines {prefixArr.Count}", path);
+                }
+            }
+
             for (var i = 0; i < prefixArr.Count; i++)
             {
                 if (i < arr.Count)
@@ -1081,20 +1138,43 @@ public sealed class InstanceValidator
             }
 
             // Check for additional items
-            if (schema.TryGetPropertyValue("items", out var itemsValue))
+            if (schema.TryGetPropertyValue("items", out var additionalItemsValue))
             {
-                if (itemsValue is JsonValue jv && jv.TryGetValue<bool>(out var allowed))
+                if (additionalItemsValue is JsonValue jv && jv.TryGetValue<bool>(out var allowed))
                 {
                     if (!allowed && arr.Count > prefixArr.Count)
                     {
                         result.AddError($"Tuple has {arr.Count} items but only {prefixArr.Count} are defined", path);
                     }
                 }
-                else if (itemsValue is JsonObject additionalSchema)
+                else if (additionalItemsValue is JsonObject additionalSchema)
                 {
                     for (var i = prefixArr.Count; i < arr.Count; i++)
                     {
                         ValidateInstance(arr[i], additionalSchema, rootSchema, result,
+                            AppendPath(path, i.ToString()), depth + 1);
+                    }
+                }
+            }
+        }
+        // Validate tuple + properties format
+        else if (schema.TryGetPropertyValue("tuple", out var tupleValue) && tupleValue is JsonArray tupleArr)
+        {
+            if (schema.TryGetPropertyValue("properties", out var propsValue) && propsValue is JsonObject props)
+            {
+                // Validate tuple length
+                if (arr.Count != tupleArr.Count)
+                {
+                    result.AddError($"Tuple has {arr.Count} elements but schema defines {tupleArr.Count}", path);
+                }
+
+                // Validate each element according to the tuple order
+                for (var i = 0; i < tupleArr.Count && i < arr.Count; i++)
+                {
+                    var propName = tupleArr[i]?.GetValue<string>();
+                    if (propName is not null && props.TryGetPropertyValue(propName, out var propSchema) && propSchema is not null)
+                    {
+                        ValidateInstance(arr[i], propSchema, rootSchema, result,
                             AppendPath(path, i.ToString()), depth + 1);
                     }
                 }
@@ -1111,17 +1191,32 @@ public sealed class InstanceValidator
             return;
         }
 
-        if (!schema.TryGetPropertyValue("options", out var optionsValue) || optionsValue is not JsonObject options)
+        // Support both "options" and "choices" keywords
+        JsonObject? options = null;
+        if (schema.TryGetPropertyValue("options", out var optionsValue) && optionsValue is JsonObject optionsObj)
         {
-            result.AddError("Choice schema must have 'options'", path);
+            options = optionsObj;
+        }
+        else if (schema.TryGetPropertyValue("choices", out var choicesValue) && choicesValue is JsonObject choicesObj)
+        {
+            options = choicesObj;
+        }
+
+        if (options is null)
+        {
+            result.AddError("Choice schema must have 'options' or 'choices'", path);
             return;
         }
 
-        // Get discriminator
+        // Get discriminator - support both "discriminator" and "selector"
         string? discriminator = null;
         if (schema.TryGetPropertyValue("discriminator", out var discValue))
         {
             discriminator = discValue?.GetValue<string>();
+        }
+        else if (schema.TryGetPropertyValue("selector", out var selectorValue))
+        {
+            discriminator = selectorValue?.GetValue<string>();
         }
 
         if (!string.IsNullOrEmpty(discriminator))
@@ -1150,6 +1245,18 @@ public sealed class InstanceValidator
         }
         else
         {
+            // Check for tagged union format (single key matching option name)
+            if (obj.Count == 1)
+            {
+                var key = obj.First().Key;
+                if (options.TryGetPropertyValue(key, out var taggedSchema) && taggedSchema is not null)
+                {
+                    // Validate the value against the matched option schema
+                    ValidateInstance(obj[key], taggedSchema, rootSchema, result, AppendPath(path, key), depth + 1);
+                    return;
+                }
+            }
+
             // Try to match one of the options
             var matchCount = 0;
             foreach (var option in options)
@@ -1198,7 +1305,31 @@ public sealed class InstanceValidator
             return;
         }
 
-        if (!TimeOnly.TryParse(str, CultureInfo.InvariantCulture, out _))
+        // RFC 3339 time format: HH:mm:ss or HH:mm:ss.fff (with optional timezone)
+        // Must be 24-hour format, no AM/PM
+        // Valid formats: "09:00:00", "09:00", "09:00:00.123", "09:00:00Z", "09:00:00+01:00"
+        var formats = new[]
+        {
+            "HH:mm:ss",
+            "HH:mm:ss.f",
+            "HH:mm:ss.ff",
+            "HH:mm:ss.fff",
+            "HH:mm:ss.ffff",
+            "HH:mm:ss.fffff",
+            "HH:mm:ss.ffffff",
+            "HH:mm:ss.fffffff",
+            "HH:mm",
+            "HH:mm:ssK",
+            "HH:mm:ss.fK",
+            "HH:mm:ss.ffK",
+            "HH:mm:ss.fffK",
+            "HH:mm:ss.ffffK",
+            "HH:mm:ss.fffffK",
+            "HH:mm:ss.ffffffK",
+            "HH:mm:ss.fffffffK",
+        };
+        
+        if (!TimeOnly.TryParseExact(str, formats, CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
         {
             result.AddError($"Invalid time format: {str}", path);
         }
@@ -1261,9 +1392,16 @@ public sealed class InstanceValidator
             return;
         }
 
-        if (!System.Uri.TryCreate(str, UriKind.RelativeOrAbsolute, out _))
+        if (!System.Uri.TryCreate(str, UriKind.Absolute, out var uri))
         {
             result.AddError($"Invalid URI format: {str}", path);
+            return;
+        }
+
+        // Must have a scheme
+        if (string.IsNullOrEmpty(uri.Scheme))
+        {
+            result.AddError($"URI must have a scheme: {str}", path);
         }
     }
 

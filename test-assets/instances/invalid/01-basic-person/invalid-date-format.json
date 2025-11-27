@@ -1,0 +1,8 @@
+{
+  "_description": "Invalid instance for 01-basic-person: invalid date format for dateOfBirth",
+  "_schema": "01-basic-person/schema.struct.json",
+  "firstName": "John",
+  "lastName": "Doe",
+  "email": "john.doe@example.com",
+  "dateOfBirth": "January 15, 1990"
+}

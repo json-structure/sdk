@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "type": "int32",
+  "minLength": 5,
+  "description": "Invalid: minLength constraint on numeric type (should be on string types)"
+}
