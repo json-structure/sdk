@@ -21,3 +21,20 @@ export {
   CompoundType,
   JsonStructureType,
 } from './types';
+
+// Serialization helpers for JSON Structure types
+export {
+  Int64,
+  UInt64,
+  Int128,
+  UInt128,
+  Decimal,
+  Duration,
+  DateOnly,
+  TimeOnly,
+  Binary,
+  UUID,
+  JSONPointer,
+  jsonStructureReviver,
+  jsonStructureReplacer,
+} from './serialization';

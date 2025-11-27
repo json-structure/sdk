@@ -168,6 +168,145 @@ interface ValidationError {
 }
 ```
 
+## Serialization Helpers
+
+The SDK provides wrapper types for JSON Structure types that need special serialization handling. Per the JSON Structure spec, certain types must be serialized as strings because JSON numbers (IEEE 754 double) cannot represent their full range.
+
+### Large Integers
+
+```typescript
+import { Int64, UInt64, Int128, UInt128 } from 'json-structure';
+
+// Int64/UInt64 - serializes to/from string to preserve precision
+const id = new Int64('9223372036854775807');
+console.log(JSON.stringify({ id })); // {"id":"9223372036854775807"}
+console.log(id.toBigInt()); // 9223372036854775807n
+
+// Parse from JSON
+const parsed = Int64.fromJSON('9223372036854775807');
+
+// Int128/UInt128 for even larger values
+const bigVal = new Int128('170141183460469231731687303715884105727');
+```
+
+### Decimal Numbers
+
+```typescript
+import { Decimal } from 'json-structure';
+
+// Preserve arbitrary precision
+const price = new Decimal('123.456789012345678901234567890');
+console.log(JSON.stringify({ price })); // {"price":"123.456789012345678901234567890"}
+```
+
+### Duration (ISO 8601)
+
+```typescript
+import { Duration } from 'json-structure';
+
+// Create from hours, minutes, seconds
+const duration = Duration.fromHMS(2, 30, 45);
+console.log(duration.toString()); // "PT2H30M45S"
+
+// Parse ISO 8601 duration
+const parsed = Duration.parse('P1Y2M3DT4H5M6S');
+console.log(parsed.toMilliseconds());
+
+// Create from components
+const dur = Duration.fromComponents({
+  years: 1, months: 2, days: 3,
+  hours: 4, minutes: 5, seconds: 6
+});
+```
+
+### Date and Time
+
+```typescript
+import { DateOnly, TimeOnly } from 'json-structure';
+
+// Date without time (RFC 3339)
+const date = new DateOnly(2024, 6, 15);
+console.log(date.toString()); // "2024-06-15"
+
+// Parse from string
+const parsed = DateOnly.parse('2024-06-15');
+
+// Convert to/from JavaScript Date
+const jsDate = date.toDate();
+const fromDate = DateOnly.fromDate(new Date());
+
+// Time without date
+const time = new TimeOnly(14, 30, 45, 123);
+console.log(time.toString()); // "14:30:45.123"
+```
+
+### Binary Data
+
+```typescript
+import { Binary } from 'json-structure';
+
+// Create from bytes
+const binary = new Binary(new Uint8Array([72, 101, 108, 108, 111]));
+console.log(binary.toBase64()); // "SGVsbG8="
+
+// Create from string
+const fromStr = Binary.fromString('Hello');
+
+// Parse from base64
+const parsed = Binary.fromBase64('SGVsbG8=');
+console.log(parsed.toString()); // "Hello"
+
+// Serializes to base64 in JSON
+console.log(JSON.stringify({ data: binary })); // {"data":"SGVsbG8="}
+```
+
+### UUID
+
+```typescript
+import { UUID } from 'json-structure';
+
+// Create from string (validates format)
+const uuid = new UUID('550e8400-e29b-41d4-a716-446655440000');
+
+// Generate random UUID v4
+const random = UUID.random();
+
+// Compare UUIDs
+console.log(uuid.equals(random)); // false
+```
+
+### JSON Pointer (RFC 6901)
+
+```typescript
+import { JSONPointer } from 'json-structure';
+
+// Create from string
+const ptr = new JSONPointer('/foo/bar/0');
+console.log(ptr.toTokens()); // ['foo', 'bar', '0']
+
+// Build from tokens
+const fromTokens = JSONPointer.fromTokens(['foo', 'bar', '0']);
+console.log(fromTokens.toString()); // "/foo/bar/0"
+
+// Handles escaping automatically
+const escaped = JSONPointer.fromTokens(['a/b', 'c~d']);
+console.log(escaped.toString()); // "/a~1b/c~0d"
+```
+
+### JSON Reviver and Replacer
+
+```typescript
+import { jsonStructureReviver, jsonStructureReplacer } from 'json-structure';
+
+// Parse JSON with automatic type conversion
+const parsed = JSON.parse(jsonString, jsonStructureReviver);
+// Recognizes: UUIDs, dates (YYYY-MM-DD), durations (PT...), datetimes
+
+// Stringify with proper serialization
+const json = JSON.stringify(obj, jsonStructureReplacer);
+// Handles: Int64, Decimal, Duration, Binary, UUID, etc.
+```
+
 ## Supported Types
 
 ### Primitive Types
