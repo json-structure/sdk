@@ -525,12 +525,10 @@ func (v *InstanceValidator) validateObject(instance interface{}, schema map[stri
 	}
 
 	// Validate properties
-	if properties != nil {
-		for propName, propSchema := range properties {
-			if propValue, exists := obj[propName]; exists {
-				if propSchemaMap, ok := propSchema.(map[string]interface{}); ok {
-					v.validateInstance(propValue, propSchemaMap, path+"/"+propName)
-				}
+	for propName, propSchema := range properties {
+		if propValue, exists := obj[propName]; exists {
+			if propSchemaMap, ok := propSchema.(map[string]interface{}); ok {
+				v.validateInstance(propValue, propSchemaMap, path+"/"+propName)
 			}
 		}
 	}
@@ -573,12 +571,10 @@ func (v *InstanceValidator) validateObjectConstraints(obj map[string]interface{}
 	}
 
 	// Validate properties
-	if properties != nil {
-		for propName, propSchema := range properties {
-			if propValue, exists := obj[propName]; exists {
-				if propSchemaMap, ok := propSchema.(map[string]interface{}); ok {
-					v.validateInstance(propValue, propSchemaMap, path+"/"+propName)
-				}
+	for propName, propSchema := range properties {
+		if propValue, exists := obj[propName]; exists {
+			if propSchemaMap, ok := propSchema.(map[string]interface{}); ok {
+				v.validateInstance(propValue, propSchemaMap, path+"/"+propName)
 			}
 		}
 	}

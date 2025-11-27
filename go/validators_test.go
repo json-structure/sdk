@@ -518,30 +518,6 @@ func TestInvalidSchemas(t *testing.T) {
 	}
 }
 
-// resolveJSONPointer resolves a JSON Pointer in a document.
-func resolveJSONPointer(pointer string, doc map[string]interface{}) interface{} {
-	if !strings.HasPrefix(pointer, "/") {
-		return nil
-	}
-
-	parts := strings.Split(pointer[1:], "/")
-	var current interface{} = doc
-
-	for _, part := range parts {
-		// Handle JSON pointer escaping
-		part = strings.ReplaceAll(part, "~1", "/")
-		part = strings.ReplaceAll(part, "~0", "~")
-
-		if m, ok := current.(map[string]interface{}); ok {
-			current = m[part]
-		} else {
-			return nil
-		}
-	}
-
-	return current
-}
-
 // TestInvalidInstances tests that all invalid instances in test-assets fail validation.
 func TestInvalidInstances(t *testing.T) {
 	dirs := getInvalidInstanceDirs()
