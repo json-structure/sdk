@@ -50,3 +50,18 @@ htmlcov/
 # OS
 .DS_Store
 Thumbs.db
+
+# .NET
+[Dd]ebug/
+[Rr]elease/
+[Bb]in/
+[Oo]bj/
+*.nupkg
+*.snupkg
+.vs/
+*.user
+*.suo
+*.cache
+TestResults/
+*.trx
+nupkg/
