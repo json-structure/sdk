@@ -8,14 +8,19 @@
     <RootNamespace>JsonStructure</RootNamespace>
     <AssemblyName>JsonStructure</AssemblyName>
     <Version>0.1.0</Version>
-    <Authors>Microsoft</Authors>
+    <Authors>JSON Structure Authors</Authors>
     <Description>JSON Structure SDK for .NET - Validates JSON documents against JSON Structure schemas and provides schema export functionality.</Description>
     <PackageId>JsonStructure</PackageId>
     <PackageTags>json;schema;validation;json-structure</PackageTags>
-    <RepositoryUrl>https://github.com/json-structure/json-structure</RepositoryUrl>
+    <RepositoryUrl>https://github.com/json-structure/sdk</RepositoryUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="System.Text.Json" Version="8.0.5" />
