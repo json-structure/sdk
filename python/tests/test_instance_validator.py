@@ -1093,8 +1093,8 @@ def test_import_and_importdefs(tmp_path):
         "name": "LocalSchema",
         "type": "object",
         "properties": {
-            "person": {"type": {"$ref": "#/Person"}},
-            "library": {"type": {"$ref": "#/LibraryType"}}
+            "person": {"type": {"$ref": "#/definitions/Person"}},
+            "library": {"type": {"$ref": "#/definitions/LibraryType"}}
         },
         "$import": "https://example.com/people.json",
         "$importdefs": "https://example.com/importdefs.json"
@@ -1468,7 +1468,7 @@ def test_import_root_level_vs_definitions_level(tmp_path):
     external_file = tmp_path / "external.json"
     external_file.write_text(json.dumps(external_schema), encoding="utf-8")
 
-    # Root-level import brings everything into root namespace
+    # Root-level import brings everything into definitions namespace
     root_import_schema = {
         "$schema": "https://json-structure.org/meta/core/v0/#",
         "$id": "https://example.com/schema/root_import",
@@ -1476,8 +1476,8 @@ def test_import_root_level_vs_definitions_level(tmp_path):
         "name": "RootImportSchema",
         "type": "object",
         "properties": {
-            "root_type": {"type": {"$ref": "#/RootType"}},
-            "nested_type": {"type": {"$ref": "#/NestedType"}}
+            "root_type": {"type": {"$ref": "#/definitions/RootType"}},
+            "nested_type": {"type": {"$ref": "#/definitions/NestedType"}}
         }
     }
     

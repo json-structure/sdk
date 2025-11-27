@@ -239,7 +239,9 @@ class JSONStructureSchemaCoreValidator:
         """
         Recursively processes $import and $importdefs keywords.
         If allow_import is False, an error is reported.
-        Otherwise, external schemas are fetched and their definitions merged into the current object.
+        Otherwise, external schemas are fetched and their definitions merged appropriately.
+        - If the import is at the root level, definitions go into obj["definitions"]
+        - If the import is inside a namespace (e.g., definitions/People), definitions merge directly into obj
         This merging is done in-place so that imported definitions appear as if they were defined locally.
         After merging, $ref pointers in the imported content are rewritten to point to their new locations.
         """
@@ -254,9 +256,11 @@ class JSONStructureSchemaCoreValidator:
                     if not isinstance(uri, str):
                         self._err(f"JSONStructureImport keyword '{key}' value must be a string URI.", f"{path}/{key}")
                         continue
+                    # Allow relative URIs if they're in import_map or external_schemas
                     if not self.ABSOLUTE_URI_REGEX.search(uri):
-                        self._err(f"JSONStructureImport keyword '{key}' value must be an absolute URI.", f"{path}/{key}")
-                        continue
+                        if uri not in self.import_map and uri not in self.external_schemas:
+                            self._err(f"JSONStructureImport keyword '{key}' value must be an absolute URI.", f"{path}/{key}")
+                            continue
                     external = self._fetch_external_schema(uri)
                     if external is None:
                         self._err(f"Unable to fetch external schema from {uri}.", f"{path}/{key}")
@@ -274,18 +278,29 @@ class JSONStructureSchemaCoreValidator:
                             imported_defs = external["definitions"]
                         else:
                             imported_defs = {}
+                    # Determine where to merge and the actual target path for ref rewriting
+                    if path == "#":
+                        # Root level import - put in definitions
+                        target_path = "#/definitions"
+                        if "definitions" not in obj:
+                            obj["definitions"] = {}
+                        merge_target = obj["definitions"]
+                    else:
+                        # Nested import (e.g., inside a namespace) - merge directly into current object
+                        target_path = path
+                        merge_target = obj
                     # Rewrite $ref pointers in imported content to point to their new location
                     for k, v in imported_defs.items():
                         if isinstance(v, dict):
                             # Deep copy to avoid modifying cached schemas
                             import copy
                             v = copy.deepcopy(v)
-                            self._rewrite_refs(v, path)
+                            self._rewrite_refs(v, target_path)
                             imported_defs[k] = v
-                    # Merge imported definitions directly into the current object.
+                    # Merge imported definitions
                     for k, v in imported_defs.items():
-                        if k not in obj:
-                            obj[k] = v
+                        if k not in merge_target:
+                            merge_target[k] = v
                     del obj[key]
             # Recurse into all values.
             for key, value in obj.items():

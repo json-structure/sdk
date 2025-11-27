@@ -100,6 +100,17 @@ class JSONStructureInstanceValidator:
         """
         if schema is None:
             schema = self.root_schema
+            
+            # Handle $root - redirect to the designated root type
+            # [Metaschema: $root keyword designates a reusable type as the root]
+            if "$root" in schema and "type" not in schema:
+                root_ref = schema.get("$root")
+                if root_ref:
+                    resolved = self._resolve_ref(root_ref)
+                    if resolved is None:
+                        self.errors.append(f"Cannot resolve $root reference {root_ref}")
+                        return self.errors
+                    return self.validate_instance(instance, resolved, path)
 
         # --- Automatically enable all addins if using extended metaschema ---
         # Only do this if $uses is present; otherwise, do NOT auto-enable addins (per spec)
@@ -192,6 +203,21 @@ class JSONStructureInstanceValidator:
                     merged_props = dict(resolved.get("properties"))
                     merged_props.update(new_schema.get("properties", {}))
                     new_schema["properties"] = merged_props
+                # Also copy tuple keyword for tuple types
+                if "tuple" in resolved:
+                    new_schema["tuple"] = resolved.get("tuple")
+                # Copy required if present
+                if "required" in resolved and "required" not in new_schema:
+                    new_schema["required"] = resolved.get("required")
+                # Copy choices for choice types
+                if "choices" in resolved:
+                    new_schema["choices"] = resolved.get("choices")
+                # Copy selector for inline unions
+                if "selector" in resolved:
+                    new_schema["selector"] = resolved.get("selector")
+                # Copy $extends for inherited types
+                if "$extends" in resolved and "$extends" not in new_schema:
+                    new_schema["$extends"] = resolved.get("$extends")
                 schema = new_schema
                 schema_type = schema.get("type")
             else:
@@ -985,7 +1011,9 @@ class JSONStructureInstanceValidator:
         """
         Recursively processes $import and $importdefs keywords in the schema.
         [Metaschema: JSONStructureImport extension constructs]
-        Merges imported definitions into the current object as if defined locally.
+        Merges imported definitions appropriately:
+        - If the import is at the root level, definitions go into obj["definitions"]
+        - If the import is inside a namespace (e.g., definitions/People), definitions merge directly into obj
         Uses self.import_map if the URI is mapped to a local file.
         After merging, $ref pointers in the imported content are rewritten to point
         to their new locations in the merged document.
@@ -1001,9 +1029,11 @@ class JSONStructureInstanceValidator:
                     if not isinstance(uri, str):
                         self.errors.append(f"JSONStructureImport keyword '{key}' value must be a string URI at {path}/{key}")
                         continue
+                    # Allow relative URIs if they're in import_map or external_schemas
                     if not self.ABSOLUTE_URI_REGEX.search(uri):
-                        self.errors.append(f"JSONStructureImport keyword '{key}' value must be an absolute URI at {path}/{key}")
-                        continue
+                        if uri not in self.import_map and uri not in self.external_schemas:
+                            self.errors.append(f"JSONStructureImport keyword '{key}' value must be an absolute URI at {path}/{key}")
+                            continue
                     external = self._fetch_external_schema(uri)
                     if external is None:
                         self.errors.append(f"Unable to fetch external schema from {uri} at {path}/{key}")
@@ -1019,17 +1049,29 @@ class JSONStructureInstanceValidator:
                             imported_defs = external["definitions"]
                         else:
                             imported_defs = {}
+                    # Determine where to merge and the actual target path for ref rewriting
+                    if path == "#":
+                        # Root level import - put in definitions
+                        target_path = "#/definitions"
+                        if "definitions" not in obj:
+                            obj["definitions"] = {}
+                        merge_target = obj["definitions"]
+                    else:
+                        # Nested import (e.g., inside a namespace) - merge directly into current object
+                        target_path = path
+                        merge_target = obj
                     # Rewrite $ref pointers in imported content to point to their new location
                     for k, v in imported_defs.items():
                         if isinstance(v, dict):
                             # Deep copy to avoid modifying cached schemas
                             import copy
                             v = copy.deepcopy(v)
-                            self._rewrite_refs(v, path)
+                            self._rewrite_refs(v, target_path)
                             imported_defs[k] = v
+                    # Merge imported definitions
                     for k, v in imported_defs.items():
-                        if k not in obj:
-                            obj[k] = v
+                        if k not in merge_target:
+                            merge_target[k] = v
                     del obj[key]
             for k, v in obj.items():
                 self._process_imports(v, f"{path}/{k}")

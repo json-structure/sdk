@@ -1,0 +1,3 @@
+[submodule "primer-and-samples"]
+	path = primer-and-samples
+	url = https://github.com/json-structure/primer-and-samples.git
