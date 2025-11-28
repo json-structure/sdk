@@ -13,23 +13,30 @@ public sealed class SchemaValidator
 {
     /// <summary>
     /// The valid primitive types in JSON Structure.
+    /// These types are defined in the JSON Structure Core specification.
     /// </summary>
     public static readonly HashSet<string> PrimitiveTypes = new(StringComparer.Ordinal)
     {
-        // TODO: cross check this list against the core spec
+        // JSON Primitive Types (Section 3.2.1)
         "string", "number", "boolean", "null",
+        // Extended Primitive Types - Integers (Section 3.2.2)
         "int8", "int16", "int32", "int64", "int128",
         "uint8", "uint16", "uint32", "uint64", "uint128",
-        "float8", "float16", "float32", "float64", "float128",
-        "decimal", "decimal64", "decimal128",
+        // Extended Primitive Types - Floating Point (Section 3.2.2)
+        "float8", "float", "double",
+        // Extended Primitive Types - Decimal (Section 3.2.2)
+        "decimal",
+        // Extended Primitive Types - Date/Time (Section 3.2.2)
         "date", "time", "datetime", "duration",
+        // Extended Primitive Types - Other (Section 3.2.2)
         "uuid", "uri", "binary", "jsonpointer",
-        // Aliases for compatibility
-        "integer", "double", "float"
+        // Aliases for JSON Schema compatibility
+        "integer" // alias for int32
     };
 
     /// <summary>
     /// The valid compound types in JSON Structure.
+    /// These types are defined in the JSON Structure Core specification (Section 3.2.3).
     /// </summary>
     public static readonly HashSet<string> CompoundTypes = new(StringComparer.Ordinal)
     {
@@ -513,11 +520,10 @@ public sealed class SchemaValidator
             ValidateEnum(enumValue, path, result);
         }
 
-        // Validate const if present  
-        if (schema.ContainsKey("const"))
+        // Validate const if present - const value must be conformant with the type definition
+        if (schema.TryGetPropertyValue("const", out var constValue))
         {
-            // const can be any value
-            // TODO: const must be conformant with the type definition
+            ValidateConstValue(constValue, typeStr, path, result);
         }
 
         // Validate conditional composition keywords
@@ -1183,6 +1189,118 @@ public sealed class SchemaValidator
                 AddError(result, ErrorCodes.SchemaEnumDuplicates, "enum array contains duplicate values", AppendPath(path, "enum"));
                 break;
             }
+        }
+    }
+
+    private void ValidateConstValue(JsonNode? constValue, string? typeStr, string path, ValidationResult result)
+    {
+        if (string.IsNullOrEmpty(typeStr))
+        {
+            // No type specified, const can be any value
+            return;
+        }
+
+        var constPath = AppendPath(path, "const");
+        
+        // Validate that const value matches the declared type
+        switch (typeStr)
+        {
+            case "null":
+                if (constValue is not null)
+                {
+                    AddError(result, ErrorCodes.SchemaKeywordInvalidType, "const value must be null for type 'null'", constPath);
+                }
+                break;
+                
+            case "boolean":
+                if (constValue is not JsonValue jvBool || !jvBool.TryGetValue<bool>(out _))
+                {
+                    AddError(result, ErrorCodes.SchemaKeywordInvalidType, "const value must be a boolean for type 'boolean'", constPath);
+                }
+                break;
+                
+            case "string":
+            case "date":
+            case "time":
+            case "datetime":
+            case "duration":
+            case "uuid":
+            case "uri":
+            case "binary":
+            case "jsonpointer":
+                if (constValue is not JsonValue jvStr || !jvStr.TryGetValue<string>(out _))
+                {
+                    AddError(result, ErrorCodes.SchemaKeywordInvalidType, $"const value must be a string for type '{typeStr}'", constPath);
+                }
+                break;
+                
+            case "number":
+            case "float":
+            case "float8":
+            case "double":
+                if (constValue is not JsonValue jvNum || 
+                    (!jvNum.TryGetValue<double>(out _) && !jvNum.TryGetValue<decimal>(out _)))
+                {
+                    AddError(result, ErrorCodes.SchemaKeywordInvalidType, $"const value must be a number for type '{typeStr}'", constPath);
+                }
+                break;
+                
+            case "integer":
+            case "int8":
+            case "int16":
+            case "int32":
+            case "uint8":
+            case "uint16":
+            case "uint32":
+                if (constValue is not JsonValue jvInt || !jvInt.TryGetValue<long>(out _))
+                {
+                    AddError(result, ErrorCodes.SchemaKeywordInvalidType, $"const value must be an integer for type '{typeStr}'", constPath);
+                }
+                break;
+                
+            case "int64":
+            case "uint64":
+            case "int128":
+            case "uint128":
+            case "decimal":
+                // These are represented as strings in JSON
+                if (constValue is not JsonValue jvBigInt || !jvBigInt.TryGetValue<string>(out _))
+                {
+                    AddError(result, ErrorCodes.SchemaKeywordInvalidType, $"const value must be a string (numeric representation) for type '{typeStr}'", constPath);
+                }
+                break;
+                
+            case "object":
+                if (constValue is not JsonObject)
+                {
+                    AddError(result, ErrorCodes.SchemaKeywordInvalidType, "const value must be an object for type 'object'", constPath);
+                }
+                break;
+                
+            case "array":
+            case "set":
+            case "tuple":
+                if (constValue is not JsonArray)
+                {
+                    AddError(result, ErrorCodes.SchemaKeywordInvalidType, $"const value must be an array for type '{typeStr}'", constPath);
+                }
+                break;
+                
+            case "map":
+                if (constValue is not JsonObject)
+                {
+                    AddError(result, ErrorCodes.SchemaKeywordInvalidType, "const value must be an object for type 'map'", constPath);
+                }
+                break;
+                
+            case "any":
+                // Any value is valid for type 'any'
+                break;
+                
+            case "choice":
+                // Choice const validation would require knowing the choice options
+                // For now, we just accept any value
+                break;
         }
     }
 
