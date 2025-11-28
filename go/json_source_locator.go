@@ -50,9 +50,7 @@ func (l *JsonSourceLocator) GetLocation(path string) JsonLocation {
 // Handles both standard JSON Pointer format (/a/0) and bracket notation (/a[0]).
 func (l *JsonSourceLocator) parseJSONPointer(path string) []string {
 	// Remove leading # if present (JSON Pointer fragment identifier)
-	if strings.HasPrefix(path, "#") {
-		path = path[1:]
-	}
+	path = strings.TrimPrefix(path, "#")
 
 	// Handle empty path or just "/"
 	if path == "" || path == "/" {
