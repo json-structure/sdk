@@ -37,8 +37,10 @@ public class InstanceValidatorTests
         var result = _validator.Validate(instance, schema);
 
         result.IsValid.Should().BeFalse();
-        result.Errors.Should().ContainSingle()
-            .Which.Message.Should().Contain("string");
+        var error = result.Errors.Should().ContainSingle().Subject;
+        error.Code.Should().Be(ErrorCodes.InstanceStringExpected);
+        error.Path.Should().BeEmpty();
+        error.Message.Should().Contain("string");
     }
 
     [Fact]
@@ -105,8 +107,10 @@ public class InstanceValidatorTests
         var result = _validator.Validate(instance, schema);
 
         result.IsValid.Should().BeFalse();
-        result.Errors.Should().ContainSingle()
-            .Which.Message.Should().Contain("required");
+        var error = result.Errors.Should().ContainSingle().Subject;
+        error.Code.Should().Be(ErrorCodes.InstanceRequiredPropertyMissing);
+        error.Path.Should().BeEmpty();
+        error.Message.Should().Contain("required");
     }
 
     [Fact]
@@ -139,6 +143,9 @@ public class InstanceValidatorTests
         var result = _validator.Validate(instance, schema);
 
         result.IsValid.Should().BeFalse();
+        var error = result.Errors.Should().ContainSingle().Subject;
+        error.Code.Should().Be(ErrorCodes.InstanceStringNotExpected);
+        error.Path.Should().Be("/1");
     }
 
     [Fact]
@@ -155,8 +162,10 @@ public class InstanceValidatorTests
         var result = _validator.Validate(instance, schema);
 
         result.IsValid.Should().BeFalse();
-        result.Errors.Should().ContainSingle()
-            .Which.Message.Should().Contain("minimum");
+        var error = result.Errors.Should().ContainSingle().Subject;
+        error.Code.Should().Be(ErrorCodes.InstanceMinItems);
+        error.Path.Should().BeEmpty();
+        error.Message.Should().Contain("minimum");
     }
 
     [Fact]
@@ -173,8 +182,10 @@ public class InstanceValidatorTests
         var result = _validator.Validate(instance, schema);
 
         result.IsValid.Should().BeFalse();
-        result.Errors.Should().ContainSingle()
-            .Which.Message.Should().Contain("minimum");
+        var error = result.Errors.Should().ContainSingle().Subject;
+        error.Code.Should().Be(ErrorCodes.InstanceStringMinLength);
+        error.Path.Should().BeEmpty();
+        error.Message.Should().Contain("minimum");
     }
 
     [Fact]
@@ -207,8 +218,10 @@ public class InstanceValidatorTests
         var result = _validator.Validate(instance, schema);
 
         result.IsValid.Should().BeFalse();
-        result.Errors.Should().ContainSingle()
-            .Which.Message.Should().Contain("pattern");
+        var error = result.Errors.Should().ContainSingle().Subject;
+        error.Code.Should().Be(ErrorCodes.InstanceStringPatternMismatch);
+        error.Path.Should().BeEmpty();
+        error.Message.Should().Contain("pattern");
     }
 
     [Fact]
@@ -225,8 +238,10 @@ public class InstanceValidatorTests
         var result = _validator.Validate(instance, schema);
 
         result.IsValid.Should().BeFalse();
-        result.Errors.Should().ContainSingle()
-            .Which.Message.Should().Contain("minimum");
+        var error = result.Errors.Should().ContainSingle().Subject;
+        error.Code.Should().Be(ErrorCodes.InstanceNumberMinimum);
+        error.Path.Should().BeEmpty();
+        error.Message.Should().Contain("minimum");
     }
 
     [Fact]
@@ -257,8 +272,10 @@ public class InstanceValidatorTests
         var result = _validator.Validate(instance, schema);
 
         result.IsValid.Should().BeFalse();
-        result.Errors.Should().ContainSingle()
-            .Which.Message.Should().Contain("enum");
+        var error = result.Errors.Should().ContainSingle().Subject;
+        error.Code.Should().Be(ErrorCodes.InstanceEnumMismatch);
+        error.Path.Should().BeEmpty();
+        error.Message.Should().Contain("enum");
     }
 
     [Fact]
@@ -289,6 +306,9 @@ public class InstanceValidatorTests
         var result = _validator.Validate(instance, schema);
 
         result.IsValid.Should().BeFalse();
+        var error = result.Errors.Should().ContainSingle().Subject;
+        error.Code.Should().Be(ErrorCodes.InstanceConstMismatch);
+        error.Path.Should().BeEmpty();
     }
 
     [Fact]
@@ -371,8 +391,64 @@ public class InstanceValidatorTests
         var result = _validator.Validate(instance, schema);
 
         result.IsValid.Should().BeFalse();
-        result.Errors.Should().ContainSingle()
-            .Which.Message.Should().Contain("anyOf");
+        var error = result.Errors.Should().ContainSingle().Subject;
+        error.Code.Should().Be(ErrorCodes.InstanceAnyOfNoneMatched);
+        error.Path.Should().BeEmpty();
+        error.Message.Should().Contain("anyOf");
+    }
+
+    [Fact]
+    public void Validate_NestedProperty_InvalidValue_ReturnsCorrectPath()
+    {
+        var schema = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["address"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["city"] = new JsonObject { ["type"] = "string" }
+                    }
+                }
+            }
+        };
+
+        var instance = new JsonObject
+        {
+            ["address"] = new JsonObject
+            {
+                ["city"] = 12345 // Should be string, not number
+            }
+        };
+
+        var result = _validator.Validate(instance, schema);
+
+        result.IsValid.Should().BeFalse();
+        var error = result.Errors.Should().ContainSingle().Subject;
+        error.Code.Should().Be(ErrorCodes.InstanceStringExpected);
+        error.Path.Should().Be("/address/city");
+    }
+
+    [Fact]
+    public void Validate_ArrayItem_InvalidValue_ReturnsCorrectPath()
+    {
+        var schema = new JsonObject
+        {
+            ["type"] = "array",
+            ["items"] = new JsonObject { ["type"] = "int32" }
+        };
+
+        var instance = new JsonArray { 1, 2, "not a number", 4 };
+
+        var result = _validator.Validate(instance, schema);
+
+        result.IsValid.Should().BeFalse();
+        var error = result.Errors.Should().ContainSingle().Subject;
+        error.Code.Should().Be(ErrorCodes.InstanceStringNotExpected);
+        error.Path.Should().Be("/2"); // Third item (0-indexed)
     }
 
     [Fact]
@@ -422,6 +498,9 @@ public class InstanceValidatorTests
         var result = _validator.Validate(instance, schema);
 
         result.IsValid.Should().BeFalse();
+        var error = result.Errors.Should().ContainSingle().Subject;
+        error.Code.Should().Be(ErrorCodes.InstanceNotMatched);
+        error.Path.Should().BeEmpty();
     }
 
     [Fact]
@@ -456,6 +535,9 @@ public class InstanceValidatorTests
         var result = _validator.Validate(instance, schema);
 
         result.IsValid.Should().BeFalse();
+        var error = result.Errors.Should().ContainSingle().Subject;
+        error.Code.Should().Be(ErrorCodes.InstanceNumberMinimum);
+        error.Path.Should().Be("/discount");
     }
 
     [Fact]
@@ -478,6 +560,9 @@ public class InstanceValidatorTests
         var result = _validator.Validate(instance, schema);
 
         result.IsValid.Should().BeFalse();
+        var error = result.Errors.Should().ContainSingle().Subject;
+        error.Code.Should().Be(ErrorCodes.InstanceDateFormatInvalid);
+        error.Path.Should().BeEmpty();
     }
 
     [Fact]
@@ -511,6 +596,9 @@ public class InstanceValidatorTests
         var result = _validator.Validate(instance, schema);
 
         result.IsValid.Should().BeFalse();
+        var error = result.Errors.Should().ContainSingle().Subject;
+        error.Code.Should().Be(ErrorCodes.InstanceBinaryEncodingInvalid);
+        error.Path.Should().BeEmpty();
     }
 
     [Fact]
@@ -533,6 +621,9 @@ public class InstanceValidatorTests
         var result = _validator.Validate(instance, schema);
 
         result.IsValid.Should().BeFalse();
+        var error = result.Errors.Should().ContainSingle().Subject;
+        error.Code.Should().Be(ErrorCodes.InstanceSchemaFalse);
+        error.Path.Should().BeEmpty();
     }
 
     [Fact]
@@ -565,8 +656,10 @@ public class InstanceValidatorTests
         var result = _validator.Validate(instance, schema);
 
         result.IsValid.Should().BeFalse();
-        result.Errors.Should().ContainSingle()
-            .Which.Message.Should().Contain("duplicate");
+        var error = result.Errors.Should().ContainSingle().Subject;
+        error.Code.Should().Be(ErrorCodes.InstanceSetDuplicate);
+        error.Path.Should().BeEmpty();
+        error.Message.Should().Contain("duplicate");
     }
 
     [Fact]
@@ -632,8 +725,10 @@ public class InstanceValidatorTests
         var result = _validator.Validate(instance, schema);
 
         result.IsValid.Should().BeFalse();
-        result.Errors.Should().ContainSingle()
-            .Which.Message.Should().Contain("Additional property");
+        var error = result.Errors.Should().ContainSingle().Subject;
+        error.Code.Should().Be(ErrorCodes.InstanceAdditionalPropertyNotAllowed);
+        error.Path.Should().BeEmpty();
+        error.Message.Should().Contain("Additional property");
     }
 
     [Fact]
@@ -666,8 +761,10 @@ public class InstanceValidatorTests
         var result = _validator.Validate(instance, schema);
 
         result.IsValid.Should().BeFalse();
-        result.Errors.Should().ContainSingle()
-            .Which.Message.Should().Contain("multiple");
+        var error = result.Errors.Should().ContainSingle().Subject;
+        error.Code.Should().Be(ErrorCodes.InstanceNumberMultipleOf);
+        error.Path.Should().BeEmpty();
+        error.Message.Should().Contain("multiple");
     }
 
     [Fact]
@@ -712,6 +809,9 @@ public class InstanceValidatorTests
         var result = _validator.Validate(instance, schema);
 
         result.IsValid.Should().BeFalse();
+        var error = result.Errors.Should().ContainSingle().Subject;
+        error.Code.Should().Be(ErrorCodes.InstanceJsonpointerFormatInvalid);
+        error.Path.Should().BeEmpty();
     }
 
     [Fact]
@@ -734,8 +834,10 @@ public class InstanceValidatorTests
         var result = _validator.Validate(instance, schema);
 
         result.IsValid.Should().BeFalse();
-        result.Errors.Should().ContainSingle()
-            .Which.Message.Should().Contain("time");
+        var error = result.Errors.Should().ContainSingle().Subject;
+        error.Code.Should().Be(ErrorCodes.InstanceTimeFormatInvalid);
+        error.Path.Should().BeEmpty();
+        error.Message.Should().Contain("time");
     }
 
     [Fact]
@@ -765,5 +867,196 @@ public class InstanceValidatorTests
         var result = _validator.Validate(instance, schema);
 
         result.IsValid.Should().BeFalse();
+        var error = result.Errors.Should().ContainSingle().Subject;
+        error.Code.Should().Be(ErrorCodes.InstanceTimeFormatInvalid);
+        error.Path.Should().Be("/monday/open");
     }
+
+    [Fact]
+    public void Validate_WithStringOverload_ReturnsSourceLocation()
+    {
+        var schema = """{"type": "object", "properties": {"name": {"type": "string"}}}""";
+        var instance = """
+{
+  "name": 123
+}
+""";
+
+        var result = _validator.Validate(instance, schema);
+
+        result.IsValid.Should().BeFalse();
+        var error = result.Errors.Should().ContainSingle().Subject;
+        error.Path.Should().Be("/name");
+        error.Location.IsKnown.Should().BeTrue();
+        error.Location.Line.Should().BeGreaterThan(0); // Line tracking is working
+        error.Location.Column.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public void Validate_WithJsonNodeOverload_ReturnsUnknownLocation()
+    {
+        var schema = new JsonObject { ["type"] = "string" };
+        var instance = JsonValue.Create(42);
+
+        var result = _validator.Validate(instance, schema);
+
+        result.IsValid.Should().BeFalse();
+        var error = result.Errors.Should().ContainSingle().Subject;
+        error.Location.IsKnown.Should().BeFalse();
+    }
+
+    #region Multiple Errors Collection Tests
+
+    [Fact]
+    public void Validate_MultipleErrors_CollectsAllByDefault()
+    {
+        // Schema with multiple required properties
+        var schema = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["name"] = new JsonObject { ["type"] = "string" },
+                ["age"] = new JsonObject { ["type"] = "int32" },
+                ["email"] = new JsonObject { ["type"] = "string" }
+            },
+            ["required"] = new JsonArray { "name", "age", "email" }
+        };
+        
+        // Instance missing all required properties
+        var instance = new JsonObject();
+
+        var result = _validator.Validate(instance, schema);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().HaveCount(3, "all three missing properties should be reported");
+        result.Errors.Should().AllSatisfy(e => e.Code.Should().Be(ErrorCodes.InstanceRequiredPropertyMissing));
+    }
+
+    [Fact]
+    public void Validate_MultipleErrors_StopsOnFirstWhenOptionSet()
+    {
+        var options = new ValidationOptions { StopOnFirstError = true };
+        var validator = new InstanceValidator(options);
+        
+        // Use nested objects so errors occur in separate validation steps
+        var schema = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["level1"] = new JsonObject 
+                { 
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["level2"] = new JsonObject { ["type"] = "string" }
+                    },
+                    ["required"] = new JsonArray { "level2" }
+                }
+            },
+            ["required"] = new JsonArray { "level1" }
+        };
+        
+        // Instance missing the first required property - should stop there
+        var instance = new JsonObject();
+
+        var result = validator.Validate(instance, schema);
+
+        result.IsValid.Should().BeFalse();
+        // With StopOnFirstError, it stops after the first validation step that produces an error
+        result.Errors.Should().HaveCountLessOrEqualTo(1, "should stop after first error step");
+    }
+
+    [Fact]
+    public void Validate_ArrayWithMultipleInvalidItems_CollectsAllErrors()
+    {
+        var schema = new JsonObject
+        {
+            ["type"] = "array",
+            ["items"] = new JsonObject { ["type"] = "int32" }
+        };
+        
+        // Array with multiple invalid string items
+        var instance = new JsonArray { "one", "two", "three" };
+
+        var result = _validator.Validate(instance, schema);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().HaveCount(3, "all three invalid items should be reported");
+        result.Errors.Select(e => e.Path).Should().BeEquivalentTo(new[] { "/0", "/1", "/2" });
+    }
+
+    [Fact]
+    public void Validate_NestedObjectsWithMultipleErrors_CollectsAllErrors()
+    {
+        var schema = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["person"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["name"] = new JsonObject { ["type"] = "string" },
+                        ["age"] = new JsonObject { ["type"] = "int32" }
+                    },
+                    ["required"] = new JsonArray { "name", "age" }
+                }
+            },
+            ["required"] = new JsonArray { "person" }
+        };
+        
+        // Instance with nested object missing both required properties
+        var instance = new JsonObject
+        {
+            ["person"] = new JsonObject()
+        };
+
+        var result = _validator.Validate(instance, schema);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().HaveCount(2, "both missing nested properties should be reported");
+        result.Errors.Should().AllSatisfy(e => e.Path.Should().StartWith("/person"));
+    }
+
+    [Fact]
+    public void Validate_MixedErrorTypes_CollectsAllErrors()
+    {
+        var schema = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["name"] = new JsonObject 
+                { 
+                    ["type"] = "string",
+                    ["minLength"] = 3
+                },
+                ["age"] = new JsonObject 
+                { 
+                    ["type"] = "int32",
+                    ["minimum"] = 0
+                }
+            },
+            ["required"] = new JsonArray { "name", "age" }
+        };
+        
+        // Instance with wrong type for name and missing age
+        var instance = new JsonObject
+        {
+            ["name"] = 123 // wrong type
+            // age is missing
+        };
+
+        var result = _validator.Validate(instance, schema);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().HaveCountGreaterOrEqualTo(2, "at least type error and missing property should be reported");
+        result.Errors.Select(e => e.Code).Should().Contain(ErrorCodes.InstanceRequiredPropertyMissing);
+    }
+
+    #endregion
 }

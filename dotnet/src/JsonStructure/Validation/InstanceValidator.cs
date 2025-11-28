@@ -15,6 +15,8 @@ public sealed class InstanceValidator
 {
     private readonly ValidationOptions _options;
     private readonly Dictionary<string, JsonNode> _resolvedRefs = new();
+    private readonly Dictionary<string, JsonNode?> _loadedImports = new();
+    private JsonSourceLocator? _instanceLocator;
 
     /// <summary>
     /// Initializes a new instance of <see cref="InstanceValidator"/>.
@@ -33,15 +35,43 @@ public sealed class InstanceValidator
     /// <returns>The validation result.</returns>
     public ValidationResult Validate(JsonNode? instance, JsonNode? schema)
     {
+        _instanceLocator = null; // No source tracking for JsonNode overload
+        return ValidateCore(instance, schema);
+    }
+
+    /// <summary>
+    /// Validates an instance against a schema from JSON strings.
+    /// </summary>
+    /// <param name="instanceJson">The instance JSON string.</param>
+    /// <param name="schemaJson">The schema JSON string.</param>
+    /// <returns>The validation result.</returns>
+    public ValidationResult Validate(string instanceJson, string schemaJson)
+    {
+        try
+        {
+            var instance = JsonNode.Parse(instanceJson);
+            var schema = JsonNode.Parse(schemaJson);
+            _instanceLocator = new JsonSourceLocator(instanceJson);
+            return ValidateCore(instance, schema);
+        }
+        catch (Exception ex)
+        {
+            return ValidationResult.Failure($"Failed to parse JSON: {ex.Message}");
+        }
+    }
+
+    private ValidationResult ValidateCore(JsonNode? instance, JsonNode? schema)
+    {
         var result = new ValidationResult();
 
         if (schema is null)
         {
-            result.AddError("Schema cannot be null", "");
+            AddError(result, ErrorCodes.SchemaNull, "Schema cannot be null", "");
             return result;
         }
 
         _resolvedRefs.Clear();
+        _loadedImports.Clear();
         
         // Handle $root - if the schema has a $root property, resolve it and use that as the validation target
         var effectiveSchema = schema;
@@ -57,7 +87,7 @@ public sealed class InstanceValidator
                 }
                 else
                 {
-                    result.AddError($"Unable to resolve $root reference: {rootRefStr}", "");
+                    AddError(result, ErrorCodes.InstanceRootUnresolved, $"Unable to resolve $root reference: {rootRefStr}", "");
                     return result;
                 }
             }
@@ -67,32 +97,12 @@ public sealed class InstanceValidator
         return result;
     }
 
-    /// <summary>
-    /// Validates an instance against a schema from JSON strings.
-    /// </summary>
-    /// <param name="instanceJson">The instance JSON string.</param>
-    /// <param name="schemaJson">The schema JSON string.</param>
-    /// <returns>The validation result.</returns>
-    public ValidationResult Validate(string instanceJson, string schemaJson)
-    {
-        try
-        {
-            var instance = JsonNode.Parse(instanceJson);
-            var schema = JsonNode.Parse(schemaJson);
-            return Validate(instance, schema);
-        }
-        catch (Exception ex)
-        {
-            return ValidationResult.Failure($"Failed to parse JSON: {ex.Message}");
-        }
-    }
-
     private void ValidateInstance(JsonNode? instance, JsonNode schema, JsonNode rootSchema, 
         ValidationResult result, string path, int depth)
     {
         if (depth > _options.MaxValidationDepth)
         {
-            result.AddError($"Maximum validation depth ({_options.MaxValidationDepth}) exceeded", path);
+            AddError(result, ErrorCodes.InstanceMaxDepthExceeded, $"Maximum validation depth ({_options.MaxValidationDepth}) exceeded", path);
             return;
         }
 
@@ -106,14 +116,14 @@ public sealed class InstanceValidator
         {
             if (!b && instance is not null)
             {
-                result.AddError("Schema 'false' rejects all values", path);
+                AddError(result, ErrorCodes.InstanceSchemaFalse, "Schema 'false' rejects all values", path);
             }
             return;
         }
 
         if (schema is not JsonObject schemaObj)
         {
-            result.AddError("Schema must be a boolean or object", path);
+            AddError(result, ErrorCodes.SchemaInvalidType, "Schema must be a boolean or object", path);
             return;
         }
 
@@ -126,7 +136,7 @@ public sealed class InstanceValidator
                 var resolvedSchema = ResolveRef(refStr, rootSchema);
                 if (resolvedSchema is null)
                 {
-                    result.AddError($"Unable to resolve reference: {refStr}", path);
+                    AddError(result, ErrorCodes.InstanceRefUnresolved, $"Unable to resolve reference: {refStr}", path);
                     return;
                 }
                 ValidateInstance(instance, resolvedSchema, rootSchema, result, path, depth + 1);
@@ -177,7 +187,7 @@ public sealed class InstanceValidator
         {
             if (!JsonNodeEquals(instance, constValue))
             {
-                result.AddError($"Value must equal const value", path);
+                AddError(result, ErrorCodes.InstanceConstMismatch, $"Value must equal const value", path);
             }
             return;
         }
@@ -196,7 +206,7 @@ public sealed class InstanceValidator
             }
             if (!matches)
             {
-                result.AddError("Value must be one of the enum values", path);
+                AddError(result, ErrorCodes.InstanceEnumMismatch, "Value must be one of the enum values", path);
             }
             return;
         }
@@ -250,7 +260,7 @@ public sealed class InstanceValidator
             }
             if (!anyValid)
             {
-                result.AddError("Value must match at least one schema in anyOf", path);
+                AddError(result, ErrorCodes.InstanceAnyOfNoneMatched, "Value must match at least one schema in anyOf", path);
             }
         }
 
@@ -272,7 +282,7 @@ public sealed class InstanceValidator
             }
             if (matchCount != 1)
             {
-                result.AddError($"Value must match exactly one schema in oneOf (matched {matchCount})", path);
+                AddError(result, ErrorCodes.InstanceOneOfInvalidCount, $"Value must match exactly one schema in oneOf (matched {matchCount})", path);
             }
         }
 
@@ -283,7 +293,7 @@ public sealed class InstanceValidator
             ValidateInstance(instance, notValue, rootSchema, subResult, path, depth + 1);
             if (subResult.IsValid)
             {
-                result.AddError("Value must not match the schema in 'not'", path);
+                AddError(result, ErrorCodes.InstanceNotMatched, "Value must not match the schema in 'not'", path);
             }
         }
 
@@ -414,11 +424,11 @@ public sealed class InstanceValidator
                 if (type.Contains(':'))
                 {
                     // Custom type reference - would need to resolve
-                    result.AddError($"Custom type reference not yet supported: {type}", path);
+                    AddError(result, ErrorCodes.InstanceCustomTypeNotSupported, $"Custom type reference not yet supported: {type}", path);
                 }
                 else
                 {
-                    result.AddError($"Unknown type: {type}", path);
+                    AddError(result, ErrorCodes.InstanceTypeUnknown, $"Unknown type: {type}", path);
                 }
                 break;
         }
@@ -446,7 +456,7 @@ public sealed class InstanceValidator
     {
         if (instance is not null)
         {
-            result.AddError("Value must be null", path);
+            AddError(result, ErrorCodes.InstanceNullExpected, "Value must be null", path);
         }
     }
 
@@ -454,7 +464,7 @@ public sealed class InstanceValidator
     {
         if (instance is not JsonValue jv || !jv.TryGetValue<bool>(out _))
         {
-            result.AddError("Value must be a boolean", path);
+            AddError(result, ErrorCodes.InstanceBooleanExpected, "Value must be a boolean", path);
         }
     }
 
@@ -462,7 +472,7 @@ public sealed class InstanceValidator
     {
         if (instance is not JsonValue jv || !jv.TryGetValue<string>(out var str))
         {
-            result.AddError("Value must be a string", path);
+            AddError(result, ErrorCodes.InstanceStringExpected, "Value must be a string", path);
             return;
         }
 
@@ -471,7 +481,7 @@ public sealed class InstanceValidator
         {
             if (minLenValue?.GetValue<int>() is int minLen && str.Length < minLen)
             {
-                result.AddError($"String length {str.Length} is less than minimum {minLen}", path);
+                AddError(result, ErrorCodes.InstanceStringMinLength, $"String length {str.Length} is less than minimum {minLen}", path);
             }
         }
 
@@ -480,7 +490,7 @@ public sealed class InstanceValidator
         {
             if (maxLenValue?.GetValue<int>() is int maxLen && str.Length > maxLen)
             {
-                result.AddError($"String length {str.Length} exceeds maximum {maxLen}", path);
+                AddError(result, ErrorCodes.InstanceStringMaxLength, $"String length {str.Length} exceeds maximum {maxLen}", path);
             }
         }
 
@@ -494,12 +504,12 @@ public sealed class InstanceValidator
                 {
                     if (!Regex.IsMatch(str, pattern))
                     {
-                        result.AddError($"String does not match pattern: {pattern}", path);
+                        AddError(result, ErrorCodes.InstanceStringPatternMismatch, $"String does not match pattern: {pattern}", path);
                     }
                 }
                 catch (ArgumentException)
                 {
-                    result.AddError($"Invalid regex pattern: {pattern}", path);
+                    AddError(result, ErrorCodes.InstancePatternInvalid, $"Invalid regex pattern: {pattern}", path);
                 }
             }
         }
@@ -521,63 +531,63 @@ public sealed class InstanceValidator
             case "email":
                 if (!IsValidEmail(value))
                 {
-                    result.AddError($"String is not a valid email address", path);
+                    AddError(result, ErrorCodes.InstanceFormatEmailInvalid, $"String is not a valid email address", path);
                 }
                 break;
             case "uri":
                 if (!Uri.TryCreate(value, UriKind.Absolute, out _))
                 {
-                    result.AddError($"String is not a valid URI", path);
+                    AddError(result, ErrorCodes.InstanceFormatUriInvalid, $"String is not a valid URI", path);
                 }
                 break;
             case "uri-reference":
                 if (!Uri.TryCreate(value, UriKind.RelativeOrAbsolute, out _))
                 {
-                    result.AddError($"String is not a valid URI reference", path);
+                    AddError(result, ErrorCodes.InstanceFormatUriReferenceInvalid, $"String is not a valid URI reference", path);
                 }
                 break;
             case "date":
                 if (!DateOnly.TryParse(value, CultureInfo.InvariantCulture, out _))
                 {
-                    result.AddError($"String is not a valid date", path);
+                    AddError(result, ErrorCodes.InstanceFormatDateInvalid, $"String is not a valid date", path);
                 }
                 break;
             case "time":
                 if (!TimeOnly.TryParse(value, CultureInfo.InvariantCulture, out _))
                 {
-                    result.AddError($"String is not a valid time", path);
+                    AddError(result, ErrorCodes.InstanceFormatTimeInvalid, $"String is not a valid time", path);
                 }
                 break;
             case "date-time":
                 if (!DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, out _))
                 {
-                    result.AddError($"String is not a valid date-time", path);
+                    AddError(result, ErrorCodes.InstanceFormatDatetimeInvalid, $"String is not a valid date-time", path);
                 }
                 break;
             case "uuid":
                 if (!Guid.TryParse(value, out _))
                 {
-                    result.AddError($"String is not a valid UUID", path);
+                    AddError(result, ErrorCodes.InstanceFormatUuidInvalid, $"String is not a valid UUID", path);
                 }
                 break;
             case "ipv4":
                 if (!System.Net.IPAddress.TryParse(value, out var ip4) || 
                     ip4.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork)
                 {
-                    result.AddError($"String is not a valid IPv4 address", path);
+                    AddError(result, ErrorCodes.InstanceFormatIpv4Invalid, $"String is not a valid IPv4 address", path);
                 }
                 break;
             case "ipv6":
                 if (!System.Net.IPAddress.TryParse(value, out var ip6) || 
                     ip6.AddressFamily != System.Net.Sockets.AddressFamily.InterNetworkV6)
                 {
-                    result.AddError($"String is not a valid IPv6 address", path);
+                    AddError(result, ErrorCodes.InstanceFormatIpv6Invalid, $"String is not a valid IPv6 address", path);
                 }
                 break;
             case "hostname":
                 if (!Uri.CheckHostName(value).Equals(UriHostNameType.Dns))
                 {
-                    result.AddError($"String is not a valid hostname", path);
+                    AddError(result, ErrorCodes.InstanceFormatHostnameInvalid, $"String is not a valid hostname", path);
                 }
                 break;
         }
@@ -594,7 +604,7 @@ public sealed class InstanceValidator
     {
         if (instance is not JsonValue jv)
         {
-            result.AddError($"Value must be a {type}", path);
+            AddError(result, ErrorCodes.InstanceNumberExpected, $"Value must be a {type}", path);
             return;
         }
 
@@ -633,7 +643,7 @@ public sealed class InstanceValidator
         }
         else
         {
-            result.AddError($"Value must be a {type}", path);
+            AddError(result, ErrorCodes.InstanceNumberExpected, $"Value must be a {type}", path);
             return;
         }
 
@@ -651,28 +661,28 @@ public sealed class InstanceValidator
             case "int64":
                 if (!long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
                 {
-                    result.AddError("Value must be a valid int64", path);
+                    AddError(result, ErrorCodes.InstanceIntegerExpected, "Value must be a valid int64", path);
                     return false;
                 }
                 break;
             case "uint64":
                 if (!ulong.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
                 {
-                    result.AddError("Value must be a valid uint64", path);
+                    AddError(result, ErrorCodes.InstanceIntegerExpected, "Value must be a valid uint64", path);
                     return false;
                 }
                 break;
             case "int128":
                 if (!Int128.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
                 {
-                    result.AddError("Value must be a valid int128", path);
+                    AddError(result, ErrorCodes.InstanceIntegerExpected, "Value must be a valid int128", path);
                     return false;
                 }
                 break;
             case "uint128":
                 if (!UInt128.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
                 {
-                    result.AddError("Value must be a valid uint128", path);
+                    AddError(result, ErrorCodes.InstanceIntegerExpected, "Value must be a valid uint128", path);
                     return false;
                 }
                 break;
@@ -681,12 +691,12 @@ public sealed class InstanceValidator
             case "decimal128":
                 if (!decimal.TryParse(value, NumberStyles.Any, CultureInfo.InvariantCulture, out _))
                 {
-                    result.AddError($"Value must be a valid {type}", path);
+                    AddError(result, ErrorCodes.InstanceDecimalExpected, $"Value must be a valid {type}", path);
                     return false;
                 }
                 break;
             default:
-                result.AddError($"String value not expected for type {type}", path);
+                AddError(result, ErrorCodes.InstanceStringNotExpected, $"String value not expected for type {type}", path);
                 return false;
         }
         return true;
@@ -699,49 +709,49 @@ public sealed class InstanceValidator
             case "int8":
                 if (value < sbyte.MinValue || value > sbyte.MaxValue || value != Math.Truncate(value))
                 {
-                    result.AddError($"Value {value} is not a valid int8", path);
+                    AddError(result, ErrorCodes.InstanceIntRangeInvalid, $"Value {value} is not a valid int8", path);
                 }
                 break;
             case "int16":
                 if (value < short.MinValue || value > short.MaxValue || value != Math.Truncate(value))
                 {
-                    result.AddError($"Value {value} is not a valid int16", path);
+                    AddError(result, ErrorCodes.InstanceIntRangeInvalid, $"Value {value} is not a valid int16", path);
                 }
                 break;
             case "int32":
                 if (value < int.MinValue || value > int.MaxValue || value != Math.Truncate(value))
                 {
-                    result.AddError($"Value {value} is not a valid int32", path);
+                    AddError(result, ErrorCodes.InstanceIntRangeInvalid, $"Value {value} is not a valid int32", path);
                 }
                 break;
             case "int64":
                 if (value < long.MinValue || value > long.MaxValue || value != Math.Truncate(value))
                 {
-                    result.AddError($"Value {value} is not a valid int64", path);
+                    AddError(result, ErrorCodes.InstanceIntRangeInvalid, $"Value {value} is not a valid int64", path);
                 }
                 break;
             case "uint8":
                 if (value < 0 || value > byte.MaxValue || value != Math.Truncate(value))
                 {
-                    result.AddError($"Value {value} is not a valid uint8", path);
+                    AddError(result, ErrorCodes.InstanceIntRangeInvalid, $"Value {value} is not a valid uint8", path);
                 }
                 break;
             case "uint16":
                 if (value < 0 || value > ushort.MaxValue || value != Math.Truncate(value))
                 {
-                    result.AddError($"Value {value} is not a valid uint16", path);
+                    AddError(result, ErrorCodes.InstanceIntRangeInvalid, $"Value {value} is not a valid uint16", path);
                 }
                 break;
             case "uint32":
                 if (value < 0 || value > uint.MaxValue || value != Math.Truncate(value))
                 {
-                    result.AddError($"Value {value} is not a valid uint32", path);
+                    AddError(result, ErrorCodes.InstanceIntRangeInvalid, $"Value {value} is not a valid uint32", path);
                 }
                 break;
             case "uint64":
                 if (value < 0 || value != Math.Truncate(value))
                 {
-                    result.AddError($"Value {value} is not a valid uint64", path);
+                    AddError(result, ErrorCodes.InstanceIntRangeInvalid, $"Value {value} is not a valid uint64", path);
                 }
                 break;
         }
@@ -755,7 +765,7 @@ public sealed class InstanceValidator
             var min = GetDecimalValue(minValue);
             if (min.HasValue && value < min.Value)
             {
-                result.AddError($"Value {value} is less than minimum {min.Value}", path);
+                AddError(result, ErrorCodes.InstanceNumberMinimum, $"Value {value} is less than minimum {min.Value}", path);
             }
         }
 
@@ -765,7 +775,7 @@ public sealed class InstanceValidator
             var max = GetDecimalValue(maxValue);
             if (max.HasValue && value > max.Value)
             {
-                result.AddError($"Value {value} exceeds maximum {max.Value}", path);
+                AddError(result, ErrorCodes.InstanceNumberMaximum, $"Value {value} exceeds maximum {max.Value}", path);
             }
         }
 
@@ -775,7 +785,7 @@ public sealed class InstanceValidator
             var exclMin = GetDecimalValue(exclMinValue);
             if (exclMin.HasValue && value <= exclMin.Value)
             {
-                result.AddError($"Value {value} must be greater than {exclMin.Value}", path);
+                AddError(result, ErrorCodes.InstanceNumberExclusiveMinimum, $"Value {value} must be greater than {exclMin.Value}", path);
             }
         }
 
@@ -785,7 +795,7 @@ public sealed class InstanceValidator
             var exclMax = GetDecimalValue(exclMaxValue);
             if (exclMax.HasValue && value >= exclMax.Value)
             {
-                result.AddError($"Value {value} must be less than {exclMax.Value}", path);
+                AddError(result, ErrorCodes.InstanceNumberExclusiveMaximum, $"Value {value} must be less than {exclMax.Value}", path);
             }
         }
 
@@ -798,7 +808,7 @@ public sealed class InstanceValidator
                 var remainder = value % multipleOf.Value;
                 if (remainder != 0)
                 {
-                    result.AddError($"Value {value} is not a multiple of {multipleOf.Value}", path);
+                    AddError(result, ErrorCodes.InstanceNumberMultipleOf, $"Value {value} is not a multiple of {multipleOf.Value}", path);
                 }
             }
         }
@@ -821,7 +831,7 @@ public sealed class InstanceValidator
     {
         if (instance is not JsonObject obj)
         {
-            result.AddError("Value must be an object", path);
+            AddError(result, ErrorCodes.InstanceObjectExpected, "Value must be an object", path);
             return;
         }
 
@@ -852,7 +862,7 @@ public sealed class InstanceValidator
                 var reqName = req?.GetValue<string>();
                 if (!string.IsNullOrEmpty(reqName) && !obj.ContainsKey(reqName))
                 {
-                    result.AddError($"Missing required property: {reqName}", path);
+                    AddError(result, ErrorCodes.InstanceRequiredPropertyMissing, $"Missing required property: {reqName}", path);
                 }
             }
         }
@@ -871,7 +881,7 @@ public sealed class InstanceValidator
                         
                         if (!definedProps.Contains(prop.Key))
                         {
-                            result.AddError($"Additional property not allowed: {prop.Key}", path);
+                            AddError(result, ErrorCodes.InstanceAdditionalPropertyNotAllowed, $"Additional property not allowed: {prop.Key}", path);
                         }
                     }
                 }
@@ -898,7 +908,7 @@ public sealed class InstanceValidator
             var minProps = minPropsValue?.GetValue<int>();
             if (minProps.HasValue && obj.Count < minProps.Value)
             {
-                result.AddError($"Object has {obj.Count} properties, minimum is {minProps.Value}", path);
+                AddError(result, ErrorCodes.InstanceMinProperties, $"Object has {obj.Count} properties, minimum is {minProps.Value}", path);
             }
         }
 
@@ -907,7 +917,7 @@ public sealed class InstanceValidator
             var maxProps = maxPropsValue?.GetValue<int>();
             if (maxProps.HasValue && obj.Count > maxProps.Value)
             {
-                result.AddError($"Object has {obj.Count} properties, maximum is {maxProps.Value}", path);
+                AddError(result, ErrorCodes.InstanceMaxProperties, $"Object has {obj.Count} properties, maximum is {maxProps.Value}", path);
             }
         }
 
@@ -923,7 +933,7 @@ public sealed class InstanceValidator
                         var reqProp = required?.GetValue<string>();
                         if (!string.IsNullOrEmpty(reqProp) && !obj.ContainsKey(reqProp))
                         {
-                            result.AddError($"Property '{dep.Key}' requires property '{reqProp}'", path);
+                            AddError(result, ErrorCodes.InstanceDependentRequired, $"Property '{dep.Key}' requires property '{reqProp}'", path);
                         }
                     }
                 }
@@ -936,7 +946,7 @@ public sealed class InstanceValidator
     {
         if (instance is not JsonArray arr)
         {
-            result.AddError("Value must be an array", path);
+            AddError(result, ErrorCodes.InstanceArrayExpected, "Value must be an array", path);
             return;
         }
 
@@ -956,7 +966,7 @@ public sealed class InstanceValidator
             var minItems = minItemsValue?.GetValue<int>();
             if (minItems.HasValue && arr.Count < minItems.Value)
             {
-                result.AddError($"Array has {arr.Count} items, minimum is {minItems.Value}", path);
+                AddError(result, ErrorCodes.InstanceMinItems, $"Array has {arr.Count} items, minimum is {minItems.Value}", path);
             }
         }
 
@@ -965,7 +975,7 @@ public sealed class InstanceValidator
             var maxItems = maxItemsValue?.GetValue<int>();
             if (maxItems.HasValue && arr.Count > maxItems.Value)
             {
-                result.AddError($"Array has {arr.Count} items, maximum is {maxItems.Value}", path);
+                AddError(result, ErrorCodes.InstanceMaxItems, $"Array has {arr.Count} items, maximum is {maxItems.Value}", path);
             }
         }
 
@@ -998,12 +1008,12 @@ public sealed class InstanceValidator
 
             if (containsCount < minContains)
             {
-                result.AddError($"Array must contain at least {minContains} matching items (found {containsCount})", path);
+                AddError(result, ErrorCodes.InstanceMinContains, $"Array must contain at least {minContains} matching items (found {containsCount})", path);
             }
 
             if (containsCount > maxContains)
             {
-                result.AddError($"Array must contain at most {maxContains} matching items (found {containsCount})", path);
+                AddError(result, ErrorCodes.InstanceMaxContains, $"Array must contain at most {maxContains} matching items (found {containsCount})", path);
             }
         }
     }
@@ -1013,7 +1023,7 @@ public sealed class InstanceValidator
     {
         if (instance is not JsonArray arr)
         {
-            result.AddError("Value must be an array (set)", path);
+            AddError(result, ErrorCodes.InstanceSetExpected, "Value must be an array (set)", path);
             return;
         }
 
@@ -1024,7 +1034,7 @@ public sealed class InstanceValidator
             var itemJson = arr[i]?.ToJsonString() ?? "null";
             if (!seen.Add(itemJson))
             {
-                result.AddError($"Set contains duplicate value at index {i}", path);
+                AddError(result, ErrorCodes.InstanceSetDuplicate, $"Set contains duplicate value at index {i}", path);
             }
         }
 
@@ -1037,7 +1047,7 @@ public sealed class InstanceValidator
     {
         if (instance is not JsonObject obj)
         {
-            result.AddError("Value must be an object (map)", path);
+            AddError(result, ErrorCodes.InstanceMapExpected, "Value must be an object (map)", path);
             return;
         }
 
@@ -1078,7 +1088,7 @@ public sealed class InstanceValidator
             var minProps = minPropsValue?.GetValue<int>();
             if (minProps.HasValue && obj.Count < minProps.Value)
             {
-                result.AddError($"Map has {obj.Count} entries, minimum is {minProps.Value}", path);
+                AddError(result, ErrorCodes.InstanceMapMinEntries, $"Map has {obj.Count} entries, minimum is {minProps.Value}", path);
             }
         }
 
@@ -1087,7 +1097,7 @@ public sealed class InstanceValidator
             var maxProps = maxPropsValue?.GetValue<int>();
             if (maxProps.HasValue && obj.Count > maxProps.Value)
             {
-                result.AddError($"Map has {obj.Count} entries, maximum is {maxProps.Value}", path);
+                AddError(result, ErrorCodes.InstanceMapMaxEntries, $"Map has {obj.Count} entries, maximum is {maxProps.Value}", path);
             }
         }
     }
@@ -1097,7 +1107,7 @@ public sealed class InstanceValidator
     {
         if (instance is not JsonArray arr)
         {
-            result.AddError("Value must be an array (tuple)", path);
+            AddError(result, ErrorCodes.InstanceTupleExpected, "Value must be an array (tuple)", path);
             return;
         }
 
@@ -1114,13 +1124,13 @@ public sealed class InstanceValidator
                     {
                         if (arr.Count != prefixArr.Count)
                         {
-                            result.AddError($"Tuple has {arr.Count} items but schema defines {prefixArr.Count}", path);
+                            AddError(result, ErrorCodes.InstanceTupleLengthMismatch, $"Tuple has {arr.Count} items but schema defines {prefixArr.Count}", path);
                         }
                     }
                 }
                 else if (arr.Count < prefixArr.Count)
                 {
-                    result.AddError($"Tuple has {arr.Count} items but schema defines {prefixArr.Count}", path);
+                    AddError(result, ErrorCodes.InstanceTupleLengthMismatch, $"Tuple has {arr.Count} items but schema defines {prefixArr.Count}", path);
                 }
             }
 
@@ -1144,7 +1154,7 @@ public sealed class InstanceValidator
                 {
                     if (!allowed && arr.Count > prefixArr.Count)
                     {
-                        result.AddError($"Tuple has {arr.Count} items but only {prefixArr.Count} are defined", path);
+                        AddError(result, ErrorCodes.InstanceTupleAdditionalItems, $"Tuple has {arr.Count} items but only {prefixArr.Count} are defined", path);
                     }
                 }
                 else if (additionalItemsValue is JsonObject additionalSchema)
@@ -1165,7 +1175,7 @@ public sealed class InstanceValidator
                 // Validate tuple length
                 if (arr.Count != tupleArr.Count)
                 {
-                    result.AddError($"Tuple has {arr.Count} elements but schema defines {tupleArr.Count}", path);
+                    AddError(result, ErrorCodes.InstanceTupleLengthMismatch, $"Tuple has {arr.Count} elements but schema defines {tupleArr.Count}", path);
                 }
 
                 // Validate each element according to the tuple order
@@ -1187,7 +1197,7 @@ public sealed class InstanceValidator
     {
         if (instance is not JsonObject obj)
         {
-            result.AddError("Value must be an object (choice)", path);
+            AddError(result, ErrorCodes.InstanceChoiceExpected, "Value must be an object (choice)", path);
             return;
         }
 
@@ -1204,7 +1214,7 @@ public sealed class InstanceValidator
 
         if (options is null)
         {
-            result.AddError("Choice schema must have 'options' or 'choices'", path);
+            AddError(result, ErrorCodes.InstanceChoiceMissingOptions, "Choice schema must have 'options' or 'choices'", path);
             return;
         }
 
@@ -1224,20 +1234,20 @@ public sealed class InstanceValidator
             // Use discriminator to determine type
             if (!obj.TryGetPropertyValue(discriminator, out var discValueNode))
             {
-                result.AddError($"Choice requires discriminator property: {discriminator}", path);
+                AddError(result, ErrorCodes.InstanceChoiceDiscriminatorMissing, $"Choice requires discriminator property: {discriminator}", path);
                 return;
             }
 
             var discStr = discValueNode?.GetValue<string>();
             if (string.IsNullOrEmpty(discStr))
             {
-                result.AddError($"Discriminator value must be a string", path);
+                AddError(result, ErrorCodes.InstanceChoiceDiscriminatorNotString, $"Discriminator value must be a string", path);
                 return;
             }
 
             if (!options.TryGetPropertyValue(discStr, out var optionSchema) || optionSchema is null)
             {
-                result.AddError($"Unknown choice option: {discStr}", path);
+                AddError(result, ErrorCodes.InstanceChoiceOptionUnknown, $"Unknown choice option: {discStr}", path);
                 return;
             }
 
@@ -1274,11 +1284,11 @@ public sealed class InstanceValidator
 
             if (matchCount == 0)
             {
-                result.AddError("Value does not match any choice option", path);
+                AddError(result, ErrorCodes.InstanceChoiceNoMatch, "Value does not match any choice option", path);
             }
             else if (matchCount > 1)
             {
-                result.AddError($"Value matches {matchCount} choice options (should match exactly one)", path);
+                AddError(result, ErrorCodes.InstanceChoiceMultipleMatches, $"Value matches {matchCount} choice options (should match exactly one)", path);
             }
         }
     }
@@ -1287,13 +1297,13 @@ public sealed class InstanceValidator
     {
         if (instance is not JsonValue jv || !jv.TryGetValue<string>(out var str))
         {
-            result.AddError("Date must be a string", path);
+            AddError(result, ErrorCodes.InstanceDateExpected, "Date must be a string", path);
             return;
         }
 
         if (!DateOnly.TryParseExact(str, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
         {
-            result.AddError($"Invalid date format: {str}", path);
+            AddError(result, ErrorCodes.InstanceDateFormatInvalid, $"Invalid date format: {str}", path);
         }
     }
 
@@ -1301,7 +1311,7 @@ public sealed class InstanceValidator
     {
         if (instance is not JsonValue jv || !jv.TryGetValue<string>(out var str))
         {
-            result.AddError("Time must be a string", path);
+            AddError(result, ErrorCodes.InstanceTimeExpected, "Time must be a string", path);
             return;
         }
 
@@ -1331,7 +1341,7 @@ public sealed class InstanceValidator
         
         if (!TimeOnly.TryParseExact(str, formats, CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
         {
-            result.AddError($"Invalid time format: {str}", path);
+            AddError(result, ErrorCodes.InstanceTimeFormatInvalid, $"Invalid time format: {str}", path);
         }
     }
 
@@ -1339,13 +1349,13 @@ public sealed class InstanceValidator
     {
         if (instance is not JsonValue jv || !jv.TryGetValue<string>(out var str))
         {
-            result.AddError("DateTime must be a string", path);
+            AddError(result, ErrorCodes.InstanceDatetimeExpected, "DateTime must be a string", path);
             return;
         }
 
         if (!DateTimeOffset.TryParse(str, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out _))
         {
-            result.AddError($"Invalid datetime format: {str}", path);
+            AddError(result, ErrorCodes.InstanceDatetimeFormatInvalid, $"Invalid datetime format: {str}", path);
         }
     }
 
@@ -1353,7 +1363,7 @@ public sealed class InstanceValidator
     {
         if (instance is not JsonValue jv || !jv.TryGetValue<string>(out var str))
         {
-            result.AddError("Duration must be a string", path);
+            AddError(result, ErrorCodes.InstanceDurationExpected, "Duration must be a string", path);
             return;
         }
 
@@ -1365,7 +1375,7 @@ public sealed class InstanceValidator
         {
             if (!TimeSpan.TryParse(str, CultureInfo.InvariantCulture, out _))
             {
-                result.AddError($"Invalid duration format: {str}", path);
+                AddError(result, ErrorCodes.InstanceDurationFormatInvalid, $"Invalid duration format: {str}", path);
             }
         }
     }
@@ -1374,13 +1384,13 @@ public sealed class InstanceValidator
     {
         if (instance is not JsonValue jv || !jv.TryGetValue<string>(out var str))
         {
-            result.AddError("UUID must be a string", path);
+            AddError(result, ErrorCodes.InstanceUuidExpected, "UUID must be a string", path);
             return;
         }
 
         if (!Guid.TryParse(str, out _))
         {
-            result.AddError($"Invalid UUID format: {str}", path);
+            AddError(result, ErrorCodes.InstanceUuidFormatInvalid, $"Invalid UUID format: {str}", path);
         }
     }
 
@@ -1388,20 +1398,20 @@ public sealed class InstanceValidator
     {
         if (instance is not JsonValue jv || !jv.TryGetValue<string>(out var str))
         {
-            result.AddError("URI must be a string", path);
+            AddError(result, ErrorCodes.InstanceUriExpected, "URI must be a string", path);
             return;
         }
 
         if (!System.Uri.TryCreate(str, UriKind.Absolute, out var uri))
         {
-            result.AddError($"Invalid URI format: {str}", path);
+            AddError(result, ErrorCodes.InstanceUriFormatInvalid, $"Invalid URI format: {str}", path);
             return;
         }
 
         // Must have a scheme
         if (string.IsNullOrEmpty(uri.Scheme))
         {
-            result.AddError($"URI must have a scheme: {str}", path);
+            AddError(result, ErrorCodes.InstanceUriMissingScheme, $"URI must have a scheme: {str}", path);
         }
     }
 
@@ -1409,7 +1419,7 @@ public sealed class InstanceValidator
     {
         if (instance is not JsonValue jv || !jv.TryGetValue<string>(out var str))
         {
-            result.AddError("Binary must be a base64 string", path);
+            AddError(result, ErrorCodes.InstanceBinaryExpected, "Binary must be a base64 string", path);
             return;
         }
 
@@ -1419,7 +1429,7 @@ public sealed class InstanceValidator
         }
         catch
         {
-            result.AddError($"Invalid base64 encoding", path);
+            AddError(result, ErrorCodes.InstanceBinaryEncodingInvalid, "Invalid base64 encoding", path);
         }
     }
 
@@ -1427,14 +1437,14 @@ public sealed class InstanceValidator
     {
         if (instance is not JsonValue jv || !jv.TryGetValue<string>(out var str))
         {
-            result.AddError("JSON Pointer must be a string", path);
+            AddError(result, ErrorCodes.InstanceJsonpointerExpected, "JSON Pointer must be a string", path);
             return;
         }
 
         // JSON Pointer must be empty or start with /
         if (!string.IsNullOrEmpty(str) && !str.StartsWith('/'))
         {
-            result.AddError($"Invalid JSON Pointer format: {str}", path);
+            AddError(result, ErrorCodes.InstanceJsonpointerFormatInvalid, $"Invalid JSON Pointer format: {str}", path);
         }
     }
 
@@ -1484,7 +1494,7 @@ public sealed class InstanceValidator
                     {
                         if (minLenValue?.GetValue<int>() is int minLen && str.Length < minLen)
                         {
-                            result.AddError($"String length {str.Length} is less than minimum {minLen}", path);
+                            AddError(result, ErrorCodes.InstanceStringMinLength, $"String length {str.Length} is less than minimum {minLen}", path);
                         }
                     }
 
@@ -1493,7 +1503,7 @@ public sealed class InstanceValidator
                     {
                         if (maxLenValue?.GetValue<int>() is int maxLen && str.Length > maxLen)
                         {
-                            result.AddError($"String length {str.Length} exceeds maximum {maxLen}", path);
+                            AddError(result, ErrorCodes.InstanceStringMaxLength, $"String length {str.Length} exceeds maximum {maxLen}", path);
                         }
                     }
 
@@ -1507,12 +1517,12 @@ public sealed class InstanceValidator
                             {
                                 if (!Regex.IsMatch(str, pattern))
                                 {
-                                    result.AddError($"String does not match pattern: {pattern}", path);
+                                    AddError(result, ErrorCodes.InstanceStringPatternMismatch, $"String does not match pattern: {pattern}", path);
                                 }
                             }
                             catch (ArgumentException)
                             {
-                                result.AddError($"Invalid regex pattern: {pattern}", path);
+                                AddError(result, ErrorCodes.InstancePatternInvalid, $"Invalid regex pattern: {pattern}", path);
                             }
                         }
                     }
@@ -1562,20 +1572,66 @@ public sealed class InstanceValidator
             return node;
         }
 
-        var parts = pointer.Split('/').Skip(1); // Skip empty first part
+        var parts = pointer.Split('/').Skip(1).ToArray(); // Skip empty first part
         var current = node;
 
-        foreach (var part in parts)
+        for (var i = 0; i < parts.Length; i++)
         {
             if (current is null) return null;
 
             // Unescape JSON Pointer tokens
-            var unescaped = part.Replace("~1", "/").Replace("~0", "~");
+            var unescaped = parts[i].Replace("~1", "/").Replace("~0", "~");
 
             if (current is JsonObject obj)
             {
-                if (!obj.TryGetPropertyValue(unescaped, out current))
+                if (obj.TryGetPropertyValue(unescaped, out var next))
                 {
+                    current = next;
+                }
+                else
+                {
+                    // Property not found directly - check for $import or $importdefs
+                    // This handles the case where we're at a namespace node that imports definitions
+                    JsonNode? importValue = null;
+                    JsonNode? importDefsValue = null;
+                    
+                    if (obj.TryGetPropertyValue("$import", out importValue) || 
+                        obj.TryGetPropertyValue("$importdefs", out importDefsValue))
+                    {
+                        var importUri = (importValue ?? importDefsValue)?.GetValue<string>();
+                        if (!string.IsNullOrEmpty(importUri))
+                        {
+                            var importedSchema = LoadImport(importUri);
+                            if (importedSchema is JsonObject importedObj)
+                            {
+                                // For $importdefs, look in definitions of imported schema
+                                // For $import, look directly in the imported schema
+                                var hasImportDefs = importDefsValue is not null;
+                                
+                                // Build remaining path
+                                var remainingParts = parts.Skip(i).ToArray();
+                                var remainingPath = "/" + string.Join("/", remainingParts);
+                                
+                                if (hasImportDefs)
+                                {
+                                    // For $importdefs, the remaining path resolves against definitions
+                                    if (importedObj.TryGetPropertyValue("definitions", out var defs) && defs is not null)
+                                    {
+                                        return ResolveJsonPointer(remainingPath, defs);
+                                    }
+                                    else if (importedObj.TryGetPropertyValue("$defs", out var dollarDefs) && dollarDefs is not null)
+                                    {
+                                        return ResolveJsonPointer(remainingPath, dollarDefs);
+                                    }
+                                }
+                                else
+                                {
+                                    // For $import, resolve against the whole imported schema
+                                    return ResolveJsonPointer(remainingPath, importedSchema);
+                                }
+                            }
+                        }
+                    }
                     return null;
                 }
             }
@@ -1597,6 +1653,26 @@ public sealed class InstanceValidator
         }
 
         return current;
+    }
+
+    /// <summary>
+    /// Loads an imported schema from a URI using the ImportLoader.
+    /// </summary>
+    private JsonNode? LoadImport(string uri)
+    {
+        if (_loadedImports.TryGetValue(uri, out var cached))
+        {
+            return cached;
+        }
+
+        JsonNode? loaded = null;
+        if (_options.ImportLoader is not null)
+        {
+            loaded = _options.ImportLoader(uri);
+        }
+
+        _loadedImports[uri] = loaded;
+        return loaded;
     }
 
     private JsonNode? FindAnchor(string anchor, JsonNode node)
@@ -1650,5 +1726,14 @@ public sealed class InstanceValidator
             return "/" + segment;
         }
         return basePath + "/" + segment;
+    }
+
+    /// <summary>
+    /// Adds an error with source location tracking.
+    /// </summary>
+    private void AddError(ValidationResult result, string code, string message, string path, string? schemaPath = null)
+    {
+        var location = _instanceLocator?.GetLocation(path) ?? JsonLocation.Unknown;
+        result.AddError(code, message, path, location, schemaPath);
     }
 }

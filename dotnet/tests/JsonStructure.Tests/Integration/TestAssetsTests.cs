@@ -38,6 +38,78 @@ public class TestAssetsTests
     {
         // All instance validation gaps have been addressed
     };
+    
+    /// <summary>
+    /// Maps invalid schema test file names to their expected error code(s).
+    /// Each test file is designed to test a specific validation error.
+    /// </summary>
+    private static readonly Dictionary<string, string[]> ExpectedSchemaErrors = new()
+    {
+        ["allof-not-array.struct.json"] = [ErrorCodes.SchemaCompositionNotArray],
+        ["array-missing-items.struct.json"] = [ErrorCodes.SchemaArrayMissingItems],
+        ["circular-ref-direct.struct.json"] = [ErrorCodes.SchemaRefCircular],
+        ["constraint-type-mismatch-minimum.struct.json"] = [ErrorCodes.SchemaConstraintInvalidForType],
+        ["constraint-type-mismatch-minlength.struct.json"] = [ErrorCodes.SchemaConstraintInvalidForType],
+        ["defs-not-object.struct.json"] = [ErrorCodes.SchemaKeywordInvalidType],
+        ["enum-duplicates.struct.json"] = [ErrorCodes.SchemaEnumDuplicates],
+        ["enum-empty.struct.json"] = [ErrorCodes.SchemaEnumEmpty],
+        ["enum-not-array.struct.json"] = [ErrorCodes.SchemaEnumNotArray],
+        ["invalid-regex-pattern.struct.json"] = [ErrorCodes.SchemaPatternInvalid],
+        ["map-missing-values.struct.json"] = [ErrorCodes.SchemaMapMissingValues],
+        ["minimum-exceeds-maximum.struct.json"] = [ErrorCodes.SchemaMinGreaterThanMax],
+        ["minitems-exceeds-maxitems.struct.json"] = [ErrorCodes.SchemaMinGreaterThanMax],
+        ["minitems-negative.struct.json"] = [ErrorCodes.SchemaIntegerConstraintInvalid],
+        ["minlength-exceeds-maxlength.struct.json"] = [ErrorCodes.SchemaMinGreaterThanMax],
+        ["minlength-negative.struct.json"] = [ErrorCodes.SchemaIntegerConstraintInvalid],
+        ["missing-type.struct.json"] = [ErrorCodes.SchemaRootMissingType],
+        ["multipleof-negative.struct.json"] = [ErrorCodes.SchemaPositiveNumberConstraintInvalid],
+        ["multipleof-zero.struct.json"] = [ErrorCodes.SchemaPositiveNumberConstraintInvalid],
+        ["properties-not-object.struct.json"] = [ErrorCodes.SchemaPropertiesNotObject],
+        ["ref-undefined.struct.json"] = [ErrorCodes.SchemaRefNotFound],
+        ["required-missing-property.struct.json"] = [ErrorCodes.SchemaRequiredPropertyNotDefined],
+        ["required-not-array.struct.json"] = [ErrorCodes.SchemaRequiredNotArray],
+        ["tuple-missing-prefixitems.struct.json"] = [ErrorCodes.SchemaTupleMissingPrefixItems],
+        ["unknown-type.struct.json"] = [ErrorCodes.SchemaTypeInvalid],
+    };
+    
+    /// <summary>
+    /// Maps invalid instance test files (sampleName/fileName) to their expected error code(s).
+    /// Each test file is designed to test a specific validation error.
+    /// </summary>
+    private static readonly Dictionary<string, string[]> ExpectedInstanceErrors = new()
+    {
+        // 01-basic-person
+        ["01-basic-person/age-exceeds-int8-range.json"] = [ErrorCodes.InstanceIntRangeInvalid],
+        ["01-basic-person/invalid-date-format.json"] = [ErrorCodes.InstanceDateFormatInvalid],
+        ["01-basic-person/missing-required-firstname.json"] = [ErrorCodes.InstanceRequiredPropertyMissing],
+        ["01-basic-person/wrong-type-age.json"] = [ErrorCodes.InstanceStringNotExpected],
+        
+        // 02-address
+        ["02-address/invalid-country-enum.json"] = [ErrorCodes.InstanceEnumMismatch],
+        ["02-address/missing-required-city.json"] = [ErrorCodes.InstanceRequiredPropertyMissing],
+        ["02-address/street-exceeds-maxlength.json"] = [ErrorCodes.InstanceStringMaxLength],
+        
+        // 04-datetime-examples
+        ["04-datetime-examples/invalid-datetime-format.json"] = [ErrorCodes.InstanceDatetimeFormatInvalid],
+        ["04-datetime-examples/invalid-duration-format.json"] = [ErrorCodes.InstanceDurationFormatInvalid],
+        ["04-datetime-examples/invalid-frequency-enum.json"] = [ErrorCodes.InstanceEnumMismatch],
+        ["04-datetime-examples/invalid-uuid-format.json"] = [ErrorCodes.InstanceUuidFormatInvalid],
+        
+        // 05-collections
+        ["05-collections/invalid-uri-in-array.json"] = [ErrorCodes.InstanceUriFormatInvalid],
+        ["05-collections/set-with-duplicates.json"] = [ErrorCodes.InstanceSetDuplicate],
+        ["05-collections/wrong-type-in-map-values.json"] = [ErrorCodes.InstanceStringExpected],
+        
+        // 06-tuples
+        ["06-tuples/tuple-wrong-element-type.json"] = [ErrorCodes.InstanceDecimalExpected],
+        ["06-tuples/tuple-wrong-length.json"] = [ErrorCodes.InstanceTupleLengthMismatch],
+        ["06-tuples/uint8-exceeds-range.json"] = [ErrorCodes.InstanceIntRangeInvalid],
+        
+        // 11-sets-and-maps
+        ["11-sets-and-maps/access-level-not-in-enum.json"] = [ErrorCodes.InstanceEnumMismatch],
+        ["11-sets-and-maps/genre-not-in-enum.json"] = [ErrorCodes.InstanceEnumMismatch],
+        ["11-sets-and-maps/invalid-time-format.json"] = [ErrorCodes.InstanceTimeFormatInvalid],
+    };
 
     public TestAssetsTests(ITestOutputHelper output)
     {
@@ -146,11 +218,31 @@ public class TestAssetsTests
             _output.WriteLine("Errors (expected):");
             foreach (var error in result.Errors)
             {
-                _output.WriteLine($"  {error.Path}: {error.Message}");
+                _output.WriteLine($"  [{error.Code}] {error.Path}: {error.Message}");
+                error.Code.Should().NotBeNullOrEmpty($"Error code should be set for error at {error.Path}");
             }
         }
         
         result.IsValid.Should().BeFalse($"Schema {schemaFileName} should be invalid. Description: {description}");
+        result.Errors.Should().NotBeEmpty("At least one error should be reported");
+        result.Errors.Should().AllSatisfy(e => e.Code.Should().NotBeNullOrEmpty("All errors should have an error code"));
+        
+        // Verify the expected error code is present
+        if (ExpectedSchemaErrors.TryGetValue(schemaFileName, out var expectedCodes))
+        {
+            var actualCodes = result.Errors.Select(e => e.Code).ToHashSet();
+            foreach (var expectedCode in expectedCodes)
+            {
+                actualCodes.Should().Contain(expectedCode, 
+                    $"Schema {schemaFileName} should produce error code {expectedCode}. " +
+                    $"Actual codes: [{string.Join(", ", actualCodes)}]");
+            }
+            _output.WriteLine($"✓ Expected error code(s) verified: {string.Join(", ", expectedCodes)}");
+        }
+        else
+        {
+            _output.WriteLine($"⚠ No expected error code mapping for {schemaFileName}");
+        }
     }
 
     #endregion
@@ -272,12 +364,32 @@ public class TestAssetsTests
             _output.WriteLine("Errors (expected):");
             foreach (var error in result.Errors)
             {
-                _output.WriteLine($"  {error.Path}: {error.Message}");
+                _output.WriteLine($"  [{error.Code}] {error.Path}: {error.Message}");
+                error.Code.Should().NotBeNullOrEmpty($"Error code should be set for error at {error.Path}");
             }
         }
         
         result.IsValid.Should().BeFalse(
             $"Instance {sampleName}/{instanceFileName} should be invalid. Description: {description}");
+        result.Errors.Should().NotBeEmpty("At least one error should be reported");
+        result.Errors.Should().AllSatisfy(e => e.Code.Should().NotBeNullOrEmpty("All errors should have an error code"));
+        
+        // Verify the expected error code is present
+        if (ExpectedInstanceErrors.TryGetValue(testKey, out var expectedCodes))
+        {
+            var actualCodes = result.Errors.Select(e => e.Code).ToHashSet();
+            foreach (var expectedCode in expectedCodes)
+            {
+                actualCodes.Should().Contain(expectedCode, 
+                    $"Instance {testKey} should produce error code {expectedCode}. " +
+                    $"Actual codes: [{string.Join(", ", actualCodes)}]");
+            }
+            _output.WriteLine($"✓ Expected error code(s) verified: {string.Join(", ", expectedCodes)}");
+        }
+        else
+        {
+            _output.WriteLine($"⚠ No expected error code mapping for {testKey}");
+        }
     }
 
     #endregion

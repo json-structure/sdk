@@ -48,8 +48,10 @@ public class SchemaValidatorTests
         var result = _validator.Validate(schema);
 
         result.IsValid.Should().BeFalse();
-        result.Errors.Should().ContainSingle()
-            .Which.Message.Should().Contain("Invalid type");
+        var error = result.Errors.Should().ContainSingle().Subject;
+        error.Code.Should().Be(ErrorCodes.SchemaTypeInvalid);
+        error.Path.Should().Be("/type");
+        error.Message.Should().Contain("Invalid type");
     }
 
     [Fact]
@@ -68,8 +70,9 @@ public class SchemaValidatorTests
         var result = _validator.Validate((JsonNode?)null);
 
         result.IsValid.Should().BeFalse();
-        result.Errors.Should().ContainSingle()
-            .Which.Message.Should().Contain("cannot be null");
+        var error = result.Errors.Should().ContainSingle().Subject;
+        error.Code.Should().Be(ErrorCodes.SchemaNull);
+        error.Message.Should().Contain("cannot be null");
     }
 
     [Fact]
@@ -101,8 +104,10 @@ public class SchemaValidatorTests
         var result = _validator.Validate(schema);
 
         result.IsValid.Should().BeFalse();
-        result.Errors.Should().ContainSingle()
-            .Which.Message.Should().Contain("non-negative");
+        var error = result.Errors.Should().ContainSingle().Subject;
+        error.Code.Should().Be(ErrorCodes.SchemaIntegerConstraintInvalid);
+        error.Path.Should().Be("/minItems");
+        error.Message.Should().Contain("non-negative");
     }
 
     [Fact]
@@ -117,8 +122,10 @@ public class SchemaValidatorTests
         var result = _validator.Validate(schema);
 
         result.IsValid.Should().BeFalse();
-        result.Errors.Should().ContainSingle()
-            .Which.Message.Should().Contain("regular expression");
+        var error = result.Errors.Should().ContainSingle().Subject;
+        error.Code.Should().Be(ErrorCodes.SchemaPatternInvalid);
+        error.Path.Should().Be("/pattern");
+        error.Message.Should().Contain("regular expression");
     }
 
     [Fact]
@@ -220,8 +227,10 @@ public class SchemaValidatorTests
         var result = _validator.Validate(schema);
 
         result.IsValid.Should().BeFalse();
-        result.Errors.Should().ContainSingle()
-            .Which.Message.Should().Contain("cannot be empty");
+        var error = result.Errors.Should().ContainSingle().Subject;
+        error.Code.Should().Be(ErrorCodes.SchemaCompositionEmpty);
+        error.Path.Should().Be("/allOf");
+        error.Message.Should().Contain("cannot be empty");
     }
 
     [Fact]
@@ -303,8 +312,10 @@ public class SchemaValidatorTests
         var result = _validator.Validate(schema);
 
         result.IsValid.Should().BeFalse();
-        result.Errors.Should().ContainSingle()
-            .Which.Message.Should().Contain("cannot be empty");
+        var error = result.Errors.Should().ContainSingle().Subject;
+        error.Code.Should().Be(ErrorCodes.SchemaEnumEmpty);
+        error.Path.Should().Be("/enum");
+        error.Message.Should().Contain("cannot be empty");
     }
 
     [Fact]
@@ -335,7 +346,132 @@ public class SchemaValidatorTests
         var result = _validator.Validate(schema);
 
         result.IsValid.Should().BeFalse();
-        result.Errors.Should().ContainSingle()
-            .Which.Message.Should().Contain("positive");
+        var error = result.Errors.Should().ContainSingle().Subject;
+        error.Code.Should().Be(ErrorCodes.SchemaPositiveNumberConstraintInvalid);
+        error.Path.Should().Be("/multipleOf");
+        error.Message.Should().Contain("positive");
     }
+
+    #region Multiple Errors Collection Tests
+
+    [Fact]
+    public void Validate_MultipleSchemaErrors_CollectsAllByDefault()
+    {
+        // Schema with multiple issues: negative minLength, maxLength < minLength, and invalid pattern
+        var schema = new JsonObject
+        {
+            ["type"] = "string",
+            ["minLength"] = -1,
+            ["maxLength"] = -2,
+            ["pattern"] = "[invalid("
+        };
+
+        var result = _validator.Validate(schema);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().HaveCountGreaterOrEqualTo(2, "multiple schema errors should be collected");
+    }
+
+    [Fact]
+    public void Validate_MultipleSchemaErrors_StopsOnFirstWhenOptionSet()
+    {
+        var options = new ValidationOptions { StopOnFirstError = true };
+        var validator = new SchemaValidator(options);
+        
+        // Use nested definitions so errors occur in separate validation steps
+        var schema = new JsonObject
+        {
+            ["type"] = "object",
+            ["definitions"] = new JsonObject
+            {
+                ["Level1"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["definitions"] = new JsonObject
+                    {
+                        ["Level2"] = new JsonObject
+                        {
+                            ["type"] = "array"
+                            // missing items - error
+                        }
+                    }
+                },
+                ["Level1b"] = new JsonObject
+                {
+                    ["type"] = "map"
+                    // missing values - another error (but should not be reached)
+                }
+            }
+        };
+
+        var result = validator.Validate(schema);
+
+        result.IsValid.Should().BeFalse();
+        // With StopOnFirstError, it should stop after the first definition with an error
+        result.Errors.Should().HaveCountLessOrEqualTo(1, "should stop after first error step");
+    }
+
+    [Fact]
+    public void Validate_MultiplePropertiesWithErrors_CollectsAllErrors()
+    {
+        var schema = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["field1"] = new JsonObject 
+                { 
+                    ["type"] = "string",
+                    ["minLength"] = -1 // invalid
+                },
+                ["field2"] = new JsonObject 
+                { 
+                    ["type"] = "number",
+                    ["multipleOf"] = 0 // invalid
+                },
+                ["field3"] = new JsonObject 
+                { 
+                    ["type"] = "integer",
+                    ["minimum"] = 100,
+                    ["maximum"] = 10 // min > max
+                }
+            }
+        };
+
+        var result = _validator.Validate(schema);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().HaveCountGreaterOrEqualTo(3, "errors in all three properties should be collected");
+    }
+
+    [Fact]
+    public void Validate_NestedDefinitionsWithErrors_CollectsAllErrors()
+    {
+        var schema = new JsonObject
+        {
+            ["type"] = "object",
+            ["definitions"] = new JsonObject
+            {
+                ["Type1"] = new JsonObject
+                {
+                    ["type"] = "array"
+                    // missing items - should be an error
+                },
+                ["Type2"] = new JsonObject
+                {
+                    ["type"] = "map"
+                    // missing values - should be an error
+                }
+            }
+        };
+
+        var result = _validator.Validate(schema);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().HaveCountGreaterOrEqualTo(2, "errors in both definitions should be collected");
+        result.Errors.Select(e => e.Code).Should().Contain(ErrorCodes.SchemaArrayMissingItems);
+        result.Errors.Select(e => e.Code).Should().Contain(ErrorCodes.SchemaMapMissingValues);
+    }
+
+    #endregion
 }

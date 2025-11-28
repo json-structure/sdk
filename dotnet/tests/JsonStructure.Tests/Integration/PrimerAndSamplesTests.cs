@@ -235,15 +235,18 @@ public class PrimerAndSamplesTests
         Skip.If(!File.Exists(fullInstancePath), $"Instance file not found: {fullInstancePath}");
         Skip.If(!File.Exists(fullSchemaPath), $"Schema file not found: {fullSchemaPath}");
         
-        // Skip tests that require $importdefs (external file loading) - not yet implemented
-        Skip.If(instancePath.Contains("04-shadowing"), 
-            "$importdefs requires external file loading which is not yet implemented");
-        
         var instanceJson = File.ReadAllText(fullInstancePath);
         var schemaJson = File.ReadAllText(fullSchemaPath);
         
         var instance = JsonNode.Parse(instanceJson);
         var schema = JsonNode.Parse(schemaJson);
+
+        // Create an import loader that resolves relative paths from the schema location
+        var schemaDir = Path.GetDirectoryName(fullSchemaPath)!;
+        var importLoader = CreateImportLoader(schemaDir);
+        
+        var options = new ValidationOptions { ImportLoader = importLoader };
+        var importValidator = new InstanceValidator(options);
 
         // Get the $root reference if present
         var rootRef = schema?["$root"]?.GetValue<string>();
@@ -269,7 +272,7 @@ public class PrimerAndSamplesTests
         }
 
         // Act
-        var result = _instanceValidator.Validate(instance, targetSchema);
+        var result = importValidator.Validate(instance, targetSchema);
 
         // Assert
         if (!result.IsValid)
@@ -277,11 +280,29 @@ public class PrimerAndSamplesTests
             _output.WriteLine($"Instance validation failed for {instancePath} against {schemaPath}:");
             foreach (var error in result.Errors)
             {
-                _output.WriteLine($"  {error.Path}: {error.Message}");
+                _output.WriteLine($"  [{error.Code}] {error.Path}: {error.Message}");
             }
         }
         
         result.IsValid.Should().BeTrue($"Instance {instancePath} should be valid against {schemaPath}");
+    }
+
+    /// <summary>
+    /// Creates an import loader that resolves relative URIs from the given base directory.
+    /// </summary>
+    private Func<string, JsonNode?> CreateImportLoader(string baseDir)
+    {
+        return uri =>
+        {
+            // Handle relative paths
+            var fullPath = Path.GetFullPath(Path.Combine(baseDir, uri));
+            if (File.Exists(fullPath))
+            {
+                var json = File.ReadAllText(fullPath);
+                return JsonNode.Parse(json);
+            }
+            return null;
+        };
     }
 
     #endregion
