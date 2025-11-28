@@ -184,9 +184,9 @@ The SDK includes the following converters:
 | `uint32` | `uint` |
 | `uint64` | `ulong` |
 | `uint128` | `UInt128` |
-| `float16` | `Half` |
-| `float32` | `float` |
-| `float64` | `double` |
+| `float8` | `Half` |
+| `float` | `float` |
+| `double` | `double` |
 | `decimal` | `decimal` |
 | `date` | `DateOnly` |
 | `time` | `TimeOnly` |
