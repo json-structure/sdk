@@ -10,10 +10,11 @@ import (
 
 // SchemaValidator validates JSON Structure schema documents.
 type SchemaValidator struct {
-	options  SchemaValidatorOptions
-	errors   []ValidationError
-	schema   map[string]interface{}
-	seenRefs map[string]bool
+	options       SchemaValidatorOptions
+	errors        []ValidationError
+	schema        map[string]interface{}
+	seenRefs      map[string]bool
+	sourceLocator *JsonSourceLocator
 }
 
 // NewSchemaValidator creates a new SchemaValidator with the given options.
@@ -23,9 +24,10 @@ func NewSchemaValidator(options *SchemaValidatorOptions) *SchemaValidator {
 		opts = *options
 	}
 	return &SchemaValidator{
-		options:  opts,
-		errors:   []ValidationError{},
-		seenRefs: make(map[string]bool),
+		options:       opts,
+		errors:        []ValidationError{},
+		seenRefs:      make(map[string]bool),
+		sourceLocator: nil,
 	}
 }
 
@@ -36,7 +38,7 @@ func (v *SchemaValidator) Validate(schema interface{}) ValidationResult {
 
 	schemaMap, ok := schema.(map[string]interface{})
 	if !ok {
-		v.addError("#", "Schema must be an object")
+		v.addError("#", "Schema must be an object", SchemaInvalidType)
 		return v.result()
 	}
 
@@ -52,6 +54,8 @@ func (v *SchemaValidator) ValidateJSON(jsonData []byte) (ValidationResult, error
 	if err := json.Unmarshal(jsonData, &schema); err != nil {
 		return ValidationResult{IsValid: false}, err
 	}
+	// Create source locator for the schema JSON
+	v.sourceLocator = NewJsonSourceLocator(string(jsonData))
 	return v.Validate(schema), nil
 }
 
@@ -68,10 +72,10 @@ func (v *SchemaValidator) validateSchemaDocument(schema map[string]interface{}, 
 	if root, ok := schema["$root"]; ok {
 		rootStr, isStr := root.(string)
 		if !isStr {
-			v.addError(path+"/$root", "$root must be a string")
+			v.addError(path+"/$root", "$root must be a string", SchemaKeywordInvalidType)
 		} else if strings.HasPrefix(rootStr, "#/") {
 			if v.resolveRef(rootStr) == nil {
-				v.addError(path+"/$root", fmt.Sprintf("$root reference '%s' not found", rootStr))
+				v.addError(path+"/$root", fmt.Sprintf("$root reference '%s' not found", rootStr), SchemaRefNotFound)
 			}
 		}
 		return
@@ -92,7 +96,7 @@ func (v *SchemaValidator) validateSchemaDocument(schema map[string]interface{}, 
 		_, hasDefs := schema["definitions"]
 		_, hasDollarDefs := schema["$defs"]
 		if !hasOnlyMeta || (!hasDefs && !hasDollarDefs) {
-			v.addError(path, "Schema must have a 'type' property or '$root' reference")
+			v.addError(path, "Schema must have a 'type' property or '$root' reference", SchemaMissingType)
 		}
 	}
 
@@ -103,14 +107,14 @@ func (v *SchemaValidator) validateSchemaDocument(schema map[string]interface{}, 
 func (v *SchemaValidator) validateDefinitions(defs interface{}, path string) {
 	defsMap, ok := defs.(map[string]interface{})
 	if !ok {
-		v.addError(path, "definitions must be an object")
+		v.addError(path, "definitions must be an object", SchemaPropertiesNotObject)
 		return
 	}
 
 	for name, def := range defsMap {
 		defMap, isMap := def.(map[string]interface{})
 		if !isMap {
-			v.addError(path+"/"+name, "Definition must be an object")
+			v.addError(path+"/"+name, "Definition must be an object", SchemaInvalidType)
 			continue
 		}
 		v.validateTypeDefinition(defMap, path+"/"+name)
@@ -138,7 +142,7 @@ func (v *SchemaValidator) validateTypeDefinition(schema map[string]interface{}, 
 		}
 		if !hasConditional {
 			if _, hasDollarRoot := schema["$root"]; !hasDollarRoot {
-				v.addError(path, "Schema must have a 'type' property")
+				v.addError(path, "Schema must have a 'type' property", SchemaMissingType)
 			}
 		}
 		return
@@ -154,16 +158,16 @@ func (v *SchemaValidator) validateTypeDefinition(schema map[string]interface{}, 
 		if ref, ok := t["$ref"]; ok {
 			v.validateRef(ref, path+"/type")
 		} else {
-			v.addError(path+"/type", "type object must have $ref")
+			v.addError(path+"/type", "type object must have $ref", SchemaTypeObjectMissingRef)
 		}
 	default:
-		v.addError(path+"/type", "type must be a string, array, or object with $ref")
+		v.addError(path+"/type", "type must be a string, array, or object with $ref", SchemaKeywordInvalidType)
 	}
 }
 
 func (v *SchemaValidator) validateSingleType(typeStr string, schema map[string]interface{}, path string) {
 	if !isValidType(typeStr) {
-		v.addError(path+"/type", fmt.Sprintf("Unknown type '%s'", typeStr))
+		v.addError(path+"/type", fmt.Sprintf("Unknown type '%s'", typeStr), SchemaTypeInvalid)
 		return
 	}
 
@@ -186,16 +190,16 @@ func (v *SchemaValidator) validateSingleType(typeStr string, schema map[string]i
 
 func (v *SchemaValidator) validateUnionType(types []interface{}, _ map[string]interface{}, path string) {
 	if len(types) == 0 {
-		v.addError(path+"/type", "Union type array cannot be empty")
+		v.addError(path+"/type", "Union type array cannot be empty", SchemaTypeArrayEmpty)
 		return
 	}
 
 	for i, t := range types {
 		typeStr, ok := t.(string)
 		if !ok {
-			v.addError(fmt.Sprintf("%s/type[%d]", path, i), "Union type elements must be strings")
+			v.addError(fmt.Sprintf("%s/type[%d]", path, i), "Union type elements must be strings", SchemaKeywordInvalidType)
 		} else if !isValidType(typeStr) {
-			v.addError(fmt.Sprintf("%s/type[%d]", path, i), fmt.Sprintf("Unknown type '%s'", typeStr))
+			v.addError(fmt.Sprintf("%s/type[%d]", path, i), fmt.Sprintf("Unknown type '%s'", typeStr), SchemaTypeInvalid)
 		}
 	}
 }
@@ -205,16 +209,16 @@ func (v *SchemaValidator) validateObjectType(schema map[string]interface{}, path
 	if props, ok := schema["properties"]; ok {
 		propsMap, isMap := props.(map[string]interface{})
 		if !isMap {
-			v.addError(path+"/properties", "properties must be an object")
+			v.addError(path+"/properties", "properties must be an object", SchemaPropertiesNotObject)
 		} else if len(propsMap) == 0 {
 			if _, hasExtends := schema["$extends"]; !hasExtends {
-				v.addError(path+"/properties", "properties must have at least one entry")
+				v.addError(path+"/properties", "properties must have at least one entry", SchemaKeywordEmpty)
 			}
 		} else {
 			for propName, propSchema := range propsMap {
 				propMap, isPropMap := propSchema.(map[string]interface{})
 				if !isPropMap {
-					v.addError(path+"/properties/"+propName, "Property schema must be an object")
+					v.addError(path+"/properties/"+propName, "Property schema must be an object", SchemaInvalidType)
 				} else {
 					v.validateTypeDefinition(propMap, path+"/properties/"+propName)
 				}
@@ -226,17 +230,17 @@ func (v *SchemaValidator) validateObjectType(schema map[string]interface{}, path
 	if req, ok := schema["required"]; ok {
 		reqArr, isArr := req.([]interface{})
 		if !isArr {
-			v.addError(path+"/required", "required must be an array")
+			v.addError(path+"/required", "required must be an array", SchemaRequiredNotArray)
 		} else {
 			propsMap, _ := schema["properties"].(map[string]interface{})
 			for i, r := range reqArr {
 				rStr, isStr := r.(string)
 				if !isStr {
-					v.addError(fmt.Sprintf("%s/required[%d]", path, i), "required elements must be strings")
+					v.addError(fmt.Sprintf("%s/required[%d]", path, i), "required elements must be strings", SchemaRequiredItemNotString)
 				} else if propsMap != nil {
 					if _, propExists := propsMap[rStr]; !propExists {
 						if _, hasExtends := schema["$extends"]; !hasExtends {
-							v.addError(fmt.Sprintf("%s/required[%d]", path, i), fmt.Sprintf("Required property '%s' not found in properties", rStr))
+							v.addError(fmt.Sprintf("%s/required[%d]", path, i), fmt.Sprintf("Required property '%s' not found in properties", rStr), SchemaRequiredPropertyNotDefined)
 						}
 					}
 				}
@@ -248,13 +252,13 @@ func (v *SchemaValidator) validateObjectType(schema map[string]interface{}, path
 func (v *SchemaValidator) validateArrayType(schema map[string]interface{}, path string) {
 	items, hasItems := schema["items"]
 	if !hasItems {
-		v.addError(path, "Array type must have 'items' property")
+		v.addError(path, "Array type must have 'items' property", SchemaArrayMissingItems)
 		return
 	}
 
 	itemsMap, isMap := items.(map[string]interface{})
 	if !isMap {
-		v.addError(path+"/items", "items must be an object")
+		v.addError(path+"/items", "items must be an object", SchemaKeywordInvalidType)
 	} else {
 		v.validateTypeDefinition(itemsMap, path+"/items")
 	}
@@ -265,13 +269,13 @@ func (v *SchemaValidator) validateArrayType(schema map[string]interface{}, path 
 func (v *SchemaValidator) validateMapType(schema map[string]interface{}, path string) {
 	values, hasValues := schema["values"]
 	if !hasValues {
-		v.addError(path, "Map type must have 'values' property")
+		v.addError(path, "Map type must have 'values' property", SchemaMapMissingValues)
 		return
 	}
 
 	valuesMap, isMap := values.(map[string]interface{})
 	if !isMap {
-		v.addError(path+"/values", "values must be an object")
+		v.addError(path+"/values", "values must be an object", SchemaKeywordInvalidType)
 	} else {
 		v.validateTypeDefinition(valuesMap, path+"/values")
 	}
@@ -280,13 +284,13 @@ func (v *SchemaValidator) validateMapType(schema map[string]interface{}, path st
 func (v *SchemaValidator) validateTupleType(schema map[string]interface{}, path string) {
 	tuple, hasTuple := schema["tuple"]
 	if !hasTuple {
-		v.addError(path, "Tuple type must have 'tuple' property defining element order")
+		v.addError(path, "Tuple type must have 'tuple' property defining element order", SchemaTupleMissingPrefixItems)
 		return
 	}
 
 	tupleArr, isArr := tuple.([]interface{})
 	if !isArr {
-		v.addError(path+"/tuple", "tuple must be an array")
+		v.addError(path+"/tuple", "tuple must be an array", SchemaPrefixItemsNotArray)
 		return
 	}
 
@@ -294,10 +298,10 @@ func (v *SchemaValidator) validateTupleType(schema map[string]interface{}, path 
 	for i, elem := range tupleArr {
 		name, isStr := elem.(string)
 		if !isStr {
-			v.addError(fmt.Sprintf("%s/tuple[%d]", path, i), "tuple elements must be strings")
+			v.addError(fmt.Sprintf("%s/tuple[%d]", path, i), "tuple elements must be strings", SchemaKeywordInvalidType)
 		} else if propsMap != nil {
 			if _, exists := propsMap[name]; !exists {
-				v.addError(fmt.Sprintf("%s/tuple[%d]", path, i), fmt.Sprintf("Tuple element '%s' not found in properties", name))
+				v.addError(fmt.Sprintf("%s/tuple[%d]", path, i), fmt.Sprintf("Tuple element '%s' not found in properties", name), SchemaRequiredPropertyNotDefined)
 			}
 		}
 	}
@@ -306,18 +310,18 @@ func (v *SchemaValidator) validateTupleType(schema map[string]interface{}, path 
 func (v *SchemaValidator) validateChoiceType(schema map[string]interface{}, path string) {
 	choices, hasChoices := schema["choices"]
 	if !hasChoices {
-		v.addError(path, "Choice type must have 'choices' property")
+		v.addError(path, "Choice type must have 'choices' property", SchemaChoiceMissingOptions)
 		return
 	}
 
 	choicesMap, isMap := choices.(map[string]interface{})
 	if !isMap {
-		v.addError(path+"/choices", "choices must be an object")
+		v.addError(path+"/choices", "choices must be an object", SchemaChoicesNotObject)
 	} else {
 		for choiceName, choiceSchema := range choicesMap {
 			choiceMap, isChoiceMap := choiceSchema.(map[string]interface{})
 			if !isChoiceMap {
-				v.addError(path+"/choices/"+choiceName, "Choice schema must be an object")
+				v.addError(path+"/choices/"+choiceName, "Choice schema must be an object", SchemaInvalidType)
 			} else {
 				v.validateTypeDefinition(choiceMap, path+"/choices/"+choiceName)
 			}
@@ -330,16 +334,16 @@ func (v *SchemaValidator) validatePrimitiveConstraints(typeStr string, schema ma
 	if enumVal, ok := schema["enum"]; ok {
 		enumArr, isArr := enumVal.([]interface{})
 		if !isArr {
-			v.addError(path+"/enum", "enum must be an array")
+			v.addError(path+"/enum", "enum must be an array", SchemaEnumNotArray)
 		} else if len(enumArr) == 0 {
-			v.addError(path+"/enum", "enum must have at least one value")
+			v.addError(path+"/enum", "enum must have at least one value", SchemaEnumEmpty)
 		} else {
 			// Check for duplicates
 			seen := make(map[string]bool)
 			for i := 0; i < len(enumArr); i++ {
 				serialized, _ := json.Marshal(enumArr[i])
 				if seen[string(serialized)] {
-					v.addError(path+"/enum", "enum values must be unique")
+					v.addError(path+"/enum", "enum values must be unique", SchemaEnumDuplicates)
 					break
 				}
 				seen[string(serialized)] = true
@@ -365,18 +369,18 @@ func (v *SchemaValidator) validateStringConstraints(schema map[string]interface{
 	if minLen, ok := schema["minLength"]; ok {
 		minLenNum, isNum := minLen.(float64)
 		if !isNum || minLenNum != float64(int(minLenNum)) {
-			v.addError(path+"/minLength", "minLength must be an integer")
+			v.addError(path+"/minLength", "minLength must be an integer", SchemaIntegerConstraintInvalid)
 		} else if minLenNum < 0 {
-			v.addError(path+"/minLength", "minLength must be non-negative")
+			v.addError(path+"/minLength", "minLength must be non-negative", SchemaIntegerConstraintInvalid)
 		}
 	}
 
 	if maxLen, ok := schema["maxLength"]; ok {
 		maxLenNum, isNum := maxLen.(float64)
 		if !isNum || maxLenNum != float64(int(maxLenNum)) {
-			v.addError(path+"/maxLength", "maxLength must be an integer")
+			v.addError(path+"/maxLength", "maxLength must be an integer", SchemaIntegerConstraintInvalid)
 		} else if maxLenNum < 0 {
-			v.addError(path+"/maxLength", "maxLength must be non-negative")
+			v.addError(path+"/maxLength", "maxLength must be non-negative", SchemaIntegerConstraintInvalid)
 		}
 	}
 
@@ -386,7 +390,7 @@ func (v *SchemaValidator) validateStringConstraints(schema map[string]interface{
 			minNum, minOk := minLen.(float64)
 			maxNum, maxOk := maxLen.(float64)
 			if minOk && maxOk && minNum > maxNum {
-				v.addError(path, "minLength cannot exceed maxLength")
+				v.addError(path, "minLength cannot exceed maxLength", SchemaMinGreaterThanMax)
 			}
 		}
 	}
@@ -394,10 +398,10 @@ func (v *SchemaValidator) validateStringConstraints(schema map[string]interface{
 	if pattern, ok := schema["pattern"]; ok {
 		patternStr, isStr := pattern.(string)
 		if !isStr {
-			v.addError(path+"/pattern", "pattern must be a string")
+			v.addError(path+"/pattern", "pattern must be a string", SchemaPatternNotString)
 		} else {
 			if _, err := regexp.Compile(patternStr); err != nil {
-				v.addError(path+"/pattern", fmt.Sprintf("Invalid regular expression: %s", patternStr))
+				v.addError(path+"/pattern", fmt.Sprintf("Invalid regular expression: %s", patternStr), SchemaPatternInvalid)
 			}
 		}
 	}
@@ -406,13 +410,13 @@ func (v *SchemaValidator) validateStringConstraints(schema map[string]interface{
 func (v *SchemaValidator) validateNumericConstraints(schema map[string]interface{}, path string) {
 	if min, ok := schema["minimum"]; ok {
 		if _, isNum := min.(float64); !isNum {
-			v.addError(path+"/minimum", "minimum must be a number")
+			v.addError(path+"/minimum", "minimum must be a number", SchemaNumberConstraintInvalid)
 		}
 	}
 
 	if max, ok := schema["maximum"]; ok {
 		if _, isNum := max.(float64); !isNum {
-			v.addError(path+"/maximum", "maximum must be a number")
+			v.addError(path+"/maximum", "maximum must be a number", SchemaNumberConstraintInvalid)
 		}
 	}
 
@@ -422,7 +426,7 @@ func (v *SchemaValidator) validateNumericConstraints(schema map[string]interface
 			minNum, minOk := min.(float64)
 			maxNum, maxOk := max.(float64)
 			if minOk && maxOk && minNum > maxNum {
-				v.addError(path, "minimum cannot exceed maximum")
+				v.addError(path, "minimum cannot exceed maximum", SchemaMinGreaterThanMax)
 			}
 		}
 	}
@@ -430,9 +434,9 @@ func (v *SchemaValidator) validateNumericConstraints(schema map[string]interface
 	if multipleOf, ok := schema["multipleOf"]; ok {
 		multipleOfNum, isNum := multipleOf.(float64)
 		if !isNum {
-			v.addError(path+"/multipleOf", "multipleOf must be a number")
+			v.addError(path+"/multipleOf", "multipleOf must be a number", SchemaNumberConstraintInvalid)
 		} else if multipleOfNum <= 0 {
-			v.addError(path+"/multipleOf", "multipleOf must be greater than 0")
+			v.addError(path+"/multipleOf", "multipleOf must be greater than 0", SchemaPositiveNumberConstraintInvalid)
 		}
 	}
 }
@@ -441,18 +445,18 @@ func (v *SchemaValidator) validateArrayConstraints(schema map[string]interface{}
 	if minItems, ok := schema["minItems"]; ok {
 		minItemsNum, isNum := minItems.(float64)
 		if !isNum || minItemsNum != float64(int(minItemsNum)) {
-			v.addError(path+"/minItems", "minItems must be an integer")
+			v.addError(path+"/minItems", "minItems must be an integer", SchemaIntegerConstraintInvalid)
 		} else if minItemsNum < 0 {
-			v.addError(path+"/minItems", "minItems must be non-negative")
+			v.addError(path+"/minItems", "minItems must be non-negative", SchemaIntegerConstraintInvalid)
 		}
 	}
 
 	if maxItems, ok := schema["maxItems"]; ok {
 		maxItemsNum, isNum := maxItems.(float64)
 		if !isNum || maxItemsNum != float64(int(maxItemsNum)) {
-			v.addError(path+"/maxItems", "maxItems must be an integer")
+			v.addError(path+"/maxItems", "maxItems must be an integer", SchemaIntegerConstraintInvalid)
 		} else if maxItemsNum < 0 {
-			v.addError(path+"/maxItems", "maxItems must be non-negative")
+			v.addError(path+"/maxItems", "maxItems must be non-negative", SchemaIntegerConstraintInvalid)
 		}
 	}
 
@@ -462,7 +466,7 @@ func (v *SchemaValidator) validateArrayConstraints(schema map[string]interface{}
 			minNum, minOk := minItems.(float64)
 			maxNum, maxOk := maxItems.(float64)
 			if minOk && maxOk && minNum > maxNum {
-				v.addError(path, "minItems cannot exceed maxItems")
+				v.addError(path, "minItems cannot exceed maxItems", SchemaMinGreaterThanMax)
 			}
 		}
 	}
@@ -473,7 +477,7 @@ func (v *SchemaValidator) validateConditionalKeywords(schema map[string]interfac
 	if allOf, ok := schema["allOf"]; ok {
 		allOfArr, isArr := allOf.([]interface{})
 		if !isArr {
-			v.addError(path+"/allOf", "allOf must be an array")
+			v.addError(path+"/allOf", "allOf must be an array", SchemaCompositionNotArray)
 		} else {
 			for i, item := range allOfArr {
 				if itemMap, isMap := item.(map[string]interface{}); isMap {
@@ -487,7 +491,7 @@ func (v *SchemaValidator) validateConditionalKeywords(schema map[string]interfac
 	if anyOf, ok := schema["anyOf"]; ok {
 		anyOfArr, isArr := anyOf.([]interface{})
 		if !isArr {
-			v.addError(path+"/anyOf", "anyOf must be an array")
+			v.addError(path+"/anyOf", "anyOf must be an array", SchemaCompositionNotArray)
 		} else {
 			for i, item := range anyOfArr {
 				if itemMap, isMap := item.(map[string]interface{}); isMap {
@@ -501,7 +505,7 @@ func (v *SchemaValidator) validateConditionalKeywords(schema map[string]interfac
 	if oneOf, ok := schema["oneOf"]; ok {
 		oneOfArr, isArr := oneOf.([]interface{})
 		if !isArr {
-			v.addError(path+"/oneOf", "oneOf must be an array")
+			v.addError(path+"/oneOf", "oneOf must be an array", SchemaCompositionNotArray)
 		} else {
 			for i, item := range oneOfArr {
 				if itemMap, isMap := item.(map[string]interface{}); isMap {
@@ -515,7 +519,7 @@ func (v *SchemaValidator) validateConditionalKeywords(schema map[string]interfac
 	if not, ok := schema["not"]; ok {
 		notMap, isMap := not.(map[string]interface{})
 		if !isMap {
-			v.addError(path+"/not", "not must be an object")
+			v.addError(path+"/not", "not must be an object", SchemaKeywordInvalidType)
 		} else {
 			v.validateTypeDefinition(notMap, path+"/not")
 		}
@@ -525,7 +529,7 @@ func (v *SchemaValidator) validateConditionalKeywords(schema map[string]interfac
 	if ifSchema, ok := schema["if"]; ok {
 		ifMap, isMap := ifSchema.(map[string]interface{})
 		if !isMap {
-			v.addError(path+"/if", "if must be an object")
+			v.addError(path+"/if", "if must be an object", SchemaKeywordInvalidType)
 		} else {
 			v.validateTypeDefinition(ifMap, path+"/if")
 		}
@@ -533,7 +537,7 @@ func (v *SchemaValidator) validateConditionalKeywords(schema map[string]interfac
 	if thenSchema, ok := schema["then"]; ok {
 		thenMap, isMap := thenSchema.(map[string]interface{})
 		if !isMap {
-			v.addError(path+"/then", "then must be an object")
+			v.addError(path+"/then", "then must be an object", SchemaKeywordInvalidType)
 		} else {
 			v.validateTypeDefinition(thenMap, path+"/then")
 		}
@@ -541,7 +545,7 @@ func (v *SchemaValidator) validateConditionalKeywords(schema map[string]interfac
 	if elseSchema, ok := schema["else"]; ok {
 		elseMap, isMap := elseSchema.(map[string]interface{})
 		if !isMap {
-			v.addError(path+"/else", "else must be an object")
+			v.addError(path+"/else", "else must be an object", SchemaKeywordInvalidType)
 		} else {
 			v.validateTypeDefinition(elseMap, path+"/else")
 		}
@@ -555,14 +559,14 @@ func (v *SchemaValidator) validateConstraintTypeMatch(typeStr string, schema map
 	// Check string constraints on non-string types
 	for _, constraint := range stringOnlyConstraints {
 		if _, ok := schema[constraint]; ok && typeStr != "string" {
-			v.addError(path+"/"+constraint, fmt.Sprintf("%s constraint is only valid for string type, not %s", constraint, typeStr))
+			v.addError(path+"/"+constraint, fmt.Sprintf("%s constraint is only valid for string type, not %s", constraint, typeStr), SchemaConstraintInvalidForType)
 		}
 	}
 
 	// Check numeric constraints on non-numeric types
 	for _, constraint := range numericOnlyConstraints {
 		if _, ok := schema[constraint]; ok && !isNumericType(typeStr) {
-			v.addError(path+"/"+constraint, fmt.Sprintf("%s constraint is only valid for numeric types, not %s", constraint, typeStr))
+			v.addError(path+"/"+constraint, fmt.Sprintf("%s constraint is only valid for numeric types, not %s", constraint, typeStr), SchemaConstraintInvalidForType)
 		}
 	}
 }
@@ -570,21 +574,21 @@ func (v *SchemaValidator) validateConstraintTypeMatch(typeStr string, schema map
 func (v *SchemaValidator) validateRef(ref interface{}, path string) {
 	refStr, ok := ref.(string)
 	if !ok {
-		v.addError(path, "$ref must be a string")
+		v.addError(path, "$ref must be a string", SchemaKeywordInvalidType)
 		return
 	}
 
 	if strings.HasPrefix(refStr, "#/") {
 		// Check for circular reference
 		if v.seenRefs[refStr] {
-			v.addError(path, fmt.Sprintf("Circular reference detected: %s", refStr))
+			v.addError(path, fmt.Sprintf("Circular reference detected: %s", refStr), SchemaRefCircular)
 			return
 		}
 
 		v.seenRefs[refStr] = true
 		resolved := v.resolveRef(refStr)
 		if resolved == nil {
-			v.addError(path, fmt.Sprintf("$ref '%s' not found", refStr))
+			v.addError(path, fmt.Sprintf("$ref '%s' not found", refStr), SchemaRefNotFound)
 		} else {
 			v.validateTypeDefinition(resolved, path)
 		}
@@ -621,10 +625,24 @@ func (v *SchemaValidator) resolveRef(ref string) map[string]interface{} {
 	return nil
 }
 
-func (v *SchemaValidator) addError(path, message string) {
+func (v *SchemaValidator) addError(path, message string, codes ...string) {
+	code := "SCHEMA_ERROR"
+	if len(codes) > 0 {
+		code = codes[0]
+	}
+	
+	// Get source location if locator is available
+	var location JsonLocation
+	if v.sourceLocator != nil {
+		location = v.sourceLocator.GetLocation(path)
+	}
+	
 	v.errors = append(v.errors, ValidationError{
-		Path:    path,
-		Message: message,
+		Code:     code,
+		Path:     path,
+		Message:  message,
+		Severity: SeverityError,
+		Location: location,
 	})
 }
 

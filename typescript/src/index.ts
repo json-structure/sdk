@@ -9,6 +9,12 @@ export { InstanceValidator } from './instance-validator';
 export {
   ValidationResult,
   ValidationError,
+  ValidationSeverity,
+  JsonLocation,
+  UNKNOWN_LOCATION,
+  isKnownLocation,
+  formatLocation,
+  formatValidationError,
   SchemaValidatorOptions,
   InstanceValidatorOptions,
   JsonValue,
@@ -21,6 +27,21 @@ export {
   CompoundType,
   JsonStructureType,
 } from './types';
+
+// Error codes
+export { ErrorCodes } from './error-codes';
+export * from './error-codes';
+
+// Source location tracking
+export { JsonSourceLocator } from './json-source-locator';
+
+// Validation error helpers
+export {
+  createValidationError,
+  schemaError,
+  instanceError,
+  validationWarning,
+} from './validation-errors';
 
 // Serialization helpers for JSON Structure types
 export {

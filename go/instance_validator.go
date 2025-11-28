@@ -29,6 +29,7 @@ type InstanceValidator struct {
 	errors            []ValidationError
 	rootSchema        map[string]interface{}
 	enabledExtensions map[string]bool
+	sourceLocator     *JsonSourceLocator
 }
 
 // NewInstanceValidator creates a new InstanceValidator with the given options.
@@ -41,6 +42,7 @@ func NewInstanceValidator(options *InstanceValidatorOptions) *InstanceValidator 
 		options:           opts,
 		errors:            []ValidationError{},
 		enabledExtensions: make(map[string]bool),
+		sourceLocator:     nil,
 	}
 }
 
@@ -51,7 +53,7 @@ func (v *InstanceValidator) Validate(instance interface{}, schema interface{}) V
 
 	schemaMap, ok := schema.(map[string]interface{})
 	if !ok {
-		v.addError("#", "Schema must be an object")
+		v.addError("#", "Schema must be an object", SchemaInvalidType)
 		return v.result()
 	}
 
@@ -64,7 +66,7 @@ func (v *InstanceValidator) Validate(instance interface{}, schema interface{}) V
 		if rootStr, ok := root.(string); ok && strings.HasPrefix(rootStr, "#/") {
 			resolved := v.resolveRef(rootStr)
 			if resolved == nil {
-				v.addError("#", fmt.Sprintf("Cannot resolve $root reference: %s", rootStr))
+				v.addError("#", fmt.Sprintf("Cannot resolve $root reference: %s", rootStr), InstanceRootUnresolved)
 				return v.result()
 			}
 			targetSchema = resolved
@@ -85,6 +87,8 @@ func (v *InstanceValidator) ValidateJSON(instanceData, schemaData []byte) (Valid
 	if err := json.Unmarshal(schemaData, &schema); err != nil {
 		return ValidationResult{IsValid: false}, fmt.Errorf("failed to parse schema: %w", err)
 	}
+	// Create source locator for the instance JSON
+	v.sourceLocator = NewJsonSourceLocator(string(instanceData))
 	return v.Validate(instance, schema), nil
 }
 
@@ -122,7 +126,7 @@ func (v *InstanceValidator) validateInstance(instance interface{}, schema map[st
 	if ref, ok := schema["$ref"].(string); ok {
 		resolved := v.resolveRef(ref)
 		if resolved == nil {
-			v.addError(path, fmt.Sprintf("Cannot resolve $ref: %s", ref))
+			v.addError(path, fmt.Sprintf("Cannot resolve $ref: %s", ref), InstanceRefUnresolved)
 			return
 		}
 		v.validateInstance(instance, resolved, path)
@@ -135,7 +139,7 @@ func (v *InstanceValidator) validateInstance(instance interface{}, schema map[st
 			if ref, ok := typeRef["$ref"].(string); ok {
 				resolved := v.resolveRef(ref)
 				if resolved == nil {
-					v.addError(path, fmt.Sprintf("Cannot resolve type $ref: %s", ref))
+					v.addError(path, fmt.Sprintf("Cannot resolve type $ref: %s", ref), InstanceRefUnresolved)
 					return
 				}
 				// Merge resolved type with current schema
@@ -159,7 +163,7 @@ func (v *InstanceValidator) validateInstance(instance interface{}, schema map[st
 	if extends, ok := schema["$extends"].(string); ok {
 		base := v.resolveRef(extends)
 		if base == nil {
-			v.addError(path, fmt.Sprintf("Cannot resolve $extends: %s", extends))
+			v.addError(path, fmt.Sprintf("Cannot resolve $extends: %s", extends), InstanceRefUnresolved)
 			return
 		}
 		// Merge base with derived
@@ -211,7 +215,7 @@ func (v *InstanceValidator) validateInstance(instance interface{}, schema map[st
 			}
 		}
 		if !valid {
-			v.addError(path, "Instance does not match any type in union")
+			v.addError(path, "Instance does not match any type in union", InstanceTypeMismatch)
 		}
 		return
 	}
@@ -248,7 +252,7 @@ func (v *InstanceValidator) validateInstance(instance interface{}, schema map[st
 						}
 					}
 					if !found {
-						v.addError(path, fmt.Sprintf("Value must be one of: %v", schema["enum"]))
+						v.addError(path, fmt.Sprintf("Value must be one of: %v", schema["enum"]), InstanceEnumMismatch)
 					}
 				}
 			}
@@ -277,13 +281,13 @@ func (v *InstanceValidator) validateInstance(instance interface{}, schema map[st
 			return
 		}
 
-		v.addError(path, "Schema must have a 'type' property")
+		v.addError(path, "Schema must have a 'type' property", SchemaMissingType)
 		return
 	}
 
 	// Validate abstract
 	if abstract, ok := schema["abstract"].(bool); ok && abstract {
-		v.addError(path, "Cannot validate instance against abstract schema")
+		v.addError(path, "Cannot validate instance against abstract schema", InstanceSchemaFalse)
 		return
 	}
 
@@ -293,7 +297,7 @@ func (v *InstanceValidator) validateInstance(instance interface{}, schema map[st
 	// Validate const
 	if constVal, ok := schema["const"]; ok {
 		if !v.deepEqual(instance, constVal) {
-			v.addError(path, fmt.Sprintf("Value must equal const: %v", constVal))
+			v.addError(path, fmt.Sprintf("Value must equal const: %v", constVal), InstanceConstMismatch)
 		}
 	}
 
@@ -307,7 +311,7 @@ func (v *InstanceValidator) validateInstance(instance interface{}, schema map[st
 			}
 		}
 		if !found {
-			v.addError(path, fmt.Sprintf("Value must be one of: %v", enumVal))
+			v.addError(path, fmt.Sprintf("Value must be one of: %v", enumVal), InstanceEnumMismatch)
 		}
 	}
 
@@ -329,22 +333,22 @@ func (v *InstanceValidator) validateByType(instance interface{}, typeStr string,
 
 	case "null":
 		if instance != nil {
-			v.addError(path, fmt.Sprintf("Expected null, got %T", instance))
+			v.addError(path, fmt.Sprintf("Expected null, got %T", instance), InstanceNullExpected)
 		}
 
 	case "boolean":
 		if _, ok := instance.(bool); !ok {
-			v.addError(path, fmt.Sprintf("Expected boolean, got %T", instance))
+			v.addError(path, fmt.Sprintf("Expected boolean, got %T", instance), InstanceBooleanExpected)
 		}
 
 	case "string":
 		if _, ok := instance.(string); !ok {
-			v.addError(path, fmt.Sprintf("Expected string, got %T", instance))
+			v.addError(path, fmt.Sprintf("Expected string, got %T", instance), InstanceStringExpected)
 		}
 
 	case "number":
 		if !isNumber(instance) {
-			v.addError(path, fmt.Sprintf("Expected number, got %T", instance))
+			v.addError(path, fmt.Sprintf("Expected number, got %T", instance), InstanceNumberExpected)
 		}
 
 	case "integer", "int32":
@@ -383,64 +387,64 @@ func (v *InstanceValidator) validateByType(instance interface{}, typeStr string,
 
 	case "float", "float8", "double":
 		if !isNumber(instance) {
-			v.addError(path, fmt.Sprintf("Expected %s, got %T", typeStr, instance))
+			v.addError(path, fmt.Sprintf("Expected %s, got %T", typeStr, instance), InstanceNumberExpected)
 		}
 
 	case "decimal":
 		if str, ok := instance.(string); ok {
 			if _, err := strconv.ParseFloat(str, 64); err != nil {
-				v.addError(path, "Invalid decimal format")
+				v.addError(path, "Invalid decimal format", InstanceDecimalExpected)
 			}
 		} else {
-			v.addError(path, fmt.Sprintf("Expected decimal as string, got %T", instance))
+			v.addError(path, fmt.Sprintf("Expected decimal as string, got %T", instance), InstanceDecimalExpected)
 		}
 
 	case "date":
 		if str, ok := instance.(string); !ok || !dateRegex.MatchString(str) {
-			v.addError(path, "Expected date in YYYY-MM-DD format")
+			v.addError(path, "Expected date in YYYY-MM-DD format", InstanceDateFormatInvalid)
 		}
 
 	case "datetime":
 		if str, ok := instance.(string); !ok || !datetimeRegex.MatchString(str) {
-			v.addError(path, "Expected datetime in RFC3339 format")
+			v.addError(path, "Expected datetime in RFC3339 format", InstanceDatetimeFormatInvalid)
 		}
 
 	case "time":
 		if str, ok := instance.(string); !ok || !timeRegex.MatchString(str) {
-			v.addError(path, "Expected time in HH:MM:SS format")
+			v.addError(path, "Expected time in HH:MM:SS format", InstanceTimeFormatInvalid)
 		}
 
 	case "duration":
 		if str, ok := instance.(string); !ok {
-			v.addError(path, "Expected duration as string")
+			v.addError(path, "Expected duration as string", InstanceDurationExpected)
 		} else if !durationRegex.MatchString(str) {
-			v.addError(path, "Expected duration in ISO 8601 format")
+			v.addError(path, "Expected duration in ISO 8601 format", InstanceDurationFormatInvalid)
 		}
 
 	case "uuid":
 		if str, ok := instance.(string); !ok {
-			v.addError(path, "Expected uuid as string")
+			v.addError(path, "Expected uuid as string", InstanceUUIDExpected)
 		} else if !uuidRegex.MatchString(str) {
-			v.addError(path, "Invalid uuid format")
+			v.addError(path, "Invalid uuid format", InstanceUUIDFormatInvalid)
 		}
 
 	case "uri":
 		if str, ok := instance.(string); !ok {
-			v.addError(path, "Expected uri as string")
+			v.addError(path, "Expected uri as string", InstanceURIExpected)
 		} else if _, err := url.ParseRequestURI(str); err != nil {
-			v.addError(path, "Invalid uri format")
+			v.addError(path, "Invalid uri format", InstanceURIFormatInvalid)
 		}
 
 	case "binary":
 		if str, ok := instance.(string); !ok {
-			v.addError(path, "Expected binary as base64 string")
+			v.addError(path, "Expected binary as base64 string", InstanceBinaryExpected)
 		} else if _, err := base64.StdEncoding.DecodeString(str); err != nil {
-			v.addError(path, "Invalid base64 encoding")
+			v.addError(path, "Invalid base64 encoding", InstanceBinaryEncodingInvalid)
 		}
 
 	case "jsonpointer":
 		if str, ok := instance.(string); !ok || !jsonPtrRegex.MatchString(str) {
-			v.addError(path, "Expected JSON pointer format")
+			v.addError(path, "Expected JSON pointer format", InstanceJSONPointerFormatInvalid)
 		}
 
 	case "object":
@@ -462,52 +466,52 @@ func (v *InstanceValidator) validateByType(instance interface{}, typeStr string,
 		v.validateChoice(instance, schema, path)
 
 	default:
-		v.addError(path, fmt.Sprintf("Unknown type: %s", typeStr))
+		v.addError(path, fmt.Sprintf("Unknown type: %s", typeStr), InstanceTypeUnknown)
 	}
 }
 
 func (v *InstanceValidator) validateInt32(instance interface{}, path string) {
 	num, ok := toFloat64(instance)
 	if !ok || num != math.Trunc(num) {
-		v.addError(path, "Expected integer")
+		v.addError(path, "Expected integer", InstanceIntegerExpected)
 		return
 	}
 	if num < -2147483648 || num > 2147483647 {
-		v.addError(path, "int32 value out of range")
+		v.addError(path, "int32 value out of range", InstanceIntRangeInvalid)
 	}
 }
 
 func (v *InstanceValidator) validateIntRange(instance interface{}, min, max float64, typeName, path string) {
 	num, ok := toFloat64(instance)
 	if !ok || num != math.Trunc(num) {
-		v.addError(path, fmt.Sprintf("Expected %s", typeName))
+		v.addError(path, fmt.Sprintf("Expected %s", typeName), InstanceIntegerExpected)
 		return
 	}
 	if num < min || num > max {
-		v.addError(path, fmt.Sprintf("%s value out of range", typeName))
+		v.addError(path, fmt.Sprintf("%s value out of range", typeName), InstanceIntRangeInvalid)
 	}
 }
 
 func (v *InstanceValidator) validateStringInt(instance interface{}, min, max *big.Int, typeName, path string) {
 	str, ok := instance.(string)
 	if !ok {
-		v.addError(path, fmt.Sprintf("Expected %s as string", typeName))
+		v.addError(path, fmt.Sprintf("Expected %s as string", typeName), InstanceStringNotExpected)
 		return
 	}
 	val, success := new(big.Int).SetString(str, 10)
 	if !success {
-		v.addError(path, fmt.Sprintf("Invalid %s format", typeName))
+		v.addError(path, fmt.Sprintf("Invalid %s format", typeName), InstanceIntegerExpected)
 		return
 	}
 	if val.Cmp(min) < 0 || val.Cmp(max) > 0 {
-		v.addError(path, fmt.Sprintf("%s value out of range", typeName))
+		v.addError(path, fmt.Sprintf("%s value out of range", typeName), InstanceIntRangeInvalid)
 	}
 }
 
 func (v *InstanceValidator) validateObject(instance interface{}, schema map[string]interface{}, path string) {
 	obj, ok := instance.(map[string]interface{})
 	if !ok {
-		v.addError(path, fmt.Sprintf("Expected object, got %T", instance))
+		v.addError(path, fmt.Sprintf("Expected object, got %T", instance), InstanceObjectExpected)
 		return
 	}
 
@@ -519,7 +523,7 @@ func (v *InstanceValidator) validateObject(instance interface{}, schema map[stri
 	for _, r := range required {
 		if rStr, ok := r.(string); ok {
 			if _, exists := obj[rStr]; !exists {
-				v.addError(path, fmt.Sprintf("Missing required property: %s", rStr))
+				v.addError(path, fmt.Sprintf("Missing required property: %s", rStr), InstanceRequiredPropertyMissing)
 			}
 		}
 	}
@@ -540,7 +544,7 @@ func (v *InstanceValidator) validateObject(instance interface{}, schema map[stri
 			if !ap {
 				for key := range obj {
 					if properties == nil || properties[key] == nil {
-						v.addError(path, fmt.Sprintf("Additional property not allowed: %s", key))
+						v.addError(path, fmt.Sprintf("Additional property not allowed: %s", key), InstanceAdditionalPropertyNotAllowed)
 					}
 				}
 			}
@@ -565,7 +569,7 @@ func (v *InstanceValidator) validateObjectConstraints(obj map[string]interface{}
 	for _, r := range required {
 		if rStr, ok := r.(string); ok {
 			if _, exists := obj[rStr]; !exists {
-				v.addError(path, fmt.Sprintf("Missing required property: %s", rStr))
+				v.addError(path, fmt.Sprintf("Missing required property: %s", rStr), InstanceRequiredPropertyMissing)
 			}
 		}
 	}
@@ -586,7 +590,7 @@ func (v *InstanceValidator) validateObjectConstraints(obj map[string]interface{}
 			if !ap {
 				for key := range obj {
 					if properties == nil || properties[key] == nil {
-						v.addError(path, fmt.Sprintf("Additional property not allowed: %s", key))
+						v.addError(path, fmt.Sprintf("Additional property not allowed: %s", key), InstanceAdditionalPropertyNotAllowed)
 					}
 				}
 			}
@@ -603,7 +607,7 @@ func (v *InstanceValidator) validateObjectConstraints(obj map[string]interface{}
 func (v *InstanceValidator) validateArray(instance interface{}, schema map[string]interface{}, path string) {
 	arr, ok := instance.([]interface{})
 	if !ok {
-		v.addError(path, fmt.Sprintf("Expected array, got %T", instance))
+		v.addError(path, fmt.Sprintf("Expected array, got %T", instance), InstanceArrayExpected)
 		return
 	}
 
@@ -617,7 +621,7 @@ func (v *InstanceValidator) validateArray(instance interface{}, schema map[strin
 func (v *InstanceValidator) validateSet(instance interface{}, schema map[string]interface{}, path string) {
 	arr, ok := instance.([]interface{})
 	if !ok {
-		v.addError(path, fmt.Sprintf("Expected set (array), got %T", instance))
+		v.addError(path, fmt.Sprintf("Expected set (array), got %T", instance), InstanceSetExpected)
 		return
 	}
 
@@ -626,7 +630,7 @@ func (v *InstanceValidator) validateSet(instance interface{}, schema map[string]
 	for i := 0; i < len(arr); i++ {
 		serialized, _ := json.Marshal(arr[i])
 		if seen[string(serialized)] {
-			v.addError(path, "Set contains duplicate items")
+			v.addError(path, "Set contains duplicate items", InstanceSetDuplicate)
 			break
 		}
 		seen[string(serialized)] = true
@@ -643,7 +647,7 @@ func (v *InstanceValidator) validateSet(instance interface{}, schema map[string]
 func (v *InstanceValidator) validateMap(instance interface{}, schema map[string]interface{}, path string) {
 	obj, ok := instance.(map[string]interface{})
 	if !ok {
-		v.addError(path, fmt.Sprintf("Expected map (object), got %T", instance))
+		v.addError(path, fmt.Sprintf("Expected map (object), got %T", instance), InstanceMapExpected)
 		return
 	}
 
@@ -657,7 +661,7 @@ func (v *InstanceValidator) validateMap(instance interface{}, schema map[string]
 func (v *InstanceValidator) validateTuple(instance interface{}, schema map[string]interface{}, path string) {
 	arr, ok := instance.([]interface{})
 	if !ok {
-		v.addError(path, fmt.Sprintf("Expected tuple (array), got %T", instance))
+		v.addError(path, fmt.Sprintf("Expected tuple (array), got %T", instance), InstanceTupleExpected)
 		return
 	}
 
@@ -665,12 +669,12 @@ func (v *InstanceValidator) validateTuple(instance interface{}, schema map[strin
 	properties, _ := schema["properties"].(map[string]interface{})
 
 	if !hasTuple {
-		v.addError(path, "Tuple schema must have 'tuple' array")
+		v.addError(path, "Tuple schema must have 'tuple' array", SchemaTupleMissingPrefixItems)
 		return
 	}
 
 	if len(arr) != len(tupleOrder) {
-		v.addError(path, fmt.Sprintf("Tuple length mismatch: expected %d, got %d", len(tupleOrder), len(arr)))
+		v.addError(path, fmt.Sprintf("Tuple length mismatch: expected %d, got %d", len(tupleOrder), len(arr)), InstanceTupleLengthMismatch)
 		return
 	}
 
@@ -688,7 +692,7 @@ func (v *InstanceValidator) validateTuple(instance interface{}, schema map[strin
 func (v *InstanceValidator) validateChoice(instance interface{}, schema map[string]interface{}, path string) {
 	obj, ok := instance.(map[string]interface{})
 	if !ok {
-		v.addError(path, fmt.Sprintf("Expected choice (object), got %T", instance))
+		v.addError(path, fmt.Sprintf("Expected choice (object), got %T", instance), InstanceChoiceExpected)
 		return
 	}
 
@@ -697,7 +701,7 @@ func (v *InstanceValidator) validateChoice(instance interface{}, schema map[stri
 	_, hasExtends := schema["$extends"]
 
 	if choices == nil {
-		v.addError(path, "Choice schema must have 'choices'")
+		v.addError(path, "Choice schema must have 'choices'", InstanceChoiceMissingOptions)
 		return
 	}
 
@@ -705,12 +709,12 @@ func (v *InstanceValidator) validateChoice(instance interface{}, schema map[stri
 		// Inline union: use selector property
 		selectorValue, ok := obj[selector].(string)
 		if !ok {
-			v.addError(path, fmt.Sprintf("Selector '%s' must be a string", selector))
+			v.addError(path, fmt.Sprintf("Selector '%s' must be a string", selector), InstanceChoiceDiscriminatorNotString)
 			return
 		}
 		choiceSchema, ok := choices[selectorValue].(map[string]interface{})
 		if !ok {
-			v.addError(path, fmt.Sprintf("Selector value '%s' not in choices", selectorValue))
+			v.addError(path, fmt.Sprintf("Selector value '%s' not in choices", selectorValue), InstanceChoiceOptionUnknown)
 			return
 		}
 		// Validate remaining properties
@@ -728,13 +732,13 @@ func (v *InstanceValidator) validateChoice(instance interface{}, schema map[stri
 			keys = append(keys, k)
 		}
 		if len(keys) != 1 {
-			v.addError(path, "Tagged union must have exactly one property")
+			v.addError(path, "Tagged union must have exactly one property", InstanceChoiceNoMatch)
 			return
 		}
 		key := keys[0]
 		choiceSchema, ok := choices[key].(map[string]interface{})
 		if !ok {
-			v.addError(path, fmt.Sprintf("Property '%s' not in choices", key))
+			v.addError(path, fmt.Sprintf("Property '%s' not in choices", key), InstanceChoiceOptionUnknown)
 			return
 		}
 		v.validateInstance(obj[key], choiceSchema, path+"/"+key)
@@ -770,7 +774,7 @@ func (v *InstanceValidator) validateConditionals(instance interface{}, schema ma
 			}
 		}
 		if !valid {
-			v.addError(path, "Instance does not satisfy anyOf")
+			v.addError(path, "Instance does not satisfy anyOf", InstanceAnyOfNoneMatched)
 		}
 	}
 
@@ -792,7 +796,7 @@ func (v *InstanceValidator) validateConditionals(instance interface{}, schema ma
 			}
 		}
 		if validCount != 1 {
-			v.addError(path, fmt.Sprintf("Instance must match exactly one schema in oneOf, matched %d", validCount))
+			v.addError(path, fmt.Sprintf("Instance must match exactly one schema in oneOf, matched %d", validCount), InstanceOneOfInvalidCount)
 		}
 	}
 
@@ -806,7 +810,7 @@ func (v *InstanceValidator) validateConditionals(instance interface{}, schema ma
 		}
 		tempValidator.validateInstance(instance, not, path+"/not")
 		if len(tempValidator.errors) == 0 {
-			v.addError(path, "Instance must not match \"not\" schema")
+			v.addError(path, "Instance must not match \"not\" schema", InstanceNotMatched)
 		}
 	}
 
@@ -839,18 +843,18 @@ func (v *InstanceValidator) validateValidationAddins(instance interface{}, typeS
 		if str, ok := instance.(string); ok {
 			if minLen, ok := schema["minLength"].(float64); ok {
 				if len(str) < int(minLen) {
-					v.addError(path, fmt.Sprintf("String length %d is less than minLength %d", len(str), int(minLen)))
+					v.addError(path, fmt.Sprintf("String length %d is less than minLength %d", len(str), int(minLen)), InstanceStringMinLength)
 				}
 			}
 			if maxLen, ok := schema["maxLength"].(float64); ok {
 				if len(str) > int(maxLen) {
-					v.addError(path, fmt.Sprintf("String length %d exceeds maxLength %d", len(str), int(maxLen)))
+					v.addError(path, fmt.Sprintf("String length %d exceeds maxLength %d", len(str), int(maxLen)), InstanceStringMaxLength)
 				}
 			}
 			if pattern, ok := schema["pattern"].(string); ok {
 				if regex, err := regexp.Compile(pattern); err == nil {
 					if !regex.MatchString(str) {
-						v.addError(path, fmt.Sprintf("String does not match pattern: %s", pattern))
+						v.addError(path, fmt.Sprintf("String does not match pattern: %s", pattern), InstanceStringPatternMismatch)
 					}
 				}
 			}
@@ -866,17 +870,17 @@ func (v *InstanceValidator) validateValidationAddins(instance interface{}, typeS
 		if num, ok := toFloat64(instance); ok {
 			if min, ok := schema["minimum"].(float64); ok {
 				if num < min {
-					v.addError(path, fmt.Sprintf("Value %v is less than minimum %v", num, min))
+					v.addError(path, fmt.Sprintf("Value %v is less than minimum %v", num, min), InstanceNumberMinimum)
 				}
 			}
 			if max, ok := schema["maximum"].(float64); ok {
 				if num > max {
-					v.addError(path, fmt.Sprintf("Value %v exceeds maximum %v", num, max))
+					v.addError(path, fmt.Sprintf("Value %v exceeds maximum %v", num, max), InstanceNumberMaximum)
 				}
 			}
 			if multipleOf, ok := schema["multipleOf"].(float64); ok {
 				if math.Abs(math.Mod(num, multipleOf)) > 1e-10 {
-					v.addError(path, fmt.Sprintf("Value %v is not a multiple of %v", num, multipleOf))
+					v.addError(path, fmt.Sprintf("Value %v is not a multiple of %v", num, multipleOf), InstanceNumberMultipleOf)
 				}
 			}
 		}
@@ -887,12 +891,12 @@ func (v *InstanceValidator) validateValidationAddins(instance interface{}, typeS
 		if arr, ok := instance.([]interface{}); ok {
 			if minItems, ok := schema["minItems"].(float64); ok {
 				if len(arr) < int(minItems) {
-					v.addError(path, fmt.Sprintf("Array has %d items, less than minItems %d", len(arr), int(minItems)))
+					v.addError(path, fmt.Sprintf("Array has %d items, less than minItems %d", len(arr), int(minItems)), InstanceMinItems)
 				}
 			}
 			if maxItems, ok := schema["maxItems"].(float64); ok {
 				if len(arr) > int(maxItems) {
-					v.addError(path, fmt.Sprintf("Array has %d items, more than maxItems %d", len(arr), int(maxItems)))
+					v.addError(path, fmt.Sprintf("Array has %d items, more than maxItems %d", len(arr), int(maxItems)), InstanceMaxItems)
 				}
 			}
 			if uniqueItems, ok := schema["uniqueItems"].(bool); ok && uniqueItems {
@@ -900,7 +904,7 @@ func (v *InstanceValidator) validateValidationAddins(instance interface{}, typeS
 				for _, item := range arr {
 					serialized, _ := json.Marshal(item)
 					if seen[string(serialized)] {
-						v.addError(path, "Array items are not unique")
+						v.addError(path, "Array items are not unique", InstanceSetDuplicate)
 						break
 					}
 					seen[string(serialized)] = true
@@ -914,12 +918,12 @@ func (v *InstanceValidator) validateValidationAddins(instance interface{}, typeS
 		if obj, ok := instance.(map[string]interface{}); ok {
 			if minProps, ok := schema["minProperties"].(float64); ok {
 				if len(obj) < int(minProps) {
-					v.addError(path, fmt.Sprintf("Object has %d properties, less than minProperties %d", len(obj), int(minProps)))
+					v.addError(path, fmt.Sprintf("Object has %d properties, less than minProperties %d", len(obj), int(minProps)), InstanceMinProperties)
 				}
 			}
 			if maxProps, ok := schema["maxProperties"].(float64); ok {
 				if len(obj) > int(maxProps) {
-					v.addError(path, fmt.Sprintf("Object has %d properties, more than maxProperties %d", len(obj), int(maxProps)))
+					v.addError(path, fmt.Sprintf("Object has %d properties, more than maxProperties %d", len(obj), int(maxProps)), InstanceMaxProperties)
 				}
 			}
 		}
@@ -961,10 +965,24 @@ func (v *InstanceValidator) deepEqual(a, b interface{}) bool {
 	return string(aJSON) == string(bJSON)
 }
 
-func (v *InstanceValidator) addError(path, message string) {
+func (v *InstanceValidator) addError(path, message string, codes ...string) {
+	code := "INSTANCE_ERROR"
+	if len(codes) > 0 {
+		code = codes[0]
+	}
+	
+	// Get source location if locator is available
+	var location JsonLocation
+	if v.sourceLocator != nil {
+		location = v.sourceLocator.GetLocation(path)
+	}
+	
 	v.errors = append(v.errors, ValidationError{
-		Path:    path,
-		Message: message,
+		Code:     code,
+		Path:     path,
+		Message:  message,
+		Severity: SeverityError,
+		Location: location,
 	})
 }
 

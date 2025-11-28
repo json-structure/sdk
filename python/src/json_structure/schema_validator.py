@@ -22,6 +22,10 @@ import sys
 import json
 import re
 from urllib.parse import urlparse
+from typing import List, Optional, Union
+from .error_codes import ValidationError, ValidationSeverity, JsonLocation
+from .json_source_locator import JsonSourceLocator
+from . import error_codes as ErrorCodes
 
 
 class JSONStructureSchemaCoreValidator:
@@ -82,9 +86,10 @@ class JSONStructureSchemaCoreValidator:
         :param external_schemas: List of schema dicts to use for resolving imports by $id.
                                  Each schema should have a '$id' field matching the import URI.
         """
-        self.errors = []
+        self.errors: List[ValidationError] = []
         self.doc = None
         self.source_text = None
+        self.source_locator: Optional[JsonSourceLocator] = None
         self.allow_import = allow_import
         self.import_map = import_map if import_map is not None else {}
         self.extended = extended
@@ -105,14 +110,20 @@ class JSONStructureSchemaCoreValidator:
         Main entry point for validating a JSON Structure Core document.
         :param doc: A dict parsed from JSON.
         :param source_text: The original JSON text for computing line and column.
-        :return: List of error messages, empty if valid.
+        :return: List of ValidationError objects, empty if valid.
         """
         self.errors = []
         self.doc = doc
         self.source_text = source_text
+        
+        # Initialize source locator for location tracking
+        if source_text:
+            self.source_locator = JsonSourceLocator(source_text)
+        else:
+            self.source_locator = None
 
         if not isinstance(doc, dict):
-            self._err("Root of the document must be a JSON object.", "#")
+            self._err("Root of the document must be a JSON object.", "#", ErrorCodes.SCHEMA_INVALID_TYPE)
             return self.errors
 
         # Process $import and $importdefs keywords recursively.
@@ -130,14 +141,14 @@ class JSONStructureSchemaCoreValidator:
         if "$uses" in doc:
             self._check_uses(doc["$uses"], "#/$uses")
         if "type" in doc and "$root" in doc:
-            self._err("Document cannot have both 'type' at root and '$root' at the same time.", "#")
+            self._err("Document cannot have both 'type' at root and '$root' at the same time.", "#", ErrorCodes.SCHEMA_ROOT_CONFLICT)
         if "type" in doc:
             self._validate_schema(doc, is_root=True, path="#", name_in_namespace=None)
         if "$root" in doc:
             self._check_json_pointer(doc["$root"], self.doc, "#/$root")
         if "definitions" in doc:
             if not isinstance(doc["definitions"], dict):
-                self._err("definitions must be an object.", "#/definitions")
+                self._err("definitions must be an object.", "#/definitions", ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE)
             else:
                 self._validate_namespace(doc["definitions"], "#/definitions")
         if "$offers" in doc:
@@ -174,14 +185,14 @@ class JSONStructureSchemaCoreValidator:
         Validate the $uses keyword.
         """
         if not isinstance(uses, list):
-            self._err("$uses must be an array.", path)
+            self._err("$uses must be an array.", path, ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE)
             return
         
         for idx, ext in enumerate(uses):
             if not isinstance(ext, str):
-                self._err(f"$uses[{idx}] must be a string.", f"{path}[{idx}]")
+                self._err(f"$uses[{idx}] must be a string.", f"{path}[{idx}]", ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE)
             elif self.extended and ext not in self.KNOWN_EXTENSIONS:
-                self._err(f"Unknown extension '{ext}' in $uses.", f"{path}[{idx}]")
+                self._err(f"Unknown extension '{ext}' in $uses.", f"{path}[{idx}]", ErrorCodes.SCHEMA_USES_UNKNOWN_EXTENSION)
 
     def _check_required_top_level_keywords(self, obj, location):
         """
@@ -943,18 +954,24 @@ class JSONStructureSchemaCoreValidator:
         col = pos - last_newline if last_newline != -1 else pos + 1
         return (line, col)
 
-    def _err(self, message, location="#"):
+    def _err(self, message: str, location: str = "#", code: str = ErrorCodes.SCHEMA_ERROR):
         """
-        Appends an error message with line and column information (if available)
+        Appends a ValidationError with line and column information (if available)
         to the validation errors.
         """
-        loc = self._locate(location)
-        if loc:
-            line, col = loc
-            full_msg = f"{message} (Line: {line}, Column: {col})"
+        if self.source_locator:
+            loc = self.source_locator.get_location(location)
         else:
-            full_msg = f"{message} (Location: {location}, line/column unknown)"
-        self.errors.append(full_msg)
+            loc = JsonLocation.unknown()
+        
+        error = ValidationError(
+            code=code,
+            message=message,
+            path=location,
+            severity=ValidationSeverity.ERROR,
+            location=loc
+        )
+        self.errors.append(error)
 
 
 def validate_json_structure_schema_core(schema_document, source_text=None, allow_dollar=False, allow_import=False, import_map=None, extended=False):

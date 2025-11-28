@@ -11,7 +11,11 @@ import {
   InstanceValidatorOptions,
   JsonValue,
   JsonObject,
+  JsonLocation,
+  UNKNOWN_LOCATION,
 } from './types';
+import { JsonSourceLocator } from './json-source-locator';
+import * as ErrorCodes from './error-codes';
 
 // Regular expressions for format validation
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
@@ -29,6 +33,7 @@ export class InstanceValidator {
   private errors: ValidationError[] = [];
   private rootSchema: JsonObject | null = null;
   private enabledExtensions: Set<string> = new Set();
+  private sourceLocator: JsonSourceLocator | null = null;
 
   constructor(options: InstanceValidatorOptions = {}) {
     this.options = { extended: false, allowImport: false, ...options };
@@ -38,14 +43,22 @@ export class InstanceValidator {
    * Validates a JSON instance against a JSON Structure schema.
    * @param instance The instance to validate.
    * @param schema The schema to validate against.
+   * @param instanceJson Optional raw JSON string for source location tracking.
    * @returns Validation result with any errors.
    */
-  validate(instance: JsonValue, schema: JsonValue): ValidationResult {
+  validate(instance: JsonValue, schema: JsonValue, instanceJson?: string): ValidationResult {
     this.errors = [];
     this.enabledExtensions = new Set();
+    
+    // Initialize source locator if JSON string is provided
+    if (instanceJson) {
+      this.sourceLocator = new JsonSourceLocator(instanceJson);
+    } else {
+      this.sourceLocator = null;
+    }
 
     if (!this.isObject(schema)) {
-      this.addError('#', 'Schema must be an object');
+      this.addError('#', 'Schema must be an object', ErrorCodes.INSTANCE_SCHEMA_INVALID);
       return this.result();
     }
 
@@ -59,7 +72,7 @@ export class InstanceValidator {
       if (rootRef.startsWith('#/')) {
         const resolved = this.resolveRef(rootRef);
         if (resolved === null) {
-          this.addError('#', `Cannot resolve $root reference: ${rootRef}`);
+          this.addError('#', `Cannot resolve $root reference: ${rootRef}`, ErrorCodes.INSTANCE_ROOT_REF_INVALID);
           return this.result();
         }
         targetSchema = resolved;
@@ -106,7 +119,7 @@ export class InstanceValidator {
     if ('$ref' in schema && typeof schema.$ref === 'string') {
       const resolved = this.resolveRef(schema.$ref);
       if (resolved === null) {
-        this.addError(path, `Cannot resolve $ref: ${schema.$ref}`);
+        this.addError(path, `Cannot resolve $ref: ${schema.$ref}`, ErrorCodes.INSTANCE_REF_RESOLUTION_FAILED);
         return;
       }
       this.validateInstance(instance, resolved, path);
@@ -118,7 +131,7 @@ export class InstanceValidator {
     if (this.isObject(type) && '$ref' in type) {
       const resolved = this.resolveRef(type.$ref as string);
       if (resolved === null) {
-        this.addError(path, `Cannot resolve type $ref: ${type.$ref}`);
+        this.addError(path, `Cannot resolve type $ref: ${type.$ref}`, ErrorCodes.INSTANCE_REF_RESOLUTION_FAILED);
         return;
       }
       // Merge the resolved type with the current schema
@@ -135,7 +148,7 @@ export class InstanceValidator {
     if ('$extends' in schema && typeof schema.$extends === 'string') {
       const base = this.resolveRef(schema.$extends);
       if (base === null) {
-        this.addError(path, `Cannot resolve $extends: ${schema.$extends}`);
+        this.addError(path, `Cannot resolve $extends: ${schema.$extends}`, ErrorCodes.INSTANCE_EXTENDS_RESOLUTION_FAILED);
         return;
       }
       // Merge base with derived
@@ -163,7 +176,7 @@ export class InstanceValidator {
         this.errors = tempErrors;
       }
       if (!valid) {
-        this.addError(path, `Instance does not match any type in union`);
+        this.addError(path, `Instance does not match any type in union`, ErrorCodes.INSTANCE_UNION_NO_MATCH);
       }
       return;
     }
@@ -182,25 +195,25 @@ export class InstanceValidator {
         // Validate enum
         if ('enum' in schema && Array.isArray(schema.enum)) {
           if (!schema.enum.some(e => this.deepEqual(instance, e))) {
-            this.addError(path, `Value must be one of: ${JSON.stringify(schema.enum)}`);
+            this.addError(path, `Value must be one of: ${JSON.stringify(schema.enum)}`, ErrorCodes.INSTANCE_ENUM_MISMATCH);
           }
         }
         // Validate const
         if ('const' in schema) {
           if (!this.deepEqual(instance, schema.const)) {
-            this.addError(path, `Value must equal const: ${JSON.stringify(schema.const)}`);
+            this.addError(path, `Value must equal const: ${JSON.stringify(schema.const)}`, ErrorCodes.INSTANCE_CONST_MISMATCH);
           }
         }
         return;
       }
       
-      this.addError(path, "Schema must have a 'type' property");
+      this.addError(path, "Schema must have a 'type' property", ErrorCodes.INSTANCE_SCHEMA_MISSING_TYPE);
       return;
     }
 
     // Validate abstract
     if (schema.abstract === true) {
-      this.addError(path, 'Cannot validate instance against abstract schema');
+      this.addError(path, 'Cannot validate instance against abstract schema', ErrorCodes.INSTANCE_ABSTRACT_SCHEMA);
       return;
     }
 
@@ -210,14 +223,14 @@ export class InstanceValidator {
     // Validate const
     if ('const' in schema) {
       if (!this.deepEqual(instance, schema.const)) {
-        this.addError(path, `Value must equal const: ${JSON.stringify(schema.const)}`);
+        this.addError(path, `Value must equal const: ${JSON.stringify(schema.const)}`, ErrorCodes.INSTANCE_CONST_MISMATCH);
       }
     }
 
     // Validate enum
     if ('enum' in schema && Array.isArray(schema.enum)) {
       if (!schema.enum.some(e => this.deepEqual(instance, e))) {
-        this.addError(path, `Value must be one of: ${JSON.stringify(schema.enum)}`);
+        this.addError(path, `Value must be one of: ${JSON.stringify(schema.enum)}`, ErrorCodes.INSTANCE_ENUM_MISMATCH);
       }
     }
 
@@ -240,25 +253,25 @@ export class InstanceValidator {
 
       case 'null':
         if (instance !== null) {
-          this.addError(path, `Expected null, got ${typeof instance}`);
+          this.addError(path, `Expected null, got ${typeof instance}`, ErrorCodes.INSTANCE_TYPE_MISMATCH);
         }
         break;
 
       case 'boolean':
         if (typeof instance !== 'boolean') {
-          this.addError(path, `Expected boolean, got ${typeof instance}`);
+          this.addError(path, `Expected boolean, got ${typeof instance}`, ErrorCodes.INSTANCE_TYPE_MISMATCH);
         }
         break;
 
       case 'string':
         if (typeof instance !== 'string') {
-          this.addError(path, `Expected string, got ${typeof instance}`);
+          this.addError(path, `Expected string, got ${typeof instance}`, ErrorCodes.INSTANCE_TYPE_MISMATCH);
         }
         break;
 
       case 'number':
         if (typeof instance !== 'number' || typeof instance === 'boolean') {
-          this.addError(path, `Expected number, got ${typeof instance}`);
+          this.addError(path, `Expected number, got ${typeof instance}`, ErrorCodes.INSTANCE_TYPE_MISMATCH);
         }
         break;
 
@@ -307,73 +320,73 @@ export class InstanceValidator {
       case 'float8':
       case 'double':
         if (typeof instance !== 'number') {
-          this.addError(path, `Expected ${type}, got ${typeof instance}`);
+          this.addError(path, `Expected ${type}, got ${typeof instance}`, ErrorCodes.INSTANCE_TYPE_MISMATCH);
         }
         break;
 
       case 'decimal':
         if (typeof instance !== 'string') {
-          this.addError(path, `Expected decimal as string, got ${typeof instance}`);
+          this.addError(path, `Expected decimal as string, got ${typeof instance}`, ErrorCodes.INSTANCE_TYPE_MISMATCH);
         } else if (isNaN(parseFloat(instance))) {
-          this.addError(path, 'Invalid decimal format');
+          this.addError(path, 'Invalid decimal format', ErrorCodes.INSTANCE_FORMAT_INVALID);
         }
         break;
 
       case 'date':
         if (typeof instance !== 'string' || !DATE_REGEX.test(instance)) {
-          this.addError(path, 'Expected date in YYYY-MM-DD format');
+          this.addError(path, 'Expected date in YYYY-MM-DD format', ErrorCodes.INSTANCE_FORMAT_INVALID);
         }
         break;
 
       case 'datetime':
         if (typeof instance !== 'string' || !DATETIME_REGEX.test(instance)) {
-          this.addError(path, 'Expected datetime in RFC3339 format');
+          this.addError(path, 'Expected datetime in RFC3339 format', ErrorCodes.INSTANCE_FORMAT_INVALID);
         }
         break;
 
       case 'time':
         if (typeof instance !== 'string' || !TIME_REGEX.test(instance)) {
-          this.addError(path, 'Expected time in HH:MM:SS format');
+          this.addError(path, 'Expected time in HH:MM:SS format', ErrorCodes.INSTANCE_FORMAT_INVALID);
         }
         break;
 
       case 'duration':
         if (typeof instance !== 'string') {
-          this.addError(path, 'Expected duration as string');
+          this.addError(path, 'Expected duration as string', ErrorCodes.INSTANCE_TYPE_MISMATCH);
         } else if (!DURATION_REGEX.test(instance)) {
-          this.addError(path, 'Expected duration in ISO 8601 format');
+          this.addError(path, 'Expected duration in ISO 8601 format', ErrorCodes.INSTANCE_FORMAT_INVALID);
         }
         break;
 
       case 'uuid':
         if (typeof instance !== 'string') {
-          this.addError(path, 'Expected uuid as string');
+          this.addError(path, 'Expected uuid as string', ErrorCodes.INSTANCE_TYPE_MISMATCH);
         } else if (!UUID_REGEX.test(instance)) {
-          this.addError(path, 'Invalid uuid format');
+          this.addError(path, 'Invalid uuid format', ErrorCodes.INSTANCE_FORMAT_INVALID);
         }
         break;
 
       case 'uri':
         if (typeof instance !== 'string') {
-          this.addError(path, 'Expected uri as string');
+          this.addError(path, 'Expected uri as string', ErrorCodes.INSTANCE_TYPE_MISMATCH);
         } else {
           try {
             new URL(instance);
           } catch {
-            this.addError(path, 'Invalid uri format');
+            this.addError(path, 'Invalid uri format', ErrorCodes.INSTANCE_FORMAT_INVALID);
           }
         }
         break;
 
       case 'binary':
         if (typeof instance !== 'string') {
-          this.addError(path, 'Expected binary as base64 string');
+          this.addError(path, 'Expected binary as base64 string', ErrorCodes.INSTANCE_TYPE_MISMATCH);
         }
         break;
 
       case 'jsonpointer':
         if (typeof instance !== 'string' || !JSON_POINTER_REGEX.test(instance)) {
-          this.addError(path, 'Expected JSON pointer format');
+          this.addError(path, 'Expected JSON pointer format', ErrorCodes.INSTANCE_FORMAT_INVALID);
         }
         break;
 
@@ -402,44 +415,44 @@ export class InstanceValidator {
         break;
 
       default:
-        this.addError(path, `Unknown type: ${type}`);
+        this.addError(path, `Unknown type: ${type}`, ErrorCodes.INSTANCE_UNKNOWN_TYPE);
     }
   }
 
   private validateInt32(instance: JsonValue, path: string): void {
     if (typeof instance !== 'number' || !Number.isInteger(instance)) {
-      this.addError(path, 'Expected integer');
+      this.addError(path, 'Expected integer', ErrorCodes.INSTANCE_TYPE_MISMATCH);
     } else if (instance < -2147483648 || instance > 2147483647) {
-      this.addError(path, 'int32 value out of range');
+      this.addError(path, 'int32 value out of range', ErrorCodes.INSTANCE_VALUE_OUT_OF_RANGE);
     }
   }
 
   private validateIntRange(instance: JsonValue, min: number, max: number, type: string, path: string): void {
     if (typeof instance !== 'number' || !Number.isInteger(instance)) {
-      this.addError(path, `Expected ${type}`);
+      this.addError(path, `Expected ${type}`, ErrorCodes.INSTANCE_TYPE_MISMATCH);
     } else if (instance < min || instance > max) {
-      this.addError(path, `${type} value out of range`);
+      this.addError(path, `${type} value out of range`, ErrorCodes.INSTANCE_VALUE_OUT_OF_RANGE);
     }
   }
 
   private validateStringInt(instance: JsonValue, min: bigint, max: bigint, type: string, path: string): void {
     if (typeof instance !== 'string') {
-      this.addError(path, `Expected ${type} as string`);
+      this.addError(path, `Expected ${type} as string`, ErrorCodes.INSTANCE_TYPE_MISMATCH);
       return;
     }
     try {
       const value = BigInt(instance);
       if (value < min || value > max) {
-        this.addError(path, `${type} value out of range`);
+        this.addError(path, `${type} value out of range`, ErrorCodes.INSTANCE_VALUE_OUT_OF_RANGE);
       }
     } catch {
-      this.addError(path, `Invalid ${type} format`);
+      this.addError(path, `Invalid ${type} format`, ErrorCodes.INSTANCE_FORMAT_INVALID);
     }
   }
 
   private validateObject(instance: JsonValue, schema: JsonObject, path: string): void {
     if (!this.isObject(instance)) {
-      this.addError(path, `Expected object, got ${Array.isArray(instance) ? 'array' : typeof instance}`);
+      this.addError(path, `Expected object, got ${Array.isArray(instance) ? 'array' : typeof instance}`, ErrorCodes.INSTANCE_TYPE_MISMATCH);
       return;
     }
 
@@ -451,7 +464,7 @@ export class InstanceValidator {
     if (required && Array.isArray(required)) {
       for (const prop of required) {
         if (!(prop in instance)) {
-          this.addError(path, `Missing required property: ${prop}`);
+          this.addError(path, `Missing required property: ${prop}`, ErrorCodes.INSTANCE_REQUIRED_PROPERTY_MISSING);
         }
       }
     }
@@ -471,7 +484,7 @@ export class InstanceValidator {
     if (additionalProperties === false) {
       for (const key of Object.keys(instance)) {
         if (properties && !(key in properties)) {
-          this.addError(path, `Additional property not allowed: ${key}`);
+          this.addError(path, `Additional property not allowed: ${key}`, ErrorCodes.INSTANCE_ADDITIONAL_PROPERTY_NOT_ALLOWED);
         }
       }
     } else if (this.isObject(additionalProperties)) {
@@ -485,7 +498,7 @@ export class InstanceValidator {
 
   private validateArray(instance: JsonValue, schema: JsonObject, path: string): void {
     if (!Array.isArray(instance)) {
-      this.addError(path, `Expected array, got ${typeof instance}`);
+      this.addError(path, `Expected array, got ${typeof instance}`, ErrorCodes.INSTANCE_TYPE_MISMATCH);
       return;
     }
 
@@ -499,7 +512,7 @@ export class InstanceValidator {
 
   private validateSet(instance: JsonValue, schema: JsonObject, path: string): void {
     if (!Array.isArray(instance)) {
-      this.addError(path, `Expected set (array), got ${typeof instance}`);
+      this.addError(path, `Expected set (array), got ${typeof instance}`, ErrorCodes.INSTANCE_TYPE_MISMATCH);
       return;
     }
 
@@ -508,7 +521,7 @@ export class InstanceValidator {
     for (let i = 0; i < instance.length; i++) {
       const serialized = JSON.stringify(instance[i]);
       if (seen.has(serialized)) {
-        this.addError(path, 'Set contains duplicate items');
+        this.addError(path, 'Set contains duplicate items', ErrorCodes.INSTANCE_SET_DUPLICATE_ITEM);
         break;
       }
       seen.add(serialized);
@@ -525,7 +538,7 @@ export class InstanceValidator {
 
   private validateMap(instance: JsonValue, schema: JsonObject, path: string): void {
     if (!this.isObject(instance)) {
-      this.addError(path, `Expected map (object), got ${typeof instance}`);
+      this.addError(path, `Expected map (object), got ${typeof instance}`, ErrorCodes.INSTANCE_TYPE_MISMATCH);
       return;
     }
 
@@ -539,7 +552,7 @@ export class InstanceValidator {
 
   private validateTuple(instance: JsonValue, schema: JsonObject, path: string): void {
     if (!Array.isArray(instance)) {
-      this.addError(path, `Expected tuple (array), got ${typeof instance}`);
+      this.addError(path, `Expected tuple (array), got ${typeof instance}`, ErrorCodes.INSTANCE_TYPE_MISMATCH);
       return;
     }
 
@@ -547,12 +560,12 @@ export class InstanceValidator {
     const properties = schema.properties as JsonObject | undefined;
 
     if (!tupleOrder || !Array.isArray(tupleOrder)) {
-      this.addError(path, "Tuple schema must have 'tuple' array");
+      this.addError(path, "Tuple schema must have 'tuple' array", ErrorCodes.INSTANCE_SCHEMA_INVALID);
       return;
     }
 
     if (instance.length !== tupleOrder.length) {
-      this.addError(path, `Tuple length mismatch: expected ${tupleOrder.length}, got ${instance.length}`);
+      this.addError(path, `Tuple length mismatch: expected ${tupleOrder.length}, got ${instance.length}`, ErrorCodes.INSTANCE_TUPLE_LENGTH_MISMATCH);
       return;
     }
 
@@ -569,7 +582,7 @@ export class InstanceValidator {
 
   private validateChoice(instance: JsonValue, schema: JsonObject, path: string): void {
     if (!this.isObject(instance)) {
-      this.addError(path, `Expected choice (object), got ${typeof instance}`);
+      this.addError(path, `Expected choice (object), got ${typeof instance}`, ErrorCodes.INSTANCE_TYPE_MISMATCH);
       return;
     }
 
@@ -578,7 +591,7 @@ export class InstanceValidator {
     const extendsRef = schema.$extends as string | undefined;
 
     if (!choices) {
-      this.addError(path, "Choice schema must have 'choices'");
+      this.addError(path, "Choice schema must have 'choices'", ErrorCodes.INSTANCE_SCHEMA_INVALID);
       return;
     }
 
@@ -586,11 +599,11 @@ export class InstanceValidator {
       // Inline union: use selector property
       const selectorValue = instance[selector];
       if (typeof selectorValue !== 'string') {
-        this.addError(path, `Selector '${selector}' must be a string`);
+        this.addError(path, `Selector '${selector}' must be a string`, ErrorCodes.INSTANCE_TYPE_MISMATCH);
         return;
       }
       if (!(selectorValue in choices)) {
-        this.addError(path, `Selector value '${selectorValue}' not in choices`);
+        this.addError(path, `Selector value '${selectorValue}' not in choices`, ErrorCodes.INSTANCE_CHOICE_NO_MATCH);
         return;
       }
       const choiceSchema = choices[selectorValue] as JsonObject;
@@ -602,12 +615,12 @@ export class InstanceValidator {
       // Tagged union: exactly one property matching a choice key
       const keys = Object.keys(instance);
       if (keys.length !== 1) {
-        this.addError(path, 'Tagged union must have exactly one property');
+        this.addError(path, 'Tagged union must have exactly one property', ErrorCodes.INSTANCE_CHOICE_INVALID);
         return;
       }
       const key = keys[0];
       if (!(key in choices)) {
-        this.addError(path, `Property '${key}' not in choices`);
+        this.addError(path, `Property '${key}' not in choices`, ErrorCodes.INSTANCE_CHOICE_NO_MATCH);
         return;
       }
       const choiceSchema = choices[key] as JsonObject;
@@ -646,7 +659,7 @@ export class InstanceValidator {
         }
       }
       if (!valid) {
-        this.addError(path, 'Instance does not satisfy anyOf');
+        this.addError(path, 'Instance does not satisfy anyOf', ErrorCodes.INSTANCE_ANYOF_NO_MATCH);
       }
     }
 
@@ -666,7 +679,7 @@ export class InstanceValidator {
         }
       }
       if (validCount !== 1) {
-        this.addError(path, `Instance must match exactly one schema in oneOf, matched ${validCount}`);
+        this.addError(path, `Instance must match exactly one schema in oneOf, matched ${validCount}`, ErrorCodes.INSTANCE_ONEOF_MISMATCH);
       }
     }
 
@@ -677,7 +690,7 @@ export class InstanceValidator {
       this.validateInstance(instance, schema.not, `${path}/not`);
       if (this.errors.length === 0) {
         this.errors = tempErrors;
-        this.addError(path, 'Instance must not match "not" schema');
+        this.addError(path, 'Instance must not match "not" schema', ErrorCodes.INSTANCE_NOT_FAILED);
       } else {
         this.errors = tempErrors;
       }
@@ -708,19 +721,19 @@ export class InstanceValidator {
     if (type === 'string' && typeof instance === 'string') {
       if ('minLength' in schema && typeof schema.minLength === 'number') {
         if (instance.length < schema.minLength) {
-          this.addError(path, `String length ${instance.length} is less than minLength ${schema.minLength}`);
+          this.addError(path, `String length ${instance.length} is less than minLength ${schema.minLength}`, ErrorCodes.INSTANCE_STRING_TOO_SHORT);
         }
       }
       if ('maxLength' in schema && typeof schema.maxLength === 'number') {
         if (instance.length > schema.maxLength) {
-          this.addError(path, `String length ${instance.length} exceeds maxLength ${schema.maxLength}`);
+          this.addError(path, `String length ${instance.length} exceeds maxLength ${schema.maxLength}`, ErrorCodes.INSTANCE_STRING_TOO_LONG);
         }
       }
       if ('pattern' in schema && typeof schema.pattern === 'string') {
         try {
           const regex = new RegExp(schema.pattern);
           if (!regex.test(instance)) {
-            this.addError(path, `String does not match pattern: ${schema.pattern}`);
+            this.addError(path, `String does not match pattern: ${schema.pattern}`, ErrorCodes.INSTANCE_PATTERN_MISMATCH);
           }
         } catch {
           // Invalid regex, skip
@@ -736,17 +749,17 @@ export class InstanceValidator {
     if (numericTypes.includes(type) && typeof instance === 'number') {
       if ('minimum' in schema && typeof schema.minimum === 'number') {
         if (instance < schema.minimum) {
-          this.addError(path, `Value ${instance} is less than minimum ${schema.minimum}`);
+          this.addError(path, `Value ${instance} is less than minimum ${schema.minimum}`, ErrorCodes.INSTANCE_NUMBER_TOO_SMALL);
         }
       }
       if ('maximum' in schema && typeof schema.maximum === 'number') {
         if (instance > schema.maximum) {
-          this.addError(path, `Value ${instance} exceeds maximum ${schema.maximum}`);
+          this.addError(path, `Value ${instance} exceeds maximum ${schema.maximum}`, ErrorCodes.INSTANCE_NUMBER_TOO_LARGE);
         }
       }
       if ('multipleOf' in schema && typeof schema.multipleOf === 'number') {
         if (Math.abs(instance % schema.multipleOf) > 1e-10) {
-          this.addError(path, `Value ${instance} is not a multiple of ${schema.multipleOf}`);
+          this.addError(path, `Value ${instance} is not a multiple of ${schema.multipleOf}`, ErrorCodes.INSTANCE_NOT_MULTIPLE_OF);
         }
       }
     }
@@ -755,12 +768,12 @@ export class InstanceValidator {
     if ((type === 'array' || type === 'set') && Array.isArray(instance)) {
       if ('minItems' in schema && typeof schema.minItems === 'number') {
         if (instance.length < schema.minItems) {
-          this.addError(path, `Array has ${instance.length} items, less than minItems ${schema.minItems}`);
+          this.addError(path, `Array has ${instance.length} items, less than minItems ${schema.minItems}`, ErrorCodes.INSTANCE_ARRAY_TOO_SHORT);
         }
       }
       if ('maxItems' in schema && typeof schema.maxItems === 'number') {
         if (instance.length > schema.maxItems) {
-          this.addError(path, `Array has ${instance.length} items, more than maxItems ${schema.maxItems}`);
+          this.addError(path, `Array has ${instance.length} items, more than maxItems ${schema.maxItems}`, ErrorCodes.INSTANCE_ARRAY_TOO_LONG);
         }
       }
       if ('uniqueItems' in schema && schema.uniqueItems === true) {
@@ -768,7 +781,7 @@ export class InstanceValidator {
         for (const item of instance) {
           const serialized = JSON.stringify(item);
           if (seen.has(serialized)) {
-            this.addError(path, 'Array items are not unique');
+            this.addError(path, 'Array items are not unique', ErrorCodes.INSTANCE_SET_DUPLICATE_ITEM);
             break;
           }
           seen.add(serialized);
@@ -781,13 +794,13 @@ export class InstanceValidator {
       if ('minProperties' in schema && typeof schema.minProperties === 'number') {
         const count = Object.keys(instance).length;
         if (count < schema.minProperties) {
-          this.addError(path, `Object has ${count} properties, less than minProperties ${schema.minProperties}`);
+          this.addError(path, `Object has ${count} properties, less than minProperties ${schema.minProperties}`, ErrorCodes.INSTANCE_TOO_FEW_PROPERTIES);
         }
       }
       if ('maxProperties' in schema && typeof schema.maxProperties === 'number') {
         const count = Object.keys(instance).length;
         if (count > schema.maxProperties) {
-          this.addError(path, `Object has ${count} properties, more than maxProperties ${schema.maxProperties}`);
+          this.addError(path, `Object has ${count} properties, more than maxProperties ${schema.maxProperties}`, ErrorCodes.INSTANCE_TOO_MANY_PROPERTIES);
         }
       }
     }
@@ -823,8 +836,16 @@ export class InstanceValidator {
     return JSON.stringify(a) === JSON.stringify(b);
   }
 
-  private addError(path: string, message: string, code?: string): void {
-    this.errors.push({ path, message, code });
+  private getLocation(path: string): JsonLocation {
+    if (this.sourceLocator) {
+      return this.sourceLocator.getLocation(path);
+    }
+    return UNKNOWN_LOCATION;
+  }
+
+  private addError(path: string, message: string, code: string = 'INSTANCE_ERROR'): void {
+    const location = this.getLocation(path);
+    this.errors.push({ code, message, path, severity: 'error', location });
   }
 
   private result(): ValidationResult {

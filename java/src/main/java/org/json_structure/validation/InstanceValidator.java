@@ -26,6 +26,7 @@ public final class InstanceValidator {
     private final ValidationOptions options;
     private final ObjectMapper objectMapper;
     private final Map<String, JsonNode> resolvedRefs = new HashMap<>();
+    private JsonSourceLocator sourceLocator;
 
     /**
      * Creates a new InstanceValidator with default options.
@@ -52,10 +53,11 @@ public final class InstanceValidator {
      * @return the validation result
      */
     public ValidationResult validate(JsonNode instance, JsonNode schema) {
+        sourceLocator = null;
         ValidationResult result = new ValidationResult();
 
         if (schema == null) {
-            result.addError("Schema cannot be null", "");
+            addError(result, ErrorCodes.SCHEMA_NULL, "Schema cannot be null", "");
             return result;
         }
 
@@ -70,7 +72,7 @@ public final class InstanceValidator {
                 if (resolved != null) {
                     effectiveSchema = resolved;
                 } else {
-                    result.addError("Unable to resolve $root reference: " + rootRef, "");
+                    addError(result, ErrorCodes.INSTANCE_ROOT_UNRESOLVED, "Unable to resolve $root reference: " + rootRef, "");
                     return result;
                 }
             }
@@ -89,9 +91,35 @@ public final class InstanceValidator {
      */
     public ValidationResult validate(String instanceJson, String schemaJson) {
         try {
+            sourceLocator = new JsonSourceLocator(instanceJson);
             JsonNode instance = objectMapper.readTree(instanceJson);
             JsonNode schema = objectMapper.readTree(schemaJson);
-            return validate(instance, schema);
+            ValidationResult result = new ValidationResult();
+
+            if (schema == null) {
+                addError(result, ErrorCodes.SCHEMA_NULL, "Schema cannot be null", "");
+                return result;
+            }
+
+            resolvedRefs.clear();
+
+            // Handle $root - if the schema has a $root property, resolve it and use that as the validation target
+            JsonNode effectiveSchema = schema;
+            if (schema.isObject() && schema.has("$root")) {
+                String rootRef = schema.get("$root").asText();
+                if (rootRef != null && !rootRef.isEmpty()) {
+                    JsonNode resolved = resolveRef(rootRef, schema);
+                    if (resolved != null) {
+                        effectiveSchema = resolved;
+                    } else {
+                        addError(result, ErrorCodes.INSTANCE_ROOT_UNRESOLVED, "Unable to resolve $root reference: " + rootRef, "");
+                        return result;
+                    }
+                }
+            }
+
+            validateInstance(instance, effectiveSchema, schema, result, "", 0);
+            return result;
         } catch (JsonProcessingException e) {
             return ValidationResult.failure("Failed to parse JSON: " + e.getMessage());
         }
@@ -100,7 +128,7 @@ public final class InstanceValidator {
     private void validateInstance(JsonNode instance, JsonNode schema, JsonNode rootSchema,
                                   ValidationResult result, String path, int depth) {
         if (depth > options.getMaxValidationDepth()) {
-            result.addError("Maximum validation depth (" + options.getMaxValidationDepth() + ") exceeded", path);
+            addError(result, ErrorCodes.INSTANCE_MAX_DEPTH_EXCEEDED, "Maximum validation depth (" + options.getMaxValidationDepth() + ") exceeded", path);
             return;
         }
 
@@ -111,13 +139,13 @@ public final class InstanceValidator {
         // Handle boolean schemas
         if (schema.isBoolean()) {
             if (!schema.asBoolean() && instance != null) {
-                result.addError("Schema 'false' rejects all values", path);
+                addError(result, ErrorCodes.INSTANCE_SCHEMA_FALSE, "Schema 'false' rejects all values", path);
             }
             return;
         }
 
         if (!schema.isObject()) {
-            result.addError("Schema must be a boolean or object", path);
+            addError(result, ErrorCodes.SCHEMA_INVALID_TYPE, "Schema must be a boolean or object", path);
             return;
         }
 
@@ -129,7 +157,7 @@ public final class InstanceValidator {
             if (refStr != null && !refStr.isEmpty()) {
                 JsonNode resolvedSchema = resolveRef(refStr, rootSchema);
                 if (resolvedSchema == null) {
-                    result.addError("Unable to resolve reference: " + refStr, path);
+                    addError(result, ErrorCodes.INSTANCE_REF_UNRESOLVED, "Unable to resolve reference: " + refStr, path);
                     return;
                 }
                 validateInstance(instance, resolvedSchema, rootSchema, result, path, depth + 1);
@@ -157,7 +185,7 @@ public final class InstanceValidator {
         // Handle const
         if (schemaObj.has("const")) {
             if (!jsonNodeEquals(instance, schemaObj.get("const"))) {
-                result.addError("Value must equal const value", path);
+                addError(result, ErrorCodes.INSTANCE_CONST_MISMATCH, "Value must equal const value", path);
             }
             return;
         }
@@ -173,7 +201,7 @@ public final class InstanceValidator {
                 }
             }
             if (!matches) {
-                result.addError("Value must be one of the enum values", path);
+                addError(result, ErrorCodes.INSTANCE_ENUM_MISMATCH, "Value must be one of the enum values", path);
             }
             return;
         }
@@ -189,7 +217,7 @@ public final class InstanceValidator {
                         validateInstance(instance, resolvedSchema, rootSchema, result, path, depth + 1);
                         return;
                     } else {
-                        result.addError("Unable to resolve type reference: " + refStr, path);
+                        addError(result, ErrorCodes.INSTANCE_REF_UNRESOLVED, "Unable to resolve type reference: " + refStr, path);
                         return;
                     }
                 }
@@ -229,7 +257,7 @@ public final class InstanceValidator {
                 }
             }
             if (!anyValid) {
-                result.addError("Value must match at least one schema in anyOf", path);
+                addError(result, ErrorCodes.INSTANCE_ANY_OF_NONE_MATCHED, "Value must match at least one schema in anyOf", path);
             }
         }
 
@@ -244,7 +272,7 @@ public final class InstanceValidator {
                 }
             }
             if (matchCount != 1) {
-                result.addError("Value must match exactly one schema in oneOf (matched " + matchCount + ")", path);
+                addError(result, ErrorCodes.INSTANCE_ONE_OF_INVALID_COUNT, "Value must match exactly one schema in oneOf (matched " + matchCount + ")", path);
             }
         }
 
@@ -253,7 +281,7 @@ public final class InstanceValidator {
             ValidationResult subResult = new ValidationResult();
             validateInstance(instance, schema.get("not"), rootSchema, subResult, path, depth + 1);
             if (subResult.isValid()) {
-                result.addError("Value must not match the schema in 'not'", path);
+                addError(result, ErrorCodes.INSTANCE_NOT_MATCHED, "Value must not match the schema in 'not'", path);
             }
         }
 
@@ -321,9 +349,9 @@ public final class InstanceValidator {
             case "jsonpointer" -> validateJsonPointer(instance, result, path);
             default -> {
                 if (type.contains(":")) {
-                    result.addError("Custom type reference not yet supported: " + type, path);
+                    addError(result, ErrorCodes.INSTANCE_CUSTOM_TYPE_NOT_SUPPORTED, "Custom type reference not yet supported: " + type, path);
                 } else {
-                    result.addError("Unknown type: " + type, path);
+                    addError(result, ErrorCodes.INSTANCE_TYPE_UNKNOWN, "Unknown type: " + type, path);
                 }
             }
         }
@@ -344,19 +372,19 @@ public final class InstanceValidator {
 
     private void validateNull(JsonNode instance, ValidationResult result, String path) {
         if (instance != null && !instance.isNull()) {
-            result.addError("Value must be null", path);
+            addError(result, ErrorCodes.INSTANCE_NULL_EXPECTED, "Value must be null", path);
         }
     }
 
     private void validateBoolean(JsonNode instance, ValidationResult result, String path) {
         if (!instance.isBoolean()) {
-            result.addError("Value must be a boolean", path);
+            addError(result, ErrorCodes.INSTANCE_BOOLEAN_EXPECTED, "Value must be a boolean", path);
         }
     }
 
     private void validateString(JsonNode instance, ObjectNode schema, ValidationResult result, String path) {
         if (!instance.isTextual()) {
-            result.addError("Value must be a string", path);
+            addError(result, ErrorCodes.INSTANCE_STRING_EXPECTED, "Value must be a string", path);
             return;
         }
 
@@ -366,7 +394,7 @@ public final class InstanceValidator {
         if (schema.has("minLength")) {
             int minLen = schema.get("minLength").asInt();
             if (str.length() < minLen) {
-                result.addError("String length " + str.length() + " is less than minimum " + minLen, path);
+                addError(result, ErrorCodes.INSTANCE_STRING_MIN_LENGTH, "String length " + str.length() + " is less than minimum " + minLen, path);
             }
         }
 
@@ -374,7 +402,7 @@ public final class InstanceValidator {
         if (schema.has("maxLength")) {
             int maxLen = schema.get("maxLength").asInt();
             if (str.length() > maxLen) {
-                result.addError("String length " + str.length() + " exceeds maximum " + maxLen, path);
+                addError(result, ErrorCodes.INSTANCE_STRING_MAX_LENGTH, "String length " + str.length() + " exceeds maximum " + maxLen, path);
             }
         }
 
@@ -383,10 +411,10 @@ public final class InstanceValidator {
             String pattern = schema.get("pattern").asText();
             try {
                 if (!Pattern.matches(pattern, str)) {
-                    result.addError("String does not match pattern: " + pattern, path);
+                    addError(result, ErrorCodes.INSTANCE_STRING_PATTERN_MISMATCH, "String does not match pattern: " + pattern, path);
                 }
             } catch (PatternSyntaxException e) {
-                result.addError("Invalid regex pattern: " + pattern, path);
+                addError(result, ErrorCodes.INSTANCE_PATTERN_INVALID, "Invalid regex pattern: " + pattern, path);
             }
         }
 
@@ -403,28 +431,28 @@ public final class InstanceValidator {
         switch (format) {
             case "email" -> {
                 if (!isValidEmail(value)) {
-                    result.addError("String is not a valid email address", path);
+                    addError(result, ErrorCodes.INSTANCE_FORMAT_EMAIL_INVALID, "String is not a valid email address", path);
                 }
             }
             case "uri" -> {
                 try {
                     new URI(value);
                 } catch (Exception e) {
-                    result.addError("String is not a valid URI", path);
+                    addError(result, ErrorCodes.INSTANCE_FORMAT_URI_INVALID, "String is not a valid URI", path);
                 }
             }
             case "date" -> {
                 try {
                     LocalDate.parse(value);
                 } catch (DateTimeParseException e) {
-                    result.addError("String is not a valid date", path);
+                    addError(result, ErrorCodes.INSTANCE_FORMAT_DATE_INVALID, "String is not a valid date", path);
                 }
             }
             case "time" -> {
                 try {
                     LocalTime.parse(value);
                 } catch (DateTimeParseException e) {
-                    result.addError("String is not a valid time", path);
+                    addError(result, ErrorCodes.INSTANCE_FORMAT_TIME_INVALID, "String is not a valid time", path);
                 }
             }
             case "date-time" -> {
@@ -434,7 +462,7 @@ public final class InstanceValidator {
                     try {
                         Instant.parse(value);
                     } catch (DateTimeParseException e2) {
-                        result.addError("String is not a valid date-time", path);
+                        addError(result, ErrorCodes.INSTANCE_FORMAT_DATETIME_INVALID, "String is not a valid date-time", path);
                     }
                 }
             }
@@ -442,7 +470,7 @@ public final class InstanceValidator {
                 try {
                     UUID.fromString(value);
                 } catch (IllegalArgumentException e) {
-                    result.addError("String is not a valid UUID", path);
+                    addError(result, ErrorCodes.INSTANCE_FORMAT_UUID_INVALID, "String is not a valid UUID", path);
                 }
             }
         }
@@ -473,7 +501,7 @@ public final class InstanceValidator {
         }
 
         if (!instance.isNumber()) {
-            result.addError("Value must be a " + type, path);
+            addError(result, ErrorCodes.INSTANCE_NUMBER_EXPECTED, "Value must be a " + type, path);
             return;
         }
 
@@ -507,7 +535,7 @@ public final class InstanceValidator {
                 }
                 case "decimal" -> new BigDecimal(value);
                 default -> {
-                    result.addError("String value not expected for type " + type, path);
+                    addError(result, ErrorCodes.INSTANCE_STRING_NOT_EXPECTED, "String value not expected for type " + type, path);
                     return false;
                 }
             }
@@ -522,42 +550,42 @@ public final class InstanceValidator {
         switch (type) {
             case "int8" -> {
                 if (value < Byte.MIN_VALUE || value > Byte.MAX_VALUE || value != Math.floor(value)) {
-                    result.addError("Value " + value + " is not a valid int8", path);
+                    addError(result, ErrorCodes.INSTANCE_INT_RANGE_INVALID, "Value " + value + " is not a valid int8", path);
                 }
             }
             case "int16" -> {
                 if (value < Short.MIN_VALUE || value > Short.MAX_VALUE || value != Math.floor(value)) {
-                    result.addError("Value " + value + " is not a valid int16", path);
+                    addError(result, ErrorCodes.INSTANCE_INT_RANGE_INVALID, "Value " + value + " is not a valid int16", path);
                 }
             }
             case "int32" -> {
                 if (value < Integer.MIN_VALUE || value > Integer.MAX_VALUE || value != Math.floor(value)) {
-                    result.addError("Value " + value + " is not a valid int32", path);
+                    addError(result, ErrorCodes.INSTANCE_INT_RANGE_INVALID, "Value " + value + " is not a valid int32", path);
                 }
             }
             case "int64" -> {
                 if (value < Long.MIN_VALUE || value > Long.MAX_VALUE || value != Math.floor(value)) {
-                    result.addError("Value " + value + " is not a valid int64", path);
+                    addError(result, ErrorCodes.INSTANCE_INT_RANGE_INVALID, "Value " + value + " is not a valid int64", path);
                 }
             }
             case "uint8" -> {
                 if (value < 0 || value > 255 || value != Math.floor(value)) {
-                    result.addError("Value " + value + " is not a valid uint8", path);
+                    addError(result, ErrorCodes.INSTANCE_INT_RANGE_INVALID, "Value " + value + " is not a valid uint8", path);
                 }
             }
             case "uint16" -> {
                 if (value < 0 || value > 65535 || value != Math.floor(value)) {
-                    result.addError("Value " + value + " is not a valid uint16", path);
+                    addError(result, ErrorCodes.INSTANCE_INT_RANGE_INVALID, "Value " + value + " is not a valid uint16", path);
                 }
             }
             case "uint32" -> {
                 if (value < 0 || value > 4294967295L || value != Math.floor(value)) {
-                    result.addError("Value " + value + " is not a valid uint32", path);
+                    addError(result, ErrorCodes.INSTANCE_INT_RANGE_INVALID, "Value " + value + " is not a valid uint32", path);
                 }
             }
             case "uint64" -> {
                 if (value < 0 || value != Math.floor(value)) {
-                    result.addError("Value " + value + " is not a valid uint64", path);
+                    addError(result, ErrorCodes.INSTANCE_INT_RANGE_INVALID, "Value " + value + " is not a valid uint64", path);
                 }
             }
         }
@@ -568,7 +596,7 @@ public final class InstanceValidator {
         if (schema.has("minimum")) {
             BigDecimal min = new BigDecimal(schema.get("minimum").asText());
             if (value.compareTo(min) < 0) {
-                result.addError("Value " + value + " is less than minimum " + min, path);
+                addError(result, ErrorCodes.INSTANCE_NUMBER_MINIMUM, "Value " + value + " is less than minimum " + min, path);
             }
         }
 
@@ -576,7 +604,7 @@ public final class InstanceValidator {
         if (schema.has("maximum")) {
             BigDecimal max = new BigDecimal(schema.get("maximum").asText());
             if (value.compareTo(max) > 0) {
-                result.addError("Value " + value + " exceeds maximum " + max, path);
+                addError(result, ErrorCodes.INSTANCE_NUMBER_MAXIMUM, "Value " + value + " exceeds maximum " + max, path);
             }
         }
 
@@ -584,7 +612,7 @@ public final class InstanceValidator {
         if (schema.has("exclusiveMinimum")) {
             BigDecimal exclMin = new BigDecimal(schema.get("exclusiveMinimum").asText());
             if (value.compareTo(exclMin) <= 0) {
-                result.addError("Value " + value + " must be greater than " + exclMin, path);
+                addError(result, ErrorCodes.INSTANCE_NUMBER_EXCLUSIVE_MINIMUM, "Value " + value + " must be greater than " + exclMin, path);
             }
         }
 
@@ -592,7 +620,7 @@ public final class InstanceValidator {
         if (schema.has("exclusiveMaximum")) {
             BigDecimal exclMax = new BigDecimal(schema.get("exclusiveMaximum").asText());
             if (value.compareTo(exclMax) >= 0) {
-                result.addError("Value " + value + " must be less than " + exclMax, path);
+                addError(result, ErrorCodes.INSTANCE_NUMBER_EXCLUSIVE_MAXIMUM, "Value " + value + " must be less than " + exclMax, path);
             }
         }
 
@@ -602,7 +630,7 @@ public final class InstanceValidator {
             if (multipleOf.compareTo(BigDecimal.ZERO) != 0) {
                 BigDecimal remainder = value.remainder(multipleOf);
                 if (remainder.compareTo(BigDecimal.ZERO) != 0) {
-                    result.addError("Value " + value + " is not a multiple of " + multipleOf, path);
+                    addError(result, ErrorCodes.INSTANCE_NUMBER_MULTIPLE_OF, "Value " + value + " is not a multiple of " + multipleOf, path);
                 }
             }
         }
@@ -611,7 +639,7 @@ public final class InstanceValidator {
     private void validateObject(JsonNode instance, ObjectNode schema, JsonNode rootSchema,
                                 ValidationResult result, String path, int depth) {
         if (!instance.isObject()) {
-            result.addError("Value must be an object", path);
+            addError(result, ErrorCodes.INSTANCE_OBJECT_EXPECTED, "Value must be an object", path);
             return;
         }
 
@@ -637,7 +665,7 @@ public final class InstanceValidator {
             for (JsonNode req : schema.get("required")) {
                 String reqName = req.asText();
                 if (!obj.has(reqName)) {
-                    result.addError("Missing required property: " + reqName, path);
+                    addError(result, ErrorCodes.INSTANCE_REQUIRED_PROPERTY_MISSING, "Missing required property: " + reqName, path);
                 }
             }
         }
@@ -652,7 +680,7 @@ public final class InstanceValidator {
                     // Skip $schema - it's a meta-property
                     if (fieldName.equals("$schema")) continue;
                     if (!definedProps.contains(fieldName)) {
-                        result.addError("Additional property not allowed: " + fieldName, path);
+                        addError(result, ErrorCodes.INSTANCE_ADDITIONAL_PROPERTY_NOT_ALLOWED, "Additional property not allowed: " + fieldName, path);
                     }
                 }
             } else if (additional.isObject()) {
@@ -673,14 +701,14 @@ public final class InstanceValidator {
         if (schema.has("minProperties")) {
             int minProps = schema.get("minProperties").asInt();
             if (obj.size() < minProps) {
-                result.addError("Object has " + obj.size() + " properties, minimum is " + minProps, path);
+                addError(result, ErrorCodes.INSTANCE_MIN_PROPERTIES, "Object has " + obj.size() + " properties, minimum is " + minProps, path);
             }
         }
 
         if (schema.has("maxProperties")) {
             int maxProps = schema.get("maxProperties").asInt();
             if (obj.size() > maxProps) {
-                result.addError("Object has " + obj.size() + " properties, maximum is " + maxProps, path);
+                addError(result, ErrorCodes.INSTANCE_MAX_PROPERTIES, "Object has " + obj.size() + " properties, maximum is " + maxProps, path);
             }
         }
 
@@ -694,7 +722,7 @@ public final class InstanceValidator {
                     for (JsonNode required : dep.getValue()) {
                         String reqProp = required.asText();
                         if (!obj.has(reqProp)) {
-                            result.addError("Property '" + dep.getKey() + "' requires property '" + reqProp + "'", path);
+                            addError(result, ErrorCodes.INSTANCE_DEPENDENT_REQUIRED, "Property '" + dep.getKey() + "' requires property '" + reqProp + "'", path);
                         }
                     }
                 }
@@ -705,7 +733,7 @@ public final class InstanceValidator {
     private void validateArray(JsonNode instance, ObjectNode schema, JsonNode rootSchema,
                                ValidationResult result, String path, int depth) {
         if (!instance.isArray()) {
-            result.addError("Value must be an array", path);
+            addError(result, ErrorCodes.INSTANCE_ARRAY_EXPECTED, "Value must be an array", path);
             return;
         }
 
@@ -724,14 +752,14 @@ public final class InstanceValidator {
         if (schema.has("minItems")) {
             int minItems = schema.get("minItems").asInt();
             if (arr.size() < minItems) {
-                result.addError("Array has " + arr.size() + " items, minimum is " + minItems, path);
+                addError(result, ErrorCodes.INSTANCE_MIN_ITEMS, "Array has " + arr.size() + " items, minimum is " + minItems, path);
             }
         }
 
         if (schema.has("maxItems")) {
             int maxItems = schema.get("maxItems").asInt();
             if (arr.size() > maxItems) {
-                result.addError("Array has " + arr.size() + " items, maximum is " + maxItems, path);
+                addError(result, ErrorCodes.INSTANCE_MAX_ITEMS, "Array has " + arr.size() + " items, maximum is " + maxItems, path);
             }
         }
 
@@ -751,11 +779,11 @@ public final class InstanceValidator {
             int maxContains = schema.has("maxContains") ? schema.get("maxContains").asInt() : Integer.MAX_VALUE;
 
             if (containsCount < minContains) {
-                result.addError("Array must contain at least " + minContains + " matching items (found " + containsCount + ")", path);
+                addError(result, ErrorCodes.INSTANCE_MIN_CONTAINS, "Array must contain at least " + minContains + " matching items (found " + containsCount + ")", path);
             }
 
             if (containsCount > maxContains) {
-                result.addError("Array must contain at most " + maxContains + " matching items (found " + containsCount + ")", path);
+                addError(result, ErrorCodes.INSTANCE_MAX_CONTAINS, "Array must contain at most " + maxContains + " matching items (found " + containsCount + ")", path);
             }
         }
     }
@@ -763,7 +791,7 @@ public final class InstanceValidator {
     private void validateSet(JsonNode instance, ObjectNode schema, JsonNode rootSchema,
                              ValidationResult result, String path, int depth) {
         if (!instance.isArray()) {
-            result.addError("Value must be an array (set)", path);
+            addError(result, ErrorCodes.INSTANCE_SET_EXPECTED, "Value must be an array (set)", path);
             return;
         }
 
@@ -774,7 +802,7 @@ public final class InstanceValidator {
         for (int i = 0; i < arr.size(); i++) {
             String itemJson = arr.get(i).toString();
             if (!seen.add(itemJson)) {
-                result.addError("Set contains duplicate value at index " + i, path);
+                addError(result, ErrorCodes.INSTANCE_SET_DUPLICATE, "Set contains duplicate value at index " + i, path);
             }
         }
 
@@ -785,7 +813,7 @@ public final class InstanceValidator {
     private void validateMap(JsonNode instance, ObjectNode schema, JsonNode rootSchema,
                              ValidationResult result, String path, int depth) {
         if (!instance.isObject()) {
-            result.addError("Value must be an object (map)", path);
+            addError(result, ErrorCodes.INSTANCE_MAP_EXPECTED, "Value must be an object (map)", path);
             return;
         }
 
@@ -818,14 +846,14 @@ public final class InstanceValidator {
         if (schema.has("minProperties")) {
             int minProps = schema.get("minProperties").asInt();
             if (obj.size() < minProps) {
-                result.addError("Map has " + obj.size() + " entries, minimum is " + minProps, path);
+                addError(result, ErrorCodes.INSTANCE_MAP_MIN_ENTRIES, "Map has " + obj.size() + " entries, minimum is " + minProps, path);
             }
         }
 
         if (schema.has("maxProperties")) {
             int maxProps = schema.get("maxProperties").asInt();
             if (obj.size() > maxProps) {
-                result.addError("Map has " + obj.size() + " entries, maximum is " + maxProps, path);
+                addError(result, ErrorCodes.INSTANCE_MAP_MAX_ENTRIES, "Map has " + obj.size() + " entries, maximum is " + maxProps, path);
             }
         }
     }
@@ -833,7 +861,7 @@ public final class InstanceValidator {
     private void validateTuple(JsonNode instance, ObjectNode schema, JsonNode rootSchema,
                                ValidationResult result, String path, int depth) {
         if (!instance.isArray()) {
-            result.addError("Value must be an array (tuple)", path);
+            addError(result, ErrorCodes.INSTANCE_TUPLE_EXPECTED, "Value must be an array (tuple)", path);
             return;
         }
 
@@ -846,7 +874,7 @@ public final class InstanceValidator {
             
             // Check tuple length matches
             if (arr.size() != tupleOrder.size()) {
-                result.addError("Tuple has " + arr.size() + " elements but expected " + tupleOrder.size(), path);
+                addError(result, ErrorCodes.INSTANCE_TUPLE_LENGTH_MISMATCH, "Tuple has " + arr.size() + " elements but expected " + tupleOrder.size(), path);
                 return;
             }
             
@@ -881,7 +909,7 @@ public final class InstanceValidator {
                 JsonNode items = schema.get("items");
                 if (items.isBoolean()) {
                     if (!items.asBoolean() && arr.size() > prefixArr.size()) {
-                        result.addError("Tuple has " + arr.size() + " items but only " + prefixArr.size() + " are defined", path);
+                        addError(result, ErrorCodes.INSTANCE_TUPLE_ADDITIONAL_ITEMS, "Tuple has " + arr.size() + " items but only " + prefixArr.size() + " are defined", path);
                     }
                 } else if (items.isObject()) {
                     for (int i = prefixArr.size(); i < arr.size(); i++) {
@@ -896,7 +924,7 @@ public final class InstanceValidator {
     private void validateChoice(JsonNode instance, ObjectNode schema, JsonNode rootSchema,
                                 ValidationResult result, String path, int depth) {
         if (!instance.isObject()) {
-            result.addError("Value must be an object (choice)", path);
+            addError(result, ErrorCodes.INSTANCE_CHOICE_EXPECTED, "Value must be an object (choice)", path);
             return;
         }
 
@@ -905,7 +933,7 @@ public final class InstanceValidator {
         // Accept either "options" or "choices" keyword
         String optionsKey = schema.has("options") ? "options" : (schema.has("choices") ? "choices" : null);
         if (optionsKey == null || !schema.get(optionsKey).isObject()) {
-            result.addError("Choice schema must have 'options' or 'choices'", path);
+            addError(result, ErrorCodes.INSTANCE_CHOICE_MISSING_OPTIONS, "Choice schema must have 'options' or 'choices'", path);
             return;
         }
 
@@ -920,18 +948,18 @@ public final class InstanceValidator {
         if (discProp != null) {
             // Use discriminator/selector property to determine type
             if (!obj.has(discProp)) {
-                result.addError("Choice requires discriminator/selector property: " + discProp, path);
+                addError(result, ErrorCodes.INSTANCE_CHOICE_DISCRIMINATOR_MISSING, "Choice requires discriminator/selector property: " + discProp, path);
                 return;
             }
 
             String discValue = obj.get(discProp).asText();
             if (discValue == null || discValue.isEmpty()) {
-                result.addError("Discriminator/selector value must be a string", path);
+                addError(result, ErrorCodes.INSTANCE_CHOICE_DISCRIMINATOR_NOT_STRING, "Discriminator/selector value must be a string", path);
                 return;
             }
 
             if (!options.has(discValue)) {
-                result.addError("Unknown choice option: " + discValue, path);
+                addError(result, ErrorCodes.INSTANCE_CHOICE_OPTION_UNKNOWN, "Unknown choice option: " + discValue, path);
                 return;
             }
 
@@ -975,42 +1003,42 @@ public final class InstanceValidator {
             }
 
             if (matchCount == 0) {
-                result.addError("Value does not match any choice option", path);
+                addError(result, ErrorCodes.INSTANCE_CHOICE_NO_MATCH, "Value does not match any choice option", path);
             } else if (matchCount > 1) {
-                result.addError("Value matches " + matchCount + " choice options (should match exactly one)", path);
+                addError(result, ErrorCodes.INSTANCE_CHOICE_MULTIPLE_MATCHES, "Value matches " + matchCount + " choice options (should match exactly one)", path);
             }
         }
     }
 
     private void validateDate(JsonNode instance, ValidationResult result, String path) {
         if (!instance.isTextual()) {
-            result.addError("Date must be a string", path);
+            addError(result, ErrorCodes.INSTANCE_DATE_EXPECTED, "Date must be a string", path);
             return;
         }
 
         try {
             LocalDate.parse(instance.asText());
         } catch (DateTimeParseException e) {
-            result.addError("Invalid date format: " + instance.asText(), path);
+            addError(result, ErrorCodes.INSTANCE_DATE_FORMAT_INVALID, "Invalid date format: " + instance.asText(), path);
         }
     }
 
     private void validateTime(JsonNode instance, ValidationResult result, String path) {
         if (!instance.isTextual()) {
-            result.addError("Time must be a string", path);
+            addError(result, ErrorCodes.INSTANCE_TIME_EXPECTED, "Time must be a string", path);
             return;
         }
 
         try {
             LocalTime.parse(instance.asText());
         } catch (DateTimeParseException e) {
-            result.addError("Invalid time format: " + instance.asText(), path);
+            addError(result, ErrorCodes.INSTANCE_TIME_FORMAT_INVALID, "Invalid time format: " + instance.asText(), path);
         }
     }
 
     private void validateDateTime(JsonNode instance, ValidationResult result, String path) {
         if (!instance.isTextual()) {
-            result.addError("DateTime must be a string", path);
+            addError(result, ErrorCodes.INSTANCE_DATETIME_EXPECTED, "DateTime must be a string", path);
             return;
         }
 
@@ -1021,14 +1049,14 @@ public final class InstanceValidator {
             try {
                 Instant.parse(str);
             } catch (DateTimeParseException e2) {
-                result.addError("Invalid datetime format: " + str, path);
+                addError(result, ErrorCodes.INSTANCE_DATETIME_FORMAT_INVALID, "Invalid datetime format: " + str, path);
             }
         }
     }
 
     private void validateDuration(JsonNode instance, ValidationResult result, String path) {
         if (!instance.isTextual()) {
-            result.addError("Duration must be a string", path);
+            addError(result, ErrorCodes.INSTANCE_DURATION_EXPECTED, "Duration must be a string", path);
             return;
         }
 
@@ -1040,27 +1068,27 @@ public final class InstanceValidator {
             try {
                 Period.parse(str);
             } catch (DateTimeParseException e2) {
-                result.addError("Invalid duration format: " + str, path);
+                addError(result, ErrorCodes.INSTANCE_DURATION_FORMAT_INVALID, "Invalid duration format: " + str, path);
             }
         }
     }
 
     private void validateUuid(JsonNode instance, ValidationResult result, String path) {
         if (!instance.isTextual()) {
-            result.addError("UUID must be a string", path);
+            addError(result, ErrorCodes.INSTANCE_UUID_EXPECTED, "UUID must be a string", path);
             return;
         }
 
         try {
             UUID.fromString(instance.asText());
         } catch (IllegalArgumentException e) {
-            result.addError("Invalid UUID format: " + instance.asText(), path);
+            addError(result, ErrorCodes.INSTANCE_UUID_FORMAT_INVALID, "Invalid UUID format: " + instance.asText(), path);
         }
     }
 
     private void validateUri(JsonNode instance, ValidationResult result, String path) {
         if (!instance.isTextual()) {
-            result.addError("URI must be a string", path);
+            addError(result, ErrorCodes.INSTANCE_URI_EXPECTED, "URI must be a string", path);
             return;
         }
 
@@ -1069,36 +1097,36 @@ public final class InstanceValidator {
             URI uri = new URI(uriStr);
             // Require absolute URIs with a scheme
             if (uri.getScheme() == null) {
-                result.addError("Invalid URI format (missing scheme): " + uriStr, path);
+                addError(result, ErrorCodes.INSTANCE_URI_MISSING_SCHEME, "Invalid URI format (missing scheme): " + uriStr, path);
             }
         } catch (Exception e) {
-            result.addError("Invalid URI format: " + uriStr, path);
+            addError(result, ErrorCodes.INSTANCE_URI_FORMAT_INVALID, "Invalid URI format: " + uriStr, path);
         }
     }
 
     private void validateBinary(JsonNode instance, ValidationResult result, String path) {
         if (!instance.isTextual()) {
-            result.addError("Binary must be a base64 string", path);
+            addError(result, ErrorCodes.INSTANCE_BINARY_EXPECTED, "Binary must be a base64 string", path);
             return;
         }
 
         try {
             Base64.getDecoder().decode(instance.asText());
         } catch (IllegalArgumentException e) {
-            result.addError("Invalid base64 encoding", path);
+            addError(result, ErrorCodes.INSTANCE_BINARY_ENCODING_INVALID, "Invalid base64 encoding", path);
         }
     }
 
     private void validateJsonPointer(JsonNode instance, ValidationResult result, String path) {
         if (!instance.isTextual()) {
-            result.addError("JSON Pointer must be a string", path);
+            addError(result, ErrorCodes.INSTANCE_JSONPOINTER_EXPECTED, "JSON Pointer must be a string", path);
             return;
         }
 
         String str = instance.asText();
         // JSON Pointer must be empty or start with /
         if (!str.isEmpty() && !str.startsWith("/")) {
-            result.addError("Invalid JSON Pointer format: " + str, path);
+            addError(result, ErrorCodes.INSTANCE_JSONPOINTER_FORMAT_INVALID, "Invalid JSON Pointer format: " + str, path);
         }
     }
 
@@ -1241,5 +1269,17 @@ public final class InstanceValidator {
             return "/" + segment;
         }
         return basePath + "/" + segment;
+    }
+
+    private JsonLocation getLocation(String path) {
+        if (sourceLocator == null) {
+            return new JsonLocation(0, 0);
+        }
+        return sourceLocator.getLocation(path);
+    }
+
+    private void addError(ValidationResult result, String code, String message, String path) {
+        JsonLocation location = getLocation(path);
+        result.addError(new ValidationError(code, message, path, ValidationSeverity.ERROR, location, ""));
     }
 }

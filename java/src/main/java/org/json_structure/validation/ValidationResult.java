@@ -27,7 +27,19 @@ public final class ValidationResult {
      * @param path    the JSON path where the error occurred
      */
     public void addError(String message, String path) {
-        errors.add(new ValidationError(message, path));
+        // Use a generic error code for backward compatibility
+        errors.add(new ValidationError("VALIDATION_ERROR", message, path));
+    }
+
+    /**
+     * Adds an error with code to the validation result.
+     *
+     * @param code    the error code
+     * @param message the error message
+     * @param path    the JSON path where the error occurred
+     */
+    public void addError(String code, String message, String path) {
+        errors.add(new ValidationError(code, message, path));
     }
 
     /**
@@ -74,7 +86,7 @@ public final class ValidationResult {
      */
     public static ValidationResult failure(String message) {
         ValidationResult result = new ValidationResult();
-        result.addError(message, "");
+        result.addError("VALIDATION_ERROR", message, "");
         return result;
     }
 
@@ -87,7 +99,21 @@ public final class ValidationResult {
      */
     public static ValidationResult failure(String message, String path) {
         ValidationResult result = new ValidationResult();
-        result.addError(message, path);
+        result.addError("VALIDATION_ERROR", message, path);
+        return result;
+    }
+
+    /**
+     * Creates a failure result with a single error with code at a specific path.
+     *
+     * @param code    the error code
+     * @param message the error message
+     * @param path    the JSON path
+     * @return a new ValidationResult with the error
+     */
+    public static ValidationResult failure(String code, String message, String path) {
+        ValidationResult result = new ValidationResult();
+        result.addError(code, message, path);
         return result;
     }
 

@@ -109,6 +109,7 @@ public final class SchemaValidator {
     private final ObjectMapper objectMapper;
     private Set<String> definedRefs; // Track defined $defs/$definitions for $ref validation
     private Set<String> importNamespaces; // Track namespaces with $import/$importdefs
+    private JsonSourceLocator sourceLocator; // For source location tracking
 
     static {
         Set<String> allTypes = new HashSet<>(PRIMITIVE_TYPES);
@@ -140,21 +141,8 @@ public final class SchemaValidator {
      * @return the validation result
      */
     public ValidationResult validate(JsonNode schema) {
-        ValidationResult result = new ValidationResult();
-
-        if (schema == null) {
-            result.addError("Schema cannot be null", "");
-            return result;
-        }
-
-        // Collect all defined references first for $ref validation
-        definedRefs = collectDefinedRefs(schema);
-        
-        // Collect namespaces with $import/$importdefs for lenient $ref validation
-        importNamespaces = collectImportNamespaces(schema);
-        
-        validateSchemaCore(schema, result, "", 0, new HashSet<>());
-        return result;
+        sourceLocator = null; // No source text available
+        return validateCore(schema);
     }
 
     /**
@@ -169,10 +157,37 @@ public final class SchemaValidator {
         }
         try {
             JsonNode schema = objectMapper.readTree(json);
-            return validate(schema);
+            sourceLocator = new JsonSourceLocator(json);
+            return validateCore(schema);
         } catch (JsonProcessingException e) {
             return ValidationResult.failure("Failed to parse JSON: " + e.getMessage());
         }
+    }
+
+    private ValidationResult validateCore(JsonNode schema) {
+        ValidationResult result = new ValidationResult();
+
+        if (schema == null) {
+            addError(result, ErrorCodes.SCHEMA_NULL, "Schema cannot be null", "");
+            return result;
+        }
+
+        // Collect all defined references first for $ref validation
+        definedRefs = collectDefinedRefs(schema);
+        
+        // Collect namespaces with $import/$importdefs for lenient $ref validation
+        importNamespaces = collectImportNamespaces(schema);
+        
+        validateSchemaCore(schema, result, "", 0, new HashSet<>());
+        return result;
+    }
+
+    /**
+     * Adds an error to the result with source location.
+     */
+    private void addError(ValidationResult result, String code, String message, String path) {
+        JsonLocation location = sourceLocator != null ? sourceLocator.getLocation(path) : JsonLocation.UNKNOWN;
+        result.addError(new ValidationError(code, message, path, ValidationSeverity.ERROR, location, null));
     }
 
     /**
@@ -249,7 +264,7 @@ public final class SchemaValidator {
 
     private void validateSchemaCore(JsonNode node, ValidationResult result, String path, int depth, Set<String> visitedRefs) {
         if (depth > options.getMaxValidationDepth()) {
-            result.addError("Maximum validation depth (" + options.getMaxValidationDepth() + ") exceeded", path);
+            addError(result, ErrorCodes.SCHEMA_MAX_DEPTH_EXCEEDED, "Maximum validation depth (" + options.getMaxValidationDepth() + ") exceeded", path);
             return;
         }
 
@@ -264,7 +279,7 @@ public final class SchemaValidator {
         }
 
         if (!node.isObject()) {
-            result.addError("Schema must be a boolean or object", path);
+            addError(result, ErrorCodes.SCHEMA_INVALID_TYPE, "Schema must be a boolean or object", path);
             return;
         }
 
@@ -274,7 +289,7 @@ public final class SchemaValidator {
         if (schema.has("$schema")) {
             JsonNode schemaValue = schema.get("$schema");
             if (!schemaValue.isTextual()) {
-                result.addError("$schema must be a string", appendPath(path, "$schema"));
+                addError(result, ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE, "$schema must be a string", appendPath(path, "$schema"));
             }
         }
 
@@ -302,12 +317,12 @@ public final class SchemaValidator {
                             }
                         }
                         if (!isImportedRef) {
-                            result.addError("$ref target does not exist: " + refStr, appendPath(path, "$ref"));
+                            addError(result, ErrorCodes.SCHEMA_REF_NOT_FOUND, "$ref target does not exist: " + refStr, appendPath(path, "$ref"));
                         }
                     } else {
                         // Check for circular reference
                         if (visitedRefs.contains(refStr)) {
-                            result.addError("Circular reference detected: " + refStr, appendPath(path, "$ref"));
+                            addError(result, ErrorCodes.SCHEMA_REF_CIRCULAR, "Circular reference detected: " + refStr, appendPath(path, "$ref"));
                         }
                     }
                 }
@@ -402,7 +417,7 @@ public final class SchemaValidator {
                                      !schema.has("prefixItems") && !schema.has("values");
         
         if (!hasSchemaKeyword && !isPureDefContainer) {
-            result.addError("Schema must have a 'type', '$ref', 'allOf', 'anyOf', 'oneOf', or '$extends' keyword", path);
+            addError(result, ErrorCodes.SCHEMA_MISSING_TYPE, "Schema must have a 'type', '$ref', 'allOf', 'anyOf', 'oneOf', or '$extends' keyword", path);
         }
     }
     
@@ -419,23 +434,23 @@ public final class SchemaValidator {
         // Numeric constraints on non-numeric types
         if (!isNumeric) {
             if (schema.has("minimum")) {
-                result.addError("'minimum' constraint is only valid for numeric types, not '" + typeStr + "'", 
+                addError(result, ErrorCodes.SCHEMA_CONSTRAINT_INVALID_FOR_TYPE, "'minimum' constraint is only valid for numeric types, not '" + typeStr + "'", 
                         appendPath(path, "minimum"));
             }
             if (schema.has("maximum")) {
-                result.addError("'maximum' constraint is only valid for numeric types, not '" + typeStr + "'", 
+                addError(result, ErrorCodes.SCHEMA_CONSTRAINT_INVALID_FOR_TYPE, "'maximum' constraint is only valid for numeric types, not '" + typeStr + "'", 
                         appendPath(path, "maximum"));
             }
             if (schema.has("exclusiveMinimum")) {
-                result.addError("'exclusiveMinimum' constraint is only valid for numeric types, not '" + typeStr + "'", 
+                addError(result, ErrorCodes.SCHEMA_CONSTRAINT_INVALID_FOR_TYPE, "'exclusiveMinimum' constraint is only valid for numeric types, not '" + typeStr + "'", 
                         appendPath(path, "exclusiveMinimum"));
             }
             if (schema.has("exclusiveMaximum")) {
-                result.addError("'exclusiveMaximum' constraint is only valid for numeric types, not '" + typeStr + "'", 
+                addError(result, ErrorCodes.SCHEMA_CONSTRAINT_INVALID_FOR_TYPE, "'exclusiveMaximum' constraint is only valid for numeric types, not '" + typeStr + "'", 
                         appendPath(path, "exclusiveMaximum"));
             }
             if (schema.has("multipleOf")) {
-                result.addError("'multipleOf' constraint is only valid for numeric types, not '" + typeStr + "'", 
+                addError(result, ErrorCodes.SCHEMA_CONSTRAINT_INVALID_FOR_TYPE, "'multipleOf' constraint is only valid for numeric types, not '" + typeStr + "'", 
                         appendPath(path, "multipleOf"));
             }
         }
@@ -443,15 +458,15 @@ public final class SchemaValidator {
         // String constraints on non-string types
         if (!isString) {
             if (schema.has("minLength")) {
-                result.addError("'minLength' constraint is only valid for string type, not '" + typeStr + "'", 
+                addError(result, ErrorCodes.SCHEMA_CONSTRAINT_INVALID_FOR_TYPE, "'minLength' constraint is only valid for string type, not '" + typeStr + "'", 
                         appendPath(path, "minLength"));
             }
             if (schema.has("maxLength")) {
-                result.addError("'maxLength' constraint is only valid for string type, not '" + typeStr + "'", 
+                addError(result, ErrorCodes.SCHEMA_CONSTRAINT_INVALID_FOR_TYPE, "'maxLength' constraint is only valid for string type, not '" + typeStr + "'", 
                         appendPath(path, "maxLength"));
             }
             if (schema.has("pattern")) {
-                result.addError("'pattern' constraint is only valid for string type, not '" + typeStr + "'", 
+                addError(result, ErrorCodes.SCHEMA_CONSTRAINT_INVALID_FOR_TYPE, "'pattern' constraint is only valid for string type, not '" + typeStr + "'", 
                         appendPath(path, "pattern"));
             }
         }
@@ -459,11 +474,11 @@ public final class SchemaValidator {
         // Array constraints on non-array types
         if (!isArray && !"tuple".equals(typeStr)) {
             if (schema.has("minItems")) {
-                result.addError("'minItems' constraint is only valid for array/set/tuple types, not '" + typeStr + "'", 
+                addError(result, ErrorCodes.SCHEMA_CONSTRAINT_INVALID_FOR_TYPE, "'minItems' constraint is only valid for array/set/tuple types, not '" + typeStr + "'", 
                         appendPath(path, "minItems"));
             }
             if (schema.has("maxItems")) {
-                result.addError("'maxItems' constraint is only valid for array/set/tuple types, not '" + typeStr + "'", 
+                addError(result, ErrorCodes.SCHEMA_CONSTRAINT_INVALID_FOR_TYPE, "'maxItems' constraint is only valid for array/set/tuple types, not '" + typeStr + "'", 
                         appendPath(path, "maxItems"));
             }
         }
@@ -471,32 +486,32 @@ public final class SchemaValidator {
 
     private void validateStringProperty(JsonNode value, String keyword, String path, ValidationResult result) {
         if (value == null || !value.isTextual()) {
-            result.addError(keyword + " must be a string", appendPath(path, keyword));
+            addError(result, ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE, keyword + " must be a string", appendPath(path, keyword));
         }
     }
 
     private void validateIdentifier(JsonNode value, String keyword, String path, ValidationResult result) {
         if (value == null || !value.isTextual()) {
-            result.addError(keyword + " must be a string", appendPath(path, keyword));
+            addError(result, ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE, keyword + " must be a string", appendPath(path, keyword));
             return;
         }
 
         String str = value.asText();
         if (!IDENTIFIER_PATTERN.matcher(str).matches()) {
-            result.addError(keyword + " must be a valid identifier (start with letter or underscore, contain only letters, digits, underscores)",
+            addError(result, ErrorCodes.SCHEMA_NAME_INVALID, keyword + " must be a valid identifier (start with letter or underscore, contain only letters, digits, underscores)",
                     appendPath(path, keyword));
         }
     }
 
     private void validateReference(JsonNode value, String keyword, String path, ValidationResult result) {
         if (value == null || !value.isTextual()) {
-            result.addError(keyword + " must be a string", appendPath(path, keyword));
+            addError(result, ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE, keyword + " must be a string", appendPath(path, keyword));
             return;
         }
 
         String str = value.asText();
         if (str.isBlank()) {
-            result.addError(keyword + " cannot be empty", appendPath(path, keyword));
+            addError(result, ErrorCodes.SCHEMA_KEYWORD_EMPTY, keyword + " cannot be empty", appendPath(path, keyword));
         }
     }
 
@@ -508,7 +523,7 @@ public final class SchemaValidator {
         if (value.isArray()) {
             for (JsonNode item : value) {
                 if (!item.isTextual()) {
-                    result.addError(keyword + " array items must be strings", appendPath(path, keyword));
+                    addError(result, ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE, keyword + " array items must be strings", appendPath(path, keyword));
                     break;
                 }
             }
@@ -520,19 +535,19 @@ public final class SchemaValidator {
             while (fields.hasNext()) {
                 Map.Entry<String, JsonNode> field = fields.next();
                 if (!field.getValue().isTextual()) {
-                    result.addError(keyword + " object values must be strings",
+                    addError(result, ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE, keyword + " object values must be strings",
                             appendPath(path, keyword + "/" + field.getKey()));
                 }
             }
             return;
         }
 
-        result.addError(keyword + " must be a string, array, or object", appendPath(path, keyword));
+        addError(result, ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE, keyword + " must be a string, array, or object", appendPath(path, keyword));
     }
 
     private void validateDefinitions(JsonNode value, String keyword, String path, ValidationResult result, int depth, Set<String> visitedRefs) {
         if (!value.isObject()) {
-            result.addError(keyword + " must be an object", appendPath(path, keyword));
+            addError(result, ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE, keyword + " must be an object", appendPath(path, keyword));
             return;
         }
 
@@ -584,7 +599,7 @@ public final class SchemaValidator {
         if (value.isTextual()) {
             String typeStr = value.asText();
             if (!ALL_TYPES.contains(typeStr) && !typeStr.contains(":")) {
-                result.addError("Invalid type: '" + typeStr + "'", typePath);
+                addError(result, ErrorCodes.SCHEMA_TYPE_INVALID, "Invalid type: '" + typeStr + "'", typePath);
             }
             return;
         }
@@ -592,7 +607,7 @@ public final class SchemaValidator {
         if (value.isArray()) {
             ArrayNode arr = (ArrayNode) value;
             if (arr.isEmpty()) {
-                result.addError("type array cannot be empty", typePath);
+                addError(result, ErrorCodes.SCHEMA_TYPE_ARRAY_EMPTY, "type array cannot be empty", typePath);
                 return;
             }
 
@@ -600,17 +615,17 @@ public final class SchemaValidator {
                 if (item.isTextual()) {
                     String itemType = item.asText();
                     if (!ALL_TYPES.contains(itemType) && !itemType.contains(":")) {
-                        result.addError("Invalid type in array: '" + itemType + "'", typePath);
+                        addError(result, ErrorCodes.SCHEMA_TYPE_INVALID, "Invalid type in array: '" + itemType + "'", typePath);
                     }
                 } else if (item.isObject()) {
                     // Type union can include $ref objects
                     if (item.has("$ref")) {
                         validateReference(item.get("$ref"), "$ref", typePath, result);
                     } else {
-                        result.addError("type array objects must contain $ref", typePath);
+                        addError(result, ErrorCodes.SCHEMA_TYPE_OBJECT_MISSING_REF, "type array objects must contain $ref", typePath);
                     }
                 } else {
-                    result.addError("type array items must be strings or objects with $ref", typePath);
+                    addError(result, ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE, "type array items must be strings or objects with $ref", typePath);
                 }
             }
             return;
@@ -621,12 +636,12 @@ public final class SchemaValidator {
             if (value.has("$ref")) {
                 validateReference(value.get("$ref"), "$ref", typePath, result);
             } else {
-                result.addError("type object must contain $ref", typePath);
+                addError(result, ErrorCodes.SCHEMA_TYPE_OBJECT_MISSING_REF, "type object must contain $ref", typePath);
             }
             return;
         }
 
-        result.addError("type must be a string, array of strings, or object with $ref", typePath);
+        addError(result, ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE, "type must be a string, array of strings, or object with $ref", typePath);
     }
 
     private String getTypeString(JsonNode value) {
@@ -649,7 +664,7 @@ public final class SchemaValidator {
         if (schema.has("properties")) {
             JsonNode props = schema.get("properties");
             if (!props.isObject()) {
-                result.addError("properties must be an object", appendPath(path, "properties"));
+                addError(result, ErrorCodes.SCHEMA_PROPERTIES_NOT_OBJECT, "properties must be an object", appendPath(path, "properties"));
             } else {
                 Iterator<Map.Entry<String, JsonNode>> fields = props.fields();
                 while (fields.hasNext()) {
@@ -668,7 +683,7 @@ public final class SchemaValidator {
             } else if (additional.isObject()) {
                 validateSchemaCore(additional, result, appendPath(path, "additionalProperties"), depth + 1, visitedRefs);
             } else {
-                result.addError("additionalProperties must be a boolean or schema",
+                addError(result, ErrorCodes.SCHEMA_ADDITIONAL_PROPERTIES_INVALID, "additionalProperties must be a boolean or schema",
                         appendPath(path, "additionalProperties"));
             }
         }
@@ -677,7 +692,7 @@ public final class SchemaValidator {
         if (schema.has("required")) {
             JsonNode required = schema.get("required");
             if (!required.isArray()) {
-                result.addError("required must be an array", appendPath(path, "required"));
+                addError(result, ErrorCodes.SCHEMA_REQUIRED_NOT_ARRAY, "required must be an array", appendPath(path, "required"));
             } else {
                 Set<String> definedProperties = new HashSet<>();
                 if (schema.has("properties") && schema.get("properties").isObject()) {
@@ -689,13 +704,13 @@ public final class SchemaValidator {
                 
                 for (JsonNode item : required) {
                     if (!item.isTextual()) {
-                        result.addError("required array items must be strings", appendPath(path, "required"));
+                        addError(result, ErrorCodes.SCHEMA_REQUIRED_ITEM_NOT_STRING, "required array items must be strings", appendPath(path, "required"));
                         break;
                     }
                     // Check if required property is defined in properties
                     String reqProp = item.asText();
                     if (!definedProperties.isEmpty() && !definedProperties.contains(reqProp)) {
-                        result.addError("required property '" + reqProp + "' is not defined in properties", 
+                        addError(result, ErrorCodes.SCHEMA_REQUIRED_PROPERTY_NOT_DEFINED, "required property '" + reqProp + "' is not defined in properties", 
                                 appendPath(path, "required"));
                     }
                 }
@@ -710,7 +725,7 @@ public final class SchemaValidator {
     private void validateArraySchema(ObjectNode schema, String path, ValidationResult result, int depth, Set<String> visitedRefs) {
         // Array type requires items definition
         if (!schema.has("items")) {
-            result.addError("array type requires 'items' definition", path);
+            addError(result, ErrorCodes.SCHEMA_ARRAY_MISSING_ITEMS, "array type requires 'items' definition", path);
         } else {
             validateSchemaCore(schema.get("items"), result, appendPath(path, "items"), depth + 1, visitedRefs);
         }
@@ -724,14 +739,14 @@ public final class SchemaValidator {
             long minItems = schema.get("minItems").asLong();
             long maxItems = schema.get("maxItems").asLong();
             if (minItems > maxItems) {
-                result.addError("minItems (" + minItems + ") cannot exceed maxItems (" + maxItems + ")", path);
+                addError(result, ErrorCodes.SCHEMA_MIN_GREATER_THAN_MAX, "minItems (" + minItems + ") cannot exceed maxItems (" + maxItems + ")", path);
             }
         }
 
         // Validate uniqueItems
         if (schema.has("uniqueItems")) {
             if (!schema.get("uniqueItems").isBoolean()) {
-                result.addError("uniqueItems must be a boolean", appendPath(path, "uniqueItems"));
+                addError(result, ErrorCodes.SCHEMA_UNIQUE_ITEMS_NOT_BOOLEAN, "uniqueItems must be a boolean", appendPath(path, "uniqueItems"));
             }
         }
 
@@ -752,14 +767,14 @@ public final class SchemaValidator {
         boolean hasTupleKeyword = schema.has("tuple") && schema.has("properties");
         
         if (!hasPrefixItems && !hasTupleKeyword) {
-            result.addError("tuple type requires 'prefixItems' or 'tuple' with 'properties' definition", path);
+            addError(result, ErrorCodes.SCHEMA_TUPLE_MISSING_PREFIX_ITEMS, "tuple type requires 'prefixItems' or 'tuple' with 'properties' definition", path);
             return;
         }
         
         if (hasPrefixItems) {
             JsonNode prefixItems = schema.get("prefixItems");
             if (!prefixItems.isArray()) {
-                result.addError("prefixItems must be an array", appendPath(path, "prefixItems"));
+                addError(result, ErrorCodes.SCHEMA_PREFIX_ITEMS_NOT_ARRAY, "prefixItems must be an array", appendPath(path, "prefixItems"));
             } else {
                 ArrayNode arr = (ArrayNode) prefixItems;
                 for (int i = 0; i < arr.size(); i++) {
@@ -771,17 +786,17 @@ public final class SchemaValidator {
         if (hasTupleKeyword) {
             JsonNode tupleNode = schema.get("tuple");
             if (!tupleNode.isArray()) {
-                result.addError("tuple must be an array of property names", appendPath(path, "tuple"));
+                addError(result, ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE, "tuple must be an array of property names", appendPath(path, "tuple"));
             } else {
                 // Validate that all items in tuple array refer to valid properties
                 ObjectNode properties = (ObjectNode) schema.get("properties");
                 for (JsonNode item : tupleNode) {
                     if (!item.isTextual()) {
-                        result.addError("tuple array must contain strings", appendPath(path, "tuple"));
+                        addError(result, ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE, "tuple array must contain strings", appendPath(path, "tuple"));
                     } else {
                         String propName = item.asText();
                         if (!properties.has(propName)) {
-                            result.addError("tuple references undefined property: " + propName, appendPath(path, "tuple"));
+                            addError(result, ErrorCodes.SCHEMA_REF_NOT_FOUND, "tuple references undefined property: " + propName, appendPath(path, "tuple"));
                         }
                     }
                 }
@@ -796,7 +811,7 @@ public final class SchemaValidator {
             } else if (items.isObject()) {
                 validateSchemaCore(items, result, appendPath(path, "items"), depth + 1, visitedRefs);
             } else {
-                result.addError("items must be a boolean or schema for tuple type", appendPath(path, "items"));
+                addError(result, ErrorCodes.SCHEMA_ITEMS_INVALID_FOR_TUPLE, "items must be a boolean or schema for tuple type", appendPath(path, "items"));
             }
         }
     }
@@ -804,7 +819,7 @@ public final class SchemaValidator {
     private void validateMapSchema(ObjectNode schema, String path, ValidationResult result, int depth, Set<String> visitedRefs) {
         // Map type requires values definition
         if (!schema.has("values")) {
-            result.addError("map type requires 'values' definition", path);
+            addError(result, ErrorCodes.SCHEMA_MAP_MISSING_VALUES, "map type requires 'values' definition", path);
         } else {
             validateSchemaCore(schema.get("values"), result, appendPath(path, "values"), depth + 1, visitedRefs);
         }
@@ -824,14 +839,14 @@ public final class SchemaValidator {
         boolean hasChoices = schema.has("choices");
         boolean hasOneOf = schema.has("oneOf");
         if (!hasOptions && !hasChoices && !hasOneOf) {
-            result.addError("choice type requires 'options', 'choices', or 'oneOf'", path);
+            addError(result, ErrorCodes.SCHEMA_CHOICE_MISSING_OPTIONS, "choice type requires 'options', 'choices', or 'oneOf'", path);
         }
 
         // Validate options (legacy keyword)
         if (schema.has("options")) {
             JsonNode options = schema.get("options");
             if (!options.isObject()) {
-                result.addError("options must be an object", appendPath(path, "options"));
+                addError(result, ErrorCodes.SCHEMA_OPTIONS_NOT_OBJECT, "options must be an object", appendPath(path, "options"));
             } else {
                 Iterator<Map.Entry<String, JsonNode>> fields = options.fields();
                 while (fields.hasNext()) {
@@ -846,7 +861,7 @@ public final class SchemaValidator {
         if (schema.has("choices")) {
             JsonNode choices = schema.get("choices");
             if (!choices.isObject()) {
-                result.addError("choices must be an object", appendPath(path, "choices"));
+                addError(result, ErrorCodes.SCHEMA_CHOICES_NOT_OBJECT, "choices must be an object", appendPath(path, "choices"));
             } else {
                 Iterator<Map.Entry<String, JsonNode>> fields = choices.fields();
                 while (fields.hasNext()) {
@@ -877,7 +892,7 @@ public final class SchemaValidator {
             long minLength = schema.get("minLength").asLong();
             long maxLength = schema.get("maxLength").asLong();
             if (minLength > maxLength) {
-                result.addError("minLength (" + minLength + ") cannot exceed maxLength (" + maxLength + ")", path);
+                addError(result, ErrorCodes.SCHEMA_MIN_GREATER_THAN_MAX, "minLength (" + minLength + ") cannot exceed maxLength (" + maxLength + ")", path);
             }
         }
 
@@ -885,12 +900,12 @@ public final class SchemaValidator {
         if (schema.has("pattern")) {
             JsonNode pattern = schema.get("pattern");
             if (!pattern.isTextual()) {
-                result.addError("pattern must be a string", appendPath(path, "pattern"));
+                addError(result, ErrorCodes.SCHEMA_PATTERN_NOT_STRING, "pattern must be a string", appendPath(path, "pattern"));
             } else {
                 try {
                     Pattern.compile(pattern.asText());
                 } catch (PatternSyntaxException e) {
-                    result.addError("pattern is not a valid regular expression: '" + pattern.asText() + "'",
+                    addError(result, ErrorCodes.SCHEMA_PATTERN_INVALID, "pattern is not a valid regular expression: '" + pattern.asText() + "'",
                             appendPath(path, "pattern"));
                 }
             }
@@ -924,20 +939,20 @@ public final class SchemaValidator {
             double minimum = schema.get("minimum").asDouble();
             double maximum = schema.get("maximum").asDouble();
             if (minimum > maximum) {
-                result.addError("minimum (" + minimum + ") cannot exceed maximum (" + maximum + ")", path);
+                addError(result, ErrorCodes.SCHEMA_MIN_GREATER_THAN_MAX, "minimum (" + minimum + ") cannot exceed maximum (" + maximum + ")", path);
             }
         }
     }
 
     private void validateEnum(JsonNode value, String path, ValidationResult result) {
         if (!value.isArray()) {
-            result.addError("enum must be an array", appendPath(path, "enum"));
+            addError(result, ErrorCodes.SCHEMA_ENUM_NOT_ARRAY, "enum must be an array", appendPath(path, "enum"));
             return;
         }
 
         ArrayNode arr = (ArrayNode) value;
         if (arr.isEmpty()) {
-            result.addError("enum array cannot be empty", appendPath(path, "enum"));
+            addError(result, ErrorCodes.SCHEMA_ENUM_EMPTY, "enum array cannot be empty", appendPath(path, "enum"));
             return;
         }
         
@@ -946,7 +961,7 @@ public final class SchemaValidator {
         for (JsonNode item : arr) {
             String itemStr = item.toString(); // Use JSON representation for comparison
             if (!seen.add(itemStr)) {
-                result.addError("enum contains duplicate values", appendPath(path, "enum"));
+                addError(result, ErrorCodes.SCHEMA_ENUM_DUPLICATES, "enum contains duplicate values", appendPath(path, "enum"));
                 break;
             }
         }
@@ -991,13 +1006,13 @@ public final class SchemaValidator {
         String keywordPath = appendPath(path, keyword);
 
         if (!value.isArray()) {
-            result.addError(keyword + " must be an array", keywordPath);
+            addError(result, ErrorCodes.SCHEMA_COMPOSITION_NOT_ARRAY, keyword + " must be an array", keywordPath);
             return;
         }
 
         ArrayNode arr = (ArrayNode) value;
         if (arr.isEmpty()) {
-            result.addError(keyword + " array cannot be empty", keywordPath);
+            addError(result, ErrorCodes.SCHEMA_COMPOSITION_EMPTY, keyword + " array cannot be empty", keywordPath);
             return;
         }
 
@@ -1008,7 +1023,7 @@ public final class SchemaValidator {
 
     private void validateAltnames(JsonNode value, String path, ValidationResult result) {
         if (!value.isObject()) {
-            result.addError("altnames must be an object", appendPath(path, "altnames"));
+            addError(result, ErrorCodes.SCHEMA_ALTNAMES_NOT_OBJECT, "altnames must be an object", appendPath(path, "altnames"));
             return;
         }
 
@@ -1016,7 +1031,7 @@ public final class SchemaValidator {
         while (fields.hasNext()) {
             Map.Entry<String, JsonNode> field = fields.next();
             if (!field.getValue().isTextual()) {
-                result.addError("altnames values must be strings",
+                addError(result, ErrorCodes.SCHEMA_ALTNAMES_VALUE_NOT_STRING, "altnames values must be strings",
                         appendPath(path, "altnames/" + field.getKey()));
             }
         }
@@ -1026,11 +1041,11 @@ public final class SchemaValidator {
         if (schema.has(keyword)) {
             JsonNode value = schema.get(keyword);
             if (!value.isInt() && !value.isLong()) {
-                result.addError(keyword + " must be a non-negative integer", appendPath(path, keyword));
+                addError(result, ErrorCodes.SCHEMA_INTEGER_CONSTRAINT_INVALID, keyword + " must be a non-negative integer", appendPath(path, keyword));
                 return;
             }
             if (value.asLong() < 0) {
-                result.addError(keyword + " must be a non-negative integer", appendPath(path, keyword));
+                addError(result, ErrorCodes.SCHEMA_INTEGER_CONSTRAINT_INVALID, keyword + " must be a non-negative integer", appendPath(path, keyword));
             }
         }
     }
@@ -1039,7 +1054,7 @@ public final class SchemaValidator {
         if (schema.has(keyword)) {
             JsonNode value = schema.get(keyword);
             if (!value.isNumber()) {
-                result.addError(keyword + " must be a number", appendPath(path, keyword));
+                addError(result, ErrorCodes.SCHEMA_NUMBER_CONSTRAINT_INVALID, keyword + " must be a number", appendPath(path, keyword));
             }
         }
     }
@@ -1048,11 +1063,11 @@ public final class SchemaValidator {
         if (schema.has(keyword)) {
             JsonNode value = schema.get(keyword);
             if (!value.isNumber()) {
-                result.addError(keyword + " must be a positive number", appendPath(path, keyword));
+                addError(result, ErrorCodes.SCHEMA_POSITIVE_NUMBER_CONSTRAINT_INVALID, keyword + " must be a positive number", appendPath(path, keyword));
                 return;
             }
             if (value.asDouble() <= 0) {
-                result.addError(keyword + " must be a positive number", appendPath(path, keyword));
+                addError(result, ErrorCodes.SCHEMA_POSITIVE_NUMBER_CONSTRAINT_INVALID, keyword + " must be a positive number", appendPath(path, keyword));
             }
         }
     }

@@ -1,6 +1,8 @@
 // Package jsonstructure provides validators for JSON Structure schemas and instances.
 package jsonstructure
 
+import "fmt"
+
 // ValidationResult represents the result of a validation operation.
 type ValidationResult struct {
 	// IsValid indicates whether the validation passed.
@@ -11,12 +13,39 @@ type ValidationResult struct {
 
 // ValidationError represents a single validation error.
 type ValidationError struct {
-	// Path is the JSON Pointer path to the error location.
-	Path string `json:"path"`
+	// Code is the error code for programmatic handling.
+	Code string `json:"code"`
 	// Message is a human-readable error description.
 	Message string `json:"message"`
-	// Code is an optional error code for programmatic handling.
-	Code string `json:"code,omitempty"`
+	// Path is the JSON Pointer path to the error location.
+	Path string `json:"path,omitempty"`
+	// Severity is the severity of the validation message.
+	Severity ValidationSeverity `json:"severity,omitempty"`
+	// Location is the source location (line/column) of the error.
+	Location JsonLocation `json:"location,omitempty"`
+	// SchemaPath is the path in the schema that caused the error.
+	SchemaPath string `json:"schemaPath,omitempty"`
+}
+
+// String returns a formatted string representation of the error.
+func (e ValidationError) String() string {
+	result := ""
+
+	if e.Path != "" {
+		result += e.Path + " "
+	}
+
+	if e.Location.IsKnown() {
+		result += fmt.Sprintf("(%d:%d) ", e.Location.Line, e.Location.Column)
+	}
+
+	result += "[" + e.Code + "] " + e.Message
+
+	if e.SchemaPath != "" {
+		result += " (schema: " + e.SchemaPath + ")"
+	}
+
+	return result
 }
 
 // SchemaValidatorOptions configures schema validation.
