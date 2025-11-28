@@ -6,16 +6,90 @@ using System.Text.Json.Nodes;
 namespace JsonStructure.Validation;
 
 /// <summary>
-/// Represents an error encountered during validation.
+/// Represents the severity of a validation message.
 /// </summary>
+public enum ValidationSeverity
+{
+    /// <summary>
+    /// An error that prevents validation from succeeding.
+    /// </summary>
+    Error,
+    
+    /// <summary>
+    /// A warning that does not prevent validation from succeeding.
+    /// </summary>
+    Warning
+}
+
+/// <summary>
+/// Represents a location in a JSON document with line and column information.
+/// </summary>
+/// <param name="Line">The 1-based line number.</param>
+/// <param name="Column">The 1-based column number.</param>
+public readonly record struct JsonLocation(int Line, int Column)
+{
+    /// <summary>
+    /// Gets a location representing an unknown position.
+    /// </summary>
+    public static JsonLocation Unknown { get; } = new(0, 0);
+    
+    /// <summary>
+    /// Gets whether this location is known (non-zero).
+    /// </summary>
+    public bool IsKnown => Line > 0 && Column > 0;
+    
+    /// <summary>
+    /// Returns a string representation of the location.
+    /// </summary>
+    public override string ToString() => IsKnown ? $"({Line}:{Column})" : "";
+}
+
+/// <summary>
+/// Represents an error or warning encountered during validation.
+/// </summary>
+/// <param name="Code">The unique error code (e.g., SCHEMA_NULL, INSTANCE_TYPE_MISMATCH).</param>
 /// <param name="Message">The error message describing the validation failure.</param>
 /// <param name="Path">The JSON path where the error occurred.</param>
-public sealed record ValidationError(string Message, string Path = "")
+/// <param name="Severity">The severity of the message (Error or Warning).</param>
+/// <param name="Location">The line and column in the source JSON where the error occurred.</param>
+/// <param name="SchemaPath">For instance validation, the path to the schema rule that caused the error.</param>
+public sealed record ValidationError(
+    string Code,
+    string Message, 
+    string Path = "",
+    ValidationSeverity Severity = ValidationSeverity.Error,
+    JsonLocation Location = default,
+    string? SchemaPath = null)
 {
+    /// <summary>
+    /// Creates a ValidationError with just a message and path (for backward compatibility).
+    /// </summary>
+    public ValidationError(string message, string path) 
+        : this("UNKNOWN", message, path, ValidationSeverity.Error, default, null)
+    {
+    }
+
     /// <summary>
     /// Returns a string representation of the error.
     /// </summary>
-    public override string ToString() => string.IsNullOrEmpty(Path) ? Message : $"{Path}: {Message}";
+    public override string ToString()
+    {
+        var parts = new List<string>();
+        
+        if (!string.IsNullOrEmpty(Path))
+            parts.Add(Path);
+            
+        if (Location.IsKnown)
+            parts.Add(Location.ToString());
+            
+        parts.Add($"[{Code}]");
+        parts.Add(Message);
+        
+        if (!string.IsNullOrEmpty(SchemaPath))
+            parts.Add($"(schema: {SchemaPath})");
+            
+        return string.Join(" ", parts);
+    }
 }
 
 /// <summary>
@@ -24,6 +98,7 @@ public sealed record ValidationError(string Message, string Path = "")
 public sealed class ValidationResult
 {
     private readonly List<ValidationError> _errors;
+    private readonly List<ValidationError> _warnings;
 
     /// <summary>
     /// Gets whether the validation was successful (no errors).
@@ -36,11 +111,22 @@ public sealed class ValidationResult
     public IReadOnlyList<ValidationError> Errors => _errors;
 
     /// <summary>
+    /// Gets the collection of validation warnings.
+    /// </summary>
+    public IReadOnlyList<ValidationError> Warnings => _warnings;
+
+    /// <summary>
+    /// Gets all messages (errors and warnings combined).
+    /// </summary>
+    public IEnumerable<ValidationError> AllMessages => _errors.Concat(_warnings);
+
+    /// <summary>
     /// Initializes a new instance of <see cref="ValidationResult"/>.
     /// </summary>
     public ValidationResult()
     {
         _errors = new List<ValidationError>();
+        _warnings = new List<ValidationError>();
     }
 
     /// <summary>
@@ -49,11 +135,12 @@ public sealed class ValidationResult
     /// <param name="errors">The validation errors.</param>
     public ValidationResult(IEnumerable<ValidationError> errors)
     {
-        _errors = errors.ToList();
+        _errors = errors.Where(e => e.Severity == ValidationSeverity.Error).ToList();
+        _warnings = errors.Where(e => e.Severity == ValidationSeverity.Warning).ToList();
     }
 
     /// <summary>
-    /// Adds an error to the result.
+    /// Adds an error to the result (backward compatible).
     /// </summary>
     /// <param name="message">The error message.</param>
     /// <param name="path">The path where the error occurred.</param>
@@ -63,12 +150,41 @@ public sealed class ValidationResult
     }
 
     /// <summary>
+    /// Adds an error with a code to the result.
+    /// </summary>
+    /// <param name="code">The error code.</param>
+    /// <param name="message">The error message.</param>
+    /// <param name="path">The path where the error occurred.</param>
+    /// <param name="location">The source location.</param>
+    /// <param name="schemaPath">The schema path for instance validation errors.</param>
+    public void AddError(string code, string message, string path = "", JsonLocation location = default, string? schemaPath = null)
+    {
+        _errors.Add(new ValidationError(code, message, path, ValidationSeverity.Error, location, schemaPath));
+    }
+
+    /// <summary>
     /// Adds an error to the result.
     /// </summary>
     /// <param name="error">The error to add.</param>
     public void AddError(ValidationError error)
     {
-        _errors.Add(error);
+        if (error.Severity == ValidationSeverity.Warning)
+            _warnings.Add(error);
+        else
+            _errors.Add(error);
+    }
+
+    /// <summary>
+    /// Adds a warning to the result.
+    /// </summary>
+    /// <param name="code">The warning code.</param>
+    /// <param name="message">The warning message.</param>
+    /// <param name="path">The path where the warning occurred.</param>
+    /// <param name="location">The source location.</param>
+    /// <param name="schemaPath">The schema path for instance validation warnings.</param>
+    public void AddWarning(string code, string message, string path = "", JsonLocation location = default, string? schemaPath = null)
+    {
+        _warnings.Add(new ValidationError(code, message, path, ValidationSeverity.Warning, location, schemaPath));
     }
 
     /// <summary>
@@ -77,7 +193,10 @@ public sealed class ValidationResult
     /// <param name="errors">The errors to add.</param>
     public void AddErrors(IEnumerable<ValidationError> errors)
     {
-        _errors.AddRange(errors);
+        foreach (var error in errors)
+        {
+            AddError(error);
+        }
     }
 
     /// <summary>

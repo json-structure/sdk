@@ -1,0 +1,869 @@
+{
+  "$schema": "https://json-structure.org/assets/error-messages.schema.json",
+  "$comment": "Standardized error and warning messages for JSON Structure SDK validators across all implementations",
+  "version": "1.0.0",
+  "messages": {
+    "SCHEMA_NULL": {
+      "code": "SCHEMA_NULL",
+      "severity": "error",
+      "category": "schema",
+      "message": "Schema cannot be null",
+      "parameters": []
+    },
+    "SCHEMA_INVALID_TYPE": {
+      "code": "SCHEMA_INVALID_TYPE",
+      "severity": "error",
+      "category": "schema",
+      "message": "Schema must be a boolean or object",
+      "parameters": []
+    },
+    "SCHEMA_MAX_DEPTH_EXCEEDED": {
+      "code": "SCHEMA_MAX_DEPTH_EXCEEDED",
+      "severity": "error",
+      "category": "schema",
+      "message": "Maximum validation depth ({maxDepth}) exceeded",
+      "parameters": ["maxDepth"]
+    },
+    "SCHEMA_KEYWORD_INVALID_TYPE": {
+      "code": "SCHEMA_KEYWORD_INVALID_TYPE",
+      "severity": "error",
+      "category": "schema",
+      "message": "{keyword} must be {expectedType}",
+      "parameters": ["keyword", "expectedType"]
+    },
+    "SCHEMA_KEYWORD_EMPTY": {
+      "code": "SCHEMA_KEYWORD_EMPTY",
+      "severity": "error",
+      "category": "schema",
+      "message": "{keyword} cannot be empty",
+      "parameters": ["keyword"]
+    },
+    "SCHEMA_TYPE_INVALID": {
+      "code": "SCHEMA_TYPE_INVALID",
+      "severity": "error",
+      "category": "schema",
+      "message": "Invalid type: '{typeName}'",
+      "parameters": ["typeName"]
+    },
+    "SCHEMA_TYPE_ARRAY_EMPTY": {
+      "code": "SCHEMA_TYPE_ARRAY_EMPTY",
+      "severity": "error",
+      "category": "schema",
+      "message": "type array cannot be empty",
+      "parameters": []
+    },
+    "SCHEMA_TYPE_OBJECT_MISSING_REF": {
+      "code": "SCHEMA_TYPE_OBJECT_MISSING_REF",
+      "severity": "error",
+      "category": "schema",
+      "message": "type object must contain $ref",
+      "parameters": []
+    },
+    "SCHEMA_REF_NOT_FOUND": {
+      "code": "SCHEMA_REF_NOT_FOUND",
+      "severity": "error",
+      "category": "schema",
+      "message": "$ref target does not exist: {refPath}",
+      "parameters": ["refPath"]
+    },
+    "SCHEMA_REF_CIRCULAR": {
+      "code": "SCHEMA_REF_CIRCULAR",
+      "severity": "error",
+      "category": "schema",
+      "message": "Circular reference detected: {refPath}",
+      "parameters": ["refPath"]
+    },
+    "SCHEMA_MISSING_TYPE": {
+      "code": "SCHEMA_MISSING_TYPE",
+      "severity": "error",
+      "category": "schema",
+      "message": "Schema must have a 'type' keyword or other schema-defining keyword",
+      "parameters": []
+    },
+    "SCHEMA_ROOT_MISSING_TYPE": {
+      "code": "SCHEMA_ROOT_MISSING_TYPE",
+      "severity": "error",
+      "category": "schema",
+      "message": "Root schema must have 'type', '$root', or other schema-defining keyword",
+      "parameters": []
+    },
+    "SCHEMA_NAME_INVALID": {
+      "code": "SCHEMA_NAME_INVALID",
+      "severity": "error",
+      "category": "schema",
+      "message": "{keyword} must be a valid identifier (start with letter or underscore, contain only letters, digits, underscores)",
+      "parameters": ["keyword"]
+    },
+    "SCHEMA_CONSTRAINT_INVALID_FOR_TYPE": {
+      "code": "SCHEMA_CONSTRAINT_INVALID_FOR_TYPE",
+      "severity": "error",
+      "category": "schema",
+      "message": "'{constraint}' constraint is only valid for {validTypes}, not '{actualType}'",
+      "parameters": ["constraint", "validTypes", "actualType"]
+    },
+    "SCHEMA_MIN_GREATER_THAN_MAX": {
+      "code": "SCHEMA_MIN_GREATER_THAN_MAX",
+      "severity": "error",
+      "category": "schema",
+      "message": "'{minKeyword}' cannot be greater than '{maxKeyword}'",
+      "parameters": ["minKeyword", "maxKeyword"]
+    },
+    "SCHEMA_PROPERTIES_NOT_OBJECT": {
+      "code": "SCHEMA_PROPERTIES_NOT_OBJECT",
+      "severity": "error",
+      "category": "schema",
+      "message": "properties must be an object",
+      "parameters": []
+    },
+    "SCHEMA_REQUIRED_NOT_ARRAY": {
+      "code": "SCHEMA_REQUIRED_NOT_ARRAY",
+      "severity": "error",
+      "category": "schema",
+      "message": "required must be an array",
+      "parameters": []
+    },
+    "SCHEMA_REQUIRED_ITEM_NOT_STRING": {
+      "code": "SCHEMA_REQUIRED_ITEM_NOT_STRING",
+      "severity": "error",
+      "category": "schema",
+      "message": "required array items must be strings",
+      "parameters": []
+    },
+    "SCHEMA_REQUIRED_PROPERTY_NOT_DEFINED": {
+      "code": "SCHEMA_REQUIRED_PROPERTY_NOT_DEFINED",
+      "severity": "error",
+      "category": "schema",
+      "message": "Required property '{propertyName}' is not defined in properties",
+      "parameters": ["propertyName"]
+    },
+    "SCHEMA_ADDITIONAL_PROPERTIES_INVALID": {
+      "code": "SCHEMA_ADDITIONAL_PROPERTIES_INVALID",
+      "severity": "error",
+      "category": "schema",
+      "message": "additionalProperties must be a boolean or schema",
+      "parameters": []
+    },
+    "SCHEMA_ARRAY_MISSING_ITEMS": {
+      "code": "SCHEMA_ARRAY_MISSING_ITEMS",
+      "severity": "error",
+      "category": "schema",
+      "message": "array type requires 'items' or 'contains' schema",
+      "parameters": []
+    },
+    "SCHEMA_TUPLE_MISSING_PREFIX_ITEMS": {
+      "code": "SCHEMA_TUPLE_MISSING_PREFIX_ITEMS",
+      "severity": "error",
+      "category": "schema",
+      "message": "tuple type requires 'prefixItems' or 'tuple' with 'properties'",
+      "parameters": []
+    },
+    "SCHEMA_PREFIX_ITEMS_NOT_ARRAY": {
+      "code": "SCHEMA_PREFIX_ITEMS_NOT_ARRAY",
+      "severity": "error",
+      "category": "schema",
+      "message": "prefixItems must be an array",
+      "parameters": []
+    },
+    "SCHEMA_MAP_MISSING_VALUES": {
+      "code": "SCHEMA_MAP_MISSING_VALUES",
+      "severity": "error",
+      "category": "schema",
+      "message": "map type requires 'values' schema",
+      "parameters": []
+    },
+    "SCHEMA_CHOICE_MISSING_OPTIONS": {
+      "code": "SCHEMA_CHOICE_MISSING_OPTIONS",
+      "severity": "error",
+      "category": "schema",
+      "message": "choice type requires 'options', 'choices', or 'oneOf'",
+      "parameters": []
+    },
+    "SCHEMA_OPTIONS_NOT_OBJECT": {
+      "code": "SCHEMA_OPTIONS_NOT_OBJECT",
+      "severity": "error",
+      "category": "schema",
+      "message": "options must be an object",
+      "parameters": []
+    },
+    "SCHEMA_CHOICES_NOT_OBJECT": {
+      "code": "SCHEMA_CHOICES_NOT_OBJECT",
+      "severity": "error",
+      "category": "schema",
+      "message": "choices must be an object",
+      "parameters": []
+    },
+    "SCHEMA_PATTERN_INVALID": {
+      "code": "SCHEMA_PATTERN_INVALID",
+      "severity": "error",
+      "category": "schema",
+      "message": "pattern is not a valid regular expression: '{pattern}'",
+      "parameters": ["pattern"]
+    },
+    "SCHEMA_PATTERN_NOT_STRING": {
+      "code": "SCHEMA_PATTERN_NOT_STRING",
+      "severity": "error",
+      "category": "schema",
+      "message": "pattern must be a string",
+      "parameters": []
+    },
+    "SCHEMA_ENUM_NOT_ARRAY": {
+      "code": "SCHEMA_ENUM_NOT_ARRAY",
+      "severity": "error",
+      "category": "schema",
+      "message": "enum must be an array",
+      "parameters": []
+    },
+    "SCHEMA_ENUM_EMPTY": {
+      "code": "SCHEMA_ENUM_EMPTY",
+      "severity": "error",
+      "category": "schema",
+      "message": "enum array cannot be empty",
+      "parameters": []
+    },
+    "SCHEMA_ENUM_DUPLICATES": {
+      "code": "SCHEMA_ENUM_DUPLICATES",
+      "severity": "error",
+      "category": "schema",
+      "message": "enum array contains duplicate values",
+      "parameters": []
+    },
+    "SCHEMA_COMPOSITION_EMPTY": {
+      "code": "SCHEMA_COMPOSITION_EMPTY",
+      "severity": "error",
+      "category": "schema",
+      "message": "{keyword} array cannot be empty",
+      "parameters": ["keyword"]
+    },
+    "SCHEMA_COMPOSITION_NOT_ARRAY": {
+      "code": "SCHEMA_COMPOSITION_NOT_ARRAY",
+      "severity": "error",
+      "category": "schema",
+      "message": "{keyword} must be an array",
+      "parameters": ["keyword"]
+    },
+    "SCHEMA_ALTNAMES_NOT_OBJECT": {
+      "code": "SCHEMA_ALTNAMES_NOT_OBJECT",
+      "severity": "error",
+      "category": "schema",
+      "message": "altnames must be an object",
+      "parameters": []
+    },
+    "SCHEMA_ALTNAMES_VALUE_NOT_STRING": {
+      "code": "SCHEMA_ALTNAMES_VALUE_NOT_STRING",
+      "severity": "error",
+      "category": "schema",
+      "message": "altnames values must be strings",
+      "parameters": []
+    },
+    "SCHEMA_INTEGER_CONSTRAINT_INVALID": {
+      "code": "SCHEMA_INTEGER_CONSTRAINT_INVALID",
+      "severity": "error",
+      "category": "schema",
+      "message": "{keyword} must be a non-negative integer",
+      "parameters": ["keyword"]
+    },
+    "SCHEMA_NUMBER_CONSTRAINT_INVALID": {
+      "code": "SCHEMA_NUMBER_CONSTRAINT_INVALID",
+      "severity": "error",
+      "category": "schema",
+      "message": "{keyword} must be a number",
+      "parameters": ["keyword"]
+    },
+    "SCHEMA_POSITIVE_NUMBER_CONSTRAINT_INVALID": {
+      "code": "SCHEMA_POSITIVE_NUMBER_CONSTRAINT_INVALID",
+      "severity": "error",
+      "category": "schema",
+      "message": "{keyword} must be a positive number",
+      "parameters": ["keyword"]
+    },
+    "SCHEMA_UNIQUE_ITEMS_NOT_BOOLEAN": {
+      "code": "SCHEMA_UNIQUE_ITEMS_NOT_BOOLEAN",
+      "severity": "error",
+      "category": "schema",
+      "message": "uniqueItems must be a boolean",
+      "parameters": []
+    },
+    "SCHEMA_ITEMS_INVALID_FOR_TUPLE": {
+      "code": "SCHEMA_ITEMS_INVALID_FOR_TUPLE",
+      "severity": "error",
+      "category": "schema",
+      "message": "items must be a boolean or schema for tuple type",
+      "parameters": []
+    },
+
+    "INSTANCE_ROOT_UNRESOLVED": {
+      "code": "INSTANCE_ROOT_UNRESOLVED",
+      "severity": "error",
+      "category": "instance",
+      "message": "Unable to resolve $root reference: {refPath}",
+      "parameters": ["refPath"]
+    },
+    "INSTANCE_MAX_DEPTH_EXCEEDED": {
+      "code": "INSTANCE_MAX_DEPTH_EXCEEDED",
+      "severity": "error",
+      "category": "instance",
+      "message": "Maximum validation depth ({maxDepth}) exceeded",
+      "parameters": ["maxDepth"]
+    },
+    "INSTANCE_SCHEMA_FALSE": {
+      "code": "INSTANCE_SCHEMA_FALSE",
+      "severity": "error",
+      "category": "instance",
+      "message": "Schema 'false' rejects all values",
+      "parameters": []
+    },
+    "INSTANCE_REF_UNRESOLVED": {
+      "code": "INSTANCE_REF_UNRESOLVED",
+      "severity": "error",
+      "category": "instance",
+      "message": "Unable to resolve reference: {refPath}",
+      "parameters": ["refPath"]
+    },
+    "INSTANCE_CONST_MISMATCH": {
+      "code": "INSTANCE_CONST_MISMATCH",
+      "severity": "error",
+      "category": "instance",
+      "message": "Value must equal const value",
+      "parameters": []
+    },
+    "INSTANCE_ENUM_MISMATCH": {
+      "code": "INSTANCE_ENUM_MISMATCH",
+      "severity": "error",
+      "category": "instance",
+      "message": "Value must be one of the enum values",
+      "parameters": []
+    },
+    "INSTANCE_ANY_OF_NONE_MATCHED": {
+      "code": "INSTANCE_ANY_OF_NONE_MATCHED",
+      "severity": "error",
+      "category": "instance",
+      "message": "Value must match at least one schema in anyOf",
+      "parameters": []
+    },
+    "INSTANCE_ONE_OF_INVALID_COUNT": {
+      "code": "INSTANCE_ONE_OF_INVALID_COUNT",
+      "severity": "error",
+      "category": "instance",
+      "message": "Value must match exactly one schema in oneOf (matched {matchCount})",
+      "parameters": ["matchCount"]
+    },
+    "INSTANCE_NOT_MATCHED": {
+      "code": "INSTANCE_NOT_MATCHED",
+      "severity": "error",
+      "category": "instance",
+      "message": "Value must not match the schema in 'not'",
+      "parameters": []
+    },
+    "INSTANCE_TYPE_UNKNOWN": {
+      "code": "INSTANCE_TYPE_UNKNOWN",
+      "severity": "error",
+      "category": "instance",
+      "message": "Unknown type: {typeName}",
+      "parameters": ["typeName"]
+    },
+    "INSTANCE_TYPE_MISMATCH": {
+      "code": "INSTANCE_TYPE_MISMATCH",
+      "severity": "error",
+      "category": "instance",
+      "message": "Value must be {expectedType}",
+      "parameters": ["expectedType"]
+    },
+    "INSTANCE_NULL_EXPECTED": {
+      "code": "INSTANCE_NULL_EXPECTED",
+      "severity": "error",
+      "category": "instance",
+      "message": "Value must be null",
+      "parameters": []
+    },
+    "INSTANCE_BOOLEAN_EXPECTED": {
+      "code": "INSTANCE_BOOLEAN_EXPECTED",
+      "severity": "error",
+      "category": "instance",
+      "message": "Value must be a boolean",
+      "parameters": []
+    },
+    "INSTANCE_STRING_EXPECTED": {
+      "code": "INSTANCE_STRING_EXPECTED",
+      "severity": "error",
+      "category": "instance",
+      "message": "Value must be a string",
+      "parameters": []
+    },
+    "INSTANCE_STRING_MIN_LENGTH": {
+      "code": "INSTANCE_STRING_MIN_LENGTH",
+      "severity": "error",
+      "category": "instance",
+      "message": "String length {actualLength} is less than minimum {minLength}",
+      "parameters": ["actualLength", "minLength"]
+    },
+    "INSTANCE_STRING_MAX_LENGTH": {
+      "code": "INSTANCE_STRING_MAX_LENGTH",
+      "severity": "error",
+      "category": "instance",
+      "message": "String length {actualLength} exceeds maximum {maxLength}",
+      "parameters": ["actualLength", "maxLength"]
+    },
+    "INSTANCE_STRING_PATTERN_MISMATCH": {
+      "code": "INSTANCE_STRING_PATTERN_MISMATCH",
+      "severity": "error",
+      "category": "instance",
+      "message": "String does not match pattern: {pattern}",
+      "parameters": ["pattern"]
+    },
+    "INSTANCE_PATTERN_INVALID": {
+      "code": "INSTANCE_PATTERN_INVALID",
+      "severity": "error",
+      "category": "instance",
+      "message": "Invalid regex pattern: {pattern}",
+      "parameters": ["pattern"]
+    },
+    "INSTANCE_FORMAT_EMAIL_INVALID": {
+      "code": "INSTANCE_FORMAT_EMAIL_INVALID",
+      "severity": "error",
+      "category": "instance",
+      "message": "String is not a valid email address",
+      "parameters": []
+    },
+    "INSTANCE_FORMAT_URI_INVALID": {
+      "code": "INSTANCE_FORMAT_URI_INVALID",
+      "severity": "error",
+      "category": "instance",
+      "message": "String is not a valid URI",
+      "parameters": []
+    },
+    "INSTANCE_FORMAT_URI_REFERENCE_INVALID": {
+      "code": "INSTANCE_FORMAT_URI_REFERENCE_INVALID",
+      "severity": "error",
+      "category": "instance",
+      "message": "String is not a valid URI reference",
+      "parameters": []
+    },
+    "INSTANCE_FORMAT_DATE_INVALID": {
+      "code": "INSTANCE_FORMAT_DATE_INVALID",
+      "severity": "error",
+      "category": "instance",
+      "message": "String is not a valid date",
+      "parameters": []
+    },
+    "INSTANCE_FORMAT_TIME_INVALID": {
+      "code": "INSTANCE_FORMAT_TIME_INVALID",
+      "severity": "error",
+      "category": "instance",
+      "message": "String is not a valid time",
+      "parameters": []
+    },
+    "INSTANCE_FORMAT_DATETIME_INVALID": {
+      "code": "INSTANCE_FORMAT_DATETIME_INVALID",
+      "severity": "error",
+      "category": "instance",
+      "message": "String is not a valid date-time",
+      "parameters": []
+    },
+    "INSTANCE_FORMAT_UUID_INVALID": {
+      "code": "INSTANCE_FORMAT_UUID_INVALID",
+      "severity": "error",
+      "category": "instance",
+      "message": "String is not a valid UUID",
+      "parameters": []
+    },
+    "INSTANCE_FORMAT_IPV4_INVALID": {
+      "code": "INSTANCE_FORMAT_IPV4_INVALID",
+      "severity": "error",
+      "category": "instance",
+      "message": "String is not a valid IPv4 address",
+      "parameters": []
+    },
+    "INSTANCE_FORMAT_IPV6_INVALID": {
+      "code": "INSTANCE_FORMAT_IPV6_INVALID",
+      "severity": "error",
+      "category": "instance",
+      "message": "String is not a valid IPv6 address",
+      "parameters": []
+    },
+    "INSTANCE_FORMAT_HOSTNAME_INVALID": {
+      "code": "INSTANCE_FORMAT_HOSTNAME_INVALID",
+      "severity": "error",
+      "category": "instance",
+      "message": "String is not a valid hostname",
+      "parameters": []
+    },
+    "INSTANCE_NUMBER_EXPECTED": {
+      "code": "INSTANCE_NUMBER_EXPECTED",
+      "severity": "error",
+      "category": "instance",
+      "message": "Value must be a number",
+      "parameters": []
+    },
+    "INSTANCE_INTEGER_EXPECTED": {
+      "code": "INSTANCE_INTEGER_EXPECTED",
+      "severity": "error",
+      "category": "instance",
+      "message": "Value must be an integer",
+      "parameters": []
+    },
+    "INSTANCE_INT_RANGE_INVALID": {
+      "code": "INSTANCE_INT_RANGE_INVALID",
+      "severity": "error",
+      "category": "instance",
+      "message": "Value {value} is not a valid {typeName}",
+      "parameters": ["value", "typeName"]
+    },
+    "INSTANCE_NUMBER_MINIMUM": {
+      "code": "INSTANCE_NUMBER_MINIMUM",
+      "severity": "error",
+      "category": "instance",
+      "message": "Value {value} is less than minimum {minimum}",
+      "parameters": ["value", "minimum"]
+    },
+    "INSTANCE_NUMBER_MAXIMUM": {
+      "code": "INSTANCE_NUMBER_MAXIMUM",
+      "severity": "error",
+      "category": "instance",
+      "message": "Value {value} exceeds maximum {maximum}",
+      "parameters": ["value", "maximum"]
+    },
+    "INSTANCE_NUMBER_EXCLUSIVE_MINIMUM": {
+      "code": "INSTANCE_NUMBER_EXCLUSIVE_MINIMUM",
+      "severity": "error",
+      "category": "instance",
+      "message": "Value {value} must be greater than {exclusiveMinimum}",
+      "parameters": ["value", "exclusiveMinimum"]
+    },
+    "INSTANCE_NUMBER_EXCLUSIVE_MAXIMUM": {
+      "code": "INSTANCE_NUMBER_EXCLUSIVE_MAXIMUM",
+      "severity": "error",
+      "category": "instance",
+      "message": "Value {value} must be less than {exclusiveMaximum}",
+      "parameters": ["value", "exclusiveMaximum"]
+    },
+    "INSTANCE_NUMBER_MULTIPLE_OF": {
+      "code": "INSTANCE_NUMBER_MULTIPLE_OF",
+      "severity": "error",
+      "category": "instance",
+      "message": "Value {value} is not a multiple of {multipleOf}",
+      "parameters": ["value", "multipleOf"]
+    },
+    "INSTANCE_OBJECT_EXPECTED": {
+      "code": "INSTANCE_OBJECT_EXPECTED",
+      "severity": "error",
+      "category": "instance",
+      "message": "Value must be an object",
+      "parameters": []
+    },
+    "INSTANCE_REQUIRED_PROPERTY_MISSING": {
+      "code": "INSTANCE_REQUIRED_PROPERTY_MISSING",
+      "severity": "error",
+      "category": "instance",
+      "message": "Missing required property: {propertyName}",
+      "parameters": ["propertyName"]
+    },
+    "INSTANCE_ADDITIONAL_PROPERTY_NOT_ALLOWED": {
+      "code": "INSTANCE_ADDITIONAL_PROPERTY_NOT_ALLOWED",
+      "severity": "error",
+      "category": "instance",
+      "message": "Additional property not allowed: {propertyName}",
+      "parameters": ["propertyName"]
+    },
+    "INSTANCE_MIN_PROPERTIES": {
+      "code": "INSTANCE_MIN_PROPERTIES",
+      "severity": "error",
+      "category": "instance",
+      "message": "Object has {actualCount} properties, minimum is {minProperties}",
+      "parameters": ["actualCount", "minProperties"]
+    },
+    "INSTANCE_MAX_PROPERTIES": {
+      "code": "INSTANCE_MAX_PROPERTIES",
+      "severity": "error",
+      "category": "instance",
+      "message": "Object has {actualCount} properties, maximum is {maxProperties}",
+      "parameters": ["actualCount", "maxProperties"]
+    },
+    "INSTANCE_DEPENDENT_REQUIRED": {
+      "code": "INSTANCE_DEPENDENT_REQUIRED",
+      "severity": "error",
+      "category": "instance",
+      "message": "Property '{sourceProperty}' requires property '{requiredProperty}'",
+      "parameters": ["sourceProperty", "requiredProperty"]
+    },
+    "INSTANCE_ARRAY_EXPECTED": {
+      "code": "INSTANCE_ARRAY_EXPECTED",
+      "severity": "error",
+      "category": "instance",
+      "message": "Value must be an array",
+      "parameters": []
+    },
+    "INSTANCE_MIN_ITEMS": {
+      "code": "INSTANCE_MIN_ITEMS",
+      "severity": "error",
+      "category": "instance",
+      "message": "Array has {actualCount} items, minimum is {minItems}",
+      "parameters": ["actualCount", "minItems"]
+    },
+    "INSTANCE_MAX_ITEMS": {
+      "code": "INSTANCE_MAX_ITEMS",
+      "severity": "error",
+      "category": "instance",
+      "message": "Array has {actualCount} items, maximum is {maxItems}",
+      "parameters": ["actualCount", "maxItems"]
+    },
+    "INSTANCE_MIN_CONTAINS": {
+      "code": "INSTANCE_MIN_CONTAINS",
+      "severity": "error",
+      "category": "instance",
+      "message": "Array must contain at least {minContains} matching items (found {actualCount})",
+      "parameters": ["minContains", "actualCount"]
+    },
+    "INSTANCE_MAX_CONTAINS": {
+      "code": "INSTANCE_MAX_CONTAINS",
+      "severity": "error",
+      "category": "instance",
+      "message": "Array must contain at most {maxContains} matching items (found {actualCount})",
+      "parameters": ["maxContains", "actualCount"]
+    },
+    "INSTANCE_SET_EXPECTED": {
+      "code": "INSTANCE_SET_EXPECTED",
+      "severity": "error",
+      "category": "instance",
+      "message": "Value must be an array (set)",
+      "parameters": []
+    },
+    "INSTANCE_SET_DUPLICATE": {
+      "code": "INSTANCE_SET_DUPLICATE",
+      "severity": "error",
+      "category": "instance",
+      "message": "Set contains duplicate value at index {index}",
+      "parameters": ["index"]
+    },
+    "INSTANCE_MAP_EXPECTED": {
+      "code": "INSTANCE_MAP_EXPECTED",
+      "severity": "error",
+      "category": "instance",
+      "message": "Value must be an object (map)",
+      "parameters": []
+    },
+    "INSTANCE_MAP_MIN_ENTRIES": {
+      "code": "INSTANCE_MAP_MIN_ENTRIES",
+      "severity": "error",
+      "category": "instance",
+      "message": "Map has {actualCount} entries, minimum is {minProperties}",
+      "parameters": ["actualCount", "minProperties"]
+    },
+    "INSTANCE_MAP_MAX_ENTRIES": {
+      "code": "INSTANCE_MAP_MAX_ENTRIES",
+      "severity": "error",
+      "category": "instance",
+      "message": "Map has {actualCount} entries, maximum is {maxProperties}",
+      "parameters": ["actualCount", "maxProperties"]
+    },
+    "INSTANCE_TUPLE_EXPECTED": {
+      "code": "INSTANCE_TUPLE_EXPECTED",
+      "severity": "error",
+      "category": "instance",
+      "message": "Value must be an array (tuple)",
+      "parameters": []
+    },
+    "INSTANCE_TUPLE_LENGTH_MISMATCH": {
+      "code": "INSTANCE_TUPLE_LENGTH_MISMATCH",
+      "severity": "error",
+      "category": "instance",
+      "message": "Tuple has {actualCount} items but schema defines {expectedCount}",
+      "parameters": ["actualCount", "expectedCount"]
+    },
+    "INSTANCE_TUPLE_ADDITIONAL_ITEMS": {
+      "code": "INSTANCE_TUPLE_ADDITIONAL_ITEMS",
+      "severity": "error",
+      "category": "instance",
+      "message": "Tuple has {actualCount} items but only {expectedCount} are defined",
+      "parameters": ["actualCount", "expectedCount"]
+    },
+    "INSTANCE_CHOICE_EXPECTED": {
+      "code": "INSTANCE_CHOICE_EXPECTED",
+      "severity": "error",
+      "category": "instance",
+      "message": "Value must be an object (choice)",
+      "parameters": []
+    },
+    "INSTANCE_CHOICE_MISSING_OPTIONS": {
+      "code": "INSTANCE_CHOICE_MISSING_OPTIONS",
+      "severity": "error",
+      "category": "instance",
+      "message": "Choice schema must have 'options' or 'choices'",
+      "parameters": []
+    },
+    "INSTANCE_CHOICE_DISCRIMINATOR_MISSING": {
+      "code": "INSTANCE_CHOICE_DISCRIMINATOR_MISSING",
+      "severity": "error",
+      "category": "instance",
+      "message": "Choice requires discriminator property: {discriminator}",
+      "parameters": ["discriminator"]
+    },
+    "INSTANCE_CHOICE_DISCRIMINATOR_NOT_STRING": {
+      "code": "INSTANCE_CHOICE_DISCRIMINATOR_NOT_STRING",
+      "severity": "error",
+      "category": "instance",
+      "message": "Discriminator value must be a string",
+      "parameters": []
+    },
+    "INSTANCE_CHOICE_OPTION_UNKNOWN": {
+      "code": "INSTANCE_CHOICE_OPTION_UNKNOWN",
+      "severity": "error",
+      "category": "instance",
+      "message": "Unknown choice option: {optionName}",
+      "parameters": ["optionName"]
+    },
+    "INSTANCE_CHOICE_NO_MATCH": {
+      "code": "INSTANCE_CHOICE_NO_MATCH",
+      "severity": "error",
+      "category": "instance",
+      "message": "Value does not match any choice option",
+      "parameters": []
+    },
+    "INSTANCE_CHOICE_MULTIPLE_MATCHES": {
+      "code": "INSTANCE_CHOICE_MULTIPLE_MATCHES",
+      "severity": "error",
+      "category": "instance",
+      "message": "Value matches {matchCount} choice options (should match exactly one)",
+      "parameters": ["matchCount"]
+    },
+    "INSTANCE_DATE_EXPECTED": {
+      "code": "INSTANCE_DATE_EXPECTED",
+      "severity": "error",
+      "category": "instance",
+      "message": "Date must be a string",
+      "parameters": []
+    },
+    "INSTANCE_DATE_FORMAT_INVALID": {
+      "code": "INSTANCE_DATE_FORMAT_INVALID",
+      "severity": "error",
+      "category": "instance",
+      "message": "Invalid date format: {value}",
+      "parameters": ["value"]
+    },
+    "INSTANCE_TIME_EXPECTED": {
+      "code": "INSTANCE_TIME_EXPECTED",
+      "severity": "error",
+      "category": "instance",
+      "message": "Time must be a string",
+      "parameters": []
+    },
+    "INSTANCE_TIME_FORMAT_INVALID": {
+      "code": "INSTANCE_TIME_FORMAT_INVALID",
+      "severity": "error",
+      "category": "instance",
+      "message": "Invalid time format: {value}",
+      "parameters": ["value"]
+    },
+    "INSTANCE_DATETIME_EXPECTED": {
+      "code": "INSTANCE_DATETIME_EXPECTED",
+      "severity": "error",
+      "category": "instance",
+      "message": "DateTime must be a string",
+      "parameters": []
+    },
+    "INSTANCE_DATETIME_FORMAT_INVALID": {
+      "code": "INSTANCE_DATETIME_FORMAT_INVALID",
+      "severity": "error",
+      "category": "instance",
+      "message": "Invalid datetime format: {value}",
+      "parameters": ["value"]
+    },
+    "INSTANCE_DURATION_EXPECTED": {
+      "code": "INSTANCE_DURATION_EXPECTED",
+      "severity": "error",
+      "category": "instance",
+      "message": "Duration must be a string",
+      "parameters": []
+    },
+    "INSTANCE_DURATION_FORMAT_INVALID": {
+      "code": "INSTANCE_DURATION_FORMAT_INVALID",
+      "severity": "error",
+      "category": "instance",
+      "message": "Invalid duration format: {value}",
+      "parameters": ["value"]
+    },
+    "INSTANCE_UUID_EXPECTED": {
+      "code": "INSTANCE_UUID_EXPECTED",
+      "severity": "error",
+      "category": "instance",
+      "message": "UUID must be a string",
+      "parameters": []
+    },
+    "INSTANCE_UUID_FORMAT_INVALID": {
+      "code": "INSTANCE_UUID_FORMAT_INVALID",
+      "severity": "error",
+      "category": "instance",
+      "message": "Invalid UUID format: {value}",
+      "parameters": ["value"]
+    },
+    "INSTANCE_URI_EXPECTED": {
+      "code": "INSTANCE_URI_EXPECTED",
+      "severity": "error",
+      "category": "instance",
+      "message": "URI must be a string",
+      "parameters": []
+    },
+    "INSTANCE_URI_FORMAT_INVALID": {
+      "code": "INSTANCE_URI_FORMAT_INVALID",
+      "severity": "error",
+      "category": "instance",
+      "message": "Invalid URI format: {value}",
+      "parameters": ["value"]
+    },
+    "INSTANCE_URI_MISSING_SCHEME": {
+      "code": "INSTANCE_URI_MISSING_SCHEME",
+      "severity": "error",
+      "category": "instance",
+      "message": "URI must have a scheme: {value}",
+      "parameters": ["value"]
+    },
+    "INSTANCE_BINARY_EXPECTED": {
+      "code": "INSTANCE_BINARY_EXPECTED",
+      "severity": "error",
+      "category": "instance",
+      "message": "Binary must be a base64 string",
+      "parameters": []
+    },
+    "INSTANCE_BINARY_ENCODING_INVALID": {
+      "code": "INSTANCE_BINARY_ENCODING_INVALID",
+      "severity": "error",
+      "category": "instance",
+      "message": "Invalid base64 encoding",
+      "parameters": []
+    },
+    "INSTANCE_JSONPOINTER_EXPECTED": {
+      "code": "INSTANCE_JSONPOINTER_EXPECTED",
+      "severity": "error",
+      "category": "instance",
+      "message": "JSON Pointer must be a string",
+      "parameters": []
+    },
+    "INSTANCE_JSONPOINTER_FORMAT_INVALID": {
+      "code": "INSTANCE_JSONPOINTER_FORMAT_INVALID",
+      "severity": "error",
+      "category": "instance",
+      "message": "Invalid JSON Pointer format: {value}",
+      "parameters": ["value"]
+    },
+    "INSTANCE_DECIMAL_EXPECTED": {
+      "code": "INSTANCE_DECIMAL_EXPECTED",
+      "severity": "error",
+      "category": "instance",
+      "message": "Value must be a valid {typeName}",
+      "parameters": ["typeName"]
+    },
+    "INSTANCE_STRING_NOT_EXPECTED": {
+      "code": "INSTANCE_STRING_NOT_EXPECTED",
+      "severity": "error",
+      "category": "instance",
+      "message": "String value not expected for type {typeName}",
+      "parameters": ["typeName"]
+    },
+    "INSTANCE_CUSTOM_TYPE_NOT_SUPPORTED": {
+      "code": "INSTANCE_CUSTOM_TYPE_NOT_SUPPORTED",
+      "severity": "error",
+      "category": "instance",
+      "message": "Custom type reference not yet supported: {typeName}",
+      "parameters": ["typeName"]
+    }
+  }
+}
