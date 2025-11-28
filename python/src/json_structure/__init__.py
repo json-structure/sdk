@@ -141,6 +141,14 @@ from json_structure.error_codes import (
     INSTANCE_CUSTOM_TYPE_NOT_SUPPORTED,
 )
 from json_structure.json_source_locator import JsonSourceLocator
+from json_structure.schema_exporter import (
+    JsonStructureSchemaExporter,
+    SchemaExporterOptions,
+    SchemaExporterContext,
+    FieldConstraints,
+    field_constraints,
+    export_schema,
+)
 
 try:
     from json_structure._version import __version__
@@ -151,6 +159,13 @@ __all__ = [
     # Validators
     "InstanceValidator",
     "SchemaValidator",
+    # Schema Export
+    "JsonStructureSchemaExporter",
+    "SchemaExporterOptions",
+    "SchemaExporterContext",
+    "FieldConstraints",
+    "field_constraints",
+    "export_schema",
     # Types
     "ValidationSeverity",
     "JsonLocation",
