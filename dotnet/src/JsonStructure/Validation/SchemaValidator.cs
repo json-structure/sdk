@@ -88,6 +88,7 @@ public sealed class SchemaValidator
     private HashSet<string> _definedRefs = new();
     private HashSet<string> _importNamespaces = new();
     private JsonNode? _rootSchema;
+    private JsonSourceLocator? _sourceLocator;
 
     static SchemaValidator()
     {
@@ -111,25 +112,30 @@ public sealed class SchemaValidator
     /// <returns>The validation result.</returns>
     public ValidationResult Validate(JsonNode? schema)
     {
-        var result = new ValidationResult();
-
         if (schema is null)
         {
-            result.AddError(ErrorCodes.SchemaNull, "Schema cannot be null", "");
+            var result = new ValidationResult();
+            AddError(result, ErrorCodes.SchemaNull, "Schema cannot be null", "");
             return result;
         }
 
-        // Store root schema for ref resolution
-        _rootSchema = schema;
-        
-        // Collect all defined references for $ref validation
-        _definedRefs = CollectDefinedRefs(schema);
-        
-        // Collect namespaces with $import/$importdefs for lenient $ref validation
-        _importNamespaces = CollectImportNamespaces(schema);
+        // Serialize to string for source location tracking
+        try
+        {
+            var serialized = schema.ToJsonString(new System.Text.Json.JsonSerializerOptions 
+            { 
+                WriteIndented = true,
+                TypeInfoResolver = new System.Text.Json.Serialization.Metadata.DefaultJsonTypeInfoResolver()
+            });
+            _sourceLocator = new JsonSourceLocator(serialized);
+        }
+        catch
+        {
+            // If serialization fails, continue without source location
+            _sourceLocator = null;
+        }
 
-        ValidateSchemaCore(schema, result, "", 0, new HashSet<string>());
-        return result;
+        return ValidateCore(schema);
     }
     
     /// <summary>
@@ -181,12 +187,52 @@ public sealed class SchemaValidator
         try
         {
             var schema = JsonNode.Parse(json);
-            return Validate(schema);
+            _sourceLocator = new JsonSourceLocator(json);
+            return ValidateCore(schema);
         }
         catch (Exception ex)
         {
             return ValidationResult.Failure($"Failed to parse JSON: {ex.Message}");
         }
+    }
+
+    private ValidationResult ValidateCore(JsonNode? schema)
+    {
+        var result = new ValidationResult();
+
+        if (schema is null)
+        {
+            AddError(result, ErrorCodes.SchemaNull, "Schema cannot be null", "");
+            return result;
+        }
+
+        // Store root schema for ref resolution
+        _rootSchema = schema;
+        
+        // Collect all defined references for $ref validation
+        _definedRefs = CollectDefinedRefs(schema);
+        
+        // Collect namespaces with $import/$importdefs for lenient $ref validation
+        _importNamespaces = CollectImportNamespaces(schema);
+
+        ValidateSchemaCore(schema, result, "", 0, new HashSet<string>());
+        return result;
+    }
+
+    /// <summary>
+    /// Gets the source location for a JSON path.
+    /// </summary>
+    private JsonLocation GetLocation(string path)
+    {
+        return _sourceLocator?.GetLocation(path) ?? default;
+    }
+
+    /// <summary>
+    /// Adds an error to the result with source location.
+    /// </summary>
+    private void AddError(ValidationResult result, string code, string message, string path)
+    {
+        result.AddError(code, message, path, GetLocation(path));
     }
 
     private HashSet<string> CollectDefinedRefs(JsonNode schema)
@@ -261,7 +307,7 @@ public sealed class SchemaValidator
     {
         if (depth > _options.MaxValidationDepth)
         {
-            result.AddError(ErrorCodes.SchemaMaxDepthExceeded, $"Maximum validation depth ({_options.MaxValidationDepth}) exceeded", path);
+            AddError(result, ErrorCodes.SchemaMaxDepthExceeded, $"Maximum validation depth ({_options.MaxValidationDepth}) exceeded", path);
             return;
         }
 
@@ -278,13 +324,13 @@ public sealed class SchemaValidator
                 // Boolean schemas are valid (true = allow all, false = deny all)
                 return;
             }
-            result.AddError(ErrorCodes.SchemaInvalidType, "Schema must be a boolean or object", path);
+            AddError(result, ErrorCodes.SchemaInvalidType, "Schema must be a boolean or object", path);
             return;
         }
 
         if (node is not JsonObject schema)
         {
-            result.AddError(ErrorCodes.SchemaInvalidType, "Schema must be a boolean or object", path);
+            AddError(result, ErrorCodes.SchemaInvalidType, "Schema must be a boolean or object", path);
             return;
         }
 
@@ -293,7 +339,7 @@ public sealed class SchemaValidator
         {
             if (schemaValue is not JsonValue sv || !sv.TryGetValue<string>(out var schemaUri))
             {
-                result.AddError(ErrorCodes.SchemaKeywordInvalidType, "$schema must be a string", AppendPath(path, "$schema"));
+                AddError(result, ErrorCodes.SchemaKeywordInvalidType, "$schema must be a string", AppendPath(path, "$schema"));
             }
             else if (!schemaUri.StartsWith("https://json-structure.org/") && 
                      !schemaUri.StartsWith("http://json-structure.org/"))
@@ -322,7 +368,7 @@ public sealed class SchemaValidator
                         var isImportedRef = _importNamespaces.Any(ns => refStr.StartsWith(ns + "/"));
                         if (!isImportedRef)
                         {
-                            result.AddError(ErrorCodes.SchemaRefNotFound, $"$ref target does not exist: {refStr}", AppendPath(path, "$ref"));
+                            AddError(result, ErrorCodes.SchemaRefNotFound, $"$ref target does not exist: {refStr}", AppendPath(path, "$ref"));
                         }
                     }
                     else
@@ -330,7 +376,7 @@ public sealed class SchemaValidator
                         // Check for circular reference
                         if (visitedRefs.Contains(refStr))
                         {
-                            result.AddError(ErrorCodes.SchemaRefCircular, $"Circular reference detected: {refStr}", AppendPath(path, "$ref"));
+                            AddError(result, ErrorCodes.SchemaRefCircular, $"Circular reference detected: {refStr}", AppendPath(path, "$ref"));
                         }
                         else
                         {
@@ -407,14 +453,14 @@ public sealed class SchemaValidator
             
             if (hasOnlyMeta && !hasSchemaDefiningKeyword)
             {
-                result.AddError(ErrorCodes.SchemaRootMissingType, "Root schema must have 'type', '$root', or other schema-defining keyword", path);
+                AddError(result, ErrorCodes.SchemaRootMissingType, "Root schema must have 'type', '$root', or other schema-defining keyword", path);
             }
         }
         else if (!hasSchemaDefiningKeyword && 
             !schema.ContainsKey("$import") && !schema.ContainsKey("$importdefs") &&
             !schema.ContainsKey("abstract") && !schema.ContainsKey("$abstract"))
         {
-            result.AddError(ErrorCodes.SchemaMissingType, "Schema must have a 'type' keyword or other schema-defining keyword", path);
+            AddError(result, ErrorCodes.SchemaMissingType, "Schema must have a 'type' keyword or other schema-defining keyword", path);
         }
 
         // Validate type if present
@@ -488,7 +534,7 @@ public sealed class SchemaValidator
     {
         if (value is not JsonValue jv || !jv.TryGetValue<string>(out _))
         {
-            result.AddError(ErrorCodes.SchemaKeywordInvalidType, $"{keyword} must be a string", AppendPath(path, keyword));
+            AddError(result, ErrorCodes.SchemaKeywordInvalidType, $"{keyword} must be a string", AppendPath(path, keyword));
         }
     }
 
@@ -496,13 +542,13 @@ public sealed class SchemaValidator
     {
         if (value is not JsonValue jv || !jv.TryGetValue<string>(out var str))
         {
-            result.AddError(ErrorCodes.SchemaKeywordInvalidType, $"{keyword} must be a string", AppendPath(path, keyword));
+            AddError(result, ErrorCodes.SchemaKeywordInvalidType, $"{keyword} must be a string", AppendPath(path, keyword));
             return;
         }
 
         if (!IdentifierPattern.IsMatch(str))
         {
-            result.AddError(ErrorCodes.SchemaNameInvalid, $"{keyword} must be a valid identifier (start with letter or underscore, contain only letters, digits, underscores)", 
+            AddError(result, ErrorCodes.SchemaNameInvalid, $"{keyword} must be a valid identifier (start with letter or underscore, contain only letters, digits, underscores)", 
                 AppendPath(path, keyword));
         }
     }
@@ -511,14 +557,14 @@ public sealed class SchemaValidator
     {
         if (value is not JsonValue jv || !jv.TryGetValue<string>(out var str))
         {
-            result.AddError(ErrorCodes.SchemaKeywordInvalidType, $"{keyword} must be a string", AppendPath(path, keyword));
+            AddError(result, ErrorCodes.SchemaKeywordInvalidType, $"{keyword} must be a string", AppendPath(path, keyword));
             return;
         }
 
         // References should be valid URI references or JSON pointers
         if (string.IsNullOrWhiteSpace(str))
         {
-            result.AddError(ErrorCodes.SchemaKeywordEmpty, $"{keyword} cannot be empty", AppendPath(path, keyword));
+            AddError(result, ErrorCodes.SchemaKeywordEmpty, $"{keyword} cannot be empty", AppendPath(path, keyword));
         }
     }
 
@@ -535,7 +581,7 @@ public sealed class SchemaValidator
             {
                 if (item is not JsonValue itemValue || !itemValue.TryGetValue<string>(out _))
                 {
-                    result.AddError(ErrorCodes.SchemaKeywordInvalidType, $"{keyword} array items must be strings", AppendPath(path, keyword));
+                    AddError(result, ErrorCodes.SchemaKeywordInvalidType, $"{keyword} array items must be strings", AppendPath(path, keyword));
                     break;
                 }
             }
@@ -548,20 +594,20 @@ public sealed class SchemaValidator
             {
                 if (prop.Value is not JsonValue propValue || !propValue.TryGetValue<string>(out _))
                 {
-                    result.AddError(ErrorCodes.SchemaKeywordInvalidType, $"{keyword} object values must be strings", AppendPath(path, $"{keyword}/{prop.Key}"));
+                    AddError(result, ErrorCodes.SchemaKeywordInvalidType, $"{keyword} object values must be strings", AppendPath(path, $"{keyword}/{prop.Key}"));
                 }
             }
             return;
         }
 
-        result.AddError(ErrorCodes.SchemaKeywordInvalidType, $"{keyword} must be a string, array, or object", AppendPath(path, keyword));
+        AddError(result, ErrorCodes.SchemaKeywordInvalidType, $"{keyword} must be a string, array, or object", AppendPath(path, keyword));
     }
 
     private void ValidateDefinitions(JsonNode? value, string keyword, string path, ValidationResult result, int depth, HashSet<string> visitedRefs)
     {
         if (value is not JsonObject defs)
         {
-            result.AddError(ErrorCodes.SchemaKeywordInvalidType, $"{keyword} must be an object", AppendPath(path, keyword));
+            AddError(result, ErrorCodes.SchemaKeywordInvalidType, $"{keyword} must be an object", AppendPath(path, keyword));
             return;
         }
 
@@ -626,7 +672,7 @@ public sealed class SchemaValidator
         {
             if (!AllTypes.Contains(typeStr) && !typeStr.Contains(':'))
             {
-                result.AddError(ErrorCodes.SchemaTypeInvalid, $"Invalid type: '{typeStr}'", typePath);
+                AddError(result, ErrorCodes.SchemaTypeInvalid, $"Invalid type: '{typeStr}'", typePath);
             }
             return;
         }
@@ -635,7 +681,7 @@ public sealed class SchemaValidator
         {
             if (arr.Count == 0)
             {
-                result.AddError(ErrorCodes.SchemaTypeArrayEmpty, "type array cannot be empty", typePath);
+                AddError(result, ErrorCodes.SchemaTypeArrayEmpty, "type array cannot be empty", typePath);
                 return;
             }
 
@@ -646,7 +692,7 @@ public sealed class SchemaValidator
                 {
                     if (!AllTypes.Contains(itemType) && !itemType.Contains(':'))
                     {
-                        result.AddError(ErrorCodes.SchemaTypeInvalid, $"Invalid type in array: '{itemType}'", typePath);
+                        AddError(result, ErrorCodes.SchemaTypeInvalid, $"Invalid type in array: '{itemType}'", typePath);
                     }
                 }
                 else if (item is JsonObject typeRefObj)
@@ -658,12 +704,12 @@ public sealed class SchemaValidator
                     }
                     else
                     {
-                        result.AddError(ErrorCodes.SchemaTypeObjectMissingRef, "type array objects must contain $ref", typePath);
+                        AddError(result, ErrorCodes.SchemaTypeObjectMissingRef, "type array objects must contain $ref", typePath);
                     }
                 }
                 else
                 {
-                    result.AddError(ErrorCodes.SchemaKeywordInvalidType, "type array items must be strings or objects with $ref", typePath);
+                    AddError(result, ErrorCodes.SchemaKeywordInvalidType, "type array items must be strings or objects with $ref", typePath);
                 }
             }
             return;
@@ -678,12 +724,12 @@ public sealed class SchemaValidator
             }
             else
             {
-                result.AddError(ErrorCodes.SchemaTypeObjectMissingRef, "type object must contain $ref", typePath);
+                AddError(result, ErrorCodes.SchemaTypeObjectMissingRef, "type object must contain $ref", typePath);
             }
             return;
         }
 
-        result.AddError(ErrorCodes.SchemaKeywordInvalidType, "type must be a string, array of strings, or object with $ref", typePath);
+        AddError(result, ErrorCodes.SchemaKeywordInvalidType, "type must be a string, array of strings, or object with $ref", typePath);
     }
 
     private string? GetTypeString(JsonNode? value)
@@ -711,33 +757,33 @@ public sealed class SchemaValidator
         if (!isString && typeStr is not null)
         {
             if (schema.ContainsKey("minLength"))
-                result.AddError(ErrorCodes.SchemaConstraintInvalidForType, $"'minLength' constraint is only valid for string type, not '{typeStr}'", AppendPath(path, "minLength"));
+                AddError(result, ErrorCodes.SchemaConstraintInvalidForType, $"'minLength' constraint is only valid for string type, not '{typeStr}'", AppendPath(path, "minLength"));
             if (schema.ContainsKey("maxLength"))
-                result.AddError(ErrorCodes.SchemaConstraintInvalidForType, $"'maxLength' constraint is only valid for string type, not '{typeStr}'", AppendPath(path, "maxLength"));
+                AddError(result, ErrorCodes.SchemaConstraintInvalidForType, $"'maxLength' constraint is only valid for string type, not '{typeStr}'", AppendPath(path, "maxLength"));
             if (schema.ContainsKey("pattern"))
-                result.AddError(ErrorCodes.SchemaConstraintInvalidForType, $"'pattern' constraint is only valid for string type, not '{typeStr}'", AppendPath(path, "pattern"));
+                AddError(result, ErrorCodes.SchemaConstraintInvalidForType, $"'pattern' constraint is only valid for string type, not '{typeStr}'", AppendPath(path, "pattern"));
         }
 
         // Numeric constraints on non-numeric types  
         if (!isNumeric && typeStr is not null)
         {
             if (schema.ContainsKey("minimum"))
-                result.AddError(ErrorCodes.SchemaConstraintInvalidForType, $"'minimum' constraint is only valid for numeric types, not '{typeStr}'", AppendPath(path, "minimum"));
+                AddError(result, ErrorCodes.SchemaConstraintInvalidForType, $"'minimum' constraint is only valid for numeric types, not '{typeStr}'", AppendPath(path, "minimum"));
             if (schema.ContainsKey("maximum"))
-                result.AddError(ErrorCodes.SchemaConstraintInvalidForType, $"'maximum' constraint is only valid for numeric types, not '{typeStr}'", AppendPath(path, "maximum"));
+                AddError(result, ErrorCodes.SchemaConstraintInvalidForType, $"'maximum' constraint is only valid for numeric types, not '{typeStr}'", AppendPath(path, "maximum"));
             if (schema.ContainsKey("exclusiveMinimum"))
-                result.AddError(ErrorCodes.SchemaConstraintInvalidForType, $"'exclusiveMinimum' constraint is only valid for numeric types, not '{typeStr}'", AppendPath(path, "exclusiveMinimum"));
+                AddError(result, ErrorCodes.SchemaConstraintInvalidForType, $"'exclusiveMinimum' constraint is only valid for numeric types, not '{typeStr}'", AppendPath(path, "exclusiveMinimum"));
             if (schema.ContainsKey("exclusiveMaximum"))
-                result.AddError(ErrorCodes.SchemaConstraintInvalidForType, $"'exclusiveMaximum' constraint is only valid for numeric types, not '{typeStr}'", AppendPath(path, "exclusiveMaximum"));
+                AddError(result, ErrorCodes.SchemaConstraintInvalidForType, $"'exclusiveMaximum' constraint is only valid for numeric types, not '{typeStr}'", AppendPath(path, "exclusiveMaximum"));
         }
 
         // Array constraints on non-array types
         if (!isArray && typeStr is not "tuple" and not null)
         {
             if (schema.ContainsKey("minItems"))
-                result.AddError(ErrorCodes.SchemaConstraintInvalidForType, $"'minItems' constraint is only valid for array/set/tuple types, not '{typeStr}'", AppendPath(path, "minItems"));
+                AddError(result, ErrorCodes.SchemaConstraintInvalidForType, $"'minItems' constraint is only valid for array/set/tuple types, not '{typeStr}'", AppendPath(path, "minItems"));
             if (schema.ContainsKey("maxItems"))
-                result.AddError(ErrorCodes.SchemaConstraintInvalidForType, $"'maxItems' constraint is only valid for array/set/tuple types, not '{typeStr}'", AppendPath(path, "maxItems"));
+                AddError(result, ErrorCodes.SchemaConstraintInvalidForType, $"'maxItems' constraint is only valid for array/set/tuple types, not '{typeStr}'", AppendPath(path, "maxItems"));
         }
     }
 
@@ -750,7 +796,7 @@ public sealed class SchemaValidator
             var max = GetNumber(maxNode);
             if (min.HasValue && max.HasValue && min.Value > max.Value)
             {
-                result.AddError(ErrorCodes.SchemaMinGreaterThanMax, "'minimum' cannot be greater than 'maximum'", path);
+                AddError(result, ErrorCodes.SchemaMinGreaterThanMax, "'minimum' cannot be greater than 'maximum'", path);
             }
         }
 
@@ -761,7 +807,7 @@ public sealed class SchemaValidator
             var maxLen = GetInteger(maxLenNode);
             if (minLen.HasValue && maxLen.HasValue && minLen.Value > maxLen.Value)
             {
-                result.AddError(ErrorCodes.SchemaMinGreaterThanMax, "'minLength' cannot be greater than 'maxLength'", path);
+                AddError(result, ErrorCodes.SchemaMinGreaterThanMax, "'minLength' cannot be greater than 'maxLength'", path);
             }
         }
 
@@ -772,7 +818,7 @@ public sealed class SchemaValidator
             var maxItems = GetInteger(maxItemsNode);
             if (minItems.HasValue && maxItems.HasValue && minItems.Value > maxItems.Value)
             {
-                result.AddError(ErrorCodes.SchemaMinGreaterThanMax, "'minItems' cannot be greater than 'maxItems'", path);
+                AddError(result, ErrorCodes.SchemaMinGreaterThanMax, "'minItems' cannot be greater than 'maxItems'", path);
             }
         }
     }
@@ -807,7 +853,7 @@ public sealed class SchemaValidator
         {
             if (propsValue is not JsonObject props)
             {
-                result.AddError(ErrorCodes.SchemaPropertiesNotObject, "properties must be an object", AppendPath(path, "properties"));
+                AddError(result, ErrorCodes.SchemaPropertiesNotObject, "properties must be an object", AppendPath(path, "properties"));
             }
             else
             {
@@ -827,7 +873,7 @@ public sealed class SchemaValidator
         {
             if (requiredValue is not JsonArray reqArr)
             {
-                result.AddError(ErrorCodes.SchemaRequiredNotArray, "required must be an array", AppendPath(path, "required"));
+                AddError(result, ErrorCodes.SchemaRequiredNotArray, "required must be an array", AppendPath(path, "required"));
             }
             else
             {
@@ -835,12 +881,12 @@ public sealed class SchemaValidator
                 {
                     if (item is not JsonValue itemValue || !itemValue.TryGetValue<string>(out var reqProp))
                     {
-                        result.AddError(ErrorCodes.SchemaRequiredItemNotString, "required array items must be strings", AppendPath(path, "required"));
+                        AddError(result, ErrorCodes.SchemaRequiredItemNotString, "required array items must be strings", AppendPath(path, "required"));
                         break;
                     }
                     else if (definedProps.Count > 0 && !definedProps.Contains(reqProp))
                     {
-                        result.AddError(ErrorCodes.SchemaRequiredPropertyNotDefined, $"Required property '{reqProp}' is not defined in properties", AppendPath(path, "required"));
+                        AddError(result, ErrorCodes.SchemaRequiredPropertyNotDefined, $"Required property '{reqProp}' is not defined in properties", AppendPath(path, "required"));
                     }
                 }
             }
@@ -859,7 +905,7 @@ public sealed class SchemaValidator
             }
             else
             {
-                result.AddError(ErrorCodes.SchemaAdditionalPropertiesInvalid, "additionalProperties must be a boolean or schema", AppendPath(path, "additionalProperties"));
+                AddError(result, ErrorCodes.SchemaAdditionalPropertiesInvalid, "additionalProperties must be a boolean or schema", AppendPath(path, "additionalProperties"));
             }
         }
 
@@ -873,7 +919,7 @@ public sealed class SchemaValidator
         // Array type requires items schema
         if (!schema.ContainsKey("items") && !schema.ContainsKey("contains"))
         {
-            result.AddError(ErrorCodes.SchemaArrayMissingItems, "array type requires 'items' or 'contains' schema", path);
+            AddError(result, ErrorCodes.SchemaArrayMissingItems, "array type requires 'items' or 'contains' schema", path);
         }
 
         // Validate items
@@ -891,7 +937,7 @@ public sealed class SchemaValidator
         {
             if (uniqueValue is not JsonValue jv || !jv.TryGetValue<bool>(out _))
             {
-                result.AddError(ErrorCodes.SchemaUniqueItemsNotBoolean, "uniqueItems must be a boolean", AppendPath(path, "uniqueItems"));
+                AddError(result, ErrorCodes.SchemaUniqueItemsNotBoolean, "uniqueItems must be a boolean", AppendPath(path, "uniqueItems"));
             }
         }
 
@@ -913,7 +959,7 @@ public sealed class SchemaValidator
         // Tuple requires either prefixItems or (tuple + properties) format
         if (!hasPrefixItems && !hasTupleProperties)
         {
-            result.AddError(ErrorCodes.SchemaTupleMissingPrefixItems, "tuple type requires 'prefixItems' or 'tuple' with 'properties'", path);
+            AddError(result, ErrorCodes.SchemaTupleMissingPrefixItems, "tuple type requires 'prefixItems' or 'tuple' with 'properties'", path);
         }
         
         // Validate prefixItems
@@ -921,7 +967,7 @@ public sealed class SchemaValidator
         {
             if (prefixValue is not JsonArray prefixArr)
             {
-                result.AddError(ErrorCodes.SchemaPrefixItemsNotArray, "prefixItems must be an array", AppendPath(path, "prefixItems"));
+                AddError(result, ErrorCodes.SchemaPrefixItemsNotArray, "prefixItems must be an array", AppendPath(path, "prefixItems"));
             }
             else
             {
@@ -968,7 +1014,7 @@ public sealed class SchemaValidator
             }
             else
             {
-                result.AddError(ErrorCodes.SchemaItemsInvalidForTuple, "items must be a boolean or schema for tuple type", AppendPath(path, "items"));
+                AddError(result, ErrorCodes.SchemaItemsInvalidForTuple, "items must be a boolean or schema for tuple type", AppendPath(path, "items"));
             }
         }
     }
@@ -978,7 +1024,7 @@ public sealed class SchemaValidator
         // Map type requires values schema
         if (!schema.ContainsKey("values"))
         {
-            result.AddError(ErrorCodes.SchemaMapMissingValues, "map type requires 'values' schema", path);
+            AddError(result, ErrorCodes.SchemaMapMissingValues, "map type requires 'values' schema", path);
         }
 
         // Validate values schema
@@ -1005,7 +1051,7 @@ public sealed class SchemaValidator
         var hasOneOf = schema.ContainsKey("oneOf");
         if (!hasOptions && !hasChoices && !hasOneOf)
         {
-            result.AddError(ErrorCodes.SchemaChoiceMissingOptions, "choice type requires 'options', 'choices', or 'oneOf'", path);
+            AddError(result, ErrorCodes.SchemaChoiceMissingOptions, "choice type requires 'options', 'choices', or 'oneOf'", path);
         }
 
         // Validate options (legacy keyword)
@@ -1013,7 +1059,7 @@ public sealed class SchemaValidator
         {
             if (optionsValue is not JsonObject opts)
             {
-                result.AddError(ErrorCodes.SchemaOptionsNotObject, "options must be an object", AppendPath(path, "options"));
+                AddError(result, ErrorCodes.SchemaOptionsNotObject, "options must be an object", AppendPath(path, "options"));
             }
             else
             {
@@ -1032,7 +1078,7 @@ public sealed class SchemaValidator
         {
             if (choicesValue is not JsonObject choices)
             {
-                result.AddError(ErrorCodes.SchemaChoicesNotObject, "choices must be an object", AppendPath(path, "choices"));
+                AddError(result, ErrorCodes.SchemaChoicesNotObject, "choices must be an object", AppendPath(path, "choices"));
             }
             else
             {
@@ -1069,7 +1115,7 @@ public sealed class SchemaValidator
         {
             if (patternValue is not JsonValue jv || !jv.TryGetValue<string>(out var pattern))
             {
-                result.AddError(ErrorCodes.SchemaPatternNotString, "pattern must be a string", AppendPath(path, "pattern"));
+                AddError(result, ErrorCodes.SchemaPatternNotString, "pattern must be a string", AppendPath(path, "pattern"));
             }
             else
             {
@@ -1079,7 +1125,7 @@ public sealed class SchemaValidator
                 }
                 catch (ArgumentException)
                 {
-                    result.AddError(ErrorCodes.SchemaPatternInvalid, $"pattern is not a valid regular expression: '{pattern}'", AppendPath(path, "pattern"));
+                    AddError(result, ErrorCodes.SchemaPatternInvalid, $"pattern is not a valid regular expression: '{pattern}'", AppendPath(path, "pattern"));
                 }
             }
         }
@@ -1117,13 +1163,13 @@ public sealed class SchemaValidator
     {
         if (value is not JsonArray arr)
         {
-            result.AddError(ErrorCodes.SchemaEnumNotArray, "enum must be an array", AppendPath(path, "enum"));
+            AddError(result, ErrorCodes.SchemaEnumNotArray, "enum must be an array", AppendPath(path, "enum"));
             return;
         }
 
         if (arr.Count == 0)
         {
-            result.AddError(ErrorCodes.SchemaEnumEmpty, "enum array cannot be empty", AppendPath(path, "enum"));
+            AddError(result, ErrorCodes.SchemaEnumEmpty, "enum array cannot be empty", AppendPath(path, "enum"));
             return;
         }
 
@@ -1134,7 +1180,7 @@ public sealed class SchemaValidator
             var itemJson = item?.ToJsonString() ?? "null";
             if (!seen.Add(itemJson))
             {
-                result.AddError(ErrorCodes.SchemaEnumDuplicates, "enum array contains duplicate values", AppendPath(path, "enum"));
+                AddError(result, ErrorCodes.SchemaEnumDuplicates, "enum array contains duplicate values", AppendPath(path, "enum"));
                 break;
             }
         }
@@ -1189,13 +1235,13 @@ public sealed class SchemaValidator
 
         if (value is not JsonArray arr)
         {
-            result.AddError(ErrorCodes.SchemaCompositionNotArray, $"{keyword} must be an array", keywordPath);
+            AddError(result, ErrorCodes.SchemaCompositionNotArray, $"{keyword} must be an array", keywordPath);
             return;
         }
 
         if (arr.Count == 0)
         {
-            result.AddError(ErrorCodes.SchemaCompositionEmpty, $"{keyword} array cannot be empty", keywordPath);
+            AddError(result, ErrorCodes.SchemaCompositionEmpty, $"{keyword} array cannot be empty", keywordPath);
             return;
         }
 
@@ -1213,7 +1259,7 @@ public sealed class SchemaValidator
     {
         if (value is not JsonObject altnames)
         {
-            result.AddError(ErrorCodes.SchemaAltnamesNotObject, "altnames must be an object", AppendPath(path, "altnames"));
+            AddError(result, ErrorCodes.SchemaAltnamesNotObject, "altnames must be an object", AppendPath(path, "altnames"));
             return;
         }
 
@@ -1221,7 +1267,7 @@ public sealed class SchemaValidator
         {
             if (prop.Value is not JsonValue jv || !jv.TryGetValue<string>(out _))
             {
-                result.AddError(ErrorCodes.SchemaAltnamesValueNotString, $"altnames values must be strings", AppendPath(path, $"altnames/{prop.Key}"));
+                AddError(result, ErrorCodes.SchemaAltnamesValueNotString, $"altnames values must be strings", AppendPath(path, $"altnames/{prop.Key}"));
             }
         }
     }
@@ -1232,7 +1278,7 @@ public sealed class SchemaValidator
         {
             if (value is not JsonValue jv)
             {
-                result.AddError(ErrorCodes.SchemaIntegerConstraintInvalid, $"{keyword} must be a non-negative integer", AppendPath(path, keyword));
+                AddError(result, ErrorCodes.SchemaIntegerConstraintInvalid, $"{keyword} must be a non-negative integer", AppendPath(path, keyword));
                 return;
             }
 
@@ -1240,19 +1286,19 @@ public sealed class SchemaValidator
             {
                 if (intVal < 0)
                 {
-                    result.AddError(ErrorCodes.SchemaIntegerConstraintInvalid, $"{keyword} must be a non-negative integer", AppendPath(path, keyword));
+                    AddError(result, ErrorCodes.SchemaIntegerConstraintInvalid, $"{keyword} must be a non-negative integer", AppendPath(path, keyword));
                 }
             }
             else if (jv.TryGetValue<long>(out var longVal))
             {
                 if (longVal < 0)
                 {
-                    result.AddError(ErrorCodes.SchemaIntegerConstraintInvalid, $"{keyword} must be a non-negative integer", AppendPath(path, keyword));
+                    AddError(result, ErrorCodes.SchemaIntegerConstraintInvalid, $"{keyword} must be a non-negative integer", AppendPath(path, keyword));
                 }
             }
             else
             {
-                result.AddError(ErrorCodes.SchemaIntegerConstraintInvalid, $"{keyword} must be a non-negative integer", AppendPath(path, keyword));
+                AddError(result, ErrorCodes.SchemaIntegerConstraintInvalid, $"{keyword} must be a non-negative integer", AppendPath(path, keyword));
             }
         }
     }
@@ -1263,13 +1309,13 @@ public sealed class SchemaValidator
         {
             if (value is not JsonValue jv)
             {
-                result.AddError(ErrorCodes.SchemaNumberConstraintInvalid, $"{keyword} must be a number", AppendPath(path, keyword));
+                AddError(result, ErrorCodes.SchemaNumberConstraintInvalid, $"{keyword} must be a number", AppendPath(path, keyword));
                 return;
             }
 
             if (!jv.TryGetValue<double>(out _) && !jv.TryGetValue<int>(out _) && !jv.TryGetValue<long>(out _))
             {
-                result.AddError(ErrorCodes.SchemaNumberConstraintInvalid, $"{keyword} must be a number", AppendPath(path, keyword));
+                AddError(result, ErrorCodes.SchemaNumberConstraintInvalid, $"{keyword} must be a number", AppendPath(path, keyword));
             }
         }
     }
@@ -1280,7 +1326,7 @@ public sealed class SchemaValidator
         {
             if (value is not JsonValue jv)
             {
-                result.AddError(ErrorCodes.SchemaPositiveNumberConstraintInvalid, $"{keyword} must be a positive number", AppendPath(path, keyword));
+                AddError(result, ErrorCodes.SchemaPositiveNumberConstraintInvalid, $"{keyword} must be a positive number", AppendPath(path, keyword));
                 return;
             }
 
@@ -1288,19 +1334,19 @@ public sealed class SchemaValidator
             {
                 if (dVal <= 0)
                 {
-                    result.AddError(ErrorCodes.SchemaPositiveNumberConstraintInvalid, $"{keyword} must be a positive number", AppendPath(path, keyword));
+                    AddError(result, ErrorCodes.SchemaPositiveNumberConstraintInvalid, $"{keyword} must be a positive number", AppendPath(path, keyword));
                 }
             }
             else if (jv.TryGetValue<int>(out var intVal))
             {
                 if (intVal <= 0)
                 {
-                    result.AddError(ErrorCodes.SchemaPositiveNumberConstraintInvalid, $"{keyword} must be a positive number", AppendPath(path, keyword));
+                    AddError(result, ErrorCodes.SchemaPositiveNumberConstraintInvalid, $"{keyword} must be a positive number", AppendPath(path, keyword));
                 }
             }
             else
             {
-                result.AddError(ErrorCodes.SchemaPositiveNumberConstraintInvalid, $"{keyword} must be a positive number", AppendPath(path, keyword));
+                AddError(result, ErrorCodes.SchemaPositiveNumberConstraintInvalid, $"{keyword} must be a positive number", AppendPath(path, keyword));
             }
         }
     }
