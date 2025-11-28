@@ -140,10 +140,10 @@ class InstanceValidatorTests {
         }
 
         @Test
-        @DisplayName("Valid float64")
-        void validFloat64() {
+        @DisplayName("Valid double")
+        void validDouble() {
             String schema = """
-                { "type": "float64" }
+                { "type": "double" }
                 """;
             String instance = "3.14159";
             

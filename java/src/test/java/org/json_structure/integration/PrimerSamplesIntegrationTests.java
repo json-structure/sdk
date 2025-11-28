@@ -152,7 +152,7 @@ class PrimerSamplesIntegrationTests {
                     "price": {
                         "type": "object",
                         "properties": {
-                            "amount": { "type": "float64", "minimum": 0 },
+                            "amount": { "type": "double", "minimum": 0 },
                             "currency": { "type": "string", "minLength": 3, "maxLength": 3 }
                         },
                         "required": ["amount", "currency"]

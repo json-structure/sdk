@@ -84,7 +84,7 @@ public class JsonStructureSchemaExporterTests
         props["LongProp"]!.AsObject()["type"]!.GetValue<string>().Should().Be("int64");
         props["LongProp"]!.AsObject()["title"]!.GetValue<string>().Should().Be("Int64");
         
-        props["DoubleProp"]!.AsObject()["type"]!.GetValue<string>().Should().Be("float64");
+        props["DoubleProp"]!.AsObject()["type"]!.GetValue<string>().Should().Be("double");
         props["DoubleProp"]!.AsObject()["title"]!.GetValue<string>().Should().Be("Double");
         
         props["BoolProp"]!.AsObject()["type"]!.GetValue<string>().Should().Be("boolean");

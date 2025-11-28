@@ -102,14 +102,14 @@ class JsonStructureSchemaExporterTests {
         @DisplayName("Export float")
         void exportFloat() throws Exception {
             ObjectNode schema = JsonStructureSchemaExporter.getSchemaAsNode(float.class, mapper);
-            assertThat(schema.get("type").asText()).isEqualTo("float32");
+            assertThat(schema.get("type").asText()).isEqualTo("float");
         }
 
         @Test
         @DisplayName("Export double")
         void exportDouble() throws Exception {
             ObjectNode schema = JsonStructureSchemaExporter.getSchemaAsNode(double.class, mapper);
-            assertThat(schema.get("type").asText()).isEqualTo("float64");
+            assertThat(schema.get("type").asText()).isEqualTo("double");
         }
     }
 

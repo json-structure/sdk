@@ -357,10 +357,11 @@ public static class JsonStructureSchemaExporter
         if (type == typeof(ulong)) return "uint64";
         if (type == typeof(UInt128)) return "uint128";
 
-        // Floating point
-        if (type == typeof(Half)) return "float16";
-        if (type == typeof(float)) return "float32";
-        if (type == typeof(double)) return "float64";
+        // Floating point - use spec names: float (32-bit), double (64-bit)
+        // Note: Half (16-bit) maps to float as the closest available spec type
+        if (type == typeof(Half)) return "float";
+        if (type == typeof(float)) return "float";
+        if (type == typeof(double)) return "double";
         if (type == typeof(decimal)) return "decimal";
 
         // Date/time types

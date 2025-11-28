@@ -23,17 +23,24 @@ public final class SchemaValidator {
 
     /**
      * The valid primitive types in JSON Structure.
+     * These types are defined in the JSON Structure Core specification.
      */
     public static final Set<String> PRIMITIVE_TYPES = Set.of(
+            // JSON Primitive Types (Section 3.2.1)
             "string", "number", "boolean", "null",
+            // Extended Primitive Types - Integers (Section 3.2.2)
             "int8", "int16", "int32", "int64", "int128",
             "uint8", "uint16", "uint32", "uint64", "uint128",
-            "float8", "float16", "float32", "float64", "float128",
-            "decimal", "decimal64", "decimal128",
+            // Extended Primitive Types - Floating Point (Section 3.2.2)
+            "float8", "float", "double",
+            // Extended Primitive Types - Decimal (Section 3.2.2)
+            "decimal",
+            // Extended Primitive Types - Date/Time (Section 3.2.2)
             "date", "time", "datetime", "duration",
+            // Extended Primitive Types - Other (Section 3.2.2)
             "uuid", "uri", "binary", "jsonpointer",
-            // Aliases for compatibility
-            "integer", "double", "float"
+            // Aliases for JSON Schema compatibility
+            "integer" // alias for int32
     );
 
     /**
@@ -43,8 +50,7 @@ public final class SchemaValidator {
             "number", "integer", "double", "float",
             "int8", "int16", "int32", "int64", "int128",
             "uint8", "uint16", "uint32", "uint64", "uint128",
-            "float8", "float16", "float32", "float64", "float128",
-            "decimal", "decimal64", "decimal128"
+            "float8", "decimal"
     );
 
     /**

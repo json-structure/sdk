@@ -302,8 +302,7 @@ public final class InstanceValidator {
             case "string" -> validateString(instance, schema, result, path);
             case "number", "integer", "int8", "int16", "int32", "int64", "int128",
                  "uint8", "uint16", "uint32", "uint64", "uint128",
-                 "float8", "float16", "float32", "float64", "float128",
-                 "double", "decimal", "decimal64", "decimal128" ->
+                 "float8", "float", "double", "decimal" ->
                     validateNumber(instance, type, schema, result, path);
             case "object" -> validateObject(instance, schema, rootSchema, result, path, depth);
             case "array" -> validateArray(instance, schema, rootSchema, result, path, depth);
@@ -506,7 +505,7 @@ public final class InstanceValidator {
                         return false;
                     }
                 }
-                case "decimal", "decimal64", "decimal128" -> new BigDecimal(value);
+                case "decimal" -> new BigDecimal(value);
                 default -> {
                     result.addError("String value not expected for type " + type, path);
                     return false;

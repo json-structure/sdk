@@ -134,7 +134,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 ObjectMapper mapper = new ObjectMapper();
 mapper.registerModule(new JsonStructureModule());
 
-// Now supports Int128, UInt128, Decimal128, etc.
+// Supports extended numeric types like Int128, UInt128, Decimal, etc.
 ```
 
 ## Supported Types
@@ -152,8 +152,8 @@ mapper.registerModule(new JsonStructureModule());
 - `uint32` - Java `long` (0-4294967295)
 - `uint64` - Java `BigInteger` (0-18446744073709551615)
 - `uint128` - Java `BigInteger` (constrained)
-- `float32` - Java `float`/`Float`
-- `float64` - Java `double`/`Double`
+- `float` - Java `float`/`Float` (single-precision 32-bit)
+- `double` - Java `double`/`Double` (double-precision 64-bit)
 - `decimal` - Java `BigDecimal`
 
 ### Temporal Types

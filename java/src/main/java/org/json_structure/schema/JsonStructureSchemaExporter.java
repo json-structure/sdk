@@ -217,9 +217,9 @@ public final class JsonStructureSchemaExporter {
         // BigInteger for larger types
         if (type == BigInteger.class) return "int128"; // Or could be uint128
 
-        // Floating point
-        if (type == float.class || type == Float.class) return "float32";
-        if (type == double.class || type == Double.class) return "float64";
+        // Floating point - use spec names: float (32-bit), double (64-bit)
+        if (type == float.class || type == Float.class) return "float";
+        if (type == double.class || type == Double.class) return "double";
         if (type == BigDecimal.class) return "decimal";
 
         // Date/time types

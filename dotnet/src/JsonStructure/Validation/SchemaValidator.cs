@@ -750,8 +750,7 @@ public sealed class SchemaValidator
     private bool IsNumericType(string? type) => type is 
         "number" or "int8" or "int16" or "int32" or "int64" or "int128" or
         "uint8" or "uint16" or "uint32" or "uint64" or "uint128" or
-        "float16" or "float32" or "float64" or "float128" or
-        "decimal" or "decimal64" or "decimal128";
+        "float8" or "float" or "double" or "decimal";
 
     private void ValidateCrossTypeConstraints(JsonObject schema, string? typeStr, string path, ValidationResult result)
     {

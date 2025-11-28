@@ -363,16 +363,10 @@ public sealed class InstanceValidator
             case "uint32":
             case "uint64":
             case "uint128":
-            case "float8":   // Alias
-            case "float16":
-            case "float32":
-            case "float64":
-            case "double":   // Alias
-            case "float128":
-            case "float":    // Alias
+            case "float8":
+            case "float":
+            case "double":
             case "decimal":
-            case "decimal64":
-            case "decimal128":
                 ValidateNumber(instance, type, schema, result, path);
                 break;
             case "object":
@@ -687,8 +681,6 @@ public sealed class InstanceValidator
                 }
                 break;
             case "decimal":
-            case "decimal64":
-            case "decimal128":
                 if (!decimal.TryParse(value, NumberStyles.Any, CultureInfo.InvariantCulture, out _))
                 {
                     AddError(result, ErrorCodes.InstanceDecimalExpected, $"Value must be a valid {type}", path);

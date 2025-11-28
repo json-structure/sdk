@@ -218,8 +218,8 @@ class SchemaValidatorTests {
                 "type": "choice",
                 "discriminator": "type",
                 "options": {
-                    "circle": { "type": "object", "properties": { "radius": { "type": "float64" } } },
-                    "rectangle": { "type": "object", "properties": { "width": { "type": "float64" }, "height": { "type": "float64" } } }
+                    "circle": { "type": "object", "properties": { "radius": { "type": "double" } } },
+                    "rectangle": { "type": "object", "properties": { "width": { "type": "double" }, "height": { "type": "double" } } }
                 }
             }
             """;
@@ -402,7 +402,7 @@ class SchemaValidatorTests {
     @ParameterizedTest
     @ValueSource(strings = {"int8", "int16", "int32", "int64", "int128",
             "uint8", "uint16", "uint32", "uint64", "uint128",
-            "float16", "float32", "float64", "decimal",
+            "float8", "float", "double", "decimal",
             "string", "boolean", "date", "time", "datetime", "duration",
             "uuid", "uri", "binary", "object"})
     @DisplayName("All primitive and object JSON Structure types are valid")
