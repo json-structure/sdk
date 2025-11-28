@@ -2,8 +2,8 @@
 //
 // JSON Structure is a type system for JSON that provides precise data typing
 // with support for numeric types (int8, int16, int32, int64, uint8, uint16,
-// uint32, uint64, float32, float64, decimal, integer), temporal types (datetime,
-// date, time, duration), and structured types (object, array, tuple, map, set, union).
+// uint32, uint64, float8, float, double, decimal, integer), temporal types (datetime,
+// date, time, duration), and structured types (object, array, tuple, map, set, choice).
 //
 // # Schema Validation
 //
