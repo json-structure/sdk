@@ -8,11 +8,11 @@ suite('JSON Structure Extension Test Suite', () => {
     const fixturesPath = path.resolve(__dirname, '../../../test-fixtures');
 
     test('Extension should be present', () => {
-        assert.ok(vscode.extensions.getExtension('json-structure.json-structure'));
+        assert.ok(vscode.extensions.getExtension('jsonstructure.json-structure'));
     });
 
     test('Extension should activate on JSON file', async () => {
-        const ext = vscode.extensions.getExtension('json-structure.json-structure');
+        const ext = vscode.extensions.getExtension('jsonstructure.json-structure');
         assert.ok(ext);
         
         // Open a JSON file to trigger activation
