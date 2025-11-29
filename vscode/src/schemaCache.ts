@@ -131,6 +131,29 @@ export class SchemaCache {
         
         this.workspaceScanTimestamp = Date.now();
     }
+
+    /**
+     * Check if a schema with the given $id exists in the workspace
+     */
+    hasWorkspaceSchema(schemaId: string): boolean {
+        // Try exact match first
+        if (this.workspaceSchemas.has(schemaId)) {
+            return true;
+        }
+        
+        // Try normalized matches (with/without trailing slash, fragment)
+        const normalizedId = schemaId.replace(/#$/, ''); // Remove trailing #
+        if (this.workspaceSchemas.has(normalizedId)) {
+            return true;
+        }
+        
+        const withFragment = schemaId + '#';
+        if (this.workspaceSchemas.has(withFragment)) {
+            return true;
+        }
+        
+        return false;
+    }
     
     /**
      * Find a schema in the workspace by its $id

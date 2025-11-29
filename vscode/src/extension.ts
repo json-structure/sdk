@@ -7,11 +7,13 @@ import { JsonStructureCompletionProvider } from './completionProvider';
 import { JsonStructureHoverProvider } from './hoverProvider';
 import { JsonStructureDefinitionProvider } from './definitionProvider';
 import { JsonStructureDocumentSymbolProvider } from './documentSymbolProvider';
+import { SchemaStatusCodeLensProvider, SchemaStatusTracker } from './schemaStatusCodeLensProvider';
 
 let diagnosticsManager: DiagnosticsManager;
 let schemaValidator: SchemaValidator;
 let instanceValidator: InstanceValidator;
 let schemaCache: SchemaCache;
+let statusTracker: SchemaStatusTracker;
 
 export function activate(context: vscode.ExtensionContext): void {
     console.log('JSON Structure extension is now active');
@@ -21,6 +23,10 @@ export function activate(context: vscode.ExtensionContext): void {
     diagnosticsManager = new DiagnosticsManager();
     schemaValidator = new SchemaValidator(diagnosticsManager);
     instanceValidator = new InstanceValidator(diagnosticsManager, schemaCache);
+    statusTracker = new SchemaStatusTracker();
+    
+    // Wire up status tracker to instance validator
+    instanceValidator.setStatusTracker(statusTracker);
 
     // Register the diagnostics collection
     context.subscriptions.push(diagnosticsManager.getDiagnosticCollection());
@@ -41,6 +47,29 @@ export function activate(context: vscode.ExtensionContext): void {
                 return;
             }
             await validateDocument(editor.document);
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('jsonStructure.showSchemaInfo', async (schemaUri: string) => {
+            const editor = vscode.window.activeTextEditor;
+            if (!editor) {
+                return;
+            }
+            
+            const statusInfo = statusTracker.getStatus(editor.document.uri);
+            let message = `Schema: ${schemaUri}`;
+            
+            if (statusInfo.schemaId && statusInfo.schemaId !== schemaUri) {
+                message += `\n$id: ${statusInfo.schemaId}`;
+            }
+            if (statusInfo.source) {
+                const sourceDescription = statusInfo.source === 'workspace' ? 'Local workspace file' :
+                                          statusInfo.source === 'file' ? 'Local file' : 'Remote URL';
+                message += `\nSource: ${sourceDescription}`;
+            }
+            
+            vscode.window.showInformationMessage(message);
         })
     );
 
@@ -78,9 +107,11 @@ export function activate(context: vscode.ExtensionContext): void {
         })
     );
 
-    // Validate all open documents on activation
-    vscode.workspace.textDocuments.forEach((document) => {
-        validateDocument(document);
+    // Validate all open documents on activation - run in background to not block activation
+    setImmediate(() => {
+        vscode.workspace.textDocuments.forEach((document) => {
+            validateDocument(document);
+        });
     });
 
     // Watch for configuration changes
@@ -133,6 +164,16 @@ export function activate(context: vscode.ExtensionContext): void {
             new JsonStructureDocumentSymbolProvider()
         )
     );
+
+    // CodeLens provider for schema status indicator
+    const codeLensProvider = new SchemaStatusCodeLensProvider(schemaCache, statusTracker);
+    context.subscriptions.push(
+        vscode.languages.registerCodeLensProvider(
+            jsonSelector,
+            codeLensProvider
+        )
+    );
+    context.subscriptions.push(codeLensProvider);
 }
 
 async function validateDocument(document: vscode.TextDocument): Promise<void> {
@@ -170,5 +211,8 @@ async function validateDocument(document: vscode.TextDocument): Promise<void> {
 export function deactivate(): void {
     if (diagnosticsManager) {
         diagnosticsManager.dispose();
+    }
+    if (statusTracker) {
+        statusTracker.dispose();
     }
 }

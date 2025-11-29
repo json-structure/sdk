@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { DiagnosticsManager } from './diagnosticsManager';
 import { SchemaCache } from './schemaCache';
+import { SchemaStatusTracker } from './schemaStatusCodeLensProvider';
 import {
     InstanceValidator as JsonStructureInstanceValidator,
     ValidationError,
@@ -16,6 +17,8 @@ export class InstanceValidator {
     private diagnosticsManager: DiagnosticsManager;
     private schemaCache: SchemaCache;
     private instanceValidator: JsonStructureInstanceValidator;
+    private statusTracker: SchemaStatusTracker | null = null;
+    private validationInProgress: Map<string, Promise<void>> = new Map();
 
     constructor(diagnosticsManager: DiagnosticsManager, schemaCache: SchemaCache) {
         this.diagnosticsManager = diagnosticsManager;
@@ -24,11 +27,50 @@ export class InstanceValidator {
     }
 
     /**
+     * Set the status tracker for schema loading status updates
+     */
+    setStatusTracker(tracker: SchemaStatusTracker): void {
+        this.statusTracker = tracker;
+    }
+
+    /**
      * Validate a document as a JSON instance against its $schema
+     * Uses a lock to prevent concurrent validations of the same document
      */
     async validate(document: vscode.TextDocument): Promise<void> {
+        const uriString = document.uri.toString();
+        
+        // If validation is already in progress for this document, wait for it to complete
+        // then start a new validation (in case content changed)
+        const existingValidation = this.validationInProgress.get(uriString);
+        if (existingValidation) {
+            await existingValidation;
+        }
+        
+        // Start new validation and track it
+        const validationPromise = this.doValidate(document);
+        this.validationInProgress.set(uriString, validationPromise);
+        
+        try {
+            await validationPromise;
+        } finally {
+            // Only clear if this is still the current validation
+            if (this.validationInProgress.get(uriString) === validationPromise) {
+                this.validationInProgress.delete(uriString);
+            }
+        }
+    }
+
+    /**
+     * Internal validation implementation
+     */
+    private async doValidate(document: vscode.TextDocument): Promise<void> {
         const text = document.getText();
         const diagnostics: vscode.Diagnostic[] = [];
+
+        // Clear any existing diagnostics at the START of validation
+        // This ensures stale errors from previous runs are removed
+        this.diagnosticsManager.clearDiagnostics(document.uri);
 
         // First, try to parse the JSON
         let instance: unknown;
@@ -36,14 +78,15 @@ export class InstanceValidator {
             instance = JSON.parse(text);
         } catch (e) {
             // JSON parse error - let VS Code's built-in JSON validation handle this
-            this.diagnosticsManager.clearDiagnostics(document.uri);
+            this.statusTracker?.clearStatus(document.uri);
             return;
         }
 
         // Check if it's an object with a $schema property
         if (!this.isObject(instance) || !('$schema' in instance)) {
-            // Not a document we should validate - clear any existing diagnostics
-            this.diagnosticsManager.clearDiagnostics(document.uri);
+            // Not a document we should validate
+            this.statusTracker?.clearStatus(document.uri);
+            this.statusTracker?.clearStatus(document.uri);
             return;
         }
 
@@ -59,8 +102,19 @@ export class InstanceValidator {
                 )
             );
             this.diagnosticsManager.setDiagnostics(document.uri, diagnostics);
+            this.statusTracker?.setStatus(document.uri, {
+                status: 'error',
+                schemaUri: String(schemaUri),
+                errorMessage: '$schema must be a string URI'
+            });
             return;
         }
+
+        // Update status to loading
+        this.statusTracker?.setStatus(document.uri, {
+            status: 'loading',
+            schemaUri
+        });
 
         // Fetch the schema (pass document URI for relative path resolution)
         const schemaResult = await this.schemaCache.getSchema(schemaUri, document.uri);
@@ -76,20 +130,74 @@ export class InstanceValidator {
                 )
             );
             this.diagnosticsManager.setDiagnostics(document.uri, diagnostics);
+            this.statusTracker?.setStatus(document.uri, {
+                status: schemaResult.error?.includes('not found') ? 'not-found' : 'error',
+                schemaUri,
+                errorMessage: schemaResult.error
+            });
             return;
         }
 
-        // Validate the instance against the schema
-        const result = this.instanceValidator.validate(instance as JsonValue, schemaResult.schema as JsonValue, text);
+        // Determine schema source
+        const source = this.determineSchemaSource(schemaUri, schemaResult);
 
-        if (!result.isValid) {
-            for (const error of result.errors) {
-                const diagnostic = this.createDiagnostic(document, error);
-                diagnostics.push(diagnostic);
+        // Update status to loaded
+        const schemaObj = schemaResult.schema as Record<string, unknown>;
+        this.statusTracker?.setStatus(document.uri, {
+            status: 'loaded',
+            schemaUri,
+            schemaId: typeof schemaObj.$id === 'string' ? schemaObj.$id : undefined,
+            source
+        });
+
+        // Validate the instance against the schema
+        try {
+            const result = this.instanceValidator.validate(instance as JsonValue, schemaResult.schema as JsonValue, text);
+
+            if (!result.isValid) {
+                for (const error of result.errors) {
+                    const diagnostic = this.createDiagnostic(document, error);
+                    diagnostics.push(diagnostic);
+                }
             }
+        } catch (validationError) {
+            // If validation throws, add an error diagnostic
+            console.error('Validation error:', validationError);
+            diagnostics.push(
+                DiagnosticsManager.createDiagnostic(
+                    this.findSchemaPropertyRange(document),
+                    `Validation error: ${validationError instanceof Error ? validationError.message : String(validationError)}`,
+                    vscode.DiagnosticSeverity.Error,
+                    'VALIDATION_ERROR',
+                    'JSON Structure'
+                )
+            );
         }
 
+        // Always set diagnostics to clear any stale ones
         this.diagnosticsManager.setDiagnostics(document.uri, diagnostics);
+    }
+
+    /**
+     * Determine the source of a loaded schema
+     */
+    private determineSchemaSource(schemaUri: string, _schemaResult: { schema: unknown }): 'workspace' | 'remote' | 'file' {
+        // Check if it looks like a file path or file:// URI
+        if (schemaUri.startsWith('file://') || schemaUri.startsWith('./') || schemaUri.startsWith('../') || /^[a-zA-Z]:/.test(schemaUri)) {
+            return 'file';
+        }
+        
+        // Check if it's an http(s) URL - could be workspace or remote
+        // Workspace schemas are found by $id matching, so if we got here with a URL,
+        // we check if it matches a workspace schema
+        if (schemaUri.startsWith('http://') || schemaUri.startsWith('https://')) {
+            // If the schema cache found it in workspace, it's workspace
+            // For now, we assume URLs that work are either remote or workspace-cached
+            // The schemaCache.getSchema first checks workspace schemas by $id
+            return this.schemaCache.hasWorkspaceSchema(schemaUri) ? 'workspace' : 'remote';
+        }
+        
+        return 'remote';
     }
 
     /**

@@ -219,7 +219,10 @@ suite('JSON Structure Extension Test Suite', () => {
             const networkErrors = structureDiagnostics.filter(d => 
                 d.message.toLowerCase().includes('network') || 
                 d.message.toLowerCase().includes('fetch') ||
-                d.message.toLowerCase().includes('failed to load')
+                d.message.toLowerCase().includes('failed to load') ||
+                d.message.toLowerCase().includes('unable to load') ||
+                d.message.toLowerCase().includes('enotfound') ||
+                d.message.toLowerCase().includes('connection refused')
             );
             
             assert.strictEqual(networkErrors.length, 0,
@@ -245,7 +248,10 @@ suite('JSON Structure Extension Test Suite', () => {
             const networkErrors = structureDiagnostics.filter(d => 
                 d.message.toLowerCase().includes('network') || 
                 d.message.toLowerCase().includes('fetch') ||
-                d.message.toLowerCase().includes('failed to load')
+                d.message.toLowerCase().includes('failed to load') ||
+                d.message.toLowerCase().includes('unable to load') ||
+                d.message.toLowerCase().includes('enotfound') ||
+                d.message.toLowerCase().includes('connection refused')
             );
             
             assert.strictEqual(networkErrors.length, 0,
@@ -268,6 +274,11 @@ suite('JSON Structure Extension Test Suite', () => {
             assert.ok(commands.includes('jsonStructure.validateDocument'));
         });
 
+        test('Show schema info command should be registered', async () => {
+            const commands = await vscode.commands.getCommands(true);
+            assert.ok(commands.includes('jsonStructure.showSchemaInfo'));
+        });
+
         test('Clear cache command should execute without error', async () => {
             await vscode.commands.executeCommand('jsonStructure.clearCache');
             // If we get here without throwing, the test passes
@@ -281,8 +292,119 @@ suite('JSON Structure Extension Test Suite', () => {
             
             assert.strictEqual(typeof config.get('enableSchemaValidation'), 'boolean');
             assert.strictEqual(typeof config.get('enableInstanceValidation'), 'boolean');
+            assert.strictEqual(typeof config.get('enableCodeLens'), 'boolean');
             assert.strictEqual(typeof config.get('cacheTTLMinutes'), 'number');
             assert.ok(config.get('schemaMapping') !== undefined);
+        });
+    });
+
+    suite('CodeLens', () => {
+        test('Should provide CodeLens for document with $schema', async () => {
+            const instancePath = path.join(fixturesPath, 'valid-instance.json');
+            const doc = await vscode.workspace.openTextDocument(instancePath);
+            await vscode.window.showTextDocument(doc);
+
+            // Wait for validation and CodeLens to be computed
+            await new Promise(resolve => setTimeout(resolve, 1500));
+
+            const codeLenses = await vscode.commands.executeCommand<vscode.CodeLens[]>(
+                'vscode.executeCodeLensProvider',
+                doc.uri
+            );
+
+            assert.ok(codeLenses && codeLenses.length > 0, 'Expected at least one CodeLens');
+            
+            // Check that CodeLens has a title related to schema
+            const schemaCodeLens = codeLenses.find(cl => 
+                cl.command?.title?.includes('Schema') || cl.command?.title?.includes('schema')
+            );
+            assert.ok(schemaCodeLens, 'Expected a CodeLens with schema-related title');
+        });
+
+        test('Should not provide CodeLens for document without $schema', async () => {
+            const doc = await vscode.workspace.openTextDocument({
+                language: 'json',
+                content: '{ "name": "test" }'
+            });
+            await vscode.window.showTextDocument(doc);
+
+            // Wait for processing
+            await new Promise(resolve => setTimeout(resolve, 500));
+
+            const codeLenses = await vscode.commands.executeCommand<vscode.CodeLens[]>(
+                'vscode.executeCodeLensProvider',
+                doc.uri
+            );
+
+            // Filter to only our CodeLenses (other extensions might provide CodeLens)
+            const schemaCodeLenses = codeLenses?.filter(cl => 
+                cl.command?.title?.includes('Schema') || cl.command?.title?.includes('schema')
+            ) || [];
+            
+            assert.strictEqual(schemaCodeLenses.length, 0, 
+                'Expected no schema-related CodeLens for document without $schema');
+        });
+
+        test('CodeLens should show loaded status for valid schema', async () => {
+            const instancePath = path.join(fixturesPath, 'valid-instance.json');
+            const doc = await vscode.workspace.openTextDocument(instancePath);
+            await vscode.window.showTextDocument(doc);
+
+            // Wait for schema to be loaded
+            await new Promise(resolve => setTimeout(resolve, 2000));
+
+            const codeLenses = await vscode.commands.executeCommand<vscode.CodeLens[]>(
+                'vscode.executeCodeLensProvider',
+                doc.uri
+            );
+
+            const schemaCodeLens = codeLenses?.find(cl => 
+                cl.command?.title?.includes('Schema') || cl.command?.title?.includes('schema')
+            );
+            
+            assert.ok(schemaCodeLens, 'Expected a schema CodeLens');
+            assert.ok(
+                schemaCodeLens.command?.title?.includes('loaded') || 
+                schemaCodeLens.command?.title?.includes('✓'),
+                `Expected CodeLens to show loaded status, got: ${schemaCodeLens.command?.title}`
+            );
+        });
+
+        test('CodeLens loaded status should have no diagnostic warnings', async () => {
+            // This test catches the bug where CodeLens shows success but diagnostic warning persists
+            const instancePath = path.join(fixturesPath, 'valid-instance.json');
+            const doc = await vscode.workspace.openTextDocument(instancePath);
+            await vscode.window.showTextDocument(doc);
+
+            // Wait for schema to be loaded
+            await new Promise(resolve => setTimeout(resolve, 2000));
+
+            // Check CodeLens shows loaded
+            const codeLenses = await vscode.commands.executeCommand<vscode.CodeLens[]>(
+                'vscode.executeCodeLensProvider',
+                doc.uri
+            );
+
+            const schemaCodeLens = codeLenses?.find(cl => 
+                cl.command?.title?.includes('loaded') || cl.command?.title?.includes('✓')
+            );
+            
+            assert.ok(schemaCodeLens, 'Expected CodeLens to show loaded status');
+
+            // NOW check that there are no diagnostic warnings for schema loading
+            const diagnostics = vscode.languages.getDiagnostics(doc.uri);
+            const schemaLoadErrors = diagnostics.filter(d => 
+                d.source === 'JSON Structure' && (
+                    d.message.toLowerCase().includes('unable to load') ||
+                    d.message.toLowerCase().includes('could not load') ||
+                    d.message.toLowerCase().includes('enotfound') ||
+                    d.message.toLowerCase().includes('schema not found') ||
+                    d.message.toLowerCase().includes('failed to')
+                )
+            );
+
+            assert.strictEqual(schemaLoadErrors.length, 0,
+                `CodeLens shows schema loaded but diagnostics show errors: ${schemaLoadErrors.map(d => d.message).join(', ')}`);
         });
     });
 });

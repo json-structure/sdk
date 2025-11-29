@@ -1,4 +1,8 @@
 # encoding: utf-8
+# Suppress the runpy module import warning when running as python -m
+import warnings
+warnings.filterwarnings("ignore", message="'json_structure.*' found in sys.modules")
+
 """
 json_structure_schema_validator.py
 
@@ -990,65 +994,61 @@ def validate_json_structure_schema_core(schema_document, source_text=None, allow
 
 
 def main():
-    """
-    Command line entry point.
-    Expects [--metaschema] [--allowimport] [--extended] [--importmap URI=filename ...] and <path_to_json_file> as arguments.
-    Prints errors with line and column information if found, otherwise prints "Schema is valid."
-    """
-    args = sys.argv[1:]
-    allow_dollar = False
-    allow_import = False
-    extended = False
+    """Command line entry point for validating JSON Structure schema files."""
+    import argparse
+    parser = argparse.ArgumentParser(
+        prog='json-structure-check',
+        description='Validate JSON Structure schema files for conformance with the specification.',
+        epilog='Example: json-structure-check schema.json'
+    )
+    parser.add_argument('schema_file', help='Path to the JSON Structure schema file to validate')
+    parser.add_argument('--metaschema', action='store_true',
+                        help="Allow '$' in property names (for validating metaschemas)")
+    parser.add_argument('--extended', '-e', action='store_true',
+                        help='Enable extended validation features (conditional composition, validation keywords)')
+    parser.add_argument('--allowimport', '-i', action='store_true',
+                        help='Enable processing of $import and $importdefs keywords')
+    parser.add_argument('--importmap', '-m', action='append', metavar='URI=FILE',
+                        help='Map import URI to local file (can be specified multiple times)')
+    parser.add_argument('--quiet', '-q', action='store_true',
+                        help='Only output errors, suppress success message')
+    args = parser.parse_args()
+
+    # Build import map from arguments
     import_map = {}
-
-    # Process flags.
-    while args and args[0].startswith("--"):
-        arg = args.pop(0)
-        if arg == "--metaschema":
-            allow_dollar = True
-        elif arg == "--allowimport":
-            allow_import = True
-        elif arg == "--extended":
-            extended = True
-        elif arg.startswith("--importmap"):
-            if "=" in arg:
-                _, mapping_str = arg.split("--importmap=", 1)
-            else:
-                if not args:
-                    print("Missing value for --importmap")
-                    sys.exit(1)
-                mapping_str = args.pop(0)
-            parts = mapping_str.split("=", 1)
-            if len(parts) != 2:
-                print("Invalid --importmap format. Expected format: URI=filename")
+    if args.importmap:
+        for mapping in args.importmap:
+            if '=' not in mapping:
+                print(f"Error: Invalid --importmap format '{mapping}'. Expected URI=FILE")
                 sys.exit(1)
-            uri, filename = parts
+            uri, filename = mapping.split('=', 1)
             import_map[uri] = filename
-        else:
-            print(f"Unknown flag {arg}")
-            sys.exit(1)
 
-    if len(args) < 1:
-        print("Usage: python json_structure_schema_validator.py [--metaschema] [--allowimport] [--extended] [--importmap URI=filename ...] <path_to_json_file>")
-        sys.exit(1)
-    file_path = args[0]
     try:
-        with open(file_path, "r", encoding="utf-8") as file_in:
+        with open(args.schema_file, "r", encoding="utf-8") as file_in:
             source_text = file_in.read()
             data = json.loads(source_text)
-    except (FileNotFoundError, json.JSONDecodeError) as ex:
-        if hasattr(ex, 'lineno') and hasattr(ex, 'colno'):
-            print(f"Error reading JSON file: {ex.msg} (Line: {ex.lineno}, Column: {ex.colno})")
-        else:
-            print(f"Error reading JSON file: {ex}")
+    except FileNotFoundError:
+        print(f"Error: Schema file not found: {args.schema_file}")
         sys.exit(1)
-    errors = validate_json_structure_schema_core(data, source_text, allow_dollar=allow_dollar, allow_import=allow_import, import_map=import_map, extended=extended)
+    except json.JSONDecodeError as ex:
+        print(f"Error: Invalid JSON in schema file: {ex.msg} (Line: {ex.lineno}, Column: {ex.colno})")
+        sys.exit(1)
+
+    errors = validate_json_structure_schema_core(
+        data, source_text,
+        allow_dollar=args.metaschema,
+        allow_import=args.allowimport,
+        import_map=import_map,
+        extended=args.extended
+    )
     if errors:
         print("Schema is invalid:")
         for err in errors:
             print(" -", err)
         sys.exit(1)
-    print("Schema is valid.")
+    if not args.quiet:
+        print("Schema is valid.")
 
 
 if __name__ == "__main__":

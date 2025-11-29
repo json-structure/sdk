@@ -1,4 +1,8 @@
 # encoding: utf-8
+# Suppress the runpy module import warning when running as python -m
+import warnings
+warnings.filterwarnings("ignore", message="'json_structure.*' found in sys.modules")
+
 """
 json_structure_instance_validator.py
 
@@ -443,13 +447,15 @@ class JSONStructureInstanceValidator:
                         self.validate_instance(instance[prop], prop_schema, f"{path}/{prop}")
                 if "additionalProperties" in schema:
                     addl = schema["additionalProperties"]
+                    # $schema is a built-in property allowed in all instances
+                    reserved_props = {"$schema"}
                     if addl is False:
                         for key in instance.keys():
-                            if key not in props:
+                            if key not in props and key not in reserved_props:
                                 self.errors.append(f"Additional property '{key}' not allowed at {path}")
                     elif isinstance(addl, dict):
                         for key in instance.keys():
-                            if key not in props:
+                            if key not in props and key not in reserved_props:
                                 self.validate_instance(instance[key], addl, f"{path}/{key}")
                 # Extended object constraint: "has" keyword. [Metaschema: ObjectValidationAddIn]
                 if "has" in schema:
@@ -599,7 +605,13 @@ class JSONStructureInstanceValidator:
     def validate(self, instance, schema=None):
         if schema is None:
             schema = self.root_schema
-        errors = []
+        
+        # First, run the core validation (handles $root, types, required, etc.)
+        # Pass None for schema to trigger $root handling if this is the root schema
+        self.errors = []
+        self.validate_instance(instance, None if schema is self.root_schema else schema, "#")
+        errors = list(self.errors)
+        
         # Extended: conditional composition
         if self.extended and "JSONStructureConditionalComposition" in self.enabled_extensions:
             for key in ("allOf", "anyOf", "oneOf"):
@@ -1166,25 +1178,69 @@ class JSONStructureInstanceValidator:
 
 
 def main():
+    """Command line entry point for validating JSON instances against JSON Structure schemas."""
     import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument('instance_file')
-    parser.add_argument('schema_file')
-    parser.add_argument('--extended', action='store_true')
+    parser = argparse.ArgumentParser(
+        prog='json-structure-validate',
+        description='Validate JSON instances against JSON Structure schemas.',
+        epilog='Example: json-structure-validate instance.json schema.json'
+    )
+    parser.add_argument('instance_file', help='Path to the JSON instance file to validate')
+    parser.add_argument('schema_file', help='Path to the JSON Structure schema file')
+    parser.add_argument('--extended', '-e', action='store_true',
+                        help='Enable extended validation features (conditional composition, validation keywords)')
+    parser.add_argument('--allowimport', '-i', action='store_true',
+                        help='Enable processing of $import and $importdefs keywords')
+    parser.add_argument('--importmap', '-m', action='append', metavar='URI=FILE',
+                        help='Map import URI to local file (can be specified multiple times)')
+    parser.add_argument('--quiet', '-q', action='store_true',
+                        help='Only output errors, suppress success message')
     args = parser.parse_args()
-    import json
-    with open(args.schema_file, 'r', encoding='utf-8') as f:
-        schema = json.load(f)
-    with open(args.instance_file, 'r', encoding='utf-8') as f:
-        instance = json.load(f)
-    validator = JSONStructureInstanceValidator(schema, extended=args.extended)
+
+    # Build import map from arguments
+    import_map = {}
+    if args.importmap:
+        for mapping in args.importmap:
+            if '=' not in mapping:
+                print(f"Error: Invalid --importmap format '{mapping}'. Expected URI=FILE")
+                sys.exit(1)
+            uri, filename = mapping.split('=', 1)
+            import_map[uri] = filename
+
+    try:
+        with open(args.schema_file, 'r', encoding='utf-8') as f:
+            schema = json.load(f)
+    except FileNotFoundError:
+        print(f"Error: Schema file not found: {args.schema_file}")
+        sys.exit(1)
+    except json.JSONDecodeError as ex:
+        print(f"Error: Invalid JSON in schema file: {ex}")
+        sys.exit(1)
+
+    try:
+        with open(args.instance_file, 'r', encoding='utf-8') as f:
+            instance = json.load(f)
+    except FileNotFoundError:
+        print(f"Error: Instance file not found: {args.instance_file}")
+        sys.exit(1)
+    except json.JSONDecodeError as ex:
+        print(f"Error: Invalid JSON in instance file: {ex}")
+        sys.exit(1)
+
+    validator = JSONStructureInstanceValidator(
+        schema,
+        allow_import=args.allowimport,
+        import_map=import_map,
+        extended=args.extended
+    )
     errors = validator.validate(instance)
     if errors:
         print("Instance is invalid:")
         for err in errors:
             print(" -", err)
-        exit(1)
-    print("Instance is valid.")
+        sys.exit(1)
+    if not args.quiet:
+        print("Instance is valid.")
 
 
 if __name__ == "__main__":

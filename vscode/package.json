@@ -2,7 +2,7 @@
   "name": "json-structure",
   "displayName": "JSON Structure",
   "description": "Validation for JSON Structure schema documents and instance documents",
-  "version": "0.1.0",
+  "version": "0.1.8",
   "publisher": "jsonstructure",
   "license": "MIT",
   "icon": "media/logo.png",
@@ -38,6 +38,10 @@
       {
         "command": "jsonStructure.validateDocument",
         "title": "JSON Structure: Validate Document"
+      },
+      {
+        "command": "jsonStructure.showSchemaInfo",
+        "title": "JSON Structure: Show Schema Information"
       }
     ],
     "configuration": {
@@ -65,6 +69,11 @@
           "type": "boolean",
           "default": true,
           "description": "Enable validation of JSON documents that have a $schema property"
+        },
+        "jsonStructure.enableCodeLens": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show CodeLens with schema status next to $schema property"
         },
         "jsonStructure.cacheTTLMinutes": {
           "type": "number",
