@@ -70,10 +70,16 @@ jobs:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
       
       - name: Publish to Open VSX Registry
-        if: ${{ github.event.inputs.dry-run != 'true' && secrets.OVSX_PAT != '' }}
+        if: ${{ github.event.inputs.dry-run != 'true' }}
         working-directory: vscode
         run: |
-          npx ovsx publish json-structure-${{ steps.version.outputs.version }}.vsix -p ${{ secrets.OVSX_PAT }}
+          if [ -n "$OVSX_PAT" ]; then
+            npx ovsx publish json-structure-${{ steps.version.outputs.version }}.vsix -p "$OVSX_PAT"
+          else
+            echo "OVSX_PAT not set, skipping Open VSX publish"
+          fi
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
         continue-on-error: true  # Don't fail if Open VSX publish fails
       
       - name: Upload VSIX artifact
