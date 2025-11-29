@@ -1,3 +1,6 @@
 [submodule "primer-and-samples"]
 	path = primer-and-samples
 	url = https://github.com/json-structure/primer-and-samples.git
+[submodule "meta"]
+	path = meta
+	url = https://github.com/json-structure/meta.git

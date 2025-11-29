@@ -224,6 +224,61 @@ func main() {
 ```
 ```
 
+## Sideloading External Schemas
+
+When using `$import` to reference external schemas, you can provide those schemas
+directly instead of fetching them from URIs:
+
+```go
+package main
+
+import (
+	"fmt"
+
+	jsonstructure "github.com/json-structure/sdk-go"
+)
+
+func main() {
+	// External schema that would normally be fetched
+	addressSchema := map[string]interface{}{
+		"$schema": "https://json-structure.org/meta/core/v0/#",
+		"$id":     "https://example.com/address.json",
+		"type":    "object",
+		"properties": map[string]interface{}{
+			"street": map[string]interface{}{"type": "string"},
+			"city":   map[string]interface{}{"type": "string"},
+		},
+	}
+
+	// Main schema that imports the address schema
+	mainSchema := map[string]interface{}{
+		"$schema": "https://json-structure.org/meta/core/v0/#",
+		"type":    "object",
+		"properties": map[string]interface{}{
+			"name":    map[string]interface{}{"type": "string"},
+			"address": map[string]interface{}{"$ref": "#/definitions/Imported/Address"},
+		},
+		"definitions": map[string]interface{}{
+			"Imported": map[string]interface{}{
+				"$import": "https://example.com/address.json",
+			},
+		},
+	}
+
+	// Sideload the address schema - keyed by URI
+	options := &jsonstructure.SchemaValidatorOptions{
+		AllowImport: true,
+		ExternalSchemas: map[string]interface{}{
+			"https://example.com/address.json": addressSchema,
+		},
+	}
+	validator := jsonstructure.NewSchemaValidator(options)
+
+	result := validator.Validate(mainSchema)
+	fmt.Printf("Valid: %v\n", result.IsValid)
+}
+```
+
 ## API Reference
 
 ### Types
@@ -250,7 +305,9 @@ type ValidationError struct {
 
 ```go
 type SchemaValidatorOptions struct {
-	EnabledExtensions map[string]bool // e.g., {"JSONStructureValidation": true}
+	EnabledExtensions map[string]bool            // e.g., {"JSONStructureValidation": true}
+	AllowImport       bool                       // Enable $import/$importdefs processing
+	ExternalSchemas   map[string]interface{}     // URI to schema map for import resolution
 }
 ```
 
@@ -258,8 +315,9 @@ type SchemaValidatorOptions struct {
 
 ```go
 type InstanceValidatorOptions struct {
-	EnabledExtensions map[string]bool // Enable extended validation features
-	AllowImport       bool            // Enable $import/$importdefs processing
+	EnabledExtensions map[string]bool            // Enable extended validation features
+	AllowImport       bool                       // Enable $import/$importdefs processing
+	ExternalSchemas   map[string]interface{}     // URI to schema map for import resolution
 }
 ```
 

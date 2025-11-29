@@ -10,11 +10,12 @@ import (
 
 // SchemaValidator validates JSON Structure schema documents.
 type SchemaValidator struct {
-	options       SchemaValidatorOptions
-	errors        []ValidationError
-	schema        map[string]interface{}
-	seenRefs      map[string]bool
-	sourceLocator *JsonSourceLocator
+	options         SchemaValidatorOptions
+	errors          []ValidationError
+	schema          map[string]interface{}
+	seenRefs        map[string]bool
+	sourceLocator   *JsonSourceLocator
+	externalSchemas map[string]interface{}
 }
 
 // NewSchemaValidator creates a new SchemaValidator with the given options.
@@ -23,12 +24,41 @@ func NewSchemaValidator(options *SchemaValidatorOptions) *SchemaValidator {
 	if options != nil {
 		opts = *options
 	}
-	return &SchemaValidator{
-		options:       opts,
-		errors:        []ValidationError{},
-		seenRefs:      make(map[string]bool),
-		sourceLocator: nil,
+	v := &SchemaValidator{
+		options:         opts,
+		errors:          []ValidationError{},
+		seenRefs:        make(map[string]bool),
+		sourceLocator:   nil,
+		externalSchemas: make(map[string]interface{}),
 	}
+
+	// Build lookup for external schemas by $id and preprocess imports
+	if opts.ExternalSchemas != nil {
+		// Deep copy all schemas
+		for uri, schema := range opts.ExternalSchemas {
+			copied := v.deepCopySchema(schema)
+			v.externalSchemas[uri] = copied
+			// Also add by $id if present
+			if schemaMap, ok := schema.(map[string]interface{}); ok {
+				if id, ok := schemaMap["$id"].(string); ok && id != uri {
+					v.externalSchemas[id] = v.deepCopySchema(schema)
+				}
+			}
+		}
+		// Process imports in external schemas if allowImport is enabled
+		if opts.AllowImport {
+			// Multiple passes to handle chained imports
+			for i := 0; i < len(v.externalSchemas); i++ {
+				for _, schema := range v.externalSchemas {
+					if schemaMap, ok := schema.(map[string]interface{}); ok {
+						v.processImportsInExternalSchema(schemaMap)
+					}
+				}
+			}
+		}
+	}
+
+	return v
 }
 
 // Validate validates a JSON Structure schema document.
@@ -43,6 +73,12 @@ func (v *SchemaValidator) Validate(schema interface{}) ValidationResult {
 	}
 
 	v.schema = schemaMap
+
+	// Process imports if enabled
+	if v.options.AllowImport {
+		v.processImports(schemaMap, "#")
+	}
+
 	v.validateSchemaDocument(schemaMap, "#")
 
 	return v.result()
@@ -117,8 +153,30 @@ func (v *SchemaValidator) validateDefinitions(defs interface{}, path string) {
 			v.addError(path+"/"+name, "Definition must be an object", SchemaInvalidType)
 			continue
 		}
-		v.validateTypeDefinition(defMap, path+"/"+name)
+		// Check if this is a type definition or a namespace
+		if v.isTypeDefinition(defMap) {
+			v.validateTypeDefinition(defMap, path+"/"+name)
+		} else {
+			// This is a namespace - validate its contents as definitions
+			v.validateDefinitions(defMap, path+"/"+name)
+		}
 	}
+}
+
+func (v *SchemaValidator) isTypeDefinition(schema map[string]interface{}) bool {
+	if _, hasType := schema["type"]; hasType {
+		return true
+	}
+	if _, hasRef := schema["$ref"]; hasRef {
+		return true
+	}
+	conditionalKeywords := []string{"allOf", "anyOf", "oneOf", "not", "if"}
+	for _, k := range conditionalKeywords {
+		if _, ok := schema[k]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func (v *SchemaValidator) validateTypeDefinition(schema map[string]interface{}, path string) {
@@ -669,5 +727,203 @@ func (v *SchemaValidator) result() ValidationResult {
 	return ValidationResult{
 		IsValid: len(v.errors) == 0,
 		Errors:  append([]ValidationError{}, v.errors...),
+	}
+}
+
+// deepCopySchema creates a deep copy of a schema.
+func (v *SchemaValidator) deepCopySchema(schema interface{}) interface{} {
+	data, err := json.Marshal(schema)
+	if err != nil {
+		return schema
+	}
+	var copied interface{}
+	if err := json.Unmarshal(data, &copied); err != nil {
+		return schema
+	}
+	return copied
+}
+
+// processImportsInExternalSchema processes $import and $importdefs in an external schema.
+func (v *SchemaValidator) processImportsInExternalSchema(obj map[string]interface{}) {
+	importKeys := []string{"$import", "$importdefs"}
+
+	for _, key := range importKeys {
+		if uri, ok := obj[key].(string); ok {
+			external, exists := v.externalSchemas[uri]
+			if !exists {
+				continue
+			}
+
+			externalMap, ok := external.(map[string]interface{})
+			if !ok {
+				continue
+			}
+
+			importedDefs := make(map[string]interface{})
+
+			if key == "$import" {
+				// Import root type if available
+				if typeName, ok := externalMap["name"].(string); ok {
+					if _, hasType := externalMap["type"]; hasType {
+						importedDefs[typeName] = externalMap
+					}
+				}
+				// Also import definitions
+				if defs, ok := externalMap["definitions"].(map[string]interface{}); ok {
+					for k, def := range defs {
+						importedDefs[k] = def
+					}
+				}
+			} else {
+				// $importdefs - only import definitions
+				if defs, ok := externalMap["definitions"].(map[string]interface{}); ok {
+					for k, def := range defs {
+						importedDefs[k] = def
+					}
+				}
+			}
+
+			// Merge into definitions at root level
+			if obj["definitions"] == nil {
+				obj["definitions"] = make(map[string]interface{})
+			}
+			mergeTarget, _ := obj["definitions"].(map[string]interface{})
+
+			// Deep copy and rewrite refs
+			for k, def := range importedDefs {
+				if _, exists := mergeTarget[k]; !exists {
+					copied := v.deepCopySchema(def)
+					if copiedMap, ok := copied.(map[string]interface{}); ok {
+						v.rewriteRefs(copiedMap, "#/definitions")
+					}
+					mergeTarget[k] = copied
+				}
+			}
+
+			delete(obj, key)
+		}
+	}
+}
+
+// processImports processes $import and $importdefs keywords recursively.
+func (v *SchemaValidator) processImports(obj map[string]interface{}, path string) {
+	importKeys := []string{"$import", "$importdefs"}
+
+	for _, key := range importKeys {
+		if uri, ok := obj[key].(string); ok {
+			external, exists := v.externalSchemas[uri]
+			if !exists {
+				v.addError(path+"/"+key, fmt.Sprintf("Unable to resolve import URI: %s", uri))
+				continue
+			}
+
+			externalMap, ok := external.(map[string]interface{})
+			if !ok {
+				v.addError(path+"/"+key, fmt.Sprintf("External schema is not an object: %s", uri))
+				continue
+			}
+
+			importedDefs := make(map[string]interface{})
+
+			if key == "$import" {
+				// Import root type if available
+				if typeName, ok := externalMap["name"].(string); ok {
+					if _, hasType := externalMap["type"]; hasType {
+						importedDefs[typeName] = externalMap
+					}
+				}
+				// Also import definitions
+				if defs, ok := externalMap["definitions"].(map[string]interface{}); ok {
+					for k, def := range defs {
+						importedDefs[k] = def
+					}
+				}
+			} else {
+				// $importdefs - only import definitions
+				if defs, ok := externalMap["definitions"].(map[string]interface{}); ok {
+					for k, def := range defs {
+						importedDefs[k] = def
+					}
+				}
+			}
+
+			// Determine where to merge
+			isRootLevel := path == "#"
+			targetPath := "#/definitions"
+			if !isRootLevel {
+				targetPath = path
+			}
+
+			if isRootLevel {
+				if obj["definitions"] == nil {
+					obj["definitions"] = make(map[string]interface{})
+				}
+			}
+
+			var mergeTarget map[string]interface{}
+			if isRootLevel {
+				mergeTarget, _ = obj["definitions"].(map[string]interface{})
+			} else {
+				mergeTarget = obj
+			}
+
+			// Deep copy and rewrite refs
+			for k, def := range importedDefs {
+				if _, exists := mergeTarget[k]; !exists {
+					copied := v.deepCopySchema(def)
+					if copiedMap, ok := copied.(map[string]interface{}); ok {
+						v.rewriteRefs(copiedMap, targetPath)
+					}
+					mergeTarget[k] = copied
+				}
+			}
+
+			delete(obj, key)
+		}
+	}
+
+	// Recurse into child objects (but not into 'properties')
+	for key, value := range obj {
+		if key == "properties" {
+			continue
+		}
+		if childMap, ok := value.(map[string]interface{}); ok {
+			v.processImports(childMap, path+"/"+key)
+		} else if childArray, ok := value.([]interface{}); ok {
+			for idx, item := range childArray {
+				if itemMap, ok := item.(map[string]interface{}); ok {
+					v.processImports(itemMap, fmt.Sprintf("%s/%s[%d]", path, key, idx))
+				}
+			}
+		}
+	}
+}
+
+// rewriteRefs rewrites $ref pointers in imported content to point to their new location.
+func (v *SchemaValidator) rewriteRefs(obj map[string]interface{}, targetPath string) {
+	for key, value := range obj {
+		if (key == "$ref" || key == "$extends") {
+			if refStr, ok := value.(string); ok && strings.HasPrefix(refStr, "#") {
+				// Rewrite the reference
+				refParts := strings.Split(strings.TrimPrefix(strings.TrimPrefix(refStr, "#"), "/"), "/")
+				if len(refParts) > 0 && refParts[0] != "" {
+					if refParts[0] == "definitions" && len(refParts) > 1 {
+						remaining := strings.Join(refParts[1:], "/")
+						obj[key] = targetPath + "/" + remaining
+					} else {
+						remaining := strings.Join(refParts, "/")
+						obj[key] = targetPath + "/" + remaining
+					}
+				}
+			}
+		} else if childMap, ok := value.(map[string]interface{}); ok {
+			v.rewriteRefs(childMap, targetPath)
+		} else if childArray, ok := value.([]interface{}); ok {
+			for _, item := range childArray {
+				if itemMap, ok := item.(map[string]interface{}); ok {
+					v.rewriteRefs(itemMap, targetPath)
+				}
+			}
+		}
 	}
 }

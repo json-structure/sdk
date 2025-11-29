@@ -175,6 +175,80 @@ mapper.registerModule(new JsonStructureModule());
 - `tuple` - Ordered heterogeneous arrays
 - `choice` - Discriminated unions
 
+## Validation Options
+
+```java
+import org.json_structure.validation.ValidationOptions;
+
+ValidationOptions options = new ValidationOptions()
+    .setStopOnFirstError(false)           // Continue collecting all errors
+    .setMaxValidationDepth(100)           // Maximum schema nesting depth
+    .setAllowDollar(true)                 // Allow $ in property names (for metaschemas)
+    .setAllowImport(true)                 // Enable $import/$importdefs processing
+    .setExternalSchemas(Map.of(           // Sideloaded schemas for import resolution
+        "https://example.com/address.json", addressSchema
+    ));
+
+SchemaValidator validator = new SchemaValidator(options);
+```
+
+### Sideloading External Schemas
+
+When using `$import` to reference external schemas, you can provide those schemas
+directly instead of fetching them from URIs:
+
+```java
+import org.json_structure.validation.SchemaValidator;
+import org.json_structure.validation.ValidationOptions;
+import org.json_structure.validation.ValidationResult;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.Map;
+
+ObjectMapper mapper = new ObjectMapper();
+
+// External schema that would normally be fetched
+JsonNode addressSchema = mapper.readTree("""
+    {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/address.json",
+        "type": "object",
+        "properties": {
+            "street": { "type": "string" },
+            "city": { "type": "string" }
+        }
+    }
+    """);
+
+// Main schema that imports the address schema
+JsonNode mainSchema = mapper.readTree("""
+    {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "type": "object",
+        "properties": {
+            "name": { "type": "string" },
+            "address": { "$ref": "#/definitions/Imported/Address" }
+        },
+        "definitions": {
+            "Imported": {
+                "$import": "https://example.com/address.json"
+            }
+        }
+    }
+    """);
+
+// Sideload the address schema - keyed by URI
+ValidationOptions options = new ValidationOptions()
+    .setAllowImport(true)
+    .setExternalSchemas(Map.of(
+        "https://example.com/address.json", addressSchema
+    ));
+
+SchemaValidator validator = new SchemaValidator(options);
+ValidationResult result = validator.validate(mainSchema);
+System.out.println("Valid: " + result.isValid());
+```
+
 ## Building
 
 ```bash

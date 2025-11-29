@@ -82,6 +82,61 @@ if (result.IsValid)
 }
 ```
 
+### Sideloading External Schemas
+
+When using `$import` to reference external schemas, you can provide those schemas
+directly instead of fetching them from URIs:
+
+```csharp
+using JsonStructure.Validation;
+using System.Text.Json.Nodes;
+
+// External schema that would normally be fetched
+var addressSchema = new JsonObject
+{
+    ["$schema"] = "https://json-structure.org/meta/core/v0/#",
+    ["$id"] = "https://example.com/address.json",
+    ["type"] = "object",
+    ["properties"] = new JsonObject
+    {
+        ["street"] = new JsonObject { ["type"] = "string" },
+        ["city"] = new JsonObject { ["type"] = "string" }
+    }
+};
+
+// Main schema that imports the address schema
+var mainSchema = new JsonObject
+{
+    ["$schema"] = "https://json-structure.org/meta/core/v0/#",
+    ["type"] = "object",
+    ["properties"] = new JsonObject
+    {
+        ["name"] = new JsonObject { ["type"] = "string" },
+        ["address"] = new JsonObject { ["$ref"] = "#/definitions/Imported/Address" }
+    },
+    ["definitions"] = new JsonObject
+    {
+        ["Imported"] = new JsonObject
+        {
+            ["$import"] = "https://example.com/address.json"
+        }
+    }
+};
+
+// Sideload the address schema - keyed by URI
+var options = new ValidationOptions
+{
+    AllowImport = true,
+    ExternalSchemas = new Dictionary<string, JsonNode>
+    {
+        ["https://example.com/address.json"] = addressSchema
+    }
+};
+
+var validator = new SchemaValidator(options);
+var result = validator.Validate(mainSchema);
+```
+
 ### Schema Export from .NET Types
 
 Generate JSON Structure schemas from C# classes:
@@ -215,6 +270,12 @@ var options = new ValidationOptions
     StopOnFirstError = false,           // Continue collecting all errors
     StrictFormatValidation = true,      // Validate format keywords strictly
     MaxValidationDepth = 100,           // Maximum schema nesting depth
+    AllowImport = true,                 // Enable $import/$importdefs processing
+    ExternalSchemas = new Dictionary<string, JsonNode>
+    {
+        // Sideloaded schemas for import resolution (keyed by URI)
+        ["https://example.com/address.json"] = addressSchema
+    },
     ReferenceResolver = uri =>          // Custom $ref resolver
     {
         // Return resolved schema or null

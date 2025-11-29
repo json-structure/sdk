@@ -101,13 +101,72 @@ class JSONStructureSchemaCoreValidator:
         # Build lookup for external schemas by $id
         self.external_schemas = {}
         if external_schemas:
+            import copy
             for schema in external_schemas:
                 if isinstance(schema, dict) and "$id" in schema:
-                    self.external_schemas[schema["$id"]] = schema
+                    # Deep copy to avoid modifying the original
+                    self.external_schemas[schema["$id"]] = copy.deepcopy(schema)
+            # Process imports in external schemas (they may import each other)
+            # Do multiple passes to handle chained imports
+            if allow_import:
+                for _ in range(len(self.external_schemas)):
+                    for schema_id, schema in self.external_schemas.items():
+                        self._process_imports_in_external_schema(schema)
         if allow_dollar:
             self.identifier_regex = re.compile(r'^[A-Za-z_$][A-Za-z0-9_$]*$')
         else:
             self.identifier_regex = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
+
+    def _process_imports_in_external_schema(self, obj):
+        """
+        Processes $import and $importdefs in an external schema during initialization.
+        This is a simplified version that doesn't track errors, just merges definitions.
+        Called on external_schemas during __init__ to ensure imported definitions are available.
+        """
+        if not isinstance(obj, dict):
+            return
+        
+        for key in list(obj.keys()):
+            if key in ("$import", "$importdefs"):
+                uri = obj[key]
+                if not isinstance(uri, str):
+                    continue
+                # Try to fetch from external_schemas
+                external = self.external_schemas.get(uri)
+                if external is None:
+                    continue
+                
+                if key == "$import":
+                    imported_defs = {}
+                    if "type" in external and "name" in external:
+                        imported_defs[external["name"]] = external
+                    if "definitions" in external and isinstance(external["definitions"], dict):
+                        imported_defs.update(external["definitions"])
+                else:  # $importdefs
+                    if "definitions" in external and isinstance(external["definitions"], dict):
+                        imported_defs = external["definitions"]
+                    else:
+                        imported_defs = {}
+                
+                # Merge into definitions at root level
+                target_path = "#/definitions"
+                if "definitions" not in obj:
+                    obj["definitions"] = {}
+                merge_target = obj["definitions"]
+                
+                # Rewrite refs and merge
+                import copy
+                for k, v in imported_defs.items():
+                    if isinstance(v, dict):
+                        v = copy.deepcopy(v)
+                        self._rewrite_refs(v, target_path)
+                        imported_defs[k] = v
+                
+                for k, v in imported_defs.items():
+                    if k not in merge_target:
+                        merge_target[k] = v
+                
+                del obj[key]
 
     def validate(self, doc, source_text=None):
         """

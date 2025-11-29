@@ -261,6 +261,21 @@ public sealed class ValidationOptions
     public Func<string, JsonNode?>? ImportLoader { get; set; }
 
     /// <summary>
+    /// Gets or sets whether to allow $ in property names (required for validating metaschemas).
+    /// </summary>
+    public bool AllowDollar { get; set; }
+
+    /// <summary>
+    /// Gets or sets whether to enable processing of $import/$importdefs.
+    /// </summary>
+    public bool AllowImport { get; set; }
+
+    /// <summary>
+    /// Gets or sets pre-loaded schemas for import resolution by $id.
+    /// </summary>
+    public Dictionary<string, JsonNode>? ExternalSchemas { get; set; }
+
+    /// <summary>
     /// Gets a default instance of the options.
     /// </summary>
     public static ValidationOptions Default { get; } = new();

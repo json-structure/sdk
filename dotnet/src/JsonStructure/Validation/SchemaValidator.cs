@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+using System.Linq;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
@@ -96,6 +97,7 @@ public sealed class SchemaValidator
     private HashSet<string> _importNamespaces = new();
     private JsonNode? _rootSchema;
     private JsonSourceLocator? _sourceLocator;
+    private Dictionary<string, JsonNode> _externalSchemas = new();
 
     static SchemaValidator()
     {
@@ -110,6 +112,40 @@ public sealed class SchemaValidator
     public SchemaValidator(ValidationOptions? options = null)
     {
         _options = options ?? ValidationOptions.Default;
+        
+        // Build lookup for external schemas by $id and preprocess imports
+        if (_options.ExternalSchemas != null)
+        {
+            // Deep copy all schemas
+            foreach (var (uri, schema) in _options.ExternalSchemas)
+            {
+                _externalSchemas[uri] = DeepCopySchema(schema);
+                
+                // Also add by $id if present
+                if (schema is JsonObject schemaObj && 
+                    schemaObj.TryGetPropertyValue("$id", out var idNode) && 
+                    idNode?.GetValue<string>() is string id && id != uri)
+                {
+                    _externalSchemas[id] = DeepCopySchema(schema);
+                }
+            }
+            
+            // Process imports in external schemas if AllowImport is enabled
+            if (_options.AllowImport)
+            {
+                // Multiple passes to handle chained imports
+                for (int i = 0; i < _externalSchemas.Count; i++)
+                {
+                    foreach (var schema in _externalSchemas.Values.ToList())
+                    {
+                        if (schema is JsonObject schemaObj)
+                        {
+                            ProcessImportsInExternalSchema(schemaObj);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// <summary>
@@ -216,6 +252,12 @@ public sealed class SchemaValidator
         // Store root schema for ref resolution
         _rootSchema = schema;
         
+        // Process imports if enabled
+        if (_options.AllowImport && schema is JsonObject schemaObj)
+        {
+            ProcessImports(schemaObj, "#");
+        }
+        
         // Collect all defined references for $ref validation
         _definedRefs = CollectDefinedRefs(schema);
         
@@ -259,7 +301,7 @@ public sealed class SchemaValidator
             {
                 var refPath = $"{path}/$defs/{prop.Key}";
                 refs.Add(refPath);
-                CollectDefinedRefsRecursive(prop.Value, refPath, refs);
+                CollectDefinedRefsFromDefinition(prop.Value, refPath, refs);
             }
         }
 
@@ -269,7 +311,37 @@ public sealed class SchemaValidator
             {
                 var refPath = $"{path}/definitions/{prop.Key}";
                 refs.Add(refPath);
-                CollectDefinedRefsRecursive(prop.Value, refPath, refs);
+                CollectDefinedRefsFromDefinition(prop.Value, refPath, refs);
+            }
+        }
+    }
+
+    private void CollectDefinedRefsFromDefinition(JsonNode? node, string path, HashSet<string> refs)
+    {
+        if (node is not JsonObject obj) return;
+
+        // Check if this is a type definition or a namespace
+        bool isTypeDef = obj.ContainsKey("type") || obj.ContainsKey("$ref") || 
+                         obj.ContainsKey("allOf") || obj.ContainsKey("anyOf") || 
+                         obj.ContainsKey("oneOf") || obj.ContainsKey("properties") ||
+                         obj.ContainsKey("items") || obj.ContainsKey("enum") || 
+                         obj.ContainsKey("const") || obj.ContainsKey("$extends") || 
+                         obj.ContainsKey("abstract") || obj.ContainsKey("$import") ||
+                         obj.ContainsKey("$importdefs");
+
+        if (isTypeDef)
+        {
+            // It's a type definition - check for nested $defs/definitions
+            CollectDefinedRefsRecursive(node, path, refs);
+        }
+        else
+        {
+            // It's a namespace - recurse into each child
+            foreach (var prop in obj)
+            {
+                var refPath = $"{path}/{prop.Key}";
+                refs.Add(refPath);
+                CollectDefinedRefsFromDefinition(prop.Value, refPath, refs);
             }
         }
     }
@@ -1488,5 +1560,253 @@ public sealed class SchemaValidator
             return "/" + segment;
         }
         return basePath + "/" + segment;
+    }
+
+    /// <summary>
+    /// Creates a deep copy of a schema.
+    /// </summary>
+    private static JsonNode DeepCopySchema(JsonNode schema)
+    {
+        var json = schema.ToJsonString();
+        return JsonNode.Parse(json)!;
+    }
+
+    /// <summary>
+    /// Processes $import and $importdefs in an external schema during initialization.
+    /// </summary>
+    private void ProcessImportsInExternalSchema(JsonObject obj)
+    {
+        string[] importKeys = { "$import", "$importdefs" };
+
+        foreach (var key in importKeys)
+        {
+            if (obj.TryGetPropertyValue(key, out var uriNode) && uriNode?.GetValue<string>() is string uri)
+            {
+                if (!_externalSchemas.TryGetValue(uri, out var external) || external is not JsonObject externalObj)
+                {
+                    continue;
+                }
+
+                var importedDefs = new Dictionary<string, JsonNode>();
+
+                if (key == "$import")
+                {
+                    // Import root type if available
+                    if (externalObj.TryGetPropertyValue("name", out var nameNode) && 
+                        nameNode?.GetValue<string>() is string typeName &&
+                        externalObj.ContainsKey("type"))
+                    {
+                        importedDefs[typeName] = DeepCopySchema(externalObj);
+                    }
+                    // Also import definitions
+                    if (externalObj.TryGetPropertyValue("definitions", out var defsNode) && defsNode is JsonObject defs)
+                    {
+                        foreach (var (defName, defValue) in defs)
+                        {
+                            if (defValue != null)
+                            {
+                                importedDefs[defName] = DeepCopySchema(defValue);
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    // $importdefs - only import definitions
+                    if (externalObj.TryGetPropertyValue("definitions", out var defsNode) && defsNode is JsonObject defs)
+                    {
+                        foreach (var (defName, defValue) in defs)
+                        {
+                            if (defValue != null)
+                            {
+                                importedDefs[defName] = DeepCopySchema(defValue);
+                            }
+                        }
+                    }
+                }
+
+                // Merge into definitions at root level
+                if (!obj.ContainsKey("definitions"))
+                {
+                    obj["definitions"] = new JsonObject();
+                }
+
+                var mergeTarget = obj["definitions"] as JsonObject;
+                if (mergeTarget != null)
+                {
+                    foreach (var (defName, defValue) in importedDefs)
+                    {
+                        if (!mergeTarget.ContainsKey(defName))
+                        {
+                            var copied = DeepCopySchema(defValue);
+                            if (copied is JsonObject copiedObj)
+                            {
+                                RewriteRefs(copiedObj, "#/definitions");
+                            }
+                            mergeTarget[defName] = copied;
+                        }
+                    }
+                }
+
+                obj.Remove(key);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Processes $import and $importdefs keywords recursively.
+    /// </summary>
+    private void ProcessImports(JsonObject obj, string path)
+    {
+        string[] importKeys = { "$import", "$importdefs" };
+
+        foreach (var key in importKeys)
+        {
+            if (obj.TryGetPropertyValue(key, out var uriNode) && uriNode?.GetValue<string>() is string uri)
+            {
+                if (!_externalSchemas.TryGetValue(uri, out var external) || external is not JsonObject externalObj)
+                {
+                    // External schema not found - will be caught by validation
+                    continue;
+                }
+
+                var importedDefs = new Dictionary<string, JsonNode>();
+
+                if (key == "$import")
+                {
+                    // Import root type if available
+                    if (externalObj.TryGetPropertyValue("name", out var nameNode) && 
+                        nameNode?.GetValue<string>() is string typeName &&
+                        externalObj.ContainsKey("type"))
+                    {
+                        importedDefs[typeName] = DeepCopySchema(externalObj);
+                    }
+                    // Also import definitions
+                    if (externalObj.TryGetPropertyValue("definitions", out var defsNode) && defsNode is JsonObject defs)
+                    {
+                        foreach (var (defName, defValue) in defs)
+                        {
+                            if (defValue != null)
+                            {
+                                importedDefs[defName] = DeepCopySchema(defValue);
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    // $importdefs - only import definitions
+                    if (externalObj.TryGetPropertyValue("definitions", out var defsNode) && defsNode is JsonObject defs)
+                    {
+                        foreach (var (defName, defValue) in defs)
+                        {
+                            if (defValue != null)
+                            {
+                                importedDefs[defName] = DeepCopySchema(defValue);
+                            }
+                        }
+                    }
+                }
+
+                // Determine where to merge
+                bool isRootLevel = path == "#" || path == "";
+                string targetPath = isRootLevel ? "#/definitions" : path;
+
+                if (isRootLevel)
+                {
+                    if (!obj.ContainsKey("definitions"))
+                    {
+                        obj["definitions"] = new JsonObject();
+                    }
+                }
+
+                var mergeTarget = isRootLevel ? obj["definitions"] as JsonObject : obj;
+                if (mergeTarget != null)
+                {
+                    foreach (var (defName, defValue) in importedDefs)
+                    {
+                        if (!mergeTarget.ContainsKey(defName))
+                        {
+                            var copied = DeepCopySchema(defValue);
+                            if (copied is JsonObject copiedObj)
+                            {
+                                RewriteRefs(copiedObj, targetPath);
+                            }
+                            mergeTarget[defName] = copied;
+                        }
+                    }
+                }
+
+                obj.Remove(key);
+            }
+        }
+
+        // Recurse into child objects (but not into 'properties')
+        foreach (var prop in obj.ToList())
+        {
+            if (prop.Key == "properties")
+            {
+                continue;
+            }
+            if (prop.Value is JsonObject childObj)
+            {
+                ProcessImports(childObj, AppendPath(path, prop.Key));
+            }
+            else if (prop.Value is JsonArray childArr)
+            {
+                for (int i = 0; i < childArr.Count; i++)
+                {
+                    if (childArr[i] is JsonObject itemObj)
+                    {
+                        ProcessImports(itemObj, $"{path}/{prop.Key}[{i}]");
+                    }
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Rewrites $ref pointers in imported content to point to their new location.
+    /// </summary>
+    private static void RewriteRefs(JsonObject obj, string targetPath)
+    {
+        foreach (var prop in obj.ToList())
+        {
+            if ((prop.Key == "$ref" || prop.Key == "$extends") && 
+                prop.Value is JsonValue jv && 
+                jv.TryGetValue<string>(out var refStr) && 
+                refStr.StartsWith("#"))
+            {
+                // Rewrite the reference
+                var refParts = refStr.TrimStart('#').TrimStart('/').Split('/');
+                if (refParts.Length > 0 && !string.IsNullOrEmpty(refParts[0]))
+                {
+                    if (refParts[0] == "definitions" && refParts.Length > 1)
+                    {
+                        var remaining = string.Join("/", refParts.Skip(1));
+                        obj[prop.Key] = targetPath + "/" + remaining;
+                    }
+                    else
+                    {
+                        var remaining = string.Join("/", refParts);
+                        obj[prop.Key] = targetPath + "/" + remaining;
+                    }
+                }
+            }
+            else if (prop.Value is JsonObject childObj)
+            {
+                RewriteRefs(childObj, targetPath);
+            }
+            else if (prop.Value is JsonArray childArr)
+            {
+                foreach (var item in childArr)
+                {
+                    if (item is JsonObject itemObj)
+                    {
+                        RewriteRefs(itemObj, targetPath);
+                    }
+                }
+            }
+        }
     }
 }

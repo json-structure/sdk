@@ -9,8 +9,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -107,6 +110,7 @@ public final class SchemaValidator {
 
     private final ValidationOptions options;
     private final ObjectMapper objectMapper;
+    private Map<String, JsonNode> externalSchemaMap; // Map of import URI to schema for import processing
     private Set<String> definedRefs; // Track defined $defs/$definitions for $ref validation
     private Set<String> importNamespaces; // Track namespaces with $import/$importdefs
     private JsonSourceLocator sourceLocator; // For source location tracking
@@ -133,6 +137,26 @@ public final class SchemaValidator {
     public SchemaValidator(ValidationOptions options) {
         this.options = options != null ? options : ValidationOptions.DEFAULT;
         this.objectMapper = new ObjectMapper();
+        
+        // Build external schema map and pre-process imports in external schemas
+        this.externalSchemaMap = new HashMap<>();
+        if (this.options.getExternalSchemas() != null) {
+            // First pass: collect all external schemas
+            for (Map.Entry<String, JsonNode> entry : this.options.getExternalSchemas().entrySet()) {
+                externalSchemaMap.put(entry.getKey(), entry.getValue());
+            }
+            // Process imports in external schemas (may require multiple passes for chained imports)
+            int maxPasses = 10;
+            for (int pass = 0; pass < maxPasses; pass++) {
+                boolean anyChanges = false;
+                for (Map.Entry<String, JsonNode> entry : new HashMap<>(externalSchemaMap).entrySet()) {
+                    if (processImportsInExternalSchema(entry.getValue())) {
+                        anyChanges = true;
+                    }
+                }
+                if (!anyChanges) break;
+            }
+        }
     }
 
     /**
@@ -175,6 +199,11 @@ public final class SchemaValidator {
 
         // Store root schema for resolving local refs
         this.rootSchema = schema;
+        
+        // Process imports if allowed (merge definitions from external schemas)
+        if (options.isAllowImport() && schema.isObject()) {
+            processImportsInExternalSchema(schema);
+        }
 
         // Collect all defined references first for $ref validation
         definedRefs = collectDefinedRefs(schema);
@@ -231,23 +260,65 @@ public final class SchemaValidator {
         if (!node.isObject()) return;
         
         if (node.has("$defs") && node.get("$defs").isObject()) {
-            Iterator<String> names = node.get("$defs").fieldNames();
+            JsonNode defs = node.get("$defs");
+            Iterator<String> names = defs.fieldNames();
             while (names.hasNext()) {
                 String name = names.next();
                 String refPath = path + "/$defs/" + name;
                 refs.add(refPath);
-                collectDefinedRefsRecursive(node.get("$defs").get(name), refPath, refs);
+                JsonNode defNode = defs.get(name);
+                collectDefinedRefsRecursive(defNode, refPath, refs);
+                // Also recurse into nested namespace objects (objects with nested definitions but no type)
+                if (defNode.isObject() && !defNode.has("type") && !defNode.has("$ref") && 
+                    !defNode.has("allOf") && !defNode.has("anyOf") && !defNode.has("oneOf")) {
+                    collectNestedNamespaceRefs(defNode, refPath, refs);
+                }
             }
         }
         
         if (node.has("definitions") && node.get("definitions").isObject()) {
-            Iterator<String> names = node.get("definitions").fieldNames();
+            JsonNode defs = node.get("definitions");
+            Iterator<String> names = defs.fieldNames();
             while (names.hasNext()) {
                 String name = names.next();
                 String refPath = path + "/definitions/" + name;
                 refs.add(refPath);
-                collectDefinedRefsRecursive(node.get("definitions").get(name), refPath, refs);
+                JsonNode defNode = defs.get(name);
+                collectDefinedRefsRecursive(defNode, refPath, refs);
+                // Also recurse into nested namespace objects (objects with nested definitions but no type)
+                if (defNode.isObject() && !defNode.has("type") && !defNode.has("$ref") && 
+                    !defNode.has("allOf") && !defNode.has("anyOf") && !defNode.has("oneOf")) {
+                    collectNestedNamespaceRefs(defNode, refPath, refs);
+                }
             }
+        }
+    }
+
+    /**
+     * Collects refs from nested namespace objects (objects containing type definitions without themselves being types).
+     */
+    private void collectNestedNamespaceRefs(JsonNode node, String path, Set<String> refs) {
+        if (!node.isObject()) return;
+        
+        Iterator<Map.Entry<String, JsonNode>> fields = node.fields();
+        while (fields.hasNext()) {
+            Map.Entry<String, JsonNode> field = fields.next();
+            String fieldName = field.getKey();
+            // Skip meta-properties
+            if (fieldName.startsWith("$")) continue;
+            
+            JsonNode fieldValue = field.getValue();
+            if (!fieldValue.isObject()) continue;
+            
+            String nestedPath = path + "/" + fieldName;
+            refs.add(nestedPath);
+            
+            // Recurse if this is also a namespace
+            if (!fieldValue.has("type") && !fieldValue.has("$ref") && 
+                !fieldValue.has("allOf") && !fieldValue.has("anyOf") && !fieldValue.has("oneOf")) {
+                collectNestedNamespaceRefs(fieldValue, nestedPath, refs);
+            }
+            collectDefinedRefsRecursive(fieldValue, nestedPath, refs);
         }
     }
 
@@ -1117,5 +1188,210 @@ public final class SchemaValidator {
             return "/" + segment;
         }
         return basePath + "/" + segment;
+    }
+
+    /**
+     * Process $import/$importdefs in an external schema and merge definitions.
+     * Returns true if any imports were processed.
+     */
+    private boolean processImportsInExternalSchema(JsonNode schema) {
+        if (schema == null || !schema.isObject()) {
+            return false;
+        }
+        
+        ObjectNode schemaObj = (ObjectNode) schema;
+        boolean processed = false;
+        
+        // Handle root-level $import
+        if (schemaObj.has("$import")) {
+            processImport(schemaObj, "$import", true);
+            processed = true;
+        }
+        
+        // Handle $import in definitions
+        if (schemaObj.has("definitions") && schemaObj.get("definitions").isObject()) {
+            ObjectNode defs = (ObjectNode) schemaObj.get("definitions");
+            Iterator<String> names = defs.fieldNames();
+            List<String> namesList = new ArrayList<>();
+            while (names.hasNext()) {
+                namesList.add(names.next());
+            }
+            for (String name : namesList) {
+                JsonNode defNode = defs.get(name);
+                if (defNode.isObject()) {
+                    ObjectNode def = (ObjectNode) defNode;
+                    if (def.has("$import")) {
+                        // This is an import namespace
+                        processImport(def, "$import", false);
+                        // Merge children into parent definitions
+                        Iterator<Map.Entry<String, JsonNode>> fields = def.fields();
+                        List<Map.Entry<String, JsonNode>> fieldsList = new ArrayList<>();
+                        while (fields.hasNext()) {
+                            fieldsList.add(fields.next());
+                        }
+                        for (Map.Entry<String, JsonNode> field : fieldsList) {
+                            if (!field.getKey().startsWith("$")) {
+                                // Keep as nested definition under namespace
+                            }
+                        }
+                        processed = true;
+                    } else if (def.has("$importdefs")) {
+                        processImport(def, "$importdefs", false);
+                        processed = true;
+                    }
+                }
+            }
+        }
+        
+        // Handle $import in $defs
+        if (schemaObj.has("$defs") && schemaObj.get("$defs").isObject()) {
+            ObjectNode defs = (ObjectNode) schemaObj.get("$defs");
+            Iterator<String> names = defs.fieldNames();
+            List<String> namesList = new ArrayList<>();
+            while (names.hasNext()) {
+                namesList.add(names.next());
+            }
+            for (String name : namesList) {
+                JsonNode defNode = defs.get(name);
+                if (defNode.isObject()) {
+                    ObjectNode def = (ObjectNode) defNode;
+                    if (def.has("$import")) {
+                        processImport(def, "$import", false);
+                        processed = true;
+                    } else if (def.has("$importdefs")) {
+                        processImport(def, "$importdefs", false);
+                        processed = true;
+                    }
+                }
+            }
+        }
+        
+        return processed;
+    }
+
+    /**
+     * Process an $import or $importdefs directive, merging definitions from imported schemas.
+     */
+    private void processImport(ObjectNode target, String importKeyword, boolean isRoot) {
+        JsonNode importNode = target.get(importKeyword);
+        if (importNode == null) return;
+        
+        List<String> importUris = new ArrayList<>();
+        
+        if (importNode.isTextual()) {
+            importUris.add(importNode.asText());
+        } else if (importNode.isArray()) {
+            for (JsonNode item : importNode) {
+                if (item.isTextual()) {
+                    importUris.add(item.asText());
+                }
+            }
+        } else if (importNode.isObject()) {
+            Iterator<Map.Entry<String, JsonNode>> fields = importNode.fields();
+            while (fields.hasNext()) {
+                Map.Entry<String, JsonNode> field = fields.next();
+                if (field.getValue().isTextual()) {
+                    importUris.add(field.getValue().asText());
+                }
+            }
+        }
+        
+        // Get or create definitions container
+        ObjectNode defs;
+        if (target.has("definitions")) {
+            defs = (ObjectNode) target.get("definitions");
+        } else if (target.has("$defs")) {
+            defs = (ObjectNode) target.get("$defs");
+        } else {
+            defs = objectMapper.createObjectNode();
+            target.set("definitions", defs);
+        }
+        
+        // Process each import
+        for (String uri : importUris) {
+            JsonNode importedSchema = externalSchemaMap.get(uri);
+            if (importedSchema == null || !importedSchema.isObject()) continue;
+            
+            ObjectNode importedObj = (ObjectNode) importedSchema;
+            
+            // Merge definitions from imported schema
+            if (importedObj.has("definitions") && importedObj.get("definitions").isObject()) {
+                mergeDefinitions(defs, (ObjectNode) importedObj.get("definitions"), uri);
+            }
+            if (importedObj.has("$defs") && importedObj.get("$defs").isObject()) {
+                mergeDefinitions(defs, (ObjectNode) importedObj.get("$defs"), uri);
+            }
+        }
+        
+        // Remove the import directive after processing
+        target.remove(importKeyword);
+    }
+
+    /**
+     * Merge definitions from source into target, rewriting $ref pointers.
+     */
+    private void mergeDefinitions(ObjectNode target, ObjectNode source, String sourceUri) {
+        Iterator<Map.Entry<String, JsonNode>> fields = source.fields();
+        while (fields.hasNext()) {
+            Map.Entry<String, JsonNode> field = fields.next();
+            String name = field.getKey();
+            JsonNode value = field.getValue();
+            
+            if (!target.has(name)) {
+                // Clone and rewrite refs
+                JsonNode cloned = value.deepCopy();
+                rewriteRefs(cloned);
+                target.set(name, cloned);
+            }
+        }
+    }
+
+    /**
+     * Rewrite $ref and $extends pointers to use #/definitions/ prefix.
+     */
+    private void rewriteRefs(JsonNode node) {
+        if (!node.isObject() && !node.isArray()) return;
+        
+        if (node.isArray()) {
+            for (JsonNode item : node) {
+                rewriteRefs(item);
+            }
+            return;
+        }
+        
+        ObjectNode obj = (ObjectNode) node;
+        
+        // Rewrite $ref
+        if (obj.has("$ref")) {
+            JsonNode refNode = obj.get("$ref");
+            if (refNode.isTextual()) {
+                String ref = refNode.asText();
+                if (ref.startsWith("#/$defs/")) {
+                    obj.put("$ref", "#/definitions/" + ref.substring(8));
+                } else if (!ref.startsWith("#/") && !ref.contains("://")) {
+                    // Relative ref - prepend #/definitions/
+                    obj.put("$ref", "#/definitions/" + ref);
+                }
+            }
+        }
+        
+        // Rewrite $extends
+        if (obj.has("$extends")) {
+            JsonNode extendsNode = obj.get("$extends");
+            if (extendsNode.isTextual()) {
+                String ref = extendsNode.asText();
+                if (ref.startsWith("#/$defs/")) {
+                    obj.put("$extends", "#/definitions/" + ref.substring(8));
+                } else if (!ref.startsWith("#/") && !ref.contains("://")) {
+                    obj.put("$extends", "#/definitions/" + ref);
+                }
+            }
+        }
+        
+        // Recurse into properties
+        Iterator<Map.Entry<String, JsonNode>> fields = obj.fields();
+        while (fields.hasNext()) {
+            rewriteRefs(fields.next().getValue());
+        }
     }
 }

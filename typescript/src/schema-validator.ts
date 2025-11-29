@@ -29,9 +29,42 @@ export class SchemaValidator {
   private schema: JsonObject | null = null;
   private seenRefs: Set<string> = new Set();
   private sourceLocator: JsonSourceLocator | null = null;
+  private allowDollar: boolean;
+  private allowImport: boolean;
+  private externalSchemas: Map<string, JsonValue>;
 
-  constructor(_options: SchemaValidatorOptions = {}) {
-    // Options reserved for future use
+  constructor(options: SchemaValidatorOptions = {}) {
+    this.allowDollar = options.allowDollar ?? false;
+    this.allowImport = options.allowImport ?? false;
+    this.externalSchemas = new Map<string, JsonValue>();
+    
+    // Build lookup for external schemas by $id and preprocess imports
+    if (options.externalSchemas) {
+      // First, deep copy all schemas
+      for (const [uri, schema] of options.externalSchemas) {
+        this.externalSchemas.set(uri, JSON.parse(JSON.stringify(schema)));
+      }
+      // Also look for schemas by $id in the values
+      for (const schema of options.externalSchemas.values()) {
+        if (this.isObject(schema) && typeof (schema as JsonObject).$id === 'string') {
+          const id = (schema as JsonObject).$id as string;
+          if (!this.externalSchemas.has(id)) {
+            this.externalSchemas.set(id, JSON.parse(JSON.stringify(schema)));
+          }
+        }
+      }
+      // Process imports in external schemas if allowImport is enabled
+      if (this.allowImport) {
+        // Multiple passes to handle chained imports
+        for (let i = 0; i < this.externalSchemas.size; i++) {
+          for (const schema of this.externalSchemas.values()) {
+            if (this.isObject(schema)) {
+              this.processImportsInExternalSchema(schema as JsonObject);
+            }
+          }
+        }
+      }
+    }
   }
 
   /**
@@ -57,6 +90,12 @@ export class SchemaValidator {
     }
 
     this.schema = schema;
+    
+    // Process imports if enabled
+    if (this.allowImport) {
+      this.processImports(this.schema, '#');
+    }
+    
     this.validateSchemaDocument(schema, '#');
 
     return this.result();
@@ -116,8 +155,19 @@ export class SchemaValidator {
         this.addError(`${path}/${name}`, 'Definition must be an object', ErrorCodes.SCHEMA_INVALID_TYPE);
         continue;
       }
-      this.validateTypeDefinition(def, `${path}/${name}`);
+      // Check if this is a type definition or a namespace
+      if ('type' in def || '$ref' in def || this.hasConditionalKeywords(def)) {
+        this.validateTypeDefinition(def, `${path}/${name}`);
+      } else {
+        // This is a namespace - validate its contents as definitions
+        this.validateDefinitions(def, `${path}/${name}`);
+      }
     }
+  }
+
+  private hasConditionalKeywords(schema: JsonObject): boolean {
+    const conditionalKeywords = ['allOf', 'anyOf', 'oneOf', 'not', 'if'];
+    return conditionalKeywords.some(k => k in schema);
   }
 
   private validateTypeDefinition(schema: JsonObject, path: string): void {
@@ -647,5 +697,184 @@ export class SchemaValidator {
       isValid: this.errors.length === 0,
       errors: [...this.errors],
     };
+  }
+
+  /**
+   * Processes $import and $importdefs in an external schema during initialization.
+   * This is called on external schemas to ensure imported definitions are available.
+   */
+  private processImportsInExternalSchema(obj: JsonObject): void {
+    const importKeys = ['$import', '$importdefs'];
+    
+    for (const key of importKeys) {
+      if (key in obj) {
+        const uri = obj[key];
+        if (typeof uri !== 'string') {
+          continue;
+        }
+        
+        const external = this.externalSchemas.get(uri);
+        if (!external || !this.isObject(external)) {
+          continue;
+        }
+        
+        let importedDefs: Record<string, JsonValue> = {};
+        
+        if (key === '$import') {
+          // Import root type if available
+          if ('type' in external && 'name' in external && typeof external.name === 'string') {
+            importedDefs[external.name] = external;
+          }
+          // Also import definitions
+          if ('definitions' in external && this.isObject(external.definitions)) {
+            Object.assign(importedDefs, external.definitions);
+          }
+        } else {
+          // $importdefs - only import definitions
+          if ('definitions' in external && this.isObject(external.definitions)) {
+            importedDefs = { ...(external.definitions as Record<string, JsonValue>) };
+          }
+        }
+        
+        // Merge into definitions at root level
+        if (!('definitions' in obj) || !this.isObject(obj.definitions)) {
+          obj.definitions = {};
+        }
+        const mergeTarget = obj.definitions as JsonObject;
+        
+        // Deep copy and rewrite refs
+        for (const [k, v] of Object.entries(importedDefs)) {
+          if (!(k in mergeTarget)) {
+            const copied = JSON.parse(JSON.stringify(v));
+            if (this.isObject(copied)) {
+              this.rewriteRefs(copied, '#/definitions');
+            }
+            mergeTarget[k] = copied;
+          }
+        }
+        
+        delete obj[key];
+      }
+    }
+  }
+
+  /**
+   * Processes $import and $importdefs keywords recursively in a schema.
+   */
+  private processImports(obj: JsonValue, path: string): void {
+    if (!this.isObject(obj)) {
+      return;
+    }
+    
+    const importKeys = ['$import', '$importdefs'];
+    
+    for (const key of importKeys) {
+      if (key in obj) {
+        const uri = obj[key];
+        if (typeof uri !== 'string') {
+          this.addError(`${path}/${key}`, `${key} value must be a string URI`);
+          continue;
+        }
+        
+        const external = this.externalSchemas.get(uri);
+        if (!external || !this.isObject(external)) {
+          this.addError(`${path}/${key}`, `Unable to resolve import URI: ${uri}`);
+          continue;
+        }
+        
+        let importedDefs: Record<string, JsonValue> = {};
+        
+        if (key === '$import') {
+          // Import root type if available
+          if ('type' in external && 'name' in external && typeof external.name === 'string') {
+            importedDefs[external.name] = external;
+          }
+          // Also import definitions
+          if ('definitions' in external && this.isObject(external.definitions)) {
+            Object.assign(importedDefs, external.definitions);
+          }
+        } else {
+          // $importdefs - only import definitions
+          if ('definitions' in external && this.isObject(external.definitions)) {
+            importedDefs = { ...(external.definitions as Record<string, JsonValue>) };
+          }
+        }
+        
+        // Determine where to merge
+        const isRootLevel = path === '#';
+        const targetPath = isRootLevel ? '#/definitions' : path;
+        
+        if (isRootLevel) {
+          if (!('definitions' in obj) || !this.isObject(obj.definitions)) {
+            obj.definitions = {};
+          }
+        }
+        
+        const mergeTarget = isRootLevel ? obj.definitions as JsonObject : obj;
+        
+        // Deep copy and rewrite refs
+        for (const [k, v] of Object.entries(importedDefs)) {
+          if (!(k in mergeTarget)) {
+            const copied = JSON.parse(JSON.stringify(v));
+            if (this.isObject(copied)) {
+              this.rewriteRefs(copied, targetPath);
+            }
+            mergeTarget[k] = copied;
+          }
+        }
+        
+        delete obj[key];
+      }
+    }
+    
+    // Recurse into child objects (but not into 'properties')
+    for (const [key, value] of Object.entries(obj)) {
+      if (key === 'properties') {
+        continue;
+      }
+      if (this.isObject(value)) {
+        this.processImports(value, `${path}/${key}`);
+      } else if (Array.isArray(value)) {
+        value.forEach((item, idx) => {
+          if (this.isObject(item)) {
+            this.processImports(item, `${path}/${key}[${idx}]`);
+          }
+        });
+      }
+    }
+  }
+
+  /**
+   * Rewrites $ref pointers in imported content to point to their new location.
+   */
+  private rewriteRefs(obj: JsonValue, targetPath: string): void {
+    if (!this.isObject(obj)) {
+      return;
+    }
+    
+    for (const [key, value] of Object.entries(obj)) {
+      if ((key === '$ref' || key === '$extends') && typeof value === 'string' && value.startsWith('#')) {
+        // Rewrite the reference
+        const refParts = value.substring(1).replace(/^\//, '').split('/');
+        if (refParts.length > 0 && refParts[0]) {
+          if (refParts[0] === 'definitions' && refParts.length > 1) {
+            // Keep everything after 'definitions'
+            const remaining = refParts.slice(1).join('/');
+            obj[key] = `${targetPath}/${remaining}`;
+          } else {
+            const remaining = refParts.join('/');
+            obj[key] = `${targetPath}/${remaining}`;
+          }
+        }
+      } else if (this.isObject(value)) {
+        this.rewriteRefs(value, targetPath);
+      } else if (Array.isArray(value)) {
+        value.forEach(item => {
+          if (this.isObject(item)) {
+            this.rewriteRefs(item, targetPath);
+          }
+        });
+      }
+    }
   }
 }

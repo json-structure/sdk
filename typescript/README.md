@@ -103,6 +103,49 @@ if (result.isValid) {
 }
 ```
 
+### Sideloading External Schemas
+
+When using `$import` to reference external schemas, you can provide those schemas
+directly instead of fetching them from URIs:
+
+```typescript
+import { SchemaValidator } from 'json-structure';
+
+// External schema that would normally be fetched
+const addressSchema = {
+  $schema: 'https://json-structure.org/meta/core/v0/#',
+  $id: 'https://example.com/address.json',
+  type: 'object',
+  properties: {
+    street: { type: 'string' },
+    city: { type: 'string' }
+  }
+};
+
+// Main schema that imports the address schema
+const mainSchema = {
+  $schema: 'https://json-structure.org/meta/core/v0/#',
+  type: 'object',
+  properties: {
+    name: { type: 'string' },
+    address: { $ref: '#/definitions/Imported/Address' }
+  },
+  definitions: {
+    Imported: {
+      $import: 'https://example.com/address.json'
+    }
+  }
+};
+
+// Sideload the address schema - matched by $id
+const validator = new SchemaValidator({
+  allowImport: true,
+  externalSchemas: [addressSchema]
+});
+
+const result = validator.validate(mainSchema);
+```
+
 ### Extended Validation
 
 To enable extended validation features (minLength, maxLength, pattern, minimum, maximum, allOf, anyOf, oneOf, not, if/then/else):
@@ -135,7 +178,9 @@ class SchemaValidator {
 }
 
 interface SchemaValidatorOptions {
-  extended?: boolean; // Enable extended validation (default: false)
+  extended?: boolean;           // Enable extended validation (default: false)
+  allowImport?: boolean;        // Allow $import references (default: false)
+  externalSchemas?: JsonValue[]; // Sideloaded schemas for import resolution
 }
 ```
 
@@ -148,8 +193,9 @@ class InstanceValidator {
 }
 
 interface InstanceValidatorOptions {
-  extended?: boolean;    // Enable extended validation features
-  allowImport?: boolean; // Allow $import references (default: false)
+  extended?: boolean;           // Enable extended validation features
+  allowImport?: boolean;        // Allow $import references (default: false)
+  externalSchemas?: JsonValue[]; // Sideloaded schemas for import resolution
 }
 ```
 

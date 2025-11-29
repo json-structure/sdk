@@ -52,6 +52,13 @@ func (e ValidationError) String() string {
 type SchemaValidatorOptions struct {
 	// Extended enables extended validation features.
 	Extended bool
+	// AllowDollar allows $ in property names (required for validating metaschemas).
+	AllowDollar bool
+	// AllowImport enables processing of $import/$importdefs.
+	AllowImport bool
+	// ExternalSchemas maps URIs to schema objects for import resolution.
+	// Each schema should have a '$id' field matching the import URI.
+	ExternalSchemas map[string]interface{}
 }
 
 // InstanceValidatorOptions configures instance validation.

@@ -94,6 +94,12 @@ export function formatValidationError(error: ValidationError): string {
 export interface SchemaValidatorOptions {
   /** Enable extended validation features. */
   extended?: boolean;
+  /** Allow $ in property names (required for validating metaschemas). */
+  allowDollar?: boolean;
+  /** Enable processing of $import/$importdefs. */
+  allowImport?: boolean;
+  /** Map of URIs to schema objects for import resolution. */
+  externalSchemas?: Map<string, JsonValue>;
 }
 
 /**
