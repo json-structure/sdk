@@ -195,11 +195,20 @@ func (v *SchemaValidator) validateUnionType(types []interface{}, _ map[string]in
 	}
 
 	for i, t := range types {
-		typeStr, ok := t.(string)
-		if !ok {
-			v.addError(fmt.Sprintf("%s/type[%d]", path, i), "Union type elements must be strings", SchemaKeywordInvalidType)
-		} else if !isValidType(typeStr) {
-			v.addError(fmt.Sprintf("%s/type[%d]", path, i), fmt.Sprintf("Unknown type '%s'", typeStr), SchemaTypeInvalid)
+		if typeStr, ok := t.(string); ok {
+			// String type name
+			if !isValidType(typeStr) {
+				v.addError(fmt.Sprintf("%s/type[%d]", path, i), fmt.Sprintf("Unknown type '%s'", typeStr), SchemaTypeInvalid)
+			}
+		} else if typeMap, ok := t.(map[string]interface{}); ok {
+			// Type reference object with $ref
+			if ref, hasRef := typeMap["$ref"]; hasRef {
+				v.validateRef(ref, fmt.Sprintf("%s/type[%d]", path, i))
+			} else {
+				v.addError(fmt.Sprintf("%s/type[%d]", path, i), "Union type object must have $ref", SchemaTypeObjectMissingRef)
+			}
+		} else {
+			v.addError(fmt.Sprintf("%s/type[%d]", path, i), "Union type elements must be strings or $ref objects", SchemaKeywordInvalidType)
 		}
 	}
 }

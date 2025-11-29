@@ -585,6 +585,143 @@ func TestInvalidInstances(t *testing.T) {
 	}
 }
 
+// TestSchemaValidatorUnionWithRef tests that union types can contain $ref objects.
+func TestSchemaValidatorUnionWithRef(t *testing.T) {
+	validator := NewSchemaValidator(&SchemaValidatorOptions{Extended: true})
+
+	// Valid union with $ref and null
+	schema := map[string]interface{}{
+		"type": "object",
+		"definitions": map[string]interface{}{
+			"coordinates": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"lat": map[string]interface{}{"type": "double"},
+					"lon": map[string]interface{}{"type": "double"},
+				},
+				"required": []interface{}{"lat", "lon"},
+			},
+		},
+		"properties": map[string]interface{}{
+			"location": map[string]interface{}{
+				"type": []interface{}{
+					map[string]interface{}{"$ref": "#/definitions/coordinates"},
+					"null",
+				},
+			},
+		},
+	}
+
+	result := validator.Validate(schema)
+	if !result.IsValid {
+		t.Errorf("Expected valid schema with union containing $ref, got errors: %v", result.Errors)
+	}
+}
+
+// TestSchemaValidatorUnionWithMultipleRefs tests union with multiple $refs.
+func TestSchemaValidatorUnionWithMultipleRefs(t *testing.T) {
+	validator := NewSchemaValidator(&SchemaValidatorOptions{Extended: true})
+
+	schema := map[string]interface{}{
+		"type": "object",
+		"definitions": map[string]interface{}{
+			"address": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"street": map[string]interface{}{"type": "string"},
+				},
+			},
+			"coordinates": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"lat": map[string]interface{}{"type": "double"},
+					"lon": map[string]interface{}{"type": "double"},
+				},
+			},
+		},
+		"properties": map[string]interface{}{
+			"location": map[string]interface{}{
+				"type": []interface{}{
+					map[string]interface{}{"$ref": "#/definitions/address"},
+					map[string]interface{}{"$ref": "#/definitions/coordinates"},
+				},
+			},
+		},
+	}
+
+	result := validator.Validate(schema)
+	if !result.IsValid {
+		t.Errorf("Expected valid schema with union containing multiple $refs, got errors: %v", result.Errors)
+	}
+}
+
+// TestSchemaValidatorUnionWithRefAndPrimitives tests union with $ref, primitives, and null.
+func TestSchemaValidatorUnionWithRefAndPrimitives(t *testing.T) {
+	validator := NewSchemaValidator(&SchemaValidatorOptions{Extended: true})
+
+	schema := map[string]interface{}{
+		"type": "object",
+		"definitions": map[string]interface{}{
+			"coordinates": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"lat": map[string]interface{}{"type": "double"},
+					"lon": map[string]interface{}{"type": "double"},
+				},
+			},
+		},
+		"properties": map[string]interface{}{
+			"value": map[string]interface{}{
+				"type": []interface{}{
+					map[string]interface{}{"$ref": "#/definitions/coordinates"},
+					"string",
+					"int32",
+					"null",
+				},
+			},
+		},
+	}
+
+	result := validator.Validate(schema)
+	if !result.IsValid {
+		t.Errorf("Expected valid schema with union containing $ref, primitives, and null, got errors: %v", result.Errors)
+	}
+}
+
+// TestSchemaValidatorUnionMissingRef tests that union objects without $ref fail.
+func TestSchemaValidatorUnionMissingRef(t *testing.T) {
+	validator := NewSchemaValidator(&SchemaValidatorOptions{Extended: true})
+
+	schema := map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"location": map[string]interface{}{
+				"type": []interface{}{
+					map[string]interface{}{"notRef": "#/definitions/coordinates"},
+					"null",
+				},
+			},
+		},
+	}
+
+	result := validator.Validate(schema)
+	if result.IsValid {
+		t.Errorf("Expected invalid schema (union object missing $ref)")
+	}
+
+	// Check that the error message mentions $ref
+	hasRefError := false
+	for _, err := range result.Errors {
+		if strings.Contains(strings.ToLower(err.Message), "$ref") {
+			hasRefError = true
+			break
+		}
+	}
+	if !hasRefError {
+		t.Errorf("Expected error message to mention $ref, got errors: %v", result.Errors)
+	}
+}
+
 // TestInvalidSchemasCount verifies we have all expected invalid schemas.
 func TestInvalidSchemasCount(t *testing.T) {
 	files := getInvalidSchemaFiles()
