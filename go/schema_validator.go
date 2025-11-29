@@ -590,7 +590,17 @@ func (v *SchemaValidator) validateRef(ref interface{}, path string) {
 	if strings.HasPrefix(refStr, "#/") {
 		// Check for circular reference
 		if v.seenRefs[refStr] {
-			v.addError(path, fmt.Sprintf("Circular reference detected: %s", refStr), SchemaRefCircular)
+			// Circular references to properly defined types are valid in JSON Structure
+			// (e.g., ObjectType -> Property -> Type -> ObjectType in metaschemas)
+			// However, a direct self-reference with no content is invalid
+			resolved := v.resolveRef(refStr)
+			if resolved != nil && len(resolved) == 1 {
+				if _, hasRef := resolved["$ref"]; hasRef {
+					// This is a definition that's only a $ref - direct circular with no content
+					v.addError(path, fmt.Sprintf("Circular reference detected: %s", refStr), SchemaRefCircular)
+				}
+			}
+			// For other circular refs, just stop recursing to prevent infinite loops
 			return
 		}
 

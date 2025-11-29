@@ -110,6 +110,7 @@ public final class SchemaValidator {
     private Set<String> definedRefs; // Track defined $defs/$definitions for $ref validation
     private Set<String> importNamespaces; // Track namespaces with $import/$importdefs
     private JsonSourceLocator sourceLocator; // For source location tracking
+    private JsonNode rootSchema; // Store root schema for resolving local refs
 
     static {
         Set<String> allTypes = new HashSet<>(PRIMITIVE_TYPES);
@@ -172,6 +173,9 @@ public final class SchemaValidator {
             return result;
         }
 
+        // Store root schema for resolving local refs
+        this.rootSchema = schema;
+
         // Collect all defined references first for $ref validation
         definedRefs = collectDefinedRefs(schema);
         
@@ -188,6 +192,30 @@ public final class SchemaValidator {
     private void addError(ValidationResult result, String code, String message, String path) {
         JsonLocation location = sourceLocator != null ? sourceLocator.getLocation(path) : JsonLocation.UNKNOWN;
         result.addError(new ValidationError(code, message, path, ValidationSeverity.ERROR, location, null));
+    }
+
+    /**
+     * Resolves a local JSON pointer reference to the target node.
+     * @param refStr The reference string (e.g., "#/definitions/MyType")
+     * @return The target JsonNode, or null if not found
+     */
+    private JsonNode resolveLocalRef(String refStr) {
+        if (rootSchema == null || !refStr.startsWith("#/")) {
+            return null;
+        }
+        
+        String path = refStr.substring(2); // Remove "#/"
+        String[] segments = path.split("/");
+        JsonNode current = rootSchema;
+        
+        for (String segment : segments) {
+            if (current == null || !current.isObject()) {
+                return null;
+            }
+            current = current.get(segment);
+        }
+        
+        return current;
     }
 
     /**
@@ -320,9 +348,21 @@ public final class SchemaValidator {
                             addError(result, ErrorCodes.SCHEMA_REF_NOT_FOUND, "$ref target does not exist: " + refStr, appendPath(path, "$ref"));
                         }
                     } else {
-                        // Check for circular reference
+                        // Check for circular reference to the same definition we're inside
+                        // Circular references to properly defined types are valid in JSON Structure
+                        // (e.g., ObjectType -> Property -> Type -> ObjectType in metaschemas)
+                        // However, a direct self-reference with no content is invalid
                         if (visitedRefs.contains(refStr)) {
-                            addError(result, ErrorCodes.SCHEMA_REF_CIRCULAR, "Circular reference detected: " + refStr, appendPath(path, "$ref"));
+                            // Only report as error if the target is a bare $ref (no actual type)
+                            JsonNode target = resolveLocalRef(refStr);
+                            if (target != null && target.isObject()) {
+                                ObjectNode targetObj = (ObjectNode) target;
+                                // Check if this definition only contains a $ref (direct circular with no content)
+                                if (targetObj.size() == 1 && targetObj.has("$ref")) {
+                                    addError(result, ErrorCodes.SCHEMA_REF_CIRCULAR, "Circular reference detected: " + refStr, appendPath(path, "$ref"));
+                                }
+                            }
+                            // For other circular refs, just skip - they're valid
                         }
                     }
                 }

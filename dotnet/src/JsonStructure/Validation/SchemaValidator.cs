@@ -383,7 +383,20 @@ public sealed class SchemaValidator
                         // Check for circular reference
                         if (visitedRefs.Contains(refStr))
                         {
-                            AddError(result, ErrorCodes.SchemaRefCircular, $"Circular reference detected: {refStr}", AppendPath(path, "$ref"));
+                            // Circular references to properly defined types are valid in JSON Structure
+                            // (e.g., ObjectType -> Property -> Type -> ObjectType in metaschemas)
+                            // However, a direct self-reference with no content is invalid
+                            var targetSchema = ResolveLocalRef(refStr);
+                            if (targetSchema is JsonObject targetObj)
+                            {
+                                // Check if this is a definition that's only a $ref (no actual content)
+                                var keys = targetObj.AsObject().Select(p => p.Key).ToList();
+                                if (keys.Count == 1 && keys[0] == "$ref")
+                                {
+                                    AddError(result, ErrorCodes.SchemaRefCircular, $"Circular reference detected: {refStr}", AppendPath(path, "$ref"));
+                                }
+                            }
+                            // For other circular refs, just stop recursing to prevent infinite loops
                         }
                         else
                         {

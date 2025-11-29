@@ -579,7 +579,16 @@ export class SchemaValidator {
     if (ref.startsWith('#/')) {
       // Check for circular reference
       if (this.seenRefs.has(ref)) {
-        this.addError(path, `Circular reference detected: ${ref}`, ErrorCodes.SCHEMA_REF_CIRCULAR);
+        // Circular references to properly defined types are valid in JSON Structure
+        // (e.g., ObjectType -> Property -> Type -> ObjectType in metaschemas)
+        // However, a direct self-reference with no content is invalid
+        // We detect this by checking if the resolved schema is ONLY a $ref
+        const resolved = this.resolveRef(ref);
+        if (resolved !== null && Object.keys(resolved).length === 1 && '$ref' in resolved) {
+          // This is a definition that's only a $ref - direct circular with no content
+          this.addError(path, `Circular reference detected: ${ref}`, ErrorCodes.SCHEMA_REF_CIRCULAR);
+        }
+        // For other circular refs, just stop recursing to prevent infinite loops
         return;
       }
 
