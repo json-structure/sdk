@@ -204,6 +204,125 @@ describe('SchemaValidator', () => {
     });
   });
 
+  describe('union types', () => {
+    it('should validate union with primitive type strings', () => {
+      const schema = {
+        type: ['string', 'number', 'boolean'],
+      };
+
+      const validator = new SchemaValidator();
+      const result = validator.validate(schema);
+
+      expect(result.isValid).toBe(true);
+    });
+
+    it('should validate union with $ref objects', () => {
+      const schema = {
+        type: 'object',
+        definitions: {
+          TextContent: {
+            type: 'object',
+            properties: { text: { type: 'string' } },
+          },
+          BinaryContent: {
+            type: 'object',
+            properties: { data: { type: 'binary' } },
+          },
+        },
+        properties: {
+          content: {
+            type: [
+              { $ref: '#/definitions/TextContent' },
+              { $ref: '#/definitions/BinaryContent' },
+            ],
+          },
+        },
+      };
+
+      const validator = new SchemaValidator();
+      const result = validator.validate(schema);
+
+      expect(result.isValid).toBe(true);
+    });
+
+    it('should validate union mixing strings and $ref objects', () => {
+      const schema = {
+        type: 'object',
+        definitions: {
+          CustomType: {
+            type: 'object',
+            properties: { value: { type: 'string' } },
+          },
+        },
+        properties: {
+          field: {
+            type: [
+              'string',
+              'number',
+              { $ref: '#/definitions/CustomType' },
+            ],
+          },
+        },
+      };
+
+      const validator = new SchemaValidator();
+      const result = validator.validate(schema);
+
+      expect(result.isValid).toBe(true);
+    });
+
+    it('should reject empty union array', () => {
+      const schema = {
+        type: [],
+      };
+
+      const validator = new SchemaValidator();
+      const result = validator.validate(schema);
+
+      expect(result.isValid).toBe(false);
+      expect(result.errors[0].message).toContain('empty');
+    });
+
+    it('should reject union with invalid type string', () => {
+      const schema = {
+        type: ['string', 'invalidtype'],
+      };
+
+      const validator = new SchemaValidator();
+      const result = validator.validate(schema);
+
+      expect(result.isValid).toBe(false);
+      expect(result.errors[0].message).toContain('Unknown type');
+    });
+
+    it('should reject union with object missing $ref', () => {
+      const schema = {
+        type: [
+          'string',
+          { notRef: 'something' },
+        ],
+      };
+
+      const validator = new SchemaValidator();
+      const result = validator.validate(schema);
+
+      expect(result.isValid).toBe(false);
+      expect(result.errors[0].message).toContain('must have $ref');
+    });
+
+    it('should reject union with invalid element type', () => {
+      const schema = {
+        type: ['string', 123],
+      };
+
+      const validator = new SchemaValidator();
+      const result = validator.validate(schema);
+
+      expect(result.isValid).toBe(false);
+      expect(result.errors[0].message).toContain('must be strings or $ref objects');
+    });
+  });
+
   describe('validation constraints', () => {
     it('should validate minLength/maxLength', () => {
       const schema = {
@@ -474,6 +593,124 @@ describe('SchemaValidator', () => {
 
       expect(result.isValid).toBe(false);
       expect(result.errors[0].message).toContain('must be an array');
+    });
+  });
+
+  describe('union types with $ref', () => {
+    it('should accept union type with $ref and null', () => {
+      const schema = {
+        type: 'object',
+        definitions: {
+          coordinates: {
+            type: 'object',
+            properties: {
+              lat: { type: 'double' },
+              lon: { type: 'double' },
+            },
+            required: ['lat', 'lon'],
+          },
+        },
+        properties: {
+          location: {
+            type: [
+              { $ref: '#/definitions/coordinates' },
+              'null',
+            ],
+          },
+        },
+      };
+
+      const validator = new SchemaValidator();
+      const result = validator.validate(schema);
+
+      expect(result.isValid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it('should accept union type with multiple $refs', () => {
+      const schema = {
+        type: 'object',
+        definitions: {
+          address: {
+            type: 'object',
+            properties: {
+              street: { type: 'string' },
+            },
+          },
+          coordinates: {
+            type: 'object',
+            properties: {
+              lat: { type: 'double' },
+              lon: { type: 'double' },
+            },
+          },
+        },
+        properties: {
+          location: {
+            type: [
+              { $ref: '#/definitions/address' },
+              { $ref: '#/definitions/coordinates' },
+            ],
+          },
+        },
+      };
+
+      const validator = new SchemaValidator();
+      const result = validator.validate(schema);
+
+      expect(result.isValid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it('should accept union type with $ref, primitives, and null', () => {
+      const schema = {
+        type: 'object',
+        definitions: {
+          coordinates: {
+            type: 'object',
+            properties: {
+              lat: { type: 'double' },
+              lon: { type: 'double' },
+            },
+          },
+        },
+        properties: {
+          value: {
+            type: [
+              { $ref: '#/definitions/coordinates' },
+              'string',
+              'int32',
+              'null',
+            ],
+          },
+        },
+      };
+
+      const validator = new SchemaValidator();
+      const result = validator.validate(schema);
+
+      expect(result.isValid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it('should reject union type with $ref object missing $ref property', () => {
+      const schema = {
+        type: 'object',
+        properties: {
+          location: {
+            type: [
+              { notRef: '#/definitions/coordinates' },
+              'null',
+            ],
+          },
+        },
+      };
+
+      const validator = new SchemaValidator();
+      const result = validator.validate(schema);
+
+      expect(result.isValid).toBe(false);
+      expect(result.errors[0].message).toContain('must have $ref');
     });
   });
 });

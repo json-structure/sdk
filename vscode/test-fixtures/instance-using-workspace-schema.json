@@ -1,0 +1,6 @@
+{
+    "$schema": "https://example.com/workspace-test/product",
+    "name": "Widget",
+    "price": 19.99,
+    "inStock": true
+}

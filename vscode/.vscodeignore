@@ -1,0 +1,15 @@
+.vscode/**
+.vscode-test/**
+src/**
+test-fixtures/**
+.gitignore
+.yarnrc
+vsc-extension-quickstart.md
+**/tsconfig.json
+**/.eslintrc.json
+**/*.map
+**/*.ts
+**/*.d.ts
+!dist/extension.js
+node_modules/**
+../**

@@ -1,0 +1,17 @@
+{
+    "$schema": "https://json-structure.org/meta/core/v0/#",
+    "$id": "https://example.com/workspace-test/product",
+    "name": "Product",
+    "type": "object",
+    "properties": {
+        "name": {
+            "type": "string"
+        },
+        "price": {
+            "type": "double"
+        },
+        "inStock": {
+            "type": "boolean"
+        }
+    }
+}

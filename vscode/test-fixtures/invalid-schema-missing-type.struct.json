@@ -1,0 +1,10 @@
+{
+    "$schema": "https://json-structure.org/meta/core/v0/#",
+    "$id": "https://example.com/missing-type",
+    "name": "MissingType",
+    "properties": {
+        "name": {
+            "type": "string"
+        }
+    }
+}

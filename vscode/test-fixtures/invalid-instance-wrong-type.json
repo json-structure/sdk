@@ -1,0 +1,5 @@
+{
+    "$schema": "./test-schema.struct.json",
+    "name": 12345,
+    "age": 30
+}

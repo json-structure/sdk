@@ -1,0 +1,11 @@
+{
+    "$schema": "https://json-structure.org/meta/core/v0/#",
+    "$id": "https://example.com/bad-ref",
+    "name": "BadRef",
+    "type": "object",
+    "properties": {
+        "data": {
+            "$ref": "#/definitions/NonExistent"
+        }
+    }
+}

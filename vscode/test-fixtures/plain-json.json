@@ -1,0 +1,5 @@
+{
+    "name": "Plain JSON",
+    "description": "This is just a plain JSON file without $schema",
+    "value": 42
+}

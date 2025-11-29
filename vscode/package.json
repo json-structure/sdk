@@ -1,0 +1,117 @@
+{
+  "name": "json-structure",
+  "displayName": "JSON Structure",
+  "description": "Validation for JSON Structure schema documents and instance documents",
+  "version": "0.1.0",
+  "publisher": "json-structure",
+  "license": "MIT",
+  "icon": "media/logo.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/json-structure/sdk.git",
+    "directory": "vscode"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Linters"
+  ],
+  "keywords": [
+    "json",
+    "schema",
+    "validation",
+    "json-structure"
+  ],
+  "activationEvents": [
+    "onLanguage:json",
+    "onLanguage:jsonc"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "jsonStructure.clearCache",
+        "title": "JSON Structure: Clear Schema Cache"
+      },
+      {
+        "command": "jsonStructure.validateDocument",
+        "title": "JSON Structure: Validate Document"
+      }
+    ],
+    "configuration": {
+      "title": "JSON Structure",
+      "properties": {
+        "jsonStructure.schemaMapping": {
+          "type": "object",
+          "default": {},
+          "description": "Map of $schema URIs to local file paths. Use this to override remote schemas with local files.",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "examples": [
+            {
+              "https://example.com/schemas/my-schema.json": "${workspaceFolder}/schemas/my-schema.struct.json"
+            }
+          ]
+        },
+        "jsonStructure.enableSchemaValidation": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable validation of *.struct.json files as JSON Structure schema documents"
+        },
+        "jsonStructure.enableInstanceValidation": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable validation of JSON documents that have a $schema property"
+        },
+        "jsonStructure.cacheTTLMinutes": {
+          "type": "number",
+          "default": 60,
+          "minimum": 1,
+          "maximum": 1440,
+          "description": "Cache TTL for fetched remote schemas in minutes (default: 60)"
+        },
+        "jsonStructure.trace.server": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Traces the communication for debugging"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run esbuild-base -- --minify",
+    "esbuild-base": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
+    "compile": "npm run esbuild-base -- --sourcemap",
+    "compile-tests": "tsc -p . --outDir dist",
+    "watch": "npm run esbuild-base -- --sourcemap --watch",
+    "pretest": "npm run compile && npm run compile-tests",
+    "test": "node ./dist/test/runTest.js",
+    "lint": "eslint src --ext ts",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.6",
+    "@types/node": "^20.10.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.13.0",
+    "@typescript-eslint/parser": "^6.13.0",
+    "@vscode/test-electron": "^2.3.8",
+    "@vscode/vsce": "^2.22.0",
+    "esbuild": "^0.20.2",
+    "eslint": "^8.55.0",
+    "glob": "^10.5.0",
+    "mocha": "^10.2.0",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "@json-structure/sdk": "file:../typescript"
+  }
+}

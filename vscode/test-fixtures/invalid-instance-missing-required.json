@@ -1,0 +1,4 @@
+{
+    "$schema": "./required-schema.struct.json",
+    "optionalField": "this is optional"
+}

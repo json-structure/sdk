@@ -1,0 +1,131 @@
+import * as vscode from 'vscode';
+import { SchemaCache } from './schemaCache';
+import { SchemaValidator } from './schemaValidator';
+import { InstanceValidator } from './instanceValidator';
+import { DiagnosticsManager } from './diagnosticsManager';
+
+let diagnosticsManager: DiagnosticsManager;
+let schemaValidator: SchemaValidator;
+let instanceValidator: InstanceValidator;
+let schemaCache: SchemaCache;
+
+export function activate(context: vscode.ExtensionContext): void {
+    console.log('JSON Structure extension is now active');
+
+    // Initialize components
+    schemaCache = new SchemaCache(context);
+    diagnosticsManager = new DiagnosticsManager();
+    schemaValidator = new SchemaValidator(diagnosticsManager);
+    instanceValidator = new InstanceValidator(diagnosticsManager, schemaCache);
+
+    // Register the diagnostics collection
+    context.subscriptions.push(diagnosticsManager.getDiagnosticCollection());
+
+    // Register commands
+    context.subscriptions.push(
+        vscode.commands.registerCommand('jsonStructure.clearCache', () => {
+            schemaCache.clearCache();
+            vscode.window.showInformationMessage('JSON Structure schema cache cleared');
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('jsonStructure.validateDocument', async () => {
+            const editor = vscode.window.activeTextEditor;
+            if (!editor) {
+                vscode.window.showWarningMessage('No active editor');
+                return;
+            }
+            await validateDocument(editor.document);
+        })
+    );
+
+    // Validate on document open
+    context.subscriptions.push(
+        vscode.workspace.onDidOpenTextDocument((document) => {
+            validateDocument(document);
+        })
+    );
+
+    // Validate on document save
+    context.subscriptions.push(
+        vscode.workspace.onDidSaveTextDocument((document) => {
+            validateDocument(document);
+        })
+    );
+
+    // Validate on document change (with debounce)
+    let validateTimeout: NodeJS.Timeout | undefined;
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeTextDocument((event) => {
+            if (validateTimeout) {
+                clearTimeout(validateTimeout);
+            }
+            validateTimeout = setTimeout(() => {
+                validateDocument(event.document);
+            }, 500);
+        })
+    );
+
+    // Clear diagnostics when document is closed
+    context.subscriptions.push(
+        vscode.workspace.onDidCloseTextDocument((document) => {
+            diagnosticsManager.clearDiagnostics(document.uri);
+        })
+    );
+
+    // Validate all open documents on activation
+    vscode.workspace.textDocuments.forEach((document) => {
+        validateDocument(document);
+    });
+
+    // Watch for configuration changes
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeConfiguration((event) => {
+            if (event.affectsConfiguration('jsonStructure')) {
+                // Re-validate all open documents
+                vscode.workspace.textDocuments.forEach((document) => {
+                    validateDocument(document);
+                });
+            }
+        })
+    );
+}
+
+async function validateDocument(document: vscode.TextDocument): Promise<void> {
+    // Only validate JSON files
+    if (document.languageId !== 'json' && document.languageId !== 'jsonc') {
+        return;
+    }
+
+    // Skip untitled documents
+    if (document.uri.scheme !== 'file') {
+        return;
+    }
+
+    const config = vscode.workspace.getConfiguration('jsonStructure');
+    const fileName = document.fileName;
+
+    // Check if it's a schema document (*.struct.json)
+    if (fileName.endsWith('.struct.json')) {
+        if (config.get<boolean>('enableSchemaValidation', true)) {
+            await schemaValidator.validate(document);
+        }
+        return;
+    }
+
+    // Check if instance validation is enabled
+    if (!config.get<boolean>('enableInstanceValidation', true)) {
+        diagnosticsManager.clearDiagnostics(document.uri);
+        return;
+    }
+
+    // Try to validate as an instance document (has $schema property)
+    await instanceValidator.validate(document);
+}
+
+export function deactivate(): void {
+    if (diagnosticsManager) {
+        diagnosticsManager.dispose();
+    }
+}

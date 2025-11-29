@@ -1,0 +1,5 @@
+{
+    "$schema": "https://schemas.example.org/test/same-directory-schema",
+    "message": "Hello, World!",
+    "count": 42
+}

@@ -1,0 +1,11 @@
+{
+    "$schema": "https://json-structure.org/meta/core/v0/#",
+    "$id": "https://schemas.example.org/test/same-directory-schema",
+    "name": "SameDirectoryTest",
+    "type": "object",
+    "properties": {
+        "message": { "type": "string" },
+        "count": { "type": "int32" }
+    },
+    "required": ["message"]
+}

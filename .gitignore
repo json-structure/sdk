@@ -51,6 +51,10 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
+# Node.js
+node_modules/
+*.vsix
+
 # .NET
 [Dd]ebug/
 [Rr]elease/

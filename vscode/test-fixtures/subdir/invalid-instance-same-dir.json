@@ -1,0 +1,4 @@
+{
+    "$schema": "https://schemas.example.org/test/same-directory-schema",
+    "count": "not a number"
+}

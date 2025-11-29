@@ -1,0 +1,6 @@
+{
+    "$schema": "https://example.com/workspace-test/product",
+    "name": 12345,
+    "price": "not a number",
+    "inStock": "yes"
+}

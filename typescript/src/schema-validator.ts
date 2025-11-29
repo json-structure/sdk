@@ -195,10 +195,20 @@ export class SchemaValidator {
 
     for (let i = 0; i < types.length; i++) {
       const t = types[i];
-      if (typeof t !== 'string') {
-        this.addError(`${path}/type[${i}]`, 'Union type elements must be strings', ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE);
-      } else if (!ALL_TYPES.includes(t as any)) {
-        this.addError(`${path}/type[${i}]`, `Unknown type '${t}'`, ErrorCodes.SCHEMA_TYPE_INVALID);
+      if (typeof t === 'string') {
+        // String type name
+        if (!ALL_TYPES.includes(t as any)) {
+          this.addError(`${path}/type[${i}]`, `Unknown type '${t}'`, ErrorCodes.SCHEMA_TYPE_INVALID);
+        }
+      } else if (this.isObject(t)) {
+        // Type reference object with $ref
+        if ('$ref' in t) {
+          this.validateRef(t.$ref, `${path}/type[${i}]`);
+        } else {
+          this.addError(`${path}/type[${i}]`, 'Union type object must have $ref', ErrorCodes.SCHEMA_TYPE_OBJECT_MISSING_REF);
+        }
+      } else {
+        this.addError(`${path}/type[${i}]`, 'Union type elements must be strings or $ref objects', ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE);
       }
     }
   }

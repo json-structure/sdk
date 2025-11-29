@@ -1,0 +1,15 @@
+{
+    "$schema": "https://json-structure.org/meta/core/v0/#",
+    "$id": "https://example.com/required-test",
+    "name": "RequiredTest",
+    "type": "object",
+    "properties": {
+        "requiredField": {
+            "type": "string"
+        },
+        "optionalField": {
+            "type": "string",
+            "optional": true
+        }
+    }
+}

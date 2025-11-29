@@ -1,0 +1,11 @@
+{
+    "$schema": "https://json-structure.org/meta/core/v0/#",
+    "$id": "https://example.com/bad-type",
+    "name": "BadType",
+    "type": "invalid_type_name",
+    "properties": {
+        "name": {
+            "type": "string"
+        }
+    }
+}
