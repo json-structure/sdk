@@ -652,7 +652,7 @@ func (v *SchemaValidator) validateRef(ref interface{}, path string) {
 			// (e.g., ObjectType -> Property -> Type -> ObjectType in metaschemas)
 			// However, a direct self-reference with no content is invalid
 			resolved := v.resolveRef(refStr)
-			if resolved != nil && len(resolved) == 1 {
+			if len(resolved) == 1 {
 				if _, hasRef := resolved["$ref"]; hasRef {
 					// This is a definition that's only a $ref - direct circular with no content
 					v.addError(path, fmt.Sprintf("Circular reference detected: %s", refStr), SchemaRefCircular)

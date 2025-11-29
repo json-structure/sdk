@@ -29,12 +29,10 @@ export class SchemaValidator {
   private schema: JsonObject | null = null;
   private seenRefs: Set<string> = new Set();
   private sourceLocator: JsonSourceLocator | null = null;
-  private allowDollar: boolean;
   private allowImport: boolean;
   private externalSchemas: Map<string, JsonValue>;
 
   constructor(options: SchemaValidatorOptions = {}) {
-    this.allowDollar = options.allowDollar ?? false;
     this.allowImport = options.allowImport ?? false;
     this.externalSchemas = new Map<string, JsonValue>();
     
