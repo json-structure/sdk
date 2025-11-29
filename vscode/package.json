@@ -3,7 +3,7 @@
   "displayName": "JSON Structure",
   "description": "Validation for JSON Structure schema documents and instance documents",
   "version": "0.1.0",
-  "publisher": "json-structure",
+  "publisher": "jsonstructure",
   "license": "MIT",
   "icon": "media/logo.png",
   "repository": {
