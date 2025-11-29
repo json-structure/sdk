@@ -465,9 +465,9 @@ public final class SchemaValidator {
             validateImport(schema.get("$importdefs"), "$importdefs", path, result);
         }
 
-        // Validate $extends if present
+        // Validate $extends if present (can be a string or array of strings)
         if (schema.has("$extends")) {
-            validateReference(schema.get("$extends"), "$extends", path, result);
+            validateExtendsKeyword(schema.get("$extends"), path, result);
         }
 
         // Get type for constraint validation
@@ -624,6 +624,38 @@ public final class SchemaValidator {
         if (str.isBlank()) {
             addError(result, ErrorCodes.SCHEMA_KEYWORD_EMPTY, keyword + " cannot be empty", appendPath(path, keyword));
         }
+    }
+
+    private void validateExtendsKeyword(JsonNode value, String path, ValidationResult result) {
+        // $extends can be a string (single base type) or array of strings (multiple inheritance)
+        if (value.isTextual()) {
+            String str = value.asText();
+            if (str.isBlank()) {
+                addError(result, ErrorCodes.SCHEMA_KEYWORD_EMPTY, "$extends cannot be empty", appendPath(path, "$extends"));
+            }
+            return;
+        }
+
+        if (value.isArray()) {
+            if (value.isEmpty()) {
+                addError(result, ErrorCodes.SCHEMA_KEYWORD_EMPTY, "$extends array cannot be empty", appendPath(path, "$extends"));
+                return;
+            }
+            
+            for (JsonNode item : value) {
+                if (!item.isTextual()) {
+                    addError(result, ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE, "$extends array items must be strings", appendPath(path, "$extends"));
+                    break;
+                }
+                if (item.asText().isBlank()) {
+                    addError(result, ErrorCodes.SCHEMA_KEYWORD_EMPTY, "$extends array items cannot be empty", appendPath(path, "$extends"));
+                    break;
+                }
+            }
+            return;
+        }
+
+        addError(result, ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE, "$extends must be a string or array of strings", appendPath(path, "$extends"));
     }
 
     private void validateImport(JsonNode value, String keyword, String path, ValidationResult result) {
@@ -1375,7 +1407,7 @@ public final class SchemaValidator {
             }
         }
         
-        // Rewrite $extends
+        // Rewrite $extends (can be string or array of strings)
         if (obj.has("$extends")) {
             JsonNode extendsNode = obj.get("$extends");
             if (extendsNode.isTextual()) {
@@ -1385,6 +1417,23 @@ public final class SchemaValidator {
                 } else if (!ref.startsWith("#/") && !ref.contains("://")) {
                     obj.put("$extends", "#/definitions/" + ref);
                 }
+            } else if (extendsNode.isArray()) {
+                ArrayNode rewrittenArray = objectMapper.createArrayNode();
+                for (JsonNode item : extendsNode) {
+                    if (item.isTextual()) {
+                        String ref = item.asText();
+                        if (ref.startsWith("#/$defs/")) {
+                            rewrittenArray.add("#/definitions/" + ref.substring(8));
+                        } else if (!ref.startsWith("#/") && !ref.contains("://")) {
+                            rewrittenArray.add("#/definitions/" + ref);
+                        } else {
+                            rewrittenArray.add(ref);
+                        }
+                    } else {
+                        rewrittenArray.add(item.deepCopy());
+                    }
+                }
+                obj.set("$extends", rewrittenArray);
             }
         }
         

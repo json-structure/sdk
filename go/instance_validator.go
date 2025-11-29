@@ -159,38 +159,83 @@ func (v *InstanceValidator) validateInstance(instance interface{}, schema map[st
 		}
 	}
 
-	// Handle $extends
-	if extends, ok := schema["$extends"].(string); ok {
-		base := v.resolveRef(extends)
-		if base == nil {
-			v.addError(path, fmt.Sprintf("Cannot resolve $extends: %s", extends), InstanceRefUnresolved)
-			return
-		}
-		// Merge base with derived
-		merged := make(map[string]interface{})
-		for k, val := range base {
-			merged[k] = val
-		}
-		for k, val := range schema {
-			if k != "$extends" {
-				merged[k] = val
+	// Handle $extends (can be a string or array of strings for multiple inheritance)
+	if extendsVal, hasExtends := schema["$extends"]; hasExtends {
+		var extendsRefs []string
+		if extStr, ok := extendsVal.(string); ok {
+			extendsRefs = []string{extStr}
+		} else if extArr, ok := extendsVal.([]interface{}); ok {
+			for _, item := range extArr {
+				if s, ok := item.(string); ok {
+					extendsRefs = append(extendsRefs, s)
+				}
 			}
 		}
-		// Merge properties
-		if baseProps, ok := base["properties"].(map[string]interface{}); ok {
-			if schemaProps, ok := schema["properties"].(map[string]interface{}); ok {
-				mergedProps := make(map[string]interface{})
-				for k, val := range baseProps {
-					mergedProps[k] = val
+		
+		if len(extendsRefs) > 0 {
+			// Merge base types in order (first-wins for properties)
+			mergedProps := make(map[string]interface{})
+			mergedRequired := make(map[string]bool)
+			
+			for _, ref := range extendsRefs {
+				base := v.resolveRef(ref)
+				if base == nil {
+					v.addError(path, fmt.Sprintf("Cannot resolve $extends: %s", ref), InstanceRefUnresolved)
+					return
 				}
+				// Merge properties (first-wins)
+				if baseProps, ok := base["properties"].(map[string]interface{}); ok {
+					for k, val := range baseProps {
+						if _, exists := mergedProps[k]; !exists {
+							mergedProps[k] = val
+						}
+					}
+				}
+				// Merge required
+				if baseReq, ok := base["required"].([]interface{}); ok {
+					for _, r := range baseReq {
+						if s, ok := r.(string); ok {
+							mergedRequired[s] = true
+						}
+					}
+				}
+			}
+			
+			// Merge derived schema's properties on top
+			if schemaProps, ok := schema["properties"].(map[string]interface{}); ok {
 				for k, val := range schemaProps {
 					mergedProps[k] = val
 				}
+			}
+			if schemaReq, ok := schema["required"].([]interface{}); ok {
+				for _, r := range schemaReq {
+					if s, ok := r.(string); ok {
+						mergedRequired[s] = true
+					}
+				}
+			}
+			
+			// Create merged schema
+			merged := make(map[string]interface{})
+			for k, val := range schema {
+				if k != "$extends" {
+					merged[k] = val
+				}
+			}
+			if len(mergedProps) > 0 {
 				merged["properties"] = mergedProps
 			}
+			if len(mergedRequired) > 0 {
+				reqArr := make([]interface{}, 0, len(mergedRequired))
+				for r := range mergedRequired {
+					reqArr = append(reqArr, r)
+				}
+				merged["required"] = reqArr
+			}
+			
+			v.validateInstance(instance, merged, path)
+			return
 		}
-		v.validateInstance(instance, merged, path)
-		return
 	}
 
 	// Handle union types

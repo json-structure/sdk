@@ -515,10 +515,10 @@ public sealed class SchemaValidator
             ValidateImport(importDefsValue, "$importdefs", path, result);
         }
 
-        // Validate $extends if present
+        // Validate $extends if present (can be a string or array of strings)
         if (schema.TryGetPropertyValue("$extends", out var extendsValue))
         {
-            ValidateReference(extendsValue, "$extends", path, result);
+            ValidateExtendsKeyword(extendsValue, path, result);
         }
 
         // Check if type is required - schemas defining data should have a type
@@ -657,6 +657,46 @@ public sealed class SchemaValidator
         {
             AddError(result, ErrorCodes.SchemaKeywordEmpty, $"{keyword} cannot be empty", AppendPath(path, keyword));
         }
+    }
+
+    private void ValidateExtendsKeyword(JsonNode? value, string path, ValidationResult result)
+    {
+        // $extends can be a string (single base type) or array of strings (multiple inheritance)
+        if (value is JsonValue jv && jv.TryGetValue<string>(out var str))
+        {
+            // Single reference
+            if (string.IsNullOrWhiteSpace(str))
+            {
+                AddError(result, ErrorCodes.SchemaKeywordEmpty, "$extends cannot be empty", AppendPath(path, "$extends"));
+            }
+            return;
+        }
+
+        if (value is JsonArray arr)
+        {
+            if (arr.Count == 0)
+            {
+                AddError(result, ErrorCodes.SchemaKeywordEmpty, "$extends array cannot be empty", AppendPath(path, "$extends"));
+                return;
+            }
+            
+            foreach (var item in arr)
+            {
+                if (item is not JsonValue itemValue || !itemValue.TryGetValue<string>(out var itemStr))
+                {
+                    AddError(result, ErrorCodes.SchemaKeywordInvalidType, "$extends array items must be strings", AppendPath(path, "$extends"));
+                    break;
+                }
+                if (string.IsNullOrWhiteSpace(itemStr))
+                {
+                    AddError(result, ErrorCodes.SchemaKeywordEmpty, "$extends array items cannot be empty", AppendPath(path, "$extends"));
+                    break;
+                }
+            }
+            return;
+        }
+
+        AddError(result, ErrorCodes.SchemaKeywordInvalidType, "$extends must be a string or array of strings", AppendPath(path, "$extends"));
     }
 
     private void ValidateImport(JsonNode? value, string keyword, string path, ValidationResult result)

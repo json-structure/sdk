@@ -165,14 +165,91 @@ public final class InstanceValidator {
             }
         }
 
-        // Handle $extends
+        // Handle $extends (can be a string or array of strings for multiple inheritance)
         if (schemaObj.has("$extends")) {
-            String extendsRef = schemaObj.get("$extends").asText();
-            if (extendsRef != null && !extendsRef.isEmpty()) {
-                JsonNode baseSchema = resolveRef(extendsRef, rootSchema);
-                if (baseSchema != null) {
-                    validateInstance(instance, baseSchema, rootSchema, result, path, depth + 1);
+            JsonNode extendsValue = schemaObj.get("$extends");
+            List<String> extendsRefs = new ArrayList<>();
+            
+            if (extendsValue.isTextual()) {
+                extendsRefs.add(extendsValue.asText());
+            } else if (extendsValue.isArray()) {
+                for (JsonNode item : extendsValue) {
+                    if (item.isTextual()) {
+                        extendsRefs.add(item.asText());
+                    }
                 }
+            }
+            
+            if (!extendsRefs.isEmpty()) {
+                // Merge base types in order (first-wins for properties)
+                ObjectNode mergedProperties = objectMapper.createObjectNode();
+                Set<String> mergedRequired = new HashSet<>();
+                
+                for (String extRef : extendsRefs) {
+                    JsonNode baseSchema = resolveRef(extRef, rootSchema);
+                    if (baseSchema != null && baseSchema.isObject()) {
+                        ObjectNode baseObj = (ObjectNode) baseSchema;
+                        // Merge properties (first-wins)
+                        if (baseObj.has("properties") && baseObj.get("properties").isObject()) {
+                            ObjectNode baseProps = (ObjectNode) baseObj.get("properties");
+                            Iterator<Map.Entry<String, JsonNode>> fields = baseProps.fields();
+                            while (fields.hasNext()) {
+                                Map.Entry<String, JsonNode> field = fields.next();
+                                if (!mergedProperties.has(field.getKey())) {
+                                    mergedProperties.set(field.getKey(), field.getValue().deepCopy());
+                                }
+                            }
+                        }
+                        // Merge required
+                        if (baseObj.has("required") && baseObj.get("required").isArray()) {
+                            for (JsonNode r : baseObj.get("required")) {
+                                if (r.isTextual()) {
+                                    mergedRequired.add(r.asText());
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Merge derived schema's properties on top
+                if (schemaObj.has("properties") && schemaObj.get("properties").isObject()) {
+                    ObjectNode schemaProps = (ObjectNode) schemaObj.get("properties");
+                    Iterator<Map.Entry<String, JsonNode>> fields = schemaProps.fields();
+                    while (fields.hasNext()) {
+                        Map.Entry<String, JsonNode> field = fields.next();
+                        mergedProperties.set(field.getKey(), field.getValue().deepCopy());
+                    }
+                }
+                if (schemaObj.has("required") && schemaObj.get("required").isArray()) {
+                    for (JsonNode r : schemaObj.get("required")) {
+                        if (r.isTextual()) {
+                            mergedRequired.add(r.asText());
+                        }
+                    }
+                }
+                
+                // Create merged schema
+                ObjectNode merged = objectMapper.createObjectNode();
+                Iterator<Map.Entry<String, JsonNode>> schemaFields = schemaObj.fields();
+                while (schemaFields.hasNext()) {
+                    Map.Entry<String, JsonNode> field = schemaFields.next();
+                    if (!field.getKey().equals("$extends")) {
+                        merged.set(field.getKey(), field.getValue().deepCopy());
+                    }
+                }
+                if (mergedProperties.size() > 0) {
+                    merged.set("properties", mergedProperties);
+                }
+                if (!mergedRequired.isEmpty()) {
+                    ArrayNode reqArray = objectMapper.createArrayNode();
+                    for (String r : mergedRequired) {
+                        reqArray.add(r);
+                    }
+                    merged.set("required", reqArray);
+                }
+                
+                validateInstance(instance, merged, rootSchema, result, path, depth + 1);
+                return;
             }
         }
 

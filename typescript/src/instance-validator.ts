@@ -144,21 +144,76 @@ export class InstanceValidator {
       return;
     }
 
-    // Handle $extends
-    if ('$extends' in schema && typeof schema.$extends === 'string') {
-      const base = this.resolveRef(schema.$extends);
-      if (base === null) {
-        this.addError(path, `Cannot resolve $extends: ${schema.$extends}`, ErrorCodes.INSTANCE_EXTENDS_RESOLUTION_FAILED);
+    // Handle $extends (can be a string or array of strings for multiple inheritance)
+    if ('$extends' in schema) {
+      const extendsValue = schema.$extends;
+      const extendsRefs: string[] = [];
+      
+      if (typeof extendsValue === 'string') {
+        extendsRefs.push(extendsValue);
+      } else if (Array.isArray(extendsValue)) {
+        for (const ref of extendsValue) {
+          if (typeof ref === 'string') {
+            extendsRefs.push(ref);
+          }
+        }
+      }
+      
+      if (extendsRefs.length > 0) {
+        // Start with an empty merged object, then add base types in order (first-wins for properties)
+        let mergedProperties: JsonObject = {};
+        let mergedRequired: string[] = [];
+        
+        // Process base types in order - first type's properties take precedence
+        for (const ref of extendsRefs) {
+          const base = this.resolveRef(ref);
+          if (base === null) {
+            this.addError(path, `Cannot resolve $extends: ${ref}`, ErrorCodes.INSTANCE_EXTENDS_RESOLUTION_FAILED);
+            return;
+          }
+          // Merge properties (first-wins: don't overwrite existing)
+          if ('properties' in base && this.isObject(base.properties)) {
+            for (const [key, value] of Object.entries(base.properties as JsonObject)) {
+              if (!(key in mergedProperties)) {
+                mergedProperties[key] = value;
+              }
+            }
+          }
+          // Merge required arrays
+          if ('required' in base && Array.isArray(base.required)) {
+            for (const req of base.required) {
+              if (typeof req === 'string' && !mergedRequired.includes(req)) {
+                mergedRequired.push(req);
+              }
+            }
+          }
+        }
+        
+        // Now merge derived schema's properties on top
+        if ('properties' in schema && this.isObject(schema.properties)) {
+          mergedProperties = { ...mergedProperties, ...(schema.properties as JsonObject) };
+        }
+        if ('required' in schema && Array.isArray(schema.required)) {
+          for (const req of schema.required) {
+            if (typeof req === 'string' && !mergedRequired.includes(req)) {
+              mergedRequired.push(req);
+            }
+          }
+        }
+        
+        // Create the final merged schema
+        const merged: JsonObject = { ...schema };
+        delete merged.$extends;
+        if (Object.keys(mergedProperties).length > 0) {
+          merged.properties = mergedProperties;
+        }
+        if (mergedRequired.length > 0) {
+          merged.required = mergedRequired;
+        }
+        
+        this.validateInstance(instance, merged, path);
         return;
       }
-      // Merge base with derived
-      const merged: JsonObject = { ...base, ...schema };
-      if ('properties' in base || 'properties' in schema) {
-        merged.properties = { ...(base.properties as JsonObject || {}), ...(schema.properties as JsonObject || {}) };
-      }
-      delete merged.$extends;
-      this.validateInstance(instance, merged, path);
-      return;
     }
 
     // Handle union types

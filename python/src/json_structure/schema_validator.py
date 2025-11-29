@@ -302,16 +302,34 @@ class JSONStructureSchemaCoreValidator:
                             # For other refs, just append the full path
                             remaining_path = "/".join(ref_parts)
                             obj[key] = f"{target_path}/{remaining_path}"
-                elif key == "$extends" and isinstance(value, str) and value.startswith("#"):
-                    # Also rewrite $extends references
-                    ref_parts = value.lstrip("#").lstrip("/").split("/")
-                    if ref_parts and ref_parts[0]:
-                        if ref_parts[0] == "definitions" and len(ref_parts) > 1:
-                            remaining_path = "/".join(ref_parts[1:])
-                            obj[key] = f"{target_path}/{remaining_path}"
-                        else:
-                            remaining_path = "/".join(ref_parts)
-                            obj[key] = f"{target_path}/{remaining_path}"
+                elif key == "$extends":
+                    # $extends can be a string or array of strings
+                    if isinstance(value, str) and value.startswith("#"):
+                        ref_parts = value.lstrip("#").lstrip("/").split("/")
+                        if ref_parts and ref_parts[0]:
+                            if ref_parts[0] == "definitions" and len(ref_parts) > 1:
+                                remaining_path = "/".join(ref_parts[1:])
+                                obj[key] = f"{target_path}/{remaining_path}"
+                            else:
+                                remaining_path = "/".join(ref_parts)
+                                obj[key] = f"{target_path}/{remaining_path}"
+                    elif isinstance(value, list):
+                        rewritten = []
+                        for item in value:
+                            if isinstance(item, str) and item.startswith("#"):
+                                ref_parts = item.lstrip("#").lstrip("/").split("/")
+                                if ref_parts and ref_parts[0]:
+                                    if ref_parts[0] == "definitions" and len(ref_parts) > 1:
+                                        remaining_path = "/".join(ref_parts[1:])
+                                        rewritten.append(f"{target_path}/{remaining_path}")
+                                    else:
+                                        remaining_path = "/".join(ref_parts)
+                                        rewritten.append(f"{target_path}/{remaining_path}")
+                                else:
+                                    rewritten.append(item)
+                            else:
+                                rewritten.append(item)
+                        obj[key] = rewritten
                 else:
                     self._rewrite_refs(value, target_path)
         elif isinstance(obj, list):
@@ -476,10 +494,7 @@ class JSONStructureSchemaCoreValidator:
             if not isinstance(schema_obj["abstract"], bool):
                 self._err(f"'abstract' keyword must be boolean.", path + "/abstract")
         if "$extends" in schema_obj:
-            if not isinstance(schema_obj["$extends"], str):
-                self._err(f"'$extends' must be a JSON pointer string.", path + "/$extends")
-            else:
-                self._check_json_pointer(schema_obj["$extends"], self.doc, path + "/$extends")
+            self._validate_extends_keyword(schema_obj["$extends"], path + "/$extends")
                 
         # Check if this is a non-schema with composition keywords
         has_type_or_ref = "type" in schema_obj or "$ref" in schema_obj
@@ -997,6 +1012,22 @@ class JSONStructureSchemaCoreValidator:
             else:
                 self._err(f"JSON Pointer segment '/{p}' not applicable to non-object.", path)
                 return
+
+    def _validate_extends_keyword(self, extends_value, path):
+        """
+        Validates the $extends keyword value.
+        $extends can be either a single JSON Pointer string or an array of JSON Pointer strings.
+        """
+        if isinstance(extends_value, str):
+            self._check_json_pointer(extends_value, self.doc, path)
+        elif isinstance(extends_value, list):
+            for i, item in enumerate(extends_value):
+                if not isinstance(item, str):
+                    self._err(f"'$extends' array element must be a JSON pointer string.", f"{path}/{i}")
+                else:
+                    self._check_json_pointer(item, self.doc, f"{path}/{i}")
+        else:
+            self._err("'$extends' must be a JSON pointer string or an array of JSON pointer strings.", path)
 
     def _check_offers(self, offers, path):
         """

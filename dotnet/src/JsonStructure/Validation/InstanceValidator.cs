@@ -144,17 +144,101 @@ public sealed class InstanceValidator
             }
         }
 
-        // Handle $extends
+        // Handle $extends (can be a string or array of strings for multiple inheritance)
         if (schemaObj.TryGetPropertyValue("$extends", out var extendsValue))
         {
-            var extendsRef = extendsValue?.GetValue<string>();
-            if (!string.IsNullOrEmpty(extendsRef))
+            var extendsRefs = new List<string>();
+            
+            if (extendsValue is JsonValue jv && jv.TryGetValue<string>(out var singleRef))
             {
-                var baseSchema = ResolveRef(extendsRef, rootSchema);
-                if (baseSchema is not null)
+                extendsRefs.Add(singleRef);
+            }
+            else if (extendsValue is JsonArray extendsArr)
+            {
+                foreach (var item in extendsArr)
                 {
-                    ValidateInstance(instance, baseSchema, rootSchema, result, path, depth + 1);
+                    if (item is JsonValue itemVal && itemVal.TryGetValue<string>(out var itemRef))
+                    {
+                        extendsRefs.Add(itemRef);
+                    }
                 }
+            }
+            
+            if (extendsRefs.Count > 0)
+            {
+                // Merge base types in order (first-wins for properties)
+                var mergedProperties = new JsonObject();
+                var mergedRequired = new HashSet<string>();
+                
+                foreach (var extRef in extendsRefs)
+                {
+                    var baseSchema = ResolveRef(extRef, rootSchema);
+                    if (baseSchema is JsonObject baseObj)
+                    {
+                        // Merge properties (first-wins)
+                        if (baseObj.TryGetPropertyValue("properties", out var baseProps) && baseProps is JsonObject basePropObj)
+                        {
+                            foreach (var prop in basePropObj)
+                            {
+                                if (!mergedProperties.ContainsKey(prop.Key))
+                                {
+                                    mergedProperties[prop.Key] = prop.Value?.DeepClone();
+                                }
+                            }
+                        }
+                        // Merge required
+                        if (baseObj.TryGetPropertyValue("required", out var baseReq) && baseReq is JsonArray baseReqArr)
+                        {
+                            foreach (var r in baseReqArr)
+                            {
+                                if (r is JsonValue rv && rv.TryGetValue<string>(out var reqStr))
+                                {
+                                    mergedRequired.Add(reqStr);
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Merge derived schema's properties on top
+                if (schemaObj.TryGetPropertyValue("properties", out var schemaProps) && schemaProps is JsonObject schemaPropObj)
+                {
+                    foreach (var prop in schemaPropObj)
+                    {
+                        mergedProperties[prop.Key] = prop.Value?.DeepClone();
+                    }
+                }
+                if (schemaObj.TryGetPropertyValue("required", out var schemaReq) && schemaReq is JsonArray schemaReqArr)
+                {
+                    foreach (var r in schemaReqArr)
+                    {
+                        if (r is JsonValue rv && rv.TryGetValue<string>(out var reqStr))
+                        {
+                            mergedRequired.Add(reqStr);
+                        }
+                    }
+                }
+                
+                // Create merged schema
+                var merged = new JsonObject();
+                foreach (var prop in schemaObj)
+                {
+                    if (prop.Key != "$extends")
+                    {
+                        merged[prop.Key] = prop.Value?.DeepClone();
+                    }
+                }
+                if (mergedProperties.Count > 0)
+                {
+                    merged["properties"] = mergedProperties;
+                }
+                if (mergedRequired.Count > 0)
+                {
+                    merged["required"] = new JsonArray(mergedRequired.Select(r => JsonValue.Create(r)).ToArray());
+                }
+                
+                ValidateInstance(instance, merged, rootSchema, result, path, depth + 1);
+                return;
             }
         }
 

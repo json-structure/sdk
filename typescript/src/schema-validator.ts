@@ -853,18 +853,45 @@ export class SchemaValidator {
     }
     
     for (const [key, value] of Object.entries(obj)) {
-      if ((key === '$ref' || key === '$extends') && typeof value === 'string' && value.startsWith('#')) {
-        // Rewrite the reference
-        const refParts = value.substring(1).replace(/^\//, '').split('/');
+      if (key === '$ref' && typeof value === 'string' && value.startsWith('#')) {
+        // Rewrite $ref reference
+        const refParts = value.substring(1).replace(/^\//,'').split('/');
         if (refParts.length > 0 && refParts[0]) {
           if (refParts[0] === 'definitions' && refParts.length > 1) {
-            // Keep everything after 'definitions'
             const remaining = refParts.slice(1).join('/');
             obj[key] = `${targetPath}/${remaining}`;
           } else {
             const remaining = refParts.join('/');
             obj[key] = `${targetPath}/${remaining}`;
           }
+        }
+      } else if (key === '$extends') {
+        // $extends can be a string or array of strings
+        if (typeof value === 'string' && value.startsWith('#')) {
+          const refParts = value.substring(1).replace(/^\//,'').split('/');
+          if (refParts.length > 0 && refParts[0]) {
+            if (refParts[0] === 'definitions' && refParts.length > 1) {
+              const remaining = refParts.slice(1).join('/');
+              obj[key] = `${targetPath}/${remaining}`;
+            } else {
+              const remaining = refParts.join('/');
+              obj[key] = `${targetPath}/${remaining}`;
+            }
+          }
+        } else if (Array.isArray(value)) {
+          obj[key] = value.map((v: JsonValue) => {
+            if (typeof v === 'string' && v.startsWith('#')) {
+              const refParts = v.substring(1).replace(/^\//,'').split('/');
+              if (refParts.length > 0 && refParts[0]) {
+                if (refParts[0] === 'definitions' && refParts.length > 1) {
+                  return `${targetPath}/${refParts.slice(1).join('/')}`;
+                } else {
+                  return `${targetPath}/${refParts.join('/')}`;
+                }
+              }
+            }
+            return v;
+          });
         }
       } else if (this.isObject(value)) {
         this.rewriteRefs(value, targetPath);

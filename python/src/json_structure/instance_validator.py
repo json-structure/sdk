@@ -256,28 +256,59 @@ class JSONStructureInstanceValidator:
 
         if not isinstance(schema_type, str):
             self.errors.append(f"Schema at {path} has invalid 'type'")
-            return self.errors        # Process $extends. [Metaschema: $extends in ObjectType/TupleType]
+            return self.errors
+        
+        # Process $extends (can be a string or array of strings for multiple inheritance)
         if schema_type != "choice" and "$extends" in schema:
-            base = self._resolve_ref(schema["$extends"])
-            if base is None:
-                self.errors.append(f"Cannot resolve $extends {schema['$extends']} at {path}")
-                return self.errors
-            base_props = base.get("properties", {})
-            derived_props = schema.get("properties", {})
-            for key in base_props:
-                if key in derived_props:
-                    self.errors.append(
-                        f"Property '{key}' is inherited via $extends and must not be redefined at {path}")
-            merged = dict(base)
-            merged.update(schema)
-            # Properly merge properties: base properties + derived properties
-            if "properties" in base or "properties" in schema:
-                merged_props = dict(base_props)
+            extends_value = schema["$extends"]
+            extends_refs = []
+            
+            if isinstance(extends_value, str):
+                extends_refs = [extends_value]
+            elif isinstance(extends_value, list):
+                extends_refs = [ref for ref in extends_value if isinstance(ref, str)]
+            
+            if extends_refs:
+                # Merge base types in order (first-wins for properties)
+                merged_props = {}
+                merged_required = set()
+                
+                for ref in extends_refs:
+                    base = self._resolve_ref(ref)
+                    if base is None:
+                        self.errors.append(f"Cannot resolve $extends {ref} at {path}")
+                        return self.errors
+                    # Merge properties (first-wins)
+                    base_props = base.get("properties", {})
+                    for key, value in base_props.items():
+                        if key not in merged_props:
+                            merged_props[key] = value
+                    # Merge required
+                    if "required" in base:
+                        for r in base.get("required", []):
+                            merged_required.add(r)
+                
+                # Merge derived schema's properties on top
+                derived_props = schema.get("properties", {})
+                for key in derived_props:
+                    if key in merged_props:
+                        self.errors.append(
+                            f"Property '{key}' is inherited via $extends and must not be redefined at {path}")
                 merged_props.update(derived_props)
-                merged["properties"] = merged_props
-            merged.pop("$extends", None)
-            merged.pop("abstract", None)
-            schema = merged
+                
+                if "required" in schema:
+                    for r in schema.get("required", []):
+                        merged_required.add(r)
+                
+                # Create merged schema
+                merged = dict(schema)
+                merged.pop("$extends", None)
+                merged.pop("abstract", None)
+                if merged_props:
+                    merged["properties"] = merged_props
+                if merged_required:
+                    merged["required"] = list(merged_required)
+                schema = merged
 
         # Reject abstract schemas. [Metaschema: abstract property]
         if schema.get("abstract") is True:
@@ -1017,12 +1048,26 @@ class JSONStructureInstanceValidator:
                         ref_name = ref_parts[-1]
                         # Rewrite to point to the same name under target_path
                         obj[key] = f"{target_path}/{ref_name}"
-                elif key == "$extends" and isinstance(value, str) and value.startswith("#"):
-                    # Also rewrite $extends references
-                    ref_parts = value.lstrip("#").split("/")
-                    if ref_parts and ref_parts[-1]:
-                        ref_name = ref_parts[-1]
-                        obj[key] = f"{target_path}/{ref_name}"
+                elif key == "$extends":
+                    # $extends can be a string or array of strings
+                    if isinstance(value, str) and value.startswith("#"):
+                        ref_parts = value.lstrip("#").split("/")
+                        if ref_parts and ref_parts[-1]:
+                            ref_name = ref_parts[-1]
+                            obj[key] = f"{target_path}/{ref_name}"
+                    elif isinstance(value, list):
+                        rewritten = []
+                        for item in value:
+                            if isinstance(item, str) and item.startswith("#"):
+                                ref_parts = item.lstrip("#").split("/")
+                                if ref_parts and ref_parts[-1]:
+                                    ref_name = ref_parts[-1]
+                                    rewritten.append(f"{target_path}/{ref_name}")
+                                else:
+                                    rewritten.append(item)
+                            else:
+                                rewritten.append(item)
+                        obj[key] = rewritten
                 else:
                     self._rewrite_refs(value, target_path)
         elif isinstance(obj, list):
