@@ -220,30 +220,39 @@ class JSONStructureSchemaCoreValidator:
     def _rewrite_refs(self, obj, target_path):
         """
         Recursively rewrites $ref pointers in an imported schema to be relative to the target path.
-        When a schema is imported at path (e.g., #/definitions/People), all internal $ref pointers
+        When a schema is imported at path (e.g., #/definitions), all internal $ref pointers
         like #/definitions/X or #/X need to be rewritten to point to target_path/X.
+        References to nested paths like #/definitions/features/Y are preserved with their structure.
         [Metaschema: JSONStructureImport extension - reference rewriting]
         :param obj: The imported schema object to rewrite.
-        :param target_path: The JSON pointer path where the schema is being imported (e.g., "#/definitions/People").
+        :param target_path: The JSON pointer path where the schema is being imported (e.g., "#/definitions").
         """
         if isinstance(obj, dict):
             for key, value in obj.items():
                 if key == "$ref" and isinstance(value, str) and value.startswith("#"):
                     # Rewrite the $ref to be relative to target_path
-                    # Original ref like "#/definitions/Address" or "#/Address"
-                    # needs to become "target_path/Address"
-                    ref_parts = value.lstrip("#").split("/")
-                    # Get the final referenced name (last part of the path)
-                    if ref_parts and ref_parts[-1]:
-                        ref_name = ref_parts[-1]
-                        # Rewrite to point to the same name under target_path
-                        obj[key] = f"{target_path}/{ref_name}"
+                    # Strip the "#" and split
+                    ref_parts = value.lstrip("#").lstrip("/").split("/")
+                    if ref_parts and ref_parts[0]:
+                        # Skip 'definitions' if present at the start since we're importing into definitions
+                        if ref_parts[0] == "definitions" and len(ref_parts) > 1:
+                            # Keep everything after 'definitions'
+                            remaining_path = "/".join(ref_parts[1:])
+                            obj[key] = f"{target_path}/{remaining_path}"
+                        else:
+                            # For other refs, just append the full path
+                            remaining_path = "/".join(ref_parts)
+                            obj[key] = f"{target_path}/{remaining_path}"
                 elif key == "$extends" and isinstance(value, str) and value.startswith("#"):
                     # Also rewrite $extends references
-                    ref_parts = value.lstrip("#").split("/")
-                    if ref_parts and ref_parts[-1]:
-                        ref_name = ref_parts[-1]
-                        obj[key] = f"{target_path}/{ref_name}"
+                    ref_parts = value.lstrip("#").lstrip("/").split("/")
+                    if ref_parts and ref_parts[0]:
+                        if ref_parts[0] == "definitions" and len(ref_parts) > 1:
+                            remaining_path = "/".join(ref_parts[1:])
+                            obj[key] = f"{target_path}/{remaining_path}"
+                        else:
+                            remaining_path = "/".join(ref_parts)
+                            obj[key] = f"{target_path}/{remaining_path}"
                 else:
                     self._rewrite_refs(value, target_path)
         elif isinstance(obj, list):
@@ -317,8 +326,12 @@ class JSONStructureSchemaCoreValidator:
                         if k not in merge_target:
                             merge_target[k] = v
                     del obj[key]
-            # Recurse into all values.
+            # Recurse into all values, but skip recursing into 'properties' values
+            # since those contain property name definitions, not import directives
             for key, value in obj.items():
+                # Skip processing inside 'properties' - $import/$importdefs there are property names, not directives
+                if key == "properties":
+                    continue
                 self._process_imports(value, f"{path}/{key}")
         elif isinstance(obj, list):
             for idx, item in enumerate(obj):
@@ -330,6 +343,8 @@ class JSONStructureSchemaCoreValidator:
         Resolution order:
         1. Check external_schemas (pre-loaded schemas matched by $id)
         2. Check import_map (URI to file path mapping)
+        
+        When loading from file, recursively processes imports in the loaded schema.
         """
         # First check sideloaded schemas by $id
         if uri in self.external_schemas:
@@ -338,7 +353,15 @@ class JSONStructureSchemaCoreValidator:
         if uri in self.import_map:
             try:
                 with open(self.import_map[uri], "r", encoding="utf-8") as f:
-                    return json.load(f)
+                    import copy
+                    schema = json.load(f)
+                    # Deep copy to avoid modifying the original
+                    schema = copy.deepcopy(schema)
+                    # Recursively process imports in the loaded schema
+                    self._process_imports(schema, "#")
+                    # Cache the processed schema for future use
+                    self.external_schemas[uri] = schema
+                    return schema
             except Exception as e:
                 self._err(f"Failed to load imported schema from {self.import_map[uri]}: {e}", "#/import")
                 return None
