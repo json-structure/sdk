@@ -144,7 +144,19 @@ export class SchemaCache {
             await this.scanPromise;
         }
         
-        const entry = this.workspaceSchemas.get(schemaId);
+        // Try exact match first
+        let entry = this.workspaceSchemas.get(schemaId);
+        
+        // Try normalized matches (with/without trailing slash, fragment)
+        if (!entry) {
+            const normalizedId = schemaId.replace(/#$/, ''); // Remove trailing #
+            entry = this.workspaceSchemas.get(normalizedId);
+        }
+        if (!entry) {
+            const withFragment = schemaId + '#';
+            entry = this.workspaceSchemas.get(withFragment);
+        }
+        
         if (entry) {
             return entry.schema;
         }
@@ -195,6 +207,7 @@ export class SchemaCache {
         // 3. Check workspace schemas for matching $id (always wait for scan to complete first)
         const workspaceSchema = await this.findWorkspaceSchema(uri);
         if (workspaceSchema) {
+            // Don't proceed to network fetch - we have a local copy
             return { schema: workspaceSchema };
         }
 
@@ -213,7 +226,7 @@ export class SchemaCache {
             }
         }
 
-        // 5. Fetch remote schema
+        // 5. Fetch remote schema - only if not found locally
         return this.fetchRemoteSchema(uri, cached?.etag);
     }
 

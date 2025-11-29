@@ -87,7 +87,8 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run esbuild-base -- --minify",
+    "version": "node scripts/update-version.js",
+    "vscode:prepublish": "npm run version && npm run esbuild-base -- --minify",
     "esbuild-base": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
     "compile": "npm run esbuild-base -- --sourcemap",
     "compile-tests": "tsc -p . --outDir dist",

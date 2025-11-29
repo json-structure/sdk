@@ -3,6 +3,10 @@ import { SchemaCache } from './schemaCache';
 import { SchemaValidator } from './schemaValidator';
 import { InstanceValidator } from './instanceValidator';
 import { DiagnosticsManager } from './diagnosticsManager';
+import { JsonStructureCompletionProvider } from './completionProvider';
+import { JsonStructureHoverProvider } from './hoverProvider';
+import { JsonStructureDefinitionProvider } from './definitionProvider';
+import { JsonStructureDocumentSymbolProvider } from './documentSymbolProvider';
 
 let diagnosticsManager: DiagnosticsManager;
 let schemaValidator: SchemaValidator;
@@ -89,6 +93,45 @@ export function activate(context: vscode.ExtensionContext): void {
                 });
             }
         })
+    );
+
+    // Register language features for JSON Structure documents
+    const jsonSelector: vscode.DocumentSelector = [
+        { language: 'json', scheme: 'file' },
+        { language: 'jsonc', scheme: 'file' }
+    ];
+
+    // Completion provider for IntelliSense
+    context.subscriptions.push(
+        vscode.languages.registerCompletionItemProvider(
+            jsonSelector,
+            new JsonStructureCompletionProvider(schemaCache),
+            '"', ':', ' ', '/'  // Trigger characters
+        )
+    );
+
+    // Hover provider for documentation on hover
+    context.subscriptions.push(
+        vscode.languages.registerHoverProvider(
+            jsonSelector,
+            new JsonStructureHoverProvider(schemaCache)
+        )
+    );
+
+    // Definition provider for go-to-definition on $ref, $extends, $root
+    context.subscriptions.push(
+        vscode.languages.registerDefinitionProvider(
+            jsonSelector,
+            new JsonStructureDefinitionProvider()
+        )
+    );
+
+    // Document symbol provider for outline view and breadcrumbs
+    context.subscriptions.push(
+        vscode.languages.registerDocumentSymbolProvider(
+            jsonSelector,
+            new JsonStructureDocumentSymbolProvider()
+        )
     );
 }
 

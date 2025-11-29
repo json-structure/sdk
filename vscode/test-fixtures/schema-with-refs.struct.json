@@ -1,0 +1,32 @@
+{
+    "$schema": "https://json-structure.org/meta/core/v0/#",
+    "$id": "https://example.com/schema-with-refs",
+    "name": "SchemaWithRefs",
+    "type": "object",
+    "properties": {
+        "primaryAddress": { "$ref": "#/definitions/Address" },
+        "billingAddress": { "$ref": "#/definitions/Address" },
+        "person": { "$ref": "#/definitions/Person" }
+    },
+    "$root": "#/definitions/Person",
+    "definitions": {
+        "Address": {
+            "type": "object",
+            "properties": {
+                "street": { "type": "string" },
+                "city": { "type": "string" },
+                "zipCode": { "type": "string" }
+            },
+            "required": ["street", "city"]
+        },
+        "Person": {
+            "type": "object",
+            "properties": {
+                "name": { "type": "string" },
+                "age": { "type": "int32" },
+                "address": { "$ref": "#/definitions/Address" }
+            },
+            "required": ["name"]
+        }
+    }
+}
