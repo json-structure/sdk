@@ -303,6 +303,9 @@ public static class ErrorCodes
     /// <summary>Map has more entries than maximum.</summary>
     public const string InstanceMapMaxEntries = "INSTANCE_MAP_MAX_ENTRIES";
     
+    /// <summary>Map key does not match keyNames or patternKeys constraint.</summary>
+    public const string InstanceMapKeyInvalid = "INSTANCE_MAP_KEY_INVALID";
+    
     /// <summary>Value must be an array (tuple).</summary>
     public const string InstanceTupleExpected = "INSTANCE_TUPLE_EXPECTED";
     

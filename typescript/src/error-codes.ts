@@ -321,6 +321,9 @@ export const INSTANCE_MAP_MIN_ENTRIES = "INSTANCE_MAP_MIN_ENTRIES";
 /** Map has more entries than maximum. */
 export const INSTANCE_MAP_MAX_ENTRIES = "INSTANCE_MAP_MAX_ENTRIES";
 
+/** Map key does not match keyNames or patternKeys constraint. */
+export const INSTANCE_MAP_KEY_INVALID = "INSTANCE_MAP_KEY_INVALID";
+
 /** Value must be an array (tuple). */
 export const INSTANCE_TUPLE_EXPECTED = "INSTANCE_TUPLE_EXPECTED";
 
@@ -599,6 +602,7 @@ export const ErrorCodes = {
   INSTANCE_MAP_EXPECTED,
   INSTANCE_MAP_MIN_ENTRIES,
   INSTANCE_MAP_MAX_ENTRIES,
+  INSTANCE_MAP_KEY_INVALID,
   INSTANCE_TUPLE_EXPECTED,
   INSTANCE_TUPLE_LENGTH_MISMATCH,
   INSTANCE_TUPLE_ADDITIONAL_ITEMS,

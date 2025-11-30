@@ -246,9 +246,9 @@ public sealed class ValidationOptions
     public bool StrictFormatValidation { get; set; } = true;
 
     /// <summary>
-    /// Gets or sets the maximum depth for recursive schema validation. Default is 100.
+    /// Gets or sets the maximum depth for recursive schema validation. Default is 64.
     /// </summary>
-    public int MaxValidationDepth { get; set; } = 100;
+    public int MaxValidationDepth { get; set; } = 64;
 
     /// <summary>
     /// Gets or sets a function to resolve external schema references.

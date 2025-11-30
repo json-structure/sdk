@@ -791,4 +791,59 @@ describe('SchemaValidator', () => {
       expect(result.errors[0].message).toContain('must have $ref');
     });
   });
+
+  describe('warnOnUnusedExtensionKeywords option', () => {
+    it('should emit warnings for extension keywords without $uses (default behavior)', () => {
+      const schema = {
+        $id: 'urn:example:test-schema',
+        name: 'TestType',
+        type: 'object',
+        properties: {
+          name: { type: 'string', minLength: 1, maxLength: 100 },
+        },
+      };
+
+      const validator = new SchemaValidator();
+      const result = validator.validate(schema);
+
+      expect(result.isValid).toBe(true);
+      expect(result.warnings.length).toBeGreaterThan(0);
+      expect(result.warnings.some(w => w.code === 'SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED')).toBe(true);
+    });
+
+    it('should suppress warnings when warnOnUnusedExtensionKeywords is false', () => {
+      const schema = {
+        $id: 'urn:example:test-schema',
+        name: 'TestType',
+        type: 'object',
+        properties: {
+          name: { type: 'string', minLength: 1, maxLength: 100 },
+        },
+      };
+
+      const validator = new SchemaValidator({ warnOnUnusedExtensionKeywords: false });
+      const result = validator.validate(schema);
+
+      expect(result.isValid).toBe(true);
+      expect(result.warnings.filter(w => w.code === 'SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED')).toHaveLength(0);
+    });
+
+    it('should not emit warnings when $uses includes JSONStructureValidation', () => {
+      const schema = {
+        $id: 'urn:example:test-schema',
+        $uses: ['JSONStructureValidation'],
+        name: 'TestType',
+        type: 'object',
+        properties: {
+          name: { type: 'string', minLength: 1, maxLength: 100 },
+        },
+      };
+
+      const validator = new SchemaValidator();
+      const result = validator.validate(schema);
+
+      expect(result.isValid).toBe(true);
+      expect(result.warnings.filter(w => w.code === 'SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED')).toHaveLength(0);
+    });
+  });
 });

@@ -696,11 +696,91 @@ func (v *InstanceValidator) validateMap(instance interface{}, schema map[string]
 		return
 	}
 
+	entryCount := len(obj)
+
+	// minEntries validation
+	if minEntries, ok := schema["minEntries"].(float64); ok {
+		if entryCount < int(minEntries) {
+			v.addError(path, fmt.Sprintf("Map has %d entries, less than minEntries %d", entryCount, int(minEntries)), InstanceMapMinEntries)
+		}
+	}
+
+	// maxEntries validation
+	if maxEntries, ok := schema["maxEntries"].(float64); ok {
+		if entryCount > int(maxEntries) {
+			v.addError(path, fmt.Sprintf("Map has %d entries, more than maxEntries %d", entryCount, int(maxEntries)), InstanceMapMaxEntries)
+		}
+	}
+
+	// keyNames validation
+	if keyNamesSchema, ok := schema["keyNames"].(map[string]interface{}); ok {
+		for key := range obj {
+			if !v.validateKeyName(key, keyNamesSchema, path) {
+				v.addError(path, fmt.Sprintf("Map key '%s' does not match keyNames constraint", key), InstanceMapKeyInvalid)
+			}
+		}
+	}
+
+	// patternKeys validation
+	if patternKeysSchema, ok := schema["patternKeys"].(map[string]interface{}); ok {
+		if pattern, ok := patternKeysSchema["pattern"].(string); ok {
+			re, err := regexp.Compile(pattern)
+			if err == nil {
+				for key := range obj {
+					if !re.MatchString(key) {
+						v.addError(path, fmt.Sprintf("Map key '%s' does not match patternKeys pattern '%s'", key, pattern), InstanceMapKeyInvalid)
+					}
+				}
+			}
+		}
+	}
+
+	// Validate values
 	if values, ok := schema["values"].(map[string]interface{}); ok {
 		for key, val := range obj {
 			v.validateInstance(val, values, path+"/"+key)
 		}
 	}
+}
+
+func (v *InstanceValidator) validateKeyName(key string, keyNamesSchema map[string]interface{}, path string) bool {
+	// Check pattern
+	if pattern, ok := keyNamesSchema["pattern"].(string); ok {
+		re, err := regexp.Compile(pattern)
+		if err != nil || !re.MatchString(key) {
+			return false
+		}
+	}
+
+	// Check minLength
+	if minLength, ok := keyNamesSchema["minLength"].(float64); ok {
+		if len(key) < int(minLength) {
+			return false
+		}
+	}
+
+	// Check maxLength
+	if maxLength, ok := keyNamesSchema["maxLength"].(float64); ok {
+		if len(key) > int(maxLength) {
+			return false
+		}
+	}
+
+	// Check enum
+	if enum, ok := keyNamesSchema["enum"].([]interface{}); ok {
+		found := false
+		for _, e := range enum {
+			if s, ok := e.(string); ok && s == key {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+
+	return true
 }
 
 func (v *InstanceValidator) validateTuple(instance interface{}, schema map[string]interface{}, path string) {
@@ -923,6 +1003,16 @@ func (v *InstanceValidator) validateValidationAddins(instance interface{}, typeS
 					v.addError(path, fmt.Sprintf("Value %v exceeds maximum %v", num, max), InstanceNumberMaximum)
 				}
 			}
+			if exMin, ok := schema["exclusiveMinimum"].(float64); ok {
+				if num <= exMin {
+					v.addError(path, fmt.Sprintf("Value %v is not greater than exclusiveMinimum %v", num, exMin), InstanceNumberExclusiveMinimum)
+				}
+			}
+			if exMax, ok := schema["exclusiveMaximum"].(float64); ok {
+				if num >= exMax {
+					v.addError(path, fmt.Sprintf("Value %v is not less than exclusiveMaximum %v", num, exMax), InstanceNumberExclusiveMaximum)
+				}
+			}
 			if multipleOf, ok := schema["multipleOf"].(float64); ok {
 				if math.Abs(math.Mod(num, multipleOf)) > 1e-10 {
 					v.addError(path, fmt.Sprintf("Value %v is not a multiple of %v", num, multipleOf), InstanceNumberMultipleOf)
@@ -955,6 +1045,36 @@ func (v *InstanceValidator) validateValidationAddins(instance interface{}, typeS
 					seen[string(serialized)] = true
 				}
 			}
+
+			// Validate contains
+			if containsSchema, ok := schema["contains"].(map[string]interface{}); ok {
+				containsCount := 0
+				savedErrors := v.errors
+				for _, item := range arr {
+					v.errors = nil
+					v.validateInstance(item, containsSchema, path)
+					if len(v.errors) == 0 {
+						containsCount++
+					}
+				}
+				v.errors = savedErrors
+
+				minContains := 1
+				maxContains := int(^uint(0) >> 1) // max int
+				if mc, ok := schema["minContains"].(float64); ok {
+					minContains = int(mc)
+				}
+				if mc, ok := schema["maxContains"].(float64); ok {
+					maxContains = int(mc)
+				}
+
+				if containsCount < minContains {
+					v.addError(path, fmt.Sprintf("Array must contain at least %d matching items (found %d)", minContains, containsCount), InstanceMinContains)
+				}
+				if containsCount > maxContains {
+					v.addError(path, fmt.Sprintf("Array must contain at most %d matching items (found %d)", maxContains, containsCount), InstanceMaxContains)
+				}
+			}
 		}
 	}
 
@@ -969,6 +1089,23 @@ func (v *InstanceValidator) validateValidationAddins(instance interface{}, typeS
 			if maxProps, ok := schema["maxProperties"].(float64); ok {
 				if len(obj) > int(maxProps) {
 					v.addError(path, fmt.Sprintf("Object has %d properties, more than maxProperties %d", len(obj), int(maxProps)), InstanceMaxProperties)
+				}
+			}
+
+			// Validate dependentRequired
+			if depReq, ok := schema["dependentRequired"].(map[string]interface{}); ok {
+				for prop, required := range depReq {
+					if _, hasProp := obj[prop]; hasProp {
+						if reqArr, ok := required.([]interface{}); ok {
+							for _, req := range reqArr {
+								if reqStr, ok := req.(string); ok {
+									if _, hasReq := obj[reqStr]; !hasReq {
+										v.addError(path, fmt.Sprintf("Property '%s' requires property '%s'", prop, reqStr), InstanceDependentRequired)
+									}
+								}
+							}
+						}
+					}
 				}
 			}
 		}

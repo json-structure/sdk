@@ -115,13 +115,15 @@ public final class SchemaValidator {
             // Numeric validation
             "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf",
             // String validation
-            "minLength", "pattern", "format",
+            "minLength", "maxLength", "pattern", "format",
             // Array/Set validation
             "minItems", "maxItems", "uniqueItems", "contains", "minContains", "maxContains",
             // Object/Map validation
             "minProperties", "maxProperties", "dependentRequired", "patternProperties", "propertyNames",
             // Map-specific
             "minEntries", "maxEntries", "patternKeys", "keyNames",
+            // Content validation
+            "contentEncoding", "contentMediaType",
             // Other
             "has", "default"
     );
@@ -601,6 +603,11 @@ public final class SchemaValidator {
         // Validate conditional composition keywords
         validateConditionalComposition(schema, path, result, depth, visitedRefs);
 
+        // Add warning for default extension keyword
+        if (schema.has("default")) {
+            addExtensionKeywordWarning(result, "default", path);
+        }
+
         // Validate altnames if present
         if (schema.has("altnames")) {
             validateAltnames(schema.get("altnames"), path, result);
@@ -1068,6 +1075,11 @@ public final class SchemaValidator {
         if (schema.has("minProperties")) addExtensionKeywordWarning(result, "minProperties", path);
         if (schema.has("maxProperties")) addExtensionKeywordWarning(result, "maxProperties", path);
         if (schema.has("propertyNames")) addExtensionKeywordWarning(result, "propertyNames", path);
+        // Map-specific extension keywords
+        if (schema.has("minEntries")) addExtensionKeywordWarning(result, "minEntries", path);
+        if (schema.has("maxEntries")) addExtensionKeywordWarning(result, "maxEntries", path);
+        if (schema.has("keyNames")) addExtensionKeywordWarning(result, "keyNames", path);
+        if (schema.has("patternKeys")) addExtensionKeywordWarning(result, "patternKeys", path);
 
         // Map type requires values definition
         if (!schema.has("values")) {
@@ -1140,6 +1152,8 @@ public final class SchemaValidator {
         if (schema.has("minLength")) addExtensionKeywordWarning(result, "minLength", path);
         if (schema.has("pattern")) addExtensionKeywordWarning(result, "pattern", path);
         if (schema.has("format")) addExtensionKeywordWarning(result, "format", path);
+        if (schema.has("contentEncoding")) addExtensionKeywordWarning(result, "contentEncoding", path);
+        if (schema.has("contentMediaType")) addExtensionKeywordWarning(result, "contentMediaType", path);
 
         validateNonNegativeInteger(schema, "minLength", path, result);
         validateNonNegativeInteger(schema, "maxLength", path, result);

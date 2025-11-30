@@ -102,6 +102,15 @@ export interface SchemaValidatorOptions {
   allowImport?: boolean;
   /** Map of URIs to schema objects for import resolution. */
   externalSchemas?: Map<string, JsonValue>;
+  /** 
+   * Maximum depth for validation recursion. Default is 64.
+   */
+  maxValidationDepth?: number;
+  /** 
+   * Whether to emit warnings when extension keywords are used without being enabled
+   * via $schema or $uses. Default is true.
+   */
+  warnOnUnusedExtensionKeywords?: boolean;
 }
 
 /**
@@ -114,6 +123,10 @@ export interface InstanceValidatorOptions {
   allowImport?: boolean;
   /** Map of URIs to schema objects for import resolution. */
   externalSchemas?: Map<string, JsonValue>;
+  /** 
+   * Maximum depth for validation recursion. Default is 64.
+   */
+  maxValidationDepth?: number;
 }
 
 /**

@@ -1,0 +1,5 @@
+{
+  "_description": "Array with duplicate items (uniqueItems is true), should fail validation",
+  "_expectedError": "INSTANCE_SET_DUPLICATE",
+  "value": [1, 2, 3, 2, 5]
+}

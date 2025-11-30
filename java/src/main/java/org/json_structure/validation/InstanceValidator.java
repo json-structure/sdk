@@ -840,6 +840,18 @@ public final class InstanceValidator {
             }
         }
 
+        // Validate uniqueItems
+        if (schema.has("uniqueItems") && schema.get("uniqueItems").asBoolean()) {
+            Set<String> seen = new HashSet<>();
+            for (int i = 0; i < arr.size(); i++) {
+                String itemJson = arr.get(i).toString();
+                if (!seen.add(itemJson)) {
+                    addError(result, ErrorCodes.INSTANCE_SET_DUPLICATE, "Array items are not unique (duplicate at index " + i + ")", path);
+                    break;
+                }
+            }
+        }
+
         // Validate contains
         if (schema.has("contains")) {
             JsonNode containsSchema = schema.get("contains");
@@ -907,30 +919,74 @@ public final class InstanceValidator {
             }
         }
 
-        // Validate propertyNames
-        if (schema.has("propertyNames")) {
-            JsonNode propNamesSchema = schema.get("propertyNames");
-            Iterator<String> fieldNames = obj.fieldNames();
-            while (fieldNames.hasNext()) {
-                String fieldName = fieldNames.next();
-                JsonNode keyNode = objectMapper.valueToTree(fieldName);
-                validateInstance(keyNode, propNamesSchema, rootSchema, result,
-                        appendPath(path, "[key:" + fieldName + "]"), depth + 1);
+        // Validate minEntries/maxEntries (preferred for maps) or minProperties/maxProperties
+        if (schema.has("minEntries")) {
+            int minEntries = schema.get("minEntries").asInt();
+            if (obj.size() < minEntries) {
+                addError(result, ErrorCodes.INSTANCE_MAP_MIN_ENTRIES, "Map has " + obj.size() + " entries, less than minEntries " + minEntries, path);
             }
-        }
-
-        // Validate minProperties/maxProperties
-        if (schema.has("minProperties")) {
+        } else if (schema.has("minProperties")) {
             int minProps = schema.get("minProperties").asInt();
             if (obj.size() < minProps) {
                 addError(result, ErrorCodes.INSTANCE_MAP_MIN_ENTRIES, "Map has " + obj.size() + " entries, minimum is " + minProps, path);
             }
         }
 
-        if (schema.has("maxProperties")) {
+        if (schema.has("maxEntries")) {
+            int maxEntries = schema.get("maxEntries").asInt();
+            if (obj.size() > maxEntries) {
+                addError(result, ErrorCodes.INSTANCE_MAP_MAX_ENTRIES, "Map has " + obj.size() + " entries, more than maxEntries " + maxEntries, path);
+            }
+        } else if (schema.has("maxProperties")) {
             int maxProps = schema.get("maxProperties").asInt();
             if (obj.size() > maxProps) {
                 addError(result, ErrorCodes.INSTANCE_MAP_MAX_ENTRIES, "Map has " + obj.size() + " entries, maximum is " + maxProps, path);
+            }
+        }
+
+        // Validate keyNames (preferred for maps), propertyNames, or keys
+        JsonNode keySchema = null;
+        if (schema.has("keyNames")) {
+            keySchema = schema.get("keyNames");
+        } else if (schema.has("propertyNames")) {
+            keySchema = schema.get("propertyNames");
+        } else if (schema.has("keys")) {
+            keySchema = schema.get("keys");
+        }
+
+        if (keySchema != null) {
+            Iterator<String> fieldNames = obj.fieldNames();
+            while (fieldNames.hasNext()) {
+                String fieldName = fieldNames.next();
+                JsonNode keyNode = objectMapper.valueToTree(fieldName);
+                ValidationResult keyResult = new ValidationResult();
+                validateInstance(keyNode, keySchema, rootSchema, keyResult,
+                        appendPath(path, "[key:" + fieldName + "]"), depth + 1);
+                if (!keyResult.isValid()) {
+                    addError(result, ErrorCodes.INSTANCE_MAP_KEY_INVALID, "Map key '" + fieldName + "' does not match keyNames constraint", path);
+                }
+            }
+        }
+
+        // Validate patternKeys
+        if (schema.has("patternKeys") && schema.get("patternKeys").isObject()) {
+            ObjectNode patternKeysSchema = (ObjectNode) schema.get("patternKeys");
+            if (patternKeysSchema.has("pattern")) {
+                String pattern = patternKeysSchema.get("pattern").asText();
+                if (pattern != null && !pattern.isEmpty()) {
+                    try {
+                        java.util.regex.Pattern regex = java.util.regex.Pattern.compile(pattern);
+                        Iterator<String> fieldNames = obj.fieldNames();
+                        while (fieldNames.hasNext()) {
+                            String fieldName = fieldNames.next();
+                            if (!regex.matcher(fieldName).matches()) {
+                                addError(result, ErrorCodes.INSTANCE_MAP_KEY_INVALID, "Map key '" + fieldName + "' does not match patternKeys pattern '" + pattern + "'", path);
+                            }
+                        }
+                    } catch (java.util.regex.PatternSyntaxException e) {
+                        // Invalid regex, skip
+                    }
+                }
             }
         }
     }

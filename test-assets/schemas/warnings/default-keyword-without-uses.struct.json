@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://test.json-structure.org/warnings/default-keyword-without-uses",
+  "name": "DefaultKeywordWithoutUsesTest",
+  "type": "object",
+  "properties": {
+    "status": {
+      "type": "string",
+      "default": "pending"
+    },
+    "count": {
+      "type": "int32",
+      "default": 0
+    }
+  },
+  "$comment": "Uses default extension keyword without enabling validation extension via $uses. Should trigger warnings for: default"
+}

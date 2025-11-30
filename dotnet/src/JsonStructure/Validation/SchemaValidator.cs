@@ -108,24 +108,17 @@ public sealed class SchemaValidator
         // Numeric validation
         "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf",
         // String validation
-        "minLength", "pattern", "format",
+        "minLength", "maxLength", "pattern", "format",
         // Array/Set validation
         "minItems", "maxItems", "uniqueItems", "contains", "minContains", "maxContains",
         // Object/Map validation
         "minProperties", "maxProperties", "dependentRequired", "patternProperties", "propertyNames",
         // Map-specific
         "minEntries", "maxEntries", "patternKeys", "keyNames",
+        // Content validation
+        "contentEncoding", "contentMediaType",
         // Other
         "has", "default"
-    };
-
-    /// <summary>
-    /// Keywords that are part of core specification (not validation extensions).
-    /// maxLength is in core spec, not validation extension.
-    /// </summary>
-    private static readonly HashSet<string> CoreKeywords = new(StringComparer.Ordinal)
-    {
-        "maxLength" // Part of core spec
     };
 
     static SchemaValidator()
@@ -1324,6 +1317,32 @@ public sealed class SchemaValidator
             ValidateSchemaCore(propNamesValue!, result, AppendPath(path, "propertyNames"), depth + 1, visitedRefs);
         }
 
+        // Validate keyNames (map-specific key constraints, preferred over propertyNames for maps)
+        if (schema.TryGetPropertyValue("keyNames", out var keyNamesValue))
+        {
+            ValidateSchemaCore(keyNamesValue!, result, AppendPath(path, "keyNames"), depth + 1, visitedRefs);
+            AddExtensionKeywordWarning(result, "keyNames", path);
+        }
+
+        // Validate patternKeys (map-specific pattern for keys)
+        if (schema.TryGetPropertyValue("patternKeys", out var patternKeysValue))
+        {
+            ValidateStringProperty(patternKeysValue, "patternKeys", path, result);
+            AddExtensionKeywordWarning(result, "patternKeys", path);
+        }
+
+        // Validate minEntries/maxEntries (map-specific, preferred over minProperties/maxProperties for maps)
+        if (schema.ContainsKey("minEntries"))
+        {
+            ValidateNonNegativeInteger(schema, "minEntries", path, result);
+            AddExtensionKeywordWarning(result, "minEntries", path);
+        }
+        if (schema.ContainsKey("maxEntries"))
+        {
+            ValidateNonNegativeInteger(schema, "maxEntries", path, result);
+            AddExtensionKeywordWarning(result, "maxEntries", path);
+        }
+
         ValidateNonNegativeInteger(schema, "minProperties", path, result);
         ValidateNonNegativeInteger(schema, "maxProperties", path, result);
     }
@@ -1434,12 +1453,14 @@ public sealed class SchemaValidator
         if (schema.TryGetPropertyValue("contentEncoding", out var encodingValue))
         {
             ValidateStringProperty(encodingValue, "contentEncoding", path, result);
+            AddExtensionKeywordWarning(result, "contentEncoding", path);
         }
 
         // Validate contentMediaType
         if (schema.TryGetPropertyValue("contentMediaType", out var mediaTypeValue))
         {
             ValidateStringProperty(mediaTypeValue, "contentMediaType", path, result);
+            AddExtensionKeywordWarning(result, "contentMediaType", path);
         }
     }
 

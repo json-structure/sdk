@@ -1,0 +1,5 @@
+{
+  "_description": "Array with no items matching contains schema (minimum 10), should fail validation",
+  "_expectedError": "INSTANCE_MIN_CONTAINS",
+  "value": [1, 2, 3, 4, 5]
+}

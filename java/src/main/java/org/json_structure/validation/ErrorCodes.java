@@ -209,6 +209,8 @@ public final class ErrorCodes {
     public static final String INSTANCE_MAP_MIN_ENTRIES = "INSTANCE_MAP_MIN_ENTRIES";
     /** Map has more entries than maximum. */
     public static final String INSTANCE_MAP_MAX_ENTRIES = "INSTANCE_MAP_MAX_ENTRIES";
+    /** Map key does not match keyNames or patternKeys constraint. */
+    public static final String INSTANCE_MAP_KEY_INVALID = "INSTANCE_MAP_KEY_INVALID";
     /** Value must be an array (tuple). */
     public static final String INSTANCE_TUPLE_EXPECTED = "INSTANCE_TUPLE_EXPECTED";
     /** Tuple length does not match schema. */

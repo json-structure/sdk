@@ -1,0 +1,5 @@
+{
+  "_description": "Array with too many items matching contains schema (4 > maxContains 3), should fail validation",
+  "_expectedError": "INSTANCE_MAX_CONTAINS",
+  "value": [10, 20, 30, 40, 5]
+}

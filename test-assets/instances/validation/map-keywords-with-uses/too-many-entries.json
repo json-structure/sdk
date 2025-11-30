@@ -1,0 +1,10 @@
+{
+  "_description": "Map with too many entries (6 > maxEntries 5), should fail validation",
+  "_expectedError": "INSTANCE_MAP_MAX_ENTRIES",
+  "alpha": 1,
+  "beta": 2,
+  "gamma": 3,
+  "delta": 4,
+  "epsilon": 5,
+  "zeta": 6
+}

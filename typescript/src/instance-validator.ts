@@ -597,12 +597,94 @@ export class InstanceValidator {
       return;
     }
 
+    const entries = Object.entries(instance);
+    const entryCount = entries.length;
+
+    // minEntries validation
+    if ('minEntries' in schema && typeof schema.minEntries === 'number') {
+      if (entryCount < schema.minEntries) {
+        this.addError(path, `Map has ${entryCount} entries, less than minEntries ${schema.minEntries}`, ErrorCodes.INSTANCE_MAP_MIN_ENTRIES);
+      }
+    }
+
+    // maxEntries validation
+    if ('maxEntries' in schema && typeof schema.maxEntries === 'number') {
+      if (entryCount > schema.maxEntries) {
+        this.addError(path, `Map has ${entryCount} entries, more than maxEntries ${schema.maxEntries}`, ErrorCodes.INSTANCE_MAP_MAX_ENTRIES);
+      }
+    }
+
+    // keyNames validation
+    if ('keyNames' in schema && this.isObject(schema.keyNames)) {
+      const keyNamesSchema = schema.keyNames as JsonObject;
+      for (const key of Object.keys(instance)) {
+        // Validate the key against the keyNames schema
+        if (!this.validateKeyName(key, keyNamesSchema, path)) {
+          this.addError(path, `Map key '${key}' does not match keyNames constraint`, ErrorCodes.INSTANCE_MAP_KEY_INVALID);
+        }
+      }
+    }
+
+    // patternKeys validation
+    if ('patternKeys' in schema && this.isObject(schema.patternKeys)) {
+      const patternKeys = schema.patternKeys as JsonObject;
+      const pattern = patternKeys.pattern as string | undefined;
+      if (pattern) {
+        const regex = new RegExp(pattern);
+        for (const key of Object.keys(instance)) {
+          if (!regex.test(key)) {
+            this.addError(path, `Map key '${key}' does not match patternKeys pattern '${pattern}'`, ErrorCodes.INSTANCE_MAP_KEY_INVALID);
+          }
+        }
+      }
+    }
+
+    // Validate values
     const values = schema.values as JsonObject | undefined;
     if (values) {
-      for (const [key, val] of Object.entries(instance)) {
+      for (const [key, val] of entries) {
         this.validateInstance(val, values, `${path}/${key}`);
       }
     }
+  }
+
+  private validateKeyName(key: string, keyNamesSchema: JsonObject, path: string): boolean {
+    // Check type (must be string for map keys)
+    const type = keyNamesSchema.type;
+    if (type && type !== 'string') {
+      return false;
+    }
+
+    // Check pattern
+    if ('pattern' in keyNamesSchema && typeof keyNamesSchema.pattern === 'string') {
+      const regex = new RegExp(keyNamesSchema.pattern);
+      if (!regex.test(key)) {
+        return false;
+      }
+    }
+
+    // Check minLength
+    if ('minLength' in keyNamesSchema && typeof keyNamesSchema.minLength === 'number') {
+      if (key.length < keyNamesSchema.minLength) {
+        return false;
+      }
+    }
+
+    // Check maxLength
+    if ('maxLength' in keyNamesSchema && typeof keyNamesSchema.maxLength === 'number') {
+      if (key.length > keyNamesSchema.maxLength) {
+        return false;
+      }
+    }
+
+    // Check enum
+    if ('enum' in keyNamesSchema && Array.isArray(keyNamesSchema.enum)) {
+      if (!keyNamesSchema.enum.includes(key)) {
+        return false;
+      }
+    }
+
+    return true;
   }
 
   private validateTuple(instance: JsonValue, schema: JsonObject, path: string): void {
@@ -776,19 +858,19 @@ export class InstanceValidator {
     if (type === 'string' && typeof instance === 'string') {
       if ('minLength' in schema && typeof schema.minLength === 'number') {
         if (instance.length < schema.minLength) {
-          this.addError(path, `String length ${instance.length} is less than minLength ${schema.minLength}`, ErrorCodes.INSTANCE_STRING_TOO_SHORT);
+          this.addError(path, `String length ${instance.length} is less than minLength ${schema.minLength}`, ErrorCodes.INSTANCE_STRING_MIN_LENGTH);
         }
       }
       if ('maxLength' in schema && typeof schema.maxLength === 'number') {
         if (instance.length > schema.maxLength) {
-          this.addError(path, `String length ${instance.length} exceeds maxLength ${schema.maxLength}`, ErrorCodes.INSTANCE_STRING_TOO_LONG);
+          this.addError(path, `String length ${instance.length} exceeds maxLength ${schema.maxLength}`, ErrorCodes.INSTANCE_STRING_MAX_LENGTH);
         }
       }
       if ('pattern' in schema && typeof schema.pattern === 'string') {
         try {
           const regex = new RegExp(schema.pattern);
           if (!regex.test(instance)) {
-            this.addError(path, `String does not match pattern: ${schema.pattern}`, ErrorCodes.INSTANCE_PATTERN_MISMATCH);
+            this.addError(path, `String does not match pattern: ${schema.pattern}`, ErrorCodes.INSTANCE_STRING_PATTERN_MISMATCH);
           }
         } catch {
           // Invalid regex, skip
@@ -804,17 +886,27 @@ export class InstanceValidator {
     if (numericTypes.includes(type) && typeof instance === 'number') {
       if ('minimum' in schema && typeof schema.minimum === 'number') {
         if (instance < schema.minimum) {
-          this.addError(path, `Value ${instance} is less than minimum ${schema.minimum}`, ErrorCodes.INSTANCE_NUMBER_TOO_SMALL);
+          this.addError(path, `Value ${instance} is less than minimum ${schema.minimum}`, ErrorCodes.INSTANCE_NUMBER_MINIMUM);
         }
       }
       if ('maximum' in schema && typeof schema.maximum === 'number') {
         if (instance > schema.maximum) {
-          this.addError(path, `Value ${instance} exceeds maximum ${schema.maximum}`, ErrorCodes.INSTANCE_NUMBER_TOO_LARGE);
+          this.addError(path, `Value ${instance} exceeds maximum ${schema.maximum}`, ErrorCodes.INSTANCE_NUMBER_MAXIMUM);
+        }
+      }
+      if ('exclusiveMinimum' in schema && typeof schema.exclusiveMinimum === 'number') {
+        if (instance <= schema.exclusiveMinimum) {
+          this.addError(path, `Value ${instance} is not greater than exclusiveMinimum ${schema.exclusiveMinimum}`, ErrorCodes.INSTANCE_NUMBER_EXCLUSIVE_MINIMUM);
+        }
+      }
+      if ('exclusiveMaximum' in schema && typeof schema.exclusiveMaximum === 'number') {
+        if (instance >= schema.exclusiveMaximum) {
+          this.addError(path, `Value ${instance} is not less than exclusiveMaximum ${schema.exclusiveMaximum}`, ErrorCodes.INSTANCE_NUMBER_EXCLUSIVE_MAXIMUM);
         }
       }
       if ('multipleOf' in schema && typeof schema.multipleOf === 'number') {
         if (Math.abs(instance % schema.multipleOf) > 1e-10) {
-          this.addError(path, `Value ${instance} is not a multiple of ${schema.multipleOf}`, ErrorCodes.INSTANCE_NOT_MULTIPLE_OF);
+          this.addError(path, `Value ${instance} is not a multiple of ${schema.multipleOf}`, ErrorCodes.INSTANCE_NUMBER_MULTIPLE_OF);
         }
       }
     }
@@ -823,12 +915,12 @@ export class InstanceValidator {
     if ((type === 'array' || type === 'set') && Array.isArray(instance)) {
       if ('minItems' in schema && typeof schema.minItems === 'number') {
         if (instance.length < schema.minItems) {
-          this.addError(path, `Array has ${instance.length} items, less than minItems ${schema.minItems}`, ErrorCodes.INSTANCE_ARRAY_TOO_SHORT);
+          this.addError(path, `Array has ${instance.length} items, less than minItems ${schema.minItems}`, ErrorCodes.INSTANCE_MIN_ITEMS);
         }
       }
       if ('maxItems' in schema && typeof schema.maxItems === 'number') {
         if (instance.length > schema.maxItems) {
-          this.addError(path, `Array has ${instance.length} items, more than maxItems ${schema.maxItems}`, ErrorCodes.INSTANCE_ARRAY_TOO_LONG);
+          this.addError(path, `Array has ${instance.length} items, more than maxItems ${schema.maxItems}`, ErrorCodes.INSTANCE_MAX_ITEMS);
         }
       }
       if ('uniqueItems' in schema && schema.uniqueItems === true) {
@@ -836,10 +928,34 @@ export class InstanceValidator {
         for (const item of instance) {
           const serialized = JSON.stringify(item);
           if (seen.has(serialized)) {
-            this.addError(path, 'Array items are not unique', ErrorCodes.INSTANCE_SET_DUPLICATE_ITEM);
+            this.addError(path, 'Array items are not unique', ErrorCodes.INSTANCE_SET_DUPLICATE);
             break;
           }
           seen.add(serialized);
+        }
+      }
+
+      // Validate contains
+      if ('contains' in schema && this.isObject(schema.contains)) {
+        let containsCount = 0;
+        const savedErrors = [...this.errors];
+        for (const item of instance) {
+          this.errors = [];
+          this.validateInstance(item, schema.contains as JsonObject, path);
+          if (this.errors.length === 0) {
+            containsCount++;
+          }
+        }
+        this.errors = savedErrors;
+
+        const minContains = typeof schema.minContains === 'number' ? schema.minContains : 1;
+        const maxContains = typeof schema.maxContains === 'number' ? schema.maxContains : Infinity;
+
+        if (containsCount < minContains) {
+          this.addError(path, `Array must contain at least ${minContains} matching items (found ${containsCount})`, ErrorCodes.INSTANCE_MIN_CONTAINS);
+        }
+        if (containsCount > maxContains) {
+          this.addError(path, `Array must contain at most ${maxContains} matching items (found ${containsCount})`, ErrorCodes.INSTANCE_MAX_CONTAINS);
         }
       }
     }
@@ -849,13 +965,26 @@ export class InstanceValidator {
       if ('minProperties' in schema && typeof schema.minProperties === 'number') {
         const count = Object.keys(instance).length;
         if (count < schema.minProperties) {
-          this.addError(path, `Object has ${count} properties, less than minProperties ${schema.minProperties}`, ErrorCodes.INSTANCE_TOO_FEW_PROPERTIES);
+          this.addError(path, `Object has ${count} properties, less than minProperties ${schema.minProperties}`, ErrorCodes.INSTANCE_MIN_PROPERTIES);
         }
       }
       if ('maxProperties' in schema && typeof schema.maxProperties === 'number') {
         const count = Object.keys(instance).length;
         if (count > schema.maxProperties) {
-          this.addError(path, `Object has ${count} properties, more than maxProperties ${schema.maxProperties}`, ErrorCodes.INSTANCE_TOO_MANY_PROPERTIES);
+          this.addError(path, `Object has ${count} properties, more than maxProperties ${schema.maxProperties}`, ErrorCodes.INSTANCE_MAX_PROPERTIES);
+        }
+      }
+
+      // Validate dependentRequired
+      if ('dependentRequired' in schema && this.isObject(schema.dependentRequired)) {
+        for (const [prop, requiredProps] of Object.entries(schema.dependentRequired)) {
+          if (prop in instance && Array.isArray(requiredProps)) {
+            for (const reqProp of requiredProps) {
+              if (typeof reqProp === 'string' && !(reqProp in instance)) {
+                this.addError(path, `Property '${prop}' requires property '${reqProp}'`, ErrorCodes.INSTANCE_DEPENDENT_REQUIRED);
+              }
+            }
+          }
         }
       }
     }

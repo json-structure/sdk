@@ -3,6 +3,7 @@ import { readFileSync, readdirSync, statSync, existsSync } from 'fs';
 import { join, basename, resolve } from 'path';
 import { SchemaValidator } from '../src/schema-validator';
 import { InstanceValidator } from '../src/instance-validator';
+import * as ErrorCodes from '../src/error-codes';
 
 // Find the test-assets directory
 function findTestAssetsDir(): string | null {
@@ -120,7 +121,10 @@ describe('Test Assets Integration', () => {
   }
 
   const invalidSchemasDir = join(testAssetsDir, 'schemas', 'invalid');
+  const warningSchemasDir = join(testAssetsDir, 'schemas', 'warnings');
+  const validationSchemasDir = join(testAssetsDir, 'schemas', 'validation');
   const invalidInstancesDir = join(testAssetsDir, 'instances', 'invalid');
+  const validationInstancesDir = join(testAssetsDir, 'instances', 'validation');
 
   describe('Invalid Schema Tests', () => {
     const schemaFiles = getFilesInDir(invalidSchemasDir, '.struct.json');
@@ -140,6 +144,113 @@ describe('Test Assets Integration', () => {
 
         const result = schemaValidator.validate(schema);
         expect(result.isValid).toBe(false);
+      });
+    }
+  });
+
+  describe('Warning Schema Tests', () => {
+    const schemaFiles = getFilesInDir(warningSchemasDir, '.struct.json');
+    
+    if (schemaFiles.length === 0) {
+      it.skip('No warning schema files found', () => {});
+      return;
+    }
+
+    for (const schemaFile of schemaFiles) {
+      const testName = basename(schemaFile, '.struct.json');
+      const hasUsesInName = testName.includes('with-uses');
+
+      it(`${testName} should ${hasUsesInName ? 'not ' : ''}produce warnings`, () => {
+        const schema = loadJson(schemaFile);
+        expect(schema).not.toBeNull();
+
+        const schemaValidator = new SchemaValidator({ extended: true, warnOnUnusedExtensionKeywords: true });
+        const result = schemaValidator.validate(schema);
+        expect(result.isValid).toBe(true);
+
+        if (hasUsesInName) {
+          // Schemas with $uses should NOT produce extension keyword warnings
+          const extensionWarnings = result.warnings.filter(
+            w => w.code === ErrorCodes.SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED
+          );
+          expect(extensionWarnings).toHaveLength(0);
+        } else {
+          // Schemas without $uses SHOULD produce extension keyword warnings
+          expect(result.warnings.length).toBeGreaterThan(0);
+          expect(result.warnings.some(w => w.code === ErrorCodes.SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED)).toBe(true);
+        }
+      });
+    }
+  });
+
+  describe('Validation Instance Tests', () => {
+    const instanceDirs = getSubDirs(validationInstancesDir);
+
+    if (instanceDirs.length === 0) {
+      it.skip('No validation instance directories found', () => {});
+      return;
+    }
+
+    for (const instanceDir of instanceDirs) {
+      const categoryName = basename(instanceDir);
+
+      describe(categoryName, () => {
+        // Find matching schema in validation schemas directory
+        const schemaFile = join(validationSchemasDir, `${categoryName}.struct.json`);
+        
+        if (!existsSync(schemaFile)) {
+          it.skip(`Schema not found for ${categoryName}`, () => {});
+          return;
+        }
+
+        const schema = loadJson(schemaFile);
+        if (!schema) {
+          it.skip(`Could not load schema for ${categoryName}`, () => {});
+          return;
+        }
+
+        const validator = new InstanceValidator({ extended: true });
+        const instanceFiles = getFilesInDir(instanceDir, '.json');
+        
+        for (const instanceFile of instanceFiles) {
+          const testName = basename(instanceFile, '.json');
+
+          it(`${testName}`, () => {
+            const instanceData = loadJson(instanceFile);
+            expect(instanceData).not.toBeNull();
+
+            // Extract expected result from metadata
+            const expectedValid = instanceData._expectedValid === true;
+            const expectedError = instanceData._expectedError;
+
+            // Remove metadata before validation
+            const cleanedData = { ...instanceData };
+            delete cleanedData._description;
+            delete cleanedData._expectedError;
+            delete cleanedData._expectedValid;
+
+            // If the schema expects a primitive type or array at root level and we have a { value: ... } wrapper,
+            // extract the value for validation
+            const schemaType = schema.type as string | undefined;
+            const valueWrapperTypes = ['string', 'number', 'integer', 'boolean', 'int8', 'uint8', 'int16', 'uint16',
+                                     'int32', 'uint32', 'float', 'double', 'decimal', 'float8', 'array', 'set'];
+            const hasSingleValue = Object.keys(cleanedData).length === 1 && 'value' in cleanedData;
+            const instance = (valueWrapperTypes.includes(schemaType || '') && hasSingleValue)
+              ? cleanedData.value
+              : cleanedData;
+
+            const result = validator.validate(instance, schema);
+
+            if (expectedValid) {
+              expect(result.isValid).toBe(true);
+            } else {
+              expect(result.isValid).toBe(false);
+              if (expectedError) {
+                expect(result.errors.some(e => e.code === expectedError)).toBe(true);
+              }
+            }
+          });
+        }
       });
     }
   });

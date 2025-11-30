@@ -3,7 +3,10 @@
   "$id": "https://test.json-structure.org/warnings/object-patternproperties-without-uses",
   "name": "ObjectPatternpropertiesWithoutUsesTest",
   "type": "object",
-  "properties": {},
+  "properties": {
+    "id": { "type": "string" }
+  },
+  "additionalProperties": true,
   "patternProperties": {
     "^x-": { "type": "string" }
   },

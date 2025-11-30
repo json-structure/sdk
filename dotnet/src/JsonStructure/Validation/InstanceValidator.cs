@@ -1055,6 +1055,22 @@ public sealed class InstanceValidator
             }
         }
 
+        // Validate uniqueItems
+        if (schema.TryGetPropertyValue("uniqueItems", out var uniqueItemsValue) && 
+            uniqueItemsValue?.GetValue<bool>() == true)
+        {
+            var seen = new HashSet<string>();
+            for (var i = 0; i < arr.Count; i++)
+            {
+                var itemJson = arr[i]?.ToJsonString() ?? "null";
+                if (!seen.Add(itemJson))
+                {
+                    AddError(result, ErrorCodes.InstanceSetDuplicate, $"Array items are not unique (duplicate at index {i})", path);
+                    break;
+                }
+            }
+        }
+
         // Validate contains
         if (schema.TryGetPropertyValue("contains", out var containsValue) && containsValue is not null)
         {
@@ -1137,9 +1153,48 @@ public sealed class InstanceValidator
             }
         }
 
-        // Validate propertyNames (JSON Schema) or keys (JSON Structure)
+        // Validate minEntries/maxEntries (preferred for maps) or minProperties/maxProperties
+        if (schema.TryGetPropertyValue("minEntries", out var minEntriesValue))
+        {
+            var minEntries = minEntriesValue?.GetValue<int>();
+            if (minEntries.HasValue && obj.Count < minEntries.Value)
+            {
+                AddError(result, ErrorCodes.InstanceMapMinEntries, $"Map has {obj.Count} entries, less than minEntries {minEntries.Value}", path);
+            }
+        }
+        else if (schema.TryGetPropertyValue("minProperties", out var minPropsValue))
+        {
+            var minProps = minPropsValue?.GetValue<int>();
+            if (minProps.HasValue && obj.Count < minProps.Value)
+            {
+                AddError(result, ErrorCodes.InstanceMapMinEntries, $"Map has {obj.Count} entries, minimum is {minProps.Value}", path);
+            }
+        }
+
+        if (schema.TryGetPropertyValue("maxEntries", out var maxEntriesValue))
+        {
+            var maxEntries = maxEntriesValue?.GetValue<int>();
+            if (maxEntries.HasValue && obj.Count > maxEntries.Value)
+            {
+                AddError(result, ErrorCodes.InstanceMapMaxEntries, $"Map has {obj.Count} entries, more than maxEntries {maxEntries.Value}", path);
+            }
+        }
+        else if (schema.TryGetPropertyValue("maxProperties", out var maxPropsValue))
+        {
+            var maxProps = maxPropsValue?.GetValue<int>();
+            if (maxProps.HasValue && obj.Count > maxProps.Value)
+            {
+                AddError(result, ErrorCodes.InstanceMapMaxEntries, $"Map has {obj.Count} entries, maximum is {maxProps.Value}", path);
+            }
+        }
+
+        // Validate keyNames (preferred for maps), propertyNames, or keys
         JsonNode? keySchema = null;
-        if (schema.TryGetPropertyValue("propertyNames", out var propNamesValue) && propNamesValue is not null)
+        if (schema.TryGetPropertyValue("keyNames", out var keyNamesValue) && keyNamesValue is not null)
+        {
+            keySchema = keyNamesValue;
+        }
+        else if (schema.TryGetPropertyValue("propertyNames", out var propNamesValue) && propNamesValue is not null)
         {
             keySchema = propNamesValue;
         }
@@ -1153,27 +1208,40 @@ public sealed class InstanceValidator
             foreach (var prop in obj)
             {
                 var keyNode = JsonValue.Create(prop.Key);
-                ValidateInstance(keyNode, keySchema, rootSchema, result,
+                var keyResult = new ValidationResult();
+                ValidateInstance(keyNode, keySchema, rootSchema, keyResult,
                     AppendPath(path, $"[key:{prop.Key}]"), depth + 1);
+                if (!keyResult.IsValid)
+                {
+                    AddError(result, ErrorCodes.InstanceMapKeyInvalid, $"Map key '{prop.Key}' does not match keyNames constraint", path);
+                }
             }
         }
 
-        // Validate minProperties/maxProperties
-        if (schema.TryGetPropertyValue("minProperties", out var minPropsValue))
+        // Validate patternKeys
+        if (schema.TryGetPropertyValue("patternKeys", out var patternKeysValue) && patternKeysValue is JsonObject patternKeysObj)
         {
-            var minProps = minPropsValue?.GetValue<int>();
-            if (minProps.HasValue && obj.Count < minProps.Value)
+            if (patternKeysObj.TryGetPropertyValue("pattern", out var patternValue))
             {
-                AddError(result, ErrorCodes.InstanceMapMinEntries, $"Map has {obj.Count} entries, minimum is {minProps.Value}", path);
-            }
-        }
-
-        if (schema.TryGetPropertyValue("maxProperties", out var maxPropsValue))
-        {
-            var maxProps = maxPropsValue?.GetValue<int>();
-            if (maxProps.HasValue && obj.Count > maxProps.Value)
-            {
-                AddError(result, ErrorCodes.InstanceMapMaxEntries, $"Map has {obj.Count} entries, maximum is {maxProps.Value}", path);
+                var pattern = patternValue?.GetValue<string>();
+                if (!string.IsNullOrEmpty(pattern))
+                {
+                    try
+                    {
+                        var regex = new System.Text.RegularExpressions.Regex(pattern);
+                        foreach (var prop in obj)
+                        {
+                            if (!regex.IsMatch(prop.Key))
+                            {
+                                AddError(result, ErrorCodes.InstanceMapKeyInvalid, $"Map key '{prop.Key}' does not match patternKeys pattern '{pattern}'", path);
+                            }
+                        }
+                    }
+                    catch (System.ArgumentException)
+                    {
+                        // Invalid regex, skip
+                    }
+                }
             }
         }
     }

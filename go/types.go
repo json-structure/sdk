@@ -61,6 +61,11 @@ type SchemaValidatorOptions struct {
 	// ExternalSchemas maps URIs to schema objects for import resolution.
 	// Each schema should have a '$id' field matching the import URI.
 	ExternalSchemas map[string]interface{}
+	// MaxValidationDepth is the maximum depth for validation recursion. Default is 64.
+	MaxValidationDepth int
+	// WarnOnUnusedExtensionKeywords controls whether to emit warnings when extension
+	// keywords are used without being enabled via $schema or $uses. Default is true.
+	WarnOnUnusedExtensionKeywords *bool
 }
 
 // InstanceValidatorOptions configures instance validation.
@@ -69,6 +74,8 @@ type InstanceValidatorOptions struct {
 	Extended bool
 	// AllowImport enables processing of $import/$importdefs.
 	AllowImport bool
+	// MaxValidationDepth is the maximum depth for validation recursion. Default is 64.
+	MaxValidationDepth int
 }
 
 // PrimitiveTypes lists all primitive types supported by JSON Structure Core.

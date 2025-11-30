@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-structure.org/meta/extended/v0/#",
+  "$id": "https://test.json-structure.org/validation/array-contains-with-uses",
+  "$uses": ["JSONStructureValidation"],
+  "name": "ArrayContainsWithUsesTest",
+  "type": "array",
+  "items": { "type": "int32" },
+  "contains": { "type": "int32", "minimum": 10 },
+  "minContains": 1,
+  "maxContains": 3,
+  "$comment": "Array must contain at least 1 and at most 3 items >= 10"
+}

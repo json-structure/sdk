@@ -1,0 +1,5 @@
+{
+  "_description": "Object with email but missing required name, should fail validation",
+  "_expectedError": "INSTANCE_DEPENDENT_REQUIRED",
+  "email": "test@example.com"
+}

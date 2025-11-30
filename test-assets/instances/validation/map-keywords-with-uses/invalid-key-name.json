@@ -1,0 +1,7 @@
+{
+  "_description": "Map with invalid key name (uppercase not matching pattern ^[a-z]+$), should fail validation",
+  "_expectedError": "INSTANCE_MAP_KEY_INVALID",
+  "alpha": 1,
+  "Beta": 2,
+  "gamma": 3
+}

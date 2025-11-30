@@ -27,7 +27,9 @@ const VALIDATION_EXTENSION_KEYWORDS = new Set([
   'minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf',
   'minItems', 'maxItems', 'uniqueItems', 'contains', 'minContains', 'maxContains',
   'minProperties', 'maxProperties', 'propertyNames', 'patternProperties', 'dependentRequired',
-  'contentEncoding', 'contentMediaType'
+  'minEntries', 'maxEntries', 'patternKeys', 'keyNames',
+  'contentEncoding', 'contentMediaType',
+  'has', 'default'
 ]);
 
 /**
@@ -41,9 +43,13 @@ export class SchemaValidator {
   private sourceLocator: JsonSourceLocator | null = null;
   private allowImport: boolean;
   private externalSchemas: Map<string, JsonValue>;
+  private maxValidationDepth: number;
+  private warnOnUnusedExtensionKeywords: boolean;
 
   constructor(options: SchemaValidatorOptions = {}) {
     this.allowImport = options.allowImport ?? false;
+    this.maxValidationDepth = options.maxValidationDepth ?? 64;
+    this.warnOnUnusedExtensionKeywords = options.warnOnUnusedExtensionKeywords ?? true;
     this.externalSchemas = new Map<string, JsonValue>();
     
     // Build lookup for external schemas by $id and preprocess imports
@@ -167,7 +173,7 @@ export class SchemaValidator {
     this.validateConditionalKeywords(schema, path);
     
     // Check for validation extension keywords without $uses at root level
-    if (isRoot) {
+    if (isRoot && this.warnOnUnusedExtensionKeywords) {
       this.checkValidationExtensionKeywords(schema);
     }
   }

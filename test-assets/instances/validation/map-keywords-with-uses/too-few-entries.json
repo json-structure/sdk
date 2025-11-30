@@ -1,0 +1,5 @@
+{
+  "_description": "Map with too few entries (1 < minEntries 2), should fail validation",
+  "_expectedError": "INSTANCE_MAP_MIN_ENTRIES",
+  "alpha": 1
+}

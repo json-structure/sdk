@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-structure.org/meta/extended/v0/#",
+  "$id": "https://test.json-structure.org/validation/map-keywords-with-uses",
+  "name": "MapKeywordsTest",
+  "$uses": ["JSONStructureValidation"],
+  "type": "map",
+  "values": { "type": "int32" },
+  "minEntries": 2,
+  "maxEntries": 5,
+  "keyNames": { "type": "string", "pattern": "^[a-z]+$" },
+  "$comment": "Tests map-specific validation keywords with $uses enabled"
+}

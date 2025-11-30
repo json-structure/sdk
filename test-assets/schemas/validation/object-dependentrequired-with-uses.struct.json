@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-structure.org/meta/extended/v0/#",
+  "$id": "https://test.json-structure.org/validation/object-dependentrequired-with-uses",
+  "$uses": ["JSONStructureValidation"],
+  "name": "ObjectDependentRequiredWithUsesTest",
+  "type": "object",
+  "properties": {
+    "name": { "type": "string" },
+    "email": { "type": "string" },
+    "phone": { "type": "string" }
+  },
+  "dependentRequired": {
+    "email": ["name"],
+    "phone": ["name", "email"]
+  },
+  "$comment": "If email is present, name is required. If phone is present, both name and email are required."
+}

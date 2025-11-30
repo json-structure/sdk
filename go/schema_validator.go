@@ -103,7 +103,9 @@ var validationExtensionKeywords = map[string]bool{
 	"minimum": true, "maximum": true, "exclusiveMinimum": true, "exclusiveMaximum": true, "multipleOf": true,
 	"minItems": true, "maxItems": true, "uniqueItems": true, "contains": true, "minContains": true, "maxContains": true,
 	"minProperties": true, "maxProperties": true, "propertyNames": true, "patternProperties": true, "dependentRequired": true,
+	"minEntries": true, "maxEntries": true, "patternKeys": true, "keyNames": true,
 	"contentEncoding": true, "contentMediaType": true,
+	"has": true, "default": true,
 }
 
 func (v *SchemaValidator) validateSchemaDocument(schema map[string]interface{}, path string) {
@@ -179,6 +181,11 @@ func (v *SchemaValidator) validateSchemaDocument(schema map[string]interface{}, 
 // checkValidationExtensionKeywords checks if validation extension keywords are used
 // without enabling the validation extension and adds warnings.
 func (v *SchemaValidator) checkValidationExtensionKeywords(schema map[string]interface{}) {
+	// Check if warnings are enabled (default is true)
+	if v.options.WarnOnUnusedExtensionKeywords != nil && !*v.options.WarnOnUnusedExtensionKeywords {
+		return
+	}
+
 	// Check if validation extensions are enabled
 	validationEnabled := false
 

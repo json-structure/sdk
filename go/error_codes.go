@@ -231,6 +231,8 @@ const (
 	InstanceMapMinEntries = "INSTANCE_MAP_MIN_ENTRIES"
 	// InstanceMapMaxEntries indicates map has more entries than maximum.
 	InstanceMapMaxEntries = "INSTANCE_MAP_MAX_ENTRIES"
+	// InstanceMapKeyInvalid indicates map key does not match keyNames or patternKeys constraint.
+	InstanceMapKeyInvalid = "INSTANCE_MAP_KEY_INVALID"
 	// InstanceTupleExpected indicates value must be an array (tuple).
 	InstanceTupleExpected = "INSTANCE_TUPLE_EXPECTED"
 	// InstanceTupleLengthMismatch indicates tuple length does not match schema.

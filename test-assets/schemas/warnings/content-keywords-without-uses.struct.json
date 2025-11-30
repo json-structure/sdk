@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://test.json-structure.org/warnings/content-keywords-without-uses",
+  "name": "ContentKeywordsWithoutUsesTest",
+  "type": "object",
+  "properties": {
+    "data": {
+      "type": "string",
+      "contentEncoding": "base64",
+      "contentMediaType": "application/json"
+    }
+  },
+  "$comment": "Uses content extension keywords without enabling validation extension via $uses. Should trigger warnings for: contentEncoding, contentMediaType"
+}

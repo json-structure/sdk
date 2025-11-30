@@ -62,11 +62,11 @@ class JSONStructureSchemaCoreValidator:
     
     # Extended keywords for validation
     NUMERIC_VALIDATION_KEYWORDS = {"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf"}
-    STRING_VALIDATION_KEYWORDS = {"minLength", "maxLength", "pattern", "format"}
+    STRING_VALIDATION_KEYWORDS = {"minLength", "maxLength", "pattern", "format", "contentEncoding", "contentMediaType"}
     ARRAY_VALIDATION_KEYWORDS = {"minItems", "maxItems", "uniqueItems", "contains", "minContains", "maxContains"}
     OBJECT_VALIDATION_KEYWORDS = {"minProperties", "maxProperties", "minEntries", "maxEntries", 
                                   "dependentRequired", "patternProperties", "patternKeys", 
-                                  "propertyNames", "keyNames", "has"}
+                                  "propertyNames", "keyNames", "has", "default"}
     
     # Valid format values
     VALID_FORMATS = {
@@ -80,7 +80,7 @@ class JSONStructureSchemaCoreValidator:
         "JSONStructureConditionalComposition", "JSONStructureValidation"
     }
 
-    def __init__(self, allow_dollar=False, allow_import=False, import_map=None, extended=False, external_schemas=None, warn_on_unused_extension_keywords=True):
+    def __init__(self, allow_dollar=False, allow_import=False, import_map=None, extended=False, external_schemas=None, warn_on_unused_extension_keywords=True, max_validation_depth=64):
         """
         Initializes a validator instance.
         :param allow_dollar: Boolean flag to allow '$' in property names.
@@ -90,6 +90,7 @@ class JSONStructureSchemaCoreValidator:
         :param external_schemas: List of schema dicts to use for resolving imports by $id.
                                  Each schema should have a '$id' field matching the import URI.
         :param warn_on_unused_extension_keywords: Boolean flag to emit warnings for extension keywords without $uses.
+        :param max_validation_depth: Maximum depth for validation recursion. Default is 64.
         """
         self.errors: List[ValidationError] = []
         self.warnings: List[ValidationError] = []
@@ -97,9 +98,11 @@ class JSONStructureSchemaCoreValidator:
         self.source_text = None
         self.source_locator: Optional[JsonSourceLocator] = None
         self.allow_import = allow_import
+        self.visited_refs: set = set()  # Track visited $ref paths for circular reference detection
         self.import_map = import_map if import_map is not None else {}
         self.extended = extended
         self.warn_on_unused_extension_keywords = warn_on_unused_extension_keywords
+        self.max_validation_depth = max_validation_depth
         self.enabled_extensions = set()
         # Build lookup for external schemas by $id
         self.external_schemas = {}
@@ -180,6 +183,7 @@ class JSONStructureSchemaCoreValidator:
         """
         self.errors = []
         self.warnings = []
+        self.visited_refs = set()  # Reset visited refs for each validation
         self.doc = doc
         self.source_text = source_text
         
@@ -518,7 +522,14 @@ class JSONStructureSchemaCoreValidator:
             if not isinstance(schema_obj["$ref"], str):
                 self._err("'$ref' must be a string.", path + "/$ref")
             else:
-                self._check_json_pointer(schema_obj["$ref"], self.doc, path + "/$ref")
+                ref = schema_obj["$ref"]
+                self._check_json_pointer(ref, self.doc, path + "/$ref")
+                # Check for pure circular reference (bare $ref only)
+                if len(schema_obj) == 1:  # Only $ref, no other properties
+                    if ref in self.visited_refs:
+                        self._err(f"Circular reference detected: {ref}", path + "/$ref", ErrorCodes.SCHEMA_REF_CIRCULAR)
+                        return
+                    self.visited_refs.add(ref)
             return
             
         if "type" in schema_obj:

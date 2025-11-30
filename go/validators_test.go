@@ -756,6 +756,100 @@ func TestSchemaValidatorUnionMissingRef(t *testing.T) {
 	}
 }
 
+// TestWarnOnUnusedExtensionKeywordsDefault tests that warnings are emitted by default for extension keywords without $uses.
+func TestWarnOnUnusedExtensionKeywordsDefault(t *testing.T) {
+	validator := NewSchemaValidator(&SchemaValidatorOptions{})
+
+	schema := map[string]interface{}{
+		"$id":  "urn:example:test-schema",
+		"name": "TestType",
+		"type": "object",
+		"properties": map[string]interface{}{
+			"name": map[string]interface{}{
+				"type":      "string",
+				"minLength": float64(1),
+				"maxLength": float64(100),
+			},
+		},
+	}
+
+	result := validator.Validate(schema)
+	if !result.IsValid {
+		t.Errorf("Expected valid schema, got errors: %v", result.Errors)
+	}
+	if len(result.Warnings) == 0 {
+		t.Errorf("Expected warnings for extension keywords without $uses, got none")
+	}
+	hasExtensionWarning := false
+	for _, w := range result.Warnings {
+		if w.Code == SchemaExtensionKeywordNotEnabled {
+			hasExtensionWarning = true
+			break
+		}
+	}
+	if !hasExtensionWarning {
+		t.Errorf("Expected SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED warning, got: %v", result.Warnings)
+	}
+}
+
+// TestWarnOnUnusedExtensionKeywordsFalse tests that warnings are suppressed when the option is false.
+func TestWarnOnUnusedExtensionKeywordsFalse(t *testing.T) {
+	warnOff := false
+	validator := NewSchemaValidator(&SchemaValidatorOptions{WarnOnUnusedExtensionKeywords: &warnOff})
+
+	schema := map[string]interface{}{
+		"$id":  "urn:example:test-schema",
+		"name": "TestType",
+		"type": "object",
+		"properties": map[string]interface{}{
+			"name": map[string]interface{}{
+				"type":      "string",
+				"minLength": float64(1),
+				"maxLength": float64(100),
+			},
+		},
+	}
+
+	result := validator.Validate(schema)
+	if !result.IsValid {
+		t.Errorf("Expected valid schema, got errors: %v", result.Errors)
+	}
+	for _, w := range result.Warnings {
+		if w.Code == SchemaExtensionKeywordNotEnabled {
+			t.Errorf("Expected no SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED warnings when option is false, but got: %v", w)
+		}
+	}
+}
+
+// TestWarnOnUnusedExtensionKeywordsWithUses tests that warnings are not emitted when $uses includes JSONStructureValidation.
+func TestWarnOnUnusedExtensionKeywordsWithUses(t *testing.T) {
+	validator := NewSchemaValidator(&SchemaValidatorOptions{})
+
+	schema := map[string]interface{}{
+		"$id":   "urn:example:test-schema",
+		"$uses": []interface{}{"JSONStructureValidation"},
+		"name":  "TestType",
+		"type":  "object",
+		"properties": map[string]interface{}{
+			"name": map[string]interface{}{
+				"type":      "string",
+				"minLength": float64(1),
+				"maxLength": float64(100),
+			},
+		},
+	}
+
+	result := validator.Validate(schema)
+	if !result.IsValid {
+		t.Errorf("Expected valid schema, got errors: %v", result.Errors)
+	}
+	for _, w := range result.Warnings {
+		if w.Code == SchemaExtensionKeywordNotEnabled {
+			t.Errorf("Expected no SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED warnings with $uses, but got: %v", w)
+		}
+	}
+}
+
 // TestInvalidSchemasCount verifies we have all expected invalid schemas.
 func TestInvalidSchemasCount(t *testing.T) {
 	files := getInvalidSchemaFiles()
@@ -785,3 +879,4 @@ func TestInvalidInstancesCount(t *testing.T) {
 		t.Errorf("Expected at least 20 invalid instances, got %d", total)
 	}
 }
+

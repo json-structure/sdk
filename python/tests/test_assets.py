@@ -211,13 +211,14 @@ def test_validation_schema_is_valid(schema_file):
 @pytest.mark.parametrize("schema_name,instance_file", get_validation_instance_test_cases(),
                          ids=lambda x: f"{x[0]}/{x[1].name}" if isinstance(x, tuple) else str(x))
 def test_validation_enforcement_instance_fails(schema_name, instance_file):
-    """Test that invalid instances fail validation when $uses is present."""
+    """Test that instances with validation extension keywords are validated correctly."""
     # Load instance
     with open(instance_file, "r", encoding="utf-8") as f:
         instance_data = json.load(f)
     
     description = instance_data.get("_description", "No description")
     expected_error = instance_data.get("_expectedError")
+    expected_valid = instance_data.get("_expectedValid", False)
     
     # Get value to validate (either "value" key or the object minus metadata)
     if "value" in instance_data:
@@ -237,11 +238,20 @@ def test_validation_enforcement_instance_fails(schema_name, instance_file):
     validator = InstanceValidator(schema, extended=True)
     errors = validator.validate_instance(instance)
     
-    assert len(errors) > 0, (
-        f"Instance {schema_name}/{instance_file.name} should be INVALID "
-        f"(validation extension keywords should be enforced). "
-        f"Description: {description}"
-    )
+    if expected_valid:
+        # Instance should be valid
+        assert len(errors) == 0, (
+            f"Instance {schema_name}/{instance_file.name} should be VALID. "
+            f"Description: {description}. "
+            f"Errors: {[str(e) for e in errors]}"
+        )
+    else:
+        # Instance should be invalid
+        assert len(errors) > 0, (
+            f"Instance {schema_name}/{instance_file.name} should be INVALID "
+            f"(validation extension keywords should be enforced). "
+            f"Description: {description}"
+        )
     
     # If expected error is specified, verify an appropriate error message is present
     # Map expected error codes to patterns in error messages
@@ -258,6 +268,13 @@ def test_validation_enforcement_instance_fails(schema_name, instance_file):
             "INSTANCE_MAX_ITEMS": ["maxItems", "more items"],
             "INSTANCE_MIN_PROPERTIES": ["minProperties", "fewer properties"],
             "INSTANCE_MAX_PROPERTIES": ["maxProperties", "more properties"],
+            "INSTANCE_MAP_MIN_ENTRIES": ["minEntries", "fewer than"],
+            "INSTANCE_MAP_MAX_ENTRIES": ["maxEntries", "more than"],
+            "INSTANCE_MAP_KEY_INVALID": ["keyNames", "key", "does not match"],
+            "INSTANCE_DEPENDENT_REQUIRED": ["requires dependent property", "dependentRequired"],
+            "INSTANCE_SET_DUPLICATE": ["unique", "duplicate"],
+            "INSTANCE_MIN_CONTAINS": ["minContains", "fewer matching", "does not contain required"],
+            "INSTANCE_MAX_CONTAINS": ["maxContains", "too many matching", "more than maxContains"],
         }
         
         patterns = error_patterns.get(expected_error, [expected_error])

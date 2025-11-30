@@ -58,7 +58,7 @@ class JSONStructureInstanceValidator:
     """
     ABSOLUTE_URI_REGEX = re.compile(r'^[a-zA-Z][a-zA-Z0-9+\-.]*://')
 
-    def __init__(self, root_schema, allow_import=False, import_map=None, extended=False, external_schemas=None):
+    def __init__(self, root_schema, allow_import=False, import_map=None, extended=False, external_schemas=None, max_validation_depth=64):
         """
         Initializes the validator.
         :param root_schema: The JSON Structure (as dict).
@@ -67,12 +67,14 @@ class JSONStructureInstanceValidator:
         :param extended: Enable extended validation features.
         :param external_schemas: List of schema dicts to use for resolving imports by $id.
                                  Each schema should have a '$id' field matching the import URI.
+        :param max_validation_depth: Maximum depth for validation recursion. Default is 64.
         """
         self.root_schema = root_schema
         self.errors = []
         self.allow_import = allow_import
         self.import_map = import_map if import_map is not None else {}
         self.extended = extended
+        self.max_validation_depth = max_validation_depth
         self.enabled_extensions = set()
         # Build lookup for external schemas by $id
         self.external_schemas = {}
@@ -928,7 +930,7 @@ class JSONStructureInstanceValidator:
                 contains_schema = schema["contains"]
                 matches = []
                 for i, item in enumerate(instance):
-                    temp_validator = JSONStructureInstanceValidator(contains_schema, import_map=self.import_map, allow_import=self.allow_import, external_schemas=list(self.external_schemas.values()) if self.external_schemas else None)
+                    temp_validator = JSONStructureInstanceValidator(contains_schema, import_map=self.import_map, allow_import=self.allow_import, extended=self.extended, external_schemas=list(self.external_schemas.values()) if self.external_schemas else None)
                     item_errors = temp_validator.validate_instance(item)
                     if not item_errors:
                         matches.append(i)
