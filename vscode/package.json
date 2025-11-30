@@ -2,7 +2,7 @@
   "name": "json-structure",
   "displayName": "JSON Structure",
   "description": "Validation for JSON Structure schema documents and instance documents",
-  "version": "0.1.8",
+  "version": "0.1.20",
   "publisher": "jsonstructure",
   "license": "MIT",
   "icon": "media/logo.png",

@@ -34,7 +34,7 @@ function run(cmd) {
 
 function getVersionFromGit() {
     // Try to get the current tag (if we're exactly on a tag)
-    const exactTag = run('git describe --exact-match --tags HEAD 2>nul');
+    const exactTag = run('git describe --exact-match --tags HEAD');
     
     if (exactTag) {
         // Extract version from tag like "v1.2.3" or "vscode-v1.2.3"
@@ -46,8 +46,8 @@ function getVersionFromGit() {
     }
     
     // Get the most recent tag matching our pattern
-    const describe = run('git describe --tags --match "v*" --abbrev=7 2>nul') ||
-                     run('git describe --tags --match "vscode-v*" --abbrev=7 2>nul');
+    const describe = run('git describe --tags --match "v*" --abbrev=7') ||
+                     run('git describe --tags --match "vscode-v*" --abbrev=7');
     
     if (describe) {
         // Format: v1.2.3-5-g1234567 (5 commits after tag, short sha)
@@ -66,8 +66,8 @@ function getVersionFromGit() {
     }
     
     // No tags found, use commit count and sha
-    const commitCount = run('git rev-list --count HEAD 2>nul') || '0';
-    const shortSha = run('git rev-parse --short=7 HEAD 2>nul') || 'unknown';
+    const commitCount = run('git rev-list --count HEAD') || '0';
+    const shortSha = run('git rev-parse --short=7 HEAD') || 'unknown';
     const devVersion = `0.0.1-dev.${commitCount}`;
     console.log(`No version tags found, using ${devVersion}`);
     return devVersion;
