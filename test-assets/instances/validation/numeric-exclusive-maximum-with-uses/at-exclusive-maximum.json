@@ -1,0 +1,5 @@
+{
+  "_description": "Double value equal to exclusive maximum (100), should fail validation",
+  "_expectedError": "INSTANCE_NUMBER_EXCLUSIVE_MAXIMUM",
+  "value": 100
+}

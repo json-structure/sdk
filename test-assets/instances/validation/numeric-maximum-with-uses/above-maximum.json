@@ -1,0 +1,5 @@
+{
+  "_description": "Integer value above maximum (100), should fail validation",
+  "_expectedError": "INSTANCE_NUMBER_MAXIMUM",
+  "value": 150
+}

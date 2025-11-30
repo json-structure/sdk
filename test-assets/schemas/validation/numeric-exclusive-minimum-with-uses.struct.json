@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-structure.org/meta/extended/v0/#",
+  "$uses": ["JSONStructureValidation"],
+  "type": "double",
+  "exclusiveMinimum": 0,
+  "$comment": "Uses 'exclusiveMinimum' keyword WITH validation extension enabled via $uses - should be enforced"
+}

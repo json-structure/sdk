@@ -1,0 +1,7 @@
+{
+  "_description": "Object with more properties than maxProperties (2), should fail validation",
+  "_expectedError": "INSTANCE_MAX_PROPERTIES",
+  "name": "test",
+  "age": 25,
+  "city": "Seattle"
+}

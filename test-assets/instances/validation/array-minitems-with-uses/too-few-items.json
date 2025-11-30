@@ -1,0 +1,5 @@
+{
+  "_description": "Array with fewer items than minItems (2), should fail validation",
+  "_expectedError": "INSTANCE_MIN_ITEMS",
+  "value": ["one"]
+}

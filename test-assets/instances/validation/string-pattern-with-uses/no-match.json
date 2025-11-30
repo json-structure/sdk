@@ -1,0 +1,5 @@
+{
+  "_description": "String not matching pattern (^[A-Z][a-z]+$), should fail validation",
+  "_expectedError": "INSTANCE_STRING_PATTERN_MISMATCH",
+  "value": "hello"
+}

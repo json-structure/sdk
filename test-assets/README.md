@@ -13,20 +13,32 @@ test-assets/
 │   │   ├── required-missing-property.struct.json
 │   │   └── ... (25 edge case schemas)
 │   │
-│   └── warnings/          # Valid schemas that trigger warnings
-│       ├── numeric-minimum-without-uses.struct.json
-│       ├── string-pattern-without-uses.struct.json
-│       ├── array-minitems-without-uses.struct.json
-│       └── ... (21 warning test schemas)
+│   ├── warnings/          # Valid schemas that trigger warnings
+│   │   ├── numeric-minimum-without-uses.struct.json
+│   │   ├── string-pattern-without-uses.struct.json
+│   │   ├── array-minitems-without-uses.struct.json
+│   │   └── ... (21 warning test schemas)
+│   │
+│   └── validation/        # Schemas with $uses to test constraint enforcement
+│       ├── numeric-minimum-with-uses.struct.json
+│       ├── string-pattern-with-uses.struct.json
+│       ├── array-minitems-with-uses.struct.json
+│       └── ... (12 validation test schemas)
 │
 └── instances/
-    └── invalid/           # Invalid instances for sample schemas
-        ├── 01-basic-person/
-        ├── 02-address/
-        ├── 04-datetime-examples/
-        ├── 05-collections/
-        ├── 06-tuples/
-        └── 11-sets-and-maps/
+    ├── invalid/           # Invalid instances for sample schemas
+    │   ├── 01-basic-person/
+    │   ├── 02-address/
+    │   ├── 04-datetime-examples/
+    │   ├── 05-collections/
+    │   ├── 06-tuples/
+    │   └── 11-sets-and-maps/
+    │
+    └── validation/        # Invalid instances for validation schemas
+        ├── numeric-minimum-with-uses/
+        ├── string-pattern-with-uses/
+        ├── all-extension-keywords-with-uses/
+        └── ... (matches schemas/validation/)
 ```
 
 ## Invalid Schemas
@@ -88,6 +100,25 @@ Each warning schema file tests a specific case where a validation extension keyw
 | `object-propertynames-without-uses.struct.json` | `propertyNames` |
 | `all-extension-keywords-without-uses.struct.json` | All keywords (13 warnings) |
 | `all-extension-keywords-with-uses.struct.json` | All keywords with `$uses` (no warnings) |
+
+## Validation Enforcement Schemas
+
+These schemas enable the validation extension via `$uses: ["JSONStructureValidation"]` to test that extension keywords ARE enforced when properly enabled. Each schema has corresponding invalid instances in `instances/validation/`:
+
+| Schema | Keyword Tested | Invalid Instance |
+|--------|----------------|------------------|
+| `numeric-minimum-with-uses.struct.json` | `minimum` | Value below minimum |
+| `numeric-maximum-with-uses.struct.json` | `maximum` | Value above maximum |
+| `numeric-exclusive-minimum-with-uses.struct.json` | `exclusiveMinimum` | Value at exclusive minimum |
+| `numeric-exclusive-maximum-with-uses.struct.json` | `exclusiveMaximum` | Value at exclusive maximum |
+| `numeric-multiple-of-with-uses.struct.json` | `multipleOf` | Value not a multiple |
+| `string-minlength-with-uses.struct.json` | `minLength` | String too short |
+| `string-pattern-with-uses.struct.json` | `pattern` | String doesn't match pattern |
+| `array-minitems-with-uses.struct.json` | `minItems` | Array has too few items |
+| `array-maxitems-with-uses.struct.json` | `maxItems` | Array has too many items |
+| `object-minproperties-with-uses.struct.json` | `minProperties` | Object has too few properties |
+| `object-maxproperties-with-uses.struct.json` | `maxProperties` | Object has too many properties |
+| `all-extension-keywords-with-uses.struct.json` | All keywords | Multiple violation instances |
 
 ## Invalid Instances
 

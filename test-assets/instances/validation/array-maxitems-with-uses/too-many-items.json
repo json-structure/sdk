@@ -1,0 +1,5 @@
+{
+  "_description": "Array with more items than maxItems (3), should fail validation",
+  "_expectedError": "INSTANCE_MAX_ITEMS",
+  "value": ["one", "two", "three", "four"]
+}

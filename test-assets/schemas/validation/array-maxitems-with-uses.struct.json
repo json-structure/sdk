@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-structure.org/meta/extended/v0/#",
+  "$uses": ["JSONStructureValidation"],
+  "type": "array",
+  "items": { "type": "string" },
+  "maxItems": 3,
+  "$comment": "Uses 'maxItems' keyword WITH validation extension enabled via $uses - should be enforced"
+}

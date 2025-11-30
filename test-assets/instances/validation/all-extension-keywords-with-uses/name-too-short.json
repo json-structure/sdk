@@ -1,0 +1,8 @@
+{
+  "_description": "Name too short (empty), should fail validation",
+  "_expectedError": "INSTANCE_STRING_MIN_LENGTH",
+  "count": 10,
+  "rate": 0.5,
+  "name": "",
+  "tags": ["one"]
+}

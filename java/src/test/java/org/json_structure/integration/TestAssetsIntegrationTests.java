@@ -411,4 +411,187 @@ class TestAssetsIntegrationTests {
         
         return tests.stream();
     }
+
+    // =============================================================================
+    // Validation Enforcement Tests
+    // =============================================================================
+
+    @TestFactory
+    @DisplayName("Validation extension keywords are enforced when $uses is present")
+    Stream<DynamicTest> allValidationInstancesShouldFailValidation() throws IOException {
+        if (testAssetsPath == null || !Files.exists(testAssetsPath)) {
+            return Stream.of(dynamicTest("test-assets path not found - skipping", () -> {
+                System.out.println("Warning: test-assets directory not found. Skipping validation enforcement tests.");
+            }));
+        }
+
+        Path validationInstancesDir = testAssetsPath.resolve("instances/validation");
+        if (!Files.exists(validationInstancesDir)) {
+            return Stream.of(dynamicTest("validation instances directory not found - skipping", () -> {
+                System.out.println("Warning: instances/validation directory not found. Skipping tests.");
+            }));
+        }
+
+        Path validationSchemasDir = testAssetsPath.resolve("schemas/validation");
+        if (!Files.exists(validationSchemasDir)) {
+            return Stream.of(dynamicTest("validation schemas directory not found - skipping", () -> {
+                System.out.println("Warning: schemas/validation directory not found. Skipping tests.");
+            }));
+        }
+
+        List<DynamicTest> tests = new ArrayList<>();
+        
+        try (Stream<Path> schemaDirs = Files.list(validationInstancesDir)) {
+            schemaDirs
+                .filter(Files::isDirectory)
+                .forEach(schemaDir -> {
+                    String schemaName = schemaDir.getFileName().toString();
+                    Path schemaPath = validationSchemasDir.resolve(schemaName + ".struct.json");
+                    
+                    if (!Files.exists(schemaPath)) {
+                        tests.add(dynamicTest(schemaName + " - schema not found", () -> {
+                            System.out.println("Warning: Schema not found for " + schemaName);
+                        }));
+                        return;
+                    }
+                    
+                    try {
+                        String schemaContent = Files.readString(schemaPath);
+                        JsonNode schema = mapper.readTree(schemaContent);
+                        
+                        try (Stream<Path> instancePaths = Files.list(schemaDir)) {
+                            instancePaths
+                                .filter(p -> p.getFileName().toString().endsWith(".json"))
+                                .forEach(instancePath -> {
+                                    String instanceName = instancePath.getFileName().toString();
+                                    String testKey = schemaName + "/" + instanceName;
+                                    tests.add(dynamicTest("Validation enforcement: " + testKey, () -> {
+                                        String instanceContent = Files.readString(instancePath);
+                                        JsonNode instance = mapper.readTree(instanceContent);
+                                        
+                                        String description = instance.has("_description")
+                                            ? instance.get("_description").asText()
+                                            : "No description";
+                                        
+                                        String expectedError = instance.has("_expectedError")
+                                            ? instance.get("_expectedError").asText()
+                                            : null;
+                                        
+                                        // Get the value to validate
+                                        JsonNode valueToValidate = instance;
+                                        if (instance.has("value")) {
+                                            valueToValidate = instance.get("value");
+                                        } else if (instance instanceof ObjectNode) {
+                                            // Remove metadata fields for validation
+                                            ObjectNode objNode = (ObjectNode) instance;
+                                            List<String> keysToRemove = new ArrayList<>();
+                                            Iterator<String> fieldNames = objNode.fieldNames();
+                                            while (fieldNames.hasNext()) {
+                                                String key = fieldNames.next();
+                                                if (key.startsWith("_")) {
+                                                    keysToRemove.add(key);
+                                                }
+                                            }
+                                            keysToRemove.forEach(objNode::remove);
+                                        }
+                                        
+                                        ValidationResult result = instanceValidator.validate(valueToValidate, schema);
+                                        
+                                        System.out.println("Testing: " + testKey);
+                                        System.out.println("Description: " + description);
+                                        if (!result.isValid()) {
+                                            System.out.println("Errors (expected):");
+                                            for (var error : result.getErrors()) {
+                                                System.out.println("  [" + error.getCode() + "] " + 
+                                                    error.getPath() + ": " + error.getMessage());
+                                            }
+                                        }
+                                        
+                                        assertThat(result.isValid())
+                                            .withFailMessage(() -> 
+                                                "Instance " + testKey + 
+                                                " should be INVALID (validation extension keywords should be enforced). " +
+                                                "Description: " + description)
+                                            .isFalse();
+                                        
+                                        assertThat(result.getErrors())
+                                            .withFailMessage("At least one error should be reported")
+                                            .isNotEmpty();
+                                        
+                                        // Verify the expected error code is present if specified
+                                        if (expectedError != null) {
+                                            var actualCodes = result.getErrors().stream()
+                                                .map(e -> e.getCode())
+                                                .collect(java.util.stream.Collectors.toSet());
+                                            assertThat(actualCodes)
+                                                .withFailMessage(() ->
+                                                    "Instance " + testKey + " should produce error code " + expectedError +
+                                                    ". Actual codes: " + actualCodes)
+                                                .contains(expectedError);
+                                            System.out.println("✓ Expected error code verified: " + expectedError);
+                                        }
+                                    }));
+                                });
+                        }
+                    } catch (IOException e) {
+                        tests.add(dynamicTest(schemaName + " - error reading files", () -> {
+                            fail("Failed to read files for " + schemaName + ": " + e.getMessage());
+                        }));
+                    }
+                });
+        }
+        
+        return tests.stream();
+    }
+
+    @TestFactory
+    @DisplayName("Validation test assets directories exist and have files")
+    Stream<DynamicTest> validationTestAssetsDirectoriesExist() {
+        List<DynamicTest> tests = new ArrayList<>();
+        
+        tests.add(dynamicTest("Validation schemas directory exists", () -> {
+            if (testAssetsPath == null) {
+                System.out.println("Warning: test-assets path not found");
+                return;
+            }
+            
+            Path validationSchemasDir = testAssetsPath.resolve("schemas/validation");
+            assertThat(Files.exists(validationSchemasDir))
+                .withFailMessage("Validation schemas directory should exist at " + validationSchemasDir)
+                .isTrue();
+            
+            long count = Files.list(validationSchemasDir)
+                .filter(p -> p.getFileName().toString().endsWith(".struct.json"))
+                .count();
+            
+            System.out.println("Found " + count + " validation schema files");
+            assertThat(count).isGreaterThan(0);
+        }));
+        
+        tests.add(dynamicTest("Validation instances directory exists", () -> {
+            if (testAssetsPath == null) {
+                System.out.println("Warning: test-assets path not found");
+                return;
+            }
+            
+            Path validationInstancesDir = testAssetsPath.resolve("instances/validation");
+            assertThat(Files.exists(validationInstancesDir))
+                .withFailMessage("Validation instances directory should exist at " + validationInstancesDir)
+                .isTrue();
+            
+            long count = 0;
+            for (Path schemaDir : Files.list(validationInstancesDir).toList()) {
+                if (Files.isDirectory(schemaDir)) {
+                    count += Files.list(schemaDir)
+                        .filter(p -> p.getFileName().toString().endsWith(".json"))
+                        .count();
+                }
+            }
+            
+            System.out.println("Found " + count + " validation instance files");
+            assertThat(count).isGreaterThan(0);
+        }));
+        
+        return tests.stream();
+    }
 }

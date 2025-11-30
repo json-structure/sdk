@@ -1,0 +1,8 @@
+{
+  "_description": "Tags array empty (minItems is 1), should fail validation",
+  "_expectedError": "INSTANCE_MIN_ITEMS",
+  "count": 10,
+  "rate": 0.5,
+  "name": "Test",
+  "tags": []
+}

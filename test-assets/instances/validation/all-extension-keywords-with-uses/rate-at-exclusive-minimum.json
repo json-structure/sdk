@@ -1,0 +1,8 @@
+{
+  "_description": "Rate at exclusive minimum (0), should fail validation",
+  "_expectedError": "INSTANCE_NUMBER_EXCLUSIVE_MINIMUM",
+  "count": 10,
+  "rate": 0,
+  "name": "Test",
+  "tags": ["one"]
+}

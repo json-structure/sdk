@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-structure.org/meta/extended/v0/#",
+  "$uses": ["JSONStructureValidation"],
+  "type": "object",
+  "properties": {
+    "name": { "type": "string" },
+    "age": { "type": "int32" },
+    "city": { "type": "string" }
+  },
+  "maxProperties": 2,
+  "$comment": "Uses 'maxProperties' keyword WITH validation extension enabled via $uses - should be enforced"
+}

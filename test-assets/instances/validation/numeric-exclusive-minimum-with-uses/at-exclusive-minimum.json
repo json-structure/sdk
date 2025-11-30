@@ -1,0 +1,5 @@
+{
+  "_description": "Double value equal to exclusive minimum (0), should fail validation",
+  "_expectedError": "INSTANCE_NUMBER_EXCLUSIVE_MINIMUM",
+  "value": 0
+}

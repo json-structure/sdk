@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-structure.org/meta/extended/v0/#",
+  "$uses": ["JSONStructureValidation"],
+  "type": "set",
+  "items": { "type": "string" },
+  "uniqueItems": true,
+  "$comment": "Uses 'uniqueItems' keyword WITH validation extension enabled via $uses - should be enforced (set already requires uniqueness)"
+}

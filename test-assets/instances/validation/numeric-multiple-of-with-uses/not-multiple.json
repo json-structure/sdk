@@ -1,0 +1,5 @@
+{
+  "_description": "Integer value not a multiple of 5, should fail validation",
+  "_expectedError": "INSTANCE_NUMBER_MULTIPLE_OF",
+  "value": 7
+}

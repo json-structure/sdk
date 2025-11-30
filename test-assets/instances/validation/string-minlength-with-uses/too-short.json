@@ -1,0 +1,5 @@
+{
+  "_description": "String shorter than minLength (3), should fail validation",
+  "_expectedError": "INSTANCE_STRING_MIN_LENGTH",
+  "value": "ab"
+}

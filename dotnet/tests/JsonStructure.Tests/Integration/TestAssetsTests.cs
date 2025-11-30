@@ -610,4 +610,163 @@ public class TestAssetsTests
     }
 
     #endregion
+
+    #region Validation Enforcement Tests
+
+    public static IEnumerable<object[]> GetValidationInstanceFiles()
+    {
+        var currentDir = Directory.GetCurrentDirectory();
+        var searchDir = currentDir;
+        string? validationInstancesPath = null;
+        
+        while (searchDir != null)
+        {
+            // Check for test-assets at this level (sdk repo structure)
+            var candidatePath = Path.Combine(searchDir, "test-assets", "instances", "validation");
+            if (Directory.Exists(candidatePath))
+            {
+                validationInstancesPath = candidatePath;
+                break;
+            }
+            
+            // Also check for sdk/test-assets (when running from a parent directory)
+            var sdkCandidatePath = Path.Combine(searchDir, "sdk", "test-assets", "instances", "validation");
+            if (Directory.Exists(sdkCandidatePath))
+            {
+                validationInstancesPath = sdkCandidatePath;
+                break;
+            }
+            
+            searchDir = Directory.GetParent(searchDir)?.FullName;
+        }
+        
+        if (validationInstancesPath == null || !Directory.Exists(validationInstancesPath))
+        {
+            yield break;
+        }
+        
+        foreach (var schemaDir in Directory.GetDirectories(validationInstancesPath))
+        {
+            var schemaName = Path.GetFileName(schemaDir);
+            foreach (var instanceFile in Directory.GetFiles(schemaDir, "*.json"))
+            {
+                yield return new object[] { schemaName, Path.GetFileName(instanceFile) };
+            }
+        }
+    }
+
+    [SkippableTheory]
+    [MemberData(nameof(GetValidationInstanceFiles))]
+    public void ValidationEnforcement_InvalidInstance_ShouldFailValidation(string schemaName, string instanceFileName)
+    {
+        // Arrange
+        Skip.If(_testAssetsPath == null, "test-assets directory not found");
+        
+        var testKey = $"{schemaName}/{instanceFileName}";
+        
+        var instancePath = Path.Combine(_testAssetsPath, "instances", "validation", schemaName, instanceFileName);
+        var schemaPath = Path.Combine(_testAssetsPath, "schemas", "validation", $"{schemaName}.struct.json");
+        
+        Skip.If(!File.Exists(instancePath), $"Instance file not found: {instancePath}");
+        Skip.If(!File.Exists(schemaPath), $"Schema file not found: {schemaPath}");
+        
+        var instanceJson = File.ReadAllText(instancePath);
+        var schemaJson = File.ReadAllText(schemaPath);
+        
+        var instance = JsonNode.Parse(instanceJson);
+        var schema = JsonNode.Parse(schemaJson);
+        
+        var description = instance?["_description"]?.GetValue<string>() ?? "No description";
+        var expectedError = instance?["_expectedError"]?.GetValue<string>();
+        
+        // Get the value to validate (instances have a "value" property or are the value itself)
+        JsonNode? valueToValidate = instance;
+        if (instance is JsonObject instanceObj && instanceObj.TryGetPropertyValue("value", out var value))
+        {
+            valueToValidate = value;
+        }
+        else if (instance is JsonObject objWithMeta)
+        {
+            // Remove metadata fields for validation
+            var keysToRemove = objWithMeta.Select(p => p.Key).Where(k => k.StartsWith("_")).ToList();
+            foreach (var key in keysToRemove)
+            {
+                objWithMeta.Remove(key);
+            }
+        }
+
+        // Act
+        var result = _instanceValidator.Validate(valueToValidate, schema);
+
+        // Assert
+        _output.WriteLine($"Testing validation enforcement: {testKey}");
+        _output.WriteLine($"Description: {description}");
+        
+        if (result.IsValid)
+        {
+            _output.WriteLine("WARNING: Instance passed validation but should have failed");
+        }
+        else
+        {
+            _output.WriteLine("Errors (expected):");
+            foreach (var error in result.Errors)
+            {
+                _output.WriteLine($"  [{error.Code}] {error.Path}: {error.Message}");
+            }
+        }
+        
+        result.IsValid.Should().BeFalse(
+            $"Instance {testKey} should be INVALID (validation extension keywords should be enforced). " +
+            $"Description: {description}");
+        result.Errors.Should().NotBeEmpty("At least one error should be reported");
+        
+        // Verify the expected error code is present if specified
+        if (!string.IsNullOrEmpty(expectedError))
+        {
+            var actualCodes = result.Errors.Select(e => e.Code).ToHashSet();
+            actualCodes.Should().Contain(expectedError, 
+                $"Instance {testKey} should produce error code {expectedError}. " +
+                $"Actual codes: [{string.Join(", ", actualCodes)}]");
+            _output.WriteLine($"✓ Expected error code verified: {expectedError}");
+        }
+    }
+
+    [SkippableFact]
+    public void ValidationSchemasDirectory_ShouldExistAndHaveFiles()
+    {
+        Skip.If(_testAssetsPath == null, "test-assets directory not found");
+        
+        var validationDir = Path.Combine(_testAssetsPath, "schemas", "validation");
+        var exists = Directory.Exists(validationDir);
+        
+        Skip.If(!exists, $"Validation schemas directory not found at {validationDir}");
+        
+        var schemaFiles = Directory.GetFiles(validationDir, "*.struct.json");
+        _output.WriteLine($"Found {schemaFiles.Length} validation schema files");
+        
+        schemaFiles.Should().NotBeEmpty("Validation schemas directory should contain test files");
+    }
+
+    [SkippableFact]
+    public void ValidationInstancesDirectory_ShouldExistAndHaveFiles()
+    {
+        Skip.If(_testAssetsPath == null, "test-assets directory not found");
+        
+        var validationInstancesDir = Path.Combine(_testAssetsPath, "instances", "validation");
+        var exists = Directory.Exists(validationInstancesDir);
+        
+        Skip.If(!exists, $"Validation instances directory not found at {validationInstancesDir}");
+        
+        var instanceCount = 0;
+        foreach (var schemaDir in Directory.GetDirectories(validationInstancesDir))
+        {
+            instanceCount += Directory.GetFiles(schemaDir, "*.json").Length;
+        }
+        
+        _output.WriteLine($"Found {instanceCount} validation instance files");
+        
+        instanceCount.Should().BeGreaterThan(0, "Validation instances directory should contain test files");
+    }
+
+    #endregion
 }
