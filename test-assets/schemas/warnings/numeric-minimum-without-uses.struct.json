@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "type": "int32",
+  "minimum": 0,
+  "$comment": "Uses 'minimum' keyword without enabling validation extension via $uses"
+}

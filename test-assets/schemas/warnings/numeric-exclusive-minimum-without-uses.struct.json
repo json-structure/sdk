@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "type": "double",
+  "exclusiveMinimum": 0,
+  "$comment": "Uses 'exclusiveMinimum' keyword without enabling validation extension via $uses"
+}

@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "type": "string",
+  "pattern": "^[A-Z][a-z]+$",
+  "$comment": "Uses 'pattern' keyword without enabling validation extension via $uses"
+}

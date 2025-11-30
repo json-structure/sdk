@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "type": "int32",
+  "maximum": 100,
+  "$comment": "Uses 'maximum' keyword without enabling validation extension via $uses"
+}

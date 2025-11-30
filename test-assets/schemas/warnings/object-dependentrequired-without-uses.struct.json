@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "type": "object",
+  "properties": {
+    "creditCard": { "type": "string" },
+    "billingAddress": { "type": "string" }
+  },
+  "dependentRequired": {
+    "creditCard": ["billingAddress"]
+  },
+  "$comment": "Uses 'dependentRequired' keyword without enabling validation extension via $uses"
+}

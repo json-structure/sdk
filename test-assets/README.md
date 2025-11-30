@@ -7,11 +7,17 @@ This directory contains test assets used by all SDK implementations to ensure co
 ```
 test-assets/
 ├── schemas/
-│   └── invalid/           # Invalid JSON Structure schemas (one edge case each)
-│       ├── missing-type.struct.json
-│       ├── unknown-type.struct.json
-│       ├── required-missing-property.struct.json
-│       └── ... (25 edge case schemas)
+│   ├── invalid/           # Invalid JSON Structure schemas (one edge case each)
+│   │   ├── missing-type.struct.json
+│   │   ├── unknown-type.struct.json
+│   │   ├── required-missing-property.struct.json
+│   │   └── ... (25 edge case schemas)
+│   │
+│   └── warnings/          # Valid schemas that trigger warnings
+│       ├── numeric-minimum-without-uses.struct.json
+│       ├── string-pattern-without-uses.struct.json
+│       ├── array-minitems-without-uses.struct.json
+│       └── ... (21 warning test schemas)
 │
 └── instances/
     └── invalid/           # Invalid instances for sample schemas
@@ -54,6 +60,34 @@ Each invalid schema file tests a specific edge case that should cause schema val
 | `defs-not-object.struct.json` | `$defs` is an array |
 | `allof-not-array.struct.json` | `allOf` is not an array |
 | `enum-duplicates.struct.json` | Duplicate values in enum |
+
+## Warning Schemas
+
+Each warning schema file tests a specific case where a validation extension keyword is used without enabling the validation extension via `$uses: ["JSONStructureValidation"]`. These schemas are **valid** but should produce warnings:
+
+| File | Extension Keyword |
+|------|-------------------|
+| `numeric-minimum-without-uses.struct.json` | `minimum` |
+| `numeric-maximum-without-uses.struct.json` | `maximum` |
+| `numeric-exclusive-minimum-without-uses.struct.json` | `exclusiveMinimum` |
+| `numeric-exclusive-maximum-without-uses.struct.json` | `exclusiveMaximum` |
+| `numeric-multiple-of-without-uses.struct.json` | `multipleOf` |
+| `string-minlength-without-uses.struct.json` | `minLength` |
+| `string-pattern-without-uses.struct.json` | `pattern` |
+| `string-format-without-uses.struct.json` | `format` |
+| `array-minitems-without-uses.struct.json` | `minItems` |
+| `array-maxitems-without-uses.struct.json` | `maxItems` |
+| `array-uniqueitems-without-uses.struct.json` | `uniqueItems` |
+| `array-contains-without-uses.struct.json` | `contains` |
+| `array-mincontains-without-uses.struct.json` | `minContains` |
+| `array-maxcontains-without-uses.struct.json` | `maxContains` |
+| `object-minproperties-without-uses.struct.json` | `minProperties` |
+| `object-maxproperties-without-uses.struct.json` | `maxProperties` |
+| `object-dependentrequired-without-uses.struct.json` | `dependentRequired` |
+| `object-patternproperties-without-uses.struct.json` | `patternProperties` |
+| `object-propertynames-without-uses.struct.json` | `propertyNames` |
+| `all-extension-keywords-without-uses.struct.json` | All keywords (13 warnings) |
+| `all-extension-keywords-with-uses.struct.json` | All keywords with `$uses` (no warnings) |
 
 ## Invalid Instances
 

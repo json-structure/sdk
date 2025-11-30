@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "type": "object",
+  "properties": {
+    "name": { "type": "string" }
+  },
+  "maxProperties": 10,
+  "$comment": "Uses 'maxProperties' keyword without enabling validation extension via $uses"
+}

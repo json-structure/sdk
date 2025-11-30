@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "type": "string",
+  "minLength": 1,
+  "$comment": "Uses 'minLength' keyword without enabling validation extension via $uses"
+}

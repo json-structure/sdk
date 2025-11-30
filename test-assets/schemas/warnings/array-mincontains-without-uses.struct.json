@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "type": "array",
+  "items": { "type": "string" },
+  "contains": { "type": "string" },
+  "minContains": 2,
+  "$comment": "Uses 'minContains' keyword without enabling validation extension via $uses"
+}

@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-structure.org/meta/extended/v0/#",
+  "$uses": ["JSONStructureValidation"],
+  "type": "object",
+  "properties": {
+    "count": {
+      "type": "int32",
+      "minimum": 0,
+      "maximum": 100,
+      "multipleOf": 5
+    },
+    "rate": {
+      "type": "double",
+      "exclusiveMinimum": 0,
+      "exclusiveMaximum": 1
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Z]",
+      "format": "custom-name"
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1,
+      "maxItems": 10,
+      "uniqueItems": true
+    }
+  },
+  "minProperties": 1,
+  "maxProperties": 10,
+  "$comment": "Uses multiple extension keywords WITH validation extension enabled via $uses. Should NOT trigger any warnings."
+}

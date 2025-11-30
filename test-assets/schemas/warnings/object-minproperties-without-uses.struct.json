@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "type": "object",
+  "properties": {
+    "name": { "type": "string" }
+  },
+  "minProperties": 1,
+  "$comment": "Uses 'minProperties' keyword without enabling validation extension via $uses"
+}

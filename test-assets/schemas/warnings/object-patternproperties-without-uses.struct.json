@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "type": "object",
+  "patternProperties": {
+    "^x-": { "type": "string" }
+  },
+  "$comment": "Uses 'patternProperties' keyword without enabling validation extension via $uses"
+}

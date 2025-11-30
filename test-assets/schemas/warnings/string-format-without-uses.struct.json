@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "type": "string",
+  "format": "email",
+  "$comment": "Uses 'format' keyword without enabling validation extension via $uses"
+}

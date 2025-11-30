@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "type": "array",
+  "items": { "type": "string" },
+  "uniqueItems": true,
+  "$comment": "Uses 'uniqueItems' keyword without enabling validation extension via $uses"
+}

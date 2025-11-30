@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "type": "array",
+  "items": { "type": "string" },
+  "contains": { "type": "string" },
+  "maxContains": 5,
+  "$comment": "Uses 'maxContains' keyword without enabling validation extension via $uses"
+}
