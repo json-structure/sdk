@@ -40,6 +40,15 @@ public class TestAssetsTests
     };
     
     /// <summary>
+    /// Schemas in the warnings directory that should NOT produce warnings
+    /// (e.g., those with proper $uses declarations).
+    /// </summary>
+    private static readonly HashSet<string> SchemasWithoutWarnings = new()
+    {
+        "all-extension-keywords-with-uses.struct.json"
+    };
+    
+    /// <summary>
     /// Maps invalid schema test file names to their expected error code(s).
     /// Each test file is designed to test a specific validation error.
     /// </summary>
@@ -478,6 +487,126 @@ public class TestAssetsTests
         }
 
         return current;
+    }
+
+    #endregion
+
+    #region Warning Schema Tests
+
+    public static IEnumerable<object[]> GetWarningSchemaFiles()
+    {
+        var currentDir = Directory.GetCurrentDirectory();
+        var searchDir = currentDir;
+        string? warningsPath = null;
+        
+        while (searchDir != null)
+        {
+            // Check for test-assets at this level (sdk repo structure)
+            var candidatePath = Path.Combine(searchDir, "test-assets", "schemas", "warnings");
+            if (Directory.Exists(candidatePath))
+            {
+                warningsPath = candidatePath;
+                break;
+            }
+            
+            // Also check for sdk/test-assets (when running from a parent directory)
+            var sdkCandidatePath = Path.Combine(searchDir, "sdk", "test-assets", "schemas", "warnings");
+            if (Directory.Exists(sdkCandidatePath))
+            {
+                warningsPath = sdkCandidatePath;
+                break;
+            }
+            
+            searchDir = Directory.GetParent(searchDir)?.FullName;
+        }
+        
+        if (warningsPath == null || !Directory.Exists(warningsPath))
+        {
+            yield break;
+        }
+        
+        foreach (var file in Directory.GetFiles(warningsPath, "*.struct.json"))
+        {
+            yield return new object[] { Path.GetFileName(file) };
+        }
+    }
+
+    [SkippableTheory]
+    [MemberData(nameof(GetWarningSchemaFiles))]
+    public void WarningSchema_ShouldBeValidButProduceWarnings(string schemaFileName)
+    {
+        // Arrange
+        Skip.If(_testAssetsPath == null, "test-assets directory not found");
+        
+        var warningsPath = Path.Combine(_testAssetsPath, "schemas", "warnings");
+        Skip.If(!Directory.Exists(warningsPath), "warnings directory not found");
+        
+        var schemaPath = Path.Combine(warningsPath, schemaFileName);
+        Skip.If(!File.Exists(schemaPath), $"Schema file not found: {schemaPath}");
+        
+        var schemaJson = File.ReadAllText(schemaPath);
+        var schema = JsonNode.Parse(schemaJson);
+        var description = schema?["description"]?.GetValue<string>() ?? "No description";
+
+        // Create validator with warning support enabled (default)
+        var options = new ValidationOptions { WarnOnUnusedExtensionKeywords = true };
+        var validator = new SchemaValidator(options);
+
+        // Act
+        var result = validator.Validate(schema);
+
+        // Assert
+        _output.WriteLine($"Testing warning schema: {schemaFileName}");
+        _output.WriteLine($"Description: {description}");
+        
+        // The schema should be valid (no errors)
+        result.IsValid.Should().BeTrue(
+            $"Schema {schemaFileName} should be valid. Description: {description}. " +
+            $"Errors: {string.Join(", ", result.Errors.Select(e => $"[{e.Code}] {e.Message}"))}");
+        
+        bool shouldHaveNoWarnings = SchemasWithoutWarnings.Contains(schemaFileName);
+        
+        if (shouldHaveNoWarnings)
+        {
+            // This schema has $uses declared, so should produce no warnings
+            result.Warnings.Should().BeEmpty(
+                $"Schema {schemaFileName} should produce NO warnings (has proper $uses declaration). " +
+                $"Description: {description}");
+            _output.WriteLine("✓ No warnings (as expected - has $uses declaration)");
+        }
+        else
+        {
+            // This schema should produce warnings for extension keywords
+            result.Warnings.Should().NotBeEmpty(
+                $"Schema {schemaFileName} should produce warnings for extension keywords without $uses. " +
+                $"Description: {description}");
+            
+            _output.WriteLine($"Warnings ({result.Warnings.Count}):");
+            foreach (var warning in result.Warnings)
+            {
+                _output.WriteLine($"  [{warning.Code}] {warning.Path}: {warning.Message}");
+                
+                // Verify all warnings have the correct error code
+                warning.Code.Should().Be(ErrorCodes.SchemaExtensionKeywordNotEnabled,
+                    $"Warning should have code {ErrorCodes.SchemaExtensionKeywordNotEnabled}");
+            }
+        }
+    }
+
+    [SkippableFact]
+    public void WarningSchemasDirectory_ShouldExistAndHaveFiles()
+    {
+        Skip.If(_testAssetsPath == null, "test-assets directory not found");
+        
+        var warningsDir = Path.Combine(_testAssetsPath, "schemas", "warnings");
+        var exists = Directory.Exists(warningsDir);
+        
+        Skip.If(!exists, $"Warnings schemas directory not found at {warningsDir}");
+        
+        var schemaFiles = Directory.GetFiles(warningsDir, "*.struct.json");
+        _output.WriteLine($"Found {schemaFiles.Length} warning schema files");
+        
+        schemaFiles.Should().NotBeEmpty("Warning schemas directory should contain test files");
     }
 
     #endregion

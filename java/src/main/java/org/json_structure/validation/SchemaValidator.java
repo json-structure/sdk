@@ -874,11 +874,7 @@ public final class SchemaValidator {
     }
 
     private boolean isNumericType(String type) {
-        return type != null && (
-                type.equals("number") ||
-                        type.startsWith("int") || type.startsWith("uint") ||
-                        type.startsWith("float") || type.startsWith("decimal")
-        );
+        return type != null && NUMERIC_TYPES.contains(type);
     }
 
     private void validateObjectSchema(ObjectNode schema, String path, ValidationResult result, int depth, Set<String> visitedRefs) {

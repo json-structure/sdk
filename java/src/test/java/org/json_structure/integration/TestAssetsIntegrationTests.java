@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.json_structure.validation.InstanceValidator;
 import org.json_structure.validation.SchemaValidator;
+import org.json_structure.validation.ValidationOptions;
 import org.json_structure.validation.ValidationResult;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DynamicTest;
@@ -59,6 +60,14 @@ class TestAssetsIntegrationTests {
      */
     private static final Set<String> KNOWN_INSTANCE_GAPS = Set.of(
         // All instance validation gaps should be fixed now!
+    );
+
+    /**
+     * Schemas in the warnings directory that should NOT produce warnings
+     * (e.g., those with proper $uses declarations).
+     */
+    private static final Set<String> SCHEMAS_WITHOUT_WARNINGS = Set.of(
+        "all-extension-keywords-with-uses.struct.json"
     );
 
     @BeforeAll
@@ -307,6 +316,98 @@ class TestAssetsIntegrationTests {
             System.out.println("Found " + count + " invalid instance files");
             assertThat(count).isGreaterThan(0);
         }));
+        
+        return tests.stream();
+    }
+
+    // =============================================================================
+    // Warning Schema Tests
+    // =============================================================================
+
+    @TestFactory
+    @DisplayName("Warning schemas produce expected warnings")
+    Stream<DynamicTest> allWarningSchemasProduceExpectedWarnings() throws IOException {
+        if (testAssetsPath == null || !Files.exists(testAssetsPath)) {
+            return Stream.of(dynamicTest("test-assets path not found - skipping", () -> {
+                System.out.println("Warning: test-assets directory not found. Skipping warning schema tests.");
+            }));
+        }
+
+        Path warningSchemasDir = testAssetsPath.resolve("schemas/warnings");
+        if (!Files.exists(warningSchemasDir)) {
+            return Stream.of(dynamicTest("warning schemas directory not found - skipping", () -> {
+                System.out.println("Warning: schemas/warnings directory not found. Skipping tests.");
+            }));
+        }
+
+        List<DynamicTest> tests = new ArrayList<>();
+        
+        // Create a schema validator with warning support enabled (default)
+        ValidationOptions options = new ValidationOptions();
+        options.setWarnOnUnusedExtensionKeywords(true);
+        SchemaValidator warningValidator = new SchemaValidator(options);
+        
+        try (Stream<Path> schemaPaths = Files.list(warningSchemasDir)) {
+            schemaPaths
+                .filter(p -> p.getFileName().toString().endsWith(".struct.json"))
+                .forEach(schemaPath -> {
+                    String schemaName = schemaPath.getFileName().toString();
+                    boolean shouldHaveNoWarnings = SCHEMAS_WITHOUT_WARNINGS.contains(schemaName);
+                    
+                    tests.add(dynamicTest("Warning schema: " + schemaName, () -> {
+                        String schemaContent = Files.readString(schemaPath);
+                        JsonNode schema = mapper.readTree(schemaContent);
+                        String description = schema.has("description") 
+                            ? schema.get("description").asText() 
+                            : "No description";
+                        
+                        ValidationResult result = warningValidator.validate(schema);
+                        
+                        // The schema should be valid (no errors)
+                        assertThat(result.isValid())
+                            .withFailMessage(() -> 
+                                "Schema " + schemaName + " should be VALID but failed validation. " +
+                                "Description: " + description + 
+                                " Errors: " + result.getErrors())
+                            .isTrue();
+                        
+                        if (shouldHaveNoWarnings) {
+                            // This schema has $uses declared, so should produce no warnings
+                            assertThat(result.getWarnings())
+                                .withFailMessage(() -> 
+                                    "Schema " + schemaName + " should produce NO warnings " +
+                                    "(has proper $uses declaration). " +
+                                    "Description: " + description +
+                                    " Warnings: " + result.getWarnings())
+                                .isEmpty();
+                        } else {
+                            // This schema should produce warnings for extension keywords
+                            assertThat(result.getWarnings())
+                                .withFailMessage(() -> 
+                                    "Schema " + schemaName + " should produce warnings " +
+                                    "for extension keywords without $uses. " +
+                                    "Description: " + description)
+                                .isNotEmpty();
+                            
+                            // Verify all warnings have the correct error code
+                            for (var warning : result.getWarnings()) {
+                                assertThat(warning.getCode())
+                                    .withFailMessage(() -> 
+                                        "Warning should have code SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED, " +
+                                        "but got: " + warning.getCode())
+                                    .isEqualTo("SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED");
+                            }
+                        }
+                        
+                        System.out.println("Schema: " + schemaName);
+                        System.out.println("Description: " + description);
+                        System.out.println("Warnings: " + result.getWarnings().size());
+                        for (var warning : result.getWarnings()) {
+                            System.out.println("  - " + warning.getPath() + ": " + warning.getMessage());
+                        }
+                    }));
+                });
+        }
         
         return tests.stream();
     }
