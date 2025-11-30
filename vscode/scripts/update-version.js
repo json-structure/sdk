@@ -6,11 +6,20 @@
  * - If on a tag like "v1.2.3" or "vscode-v1.2.3": uses "1.2.3"
  * - If commits after tag: uses "1.2.4-dev.{commits}.{short-sha}"
  * - If no tags: uses "0.0.0-dev.{commits}.{short-sha}"
+ * 
+ * Set SKIP_VERSION_UPDATE=1 to skip updating (used in CI when version is set explicitly)
  */
 
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+
+// Skip if explicitly requested (e.g., in CI when version is set explicitly)
+if (process.env.SKIP_VERSION_UPDATE === '1') {
+    const packageJson = require(path.join(__dirname, '..', 'package.json'));
+    console.log(`Skipping version update, keeping version: ${packageJson.version}`);
+    process.exit(0);
+}
 
 // Get the vscode extension root directory (parent of scripts/)
 const extensionRoot = path.dirname(__dirname);
