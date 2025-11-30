@@ -500,6 +500,23 @@ public sealed class SchemaValidator
             return;
         }
 
+        // Root-level validation (path is empty for root)
+        bool isRoot = string.IsNullOrEmpty(path);
+        if (isRoot)
+        {
+            // Root schema must have $id
+            if (!schema.ContainsKey("$id"))
+            {
+                AddError(result, ErrorCodes.SchemaRootMissingId, "Missing required '$id' keyword at root", "");
+            }
+            
+            // Root schema with 'type' must have 'name'
+            if (schema.ContainsKey("type") && !schema.ContainsKey("name"))
+            {
+                AddError(result, ErrorCodes.SchemaRootMissingName, "Root schema with 'type' must have a 'name' property", "");
+            }
+        }
+
         // Validate $schema if present
         if (schema.TryGetPropertyValue("$schema", out var schemaValue))
         {

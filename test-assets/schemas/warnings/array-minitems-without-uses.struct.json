@@ -1,5 +1,7 @@
 {
   "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://test.json-structure.org/warnings/array-minitems-without-uses",
+  "name": "ArrayMinitemsWithoutUsesTest",
   "type": "array",
   "items": { "type": "string" },
   "minItems": 1,

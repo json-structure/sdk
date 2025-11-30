@@ -43,6 +43,8 @@ class PrimerSamplesIntegrationTests {
         private static final String PERSON_SCHEMA = """
             {
                 "$schema": "https://json-structure.org/draft/2025-02/schema",
+                "$id": "https://test.example.com/person/person-schema",
+                "name": "Person",
                 "type": "object",
                 "properties": {
                     "firstName": { "type": "string" },
@@ -148,6 +150,8 @@ class PrimerSamplesIntegrationTests {
         private static final String PRODUCT_SCHEMA = """
             {
                 "$schema": "https://json-structure.org/draft/2025-02/schema",
+                "$id": "https://test.example.com/product/product-catalog-schema",
+                "name": "ProductCatalog",
                 "$defs": {
                     "price": {
                         "type": "object",
@@ -262,6 +266,8 @@ class PrimerSamplesIntegrationTests {
         private static final String EVENT_SCHEMA = """
             {
                 "$schema": "https://json-structure.org/draft/2025-02/schema",
+                "$id": "https://test.example.com/event/event-schema",
+                "name": "Event",
                 "type": "object",
                 "properties": {
                     "eventId": { "type": "uuid" },
@@ -338,6 +344,8 @@ class PrimerSamplesIntegrationTests {
         private static final String CONFIG_SCHEMA = """
             {
                 "$schema": "https://json-structure.org/draft/2025-02/schema",
+                "$id": "https://test.example.com/configuration/config-schema",
+                "name": "Configuration",
                 "type": "object",
                 "properties": {
                     "server": {
@@ -454,6 +462,8 @@ class PrimerSamplesIntegrationTests {
         private static final String VEHICLE_SCHEMA = """
             {
                 "$schema": "https://json-structure.org/draft/2025-02/schema",
+                "$id": "https://test.example.com/conditional/vehicle-schema",
+                "name": "Vehicle",
                 "type": "object",
                 "properties": {
                     "vehicleType": { "type": "string", "enum": ["car", "motorcycle", "truck"] },

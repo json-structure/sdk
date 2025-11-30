@@ -1,5 +1,7 @@
 {
   "$schema": "https://json-structure.org/meta/extended/v0/#",
+  "$id": "https://test.json-structure.org/warnings/all-extension-keywords-with-uses",
+  "name": "AllExtensionKeywordsWithUsesTest",
   "$uses": ["JSONStructureValidation"],
   "type": "object",
   "properties": {
@@ -17,8 +19,7 @@
     "name": {
       "type": "string",
       "minLength": 1,
-      "pattern": "^[A-Z]",
-      "format": "custom-name"
+      "pattern": "^[A-Z]"
     },
     "tags": {
       "type": "array",

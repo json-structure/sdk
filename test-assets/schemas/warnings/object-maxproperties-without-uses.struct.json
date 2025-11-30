@@ -1,5 +1,7 @@
 {
   "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://test.json-structure.org/warnings/object-maxproperties-without-uses",
+  "name": "ObjectMaxpropertiesWithoutUsesTest",
   "type": "object",
   "properties": {
     "name": { "type": "string" }

@@ -1,5 +1,7 @@
 {
   "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://test.json-structure.org/warnings/numeric-multiple-of-without-uses",
+  "name": "NumericMultipleOfWithoutUsesTest",
   "type": "int32",
   "multipleOf": 5,
   "$comment": "Uses 'multipleOf' keyword without enabling validation extension via $uses"

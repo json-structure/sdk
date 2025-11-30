@@ -1,6 +1,9 @@
 {
   "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://test.json-structure.org/warnings/object-patternproperties-without-uses",
+  "name": "ObjectPatternpropertiesWithoutUsesTest",
   "type": "object",
+  "properties": {},
   "patternProperties": {
     "^x-": { "type": "string" }
   },

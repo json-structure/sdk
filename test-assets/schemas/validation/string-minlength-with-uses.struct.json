@@ -1,5 +1,7 @@
 {
   "$schema": "https://json-structure.org/meta/extended/v0/#",
+  "$id": "https://test.json-structure.org/validation/string-minlength-with-uses",
+  "name": "StringMinLengthTest",
   "$uses": ["JSONStructureValidation"],
   "type": "string",
   "minLength": 3,

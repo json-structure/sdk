@@ -1,5 +1,7 @@
 {
   "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://test.json-structure.org/warnings/numeric-maximum-without-uses",
+  "name": "NumericMaximumWithoutUsesTest",
   "type": "int32",
   "maximum": 100,
   "$comment": "Uses 'maximum' keyword without enabling validation extension via $uses"

@@ -58,6 +58,12 @@ const (
 	SchemaMissingType = "SCHEMA_MISSING_TYPE"
 	// SchemaRootMissingType indicates root schema must have 'type', '$root', or other schema-defining keyword.
 	SchemaRootMissingType = "SCHEMA_ROOT_MISSING_TYPE"
+	// SchemaRootMissingID indicates root schema must have an '$id' keyword.
+	SchemaRootMissingID = "SCHEMA_ROOT_MISSING_ID"
+	// SchemaRootMissingName indicates root schema with 'type' must have a 'name' property.
+	SchemaRootMissingName = "SCHEMA_ROOT_MISSING_NAME"
+	// SchemaExtensionKeywordNotEnabled indicates validation extension keyword is used but validation extensions are not enabled.
+	SchemaExtensionKeywordNotEnabled = "SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED"
 	// SchemaNameInvalid indicates name is not a valid identifier.
 	SchemaNameInvalid = "SCHEMA_NAME_INVALID"
 	// SchemaConstraintInvalidForType indicates constraint is not valid for this type.

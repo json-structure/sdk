@@ -1,5 +1,7 @@
 {
   "$schema": "https://json-structure.org/meta/extended/v0/#",
+  "$id": "https://test.json-structure.org/validation/numeric-exclusive-minimum-with-uses",
+  "name": "NumericExclusiveMinimumTest",
   "$uses": ["JSONStructureValidation"],
   "type": "double",
   "exclusiveMinimum": 0,

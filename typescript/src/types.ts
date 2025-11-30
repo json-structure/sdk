@@ -44,6 +44,8 @@ export interface ValidationResult {
   isValid: boolean;
   /** List of validation errors (empty if valid). */
   errors: ValidationError[];
+  /** List of validation warnings (non-fatal issues). */
+  warnings: ValidationError[];
 }
 
 /**

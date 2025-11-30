@@ -1,5 +1,7 @@
 {
   "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://test.json-structure.org/warnings/all-extension-keywords-without-uses",
+  "name": "AllExtensionKeywordsWithoutUsesTest",
   "type": "object",
   "properties": {
     "count": {
@@ -16,8 +18,7 @@
     "name": {
       "type": "string",
       "minLength": 1,
-      "pattern": "^[A-Z]",
-      "format": "custom-name"
+      "pattern": "^[A-Z]"
     },
     "tags": {
       "type": "array",
@@ -29,5 +30,5 @@
   },
   "minProperties": 1,
   "maxProperties": 10,
-  "$comment": "Uses multiple extension keywords without enabling validation extension via $uses. Should trigger warnings for: minimum, maximum, multipleOf, exclusiveMinimum, exclusiveMaximum, minLength, pattern, format, minItems, maxItems, uniqueItems, minProperties, maxProperties"
+  "$comment": "Uses multiple extension keywords without enabling validation extension via $uses. Should trigger warnings for: minimum, maximum, multipleOf, exclusiveMinimum, exclusiveMaximum, minLength, pattern, minItems, maxItems, uniqueItems, minProperties, maxProperties"
 }

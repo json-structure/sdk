@@ -14,6 +14,8 @@ func TestSchemaValidatorValid(t *testing.T) {
 
 	// Simple valid schema
 	schema := map[string]interface{}{
+		"$id":  "urn:example:test-schema",
+		"name": "TestType",
 		"type": "object",
 		"properties": map[string]interface{}{
 			"name": map[string]interface{}{
@@ -55,6 +57,8 @@ func TestSchemaValidatorUnknownType(t *testing.T) {
 	validator := NewSchemaValidator(&SchemaValidatorOptions{Extended: true})
 
 	schema := map[string]interface{}{
+		"$id":  "urn:example:test-schema",
+		"name": "TestType",
 		"type": "foobar",
 	}
 
@@ -67,6 +71,8 @@ func TestSchemaValidatorUnknownType(t *testing.T) {
 // TestInstanceValidatorValid tests that valid instances pass validation.
 func TestInstanceValidatorValid(t *testing.T) {
 	schema := map[string]interface{}{
+		"$id":  "urn:example:test-schema",
+		"name": "TestType",
 		"type": "object",
 		"properties": map[string]interface{}{
 			"name": map[string]interface{}{
@@ -95,6 +101,8 @@ func TestInstanceValidatorValid(t *testing.T) {
 // TestInstanceValidatorMissingRequired tests that missing required fields fail.
 func TestInstanceValidatorMissingRequired(t *testing.T) {
 	schema := map[string]interface{}{
+		"$id":  "urn:example:test-schema",
+		"name": "TestType",
 		"type": "object",
 		"properties": map[string]interface{}{
 			"name": map[string]interface{}{
@@ -122,6 +130,8 @@ func TestInstanceValidatorMissingRequired(t *testing.T) {
 // TestInstanceValidatorWrongType tests that wrong types fail.
 func TestInstanceValidatorWrongType(t *testing.T) {
 	schema := map[string]interface{}{
+		"$id":  "urn:example:test-schema",
+		"name": "TestType",
 		"type": "object",
 		"properties": map[string]interface{}{
 			"age": map[string]interface{}{
@@ -145,6 +155,8 @@ func TestInstanceValidatorWrongType(t *testing.T) {
 // TestInstanceValidatorMinimum tests minimum constraint.
 func TestInstanceValidatorMinimum(t *testing.T) {
 	schema := map[string]interface{}{
+		"$id":    "urn:example:test-schema",
+		"name":   "TestType",
 		"type":    "int32",
 		"minimum": float64(10),
 	}
@@ -167,6 +179,8 @@ func TestInstanceValidatorMinimum(t *testing.T) {
 // TestInstanceValidatorMaxLength tests maxLength constraint.
 func TestInstanceValidatorMaxLength(t *testing.T) {
 	schema := map[string]interface{}{
+		"$id":      "urn:example:test-schema",
+		"name":     "TestType",
 		"type":      "string",
 		"maxLength": float64(5),
 	}
@@ -189,6 +203,8 @@ func TestInstanceValidatorMaxLength(t *testing.T) {
 // TestInstanceValidatorPattern tests pattern constraint.
 func TestInstanceValidatorPattern(t *testing.T) {
 	schema := map[string]interface{}{
+		"$id":    "urn:example:test-schema",
+		"name":   "TestType",
 		"type":    "string",
 		"pattern": "^[a-z]+$",
 	}
@@ -211,6 +227,8 @@ func TestInstanceValidatorPattern(t *testing.T) {
 // TestInstanceValidatorEnum tests enum constraint.
 func TestInstanceValidatorEnum(t *testing.T) {
 	schema := map[string]interface{}{
+		"$id":  "urn:example:test-schema",
+		"name": "TestType",
 		"type": "string",
 		"enum": []interface{}{"red", "green", "blue"},
 	}
@@ -233,6 +251,8 @@ func TestInstanceValidatorEnum(t *testing.T) {
 // TestInstanceValidatorArray tests array validation.
 func TestInstanceValidatorArray(t *testing.T) {
 	schema := map[string]interface{}{
+		"$id":  "urn:example:test-schema",
+		"name": "TestType",
 		"type": "array",
 		"items": map[string]interface{}{
 			"type": "string",
@@ -271,6 +291,8 @@ func TestInstanceValidatorArray(t *testing.T) {
 // TestInstanceValidatorRef tests $ref resolution.
 func TestInstanceValidatorRef(t *testing.T) {
 	schema := map[string]interface{}{
+		"$id":  "urn:example:test-schema",
+		"name": "TestType",
 		"type": "object",
 		"properties": map[string]interface{}{
 			"person": map[string]interface{}{
@@ -316,6 +338,8 @@ func TestInstanceValidatorRef(t *testing.T) {
 // TestInstanceValidatorAllOf tests allOf composition.
 func TestInstanceValidatorAllOf(t *testing.T) {
 	schema := map[string]interface{}{
+		"$id":  "urn:example:test-schema",
+		"name": "TestType",
 		"type": "object",
 		"allOf": []interface{}{
 			map[string]interface{}{
@@ -394,6 +418,8 @@ func TestInstanceValidatorOneOf(t *testing.T) {
 // TestInstanceValidatorChoice tests choice type.
 func TestInstanceValidatorChoice(t *testing.T) {
 	schema := map[string]interface{}{
+		"$id":  "urn:example:test-schema",
+		"name": "TestType",
 		"type": "choice",
 		"choices": map[string]interface{}{
 			"text": map[string]interface{}{
@@ -591,6 +617,8 @@ func TestSchemaValidatorUnionWithRef(t *testing.T) {
 
 	// Valid union with $ref and null
 	schema := map[string]interface{}{
+		"$id":  "urn:example:test-schema",
+		"name": "TestType",
 		"type": "object",
 		"definitions": map[string]interface{}{
 			"coordinates": map[string]interface{}{
@@ -623,6 +651,8 @@ func TestSchemaValidatorUnionWithMultipleRefs(t *testing.T) {
 	validator := NewSchemaValidator(&SchemaValidatorOptions{Extended: true})
 
 	schema := map[string]interface{}{
+		"$id":  "urn:example:test-schema",
+		"name": "TestType",
 		"type": "object",
 		"definitions": map[string]interface{}{
 			"address": map[string]interface{}{
@@ -660,6 +690,8 @@ func TestSchemaValidatorUnionWithRefAndPrimitives(t *testing.T) {
 	validator := NewSchemaValidator(&SchemaValidatorOptions{Extended: true})
 
 	schema := map[string]interface{}{
+		"$id":  "urn:example:test-schema",
+		"name": "TestType",
 		"type": "object",
 		"definitions": map[string]interface{}{
 			"coordinates": map[string]interface{}{
@@ -693,6 +725,8 @@ func TestSchemaValidatorUnionMissingRef(t *testing.T) {
 	validator := NewSchemaValidator(&SchemaValidatorOptions{Extended: true})
 
 	schema := map[string]interface{}{
+		"$id":  "urn:example:test-schema",
+		"name": "TestType",
 		"type": "object",
 		"properties": map[string]interface{}{
 			"location": map[string]interface{}{

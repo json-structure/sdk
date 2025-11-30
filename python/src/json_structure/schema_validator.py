@@ -80,7 +80,7 @@ class JSONStructureSchemaCoreValidator:
         "JSONStructureConditionalComposition", "JSONStructureValidation"
     }
 
-    def __init__(self, allow_dollar=False, allow_import=False, import_map=None, extended=False, external_schemas=None):
+    def __init__(self, allow_dollar=False, allow_import=False, import_map=None, extended=False, external_schemas=None, warn_on_unused_extension_keywords=True):
         """
         Initializes a validator instance.
         :param allow_dollar: Boolean flag to allow '$' in property names.
@@ -89,14 +89,17 @@ class JSONStructureSchemaCoreValidator:
         :param extended: Boolean flag to enable extended validation features.
         :param external_schemas: List of schema dicts to use for resolving imports by $id.
                                  Each schema should have a '$id' field matching the import URI.
+        :param warn_on_unused_extension_keywords: Boolean flag to emit warnings for extension keywords without $uses.
         """
         self.errors: List[ValidationError] = []
+        self.warnings: List[ValidationError] = []
         self.doc = None
         self.source_text = None
         self.source_locator: Optional[JsonSourceLocator] = None
         self.allow_import = allow_import
         self.import_map = import_map if import_map is not None else {}
         self.extended = extended
+        self.warn_on_unused_extension_keywords = warn_on_unused_extension_keywords
         self.enabled_extensions = set()
         # Build lookup for external schemas by $id
         self.external_schemas = {}
@@ -176,6 +179,7 @@ class JSONStructureSchemaCoreValidator:
         :return: List of ValidationError objects, empty if valid.
         """
         self.errors = []
+        self.warnings = []
         self.doc = doc
         self.source_text = source_text
         
@@ -259,12 +263,14 @@ class JSONStructureSchemaCoreValidator:
 
     def _check_required_top_level_keywords(self, obj, location):
         """
-        Ensures $schema and $id are present at the root level.
+        Ensures $id is present at root level, and name is present when type is at root.
         """
-        if "$schema" not in obj:
-            self._err("Missing required '$schema' keyword at root.", location)
         if "$id" not in obj:
-            self._err("Missing required '$id' keyword at root.", location)
+            self._err("Missing required '$id' keyword at root.", location, ErrorCodes.SCHEMA_ROOT_MISSING_ID)
+        
+        # Root schema with 'type' must have 'name'
+        if "type" in obj and "name" not in obj:
+            self._err("Root schema with 'type' must have a 'name' property.", location, ErrorCodes.SCHEMA_ROOT_MISSING_NAME)
 
     def _check_is_absolute_uri(self, value, keyword_name, location):
         """
@@ -630,7 +636,7 @@ class JSONStructureSchemaCoreValidator:
         Check extended validation keywords based on type.
         """
         if "JSONStructureValidation" not in self.enabled_extensions:
-            # Check if any validation keywords are present without the extension
+            # Emit warnings for validation keywords present without the extension enabled
             all_validation_keywords = (self.NUMERIC_VALIDATION_KEYWORDS | 
                                      self.STRING_VALIDATION_KEYWORDS | 
                                      self.ARRAY_VALIDATION_KEYWORDS | 
@@ -638,7 +644,7 @@ class JSONStructureSchemaCoreValidator:
                                      {"default"})
             for key in all_validation_keywords:
                 if key in obj:
-                    self._err(f"Validation keyword '{key}' requires JSONStructureValidation extension.", f"{path}/{key}")
+                    self._add_extension_keyword_warning(key, path)
             return
             
         tval = obj.get("type")
@@ -1089,6 +1095,50 @@ class JSONStructureSchemaCoreValidator:
             location=loc
         )
         self.errors.append(error)
+
+    def _warn(self, message: str, location: str = "#", code: str = ErrorCodes.SCHEMA_ERROR):
+        """
+        Appends a ValidationError with WARNING severity.
+        """
+        if self.source_locator:
+            loc = self.source_locator.get_location(location)
+        else:
+            loc = JsonLocation.unknown()
+        
+        warning = ValidationError(
+            code=code,
+            message=message,
+            path=location,
+            severity=ValidationSeverity.WARNING,
+            location=loc
+        )
+        self.warnings.append(warning)
+
+    def _add_extension_keyword_warning(self, keyword: str, path: str):
+        """
+        Adds a warning for validation extension keywords used without the extension enabled.
+        """
+        if not self.warn_on_unused_extension_keywords:
+            return
+        
+        if "JSONStructureValidation" in self.enabled_extensions:
+            return
+        
+        all_validation_keywords = (self.NUMERIC_VALIDATION_KEYWORDS | 
+                                  self.STRING_VALIDATION_KEYWORDS | 
+                                  self.ARRAY_VALIDATION_KEYWORDS | 
+                                  self.OBJECT_VALIDATION_KEYWORDS)
+        
+        if keyword not in all_validation_keywords:
+            return
+        
+        full_path = f"{path}/{keyword}" if path else keyword
+        self._warn(
+            f"Validation extension keyword '{keyword}' is used but validation extensions are not enabled. "
+            "Add '\"$uses\": [\"JSONStructureValidation\"]' to enable validation, or this keyword will be ignored.",
+            full_path,
+            ErrorCodes.SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED
+        )
 
 
 def validate_json_structure_schema_core(schema_document, source_text=None, allow_dollar=False, allow_import=False, import_map=None, extended=False):

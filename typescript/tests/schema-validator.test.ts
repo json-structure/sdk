@@ -50,6 +50,8 @@ describe('SchemaValidator', () => {
 
     it('should reject unknown type', () => {
       const schema = {
+        $id: 'urn:example:test-schema',
+        name: 'TestType',
         type: 'unknowntype',
       };
 
@@ -73,7 +75,7 @@ describe('SchemaValidator', () => {
     ];
 
     it.each(primitiveTypes)('should accept primitive type: %s', (type) => {
-      const schema = { type };
+      const schema = { $id: 'urn:example:test-schema', name: 'TestType', type };
       const validator = new SchemaValidator();
       const result = validator.validate(schema);
 
@@ -84,6 +86,8 @@ describe('SchemaValidator', () => {
   describe('compound types', () => {
     it('should validate object type with properties', () => {
       const schema = {
+        $id: 'urn:example:test-schema',
+        name: 'TestType',
         type: 'object',
         properties: {
           name: { type: 'string' },
@@ -98,6 +102,8 @@ describe('SchemaValidator', () => {
 
     it('should reject object with empty properties', () => {
       const schema = {
+        $id: 'urn:example:test-schema',
+        name: 'TestType',
         type: 'object',
         properties: {},
       };
@@ -111,6 +117,8 @@ describe('SchemaValidator', () => {
 
     it('should validate array type with items', () => {
       const schema = {
+        $id: 'urn:example:test-schema',
+        name: 'TestType',
         type: 'array',
         items: { type: 'string' },
       };
@@ -123,6 +131,8 @@ describe('SchemaValidator', () => {
 
     it('should reject array without items', () => {
       const schema = {
+        $id: 'urn:example:test-schema',
+        name: 'TestType',
         type: 'array',
       };
 
@@ -135,6 +145,8 @@ describe('SchemaValidator', () => {
 
     it('should validate map type with values', () => {
       const schema = {
+        $id: 'urn:example:test-schema',
+        name: 'TestType',
         type: 'map',
         values: { type: 'string' },
       };
@@ -147,6 +159,8 @@ describe('SchemaValidator', () => {
 
     it('should reject map without values', () => {
       const schema = {
+        $id: 'urn:example:test-schema',
+        name: 'TestType',
         type: 'map',
       };
 
@@ -159,6 +173,8 @@ describe('SchemaValidator', () => {
 
     it('should validate tuple type', () => {
       const schema = {
+        $id: 'urn:example:test-schema',
+        name: 'TestType',
         type: 'tuple',
         properties: {
           x: { type: 'int32' },
@@ -175,6 +191,8 @@ describe('SchemaValidator', () => {
 
     it('should reject tuple without tuple array', () => {
       const schema = {
+        $id: 'urn:example:test-schema',
+        name: 'TestType',
         type: 'tuple',
         properties: {
           x: { type: 'int32' },
@@ -190,6 +208,8 @@ describe('SchemaValidator', () => {
 
     it('should validate choice type', () => {
       const schema = {
+        $id: 'urn:example:test-schema',
+        name: 'TestType',
         type: 'choice',
         choices: {
           circle: { type: 'object', properties: { radius: { type: 'double' } } },
@@ -207,6 +227,8 @@ describe('SchemaValidator', () => {
   describe('union types', () => {
     it('should validate union with primitive type strings', () => {
       const schema = {
+        $id: 'urn:example:test-schema',
+        name: 'TestType',
         type: ['string', 'number', 'boolean'],
       };
 
@@ -218,6 +240,8 @@ describe('SchemaValidator', () => {
 
     it('should validate union with $ref objects', () => {
       const schema = {
+        $id: 'urn:example:test-schema',
+        name: 'TestType',
         type: 'object',
         definitions: {
           TextContent: {
@@ -247,6 +271,8 @@ describe('SchemaValidator', () => {
 
     it('should validate union mixing strings and $ref objects', () => {
       const schema = {
+        $id: 'urn:example:test-schema',
+        name: 'TestType',
         type: 'object',
         definitions: {
           CustomType: {
@@ -273,6 +299,8 @@ describe('SchemaValidator', () => {
 
     it('should reject empty union array', () => {
       const schema = {
+        $id: 'urn:example:test-schema',
+        name: 'TestType',
         type: [],
       };
 
@@ -285,6 +313,8 @@ describe('SchemaValidator', () => {
 
     it('should reject union with invalid type string', () => {
       const schema = {
+        $id: 'urn:example:test-schema',
+        name: 'TestType',
         type: ['string', 'invalidtype'],
       };
 
@@ -297,6 +327,8 @@ describe('SchemaValidator', () => {
 
     it('should reject union with object missing $ref', () => {
       const schema = {
+        $id: 'urn:example:test-schema',
+        name: 'TestType',
         type: [
           'string',
           { notRef: 'something' },
@@ -312,6 +344,8 @@ describe('SchemaValidator', () => {
 
     it('should reject union with invalid element type', () => {
       const schema = {
+        $id: 'urn:example:test-schema',
+        name: 'TestType',
         type: ['string', 123],
       };
 
@@ -326,6 +360,8 @@ describe('SchemaValidator', () => {
   describe('validation constraints', () => {
     it('should validate minLength/maxLength', () => {
       const schema = {
+        $id: 'urn:example:test-schema',
+        name: 'TestType',
         type: 'string',
         minLength: 1,
         maxLength: 100,
@@ -339,6 +375,8 @@ describe('SchemaValidator', () => {
 
     it('should reject negative minLength', () => {
       const schema = {
+        $id: 'urn:example:test-schema',
+        name: 'TestType',
         type: 'string',
         minLength: -1,
       };
@@ -352,6 +390,8 @@ describe('SchemaValidator', () => {
 
     it('should reject minLength > maxLength', () => {
       const schema = {
+        $id: 'urn:example:test-schema',
+        name: 'TestType',
         type: 'string',
         minLength: 10,
         maxLength: 5,
@@ -366,6 +406,8 @@ describe('SchemaValidator', () => {
 
     it('should validate minimum/maximum', () => {
       const schema = {
+        $id: 'urn:example:test-schema',
+        name: 'TestType',
         type: 'number',
         minimum: 0,
         maximum: 100,
@@ -379,6 +421,8 @@ describe('SchemaValidator', () => {
 
     it('should reject minimum > maximum', () => {
       const schema = {
+        $id: 'urn:example:test-schema',
+        name: 'TestType',
         type: 'number',
         minimum: 100,
         maximum: 0,
@@ -393,6 +437,8 @@ describe('SchemaValidator', () => {
 
     it('should reject invalid pattern regex', () => {
       const schema = {
+        $id: 'urn:example:test-schema',
+        name: 'TestType',
         type: 'string',
         pattern: '[invalid',
       };
@@ -406,6 +452,8 @@ describe('SchemaValidator', () => {
 
     it('should reject multipleOf <= 0', () => {
       const schema = {
+        $id: 'urn:example:test-schema',
+        name: 'TestType',
         type: 'number',
         multipleOf: 0,
       };
@@ -419,6 +467,8 @@ describe('SchemaValidator', () => {
 
     it('should validate minItems/maxItems', () => {
       const schema = {
+        $id: 'urn:example:test-schema',
+        name: 'TestType',
         type: 'array',
         items: { type: 'string' },
         minItems: 1,
@@ -433,6 +483,8 @@ describe('SchemaValidator', () => {
 
     it('should reject minItems > maxItems', () => {
       const schema = {
+        $id: 'urn:example:test-schema',
+        name: 'TestType',
         type: 'array',
         items: { type: 'string' },
         minItems: 10,
@@ -450,6 +502,8 @@ describe('SchemaValidator', () => {
   describe('enum validation', () => {
     it('should validate valid enum', () => {
       const schema = {
+        $id: 'urn:example:test-schema',
+        name: 'TestType',
         type: 'string',
         enum: ['red', 'green', 'blue'],
       };
@@ -462,6 +516,8 @@ describe('SchemaValidator', () => {
 
     it('should reject empty enum', () => {
       const schema = {
+        $id: 'urn:example:test-schema',
+        name: 'TestType',
         type: 'string',
         enum: [],
       };
@@ -475,6 +531,8 @@ describe('SchemaValidator', () => {
 
     it('should reject enum with duplicates', () => {
       const schema = {
+        $id: 'urn:example:test-schema',
+        name: 'TestType',
         type: 'string',
         enum: ['a', 'b', 'a'],
       };
@@ -490,6 +548,8 @@ describe('SchemaValidator', () => {
   describe('$ref validation', () => {
     it('should validate valid $ref', () => {
       const schema = {
+        $id: 'urn:example:test-schema',
+        name: 'TestType',
         definitions: {
           Address: {
             type: 'object',
@@ -512,6 +572,8 @@ describe('SchemaValidator', () => {
 
     it('should reject undefined $ref', () => {
       const schema = {
+        $id: 'urn:example:test-schema',
+        name: 'TestType',
         type: 'object',
         properties: {
           home: { $ref: '#/definitions/NotFound' },
@@ -528,6 +590,8 @@ describe('SchemaValidator', () => {
     it('should detect direct circular references', () => {
       // Direct circular ref with no other content is invalid
       const schema = {
+        $id: 'urn:example:test-schema',
+        name: 'TestType',
         definitions: {
           recursive: { $ref: '#/definitions/recursive' },
         },
@@ -549,6 +613,8 @@ describe('SchemaValidator', () => {
   describe('required validation', () => {
     it('should validate required properties', () => {
       const schema = {
+        $id: 'urn:example:test-schema',
+        name: 'TestType',
         type: 'object',
         properties: {
           name: { type: 'string' },
@@ -565,6 +631,8 @@ describe('SchemaValidator', () => {
 
     it('should reject required property not in properties', () => {
       const schema = {
+        $id: 'urn:example:test-schema',
+        name: 'TestType',
         type: 'object',
         properties: {
           name: { type: 'string' },
@@ -581,6 +649,8 @@ describe('SchemaValidator', () => {
 
     it('should reject non-array required', () => {
       const schema = {
+        $id: 'urn:example:test-schema',
+        name: 'TestType',
         type: 'object',
         properties: {
           name: { type: 'string' },
@@ -599,6 +669,8 @@ describe('SchemaValidator', () => {
   describe('union types with $ref', () => {
     it('should accept union type with $ref and null', () => {
       const schema = {
+        $id: 'urn:example:test-schema',
+        name: 'TestType',
         type: 'object',
         definitions: {
           coordinates: {
@@ -629,6 +701,8 @@ describe('SchemaValidator', () => {
 
     it('should accept union type with multiple $refs', () => {
       const schema = {
+        $id: 'urn:example:test-schema',
+        name: 'TestType',
         type: 'object',
         definitions: {
           address: {
@@ -664,6 +738,8 @@ describe('SchemaValidator', () => {
 
     it('should accept union type with $ref, primitives, and null', () => {
       const schema = {
+        $id: 'urn:example:test-schema',
+        name: 'TestType',
         type: 'object',
         definitions: {
           coordinates: {
@@ -695,6 +771,8 @@ describe('SchemaValidator', () => {
 
     it('should reject union type with $ref object missing $ref property', () => {
       const schema = {
+        $id: 'urn:example:test-schema',
+        name: 'TestType',
         type: 'object',
         properties: {
           location: {

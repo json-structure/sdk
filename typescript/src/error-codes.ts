@@ -41,6 +41,15 @@ export const SCHEMA_MISSING_TYPE = "SCHEMA_MISSING_TYPE";
 /** Root schema must have 'type', '$root', or other schema-defining keyword. */
 export const SCHEMA_ROOT_MISSING_TYPE = "SCHEMA_ROOT_MISSING_TYPE";
 
+/** Root schema must have an '$id' keyword. */
+export const SCHEMA_ROOT_MISSING_ID = "SCHEMA_ROOT_MISSING_ID";
+
+/** Root schema with 'type' must have a 'name' property. */
+export const SCHEMA_ROOT_MISSING_NAME = "SCHEMA_ROOT_MISSING_NAME";
+
+/** Validation extension keyword is used but validation extensions are not enabled. */
+export const SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED = "SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED";
+
 /** Name is not a valid identifier. */
 export const SCHEMA_NAME_INVALID = "SCHEMA_NAME_INVALID";
 
@@ -497,6 +506,9 @@ export const ErrorCodes = {
   SCHEMA_REF_INVALID,
   SCHEMA_MISSING_TYPE,
   SCHEMA_ROOT_MISSING_TYPE,
+  SCHEMA_ROOT_MISSING_ID,
+  SCHEMA_ROOT_MISSING_NAME,
+  SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED,
   SCHEMA_NAME_INVALID,
   SCHEMA_CONSTRAINT_INVALID_FOR_TYPE,
   SCHEMA_CONSTRAINT_TYPE_MISMATCH,

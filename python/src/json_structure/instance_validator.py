@@ -823,17 +823,34 @@ class JSONStructureInstanceValidator:
                         self.errors.append(f"Value at {path} is greater than maximum {schema['maximum']}")
                 except Exception:
                     self.errors.append(f"Cannot compare value at {path} with maximum constraint")
-            if schema.get("exclusiveMinimum") is True:
+            if "exclusiveMinimum" in schema:
                 try:
-                    if instance <= schema.get("minimum", float("-inf")):
-                        self.errors.append(
-                            f"Value at {path} is not greater than exclusive minimum {schema.get('minimum')}")
+                    excl_min = schema["exclusiveMinimum"]
+                    if isinstance(excl_min, bool):
+                        # Draft-04 style: exclusiveMinimum is a boolean modifier for minimum
+                        if excl_min is True and instance <= schema.get("minimum", float("-inf")):
+                            self.errors.append(
+                                f"Value at {path} is not greater than exclusive minimum {schema.get('minimum')}")
+                    else:
+                        # Draft-06+ style: exclusiveMinimum is a numeric value
+                        if instance <= excl_min:
+                            self.errors.append(
+                                f"Value at {path} is not greater than exclusive minimum {excl_min}")
                 except Exception:
                     self.errors.append(f"Cannot evaluate exclusiveMinimum constraint at {path}")
-            if schema.get("exclusiveMaximum") is True:
+            if "exclusiveMaximum" in schema:
                 try:
-                    if instance >= schema.get("maximum", float("inf")):                        self.errors.append(
-                            f"Value at {path} is not less than exclusive maximum {schema.get('maximum')}")
+                    excl_max = schema["exclusiveMaximum"]
+                    if isinstance(excl_max, bool):
+                        # Draft-04 style: exclusiveMaximum is a boolean modifier for maximum
+                        if excl_max is True and instance >= schema.get("maximum", float("inf")):
+                            self.errors.append(
+                                f"Value at {path} is not less than exclusive maximum {schema.get('maximum')}")
+                    else:
+                        # Draft-06+ style: exclusiveMaximum is a numeric value
+                        if instance >= excl_max:
+                            self.errors.append(
+                                f"Value at {path} is not less than exclusive maximum {excl_max}")
                 except Exception:
                     self.errors.append(f"Cannot evaluate exclusiveMaximum constraint at {path}")
             if "multipleOf" in schema:

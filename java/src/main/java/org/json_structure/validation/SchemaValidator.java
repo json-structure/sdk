@@ -462,6 +462,20 @@ public final class SchemaValidator {
         }
 
         ObjectNode schema = (ObjectNode) node;
+        
+        // Root schema requirements per JSON Structure Core spec
+        boolean isRoot = path.isEmpty();
+        if (isRoot) {
+            // Root schema must have $id
+            if (!schema.has("$id")) {
+                addError(result, ErrorCodes.SCHEMA_ROOT_MISSING_ID, "Missing required '$id' keyword at root", "");
+            }
+            
+            // Root schema with 'type' must have 'name'
+            if (schema.has("type") && !schema.has("name")) {
+                addError(result, ErrorCodes.SCHEMA_ROOT_MISSING_NAME, "Root schema with 'type' must have a 'name' property", "");
+            }
+        }
 
         // Validate $schema if present
         if (schema.has("$schema")) {

@@ -284,18 +284,21 @@ VALID_EXTENDED_SCHEMAS = [
 # Invalid Schemas (Core)
 # =============================================================================
 
-# Case 1: Missing required '$schema' keyword.
-INVALID_MISSING_SCHEMA = {
-    "$id": "https://example.com/schema/missing_schema",
-    "name": "MissingSchema",
-    "type": "any"
-}
-
-# Case 2: Missing required '$id' keyword.
+# Case 1: Missing required '$id' keyword.
 INVALID_MISSING_ID = {
     "$schema": "https://json-structure.org/meta/core/v0/#",
     "name": "MissingID",
     "type": "any"
+}
+
+# Case 2: Missing required 'name' when 'type' is present at root.
+INVALID_MISSING_NAME = {
+    "$schema": "https://json-structure.org/meta/core/v0/#",
+    "$id": "https://example.com/schema/missing_name",
+    "type": "object",
+    "properties": {
+        "foo": {"type": "string"}
+    }
 }
 
 # Case 3: Both 'type' and '$root' present at the root.
@@ -540,8 +543,8 @@ INVALID_TUPLE_NONSTRING_ITEM = {
 }
 
 INVALID_SCHEMAS = [
-    INVALID_MISSING_SCHEMA,
     INVALID_MISSING_ID,
+    INVALID_MISSING_NAME,
     INVALID_BOTH_TYPE_AND_ROOT,
     INVALID_NO_PROPERTIES,
     INVALID_UNION_INLINE,

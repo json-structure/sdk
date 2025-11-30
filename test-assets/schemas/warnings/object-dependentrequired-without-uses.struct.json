@@ -1,5 +1,7 @@
 {
   "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://test.json-structure.org/warnings/object-dependentrequired-without-uses",
+  "name": "ObjectDependentrequiredWithoutUsesTest",
   "type": "object",
   "properties": {
     "creditCard": { "type": "string" },

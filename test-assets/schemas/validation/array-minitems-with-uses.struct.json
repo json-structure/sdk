@@ -1,5 +1,7 @@
 {
   "$schema": "https://json-structure.org/meta/extended/v0/#",
+  "$id": "https://test.json-structure.org/validation/array-minitems-with-uses",
+  "name": "ArrayMinItemsTest",
   "$uses": ["JSONStructureValidation"],
   "type": "array",
   "items": { "type": "string" },

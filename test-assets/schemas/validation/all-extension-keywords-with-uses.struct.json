@@ -1,5 +1,7 @@
 {
   "$schema": "https://json-structure.org/meta/extended/v0/#",
+  "$id": "https://test.json-structure.org/validation/all-extension-keywords-with-uses",
+  "name": "AllExtensionKeywordsTest",
   "$uses": ["JSONStructureValidation"],
   "type": "object",
   "properties": {

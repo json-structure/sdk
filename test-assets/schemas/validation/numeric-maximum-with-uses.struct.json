@@ -1,5 +1,7 @@
 {
   "$schema": "https://json-structure.org/meta/extended/v0/#",
+  "$id": "https://test.json-structure.org/validation/numeric-maximum-with-uses",
+  "name": "NumericMaximumTest",
   "$uses": ["JSONStructureValidation"],
   "type": "int32",
   "maximum": 100,

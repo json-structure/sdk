@@ -9,6 +9,8 @@ export interface SchemaStatusInfo {
     schemaId?: string;
     errorMessage?: string;
     source?: 'workspace' | 'remote' | 'file';
+    /** Number of validation warnings */
+    warningCount?: number;
 }
 
 /**
@@ -112,8 +114,16 @@ export class SchemaStatusCodeLensProvider implements vscode.CodeLensProvider {
                                    statusInfo.source === 'file' ? '📄' : '🌐';
                 const sourceText = statusInfo.source === 'workspace' ? 'workspace' :
                                    statusInfo.source === 'file' ? 'local file' : 'remote';
-                title = `${sourceIcon} ✓ Schema loaded (${sourceText})`;
-                tooltip = `Schema "${statusInfo.schemaId || schemaUri}" loaded from ${sourceText}`;
+                
+                // Show warning indicator if there are warnings
+                if (statusInfo.warningCount && statusInfo.warningCount > 0) {
+                    const warningText = statusInfo.warningCount === 1 ? '1 warning' : `${statusInfo.warningCount} warnings`;
+                    title = `${sourceIcon} ⚠️ Schema loaded with ${warningText} (${sourceText})`;
+                    tooltip = `Schema "${statusInfo.schemaId || schemaUri}" loaded from ${sourceText} with ${warningText}`;
+                } else {
+                    title = `${sourceIcon} ✓ Schema loaded (${sourceText})`;
+                    tooltip = `Schema "${statusInfo.schemaId || schemaUri}" loaded from ${sourceText}`;
+                }
                 command = 'jsonStructure.showSchemaInfo';
                 break;
             

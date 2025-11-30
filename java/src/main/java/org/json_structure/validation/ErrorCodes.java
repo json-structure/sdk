@@ -38,6 +38,10 @@ public final class ErrorCodes {
     public static final String SCHEMA_MISSING_TYPE = "SCHEMA_MISSING_TYPE";
     /** Root schema must have 'type', '$root', or other schema-defining keyword. */
     public static final String SCHEMA_ROOT_MISSING_TYPE = "SCHEMA_ROOT_MISSING_TYPE";
+    /** Root schema must have '$id' keyword. */
+    public static final String SCHEMA_ROOT_MISSING_ID = "SCHEMA_ROOT_MISSING_ID";
+    /** Root schema with 'type' must have 'name' property. */
+    public static final String SCHEMA_ROOT_MISSING_NAME = "SCHEMA_ROOT_MISSING_NAME";
     /** Name is not a valid identifier. */
     public static final String SCHEMA_NAME_INVALID = "SCHEMA_NAME_INVALID";
     /** Constraint is not valid for this type. */

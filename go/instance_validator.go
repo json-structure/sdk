@@ -1033,8 +1033,9 @@ func (v *InstanceValidator) addError(path, message string, codes ...string) {
 
 func (v *InstanceValidator) result() ValidationResult {
 	return ValidationResult{
-		IsValid: len(v.errors) == 0,
-		Errors:  append([]ValidationError{}, v.errors...),
+		IsValid:  len(v.errors) == 0,
+		Errors:   append([]ValidationError{}, v.errors...),
+		Warnings: []ValidationError{}, // Instance validation doesn't generate warnings currently
 	}
 }
 

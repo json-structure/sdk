@@ -907,6 +907,7 @@ export class InstanceValidator {
     return {
       isValid: this.errors.length === 0,
       errors: [...this.errors],
+      warnings: [],  // Instance validation doesn't generate warnings currently
     };
   }
 }

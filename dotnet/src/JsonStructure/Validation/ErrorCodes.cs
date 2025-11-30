@@ -47,6 +47,12 @@ public static class ErrorCodes
     /// <summary>Root schema must have 'type', '$root', or other schema-defining keyword.</summary>
     public const string SchemaRootMissingType = "SCHEMA_ROOT_MISSING_TYPE";
     
+    /// <summary>Root schema must have an '$id' keyword.</summary>
+    public const string SchemaRootMissingId = "SCHEMA_ROOT_MISSING_ID";
+    
+    /// <summary>Root schema with 'type' must have a 'name' property.</summary>
+    public const string SchemaRootMissingName = "SCHEMA_ROOT_MISSING_NAME";
+    
     /// <summary>Name is not a valid identifier.</summary>
     public const string SchemaNameInvalid = "SCHEMA_NAME_INVALID";
     

@@ -31,6 +31,8 @@ class SchemaValidatorTests {
         String schema = """
             {
                 "$schema": "https://json-structure.org/meta/core/v1.0",
+                "$id": "https://test.example.com/schema/primitiveTypes",
+                "name": "TestSchema",
                 "type": "object",
                 "properties": {
                     "name": { "type": "string" },
@@ -50,6 +52,8 @@ class SchemaValidatorTests {
     void validSchemaWithExtendedNumericTypes() {
         String schema = """
             {
+                "$id": "https://test.example.com/schema/extendedNumericTypes",
+                "name": "TestSchema",
                 "type": "object",
                 "properties": {
                     "small": { "type": "int8" },
@@ -71,6 +75,8 @@ class SchemaValidatorTests {
     void validSchemaWithTemporalTypes() {
         String schema = """
             {
+                "$id": "https://test.example.com/schema/temporalTypes",
+                "name": "TestSchema",
                 "type": "object",
                 "properties": {
                     "birthDate": { "type": "date" },
@@ -90,6 +96,8 @@ class SchemaValidatorTests {
     void validSchemaWithCompoundTypes() {
         String schema = """
             {
+                "$id": "https://test.example.com/schema/compoundTypes",
+                "name": "TestSchema",
                 "type": "object",
                 "properties": {
                     "tags": { "type": "array", "items": { "type": "string" } },
@@ -108,8 +116,10 @@ class SchemaValidatorTests {
     void validSchemaWithDefsAndRef() {
         String schema = """
             {
+                "$id": "https://test.example.com/schema/defsAndRef",
                 "$defs": {
                     "Address": {
+                        "name": "Address",
                         "type": "object",
                         "properties": {
                             "street": { "type": "string" },
@@ -117,6 +127,7 @@ class SchemaValidatorTests {
                         }
                     }
                 },
+                "name": "TestSchema",
                 "type": "object",
                 "properties": {
                     "home": { "$ref": "#/$defs/Address" },
@@ -134,6 +145,8 @@ class SchemaValidatorTests {
     void validSchemaWithEnum() {
         String schema = """
             {
+                "$id": "https://test.example.com/schema/enum",
+                "name": "TestSchema",
                 "type": "string",
                 "enum": ["pending", "approved", "rejected"]
             }
@@ -148,6 +161,8 @@ class SchemaValidatorTests {
     void validSchemaWithStringConstraints() {
         String schema = """
             {
+                "$id": "https://test.example.com/schema/stringConstraints",
+                "name": "TestSchema",
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 100,
@@ -164,6 +179,8 @@ class SchemaValidatorTests {
     void validSchemaWithNumericConstraints() {
         String schema = """
             {
+                "$id": "https://test.example.com/schema/numericConstraints",
+                "name": "TestSchema",
                 "type": "int32",
                 "minimum": 0,
                 "maximum": 100,
@@ -180,6 +197,7 @@ class SchemaValidatorTests {
     void validSchemaWithAllOfComposition() {
         String schema = """
             {
+                "$id": "https://test.example.com/schema/allOfComposition",
                 "allOf": [
                     { "type": "object", "properties": { "a": { "type": "string" } } },
                     { "type": "object", "properties": { "b": { "type": "int32" } } }
@@ -196,6 +214,8 @@ class SchemaValidatorTests {
     void validTupleSchema() {
         String schema = """
             {
+                "$id": "https://test.example.com/schema/tuple",
+                "name": "TestSchema",
                 "type": "tuple",
                 "prefixItems": [
                     { "type": "string" },
@@ -215,6 +235,8 @@ class SchemaValidatorTests {
     void validChoiceSchemaWithDiscriminator() {
         String schema = """
             {
+                "$id": "https://test.example.com/schema/choiceWithDiscriminator",
+                "name": "TestSchema",
                 "type": "choice",
                 "discriminator": "type",
                 "options": {
@@ -253,6 +275,8 @@ class SchemaValidatorTests {
     void invalidTypeValue() {
         String schema = """
             {
+                "$id": "https://test.example.com/schema/invalidType",
+                "name": "TestSchema",
                 "type": "invalidType"
             }
             """;
@@ -267,6 +291,7 @@ class SchemaValidatorTests {
     void invalidTypeNotStringOrArray() {
         String schema = """
             {
+                "$id": "https://test.example.com/schema/typeNotStringOrArray",
                 "type": 123
             }
             """;
@@ -280,6 +305,7 @@ class SchemaValidatorTests {
     void invalidEmptyTypeArray() {
         String schema = """
             {
+                "$id": "https://test.example.com/schema/emptyTypeArray",
                 "type": []
             }
             """;
@@ -294,6 +320,8 @@ class SchemaValidatorTests {
     void invalidEmptyEnumArray() {
         String schema = """
             {
+                "$id": "https://test.example.com/schema/emptyEnumArray",
+                "name": "TestSchema",
                 "type": "string",
                 "enum": []
             }
@@ -309,6 +337,8 @@ class SchemaValidatorTests {
     void invalidRequiredNotArray() {
         String schema = """
             {
+                "$id": "https://test.example.com/schema/requiredNotArray",
+                "name": "TestSchema",
                 "type": "object",
                 "properties": {
                     "name": { "type": "string" }
@@ -327,6 +357,8 @@ class SchemaValidatorTests {
     void invalidPropertiesNotObject() {
         String schema = """
             {
+                "$id": "https://test.example.com/schema/propertiesNotObject",
+                "name": "TestSchema",
                 "type": "object",
                 "properties": "invalid"
             }
@@ -342,6 +374,8 @@ class SchemaValidatorTests {
     void invalidNegativeMinLength() {
         String schema = """
             {
+                "$id": "https://test.example.com/schema/negativeMinLength",
+                "name": "TestSchema",
                 "type": "string",
                 "minLength": -1
             }
@@ -357,6 +391,8 @@ class SchemaValidatorTests {
     void invalidNonPositiveMultipleOf() {
         String schema = """
             {
+                "$id": "https://test.example.com/schema/nonPositiveMultipleOf",
+                "name": "TestSchema",
                 "type": "number",
                 "multipleOf": 0
             }
@@ -372,6 +408,8 @@ class SchemaValidatorTests {
     void invalidRegexPattern() {
         String schema = """
             {
+                "$id": "https://test.example.com/schema/invalidRegexPattern",
+                "name": "TestSchema",
                 "type": "string",
                 "pattern": "[invalid("
             }
@@ -409,9 +447,11 @@ class SchemaValidatorTests {
     void allJsonStructureTypesAreValid(String typeName) {
         String schema = """
             {
+                "$id": "https://test.example.com/schema/%s",
+                "name": "TestSchema",
                 "type": "%s"
             }
-            """.formatted(typeName);
+            """.formatted(typeName, typeName);
         
         ValidationResult result = validator.validate(schema);
         assertThat(result.isValid()).isTrue();
@@ -422,6 +462,8 @@ class SchemaValidatorTests {
     void arrayTypeRequiresItems() {
         String validSchema = """
             {
+                "$id": "https://test.example.com/schema/arrayWithItems",
+                "name": "TestSchema",
                 "type": "array",
                 "items": { "type": "string" }
             }
@@ -430,6 +472,8 @@ class SchemaValidatorTests {
 
         String invalidSchema = """
             {
+                "$id": "https://test.example.com/schema/arrayWithoutItems",
+                "name": "TestSchema",
                 "type": "array"
             }
             """;
@@ -441,6 +485,8 @@ class SchemaValidatorTests {
     void setTypeRequiresItems() {
         String validSchema = """
             {
+                "$id": "https://test.example.com/schema/setWithItems",
+                "name": "TestSchema",
                 "type": "set",
                 "items": { "type": "string" }
             }
@@ -449,6 +495,8 @@ class SchemaValidatorTests {
 
         String invalidSchema = """
             {
+                "$id": "https://test.example.com/schema/setWithoutItems",
+                "name": "TestSchema",
                 "type": "set"
             }
             """;
@@ -460,6 +508,8 @@ class SchemaValidatorTests {
     void mapTypeRequiresValues() {
         String validSchema = """
             {
+                "$id": "https://test.example.com/schema/mapWithValues",
+                "name": "TestSchema",
                 "type": "map",
                 "values": { "type": "string" }
             }
@@ -468,6 +518,8 @@ class SchemaValidatorTests {
 
         String invalidSchema = """
             {
+                "$id": "https://test.example.com/schema/mapWithoutValues",
+                "name": "TestSchema",
                 "type": "map"
             }
             """;
@@ -479,6 +531,8 @@ class SchemaValidatorTests {
     void tupleTypeRequiresPrefixItems() {
         String validSchema = """
             {
+                "$id": "https://test.example.com/schema/tupleWithPrefixItems",
+                "name": "TestSchema",
                 "type": "tuple",
                 "prefixItems": [
                     { "type": "string" },
@@ -490,6 +544,8 @@ class SchemaValidatorTests {
 
         String invalidSchema = """
             {
+                "$id": "https://test.example.com/schema/tupleWithoutPrefixItems",
+                "name": "TestSchema",
                 "type": "tuple"
             }
             """;
@@ -501,6 +557,8 @@ class SchemaValidatorTests {
     void choiceTypeRequiresDiscriminator() {
         String validSchema = """
             {
+                "$id": "https://test.example.com/schema/choiceWithDiscriminator",
+                "name": "TestSchema",
                 "type": "choice",
                 "discriminator": "type",
                 "options": {
@@ -513,6 +571,8 @@ class SchemaValidatorTests {
 
         String invalidSchema = """
             {
+                "$id": "https://test.example.com/schema/choiceWithoutDiscriminator",
+                "name": "TestSchema",
                 "type": "choice"
             }
             """;
@@ -526,6 +586,8 @@ class SchemaValidatorTests {
     void warnsOnExtensionKeywordsWithoutUses() {
         String schema = """
             {
+                "$id": "https://test.example.com/schema/extensionKeywordsWithoutUses",
+                "name": "TestSchema",
                 "type": "object",
                 "properties": {
                     "name": { "type": "string", "minLength": 1 },
@@ -550,7 +612,9 @@ class SchemaValidatorTests {
     void noWarningsWithUsesClause() {
         String schema = """
             {
+                "$id": "https://test.example.com/schema/extensionKeywordsWithUses",
                 "$uses": ["JSONStructureValidation"],
+                "name": "TestSchema",
                 "type": "object",
                 "properties": {
                     "name": { "type": "string", "minLength": 1 },
@@ -570,6 +634,8 @@ class SchemaValidatorTests {
         String schema = """
             {
                 "$schema": "https://json-structure.org/meta/validation/v0/#",
+                "$id": "https://test.example.com/schema/validationMetaSchema",
+                "name": "TestSchema",
                 "type": "object",
                 "properties": {
                     "name": { "type": "string", "pattern": "^[A-Z]" }
@@ -591,6 +657,8 @@ class SchemaValidatorTests {
         
         String schema = """
             {
+                "$id": "https://test.example.com/schema/warningsDisabled",
+                "name": "TestSchema",
                 "type": "string",
                 "minLength": 1,
                 "format": "email"
@@ -607,6 +675,8 @@ class SchemaValidatorTests {
     void warnsOnArrayExtensionKeywords() {
         String schema = """
             {
+                "$id": "https://test.example.com/schema/arrayExtensionKeywords",
+                "name": "TestSchema",
                 "type": "array",
                 "items": { "type": "string" },
                 "minItems": 1,
@@ -625,6 +695,8 @@ class SchemaValidatorTests {
     void warnsOnObjectExtensionKeywords() {
         String schema = """
             {
+                "$id": "https://test.example.com/schema/objectExtensionKeywords",
+                "name": "TestSchema",
                 "type": "object",
                 "properties": {
                     "name": { "type": "string" }

@@ -4,6 +4,7 @@ import { SchemaCache } from './schemaCache';
 import { SchemaStatusTracker } from './schemaStatusCodeLensProvider';
 import {
     InstanceValidator as JsonStructureInstanceValidator,
+    SchemaValidator as JsonStructureSchemaValidator,
     ValidationError,
     isKnownLocation,
     JsonValue
@@ -17,6 +18,7 @@ export class InstanceValidator {
     private diagnosticsManager: DiagnosticsManager;
     private schemaCache: SchemaCache;
     private instanceValidator: JsonStructureInstanceValidator;
+    private schemaValidator: JsonStructureSchemaValidator;
     private statusTracker: SchemaStatusTracker | null = null;
     private validationInProgress: Map<string, Promise<void>> = new Map();
 
@@ -24,6 +26,7 @@ export class InstanceValidator {
         this.diagnosticsManager = diagnosticsManager;
         this.schemaCache = schemaCache;
         this.instanceValidator = new JsonStructureInstanceValidator({ extended: true });
+        this.schemaValidator = new JsonStructureSchemaValidator();
     }
 
     /**
@@ -141,13 +144,18 @@ export class InstanceValidator {
         // Determine schema source
         const source = this.determineSchemaSource(schemaUri, schemaResult);
 
-        // Update status to loaded
+        // Validate the schema itself to get warnings
+        const schemaValidationResult = this.schemaValidator.validate(schemaResult.schema as JsonValue);
+        const warningCount = schemaValidationResult.warnings?.length ?? 0;
+
+        // Update status to loaded (with warning count)
         const schemaObj = schemaResult.schema as Record<string, unknown>;
         this.statusTracker?.setStatus(document.uri, {
             status: 'loaded',
             schemaUri,
             schemaId: typeof schemaObj.$id === 'string' ? schemaObj.$id : undefined,
-            source
+            source,
+            warningCount
         });
 
         // Validate the instance against the schema
@@ -158,6 +166,21 @@ export class InstanceValidator {
                 for (const error of result.errors) {
                     const diagnostic = this.createDiagnostic(document, error);
                     diagnostics.push(diagnostic);
+                }
+            }
+
+            // Also add schema warnings as Warning severity diagnostics
+            if (schemaValidationResult.warnings && schemaValidationResult.warnings.length > 0) {
+                for (const warning of schemaValidationResult.warnings) {
+                    diagnostics.push(
+                        DiagnosticsManager.createDiagnostic(
+                            this.findSchemaPropertyRange(document),
+                            `Schema warning: ${warning.message}`,
+                            vscode.DiagnosticSeverity.Warning,
+                            warning.code,
+                            'JSON Structure Schema'
+                        )
+                    );
                 }
             }
         } catch (validationError) {

@@ -12,6 +12,7 @@ import (
 type SchemaValidator struct {
 	options         SchemaValidatorOptions
 	errors          []ValidationError
+	warnings        []ValidationError
 	schema          map[string]interface{}
 	seenRefs        map[string]bool
 	sourceLocator   *JsonSourceLocator
@@ -64,6 +65,7 @@ func NewSchemaValidator(options *SchemaValidatorOptions) *SchemaValidator {
 // Validate validates a JSON Structure schema document.
 func (v *SchemaValidator) Validate(schema interface{}) ValidationResult {
 	v.errors = []ValidationError{}
+	v.warnings = []ValidationError{}
 	v.seenRefs = make(map[string]bool)
 
 	schemaMap, ok := schema.(map[string]interface{})
@@ -95,7 +97,32 @@ func (v *SchemaValidator) ValidateJSON(jsonData []byte) (ValidationResult, error
 	return v.Validate(schema), nil
 }
 
+// Validation extension keywords that require JSONStructureValidation extension.
+var validationExtensionKeywords = map[string]bool{
+	"pattern": true, "format": true, "minLength": true, "maxLength": true,
+	"minimum": true, "maximum": true, "exclusiveMinimum": true, "exclusiveMaximum": true, "multipleOf": true,
+	"minItems": true, "maxItems": true, "uniqueItems": true, "contains": true, "minContains": true, "maxContains": true,
+	"minProperties": true, "maxProperties": true, "propertyNames": true, "patternProperties": true, "dependentRequired": true,
+	"contentEncoding": true, "contentMediaType": true,
+}
+
 func (v *SchemaValidator) validateSchemaDocument(schema map[string]interface{}, path string) {
+	// Root-level validation (path is "#" for root)
+	isRoot := path == "#"
+	if isRoot {
+		// Root schema must have $id
+		if _, hasID := schema["$id"]; !hasID {
+			v.addError("", "Missing required '$id' keyword at root", SchemaRootMissingID)
+		}
+
+		// Root schema with 'type' must have 'name'
+		_, hasType := schema["type"]
+		_, hasName := schema["name"]
+		if hasType && !hasName {
+			v.addError("", "Root schema with 'type' must have a 'name' property", SchemaRootMissingName)
+		}
+	}
+
 	// Validate definitions if present
 	if defs, ok := schema["definitions"]; ok {
 		v.validateDefinitions(defs, path+"/definitions")
@@ -113,6 +140,10 @@ func (v *SchemaValidator) validateSchemaDocument(schema map[string]interface{}, 
 			if v.resolveRef(rootStr) == nil {
 				v.addError(path+"/$root", fmt.Sprintf("$root reference '%s' not found", rootStr), SchemaRefNotFound)
 			}
+		}
+		// Check for validation extension keywords at root level
+		if isRoot {
+			v.checkValidationExtensionKeywords(schema)
 		}
 		return
 	}
@@ -138,6 +169,78 @@ func (v *SchemaValidator) validateSchemaDocument(schema map[string]interface{}, 
 
 	// Validate conditional keywords at root level
 	v.validateConditionalKeywords(schema, path)
+
+	// Check for validation extension keywords at root level
+	if isRoot {
+		v.checkValidationExtensionKeywords(schema)
+	}
+}
+
+// checkValidationExtensionKeywords checks if validation extension keywords are used
+// without enabling the validation extension and adds warnings.
+func (v *SchemaValidator) checkValidationExtensionKeywords(schema map[string]interface{}) {
+	// Check if validation extensions are enabled
+	validationEnabled := false
+
+	if uses, ok := schema["$uses"].([]interface{}); ok {
+		for _, u := range uses {
+			if uStr, ok := u.(string); ok && uStr == "JSONStructureValidation" {
+				validationEnabled = true
+				break
+			}
+		}
+	}
+
+	if schemaURI, ok := schema["$schema"].(string); ok {
+		if strings.Contains(schemaURI, "extended") || strings.Contains(schemaURI, "validation") {
+			validationEnabled = true
+		}
+	}
+
+	if !validationEnabled {
+		v.collectValidationKeywordWarnings(schema, "")
+	}
+}
+
+func (v *SchemaValidator) collectValidationKeywordWarnings(obj interface{}, path string) {
+	objMap, ok := obj.(map[string]interface{})
+	if !ok {
+		return
+	}
+
+	for key, value := range objMap {
+		if validationExtensionKeywords[key] {
+			keyPath := key
+			if path != "" {
+				keyPath = path + "/" + key
+			}
+			v.addWarning(
+				keyPath,
+				fmt.Sprintf("Validation extension keyword '%s' is used but validation extensions are not enabled. "+
+					"Add '\"$uses\": [\"JSONStructureValidation\"]' to enable validation, or this keyword will be ignored.", key),
+				SchemaExtensionKeywordNotEnabled,
+			)
+		}
+
+		// Recurse into nested objects and arrays
+		if nestedMap, ok := value.(map[string]interface{}); ok {
+			nextPath := key
+			if path != "" {
+				nextPath = path + "/" + key
+			}
+			v.collectValidationKeywordWarnings(nestedMap, nextPath)
+		} else if nestedArray, ok := value.([]interface{}); ok {
+			for i, item := range nestedArray {
+				if itemMap, ok := item.(map[string]interface{}); ok {
+					nextPath := fmt.Sprintf("%s/%d", key, i)
+					if path != "" {
+						nextPath = path + "/" + nextPath
+					}
+					v.collectValidationKeywordWarnings(itemMap, nextPath)
+				}
+			}
+		}
+	}
 }
 
 func (v *SchemaValidator) validateDefinitions(defs interface{}, path string) {
@@ -723,10 +826,25 @@ func (v *SchemaValidator) addError(path, message string, codes ...string) {
 	})
 }
 
+func (v *SchemaValidator) addWarning(path, message, code string) {
+	location := UnknownLocation()
+	if v.sourceLocator != nil {
+		location = v.sourceLocator.GetLocation(path)
+	}
+	v.warnings = append(v.warnings, ValidationError{
+		Code:     code,
+		Path:     path,
+		Message:  message,
+		Severity: SeverityWarning,
+		Location: location,
+	})
+}
+
 func (v *SchemaValidator) result() ValidationResult {
 	return ValidationResult{
-		IsValid: len(v.errors) == 0,
-		Errors:  append([]ValidationError{}, v.errors...),
+		IsValid:  len(v.errors) == 0,
+		Errors:   append([]ValidationError{}, v.errors...),
+		Warnings: append([]ValidationError{}, v.warnings...),
 	}
 }
 

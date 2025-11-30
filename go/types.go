@@ -9,6 +9,8 @@ type ValidationResult struct {
 	IsValid bool `json:"isValid"`
 	// Errors contains validation errors (empty if valid).
 	Errors []ValidationError `json:"errors"`
+	// Warnings contains validation warnings (non-fatal issues).
+	Warnings []ValidationError `json:"warnings"`
 }
 
 // ValidationError represents a single validation error.

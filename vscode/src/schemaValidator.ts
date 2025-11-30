@@ -39,9 +39,18 @@ export class SchemaValidator {
         // Validate the schema using the JSON Structure SDK
         const result = this.schemaValidator.validate(schema as JsonValue, text);
 
+        // Add errors as Error severity
         if (!result.isValid) {
             for (const error of result.errors) {
-                const diagnostic = this.createDiagnostic(document, error);
+                const diagnostic = this.createDiagnostic(document, error, vscode.DiagnosticSeverity.Error);
+                diagnostics.push(diagnostic);
+            }
+        }
+
+        // Add warnings as Warning severity
+        if (result.warnings && result.warnings.length > 0) {
+            for (const warning of result.warnings) {
+                const diagnostic = this.createDiagnostic(document, warning, vscode.DiagnosticSeverity.Warning);
                 diagnostics.push(diagnostic);
             }
         }
@@ -54,7 +63,8 @@ export class SchemaValidator {
      */
     private createDiagnostic(
         document: vscode.TextDocument,
-        error: ValidationError
+        error: ValidationError,
+        severity: vscode.DiagnosticSeverity = vscode.DiagnosticSeverity.Error
     ): vscode.Diagnostic {
         let range: vscode.Range;
 
@@ -72,7 +82,7 @@ export class SchemaValidator {
         return DiagnosticsManager.createDiagnostic(
             range,
             error.message,
-            vscode.DiagnosticSeverity.Error,
+            severity,
             error.code,
             'JSON Structure Schema'
         );

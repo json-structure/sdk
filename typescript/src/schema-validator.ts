@@ -21,11 +21,21 @@ import * as ErrorCodes from './error-codes';
 
 const ALL_TYPES = [...PRIMITIVE_TYPES, ...COMPOUND_TYPES] as const;
 
+/** Validation extension keywords that require JSONStructureValidation extension. */
+const VALIDATION_EXTENSION_KEYWORDS = new Set([
+  'pattern', 'format', 'minLength', 'maxLength',
+  'minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf',
+  'minItems', 'maxItems', 'uniqueItems', 'contains', 'minContains', 'maxContains',
+  'minProperties', 'maxProperties', 'propertyNames', 'patternProperties', 'dependentRequired',
+  'contentEncoding', 'contentMediaType'
+]);
+
 /**
  * Validates JSON Structure schema documents.
  */
 export class SchemaValidator {
   private errors: ValidationError[] = [];
+  private warnings: ValidationError[] = [];
   private schema: JsonObject | null = null;
   private seenRefs: Set<string> = new Set();
   private sourceLocator: JsonSourceLocator | null = null;
@@ -73,6 +83,7 @@ export class SchemaValidator {
    */
   validate(schema: JsonValue, schemaJson?: string): ValidationResult {
     this.errors = [];
+    this.warnings = [];
     this.seenRefs = new Set();
     
     // Set up source locator if JSON string provided
@@ -100,6 +111,20 @@ export class SchemaValidator {
   }
 
   private validateSchemaDocument(schema: JsonObject, path: string): void {
+    // Root-level validation (path is '#' for root)
+    const isRoot = path === '#';
+    if (isRoot) {
+      // Root schema must have $id
+      if (!('$id' in schema)) {
+        this.addError('', "Missing required '$id' keyword at root", ErrorCodes.SCHEMA_ROOT_MISSING_ID);
+      }
+      
+      // Root schema with 'type' must have 'name'
+      if ('type' in schema && !('name' in schema)) {
+        this.addError('', "Root schema with 'type' must have a 'name' property", ErrorCodes.SCHEMA_ROOT_MISSING_NAME);
+      }
+    }
+
     // Validate definitions if present
     if ('definitions' in schema) {
       this.validateDefinitions(schema.definitions, `${path}/definitions`);
@@ -140,6 +165,61 @@ export class SchemaValidator {
     
     // Validate conditional keywords at root level
     this.validateConditionalKeywords(schema, path);
+    
+    // Check for validation extension keywords without $uses at root level
+    if (isRoot) {
+      this.checkValidationExtensionKeywords(schema);
+    }
+  }
+
+  /**
+   * Recursively checks for validation extension keywords and adds warnings if
+   * they are used without enabling the validation extension.
+   */
+  private checkValidationExtensionKeywords(schema: JsonObject): void {
+    // Check if validation extensions are enabled
+    const uses = schema.$uses;
+    const schemaUri = schema.$schema;
+    let validationEnabled = false;
+    
+    if (Array.isArray(uses)) {
+      validationEnabled = uses.some(u => u === 'JSONStructureValidation');
+    }
+    if (typeof schemaUri === 'string' && (schemaUri.includes('extended') || schemaUri.includes('validation'))) {
+      validationEnabled = true;
+    }
+    
+    if (!validationEnabled) {
+      // Collect all extension keywords used in the schema
+      this.collectValidationKeywordWarnings(schema, '');
+    }
+  }
+  
+  private collectValidationKeywordWarnings(obj: JsonValue, path: string): void {
+    if (!this.isObject(obj)) return;
+    
+    const schema = obj as JsonObject;
+    for (const [key, value] of Object.entries(schema)) {
+      if (VALIDATION_EXTENSION_KEYWORDS.has(key)) {
+        this.addWarning(
+          path ? `${path}/${key}` : key,
+          `Validation extension keyword '${key}' is used but validation extensions are not enabled. ` +
+          `Add '"$uses": ["JSONStructureValidation"]' to enable validation, or this keyword will be ignored.`,
+          ErrorCodes.SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED
+        );
+      }
+      
+      // Recurse into nested objects and arrays
+      if (this.isObject(value)) {
+        this.collectValidationKeywordWarnings(value, path ? `${path}/${key}` : key);
+      } else if (Array.isArray(value)) {
+        for (let i = 0; i < value.length; i++) {
+          if (this.isObject(value[i])) {
+            this.collectValidationKeywordWarnings(value[i], path ? `${path}/${key}/${i}` : `${key}/${i}`);
+          }
+        }
+      }
+    }
   }
 
   private validateDefinitions(defs: JsonValue, path: string): void {
@@ -690,10 +770,16 @@ export class SchemaValidator {
     this.errors.push({ code, message, path, severity: 'error', location });
   }
 
+  private addWarning(path: string, message: string, code: string): void {
+    const location = this.sourceLocator?.getLocation(path) ?? UNKNOWN_LOCATION;
+    this.warnings.push({ code, message, path, severity: 'warning', location });
+  }
+
   private result(): ValidationResult {
     return {
       isValid: this.errors.length === 0,
       errors: [...this.errors],
+      warnings: [...this.warnings],
     };
   }
 

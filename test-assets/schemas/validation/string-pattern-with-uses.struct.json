@@ -1,5 +1,7 @@
 {
   "$schema": "https://json-structure.org/meta/extended/v0/#",
+  "$id": "https://test.json-structure.org/validation/string-pattern-with-uses",
+  "name": "StringPatternTest",
   "$uses": ["JSONStructureValidation"],
   "type": "string",
   "pattern": "^[A-Z][a-z]+$",

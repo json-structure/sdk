@@ -22,6 +22,8 @@ public class SchemaValidatorTests
     {
         var schema = new JsonObject
         {
+            ["$id"] = "urn:example:test-schema",
+            ["name"] = "TestType",
             ["type"] = "object",
             ["properties"] = new JsonObject
             {
@@ -42,6 +44,8 @@ public class SchemaValidatorTests
     {
         var schema = new JsonObject
         {
+            ["$id"] = "urn:example:test-schema",
+            ["name"] = "TestType",
             ["type"] = "invalid-type"
         };
 
@@ -80,6 +84,8 @@ public class SchemaValidatorTests
     {
         var schema = new JsonObject
         {
+            ["$id"] = "urn:example:test-schema",
+            ["name"] = "TestType",
             ["type"] = "array",
             ["items"] = new JsonObject { ["type"] = "string" },
             ["minItems"] = 1,
@@ -96,6 +102,8 @@ public class SchemaValidatorTests
     {
         var schema = new JsonObject
         {
+            ["$id"] = "urn:example:test-schema",
+            ["name"] = "TestType",
             ["type"] = "array",
             ["items"] = new JsonObject { ["type"] = "string" },
             ["minItems"] = -1
@@ -115,6 +123,8 @@ public class SchemaValidatorTests
     {
         var schema = new JsonObject
         {
+            ["$id"] = "urn:example:test-schema",
+            ["name"] = "TestType",
             ["type"] = "string",
             ["pattern"] = "[invalid regex("
         };
@@ -133,6 +143,7 @@ public class SchemaValidatorTests
     {
         var schema = new JsonObject
         {
+            ["$id"] = "urn:example:test-schema",
             ["$defs"] = new JsonObject
             {
                 ["Address"] = new JsonObject
@@ -157,7 +168,7 @@ public class SchemaValidatorTests
     {
         foreach (var type in SchemaValidator.PrimitiveTypes)
         {
-            var schema = new JsonObject { ["type"] = type };
+            var schema = new JsonObject { ["$id"] = "urn:example:test-schema", ["name"] = "TestType", ["type"] = type };
             var result = _validator.Validate(schema);
             result.IsValid.Should().BeTrue($"Type '{type}' should be valid");
         }
@@ -168,7 +179,7 @@ public class SchemaValidatorTests
     {
         foreach (var type in SchemaValidator.CompoundTypes)
         {
-            var schema = new JsonObject { ["type"] = type };
+            var schema = new JsonObject { ["$id"] = "urn:example:test-schema", ["name"] = "TestType", ["type"] = type };
             
             // Add required structure for compound types
             if (type == "array" || type == "set")
@@ -204,6 +215,7 @@ public class SchemaValidatorTests
     {
         var schema = new JsonObject
         {
+            ["$id"] = "urn:example:test-schema",
             ["allOf"] = new JsonArray
             {
                 new JsonObject { ["type"] = "object" },
@@ -221,6 +233,7 @@ public class SchemaValidatorTests
     {
         var schema = new JsonObject
         {
+            ["$id"] = "urn:example:test-schema",
             ["allOf"] = new JsonArray()
         };
 
@@ -238,6 +251,8 @@ public class SchemaValidatorTests
     {
         var schema = new JsonObject
         {
+            ["$id"] = "urn:example:test-schema",
+            ["name"] = "TestType",
             ["type"] = "choice",
             ["discriminator"] = "type",
             ["options"] = new JsonObject
@@ -257,6 +272,8 @@ public class SchemaValidatorTests
     {
         var schema = new JsonObject
         {
+            ["$id"] = "urn:example:test-schema",
+            ["name"] = "TestType",
             ["type"] = "map",
             ["values"] = new JsonObject { ["type"] = "int32" }
         };
@@ -271,6 +288,8 @@ public class SchemaValidatorTests
     {
         var schema = new JsonObject
         {
+            ["$id"] = "urn:example:test-schema",
+            ["name"] = "TestType",
             ["type"] = "tuple",
             ["prefixItems"] = new JsonArray
             {
@@ -291,6 +310,8 @@ public class SchemaValidatorTests
     {
         var schema = new JsonObject
         {
+            ["$id"] = "urn:example:test-schema",
+            ["name"] = "TestType",
             ["type"] = "string",
             ["enum"] = new JsonArray { "red", "green", "blue" }
         };
@@ -305,6 +326,8 @@ public class SchemaValidatorTests
     {
         var schema = new JsonObject
         {
+            ["$id"] = "urn:example:test-schema",
+            ["name"] = "TestType",
             ["type"] = "string",
             ["enum"] = new JsonArray()
         };
@@ -323,6 +346,8 @@ public class SchemaValidatorTests
     {
         var schema = new JsonObject
         {
+            ["$id"] = "urn:example:test-schema",
+            ["name"] = "TestType",
             ["type"] = "number",
             ["minimum"] = 0,
             ["maximum"] = 100,
@@ -339,6 +364,8 @@ public class SchemaValidatorTests
     {
         var schema = new JsonObject
         {
+            ["$id"] = "urn:example:test-schema",
+            ["name"] = "TestType",
             ["type"] = "number",
             ["multipleOf"] = -5
         };
@@ -360,6 +387,8 @@ public class SchemaValidatorTests
         // Schema with multiple issues: negative minLength, maxLength < minLength, and invalid pattern
         var schema = new JsonObject
         {
+            ["$id"] = "urn:example:test-schema",
+            ["name"] = "TestType",
             ["type"] = "string",
             ["minLength"] = -1,
             ["maxLength"] = -2,
@@ -381,6 +410,8 @@ public class SchemaValidatorTests
         // Use nested definitions so errors occur in separate validation steps
         var schema = new JsonObject
         {
+            ["$id"] = "urn:example:test-schema",
+            ["name"] = "TestType",
             ["type"] = "object",
             ["definitions"] = new JsonObject
             {
@@ -416,6 +447,8 @@ public class SchemaValidatorTests
     {
         var schema = new JsonObject
         {
+            ["$id"] = "urn:example:test-schema",
+            ["name"] = "TestType",
             ["type"] = "object",
             ["properties"] = new JsonObject
             {
@@ -449,6 +482,8 @@ public class SchemaValidatorTests
     {
         var schema = new JsonObject
         {
+            ["$id"] = "urn:example:test-schema",
+            ["name"] = "TestType",
             ["type"] = "object",
             ["definitions"] = new JsonObject
             {
@@ -484,6 +519,8 @@ public class SchemaValidatorTests
         var schema = new JsonObject
         {
             ["$schema"] = "https://json-structure.org/meta/core/v0/#",
+            ["$id"] = "urn:example:test-schema",
+            ["name"] = "TestType",
             ["type"] = "object",
             ["properties"] = new JsonObject
             {
@@ -523,6 +560,8 @@ public class SchemaValidatorTests
         var schema = new JsonObject
         {
             ["$schema"] = "https://json-structure.org/meta/extended/v0/#",
+            ["$id"] = "urn:example:test-schema",
+            ["name"] = "TestType",
             ["$uses"] = new JsonArray { "JSONStructureValidation" },
             ["type"] = "object",
             ["properties"] = new JsonObject
@@ -555,6 +594,8 @@ public class SchemaValidatorTests
         var schema = new JsonObject
         {
             ["$schema"] = "https://json-structure.org/meta/validation/v0/#",
+            ["$id"] = "urn:example:test-schema",
+            ["name"] = "TestType",
             ["type"] = "string",
             ["minLength"] = 1,
             ["pattern"] = "^[A-Z]"
@@ -578,6 +619,8 @@ public class SchemaValidatorTests
         var schema = new JsonObject
         {
             ["$schema"] = "https://json-structure.org/meta/core/v0/#",
+            ["$id"] = "urn:example:test-schema",
+            ["name"] = "TestType",
             ["type"] = "string",
             ["minLength"] = 1,
             ["pattern"] = "^[A-Z]"
@@ -594,6 +637,8 @@ public class SchemaValidatorTests
     {
         var schema = new JsonObject
         {
+            ["$id"] = "urn:example:test-schema",
+            ["name"] = "TestType",
             ["type"] = "array",
             ["items"] = new JsonObject { ["type"] = "string" },
             ["minItems"] = 1,
@@ -615,6 +660,8 @@ public class SchemaValidatorTests
     {
         var schema = new JsonObject
         {
+            ["$id"] = "urn:example:test-schema",
+            ["name"] = "TestType",
             ["type"] = "object",
             ["minProperties"] = 1,
             ["maxProperties"] = 10
@@ -633,6 +680,8 @@ public class SchemaValidatorTests
     {
         var schema = new JsonObject
         {
+            ["$id"] = "urn:example:test-schema",
+            ["name"] = "TestType",
             ["type"] = "string",
             ["default"] = "hello"
         };

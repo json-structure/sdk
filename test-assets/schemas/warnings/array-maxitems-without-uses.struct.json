@@ -1,5 +1,7 @@
 {
   "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://test.json-structure.org/warnings/array-maxitems-without-uses",
+  "name": "ArrayMaxitemsWithoutUsesTest",
   "type": "array",
   "items": { "type": "string" },
   "maxItems": 10,
