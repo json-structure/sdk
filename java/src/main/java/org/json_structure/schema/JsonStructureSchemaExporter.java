@@ -62,9 +62,16 @@ public final class JsonStructureSchemaExporter {
         ObjectNode schema = mapper.createObjectNode();
         boolean isRoot = path.isEmpty();
 
-        // Add $schema for root
+        // Add $schema and $uses for root
         if (isRoot && options.isIncludeSchemaKeyword()) {
-            schema.put("$schema", options.getSchemaUri());
+            if (options.isUseExtendedValidation()) {
+                // Use extended meta-schema with validation extension
+                schema.put("$schema", "https://json-structure.org/meta/extended/v0/#");
+                ArrayNode usesArray = schema.putArray("$uses");
+                usesArray.add("JSONStructureValidation");
+            } else {
+                schema.put("$schema", options.getSchemaUri());
+            }
         }
 
         // Handle wrapper types

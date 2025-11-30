@@ -317,6 +317,49 @@ class JsonStructureSchemaExporterTests {
             assertThat(schema.has("title")).isTrue();
             assertThat(schema.get("title").asText()).isEqualTo("Product");
         }
+
+        @Test
+        @DisplayName("Export with extended validation enabled")
+        void exportWithExtendedValidation() throws Exception {
+            JsonStructureSchemaExporterOptions options = new JsonStructureSchemaExporterOptions()
+                .setUseExtendedValidation(true);
+            
+            ObjectNode schema = JsonStructureSchemaExporter.getSchemaAsNode(Product.class, mapper, options);
+            
+            assertThat(schema.has("$schema")).isTrue();
+            assertThat(schema.get("$schema").asText())
+                .isEqualTo("https://json-structure.org/meta/extended/v0/#");
+            assertThat(schema.has("$uses")).isTrue();
+            assertThat(schema.get("$uses").isArray()).isTrue();
+            assertThat(schema.get("$uses").get(0).asText()).isEqualTo("JSONStructureValidation");
+        }
+
+        @Test
+        @DisplayName("Extended validation overrides custom schema URI")
+        void extendedValidationOverridesSchemaUri() throws Exception {
+            JsonStructureSchemaExporterOptions options = new JsonStructureSchemaExporterOptions()
+                .setSchemaUri("https://custom.example.com/schema")
+                .setUseExtendedValidation(true);
+            
+            ObjectNode schema = JsonStructureSchemaExporter.getSchemaAsNode(Product.class, mapper, options);
+            
+            // Extended validation takes precedence
+            assertThat(schema.get("$schema").asText())
+                .isEqualTo("https://json-structure.org/meta/extended/v0/#");
+            assertThat(schema.has("$uses")).isTrue();
+        }
+
+        @Test
+        @DisplayName("Default schema URI is core v0")
+        void defaultSchemaUri() throws Exception {
+            JsonStructureSchemaExporterOptions options = new JsonStructureSchemaExporterOptions();
+            
+            ObjectNode schema = JsonStructureSchemaExporter.getSchemaAsNode(Product.class, mapper, options);
+            
+            assertThat(schema.get("$schema").asText())
+                .isEqualTo("https://json-structure.org/meta/core/v0/#");
+            assertThat(schema.has("$uses")).isFalse();
+        }
     }
 
     @Nested

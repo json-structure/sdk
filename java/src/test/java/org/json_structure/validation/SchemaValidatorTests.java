@@ -518,4 +518,124 @@ class SchemaValidatorTests {
             """;
         assertThat(validator.validate(invalidSchema).isValid()).isFalse();
     }
+
+    // === Extension Keyword Warning Tests ===
+
+    @Test
+    @DisplayName("Warns when extension keywords used without $uses")
+    void warnsOnExtensionKeywordsWithoutUses() {
+        String schema = """
+            {
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "minLength": 1 },
+                    "age": { "type": "int32", "minimum": 0 }
+                }
+            }
+            """;
+        
+        ValidationResult result = validator.validate(schema);
+        assertThat(result.isValid()).isTrue(); // Warnings don't affect validity
+        assertThat(result.getWarnings()).isNotEmpty();
+        assertThat(result.getWarnings()).anyMatch(w -> 
+            w.getCode().equals(ErrorCodes.SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED) &&
+            w.getMessage().contains("minLength"));
+        assertThat(result.getWarnings()).anyMatch(w -> 
+            w.getCode().equals(ErrorCodes.SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED) &&
+            w.getMessage().contains("minimum"));
+    }
+
+    @Test
+    @DisplayName("No warnings when extension keywords used with $uses")
+    void noWarningsWithUsesClause() {
+        String schema = """
+            {
+                "$uses": ["JSONStructureValidation"],
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "minLength": 1 },
+                    "age": { "type": "int32", "minimum": 0, "maximum": 150 }
+                }
+            }
+            """;
+        
+        ValidationResult result = validator.validate(schema);
+        assertThat(result.isValid()).isTrue();
+        assertThat(result.getWarnings()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("No warnings when extension keywords used with validation meta-schema")
+    void noWarningsWithValidationMetaSchema() {
+        String schema = """
+            {
+                "$schema": "https://json-structure.org/meta/validation/v0/#",
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "pattern": "^[A-Z]" }
+                }
+            }
+            """;
+        
+        ValidationResult result = validator.validate(schema);
+        assertThat(result.isValid()).isTrue();
+        assertThat(result.getWarnings()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Warnings can be disabled via options")
+    void warningsCanBeDisabled() {
+        ValidationOptions options = new ValidationOptions()
+            .setWarnOnUnusedExtensionKeywords(false);
+        SchemaValidator validatorWithOptions = new SchemaValidator(options);
+        
+        String schema = """
+            {
+                "type": "string",
+                "minLength": 1,
+                "format": "email"
+            }
+            """;
+        
+        ValidationResult result = validatorWithOptions.validate(schema);
+        assertThat(result.isValid()).isTrue();
+        assertThat(result.getWarnings()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Warns on array extension keywords without $uses")
+    void warnsOnArrayExtensionKeywords() {
+        String schema = """
+            {
+                "type": "array",
+                "items": { "type": "string" },
+                "minItems": 1,
+                "maxItems": 10,
+                "uniqueItems": true
+            }
+            """;
+        
+        ValidationResult result = validator.validate(schema);
+        assertThat(result.isValid()).isTrue();
+        assertThat(result.getWarnings()).hasSize(3);
+    }
+
+    @Test
+    @DisplayName("Warns on object extension keywords without $uses")
+    void warnsOnObjectExtensionKeywords() {
+        String schema = """
+            {
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string" }
+                },
+                "minProperties": 1,
+                "maxProperties": 10
+            }
+            """;
+        
+        ValidationResult result = validator.validate(schema);
+        assertThat(result.isValid()).isTrue();
+        assertThat(result.getWarnings()).hasSize(2);
+    }
 }

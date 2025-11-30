@@ -96,6 +96,8 @@ public final class ErrorCodes {
     public static final String SCHEMA_UNIQUE_ITEMS_NOT_BOOLEAN = "SCHEMA_UNIQUE_ITEMS_NOT_BOOLEAN";
     /** items must be a boolean or schema for tuple type. */
     public static final String SCHEMA_ITEMS_INVALID_FOR_TUPLE = "SCHEMA_ITEMS_INVALID_FOR_TUPLE";
+    /** Validation extension keyword is used but validation extensions are not enabled. */
+    public static final String SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED = "SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED";
 
     // Instance Validation Errors
 

@@ -8,11 +8,12 @@ package org.json_structure.schema;
  */
 public final class JsonStructureSchemaExporterOptions {
 
-    private String schemaUri = "https://json-structure.org/meta/core/v1.0";
+    private String schemaUri = "https://json-structure.org/meta/core/v0/#";
     private boolean includeSchemaKeyword = true;
     private boolean includeTitles = true;
     private boolean includeDescriptions = true;
     private boolean treatNullAsOptional = true;
+    private boolean useExtendedValidation = false;
     private SchemaTransformer schemaTransformer = null;
 
     /**
@@ -22,7 +23,8 @@ public final class JsonStructureSchemaExporterOptions {
     }
 
     /**
-     * Gets the schema URI to use.
+     * Gets the schema URI to use. Defaults to JSON Structure core v0.
+     * When {@link #isUseExtendedValidation()} is true, this is overridden to use the extended meta-schema.
      *
      * @return the schema URI
      */
@@ -118,6 +120,36 @@ public final class JsonStructureSchemaExporterOptions {
      */
     public JsonStructureSchemaExporterOptions setTreatNullAsOptional(boolean treatNullAsOptional) {
         this.treatNullAsOptional = treatNullAsOptional;
+        return this;
+    }
+
+    /**
+     * Gets whether to use extended validation keywords from the JSON Structure Validation extension.
+     * When enabled, the schema will use the extended meta-schema URI and include a $uses clause
+     * with "JSONStructureValidation". This enables additional validation keywords such as
+     * minLength, pattern, format, minItems, maxItems, uniqueItems, contains, minProperties,
+     * maxProperties, dependentRequired, patternProperties, propertyNames, and default.
+     *
+     * @return true if extended validation is enabled
+     * @see <a href="https://json-structure.github.io/validation/draft-vasters-json-structure-validation.html">JSON Structure Validation Extension</a>
+     */
+    public boolean isUseExtendedValidation() {
+        return useExtendedValidation;
+    }
+
+    /**
+     * Sets whether to use extended validation keywords from the JSON Structure Validation extension.
+     * When enabled, the schema will use the extended meta-schema URI and include a $uses clause
+     * with "JSONStructureValidation". This enables additional validation keywords such as
+     * minLength, pattern, format, minItems, maxItems, uniqueItems, contains, minProperties,
+     * maxProperties, dependentRequired, patternProperties, propertyNames, and default.
+     *
+     * @param useExtendedValidation true to enable extended validation
+     * @return this options instance for chaining
+     * @see <a href="https://json-structure.github.io/validation/draft-vasters-json-structure-validation.html">JSON Structure Validation Extension</a>
+     */
+    public JsonStructureSchemaExporterOptions setUseExtendedValidation(boolean useExtendedValidation) {
+        this.useExtendedValidation = useExtendedValidation;
         return this;
     }
 

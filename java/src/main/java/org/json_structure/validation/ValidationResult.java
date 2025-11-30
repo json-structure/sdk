@@ -6,6 +6,7 @@ package org.json_structure.validation;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * Represents the result of a validation operation.
@@ -52,30 +53,73 @@ public final class ValidationResult {
     }
 
     /**
-     * Returns whether the validation succeeded (no errors).
+     * Adds a warning to the validation result.
+     *
+     * @param code     the warning code
+     * @param message  the warning message
+     * @param path     the JSON path where the warning occurred
+     * @param location the source location
+     */
+    public void addWarning(String code, String message, String path, JsonLocation location) {
+        errors.add(new ValidationError(code, message, path, ValidationSeverity.WARNING, location, null));
+    }
+
+    /**
+     * Returns whether the validation succeeded (no errors, warnings don't affect validity).
      *
      * @return true if valid, false otherwise
      */
     public boolean isValid() {
-        return errors.isEmpty();
+        return errors.stream().noneMatch(e -> e.getSeverity() == ValidationSeverity.ERROR);
     }
 
     /**
-     * Gets the list of validation errors.
+     * Gets the list of all validation messages (both errors and warnings).
      *
-     * @return an unmodifiable list of errors
+     * @return an unmodifiable list of messages
      */
     public List<ValidationError> getErrors() {
         return Collections.unmodifiableList(errors);
     }
 
     /**
-     * Gets the number of errors.
+     * Gets only the errors (not warnings).
+     *
+     * @return an unmodifiable list of errors
+     */
+    public List<ValidationError> getErrorsOnly() {
+        return errors.stream()
+                .filter(e -> e.getSeverity() == ValidationSeverity.ERROR)
+                .collect(Collectors.toUnmodifiableList());
+    }
+
+    /**
+     * Gets only the warnings.
+     *
+     * @return an unmodifiable list of warnings
+     */
+    public List<ValidationError> getWarnings() {
+        return errors.stream()
+                .filter(e -> e.getSeverity() == ValidationSeverity.WARNING)
+                .collect(Collectors.toUnmodifiableList());
+    }
+
+    /**
+     * Gets the number of errors (not including warnings).
      *
      * @return the error count
      */
     public int getErrorCount() {
-        return errors.size();
+        return (int) errors.stream().filter(e -> e.getSeverity() == ValidationSeverity.ERROR).count();
+    }
+
+    /**
+     * Gets the number of warnings.
+     *
+     * @return the warning count
+     */
+    public int getWarningCount() {
+        return (int) errors.stream().filter(e -> e.getSeverity() == ValidationSeverity.WARNING).count();
     }
 
     /**

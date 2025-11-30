@@ -108,6 +108,24 @@ public final class SchemaValidator {
     private static final Pattern IDENTIFIER_PATTERN = Pattern.compile(
             "^[a-zA-Z_][a-zA-Z0-9_]*$");
 
+    /**
+     * Validation extension keywords that require the JSONStructureValidation feature.
+     */
+    private static final Set<String> VALIDATION_EXTENSION_KEYWORDS = Set.of(
+            // Numeric validation
+            "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf",
+            // String validation
+            "minLength", "pattern", "format",
+            // Array/Set validation
+            "minItems", "maxItems", "uniqueItems", "contains", "minContains", "maxContains",
+            // Object/Map validation
+            "minProperties", "maxProperties", "dependentRequired", "patternProperties", "propertyNames",
+            // Map-specific
+            "minEntries", "maxEntries", "patternKeys", "keyNames",
+            // Other
+            "has", "default"
+    );
+
     private final ValidationOptions options;
     private final ObjectMapper objectMapper;
     private Map<String, JsonNode> externalSchemaMap; // Map of import URI to schema for import processing
@@ -115,6 +133,7 @@ public final class SchemaValidator {
     private Set<String> importNamespaces; // Track namespaces with $import/$importdefs
     private JsonSourceLocator sourceLocator; // For source location tracking
     private JsonNode rootSchema; // Store root schema for resolving local refs
+    private boolean validationExtensionEnabled; // Whether validation extension is enabled via $schema or $uses
 
     static {
         Set<String> allTypes = new HashSet<>(PRIMITIVE_TYPES);
@@ -200,6 +219,9 @@ public final class SchemaValidator {
         // Store root schema for resolving local refs
         this.rootSchema = schema;
         
+        // Detect if validation extensions are enabled
+        this.validationExtensionEnabled = isValidationExtensionEnabled(schema);
+        
         // Process imports if allowed (merge definitions from external schemas)
         if (options.isAllowImport() && schema.isObject()) {
             processImportsInExternalSchema(schema);
@@ -221,6 +243,63 @@ public final class SchemaValidator {
     private void addError(ValidationResult result, String code, String message, String path) {
         JsonLocation location = sourceLocator != null ? sourceLocator.getLocation(path) : JsonLocation.UNKNOWN;
         result.addError(new ValidationError(code, message, path, ValidationSeverity.ERROR, location, null));
+    }
+
+    /**
+     * Checks if the validation extension is enabled via $schema or $uses.
+     */
+    private static boolean isValidationExtensionEnabled(JsonNode schema) {
+        if (schema == null || !schema.isObject()) {
+            return false;
+        }
+
+        // Check $schema - validation meta-schema enables all validation keywords
+        JsonNode schemaNode = schema.get("$schema");
+        if (schemaNode != null && schemaNode.isTextual()) {
+            String schemaUri = schemaNode.asText();
+            // Check for validation meta-schema
+            if (schemaUri.contains("/meta/validation/")) {
+                return true;
+            }
+        }
+
+        // Check $uses for JSONStructureValidation
+        JsonNode usesNode = schema.get("$uses");
+        if (usesNode != null && usesNode.isArray()) {
+            for (JsonNode useItem : usesNode) {
+                if (useItem.isTextual() && "JSONStructureValidation".equals(useItem.asText())) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Adds a warning for validation extension keywords used without the extension enabled.
+     */
+    private void addExtensionKeywordWarning(ValidationResult result, String keyword, String path) {
+        if (!options.isWarnOnUnusedExtensionKeywords()) {
+            return;
+        }
+
+        if (validationExtensionEnabled) {
+            return;
+        }
+
+        if (!VALIDATION_EXTENSION_KEYWORDS.contains(keyword)) {
+            return;
+        }
+
+        String fullPath = path.isEmpty() ? keyword : path + "/" + keyword;
+        JsonLocation location = sourceLocator != null ? sourceLocator.getLocation(fullPath) : JsonLocation.UNKNOWN;
+        result.addWarning(
+                ErrorCodes.SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED,
+                "Validation extension keyword '" + keyword + "' is used but validation extensions are not enabled. " +
+                "Add '\"$uses\": [\"JSONStructureValidation\"]' to enable validation, or this keyword will be ignored.",
+                fullPath,
+                location);
     }
 
     /**
@@ -860,12 +939,27 @@ public final class SchemaValidator {
             }
         }
 
+        // Add warnings for extension keywords
+        if (schema.has("minProperties")) addExtensionKeywordWarning(result, "minProperties", path);
+        if (schema.has("maxProperties")) addExtensionKeywordWarning(result, "maxProperties", path);
+        if (schema.has("dependentRequired")) addExtensionKeywordWarning(result, "dependentRequired", path);
+        if (schema.has("patternProperties")) addExtensionKeywordWarning(result, "patternProperties", path);
+        if (schema.has("propertyNames")) addExtensionKeywordWarning(result, "propertyNames", path);
+
         // Validate minProperties/maxProperties
         validateNonNegativeInteger(schema, "minProperties", path, result);
         validateNonNegativeInteger(schema, "maxProperties", path, result);
     }
 
     private void validateArraySchema(ObjectNode schema, String path, ValidationResult result, int depth, Set<String> visitedRefs) {
+        // Add warnings for extension keywords
+        if (schema.has("minItems")) addExtensionKeywordWarning(result, "minItems", path);
+        if (schema.has("maxItems")) addExtensionKeywordWarning(result, "maxItems", path);
+        if (schema.has("uniqueItems")) addExtensionKeywordWarning(result, "uniqueItems", path);
+        if (schema.has("contains")) addExtensionKeywordWarning(result, "contains", path);
+        if (schema.has("minContains")) addExtensionKeywordWarning(result, "minContains", path);
+        if (schema.has("maxContains")) addExtensionKeywordWarning(result, "maxContains", path);
+
         // Array type requires items definition
         if (!schema.has("items")) {
             addError(result, ErrorCodes.SCHEMA_ARRAY_MISSING_ITEMS, "array type requires 'items' definition", path);
@@ -960,6 +1054,11 @@ public final class SchemaValidator {
     }
 
     private void validateMapSchema(ObjectNode schema, String path, ValidationResult result, int depth, Set<String> visitedRefs) {
+        // Add warnings for extension keywords
+        if (schema.has("minProperties")) addExtensionKeywordWarning(result, "minProperties", path);
+        if (schema.has("maxProperties")) addExtensionKeywordWarning(result, "maxProperties", path);
+        if (schema.has("propertyNames")) addExtensionKeywordWarning(result, "propertyNames", path);
+
         // Map type requires values definition
         if (!schema.has("values")) {
             addError(result, ErrorCodes.SCHEMA_MAP_MISSING_VALUES, "map type requires 'values' definition", path);
@@ -1027,6 +1126,11 @@ public final class SchemaValidator {
     }
 
     private void validateStringSchema(ObjectNode schema, String path, ValidationResult result) {
+        // Add warnings for extension keywords (minLength is extension, maxLength is core)
+        if (schema.has("minLength")) addExtensionKeywordWarning(result, "minLength", path);
+        if (schema.has("pattern")) addExtensionKeywordWarning(result, "pattern", path);
+        if (schema.has("format")) addExtensionKeywordWarning(result, "format", path);
+
         validateNonNegativeInteger(schema, "minLength", path, result);
         validateNonNegativeInteger(schema, "maxLength", path, result);
         
@@ -1071,6 +1175,13 @@ public final class SchemaValidator {
     }
 
     private void validateNumericSchema(ObjectNode schema, String path, ValidationResult result) {
+        // Add warnings for extension keywords
+        if (schema.has("minimum")) addExtensionKeywordWarning(result, "minimum", path);
+        if (schema.has("maximum")) addExtensionKeywordWarning(result, "maximum", path);
+        if (schema.has("exclusiveMinimum")) addExtensionKeywordWarning(result, "exclusiveMinimum", path);
+        if (schema.has("exclusiveMaximum")) addExtensionKeywordWarning(result, "exclusiveMaximum", path);
+        if (schema.has("multipleOf")) addExtensionKeywordWarning(result, "multipleOf", path);
+
         validateNumber(schema, "minimum", path, result);
         validateNumber(schema, "maximum", path, result);
         validateNumber(schema, "exclusiveMinimum", path, result);
