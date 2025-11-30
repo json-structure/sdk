@@ -3,11 +3,7 @@ name: Publish VS Code Extension
 on:
   push:
     tags:
-      - 'vscode-v*'  # Trigger on tags like vscode-v1.0.0
-  workflow_run:
-    workflows: ["TypeScript SDK"]
-    types: [completed]
-    branches: [main, master]
+      - 'v[0-9]+.[0-9]+.[0-9]+'  # Trigger on tags like v1.0.0 (aligned with other SDKs)
   workflow_dispatch:
     inputs:
       dry-run:
@@ -15,28 +11,72 @@ on:
         required: false
         default: 'false'
         type: boolean
+      version:
+        description: 'SDK version to use (e.g., 0.1.17). If empty, extracts from tag.'
+        required: false
+        type: string
 
 permissions:
   contents: read
 
 jobs:
-  # Build and test job - runs on workflow_run or workflow_dispatch
+  # Wait for TypeScript SDK to be published to npm
+  wait-for-npm:
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    outputs:
+      version: ${{ steps.get_version.outputs.VERSION }}
+    
+    steps:
+      - name: Extract version from tag
+        id: get_version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION=${GITHUB_REF#refs/tags/v}
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "SDK version: $VERSION"
+      
+      - name: Wait for @json-structure/sdk to be available on npm
+        run: |
+          VERSION="${{ steps.get_version.outputs.VERSION }}"
+          echo "Waiting for @json-structure/sdk@$VERSION to be available on npm..."
+          
+          MAX_ATTEMPTS=30
+          ATTEMPT=0
+          
+          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+            ATTEMPT=$((ATTEMPT + 1))
+            echo "Attempt $ATTEMPT of $MAX_ATTEMPTS..."
+            
+            # Check if the version exists on npm
+            if npm view "@json-structure/sdk@$VERSION" version 2>/dev/null; then
+              echo "✓ @json-structure/sdk@$VERSION is now available on npm!"
+              exit 0
+            fi
+            
+            if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+              echo "Package not yet available, waiting 30 seconds..."
+              sleep 30
+            fi
+          done
+          
+          echo "✗ Timeout: @json-structure/sdk@$VERSION not available after $MAX_ATTEMPTS attempts"
+          exit 1
+
+  # Build and test job
   build-and-test:
     runs-on: ubuntu-latest
-    # Only run if:
-    # - This is a tag push (will publish)
-    # - Or workflow_run completed successfully
-    # - Or manual workflow_dispatch
-    if: |
-      github.event_name == 'push' ||
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+    needs: [wait-for-npm]
+    if: always() && (needs.wait-for-npm.result == 'success' || github.event_name == 'workflow_dispatch')
     
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Full history for version detection
+          fetch-depth: 0
           submodules: recursive
       
       - name: Setup Node.js
@@ -46,25 +86,44 @@ jobs:
           cache: 'npm'
           cache-dependency-path: vscode/package-lock.json
       
-      - name: Install TypeScript SDK dependencies
-        working-directory: typescript
-        run: npm ci
+      - name: Get SDK version
+        id: sdk_version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          elif [ -n "${{ needs.wait-for-npm.outputs.version }}" ]; then
+            VERSION="${{ needs.wait-for-npm.outputs.version }}"
+          else
+            # For workflow_dispatch without version, use latest from npm
+            VERSION=$(npm view @json-structure/sdk version)
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Using SDK version: $VERSION"
       
-      - name: Build TypeScript SDK
-        working-directory: typescript
-        run: npm run build
-      
-      - name: Test TypeScript SDK
-        working-directory: typescript
-        run: npm test
+      - name: Update SDK dependency to npm package
+        working-directory: vscode
+        run: |
+          VERSION="${{ steps.sdk_version.outputs.VERSION }}"
+          echo "Updating @json-structure/sdk dependency to version $VERSION"
+          
+          # Update package.json to use npm package instead of local file
+          npm pkg set "dependencies.@json-structure/sdk=$VERSION"
+          
+          cat package.json | grep -A2 '"dependencies"'
       
       - name: Install VS Code Extension dependencies
         working-directory: vscode
-        run: npm ci
+        run: npm install
       
       - name: Run VS Code Extension tests
         working-directory: vscode
         run: xvfb-run -a npm test
+      
+      - name: Update extension version to match SDK
+        working-directory: vscode
+        run: |
+          VERSION="${{ steps.sdk_version.outputs.VERSION }}"
+          npm version $VERSION --no-git-tag-version --allow-same-version
       
       - name: Package extension
         working-directory: vscode
@@ -91,9 +150,9 @@ jobs:
   # Publish job - only runs on tag push
   publish:
     runs-on: ubuntu-latest
-    needs: build-and-test
-    if: startsWith(github.ref, 'refs/tags/vscode-v')
-    environment: vscode-marketplace  # Use GitHub environment for approvals and secrets
+    needs: [wait-for-npm, build-and-test]
+    if: startsWith(github.ref, 'refs/tags/v') && needs.build-and-test.result == 'success'
+    environment: vscode-marketplace
     
     steps:
       - name: Checkout
@@ -109,17 +168,22 @@ jobs:
           cache: 'npm'
           cache-dependency-path: vscode/package-lock.json
       
-      - name: Install TypeScript SDK dependencies
-        working-directory: typescript
-        run: npm ci
-      
-      - name: Build TypeScript SDK
-        working-directory: typescript
-        run: npm run build
+      - name: Update SDK dependency to npm package
+        working-directory: vscode
+        run: |
+          VERSION="${{ needs.wait-for-npm.outputs.version }}"
+          echo "Updating @json-structure/sdk dependency to version $VERSION"
+          npm pkg set "dependencies.@json-structure/sdk=$VERSION"
       
       - name: Install VS Code Extension dependencies
         working-directory: vscode
-        run: npm ci
+        run: npm install
+      
+      - name: Update extension version to match SDK
+        working-directory: vscode
+        run: |
+          VERSION="${{ needs.wait-for-npm.outputs.version }}"
+          npm version $VERSION --no-git-tag-version --allow-same-version
       
       - name: Package extension
         working-directory: vscode
@@ -144,4 +208,4 @@ jobs:
           fi
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
-        continue-on-error: true  # Don't fail if Open VSX publish fails
+        continue-on-error: true
