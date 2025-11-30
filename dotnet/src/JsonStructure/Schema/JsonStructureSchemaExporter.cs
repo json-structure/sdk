@@ -16,9 +16,10 @@ namespace JsonStructure.Schema;
 public sealed class JsonStructureSchemaExporterOptions
 {
     /// <summary>
-    /// Gets or sets the schema URI to use. Defaults to JSON Structure 1.0.
+    /// Gets or sets the schema URI to use. Defaults to JSON Structure core v0.
+    /// When <see cref="UseExtendedValidation"/> is true, this is overridden to use the extended meta-schema.
     /// </summary>
-    public string SchemaUri { get; set; } = "https://json-structure.org/meta/core/v1.0";
+    public string SchemaUri { get; set; } = "https://json-structure.org/meta/core/v0/#";
 
     /// <summary>
     /// Gets or sets whether to include the $schema property. Default is true.
@@ -39,6 +40,20 @@ public sealed class JsonStructureSchemaExporterOptions
     /// Gets or sets whether to mark non-nullable reference types as required. Default is true.
     /// </summary>
     public bool TreatNullObliviousAsNonNullable { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets whether to use extended validation keywords from the JSON Structure Validation extension.
+    /// When enabled, the schema will use the extended meta-schema URI and include a $uses clause
+    /// with "JSONStructureValidation". This enables additional validation keywords such as
+    /// minLength, pattern, format, minItems, maxItems, uniqueItems, contains, minProperties,
+    /// maxProperties, dependentRequired, patternProperties, propertyNames, and default.
+    /// Default is false.
+    /// </summary>
+    /// <remarks>
+    /// See https://json-structure.github.io/validation/draft-vasters-json-structure-validation.html
+    /// for the full specification of validation extension keywords.
+    /// </remarks>
+    public bool UseExtendedValidation { get; set; } = false;
 
     /// <summary>
     /// Gets or sets a callback to transform the generated schema.
@@ -130,10 +145,19 @@ public static class JsonStructureSchemaExporter
         var schema = new JsonObject();
         var isRoot = string.IsNullOrEmpty(path);
 
-        // Add $schema for root
+        // Add $schema and $uses for root
         if (isRoot && exporterOptions.IncludeSchemaKeyword)
         {
-            schema["$schema"] = exporterOptions.SchemaUri;
+            if (exporterOptions.UseExtendedValidation)
+            {
+                // Use extended meta-schema with validation extension
+                schema["$schema"] = "https://json-structure.org/meta/extended/v0/#";
+                schema["$uses"] = new JsonArray("JSONStructureValidation");
+            }
+            else
+            {
+                schema["$schema"] = exporterOptions.SchemaUri;
+            }
         }
 
         // Handle nullable types
@@ -278,33 +302,92 @@ public static class JsonStructureSchemaExporter
                         propSchemaObj["deprecated"] = true;
                     }
 
-                    // Check for range constraints
-                    var range = prop.GetCustomAttribute<System.ComponentModel.DataAnnotations.RangeAttribute>();
-                    if (range is not null)
+                    // Validation extension keywords - only emit when UseExtendedValidation is enabled
+                    if (exporterOptions.UseExtendedValidation)
                     {
-                        if (range.Minimum is not null)
-                        {
-                            propSchemaObj["minimum"] = JsonValue.Create(Convert.ToDouble(range.Minimum));
-                        }
-                        if (range.Maximum is not null)
-                        {
-                            propSchemaObj["maximum"] = JsonValue.Create(Convert.ToDouble(range.Maximum));
-                        }
-                    }
+                        // Determine if property is an array/collection type
+                        var propType = prop.PropertyType;
+                        var isArrayType = propType.IsArray || 
+                            (propType.IsGenericType && IsCollectionType(propType.GetGenericTypeDefinition()));
 
-                    // Check for string length constraints
-                    var stringLength = prop.GetCustomAttribute<System.ComponentModel.DataAnnotations.StringLengthAttribute>();
-                    if (stringLength is not null)
-                    {
-                        propSchemaObj["minLength"] = stringLength.MinimumLength;
-                        propSchemaObj["maxLength"] = stringLength.MaximumLength;
-                    }
+                        // Check for range constraints (minimum/maximum/exclusiveMinimum/exclusiveMaximum)
+                        var range = prop.GetCustomAttribute<System.ComponentModel.DataAnnotations.RangeAttribute>();
+                        if (range is not null)
+                        {
+                            if (range.Minimum is not null)
+                            {
+                                // Check for exclusive bounds (.NET 8+)
+                                if (range.MinimumIsExclusive)
+                                {
+                                    propSchemaObj["exclusiveMinimum"] = JsonValue.Create(Convert.ToDouble(range.Minimum));
+                                }
+                                else
+                                {
+                                    propSchemaObj["minimum"] = JsonValue.Create(Convert.ToDouble(range.Minimum));
+                                }
+                            }
+                            if (range.Maximum is not null)
+                            {
+                                // Check for exclusive bounds (.NET 8+)
+                                if (range.MaximumIsExclusive)
+                                {
+                                    propSchemaObj["exclusiveMaximum"] = JsonValue.Create(Convert.ToDouble(range.Maximum));
+                                }
+                                else
+                                {
+                                    propSchemaObj["maximum"] = JsonValue.Create(Convert.ToDouble(range.Maximum));
+                                }
+                            }
+                        }
 
-                    // Check for regex pattern
-                    var regex = prop.GetCustomAttribute<System.ComponentModel.DataAnnotations.RegularExpressionAttribute>();
-                    if (regex is not null)
-                    {
-                        propSchemaObj["pattern"] = regex.Pattern;
+                        // Check for string length constraints (minLength/maxLength)
+                        var stringLength = prop.GetCustomAttribute<System.ComponentModel.DataAnnotations.StringLengthAttribute>();
+                        if (stringLength is not null)
+                        {
+                            propSchemaObj["minLength"] = stringLength.MinimumLength;
+                            propSchemaObj["maxLength"] = stringLength.MaximumLength;
+                        }
+
+                        // Check for minimum length - maps to minLength for strings, minItems for arrays
+                        var minLength = prop.GetCustomAttribute<System.ComponentModel.DataAnnotations.MinLengthAttribute>();
+                        if (minLength is not null)
+                        {
+                            if (isArrayType)
+                            {
+                                propSchemaObj["minItems"] = minLength.Length;
+                            }
+                            else
+                            {
+                                propSchemaObj["minLength"] = minLength.Length;
+                            }
+                        }
+
+                        // Check for maximum length - maps to maxLength for strings, maxItems for arrays
+                        var maxLengthAttr = prop.GetCustomAttribute<System.ComponentModel.DataAnnotations.MaxLengthAttribute>();
+                        if (maxLengthAttr is not null)
+                        {
+                            if (isArrayType)
+                            {
+                                propSchemaObj["maxItems"] = maxLengthAttr.Length;
+                            }
+                            else
+                            {
+                                propSchemaObj["maxLength"] = maxLengthAttr.Length;
+                            }
+                        }
+
+                        // Check for regex pattern
+                        var regex = prop.GetCustomAttribute<System.ComponentModel.DataAnnotations.RegularExpressionAttribute>();
+                        if (regex is not null)
+                        {
+                            propSchemaObj["pattern"] = regex.Pattern;
+                        }
+
+                        // Check for EmailAddress attribute - maps to format: "email"
+                        if (prop.GetCustomAttribute<System.ComponentModel.DataAnnotations.EmailAddressAttribute>() is not null)
+                        {
+                            propSchemaObj["format"] = "email";
+                        }
                     }
 
                     propSchema = ApplyTransform(propSchemaObj, prop.PropertyType, prop, null, 

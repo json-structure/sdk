@@ -474,4 +474,175 @@ public class SchemaValidatorTests
     }
 
     #endregion
+
+    #region Extension Keyword Warnings
+
+    [Fact]
+    public void Validate_ValidationKeywordsWithoutExtension_EmitsWarnings()
+    {
+        // Schema using validation extension keywords without enabling the extension
+        var schema = new JsonObject
+        {
+            ["$schema"] = "https://json-structure.org/meta/core/v0/#",
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["name"] = new JsonObject
+                {
+                    ["type"] = "string",
+                    ["minLength"] = 1,
+                    ["pattern"] = "^[A-Z]"
+                },
+                ["age"] = new JsonObject
+                {
+                    ["type"] = "int32",
+                    ["minimum"] = 0,
+                    ["maximum"] = 150
+                }
+            }
+        };
+
+        var result = _validator.Validate(schema);
+
+        // Schema should still be valid (warnings don't fail validation)
+        result.IsValid.Should().BeTrue();
+        
+        // But we should have warnings for the validation extension keywords
+        result.Warnings.Should().HaveCountGreaterOrEqualTo(4);
+        result.Warnings.Should().Contain(w => w.Code == ErrorCodes.SchemaExtensionKeywordNotEnabled);
+        result.Warnings.Should().Contain(w => w.Message.Contains("minLength"));
+        result.Warnings.Should().Contain(w => w.Message.Contains("pattern"));
+        result.Warnings.Should().Contain(w => w.Message.Contains("minimum"));
+        result.Warnings.Should().Contain(w => w.Message.Contains("maximum"));
+    }
+
+    [Fact]
+    public void Validate_ValidationKeywordsWithExtensionEnabled_NoWarnings()
+    {
+        // Schema using validation extension with $uses enabling it
+        var schema = new JsonObject
+        {
+            ["$schema"] = "https://json-structure.org/meta/extended/v0/#",
+            ["$uses"] = new JsonArray { "JSONStructureValidation" },
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["name"] = new JsonObject
+                {
+                    ["type"] = "string",
+                    ["minLength"] = 1,
+                    ["pattern"] = "^[A-Z]"
+                },
+                ["age"] = new JsonObject
+                {
+                    ["type"] = "int32",
+                    ["minimum"] = 0,
+                    ["maximum"] = 150
+                }
+            }
+        };
+
+        var result = _validator.Validate(schema);
+
+        result.IsValid.Should().BeTrue();
+        result.Warnings.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Validate_ValidationKeywordsWithValidationMetaSchema_NoWarnings()
+    {
+        // Schema using validation meta-schema
+        var schema = new JsonObject
+        {
+            ["$schema"] = "https://json-structure.org/meta/validation/v0/#",
+            ["type"] = "string",
+            ["minLength"] = 1,
+            ["pattern"] = "^[A-Z]"
+        };
+
+        var result = _validator.Validate(schema);
+
+        result.IsValid.Should().BeTrue();
+        result.Warnings.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Validate_WarningsCanBeDisabled()
+    {
+        var options = new ValidationOptions
+        {
+            WarnOnUnusedExtensionKeywords = false
+        };
+        var validator = new SchemaValidator(options);
+
+        var schema = new JsonObject
+        {
+            ["$schema"] = "https://json-structure.org/meta/core/v0/#",
+            ["type"] = "string",
+            ["minLength"] = 1,
+            ["pattern"] = "^[A-Z]"
+        };
+
+        var result = validator.Validate(schema);
+
+        result.IsValid.Should().BeTrue();
+        result.Warnings.Should().BeEmpty(); // Warnings disabled
+    }
+
+    [Fact]
+    public void Validate_ArrayValidationKeywordsWithoutExtension_EmitsWarnings()
+    {
+        var schema = new JsonObject
+        {
+            ["type"] = "array",
+            ["items"] = new JsonObject { ["type"] = "string" },
+            ["minItems"] = 1,
+            ["maxItems"] = 10,
+            ["uniqueItems"] = true
+        };
+
+        var result = _validator.Validate(schema);
+
+        result.IsValid.Should().BeTrue();
+        result.Warnings.Should().HaveCountGreaterOrEqualTo(3);
+        result.Warnings.Should().Contain(w => w.Message.Contains("minItems"));
+        result.Warnings.Should().Contain(w => w.Message.Contains("maxItems"));
+        result.Warnings.Should().Contain(w => w.Message.Contains("uniqueItems"));
+    }
+
+    [Fact]
+    public void Validate_ObjectValidationKeywordsWithoutExtension_EmitsWarnings()
+    {
+        var schema = new JsonObject
+        {
+            ["type"] = "object",
+            ["minProperties"] = 1,
+            ["maxProperties"] = 10
+        };
+
+        var result = _validator.Validate(schema);
+
+        result.IsValid.Should().BeTrue();
+        result.Warnings.Should().HaveCountGreaterOrEqualTo(2);
+        result.Warnings.Should().Contain(w => w.Message.Contains("minProperties"));
+        result.Warnings.Should().Contain(w => w.Message.Contains("maxProperties"));
+    }
+
+    [Fact]
+    public void Validate_DefaultKeywordWithoutExtension_EmitsWarning()
+    {
+        var schema = new JsonObject
+        {
+            ["type"] = "string",
+            ["default"] = "hello"
+        };
+
+        var result = _validator.Validate(schema);
+
+        result.IsValid.Should().BeTrue();
+        result.Warnings.Should().ContainSingle();
+        result.Warnings[0].Message.Should().Contain("default");
+    }
+
+    #endregion
 }

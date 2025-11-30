@@ -98,6 +98,35 @@ public sealed class SchemaValidator
     private JsonNode? _rootSchema;
     private JsonSourceLocator? _sourceLocator;
     private Dictionary<string, JsonNode> _externalSchemas = new();
+    private bool _validationExtensionEnabled;
+
+    /// <summary>
+    /// Validation extension keywords that require the JSONStructureValidation feature.
+    /// </summary>
+    private static readonly HashSet<string> ValidationExtensionKeywords = new(StringComparer.Ordinal)
+    {
+        // Numeric validation
+        "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf",
+        // String validation
+        "minLength", "pattern", "format",
+        // Array/Set validation
+        "minItems", "maxItems", "uniqueItems", "contains", "minContains", "maxContains",
+        // Object/Map validation
+        "minProperties", "maxProperties", "dependentRequired", "patternProperties", "propertyNames",
+        // Map-specific
+        "minEntries", "maxEntries", "patternKeys", "keyNames",
+        // Other
+        "has", "default"
+    };
+
+    /// <summary>
+    /// Keywords that are part of core specification (not validation extensions).
+    /// maxLength is in core spec, not validation extension.
+    /// </summary>
+    private static readonly HashSet<string> CoreKeywords = new(StringComparer.Ordinal)
+    {
+        "maxLength" // Part of core spec
+    };
 
     static SchemaValidator()
     {
@@ -252,6 +281,9 @@ public sealed class SchemaValidator
         // Store root schema for ref resolution
         _rootSchema = schema;
         
+        // Detect if validation extensions are enabled
+        _validationExtensionEnabled = IsValidationExtensionEnabled(schema);
+        
         // Process imports if enabled
         if (_options.AllowImport && schema is JsonObject schemaObj)
         {
@@ -266,6 +298,61 @@ public sealed class SchemaValidator
 
         ValidateSchemaCore(schema, result, "", 0, new HashSet<string>());
         return result;
+    }
+
+    /// <summary>
+    /// Checks if the validation extension is enabled via $schema or $uses.
+    /// </summary>
+    private static bool IsValidationExtensionEnabled(JsonNode? schema)
+    {
+        if (schema is not JsonObject schemaObj)
+            return false;
+
+        // Check $schema - validation meta-schema enables all validation keywords
+        if (schemaObj.TryGetPropertyValue("$schema", out var schemaValue) &&
+            schemaValue is JsonValue sv && sv.TryGetValue<string>(out var schemaUri))
+        {
+            // Check for validation meta-schema
+            if (schemaUri.Contains("/meta/validation/"))
+                return true;
+        }
+
+        // Check $uses for JSONStructureValidation
+        if (schemaObj.TryGetPropertyValue("$uses", out var usesValue) && usesValue is JsonArray usesArray)
+        {
+            foreach (var useItem in usesArray)
+            {
+                if (useItem is JsonValue uv && uv.TryGetValue<string>(out var useStr))
+                {
+                    if (useStr == "JSONStructureValidation")
+                        return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Adds a warning for validation extension keywords used without the extension enabled.
+    /// </summary>
+    private void AddExtensionKeywordWarning(ValidationResult result, string keyword, string path)
+    {
+        if (!_options.WarnOnUnusedExtensionKeywords)
+            return;
+
+        if (_validationExtensionEnabled)
+            return;
+
+        if (!ValidationExtensionKeywords.Contains(keyword))
+            return;
+
+        result.AddWarning(
+            ErrorCodes.SchemaExtensionKeywordNotEnabled,
+            $"Validation extension keyword '{keyword}' is used but validation extensions are not enabled. " +
+            "Add '\"$uses\": [\"JSONStructureValidation\"]' to enable validation, or this keyword will be ignored.",
+            AppendPath(path, keyword),
+            GetLocation(AppendPath(path, keyword)));
     }
 
     /// <summary>
@@ -609,6 +696,12 @@ public sealed class SchemaValidator
         if (schema.TryGetPropertyValue("const", out var constValue))
         {
             ValidateConstValue(constValue, typeStr, path, result);
+        }
+
+        // Check for default keyword (validation extension)
+        if (schema.ContainsKey("default"))
+        {
+            AddExtensionKeywordWarning(result, "default", path);
         }
 
         // Validate conditional composition keywords
@@ -1039,9 +1132,35 @@ public sealed class SchemaValidator
             }
         }
 
-        // Validate minProperties/maxProperties
-        ValidateNonNegativeInteger(schema, "minProperties", path, result);
-        ValidateNonNegativeInteger(schema, "maxProperties", path, result);
+        // Validate minProperties/maxProperties (validation extensions)
+        if (schema.ContainsKey("minProperties"))
+        {
+            ValidateNonNegativeInteger(schema, "minProperties", path, result);
+            AddExtensionKeywordWarning(result, "minProperties", path);
+        }
+        if (schema.ContainsKey("maxProperties"))
+        {
+            ValidateNonNegativeInteger(schema, "maxProperties", path, result);
+            AddExtensionKeywordWarning(result, "maxProperties", path);
+        }
+        
+        // Validate dependentRequired (validation extension)
+        if (schema.ContainsKey("dependentRequired"))
+        {
+            AddExtensionKeywordWarning(result, "dependentRequired", path);
+        }
+        
+        // Validate patternProperties (validation extension)
+        if (schema.ContainsKey("patternProperties"))
+        {
+            AddExtensionKeywordWarning(result, "patternProperties", path);
+        }
+        
+        // Validate propertyNames (validation extension)
+        if (schema.ContainsKey("propertyNames"))
+        {
+            AddExtensionKeywordWarning(result, "propertyNames", path);
+        }
     }
 
     private void ValidateArraySchema(JsonObject schema, string path, ValidationResult result, int depth, HashSet<string> visitedRefs)
@@ -1058,27 +1177,46 @@ public sealed class SchemaValidator
             ValidateSchemaCore(itemsValue!, result, AppendPath(path, "items"), depth + 1, visitedRefs);
         }
 
-        // Validate minItems/maxItems
-        ValidateNonNegativeInteger(schema, "minItems", path, result);
-        ValidateNonNegativeInteger(schema, "maxItems", path, result);
+        // Validate minItems/maxItems (validation extensions)
+        if (schema.ContainsKey("minItems"))
+        {
+            ValidateNonNegativeInteger(schema, "minItems", path, result);
+            AddExtensionKeywordWarning(result, "minItems", path);
+        }
+        if (schema.ContainsKey("maxItems"))
+        {
+            ValidateNonNegativeInteger(schema, "maxItems", path, result);
+            AddExtensionKeywordWarning(result, "maxItems", path);
+        }
 
-        // Validate uniqueItems
+        // Validate uniqueItems (validation extension)
         if (schema.TryGetPropertyValue("uniqueItems", out var uniqueValue))
         {
             if (uniqueValue is not JsonValue jv || !jv.TryGetValue<bool>(out _))
             {
                 AddError(result, ErrorCodes.SchemaUniqueItemsNotBoolean, "uniqueItems must be a boolean", AppendPath(path, "uniqueItems"));
             }
+            AddExtensionKeywordWarning(result, "uniqueItems", path);
         }
 
-        // Validate contains
+        // Validate contains (validation extension)
         if (schema.TryGetPropertyValue("contains", out var containsValue))
         {
             ValidateSchemaCore(containsValue!, result, AppendPath(path, "contains"), depth + 1, visitedRefs);
+            AddExtensionKeywordWarning(result, "contains", path);
         }
 
-        ValidateNonNegativeInteger(schema, "minContains", path, result);
-        ValidateNonNegativeInteger(schema, "maxContains", path, result);
+        // Validate minContains/maxContains (validation extensions)
+        if (schema.ContainsKey("minContains"))
+        {
+            ValidateNonNegativeInteger(schema, "minContains", path, result);
+            AddExtensionKeywordWarning(result, "minContains", path);
+        }
+        if (schema.ContainsKey("maxContains"))
+        {
+            ValidateNonNegativeInteger(schema, "maxContains", path, result);
+            AddExtensionKeywordWarning(result, "maxContains", path);
+        }
     }
 
     private void ValidateTupleSchema(JsonObject schema, string path, ValidationResult result, int depth, HashSet<string> visitedRefs)
@@ -1237,10 +1375,17 @@ public sealed class SchemaValidator
 
     private void ValidateStringSchema(JsonObject schema, string path, ValidationResult result)
     {
-        ValidateNonNegativeInteger(schema, "minLength", path, result);
+        // minLength is a validation extension keyword
+        if (schema.ContainsKey("minLength"))
+        {
+            ValidateNonNegativeInteger(schema, "minLength", path, result);
+            AddExtensionKeywordWarning(result, "minLength", path);
+        }
+        
+        // maxLength is in core spec
         ValidateNonNegativeInteger(schema, "maxLength", path, result);
 
-        // Validate pattern
+        // Validate pattern (validation extension)
         if (schema.TryGetPropertyValue("pattern", out var patternValue))
         {
             if (patternValue is not JsonValue jv || !jv.TryGetValue<string>(out var pattern))
@@ -1258,12 +1403,14 @@ public sealed class SchemaValidator
                     AddError(result, ErrorCodes.SchemaPatternInvalid, $"pattern is not a valid regular expression: '{pattern}'", AppendPath(path, "pattern"));
                 }
             }
+            AddExtensionKeywordWarning(result, "pattern", path);
         }
 
-        // Validate format
+        // Validate format (validation extension)
         if (schema.TryGetPropertyValue("format", out var formatValue))
         {
             ValidateStringProperty(formatValue, "format", path, result);
+            AddExtensionKeywordWarning(result, "format", path);
         }
 
         // Validate contentEncoding
@@ -1281,12 +1428,32 @@ public sealed class SchemaValidator
 
     private void ValidateNumericSchema(JsonObject schema, string path, ValidationResult result)
     {
-        // Validate minimum/maximum
-        ValidateNumber(schema, "minimum", path, result);
-        ValidateNumber(schema, "maximum", path, result);
-        ValidateNumber(schema, "exclusiveMinimum", path, result);
-        ValidateNumber(schema, "exclusiveMaximum", path, result);
-        ValidatePositiveNumber(schema, "multipleOf", path, result);
+        // Validate minimum/maximum (validation extensions)
+        if (schema.ContainsKey("minimum"))
+        {
+            ValidateNumber(schema, "minimum", path, result);
+            AddExtensionKeywordWarning(result, "minimum", path);
+        }
+        if (schema.ContainsKey("maximum"))
+        {
+            ValidateNumber(schema, "maximum", path, result);
+            AddExtensionKeywordWarning(result, "maximum", path);
+        }
+        if (schema.ContainsKey("exclusiveMinimum"))
+        {
+            ValidateNumber(schema, "exclusiveMinimum", path, result);
+            AddExtensionKeywordWarning(result, "exclusiveMinimum", path);
+        }
+        if (schema.ContainsKey("exclusiveMaximum"))
+        {
+            ValidateNumber(schema, "exclusiveMaximum", path, result);
+            AddExtensionKeywordWarning(result, "exclusiveMaximum", path);
+        }
+        if (schema.ContainsKey("multipleOf"))
+        {
+            ValidatePositiveNumber(schema, "multipleOf", path, result);
+            AddExtensionKeywordWarning(result, "multipleOf", path);
+        }
     }
 
     private void ValidateEnum(JsonNode? value, string path, ValidationResult result)

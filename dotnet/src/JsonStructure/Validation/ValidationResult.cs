@@ -276,6 +276,21 @@ public sealed class ValidationOptions
     public Dictionary<string, JsonNode>? ExternalSchemas { get; set; }
 
     /// <summary>
+    /// Gets or sets whether to emit warnings when extension keywords are used without being enabled
+    /// via $schema or $uses. When true (default), the validator will emit warnings for validation
+    /// extension keywords (like minimum, maximum, minLength, maxLength, pattern, format, minItems,
+    /// maxItems, etc.) that are present in a schema but won't be enforced because the validation
+    /// extension is not enabled. Set to false to suppress these warnings.
+    /// </summary>
+    /// <remarks>
+    /// Extension keywords are optional features defined in JSON Structure Validation extension.
+    /// They require either the validation meta-schema or a $uses clause with "JSONStructureValidation"
+    /// to be enforced. Using them without enabling the extension means they will be ignored during
+    /// validation, which might not be the author's intent.
+    /// </remarks>
+    public bool WarnOnUnusedExtensionKeywords { get; set; } = true;
+
+    /// <summary>
     /// Gets a default instance of the options.
     /// </summary>
     public static ValidationOptions Default { get; } = new();

@@ -20,7 +20,7 @@ public class JsonStructureSchemaExporterTests
         
         // Check $schema is present and correct
         schemaObj["$schema"].Should().NotBeNull();
-        schemaObj["$schema"]!.GetValue<string>().Should().Be("https://json-structure.org/meta/core/v1.0");
+        schemaObj["$schema"]!.GetValue<string>().Should().Be("https://json-structure.org/meta/core/v0/#");
         
         // Check type is object
         schemaObj["type"].Should().NotBeNull();
@@ -65,7 +65,7 @@ public class JsonStructureSchemaExporterTests
         var schemaObj = schema.AsObject();
         
         // Check root schema structure
-        schemaObj["$schema"]!.GetValue<string>().Should().Be("https://json-structure.org/meta/core/v1.0");
+        schemaObj["$schema"]!.GetValue<string>().Should().Be("https://json-structure.org/meta/core/v0/#");
         schemaObj["type"]!.GetValue<string>().Should().Be("object");
         schemaObj["title"]!.GetValue<string>().Should().Be("TypeMappingClass");
         
@@ -132,7 +132,7 @@ public class JsonStructureSchemaExporterTests
         var schemaObj = schema.AsObject();
         
         // Check root schema structure
-        schemaObj["$schema"]!.GetValue<string>().Should().Be("https://json-structure.org/meta/core/v1.0");
+        schemaObj["$schema"]!.GetValue<string>().Should().Be("https://json-structure.org/meta/core/v0/#");
         schemaObj["type"]!.GetValue<string>().Should().Be("object");
         schemaObj["title"]!.GetValue<string>().Should().Be("ClassWithEnum");
         
@@ -161,7 +161,7 @@ public class JsonStructureSchemaExporterTests
         var schemaObj = schema.AsObject();
         
         // Check root schema structure
-        schemaObj["$schema"]!.GetValue<string>().Should().Be("https://json-structure.org/meta/core/v1.0");
+        schemaObj["$schema"]!.GetValue<string>().Should().Be("https://json-structure.org/meta/core/v0/#");
         schemaObj["type"]!.GetValue<string>().Should().Be("object");
         schemaObj["title"]!.GetValue<string>().Should().Be("ClassWithList");
         
@@ -190,7 +190,7 @@ public class JsonStructureSchemaExporterTests
         var schemaObj = schema.AsObject();
         
         // Check root schema structure
-        schemaObj["$schema"]!.GetValue<string>().Should().Be("https://json-structure.org/meta/core/v1.0");
+        schemaObj["$schema"]!.GetValue<string>().Should().Be("https://json-structure.org/meta/core/v0/#");
         schemaObj["type"]!.GetValue<string>().Should().Be("object");
         schemaObj["title"]!.GetValue<string>().Should().Be("ClassWithDictionary");
         
@@ -219,7 +219,7 @@ public class JsonStructureSchemaExporterTests
         var schemaObj = schema.AsObject();
         
         // Check root schema structure
-        schemaObj["$schema"]!.GetValue<string>().Should().Be("https://json-structure.org/meta/core/v1.0");
+        schemaObj["$schema"]!.GetValue<string>().Should().Be("https://json-structure.org/meta/core/v0/#");
         schemaObj["type"]!.GetValue<string>().Should().Be("object");
         schemaObj["title"]!.GetValue<string>().Should().Be("ClassWithHashSet");
         
@@ -248,7 +248,7 @@ public class JsonStructureSchemaExporterTests
         var schemaObj = schema.AsObject();
         
         // Check root schema structure
-        schemaObj["$schema"]!.GetValue<string>().Should().Be("https://json-structure.org/meta/core/v1.0");
+        schemaObj["$schema"]!.GetValue<string>().Should().Be("https://json-structure.org/meta/core/v0/#");
         schemaObj["type"]!.GetValue<string>().Should().Be("object");
         schemaObj["title"]!.GetValue<string>().Should().Be("ClassWithRequired");
         
@@ -281,7 +281,7 @@ public class JsonStructureSchemaExporterTests
         var schemaObj = schema.AsObject();
         
         // Check root schema structure
-        schemaObj["$schema"]!.GetValue<string>().Should().Be("https://json-structure.org/meta/core/v1.0");
+        schemaObj["$schema"]!.GetValue<string>().Should().Be("https://json-structure.org/meta/core/v0/#");
         schemaObj["type"]!.GetValue<string>().Should().Be("object");
         schemaObj["title"]!.GetValue<string>().Should().Be("ClassWithDescription");
         schemaObj["description"]!.GetValue<string>().Should().Be("This is a test class");
@@ -308,7 +308,7 @@ public class JsonStructureSchemaExporterTests
         var schemaObj = schema.AsObject();
         
         // Check root schema structure
-        schemaObj["$schema"]!.GetValue<string>().Should().Be("https://json-structure.org/meta/core/v1.0");
+        schemaObj["$schema"]!.GetValue<string>().Should().Be("https://json-structure.org/meta/core/v0/#");
         schemaObj["type"]!.GetValue<string>().Should().Be("object");
         schemaObj["title"]!.GetValue<string>().Should().Be("ClassWithJsonPropertyName");
         
@@ -358,7 +358,7 @@ public class JsonStructureSchemaExporterTests
         schemaObj["customProperty"]!.GetValue<string>().Should().Be("customValue");
         
         // Check original properties still exist
-        schemaObj["$schema"]!.GetValue<string>().Should().Be("https://json-structure.org/meta/core/v1.0");
+        schemaObj["$schema"]!.GetValue<string>().Should().Be("https://json-structure.org/meta/core/v0/#");
         schemaObj["type"]!.GetValue<string>().Should().Be("object");
         schemaObj["title"]!.GetValue<string>().Should().Be("SimpleClass");
         schemaObj["properties"].Should().NotBeNull();
@@ -373,7 +373,7 @@ public class JsonStructureSchemaExporterTests
         var schemaObj = schema.AsObject();
         
         // Check root schema structure
-        schemaObj["$schema"]!.GetValue<string>().Should().Be("https://json-structure.org/meta/core/v1.0");
+        schemaObj["$schema"]!.GetValue<string>().Should().Be("https://json-structure.org/meta/core/v0/#");
         schemaObj["type"]!.GetValue<string>().Should().Be("object");
         schemaObj["title"]!.GetValue<string>().Should().Be("ClassWithLargeIntegers");
         
@@ -394,81 +394,339 @@ public class JsonStructureSchemaExporterTests
     }
 
     [Fact]
-    public void GetJsonStructureSchemaAsNode_WithRangeAttribute_IncludesMinMax()
+    public void GetJsonStructureSchemaAsNode_WithRangeAttribute_DoesNotIncludeMinMaxWithoutExtendedValidation()
     {
+        // Without UseExtendedValidation, range constraints should NOT be emitted
         var schema = JsonStructureSchemaExporter.GetJsonStructureSchemaAsNode<ClassWithRange>();
 
         var schemaObj = schema.AsObject();
-        
-        // Check root schema structure
-        schemaObj["$schema"]!.GetValue<string>().Should().Be("https://json-structure.org/meta/core/v1.0");
-        schemaObj["type"]!.GetValue<string>().Should().Be("object");
-        schemaObj["title"]!.GetValue<string>().Should().Be("ClassWithRange");
-        
         var props = schemaObj["properties"]!.AsObject();
-        props.Count.Should().Be(1);
-        
         var valueProp = props["Value"]!.AsObject();
-        valueProp["type"]!.GetValue<string>().Should().Be("int32");
-        valueProp["title"]!.GetValue<string>().Should().Be("Int32");
-        valueProp["minimum"]!.GetValue<double>().Should().Be(0);
-        valueProp["maximum"]!.GetValue<double>().Should().Be(100);
         
-        // Verify required
-        var required = schemaObj["required"]!.AsArray().Select(v => v!.GetValue<string>()).ToList();
-        required.Should().ContainSingle().Which.Should().Be("Value");
+        // Validation keywords should NOT be present
+        valueProp.ContainsKey("minimum").Should().BeFalse();
+        valueProp.ContainsKey("maximum").Should().BeFalse();
     }
 
     [Fact]
-    public void GetJsonStructureSchemaAsNode_WithStringLength_IncludesLengthConstraints()
+    public void GetJsonStructureSchemaAsNode_WithRangeAttribute_IncludesMinMaxWithExtendedValidation()
     {
+        var exporterOptions = new JsonStructureSchemaExporterOptions
+        {
+            UseExtendedValidation = true
+        };
+
+        var schema = JsonStructureSchemaExporter.GetJsonStructureSchemaAsNode<ClassWithRange>(
+            exporterOptions: exporterOptions);
+
+        var schemaObj = schema.AsObject();
+        
+        // Check extended schema and $uses
+        schemaObj["$schema"]!.GetValue<string>().Should().Be("https://json-structure.org/meta/extended/v0/#");
+        schemaObj["$uses"]!.AsArray()[0]!.GetValue<string>().Should().Be("JSONStructureValidation");
+        
+        var props = schemaObj["properties"]!.AsObject();
+        var valueProp = props["Value"]!.AsObject();
+        valueProp["type"]!.GetValue<string>().Should().Be("int32");
+        valueProp["minimum"]!.GetValue<double>().Should().Be(0);
+        valueProp["maximum"]!.GetValue<double>().Should().Be(100);
+    }
+
+    [Fact]
+    public void GetJsonStructureSchemaAsNode_WithStringLength_DoesNotIncludeLengthWithoutExtendedValidation()
+    {
+        // Without UseExtendedValidation, length constraints should NOT be emitted
         var schema = JsonStructureSchemaExporter.GetJsonStructureSchemaAsNode<ClassWithStringLength>();
 
         var schemaObj = schema.AsObject();
-        
-        // Check root schema structure
-        schemaObj["$schema"]!.GetValue<string>().Should().Be("https://json-structure.org/meta/core/v1.0");
-        schemaObj["type"]!.GetValue<string>().Should().Be("object");
-        schemaObj["title"]!.GetValue<string>().Should().Be("ClassWithStringLength");
-        
         var props = schemaObj["properties"]!.AsObject();
-        props.Count.Should().Be(1);
-        
         var nameProp = props["Name"]!.AsObject();
-        nameProp["type"]!.GetValue<string>().Should().Be("string");
-        nameProp["title"]!.GetValue<string>().Should().Be("String");
-        nameProp["minLength"]!.GetValue<int>().Should().Be(1);
-        nameProp["maxLength"]!.GetValue<int>().Should().Be(50);
         
-        // Verify required
-        var required = schemaObj["required"]!.AsArray().Select(v => v!.GetValue<string>()).ToList();
-        required.Should().ContainSingle().Which.Should().Be("Name");
+        // Validation keywords should NOT be present
+        nameProp.ContainsKey("minLength").Should().BeFalse();
+        nameProp.ContainsKey("maxLength").Should().BeFalse();
     }
 
     [Fact]
-    public void GetJsonStructureSchemaAsNode_WithRegex_IncludesPattern()
+    public void GetJsonStructureSchemaAsNode_WithStringLength_IncludesLengthWithExtendedValidation()
     {
-        var schema = JsonStructureSchemaExporter.GetJsonStructureSchemaAsNode<ClassWithRegex>();
+        var exporterOptions = new JsonStructureSchemaExporterOptions
+        {
+            UseExtendedValidation = true
+        };
+
+        var schema = JsonStructureSchemaExporter.GetJsonStructureSchemaAsNode<ClassWithStringLength>(
+            exporterOptions: exporterOptions);
 
         var schemaObj = schema.AsObject();
         
-        // Check root schema structure
-        schemaObj["$schema"]!.GetValue<string>().Should().Be("https://json-structure.org/meta/core/v1.0");
-        schemaObj["type"]!.GetValue<string>().Should().Be("object");
-        schemaObj["title"]!.GetValue<string>().Should().Be("ClassWithRegex");
+        // Check extended schema and $uses
+        schemaObj["$schema"]!.GetValue<string>().Should().Be("https://json-structure.org/meta/extended/v0/#");
         
         var props = schemaObj["properties"]!.AsObject();
-        props.Count.Should().Be(1);
+        var nameProp = props["Name"]!.AsObject();
+        nameProp["type"]!.GetValue<string>().Should().Be("string");
+        nameProp["minLength"]!.GetValue<int>().Should().Be(1);
+        nameProp["maxLength"]!.GetValue<int>().Should().Be(50);
+    }
+
+    [Fact]
+    public void GetJsonStructureSchemaAsNode_WithRegex_DoesNotIncludePatternWithoutExtendedValidation()
+    {
+        // Without UseExtendedValidation, pattern should NOT be emitted
+        var schema = JsonStructureSchemaExporter.GetJsonStructureSchemaAsNode<ClassWithRegex>();
+
+        var schemaObj = schema.AsObject();
+        var props = schemaObj["properties"]!.AsObject();
+        var emailProp = props["Email"]!.AsObject();
+        
+        // Pattern should NOT be present
+        emailProp.ContainsKey("pattern").Should().BeFalse();
+    }
+
+    [Fact]
+    public void GetJsonStructureSchemaAsNode_WithRegex_IncludesPatternWithExtendedValidation()
+    {
+        var exporterOptions = new JsonStructureSchemaExporterOptions
+        {
+            UseExtendedValidation = true
+        };
+
+        var schema = JsonStructureSchemaExporter.GetJsonStructureSchemaAsNode<ClassWithRegex>(
+            exporterOptions: exporterOptions);
+
+        var schemaObj = schema.AsObject();
+        
+        // Check extended schema
+        schemaObj["$schema"]!.GetValue<string>().Should().Be("https://json-structure.org/meta/extended/v0/#");
+        
+        var props = schemaObj["properties"]!.AsObject();
+        var emailProp = props["Email"]!.AsObject();
+        emailProp["type"]!.GetValue<string>().Should().Be("string");
+        emailProp["pattern"]!.GetValue<string>().Should().Be(@"^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$");
+    }
+
+    [Fact]
+    public void GetJsonStructureSchemaAsNode_WithMinLengthAttribute_IncludesMinLengthWithExtendedValidation()
+    {
+        var exporterOptions = new JsonStructureSchemaExporterOptions
+        {
+            UseExtendedValidation = true
+        };
+
+        var schema = JsonStructureSchemaExporter.GetJsonStructureSchemaAsNode<ClassWithMinLength>(
+            exporterOptions: exporterOptions);
+
+        var schemaObj = schema.AsObject();
+        var props = schemaObj["properties"]!.AsObject();
+        var valueProp = props["Value"]!.AsObject();
+        
+        valueProp["minLength"]!.GetValue<int>().Should().Be(5);
+        valueProp.ContainsKey("maxLength").Should().BeFalse();
+    }
+
+    [Fact]
+    public void GetJsonStructureSchemaAsNode_WithMaxLengthAttribute_IncludesMaxLengthWithExtendedValidation()
+    {
+        var exporterOptions = new JsonStructureSchemaExporterOptions
+        {
+            UseExtendedValidation = true
+        };
+
+        var schema = JsonStructureSchemaExporter.GetJsonStructureSchemaAsNode<ClassWithMaxLength>(
+            exporterOptions: exporterOptions);
+
+        var schemaObj = schema.AsObject();
+        var props = schemaObj["properties"]!.AsObject();
+        var valueProp = props["Value"]!.AsObject();
+        
+        valueProp["maxLength"]!.GetValue<int>().Should().Be(100);
+        valueProp.ContainsKey("minLength").Should().BeFalse();
+    }
+
+    [Fact]
+    public void GetJsonStructureSchemaAsNode_AllValidationAnnotations_OnlyEmittedWithExtendedValidation()
+    {
+        var exporterOptions = new JsonStructureSchemaExporterOptions
+        {
+            UseExtendedValidation = true
+        };
+
+        var schema = JsonStructureSchemaExporter.GetJsonStructureSchemaAsNode<ClassWithAllValidationAnnotations>(
+            exporterOptions: exporterOptions);
+
+        var schemaObj = schema.AsObject();
+        
+        // Verify extended schema
+        schemaObj["$schema"]!.GetValue<string>().Should().Be("https://json-structure.org/meta/extended/v0/#");
+        schemaObj["$uses"]!.AsArray().Should().HaveCount(1);
+        
+        var props = schemaObj["properties"]!.AsObject();
+        
+        // Check Age with Range
+        var ageProp = props["Age"]!.AsObject();
+        ageProp["minimum"]!.GetValue<double>().Should().Be(0);
+        ageProp["maximum"]!.GetValue<double>().Should().Be(150);
+        
+        // Check Name with StringLength
+        var nameProp = props["Name"]!.AsObject();
+        nameProp["minLength"]!.GetValue<int>().Should().Be(1);
+        nameProp["maxLength"]!.GetValue<int>().Should().Be(100);
+        
+        // Check Email with RegularExpression
+        var emailProp = props["Email"]!.AsObject();
+        emailProp["pattern"].Should().NotBeNull();
+        
+        // Check Score with Range (double)
+        var scoreProp = props["Score"]!.AsObject();
+        scoreProp["minimum"]!.GetValue<double>().Should().Be(0.0);
+        scoreProp["maximum"]!.GetValue<double>().Should().Be(100.0);
+    }
+
+    [Fact]
+    public void GetJsonStructureSchemaAsNode_AllValidationAnnotations_NotEmittedWithoutExtendedValidation()
+    {
+        // Without UseExtendedValidation flag
+        var schema = JsonStructureSchemaExporter.GetJsonStructureSchemaAsNode<ClassWithAllValidationAnnotations>();
+
+        var schemaObj = schema.AsObject();
+        
+        // Verify core schema (not extended)
+        schemaObj["$schema"]!.GetValue<string>().Should().Be("https://json-structure.org/meta/core/v0/#");
+        schemaObj.ContainsKey("$uses").Should().BeFalse();
+        
+        var props = schemaObj["properties"]!.AsObject();
+        
+        // Check Age - no validation keywords
+        var ageProp = props["Age"]!.AsObject();
+        ageProp.ContainsKey("minimum").Should().BeFalse();
+        ageProp.ContainsKey("maximum").Should().BeFalse();
+        
+        // Check Name - no validation keywords
+        var nameProp = props["Name"]!.AsObject();
+        nameProp.ContainsKey("minLength").Should().BeFalse();
+        nameProp.ContainsKey("maxLength").Should().BeFalse();
+        
+        // Check Email - no pattern
+        var emailProp = props["Email"]!.AsObject();
+        emailProp.ContainsKey("pattern").Should().BeFalse();
+        
+        // Check Score - no validation keywords
+        var scoreProp = props["Score"]!.AsObject();
+        scoreProp.ContainsKey("minimum").Should().BeFalse();
+        scoreProp.ContainsKey("maximum").Should().BeFalse();
+    }
+
+    [Fact]
+    public void GetJsonStructureSchemaAsNode_WithArrayMinLength_EmitsMinItems()
+    {
+        var exporterOptions = new JsonStructureSchemaExporterOptions
+        {
+            UseExtendedValidation = true
+        };
+
+        var schema = JsonStructureSchemaExporter.GetJsonStructureSchemaAsNode<ClassWithArrayLengthConstraints>(
+            exporterOptions: exporterOptions);
+
+        var schemaObj = schema.AsObject();
+        var props = schemaObj["properties"]!.AsObject();
+        
+        // Tags has MinLength(2) - should be minItems for arrays
+        var tagsProp = props["Tags"]!.AsObject();
+        tagsProp["minItems"]!.GetValue<int>().Should().Be(2);
+        tagsProp.ContainsKey("minLength").Should().BeFalse();
+        
+        // Numbers has MaxLength(10) - should be maxItems for arrays
+        var numbersProp = props["Numbers"]!.AsObject();
+        numbersProp["maxItems"]!.GetValue<int>().Should().Be(10);
+        numbersProp.ContainsKey("maxLength").Should().BeFalse();
+        
+        // Scores has both MinLength(1) and MaxLength(5)
+        var scoresProp = props["Scores"]!.AsObject();
+        scoresProp["minItems"]!.GetValue<int>().Should().Be(1);
+        scoresProp["maxItems"]!.GetValue<int>().Should().Be(5);
+    }
+
+    [Fact]
+    public void GetJsonStructureSchemaAsNode_WithArrayMinLength_NotEmittedWithoutExtendedValidation()
+    {
+        var schema = JsonStructureSchemaExporter.GetJsonStructureSchemaAsNode<ClassWithArrayLengthConstraints>();
+
+        var schemaObj = schema.AsObject();
+        var props = schemaObj["properties"]!.AsObject();
+        
+        var tagsProp = props["Tags"]!.AsObject();
+        tagsProp.ContainsKey("minItems").Should().BeFalse();
+        
+        var numbersProp = props["Numbers"]!.AsObject();
+        numbersProp.ContainsKey("maxItems").Should().BeFalse();
+    }
+
+    [Fact]
+    public void GetJsonStructureSchemaAsNode_WithExclusiveRange_EmitsExclusiveMinMax()
+    {
+        var exporterOptions = new JsonStructureSchemaExporterOptions
+        {
+            UseExtendedValidation = true
+        };
+
+        var schema = JsonStructureSchemaExporter.GetJsonStructureSchemaAsNode<ClassWithExclusiveRange>(
+            exporterOptions: exporterOptions);
+
+        var schemaObj = schema.AsObject();
+        var props = schemaObj["properties"]!.AsObject();
+        
+        // ExclusiveBoth - both exclusive
+        var exclusiveBothProp = props["ExclusiveBoth"]!.AsObject();
+        exclusiveBothProp["exclusiveMinimum"]!.GetValue<double>().Should().Be(0);
+        exclusiveBothProp["exclusiveMaximum"]!.GetValue<double>().Should().Be(100);
+        exclusiveBothProp.ContainsKey("minimum").Should().BeFalse();
+        exclusiveBothProp.ContainsKey("maximum").Should().BeFalse();
+        
+        // ExclusiveMin - only min exclusive
+        var exclusiveMinProp = props["ExclusiveMin"]!.AsObject();
+        exclusiveMinProp["exclusiveMinimum"]!.GetValue<double>().Should().Be(0);
+        exclusiveMinProp["maximum"]!.GetValue<double>().Should().Be(100);
+        exclusiveMinProp.ContainsKey("minimum").Should().BeFalse();
+        exclusiveMinProp.ContainsKey("exclusiveMaximum").Should().BeFalse();
+        
+        // ExclusiveMax - only max exclusive
+        var exclusiveMaxProp = props["ExclusiveMax"]!.AsObject();
+        exclusiveMaxProp["minimum"]!.GetValue<double>().Should().Be(0);
+        exclusiveMaxProp["exclusiveMaximum"]!.GetValue<double>().Should().Be(100);
+        exclusiveMaxProp.ContainsKey("exclusiveMinimum").Should().BeFalse();
+        exclusiveMaxProp.ContainsKey("maximum").Should().BeFalse();
+    }
+
+    [Fact]
+    public void GetJsonStructureSchemaAsNode_WithEmailAddress_EmitsFormat()
+    {
+        var exporterOptions = new JsonStructureSchemaExporterOptions
+        {
+            UseExtendedValidation = true
+        };
+
+        var schema = JsonStructureSchemaExporter.GetJsonStructureSchemaAsNode<ClassWithEmailAddress>(
+            exporterOptions: exporterOptions);
+
+        var schemaObj = schema.AsObject();
+        var props = schemaObj["properties"]!.AsObject();
         
         var emailProp = props["Email"]!.AsObject();
         emailProp["type"]!.GetValue<string>().Should().Be("string");
-        emailProp["title"]!.GetValue<string>().Should().Be("String");
-        emailProp["pattern"].Should().NotBeNull();
-        emailProp["pattern"]!.GetValue<string>().Should().Be(@"^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$");
+        emailProp["format"]!.GetValue<string>().Should().Be("email");
+    }
+
+    [Fact]
+    public void GetJsonStructureSchemaAsNode_WithEmailAddress_NotEmittedWithoutExtendedValidation()
+    {
+        var schema = JsonStructureSchemaExporter.GetJsonStructureSchemaAsNode<ClassWithEmailAddress>();
+
+        var schemaObj = schema.AsObject();
+        var props = schemaObj["properties"]!.AsObject();
         
-        // Verify required
-        var required = schemaObj["required"]!.AsArray().Select(v => v!.GetValue<string>()).ToList();
-        required.Should().ContainSingle().Which.Should().Be("Email");
+        var emailProp = props["Email"]!.AsObject();
+        emailProp.ContainsKey("format").Should().BeFalse();
     }
 
     [Fact]
@@ -479,7 +737,7 @@ public class JsonStructureSchemaExporterTests
         var schemaObj = schema.AsObject();
         
         // Check root schema structure
-        schemaObj["$schema"]!.GetValue<string>().Should().Be("https://json-structure.org/meta/core/v1.0");
+        schemaObj["$schema"]!.GetValue<string>().Should().Be("https://json-structure.org/meta/core/v0/#");
         schemaObj["type"]!.GetValue<string>().Should().Be("object");
         schemaObj["title"]!.GetValue<string>().Should().Be("ClassWithObsolete");
         
@@ -509,7 +767,7 @@ public class JsonStructureSchemaExporterTests
         var schemaObj = schema.AsObject();
         
         // Check root schema structure
-        schemaObj["$schema"]!.GetValue<string>().Should().Be("https://json-structure.org/meta/core/v1.0");
+        schemaObj["$schema"]!.GetValue<string>().Should().Be("https://json-structure.org/meta/core/v0/#");
         schemaObj["type"]!.GetValue<string>().Should().Be("object");
         schemaObj["title"]!.GetValue<string>().Should().Be("ClassWithIgnore");
         
@@ -539,7 +797,7 @@ public class JsonStructureSchemaExporterTests
         var schemaObj = schema.AsObject();
         
         // Check root schema structure
-        schemaObj["$schema"]!.GetValue<string>().Should().Be("https://json-structure.org/meta/core/v1.0");
+        schemaObj["$schema"]!.GetValue<string>().Should().Be("https://json-structure.org/meta/core/v0/#");
         schemaObj["type"]!.GetValue<string>().Should().Be("object");
         schemaObj["title"]!.GetValue<string>().Should().Be("SimpleClass");
         
@@ -562,6 +820,74 @@ public class JsonStructureSchemaExporterTests
         required.Should().Contain("age");
         required.Should().NotContain("Name");
         required.Should().NotContain("Age");
+    }
+
+    [Fact]
+    public void GetJsonStructureSchemaAsNode_WithExtendedValidation_IncludesUsesClause()
+    {
+        var exporterOptions = new JsonStructureSchemaExporterOptions
+        {
+            UseExtendedValidation = true
+        };
+
+        var schema = JsonStructureSchemaExporter.GetJsonStructureSchemaAsNode<SimpleClass>(
+            exporterOptions: exporterOptions);
+
+        var schemaObj = schema.AsObject();
+
+        // Check that $schema is the extended meta-schema
+        schemaObj["$schema"].Should().NotBeNull();
+        schemaObj["$schema"]!.GetValue<string>().Should().Be("https://json-structure.org/meta/extended/v0/#");
+
+        // Check that $uses includes JSONStructureValidation
+        schemaObj["$uses"].Should().NotBeNull();
+        var uses = schemaObj["$uses"]!.AsArray();
+        uses.Should().HaveCount(1);
+        uses[0]!.GetValue<string>().Should().Be("JSONStructureValidation");
+
+        // Verify other schema properties are still present
+        schemaObj["type"]!.GetValue<string>().Should().Be("object");
+        schemaObj["properties"].Should().NotBeNull();
+    }
+
+    [Fact]
+    public void GetJsonStructureSchemaAsNode_WithoutExtendedValidation_UsesDefaultSchema()
+    {
+        var exporterOptions = new JsonStructureSchemaExporterOptions
+        {
+            UseExtendedValidation = false
+        };
+
+        var schema = JsonStructureSchemaExporter.GetJsonStructureSchemaAsNode<SimpleClass>(
+            exporterOptions: exporterOptions);
+
+        var schemaObj = schema.AsObject();
+
+        // Check that $schema is the core meta-schema
+        schemaObj["$schema"].Should().NotBeNull();
+        schemaObj["$schema"]!.GetValue<string>().Should().Be("https://json-structure.org/meta/core/v0/#");
+
+        // Check that $uses is NOT present
+        schemaObj.ContainsKey("$uses").Should().BeFalse();
+    }
+
+    [Fact]
+    public void GetJsonStructureSchemaAsNode_WithExtendedValidation_OverridesCustomSchemaUri()
+    {
+        var exporterOptions = new JsonStructureSchemaExporterOptions
+        {
+            UseExtendedValidation = true,
+            SchemaUri = "https://custom.schema.uri/v1.0"  // This should be ignored when UseExtendedValidation is true
+        };
+
+        var schema = JsonStructureSchemaExporter.GetJsonStructureSchemaAsNode<SimpleClass>(
+            exporterOptions: exporterOptions);
+
+        var schemaObj = schema.AsObject();
+
+        // Extended validation should override the custom URI
+        schemaObj["$schema"]!.GetValue<string>().Should().Be("https://json-structure.org/meta/extended/v0/#");
+        schemaObj["$uses"].Should().NotBeNull();
     }
 
     // Test classes
@@ -652,6 +978,33 @@ public class JsonStructureSchemaExporterTests
         public string Email { get; set; } = "";
     }
 
+    private class ClassWithMinLength
+    {
+        [System.ComponentModel.DataAnnotations.MinLength(5)]
+        public string Value { get; set; } = "";
+    }
+
+    private class ClassWithMaxLength
+    {
+        [System.ComponentModel.DataAnnotations.MaxLength(100)]
+        public string Value { get; set; } = "";
+    }
+
+    private class ClassWithAllValidationAnnotations
+    {
+        [System.ComponentModel.DataAnnotations.Range(0, 150)]
+        public int Age { get; set; }
+
+        [System.ComponentModel.DataAnnotations.StringLength(100, MinimumLength = 1)]
+        public string Name { get; set; } = "";
+
+        [System.ComponentModel.DataAnnotations.RegularExpression(@"^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$")]
+        public string Email { get; set; } = "";
+
+        [System.ComponentModel.DataAnnotations.Range(0.0, 100.0)]
+        public double Score { get; set; }
+    }
+
     private class ClassWithObsolete
     {
         [Obsolete("Use NewProperty instead")]
@@ -666,5 +1019,36 @@ public class JsonStructureSchemaExporterTests
         public string IgnoredProp { get; set; } = "";
 
         public string IncludedProp { get; set; } = "";
+    }
+
+    private class ClassWithArrayLengthConstraints
+    {
+        [System.ComponentModel.DataAnnotations.MinLength(2)]
+        public List<string> Tags { get; set; } = new();
+
+        [System.ComponentModel.DataAnnotations.MaxLength(10)]
+        public int[] Numbers { get; set; } = Array.Empty<int>();
+
+        [System.ComponentModel.DataAnnotations.MinLength(1)]
+        [System.ComponentModel.DataAnnotations.MaxLength(5)]
+        public List<int> Scores { get; set; } = new();
+    }
+
+    private class ClassWithExclusiveRange
+    {
+        [System.ComponentModel.DataAnnotations.Range(0, 100, MinimumIsExclusive = true, MaximumIsExclusive = true)]
+        public int ExclusiveBoth { get; set; }
+
+        [System.ComponentModel.DataAnnotations.Range(0, 100, MinimumIsExclusive = true)]
+        public int ExclusiveMin { get; set; }
+
+        [System.ComponentModel.DataAnnotations.Range(0, 100, MaximumIsExclusive = true)]
+        public int ExclusiveMax { get; set; }
+    }
+
+    private class ClassWithEmailAddress
+    {
+        [System.ComponentModel.DataAnnotations.EmailAddress]
+        public string Email { get; set; } = "";
     }
 }

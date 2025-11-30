@@ -133,6 +133,9 @@ public static class ErrorCodes
     
     /// <summary>items must be a boolean or schema for tuple type.</summary>
     public const string SchemaItemsInvalidForTuple = "SCHEMA_ITEMS_INVALID_FOR_TUPLE";
+    
+    /// <summary>Validation extension keyword is used but validation extensions are not enabled.</summary>
+    public const string SchemaExtensionKeywordNotEnabled = "SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED";
 
     #endregion
 
