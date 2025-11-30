@@ -98,7 +98,9 @@ jobs:
         working-directory: vscode
         run: |
           VERSION="${{ steps.sdk_version.outputs.VERSION }}"
-          npm version $VERSION --no-git-tag-version --allow-same-version
+          # Use npm pkg set to avoid triggering version hooks that auto-generate dev versions
+          npm pkg set "version=$VERSION"
+          echo "Set extension version to: $VERSION"
       
       - name: Package extension
         working-directory: vscode
@@ -163,7 +165,9 @@ jobs:
         working-directory: vscode
         run: |
           VERSION="${{ needs.build-and-test.outputs.sdk_version }}"
-          npm version $VERSION --no-git-tag-version --allow-same-version
+          # Use npm pkg set to avoid triggering version hooks that auto-generate dev versions
+          npm pkg set "version=$VERSION"
+          echo "Set extension version to: $VERSION"
       
       - name: Package extension
         working-directory: vscode
