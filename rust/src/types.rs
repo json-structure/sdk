@@ -6,6 +6,7 @@ use crate::error_codes::{InstanceErrorCode, SchemaErrorCode};
 
 /// Severity level for validation messages.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum Severity {
     /// An error that causes validation to fail.
     Error,
@@ -23,7 +24,10 @@ impl fmt::Display for Severity {
 }
 
 /// Location in the source JSON document.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+///
+/// Line and column numbers are 1-indexed. An unknown location
+/// is represented as (0, 0).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
 pub struct JsonLocation {
     /// Line number (1-indexed).
     pub line: usize,
@@ -33,17 +37,20 @@ pub struct JsonLocation {
 
 impl JsonLocation {
     /// Creates a new location.
-    pub fn new(line: usize, column: usize) -> Self {
+    #[must_use]
+    pub const fn new(line: usize, column: usize) -> Self {
         Self { line, column }
     }
 
     /// Returns an unknown location (0, 0).
-    pub fn unknown() -> Self {
+    #[must_use]
+    pub const fn unknown() -> Self {
         Self { line: 0, column: 0 }
     }
 
     /// Returns true if this is an unknown location.
-    pub fn is_unknown(&self) -> bool {
+    #[must_use]
+    pub const fn is_unknown(&self) -> bool {
         self.line == 0 && self.column == 0
     }
 }
@@ -59,7 +66,10 @@ impl fmt::Display for JsonLocation {
 }
 
 /// A validation error with code, message, path, and location.
-#[derive(Debug, Clone)]
+///
+/// This struct implements [`std::error::Error`] for integration with
+/// Rust's standard error handling patterns.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValidationError {
     /// The error code.
     pub code: String,
@@ -140,7 +150,39 @@ impl ValidationError {
     pub fn is_warning(&self) -> bool {
         self.severity == Severity::Warning
     }
+
+    /// Returns the error code.
+    #[inline]
+    pub fn code(&self) -> &str {
+        &self.code
+    }
+
+    /// Returns the error message.
+    #[inline]
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+
+    /// Returns the JSON Pointer path.
+    #[inline]
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+
+    /// Returns the severity.
+    #[inline]
+    pub fn severity(&self) -> Severity {
+        self.severity
+    }
+
+    /// Returns the source location.
+    #[inline]
+    pub fn location(&self) -> JsonLocation {
+        self.location
+    }
 }
+
+impl std::error::Error for ValidationError {}
 
 impl fmt::Display for ValidationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -157,13 +199,17 @@ impl fmt::Display for ValidationError {
 }
 
 /// Result of validation containing errors and warnings.
-#[derive(Debug, Clone, Default)]
+///
+/// Use [`is_valid()`](Self::is_valid) to check if validation passed.
+/// Use [`errors()`](Self::errors) and [`warnings()`](Self::warnings) to iterate over issues.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ValidationResult {
     errors: Vec<ValidationError>,
 }
 
 impl ValidationResult {
     /// Creates a new empty validation result.
+    #[must_use]
     pub fn new() -> Self {
         Self { errors: Vec::new() }
     }
@@ -179,16 +225,19 @@ impl ValidationResult {
     }
 
     /// Returns true if validation passed (no errors, warnings are OK).
+    #[must_use]
     pub fn is_valid(&self) -> bool {
         !self.errors.iter().any(|e| e.is_error())
     }
 
     /// Returns true if there are no errors or warnings.
+    #[must_use]
     pub fn is_clean(&self) -> bool {
         self.errors.is_empty()
     }
 
     /// Returns all errors and warnings.
+    #[must_use]
     pub fn all_errors(&self) -> &[ValidationError] {
         &self.errors
     }
@@ -204,11 +253,13 @@ impl ValidationResult {
     }
 
     /// Returns the count of errors (not warnings).
+    #[must_use]
     pub fn error_count(&self) -> usize {
         self.errors.iter().filter(|e| e.is_error()).count()
     }
 
     /// Returns the count of warnings (not errors).
+    #[must_use]
     pub fn warning_count(&self) -> usize {
         self.errors.iter().filter(|e| e.is_warning()).count()
     }
@@ -216,6 +267,18 @@ impl ValidationResult {
     /// Merges another result into this one.
     pub fn merge(&mut self, other: ValidationResult) {
         self.errors.extend(other.errors);
+    }
+
+    /// Returns true if there are any errors (not warnings).
+    #[must_use]
+    pub fn has_errors(&self) -> bool {
+        self.errors.iter().any(|e| e.is_error())
+    }
+
+    /// Returns true if there are any warnings.
+    #[must_use]
+    pub fn has_warnings(&self) -> bool {
+        self.errors.iter().any(|e| e.is_warning())
     }
 }
 
@@ -292,9 +355,13 @@ pub const VALIDATION_EXTENSION_KEYWORDS: &[&str] = &[
     // Array/Set validation
     "minItems", "maxItems", "uniqueItems", "contains", "minContains", "maxContains",
     // Object/Map validation
-    "minProperties", "maxProperties", "dependentRequired", "propertyNames",
+    "minProperties", "maxProperties", "dependentRequired", "propertyNames", "patternProperties",
+    // Map-specific validation
+    "minEntries", "maxEntries", "keyNames",
     // Content validation
     "contentEncoding", "contentMediaType", "contentCompression",
+    // Default value
+    "default",
 ];
 
 /// Conditional composition keywords that require JSONStructureConditionalComposition.
@@ -368,19 +435,10 @@ impl Default for SchemaValidatorOptions {
 }
 
 /// Options for instance validation.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct InstanceValidatorOptions {
     /// Whether to enable extended validation features.
     pub extended: bool,
     /// Whether to allow $import/$importdefs keywords.
     pub allow_import: bool,
-}
-
-impl Default for InstanceValidatorOptions {
-    fn default() -> Self {
-        Self {
-            extended: false,
-            allow_import: false,
-        }
-    }
 }

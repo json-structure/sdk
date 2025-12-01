@@ -5,7 +5,11 @@
 use std::fmt;
 
 /// Error codes for schema validation errors.
+///
+/// This enum is marked `#[non_exhaustive]` to allow adding new error codes
+/// in future versions without breaking semver compatibility.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum SchemaErrorCode {
     // General schema errors
     SchemaNull,
@@ -77,6 +81,17 @@ pub enum SchemaErrorCode {
     SchemaMaxLengthInvalid,
     SchemaPatternInvalid,
     SchemaFormatInvalid,
+    SchemaConstraintTypeMismatch,
+    SchemaMinimumExceedsMaximum,
+    SchemaMinLengthExceedsMaxLength,
+    SchemaMinLengthNegative,
+    SchemaMaxLengthNegative,
+    SchemaMinItemsExceedsMaxItems,
+    SchemaMinItemsNegative,
+    SchemaMultipleOfInvalid,
+    SchemaKeywordInvalidType,
+    SchemaTypeArrayEmpty,
+    SchemaTypeObjectMissingRef,
     
     // Import errors
     SchemaImportNotAllowed,
@@ -144,6 +159,17 @@ impl SchemaErrorCode {
             Self::SchemaMaxLengthInvalid => "SCHEMA_MAX_LENGTH_INVALID",
             Self::SchemaPatternInvalid => "SCHEMA_PATTERN_INVALID",
             Self::SchemaFormatInvalid => "SCHEMA_FORMAT_INVALID",
+            Self::SchemaConstraintTypeMismatch => "SCHEMA_CONSTRAINT_TYPE_MISMATCH",
+            Self::SchemaMinimumExceedsMaximum => "SCHEMA_MINIMUM_EXCEEDS_MAXIMUM",
+            Self::SchemaMinLengthExceedsMaxLength => "SCHEMA_MINLENGTH_EXCEEDS_MAXLENGTH",
+            Self::SchemaMinLengthNegative => "SCHEMA_MINLENGTH_NEGATIVE",
+            Self::SchemaMaxLengthNegative => "SCHEMA_MAXLENGTH_NEGATIVE",
+            Self::SchemaMinItemsExceedsMaxItems => "SCHEMA_MINITEMS_EXCEEDS_MAXITEMS",
+            Self::SchemaMinItemsNegative => "SCHEMA_MINITEMS_NEGATIVE",
+            Self::SchemaMultipleOfInvalid => "SCHEMA_MULTIPLEOF_INVALID",
+            Self::SchemaKeywordInvalidType => "SCHEMA_KEYWORD_INVALID_TYPE",
+            Self::SchemaTypeArrayEmpty => "SCHEMA_TYPE_ARRAY_EMPTY",
+            Self::SchemaTypeObjectMissingRef => "SCHEMA_TYPE_OBJECT_MISSING_REF",
             Self::SchemaImportNotAllowed => "SCHEMA_IMPORT_NOT_ALLOWED",
             Self::SchemaImportFailed => "SCHEMA_IMPORT_FAILED",
             Self::SchemaImportCircular => "SCHEMA_IMPORT_CIRCULAR",
@@ -165,7 +191,11 @@ impl fmt::Display for SchemaErrorCode {
 }
 
 /// Error codes for instance validation errors.
+///
+/// This enum is marked `#[non_exhaustive]` to allow adding new error codes
+/// in future versions without breaking semver compatibility.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum InstanceErrorCode {
     // Type mismatch errors
     InstanceTypeMismatch,
@@ -205,6 +235,8 @@ pub enum InstanceErrorCode {
     InstanceArrayTooLong,
     InstanceArrayNotUnique,
     InstanceArrayContainsMissing,
+    InstanceArrayContainsTooFew,
+    InstanceArrayContainsTooMany,
     InstanceArrayItemInvalid,
     
     // Tuple errors
@@ -215,6 +247,9 @@ pub enum InstanceErrorCode {
     // Map errors
     InstanceMapExpected,
     InstanceMapValueInvalid,
+    InstanceMapTooFewEntries,
+    InstanceMapTooManyEntries,
+    InstanceMapKeyPatternMismatch,
     
     // Set errors
     InstanceSetExpected,
@@ -269,6 +304,9 @@ pub enum InstanceErrorCode {
     
     // Reference errors
     InstanceRefNotFound,
+    
+    // Union errors
+    InstanceUnionNoMatch,
 }
 
 impl InstanceErrorCode {
@@ -302,12 +340,17 @@ impl InstanceErrorCode {
             Self::InstanceArrayTooLong => "INSTANCE_ARRAY_TOO_LONG",
             Self::InstanceArrayNotUnique => "INSTANCE_ARRAY_NOT_UNIQUE",
             Self::InstanceArrayContainsMissing => "INSTANCE_ARRAY_CONTAINS_MISSING",
+            Self::InstanceArrayContainsTooFew => "INSTANCE_ARRAY_CONTAINS_TOO_FEW",
+            Self::InstanceArrayContainsTooMany => "INSTANCE_ARRAY_CONTAINS_TOO_MANY",
             Self::InstanceArrayItemInvalid => "INSTANCE_ARRAY_ITEM_INVALID",
             Self::InstanceTupleExpected => "INSTANCE_TUPLE_EXPECTED",
             Self::InstanceTupleLengthMismatch => "INSTANCE_TUPLE_LENGTH_MISMATCH",
             Self::InstanceTupleElementInvalid => "INSTANCE_TUPLE_ELEMENT_INVALID",
             Self::InstanceMapExpected => "INSTANCE_MAP_EXPECTED",
             Self::InstanceMapValueInvalid => "INSTANCE_MAP_VALUE_INVALID",
+            Self::InstanceMapTooFewEntries => "INSTANCE_MAP_TOO_FEW_ENTRIES",
+            Self::InstanceMapTooManyEntries => "INSTANCE_MAP_TOO_MANY_ENTRIES",
+            Self::InstanceMapKeyPatternMismatch => "INSTANCE_MAP_KEY_PATTERN_MISMATCH",
             Self::InstanceSetExpected => "INSTANCE_SET_EXPECTED",
             Self::InstanceSetNotUnique => "INSTANCE_SET_NOT_UNIQUE",
             Self::InstanceSetItemInvalid => "INSTANCE_SET_ITEM_INVALID",
@@ -342,6 +385,7 @@ impl InstanceErrorCode {
             Self::InstanceIfThenFailed => "INSTANCE_IF_THEN_FAILED",
             Self::InstanceIfElseFailed => "INSTANCE_IF_ELSE_FAILED",
             Self::InstanceRefNotFound => "INSTANCE_REF_NOT_FOUND",
+            Self::InstanceUnionNoMatch => "INSTANCE_UNION_NO_MATCH",
         }
     }
 }

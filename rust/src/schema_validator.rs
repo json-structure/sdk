@@ -14,19 +14,37 @@ use crate::types::{
 };
 
 /// Validates JSON Structure schema documents.
+///
+/// # Example
+///
+/// ```
+/// use json_structure::SchemaValidator;
+///
+/// let validator = SchemaValidator::new();
+/// let result = validator.validate(r#"{"$id": "test", "name": "Test", "type": "string"}"#);
+/// assert!(result.is_valid());
+/// ```
 pub struct SchemaValidator {
     options: SchemaValidatorOptions,
     #[allow(dead_code)]
     external_schemas: HashMap<String, Value>,
 }
 
+impl Default for SchemaValidator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SchemaValidator {
     /// Creates a new schema validator with default options.
+    #[must_use]
     pub fn new() -> Self {
         Self::with_options(SchemaValidatorOptions::default())
     }
 
     /// Creates a new schema validator with the given options.
+    #[must_use]
     pub fn with_options(options: SchemaValidatorOptions) -> Self {
         let mut external_schemas = HashMap::new();
         for schema in &options.external_schemas {
@@ -40,14 +58,39 @@ impl SchemaValidator {
         }
     }
 
+    /// Enables or disables extended validation mode.
+    /// Note: Schema validation always validates extended keywords; this is a placeholder for API consistency.
+    pub fn set_extended(&mut self, _extended: bool) {
+        // Schema validation always includes extended keyword validation
+    }
+
+    /// Returns whether extended validation is enabled.
+    /// Note: Schema validation always validates extended keywords.
+    pub fn is_extended(&self) -> bool {
+        true // Schema validation always includes extended keyword validation
+    }
+
+    /// Enables or disables warnings for extension keywords without $uses.
+    pub fn set_warn_on_extension_keywords(&mut self, warn: bool) {
+        self.options.warn_on_unused_extension_keywords = warn;
+    }
+
+    /// Returns whether warnings are enabled for extension keywords.
+    pub fn is_warn_on_extension_keywords(&self) -> bool {
+        self.options.warn_on_unused_extension_keywords
+    }
+
     /// Validates a JSON Structure schema from a string.
+    ///
+    /// Returns a [`ValidationResult`] that should be checked with [`is_valid()`](ValidationResult::is_valid).
+    #[must_use]
     pub fn validate(&self, schema_json: &str) -> ValidationResult {
         let mut result = ValidationResult::new();
         let locator = JsonSourceLocator::new(schema_json);
 
         match serde_json::from_str::<Value>(schema_json) {
             Ok(schema) => {
-                self.validate_schema(&schema, &locator, &mut result, "", true, &mut HashSet::new(), 0);
+                self.validate_schema_internal(&schema, &schema, &locator, &mut result, "", true, &mut HashSet::new(), 0);
             }
             Err(e) => {
                 result.add_error(ValidationError::schema_error(
@@ -63,17 +106,37 @@ impl SchemaValidator {
     }
 
     /// Validates a JSON Structure schema from a parsed Value.
+    ///
+    /// Returns a [`ValidationResult`] that should be checked with [`is_valid()`](ValidationResult::is_valid).
+    #[must_use]
     pub fn validate_value(&self, schema: &Value, schema_json: &str) -> ValidationResult {
         let mut result = ValidationResult::new();
         let locator = JsonSourceLocator::new(schema_json);
-        self.validate_schema(schema, &locator, &mut result, "", true, &mut HashSet::new(), 0);
+        self.validate_schema_internal(schema, schema, &locator, &mut result, "", true, &mut HashSet::new(), 0);
         result
     }
 
-    /// Validates a schema node.
+    /// Validates a schema node (internal helper that uses a separate root_schema).
     fn validate_schema(
         &self,
         schema: &Value,
+        root_schema: &Value,
+        locator: &JsonSourceLocator,
+        result: &mut ValidationResult,
+        path: &str,
+        is_root: bool,
+        visited_refs: &mut HashSet<String>,
+        depth: usize,
+    ) {
+        // Pass through to internal method with proper root_schema
+        self.validate_schema_internal(schema, root_schema, locator, result, path, is_root, visited_refs, depth);
+    }
+
+    /// Internal schema validation with root schema reference.
+    fn validate_schema_internal(
+        &self,
+        schema: &Value,
+        root_schema: &Value,
         locator: &JsonSourceLocator,
         result: &mut ValidationResult,
         path: &str,
@@ -116,13 +179,15 @@ impl SchemaValidator {
 
         let obj = schema.as_object().unwrap();
 
-        // Collect enabled extensions
+        // Collect enabled extensions from root schema (extensions are inherited)
         let mut enabled_extensions = HashSet::new();
-        if let Some(uses) = obj.get("$uses") {
-            if let Value::Array(arr) = uses {
-                for ext in arr {
-                    if let Value::String(s) = ext {
-                        enabled_extensions.insert(s.as_str());
+        if let Some(root_obj) = root_schema.as_object() {
+            if let Some(uses) = root_obj.get("$uses") {
+                if let Value::Array(arr) = uses {
+                    for ext in arr {
+                        if let Value::String(s) = ext {
+                            enabled_extensions.insert(s.as_str());
+                        }
                     }
                 }
             }
@@ -135,17 +200,17 @@ impl SchemaValidator {
 
         // Validate $ref if present
         if let Some(ref_val) = obj.get("$ref") {
-            self.validate_ref(ref_val, schema, locator, result, path, visited_refs, depth);
+            self.validate_ref(ref_val, schema, root_schema, locator, result, path, visited_refs, depth);
         }
 
         // Validate type if present
         if let Some(type_val) = obj.get("type") {
-            self.validate_type(type_val, obj, locator, result, path, &enabled_extensions, depth);
+            self.validate_type(type_val, obj, root_schema, locator, result, path, &enabled_extensions, visited_refs, depth);
         }
 
         // Validate definitions
         if let Some(defs) = obj.get("definitions") {
-            self.validate_definitions(defs, locator, result, path, visited_refs, depth);
+            self.validate_definitions(defs, root_schema, locator, result, path, visited_refs, depth);
         }
 
         // Validate enum
@@ -154,7 +219,7 @@ impl SchemaValidator {
         }
 
         // Validate composition keywords
-        self.validate_composition(obj, locator, result, path, &enabled_extensions, visited_refs, depth);
+        self.validate_composition(obj, root_schema, locator, result, path, &enabled_extensions, visited_refs, depth);
 
         // Validate extension keywords without $uses
         if self.options.warn_on_unused_extension_keywords {
@@ -197,6 +262,30 @@ impl SchemaValidator {
                 path,
                 locator.get_location(path),
             ));
+        }
+
+        // Root must have type OR $root OR definitions OR composition keyword
+        let has_type = obj.contains_key("type");
+        let has_root = obj.contains_key("$root");
+        let has_definitions = obj.contains_key("definitions");
+        let has_composition = obj.keys().any(|k| 
+            ["allOf", "anyOf", "oneOf", "not", "if"].contains(&k.as_str())
+        );
+        
+        if !has_type && !has_root && !has_composition {
+            // Check if it has only meta keywords + definitions
+            let has_only_meta = obj.keys().all(|k| {
+                k.starts_with('$') || k == "definitions" || k == "name" || k == "description"
+            });
+            
+            if !has_only_meta || !has_definitions {
+                result.add_error(ValidationError::schema_error(
+                    SchemaErrorCode::SchemaRootMissingType,
+                    "Schema must have a 'type' property or '$root' reference",
+                    path,
+                    locator.get_location(path),
+                ));
+            }
         }
 
         // Validate $uses
@@ -289,7 +378,8 @@ impl SchemaValidator {
     fn validate_ref(
         &self,
         ref_val: &Value,
-        schema: &Value,
+        _schema: &Value,
+        root_schema: &Value,
         locator: &JsonSourceLocator,
         result: &mut ValidationResult,
         path: &str,
@@ -313,22 +403,50 @@ impl SchemaValidator {
 
                 // Validate reference format
                 if ref_str.starts_with("#/definitions/") {
-                    // Local definition reference
-                    let def_name = &ref_str[14..]; // Skip "#/definitions/"
-                    
-                    // Find root schema to check definitions
-                    // For now, just check the current schema's definitions
-                    if let Some(defs) = schema.get("definitions") {
-                        if let Value::Object(defs_obj) = defs {
-                            if !defs_obj.contains_key(def_name) {
-                                result.add_error(ValidationError::schema_error(
-                                    SchemaErrorCode::SchemaRefNotFound,
-                                    format!("Reference not found: {}", ref_str),
-                                    &ref_path,
-                                    locator.get_location(&ref_path),
-                                ));
+                    // Local definition reference - resolve from root schema
+                    if let Some(resolved) = self.resolve_ref(ref_str, root_schema) {
+                        // Check for direct circular reference (definition is only a $ref to itself)
+                        if let Value::Object(def_obj) = resolved {
+                            let keys: Vec<&String> = def_obj.keys().collect();
+                            let is_bare_ref = keys.len() == 1 && keys[0] == "$ref";
+                            let is_type_ref_only = keys.len() == 1 && keys[0] == "type" && {
+                                if let Some(Value::Object(type_obj)) = def_obj.get("type") {
+                                    type_obj.len() == 1 && type_obj.contains_key("$ref")
+                                } else {
+                                    false
+                                }
+                            };
+                            
+                            if is_bare_ref || is_type_ref_only {
+                                // Check if it references itself
+                                let inner_ref = if is_bare_ref {
+                                    def_obj.get("$ref").and_then(|v| v.as_str())
+                                } else if is_type_ref_only {
+                                    def_obj.get("type")
+                                        .and_then(|t| t.as_object())
+                                        .and_then(|o| o.get("$ref"))
+                                        .and_then(|v| v.as_str())
+                                } else {
+                                    None
+                                };
+                                
+                                if inner_ref == Some(ref_str) {
+                                    result.add_error(ValidationError::schema_error(
+                                        SchemaErrorCode::SchemaRefCircular,
+                                        format!("Direct circular reference: {}", ref_str),
+                                        &ref_path,
+                                        locator.get_location(&ref_path),
+                                    ));
+                                }
                             }
                         }
+                    } else {
+                        result.add_error(ValidationError::schema_error(
+                            SchemaErrorCode::SchemaRefNotFound,
+                            format!("Reference not found: {}", ref_str),
+                            &ref_path,
+                            locator.get_location(&ref_path),
+                        ));
                     }
                 }
                 // External references would be validated here if import is enabled
@@ -344,11 +462,208 @@ impl SchemaValidator {
         }
     }
 
+    /// Resolves a $ref reference to its target definition.
+    fn resolve_ref<'a>(&self, ref_str: &str, root_schema: &'a Value) -> Option<&'a Value> {
+        if !ref_str.starts_with("#/") {
+            return None;
+        }
+        
+        let path_parts: Vec<&str> = ref_str[2..].split('/').collect();
+        let mut current = root_schema;
+        
+        for part in path_parts {
+            // Handle JSON Pointer escaping
+            let unescaped = part.replace("~1", "/").replace("~0", "~");
+            current = current.get(&unescaped)?;
+        }
+        
+        Some(current)
+    }
+
     /// Validates the type keyword and type-specific requirements.
     fn validate_type(
         &self,
         type_val: &Value,
         obj: &serde_json::Map<String, Value>,
+        root_schema: &Value,
+        locator: &JsonSourceLocator,
+        result: &mut ValidationResult,
+        path: &str,
+        enabled_extensions: &HashSet<&str>,
+        visited_refs: &mut HashSet<String>,
+        depth: usize,
+    ) {
+        let type_path = format!("{}/type", path);
+
+        match type_val {
+            Value::String(type_name) => {
+                self.validate_single_type(type_name, obj, root_schema, locator, result, path, enabled_extensions, depth);
+            }
+            Value::Array(types) => {
+                // Union type: ["string", "null"] or [{"$ref": "..."}, "null"]
+                if types.is_empty() {
+                    result.add_error(ValidationError::schema_error(
+                        SchemaErrorCode::SchemaTypeArrayEmpty,
+                        "Union type array cannot be empty",
+                        &type_path,
+                        locator.get_location(&type_path),
+                    ));
+                    return;
+                }
+                for (i, t) in types.iter().enumerate() {
+                    let elem_path = format!("{}/{}", type_path, i);
+                    match t {
+                        Value::String(s) => {
+                            if !is_valid_type(s) {
+                                result.add_error(ValidationError::schema_error(
+                                    SchemaErrorCode::SchemaTypeInvalid,
+                                    format!("Unknown type in union: '{}'", s),
+                                    &elem_path,
+                                    locator.get_location(&elem_path),
+                                ));
+                            }
+                        }
+                        Value::Object(ref_obj) => {
+                            if let Some(ref_val) = ref_obj.get("$ref") {
+                                if let Value::String(ref_str) = ref_val {
+                                    // Validate the ref exists
+                                    self.validate_type_ref(ref_str, root_schema, locator, result, &elem_path, visited_refs);
+                                } else {
+                                    result.add_error(ValidationError::schema_error(
+                                        SchemaErrorCode::SchemaRefNotString,
+                                        "$ref must be a string",
+                                        &format!("{}/$ref", elem_path),
+                                        locator.get_location(&format!("{}/$ref", elem_path)),
+                                    ));
+                                }
+                            } else {
+                                result.add_error(ValidationError::schema_error(
+                                    SchemaErrorCode::SchemaTypeObjectMissingRef,
+                                    "Union type object must have $ref",
+                                    &elem_path,
+                                    locator.get_location(&elem_path),
+                                ));
+                            }
+                        }
+                        _ => {
+                            result.add_error(ValidationError::schema_error(
+                                SchemaErrorCode::SchemaKeywordInvalidType,
+                                "Union type elements must be strings or $ref objects",
+                                &elem_path,
+                                locator.get_location(&elem_path),
+                            ));
+                        }
+                    }
+                }
+            }
+            Value::Object(ref_obj) => {
+                // Type can be an object with $ref
+                if let Some(ref_val) = ref_obj.get("$ref") {
+                    if let Value::String(ref_str) = ref_val {
+                        // Validate the ref exists
+                        self.validate_type_ref(ref_str, root_schema, locator, result, path, visited_refs);
+                    } else {
+                        result.add_error(ValidationError::schema_error(
+                            SchemaErrorCode::SchemaRefNotString,
+                            "$ref must be a string",
+                            &format!("{}/$ref", type_path),
+                            locator.get_location(&format!("{}/$ref", type_path)),
+                        ));
+                    }
+                } else {
+                    result.add_error(ValidationError::schema_error(
+                        SchemaErrorCode::SchemaTypeObjectMissingRef,
+                        "type object must have $ref",
+                        &type_path,
+                        locator.get_location(&type_path),
+                    ));
+                }
+            }
+            _ => {
+                result.add_error(ValidationError::schema_error(
+                    SchemaErrorCode::SchemaKeywordInvalidType,
+                    "type must be a string, array, or object with $ref",
+                    &type_path,
+                    locator.get_location(&type_path),
+                ));
+            }
+        }
+    }
+
+    /// Validates a $ref inside a type attribute.
+    fn validate_type_ref(
+        &self,
+        ref_str: &str,
+        root_schema: &Value,
+        locator: &JsonSourceLocator,
+        result: &mut ValidationResult,
+        path: &str,
+        visited_refs: &mut HashSet<String>,
+    ) {
+        let ref_path = format!("{}/type/$ref", path);
+        
+        if ref_str.starts_with("#/definitions/") {
+            // Check for circular reference
+            if visited_refs.contains(ref_str) {
+                // Check if it's a direct circular reference
+                if let Some(resolved) = self.resolve_ref(ref_str, root_schema) {
+                    if let Value::Object(def_obj) = resolved {
+                        let keys: Vec<&String> = def_obj.keys().collect();
+                        let is_type_ref_only = keys.len() == 1 && keys[0] == "type" && {
+                            if let Some(Value::Object(type_obj)) = def_obj.get("type") {
+                                type_obj.len() == 1 && type_obj.contains_key("$ref")
+                            } else {
+                                false
+                            }
+                        };
+                        
+                        if is_type_ref_only {
+                            result.add_error(ValidationError::schema_error(
+                                SchemaErrorCode::SchemaRefCircular,
+                                format!("Direct circular reference: {}", ref_str),
+                                &ref_path,
+                                locator.get_location(&ref_path),
+                            ));
+                        }
+                    }
+                }
+                return;
+            }
+
+            // Track this ref
+            visited_refs.insert(ref_str.to_string());
+            
+            // Resolve and validate
+            if let Some(resolved) = self.resolve_ref(ref_str, root_schema) {
+                // Check if the resolved schema itself has a type with $ref (for circular detection)
+                if let Value::Object(def_obj) = resolved {
+                    if let Some(type_val) = def_obj.get("type") {
+                        if let Value::Object(type_obj) = type_val {
+                            if let Some(Value::String(inner_ref)) = type_obj.get("$ref") {
+                                self.validate_type_ref(inner_ref, root_schema, locator, result, path, visited_refs);
+                            }
+                        }
+                    }
+                }
+            } else {
+                result.add_error(ValidationError::schema_error(
+                    SchemaErrorCode::SchemaRefNotFound,
+                    format!("Reference not found: {}", ref_str),
+                    &ref_path,
+                    locator.get_location(&ref_path),
+                ));
+            }
+            
+            visited_refs.remove(ref_str);
+        }
+    }
+
+    /// Validates a single type name.
+    fn validate_single_type(
+        &self,
+        type_name: &str,
+        obj: &serde_json::Map<String, Value>,
+        root_schema: &Value,
         locator: &JsonSourceLocator,
         result: &mut ValidationResult,
         path: &str,
@@ -356,20 +671,7 @@ impl SchemaValidator {
         depth: usize,
     ) {
         let type_path = format!("{}/type", path);
-
-        let type_name = match type_val {
-            Value::String(s) => s.as_str(),
-            _ => {
-                result.add_error(ValidationError::schema_error(
-                    SchemaErrorCode::SchemaTypeNotString,
-                    "type must be a string",
-                    &type_path,
-                    locator.get_location(&type_path),
-                ));
-                return;
-            }
-        };
-
+        
         // Validate type name
         if !is_valid_type(type_name) {
             result.add_error(ValidationError::schema_error(
@@ -383,12 +685,178 @@ impl SchemaValidator {
 
         // Type-specific validation
         match type_name {
-            "object" => self.validate_object_type(obj, locator, result, path, enabled_extensions, depth),
-            "array" | "set" => self.validate_array_type(obj, locator, result, path, type_name),
-            "map" => self.validate_map_type(obj, locator, result, path),
-            "tuple" => self.validate_tuple_type(obj, locator, result, path),
-            "choice" => self.validate_choice_type(obj, locator, result, path),
-            _ => {}
+            "object" => self.validate_object_type(obj, root_schema, locator, result, path, enabled_extensions, depth),
+            "array" | "set" => self.validate_array_type(obj, root_schema, locator, result, path, type_name),
+            "map" => self.validate_map_type(obj, root_schema, locator, result, path),
+            "tuple" => self.validate_tuple_type(obj, root_schema, locator, result, path),
+            "choice" => self.validate_choice_type(obj, root_schema, locator, result, path),
+            _ => {
+                // Validate extended constraints for primitive types
+                self.validate_primitive_constraints(type_name, obj, locator, result, path);
+            }
+        }
+    }
+
+    /// Validates primitive type constraints.
+    fn validate_primitive_constraints(
+        &self,
+        type_name: &str,
+        obj: &serde_json::Map<String, Value>,
+        locator: &JsonSourceLocator,
+        result: &mut ValidationResult,
+        path: &str,
+    ) {
+        use crate::types::is_numeric_type;
+
+        // Check for type-constraint mismatches
+        let is_numeric = is_numeric_type(type_name);
+        let is_string = type_name == "string";
+
+        // minimum/maximum only apply to numeric types
+        if obj.contains_key("minimum") && !is_numeric {
+            result.add_error(ValidationError::schema_error(
+                SchemaErrorCode::SchemaConstraintTypeMismatch,
+                format!("minimum constraint cannot be used with type '{}'", type_name),
+                &format!("{}/minimum", path),
+                locator.get_location(&format!("{}/minimum", path)),
+            ));
+        }
+        if obj.contains_key("maximum") && !is_numeric {
+            result.add_error(ValidationError::schema_error(
+                SchemaErrorCode::SchemaConstraintTypeMismatch,
+                format!("maximum constraint cannot be used with type '{}'", type_name),
+                &format!("{}/maximum", path),
+                locator.get_location(&format!("{}/maximum", path)),
+            ));
+        }
+
+        // minLength/maxLength only apply to string
+        if obj.contains_key("minLength") && !is_string {
+            result.add_error(ValidationError::schema_error(
+                SchemaErrorCode::SchemaConstraintTypeMismatch,
+                format!("minLength constraint cannot be used with type '{}'", type_name),
+                &format!("{}/minLength", path),
+                locator.get_location(&format!("{}/minLength", path)),
+            ));
+        }
+        if obj.contains_key("maxLength") && !is_string {
+            result.add_error(ValidationError::schema_error(
+                SchemaErrorCode::SchemaConstraintTypeMismatch,
+                format!("maxLength constraint cannot be used with type '{}'", type_name),
+                &format!("{}/maxLength", path),
+                locator.get_location(&format!("{}/maxLength", path)),
+            ));
+        }
+
+        // Validate numeric constraint values
+        if is_numeric {
+            self.validate_numeric_constraints(obj, locator, result, path);
+        }
+
+        // Validate string constraint values
+        if is_string {
+            self.validate_string_constraints(obj, locator, result, path);
+        }
+
+        // multipleOf only applies to numeric types
+        if let Some(multiple_of) = obj.get("multipleOf") {
+            if !is_numeric {
+                result.add_error(ValidationError::schema_error(
+                    SchemaErrorCode::SchemaConstraintTypeMismatch,
+                    format!("multipleOf constraint cannot be used with type '{}'", type_name),
+                    &format!("{}/multipleOf", path),
+                    locator.get_location(&format!("{}/multipleOf", path)),
+                ));
+            } else if let Some(n) = multiple_of.as_f64() {
+                if n <= 0.0 {
+                    result.add_error(ValidationError::schema_error(
+                        SchemaErrorCode::SchemaMultipleOfInvalid,
+                        "multipleOf must be greater than 0",
+                        &format!("{}/multipleOf", path),
+                        locator.get_location(&format!("{}/multipleOf", path)),
+                    ));
+                }
+            }
+        }
+
+        // Validate pattern regex
+        if let Some(Value::String(pattern)) = obj.get("pattern") {
+            if regex::Regex::new(pattern).is_err() {
+                result.add_error(ValidationError::schema_error(
+                    SchemaErrorCode::SchemaPatternInvalid,
+                    format!("Invalid regular expression pattern: {}", pattern),
+                    &format!("{}/pattern", path),
+                    locator.get_location(&format!("{}/pattern", path)),
+                ));
+            }
+        }
+    }
+
+    /// Validates numeric constraints (minimum/maximum relationships).
+    fn validate_numeric_constraints(
+        &self,
+        obj: &serde_json::Map<String, Value>,
+        locator: &JsonSourceLocator,
+        result: &mut ValidationResult,
+        path: &str,
+    ) {
+        let minimum = obj.get("minimum").and_then(Value::as_f64);
+        let maximum = obj.get("maximum").and_then(Value::as_f64);
+        
+        if let (Some(min), Some(max)) = (minimum, maximum) {
+            if min > max {
+                result.add_error(ValidationError::schema_error(
+                    SchemaErrorCode::SchemaMinimumExceedsMaximum,
+                    format!("minimum ({}) exceeds maximum ({})", min, max),
+                    &format!("{}/minimum", path),
+                    locator.get_location(&format!("{}/minimum", path)),
+                ));
+            }
+        }
+    }
+
+    /// Validates string constraints (minLength/maxLength relationships).
+    fn validate_string_constraints(
+        &self,
+        obj: &serde_json::Map<String, Value>,
+        locator: &JsonSourceLocator,
+        result: &mut ValidationResult,
+        path: &str,
+    ) {
+        let min_length = obj.get("minLength").and_then(Value::as_i64);
+        let max_length = obj.get("maxLength").and_then(Value::as_i64);
+
+        if let Some(min) = min_length {
+            if min < 0 {
+                result.add_error(ValidationError::schema_error(
+                    SchemaErrorCode::SchemaMinLengthNegative,
+                    "minLength cannot be negative",
+                    &format!("{}/minLength", path),
+                    locator.get_location(&format!("{}/minLength", path)),
+                ));
+            }
+        }
+
+        if let Some(max) = max_length {
+            if max < 0 {
+                result.add_error(ValidationError::schema_error(
+                    SchemaErrorCode::SchemaMaxLengthNegative,
+                    "maxLength cannot be negative",
+                    &format!("{}/maxLength", path),
+                    locator.get_location(&format!("{}/maxLength", path)),
+                ));
+            }
+        }
+
+        if let (Some(min), Some(max)) = (min_length, max_length) {
+            if min > max {
+                result.add_error(ValidationError::schema_error(
+                    SchemaErrorCode::SchemaMinLengthExceedsMaxLength,
+                    format!("minLength ({}) exceeds maxLength ({})", min, max),
+                    &format!("{}/minLength", path),
+                    locator.get_location(&format!("{}/minLength", path)),
+                ));
+            }
         }
     }
 
@@ -396,6 +864,7 @@ impl SchemaValidator {
     fn validate_object_type(
         &self,
         obj: &serde_json::Map<String, Value>,
+        root_schema: &Value,
         locator: &JsonSourceLocator,
         result: &mut ValidationResult,
         path: &str,
@@ -411,6 +880,7 @@ impl SchemaValidator {
                         let prop_path = format!("{}/{}", props_path, prop_name);
                         self.validate_schema(
                             prop_schema,
+                            root_schema,
                             locator,
                             result,
                             &prop_path,
@@ -444,6 +914,7 @@ impl SchemaValidator {
                 Value::Object(_) => {
                     self.validate_schema(
                         additional,
+                        root_schema,
                         locator,
                         result,
                         &add_path,
@@ -529,6 +1000,7 @@ impl SchemaValidator {
     fn validate_array_type(
         &self,
         obj: &serde_json::Map<String, Value>,
+        root_schema: &Value,
         locator: &JsonSourceLocator,
         result: &mut ValidationResult,
         path: &str,
@@ -544,7 +1016,33 @@ impl SchemaValidator {
             ));
         } else if let Some(items) = obj.get("items") {
             let items_path = format!("{}/items", path);
-            self.validate_schema(items, locator, result, &items_path, false, &mut HashSet::new(), 0);
+            self.validate_schema(items, root_schema, locator, result, &items_path, false, &mut HashSet::new(), 0);
+        }
+
+        // Validate minItems/maxItems constraints
+        let min_items = obj.get("minItems").and_then(Value::as_i64);
+        let max_items = obj.get("maxItems").and_then(Value::as_i64);
+
+        if let Some(min) = min_items {
+            if min < 0 {
+                result.add_error(ValidationError::schema_error(
+                    SchemaErrorCode::SchemaMinItemsNegative,
+                    "minItems cannot be negative",
+                    &format!("{}/minItems", path),
+                    locator.get_location(&format!("{}/minItems", path)),
+                ));
+            }
+        }
+
+        if let (Some(min), Some(max)) = (min_items, max_items) {
+            if min > max {
+                result.add_error(ValidationError::schema_error(
+                    SchemaErrorCode::SchemaMinItemsExceedsMaxItems,
+                    format!("minItems ({}) exceeds maxItems ({})", min, max),
+                    &format!("{}/minItems", path),
+                    locator.get_location(&format!("{}/minItems", path)),
+                ));
+            }
         }
     }
 
@@ -552,6 +1050,7 @@ impl SchemaValidator {
     fn validate_map_type(
         &self,
         obj: &serde_json::Map<String, Value>,
+        root_schema: &Value,
         locator: &JsonSourceLocator,
         result: &mut ValidationResult,
         path: &str,
@@ -566,7 +1065,7 @@ impl SchemaValidator {
             ));
         } else if let Some(values) = obj.get("values") {
             let values_path = format!("{}/values", path);
-            self.validate_schema(values, locator, result, &values_path, false, &mut HashSet::new(), 0);
+            self.validate_schema(values, root_schema, locator, result, &values_path, false, &mut HashSet::new(), 0);
         }
     }
 
@@ -574,6 +1073,7 @@ impl SchemaValidator {
     fn validate_tuple_type(
         &self,
         obj: &serde_json::Map<String, Value>,
+        _root_schema: &Value,
         locator: &JsonSourceLocator,
         result: &mut ValidationResult,
         path: &str,
@@ -641,6 +1141,7 @@ impl SchemaValidator {
     fn validate_choice_type(
         &self,
         obj: &serde_json::Map<String, Value>,
+        root_schema: &Value,
         locator: &JsonSourceLocator,
         result: &mut ValidationResult,
         path: &str,
@@ -665,6 +1166,7 @@ impl SchemaValidator {
                         let choice_path = format!("{}/{}", choices_path, choice_name);
                         self.validate_schema(
                             choice_schema,
+                            root_schema,
                             locator,
                             result,
                             &choice_path,
@@ -703,6 +1205,7 @@ impl SchemaValidator {
     fn validate_definitions(
         &self,
         defs: &Value,
+        root_schema: &Value,
         locator: &JsonSourceLocator,
         result: &mut ValidationResult,
         path: &str,
@@ -715,28 +1218,7 @@ impl SchemaValidator {
             Value::Object(defs_obj) => {
                 for (def_name, def_schema) in defs_obj {
                     let def_path = format!("{}/{}", defs_path, def_name);
-                    
-                    // Definition must have type or $ref
-                    if let Value::Object(def_obj) = def_schema {
-                        if !def_obj.contains_key("type") && !def_obj.contains_key("$ref") {
-                            result.add_error(ValidationError::schema_error(
-                                SchemaErrorCode::SchemaDefinitionMissingType,
-                                format!("Definition '{}' must have type or $ref", def_name),
-                                &def_path,
-                                locator.get_location(&def_path),
-                            ));
-                        }
-                    }
-
-                    self.validate_schema(
-                        def_schema,
-                        locator,
-                        result,
-                        &def_path,
-                        false,
-                        visited_refs,
-                        depth + 1,
-                    );
+                    self.validate_definition_or_namespace(def_schema, root_schema, locator, result, &def_path, visited_refs, depth);
                 }
             }
             _ => {
@@ -747,6 +1229,89 @@ impl SchemaValidator {
                     locator.get_location(&defs_path),
                 ));
             }
+        }
+    }
+
+    /// Validates a definition or namespace (recursive for namespaces).
+    fn validate_definition_or_namespace(
+        &self,
+        def_schema: &Value,
+        root_schema: &Value,
+        locator: &JsonSourceLocator,
+        result: &mut ValidationResult,
+        path: &str,
+        visited_refs: &mut HashSet<String>,
+        depth: usize,
+    ) {
+        if let Value::Object(def_obj) = def_schema {
+            // Empty definitions are invalid
+            if def_obj.is_empty() {
+                result.add_error(ValidationError::schema_error(
+                    SchemaErrorCode::SchemaDefinitionMissingType,
+                    "Definition must have type, $ref, definitions, or composition",
+                    path,
+                    locator.get_location(path),
+                ));
+                return;
+            }
+
+            let has_type = def_obj.contains_key("type");
+            let has_ref = def_obj.contains_key("$ref");
+            let has_definitions = def_obj.contains_key("definitions");
+            let has_composition = def_obj.keys().any(|k| 
+                ["allOf", "anyOf", "oneOf", "not", "if"].contains(&k.as_str())
+            );
+            
+            if has_type || has_ref || has_definitions || has_composition {
+                // This is a type definition - validate it
+                self.validate_schema_internal(
+                    def_schema,
+                    root_schema,
+                    locator,
+                    result,
+                    path,
+                    false,
+                    visited_refs,
+                    depth + 1,
+                );
+            } else {
+                // This might be a namespace - check if all children look like schemas
+                // (objects with type, $ref, etc.)
+                let is_namespace = def_obj.values().all(|v| {
+                    if let Value::Object(child) = v {
+                        child.contains_key("type") 
+                            || child.contains_key("$ref") 
+                            || child.contains_key("definitions")
+                            || child.keys().any(|k| ["allOf", "anyOf", "oneOf"].contains(&k.as_str()))
+                            || child.values().all(|cv| cv.is_object())  // nested namespace
+                    } else {
+                        false
+                    }
+                });
+                
+                if is_namespace {
+                    // Recursively validate as namespace
+                    for (child_name, child_schema) in def_obj {
+                        let child_path = format!("{}/{}", path, child_name);
+                        self.validate_definition_or_namespace(child_schema, root_schema, locator, result, &child_path, visited_refs, depth + 1);
+                    }
+                } else {
+                    // Not a namespace and no type - error
+                    result.add_error(ValidationError::schema_error(
+                        SchemaErrorCode::SchemaDefinitionMissingType,
+                        "Definition must have type, $ref, definitions, or composition",
+                        path,
+                        locator.get_location(path),
+                    ));
+                }
+            }
+        } else {
+            result.add_error(ValidationError::schema_error(
+                SchemaErrorCode::SchemaDefinitionInvalid,
+                "Definition must be an object",
+                path,
+                locator.get_location(path),
+            ));
         }
     }
 
@@ -803,6 +1368,7 @@ impl SchemaValidator {
     fn validate_composition(
         &self,
         obj: &serde_json::Map<String, Value>,
+        root_schema: &Value,
         locator: &JsonSourceLocator,
         result: &mut ValidationResult,
         path: &str,
@@ -812,29 +1378,29 @@ impl SchemaValidator {
     ) {
         // allOf
         if let Some(all_of) = obj.get("allOf") {
-            self.validate_composition_array(all_of, "allOf", locator, result, path, visited_refs, depth);
+            self.validate_composition_array(all_of, "allOf", root_schema, locator, result, path, visited_refs, depth);
         }
 
         // anyOf
         if let Some(any_of) = obj.get("anyOf") {
-            self.validate_composition_array(any_of, "anyOf", locator, result, path, visited_refs, depth);
+            self.validate_composition_array(any_of, "anyOf", root_schema, locator, result, path, visited_refs, depth);
         }
 
         // oneOf
         if let Some(one_of) = obj.get("oneOf") {
-            self.validate_composition_array(one_of, "oneOf", locator, result, path, visited_refs, depth);
+            self.validate_composition_array(one_of, "oneOf", root_schema, locator, result, path, visited_refs, depth);
         }
 
         // not
         if let Some(not) = obj.get("not") {
             let not_path = format!("{}/not", path);
-            self.validate_schema(not, locator, result, &not_path, false, visited_refs, depth + 1);
+            self.validate_schema_internal(not, root_schema, locator, result, &not_path, false, visited_refs, depth + 1);
         }
 
         // if/then/else
         if let Some(if_schema) = obj.get("if") {
             let if_path = format!("{}/if", path);
-            self.validate_schema(if_schema, locator, result, &if_path, false, visited_refs, depth + 1);
+            self.validate_schema_internal(if_schema, root_schema, locator, result, &if_path, false, visited_refs, depth + 1);
         }
 
         if let Some(then_schema) = obj.get("then") {
@@ -847,7 +1413,7 @@ impl SchemaValidator {
                 ));
             }
             let then_path = format!("{}/then", path);
-            self.validate_schema(then_schema, locator, result, &then_path, false, visited_refs, depth + 1);
+            self.validate_schema_internal(then_schema, root_schema, locator, result, &then_path, false, visited_refs, depth + 1);
         }
 
         if let Some(else_schema) = obj.get("else") {
@@ -860,7 +1426,7 @@ impl SchemaValidator {
                 ));
             }
             let else_path = format!("{}/else", path);
-            self.validate_schema(else_schema, locator, result, &else_path, false, visited_refs, depth + 1);
+            self.validate_schema_internal(else_schema, root_schema, locator, result, &else_path, false, visited_refs, depth + 1);
         }
     }
 
@@ -869,6 +1435,7 @@ impl SchemaValidator {
         &self,
         value: &Value,
         keyword: &str,
+        root_schema: &Value,
         locator: &JsonSourceLocator,
         result: &mut ValidationResult,
         path: &str,
@@ -881,7 +1448,7 @@ impl SchemaValidator {
             Value::Array(arr) => {
                 for (i, item) in arr.iter().enumerate() {
                     let item_path = format!("{}/{}", keyword_path, i);
-                    self.validate_schema(item, locator, result, &item_path, false, visited_refs, depth + 1);
+                    self.validate_schema_internal(item, root_schema, locator, result, &item_path, false, visited_refs, depth + 1);
                 }
             }
             _ => {
@@ -942,12 +1509,6 @@ impl SchemaValidator {
                 ));
             }
         }
-    }
-}
-
-impl Default for SchemaValidator {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -1079,5 +1640,64 @@ mod tests {
         let validator = SchemaValidator::new();
         let result = validator.validate(schema);
         assert!(!result.is_valid());
+    }
+
+    #[test]
+    fn test_ref_to_definition() {
+        let schema = r##"{
+            "$id": "https://example.com/schema",
+            "name": "TestSchema",
+            "type": "object",
+            "definitions": {
+                "Inner": {
+                    "type": "string"
+                }
+            },
+            "properties": {
+                "value": { "type": { "$ref": "#/definitions/Inner" } }
+            }
+        }"##;
+        
+        let validator = SchemaValidator::new();
+        let result = validator.validate(schema);
+        for err in result.all_errors() {
+            println!("Error: {:?}", err);
+        }
+        assert!(result.is_valid(), "Schema with valid ref should pass");
+    }
+
+    #[test]
+    fn test_ref_undefined() {
+        let schema = r##"{
+            "$id": "https://example.com/schema",
+            "name": "TestSchema",
+            "type": "object",
+            "properties": {
+                "value": { "type": { "$ref": "#/definitions/Undefined" } }
+            }
+        }"##;
+        
+        let validator = SchemaValidator::new();
+        let result = validator.validate(schema);
+        assert!(!result.is_valid(), "Schema with undefined ref should fail");
+    }
+
+    #[test]
+    fn test_union_type() {
+        let schema = r##"{
+            "$id": "https://example.com/schema",
+            "name": "TestSchema",
+            "type": "object",
+            "properties": {
+                "value": { "type": ["string", "null"] }
+            }
+        }"##;
+        
+        let validator = SchemaValidator::new();
+        let result = validator.validate(schema);
+        for err in result.all_errors() {
+            println!("Error: {:?}", err);
+        }
+        assert!(result.is_valid(), "Schema with union type should pass");
     }
 }

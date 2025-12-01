@@ -15,29 +15,84 @@ use crate::types::{
 };
 
 /// Validates JSON instances against JSON Structure schemas.
+///
+/// # Example
+///
+/// ```
+/// use json_structure::InstanceValidator;
+/// use serde_json::json;
+///
+/// let validator = InstanceValidator::new();
+/// let schema = json!({
+///     "$id": "test",
+///     "name": "Test",
+///     "type": "string"
+/// });
+/// let result = validator.validate("\"hello\"", &schema);
+/// assert!(result.is_valid());
+/// ```
 pub struct InstanceValidator {
     options: InstanceValidatorOptions,
 }
 
+impl Default for InstanceValidator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InstanceValidator {
     /// Creates a new instance validator with default options.
+    #[must_use]
     pub fn new() -> Self {
         Self::with_options(InstanceValidatorOptions::default())
     }
 
     /// Creates a new instance validator with the given options.
+    #[must_use]
     pub fn with_options(options: InstanceValidatorOptions) -> Self {
         Self { options }
     }
 
+    /// Enables or disables extended validation mode.
+    pub fn set_extended(&mut self, extended: bool) {
+        self.options.extended = extended;
+    }
+
+    /// Returns whether extended validation is enabled.
+    #[must_use]
+    pub fn is_extended(&self) -> bool {
+        self.options.extended
+    }
+
     /// Validates a JSON instance against a schema.
+    ///
+    /// Returns a [`ValidationResult`] that should be checked with [`is_valid()`](ValidationResult::is_valid).
+    #[must_use]
     pub fn validate(&self, instance_json: &str, schema: &Value) -> ValidationResult {
         let mut result = ValidationResult::new();
         let locator = JsonSourceLocator::new(instance_json);
 
         match serde_json::from_str::<Value>(instance_json) {
             Ok(instance) => {
-                self.validate_instance(&instance, schema, schema, &mut result, "", &locator, 0);
+                // Check for $root and use it as the starting point for validation
+                let effective_schema = if let Some(schema_obj) = schema.as_object() {
+                    if let Some(Value::String(root_ref)) = schema_obj.get("$root") {
+                        // Resolve the $root reference
+                        if let Some(resolved) = self.resolve_ref(root_ref, schema) {
+                            resolved
+                        } else {
+                            // If $root can't be resolved, use the schema itself
+                            schema
+                        }
+                    } else {
+                        schema
+                    }
+                } else {
+                    schema
+                };
+                
+                self.validate_instance(&instance, effective_schema, schema, &mut result, "", &locator, 0);
             }
             Err(e) => {
                 result.add_error(ValidationError::instance_error(
@@ -131,8 +186,65 @@ impl InstanceValidator {
 
         // Get type and validate
         if let Some(type_val) = schema_obj.get("type") {
-            if let Value::String(type_name) = type_val {
-                self.validate_type(instance, type_name, schema_obj, root_schema, result, path, locator, depth);
+            match type_val {
+                Value::String(type_name) => {
+                    self.validate_type(instance, type_name, schema_obj, root_schema, result, path, locator, depth);
+                }
+                Value::Array(types) => {
+                    // Union type: try each type until one validates
+                    let mut union_valid = false;
+                    for t in types {
+                        match t {
+                            Value::String(type_name) => {
+                                let mut temp_result = ValidationResult::new();
+                                self.validate_type(instance, type_name, schema_obj, root_schema, &mut temp_result, path, locator, depth);
+                                if temp_result.is_valid() {
+                                    union_valid = true;
+                                    break;
+                                }
+                            }
+                            Value::Object(ref_obj) => {
+                                if let Some(Value::String(ref_str)) = ref_obj.get("$ref") {
+                                    if let Some(resolved) = self.resolve_ref(ref_str, root_schema) {
+                                        let mut temp_result = ValidationResult::new();
+                                        self.validate_instance(instance, resolved, root_schema, &mut temp_result, path, locator, depth + 1);
+                                        if temp_result.is_valid() {
+                                            union_valid = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    if !union_valid {
+                        result.add_error(ValidationError::instance_error(
+                            InstanceErrorCode::InstanceUnionNoMatch,
+                            "Value does not match any type in union",
+                            path,
+                            locator.get_location(path),
+                        ));
+                    }
+                    return;
+                }
+                Value::Object(ref_obj) => {
+                    // Type is a $ref object
+                    if let Some(Value::String(ref_str)) = ref_obj.get("$ref") {
+                        if let Some(resolved) = self.resolve_ref(ref_str, root_schema) {
+                            self.validate_instance(instance, resolved, root_schema, result, path, locator, depth + 1);
+                        } else {
+                            result.add_error(ValidationError::instance_error(
+                                InstanceErrorCode::InstanceRefNotFound,
+                                format!("Reference not found: {}", ref_str),
+                                path,
+                                locator.get_location(path),
+                            ));
+                        }
+                    }
+                    return;
+                }
+                _ => {}
             }
         }
 
@@ -417,7 +529,7 @@ impl InstanceValidator {
     fn validate_int_range(
         &self,
         instance: &Value,
-        _schema_obj: &serde_json::Map<String, Value>,
+        schema_obj: &serde_json::Map<String, Value>,
         result: &mut ValidationResult,
         path: &str,
         locator: &JsonSourceLocator,
@@ -438,30 +550,109 @@ impl InstanceValidator {
             }
         };
 
-        if let Some(val) = num.as_i64() {
-            if val < min || val > max {
+        let val = if let Some(v) = num.as_i64() {
+            if v < min || v > max {
                 result.add_error(ValidationError::instance_error(
                     InstanceErrorCode::InstanceIntegerOutOfRange,
-                    format!("Value {} is out of range for {} ({} to {})", val, type_name, min, max),
+                    format!("Value {} is out of range for {} ({} to {})", v, type_name, min, max),
                     path,
                     locator.get_location(path),
                 ));
             }
-        } else if let Some(val) = num.as_f64() {
-            if val.fract() != 0.0 {
+            v as f64
+        } else if let Some(v) = num.as_f64() {
+            if v.fract() != 0.0 {
                 result.add_error(ValidationError::instance_error(
                     InstanceErrorCode::InstanceIntegerExpected,
-                    format!("Expected integer, got {}", val),
+                    format!("Expected integer, got {}", v),
                     path,
                     locator.get_location(path),
                 ));
-            } else if val < min as f64 || val > max as f64 {
+                return;
+            }
+            if v < min as f64 || v > max as f64 {
                 result.add_error(ValidationError::instance_error(
                     InstanceErrorCode::InstanceIntegerOutOfRange,
-                    format!("Value {} is out of range for {}", val, type_name),
+                    format!("Value {} is out of range for {}", v, type_name),
                     path,
                     locator.get_location(path),
                 ));
+            }
+            v
+        } else {
+            return;
+        };
+
+        // Extended validation
+        if self.options.extended {
+            // minimum
+            if let Some(Value::Number(n)) = schema_obj.get("minimum") {
+                if let Some(min_val) = n.as_f64() {
+                    if val < min_val {
+                        result.add_error(ValidationError::instance_error(
+                            InstanceErrorCode::InstanceNumberTooSmall,
+                            format!("Value {} is less than minimum {}", val, min_val),
+                            path,
+                            locator.get_location(path),
+                        ));
+                    }
+                }
+            }
+
+            // maximum
+            if let Some(Value::Number(n)) = schema_obj.get("maximum") {
+                if let Some(max_val) = n.as_f64() {
+                    if val > max_val {
+                        result.add_error(ValidationError::instance_error(
+                            InstanceErrorCode::InstanceNumberTooLarge,
+                            format!("Value {} is greater than maximum {}", val, max_val),
+                            path,
+                            locator.get_location(path),
+                        ));
+                    }
+                }
+            }
+
+            // exclusiveMinimum
+            if let Some(Value::Number(n)) = schema_obj.get("exclusiveMinimum") {
+                if let Some(min_val) = n.as_f64() {
+                    if val <= min_val {
+                        result.add_error(ValidationError::instance_error(
+                            InstanceErrorCode::InstanceNumberTooSmall,
+                            format!("Value {} is not greater than exclusive minimum {}", val, min_val),
+                            path,
+                            locator.get_location(path),
+                        ));
+                    }
+                }
+            }
+
+            // exclusiveMaximum
+            if let Some(Value::Number(n)) = schema_obj.get("exclusiveMaximum") {
+                if let Some(max_val) = n.as_f64() {
+                    if val >= max_val {
+                        result.add_error(ValidationError::instance_error(
+                            InstanceErrorCode::InstanceNumberTooLarge,
+                            format!("Value {} is not less than exclusive maximum {}", val, max_val),
+                            path,
+                            locator.get_location(path),
+                        ));
+                    }
+                }
+            }
+
+            // multipleOf
+            if let Some(Value::Number(n)) = schema_obj.get("multipleOf") {
+                if let Some(mul) = n.as_f64() {
+                    if mul > 0.0 && (val % mul).abs() > f64::EPSILON {
+                        result.add_error(ValidationError::instance_error(
+                            InstanceErrorCode::InstanceNumberNotMultiple,
+                            format!("Value {} is not a multiple of {}", val, mul),
+                            path,
+                            locator.get_location(path),
+                        ));
+                    }
+                }
             }
         }
     }
@@ -469,7 +660,7 @@ impl InstanceValidator {
     fn validate_uint_range(
         &self,
         instance: &Value,
-        _schema_obj: &serde_json::Map<String, Value>,
+        schema_obj: &serde_json::Map<String, Value>,
         result: &mut ValidationResult,
         path: &str,
         locator: &JsonSourceLocator,
@@ -499,14 +690,93 @@ impl InstanceValidator {
                     locator.get_location(path),
                 ));
             }
-        } else if let Some(val) = num.as_i64() {
-            if val < 0 {
+        } else if let Some(v) = num.as_i64() {
+            if v < 0 {
                 result.add_error(ValidationError::instance_error(
                     InstanceErrorCode::InstanceIntegerOutOfRange,
-                    format!("Value {} is negative, expected unsigned {}", val, type_name),
+                    format!("Value {} is negative, expected unsigned {}", v, type_name),
                     path,
                     locator.get_location(path),
                 ));
+                return;
+            }
+        } else {
+            return;
+        }
+
+        // Get value for extended validation
+        let val = num.as_f64().unwrap_or(0.0);
+
+        // Extended validation
+        if self.options.extended {
+            // minimum
+            if let Some(Value::Number(n)) = schema_obj.get("minimum") {
+                if let Some(min_val) = n.as_f64() {
+                    if val < min_val {
+                        result.add_error(ValidationError::instance_error(
+                            InstanceErrorCode::InstanceNumberTooSmall,
+                            format!("Value {} is less than minimum {}", val, min_val),
+                            path,
+                            locator.get_location(path),
+                        ));
+                    }
+                }
+            }
+
+            // maximum
+            if let Some(Value::Number(n)) = schema_obj.get("maximum") {
+                if let Some(max_val) = n.as_f64() {
+                    if val > max_val {
+                        result.add_error(ValidationError::instance_error(
+                            InstanceErrorCode::InstanceNumberTooLarge,
+                            format!("Value {} is greater than maximum {}", val, max_val),
+                            path,
+                            locator.get_location(path),
+                        ));
+                    }
+                }
+            }
+
+            // exclusiveMinimum
+            if let Some(Value::Number(n)) = schema_obj.get("exclusiveMinimum") {
+                if let Some(min_val) = n.as_f64() {
+                    if val <= min_val {
+                        result.add_error(ValidationError::instance_error(
+                            InstanceErrorCode::InstanceNumberTooSmall,
+                            format!("Value {} is not greater than exclusive minimum {}", val, min_val),
+                            path,
+                            locator.get_location(path),
+                        ));
+                    }
+                }
+            }
+
+            // exclusiveMaximum
+            if let Some(Value::Number(n)) = schema_obj.get("exclusiveMaximum") {
+                if let Some(max_val) = n.as_f64() {
+                    if val >= max_val {
+                        result.add_error(ValidationError::instance_error(
+                            InstanceErrorCode::InstanceNumberTooLarge,
+                            format!("Value {} is not less than exclusive maximum {}", val, max_val),
+                            path,
+                            locator.get_location(path),
+                        ));
+                    }
+                }
+            }
+
+            // multipleOf
+            if let Some(Value::Number(n)) = schema_obj.get("multipleOf") {
+                if let Some(mul) = n.as_f64() {
+                    if mul > 0.0 && (val % mul).abs() > f64::EPSILON {
+                        result.add_error(ValidationError::instance_error(
+                            InstanceErrorCode::InstanceNumberNotMultiple,
+                            format!("Value {} is not a multiple of {}", val, mul),
+                            path,
+                            locator.get_location(path),
+                        ));
+                    }
+                }
             }
         }
     }
@@ -1004,6 +1274,59 @@ impl InstanceValidator {
                 }
             }
         }
+
+        // Extended validation
+        if self.options.extended {
+            // minProperties
+            if let Some(Value::Number(n)) = schema_obj.get("minProperties") {
+                if let Some(min) = n.as_u64() {
+                    if obj.len() < min as usize {
+                        result.add_error(ValidationError::instance_error(
+                            InstanceErrorCode::InstanceTooFewProperties,
+                            format!("Object has {} properties, minimum is {}", obj.len(), min),
+                            path,
+                            locator.get_location(path),
+                        ));
+                    }
+                }
+            }
+
+            // maxProperties
+            if let Some(Value::Number(n)) = schema_obj.get("maxProperties") {
+                if let Some(max) = n.as_u64() {
+                    if obj.len() > max as usize {
+                        result.add_error(ValidationError::instance_error(
+                            InstanceErrorCode::InstanceTooManyProperties,
+                            format!("Object has {} properties, maximum is {}", obj.len(), max),
+                            path,
+                            locator.get_location(path),
+                        ));
+                    }
+                }
+            }
+
+            // dependentRequired
+            if let Some(Value::Object(deps)) = schema_obj.get("dependentRequired") {
+                for (prop, required_props) in deps {
+                    if obj.contains_key(prop) {
+                        if let Value::Array(req) = required_props {
+                            for req_prop in req {
+                                if let Value::String(req_name) = req_prop {
+                                    if !obj.contains_key(req_name) {
+                                        result.add_error(ValidationError::instance_error(
+                                            InstanceErrorCode::InstanceDependentRequiredMissing,
+                                            format!("Property '{}' requires '{}' to be present", prop, req_name),
+                                            path,
+                                            locator.get_location(path),
+                                        ));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     fn validate_array(
@@ -1059,6 +1382,44 @@ impl InstanceValidator {
                         result.add_error(ValidationError::instance_error(
                             InstanceErrorCode::InstanceArrayTooLong,
                             format!("Array length {} is greater than maximum {}", arr.len(), max),
+                            path,
+                            locator.get_location(path),
+                        ));
+                    }
+                }
+            }
+
+            // contains / minContains / maxContains
+            if let Some(contains_schema) = schema_obj.get("contains") {
+                let mut match_count = 0;
+                for item in arr.iter() {
+                    let mut temp_result = ValidationResult::new();
+                    self.validate_instance(item, contains_schema, root_schema, &mut temp_result, path, locator, depth + 1);
+                    if temp_result.is_valid() {
+                        match_count += 1;
+                    }
+                }
+
+                let min_contains = schema_obj.get("minContains")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(1);
+                let max_contains = schema_obj.get("maxContains")
+                    .and_then(Value::as_u64);
+
+                if match_count < min_contains as usize {
+                    result.add_error(ValidationError::instance_error(
+                        InstanceErrorCode::InstanceArrayContainsTooFew,
+                        format!("Array contains {} matching items, minimum is {}", match_count, min_contains),
+                        path,
+                        locator.get_location(path),
+                    ));
+                }
+
+                if let Some(max) = max_contains {
+                    if match_count > max as usize {
+                        result.add_error(ValidationError::instance_error(
+                            InstanceErrorCode::InstanceArrayContainsTooMany,
+                            format!("Array contains {} matching items, maximum is {}", match_count, max),
                             path,
                             locator.get_location(path),
                         ));
@@ -1141,9 +1502,60 @@ impl InstanceValidator {
 
         // Validate values
         if let Some(values_schema) = schema_obj.get("values") {
-            for (key, value) in obj {
+            for (key, value) in obj.iter() {
                 let value_path = format!("{}/{}", path, key);
                 self.validate_instance(value, values_schema, root_schema, result, &value_path, locator, depth + 1);
+            }
+        }
+
+        // Extended validation
+        if self.options.extended {
+            // minEntries
+            if let Some(Value::Number(n)) = schema_obj.get("minEntries") {
+                if let Some(min) = n.as_u64() {
+                    if obj.len() < min as usize {
+                        result.add_error(ValidationError::instance_error(
+                            InstanceErrorCode::InstanceMapTooFewEntries,
+                            format!("Map has {} entries, minimum is {}", obj.len(), min),
+                            path,
+                            locator.get_location(path),
+                        ));
+                    }
+                }
+            }
+
+            // maxEntries
+            if let Some(Value::Number(n)) = schema_obj.get("maxEntries") {
+                if let Some(max) = n.as_u64() {
+                    if obj.len() > max as usize {
+                        result.add_error(ValidationError::instance_error(
+                            InstanceErrorCode::InstanceMapTooManyEntries,
+                            format!("Map has {} entries, maximum is {}", obj.len(), max),
+                            path,
+                            locator.get_location(path),
+                        ));
+                    }
+                }
+            }
+
+            // keyNames - validate key patterns
+            if let Some(keynames_schema) = schema_obj.get("keyNames") {
+                if let Some(keynames_obj) = keynames_schema.as_object() {
+                    if let Some(Value::String(pattern)) = keynames_obj.get("pattern") {
+                        if let Ok(re) = Regex::new(pattern) {
+                            for key in obj.keys() {
+                                if !re.is_match(key) {
+                                    result.add_error(ValidationError::instance_error(
+                                        InstanceErrorCode::InstanceMapKeyPatternMismatch,
+                                        format!("Map key '{}' does not match pattern '{}'", key, pattern),
+                                        path,
+                                        locator.get_location(path),
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -1399,12 +1811,6 @@ impl InstanceValidator {
                 }
             }
         }
-    }
-}
-
-impl Default for InstanceValidator {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

@@ -1,0 +1,126 @@
+name: Rust SDK
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - 'rust/**'
+      - 'meta/**'
+      - 'test-assets/**'
+      - '.github/workflows/rust.yml'
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  pull_request:
+    branches: [master, main]
+    paths:
+      - 'rust/**'
+      - 'meta/**'
+      - 'test-assets/**'
+      - '.github/workflows/rust.yml'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Test Rust ${{ matrix.rust }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        rust: [stable, beta]
+        include:
+          - os: ubuntu-latest
+            rust: nightly
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust ${{ matrix.rust }}
+        uses: dtolnay/rust-action@stable
+        with:
+          toolchain: ${{ matrix.rust }}
+          components: rustfmt, clippy
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: ${{ runner.os }}-cargo-${{ matrix.rust }}-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-${{ matrix.rust }}-
+
+      - name: Build
+        working-directory: rust
+        run: cargo build --verbose
+
+      - name: Run tests
+        working-directory: rust
+        run: cargo test --verbose
+
+      - name: Run clippy
+        if: matrix.rust == 'stable' && matrix.os == 'ubuntu-latest'
+        working-directory: rust
+        run: cargo clippy -- -D warnings
+
+      - name: Check formatting
+        if: matrix.rust == 'stable' && matrix.os == 'ubuntu-latest'
+        working-directory: rust
+        run: cargo fmt -- --check
+
+  build:
+    name: Build package
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-action@stable
+        with:
+          toolchain: stable
+
+      - name: Build release
+        working-directory: rust
+        run: cargo build --release
+
+      - name: Package
+        working-directory: rust
+        run: cargo package --allow-dirty
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-package
+          path: rust/target/package/*.crate
+
+  publish:
+    name: Publish to crates.io
+    runs-on: ubuntu-latest
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-action@stable
+        with:
+          toolchain: stable
+
+      - name: Publish to crates.io
+        working-directory: rust
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+        run: cargo publish

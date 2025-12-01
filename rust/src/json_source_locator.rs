@@ -8,6 +8,9 @@ use std::collections::HashMap;
 use crate::types::JsonLocation;
 
 /// Locates positions in JSON source text.
+///
+/// Maps JSON Pointer paths to their source locations (line/column)
+/// in the original JSON document.
 #[derive(Debug, Clone)]
 pub struct JsonSourceLocator {
     /// Map from JSON Pointer paths to source locations.
@@ -16,6 +19,7 @@ pub struct JsonSourceLocator {
 
 impl JsonSourceLocator {
     /// Creates a new source locator by parsing the given JSON text.
+    #[must_use]
     pub fn new(json_text: &str) -> Self {
         let mut locator = Self {
             locations: HashMap::new(),

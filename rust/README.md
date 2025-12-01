@@ -194,18 +194,50 @@ fn process_result(result: &ValidationResult) {
         return;
     }
 
-    // Process errors
-    for error in result.errors() {
-        println!("[{}] {} at {}", error.code, error.message, error.path);
+    // Check for errors or warnings
+    if result.has_errors() {
+        for error in result.errors() {
+            println!("[{}] {} at {}", error.code(), error.message(), error.path());
+        }
     }
 
-    // Process warnings
-    for warning in result.warnings() {
-        println!("Warning: {}", warning.message);
+    if result.has_warnings() {
+        for warning in result.warnings() {
+            println!("Warning: {}", warning.message());
+        }
     }
 
     // Get counts
     println!("Errors: {}, Warnings: {}", result.error_count(), result.warning_count());
+}
+```
+
+### Using Default Trait
+
+Both validators implement `Default`:
+
+```rust
+use json_structure::{SchemaValidator, InstanceValidator};
+
+let schema_validator = SchemaValidator::default();
+let instance_validator = InstanceValidator::default();
+```
+
+### Error as std::error::Error
+
+`ValidationError` implements `std::error::Error` for integration with Rust's error handling:
+
+```rust
+use json_structure::ValidationError;
+
+fn validate_something() -> Result<(), Box<dyn std::error::Error>> {
+    let validator = json_structure::SchemaValidator::new();
+    let result = validator.validate("{}");
+    
+    if let Some(error) = result.errors().next() {
+        return Err(error.clone().into());
+    }
+    Ok(())
 }
 ```
 
