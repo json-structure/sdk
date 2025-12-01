@@ -1,6 +1,5 @@
 //! Core types for JSON Structure validation.
 
-use std::collections::HashSet;
 use std::fmt;
 
 use crate::error_codes::{InstanceErrorCode, SchemaErrorCode};
@@ -313,6 +312,7 @@ pub const KNOWN_EXTENSIONS: &[&str] = &[
 ];
 
 /// Valid format values for the "format" keyword.
+#[allow(dead_code)]
 pub const VALID_FORMATS: &[&str] = &[
     "ipv4", "ipv6", "email", "idn-email", "hostname", "idn-hostname",
     "iri", "iri-reference", "uri-template", "relative-json-pointer", "regex",

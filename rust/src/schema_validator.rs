@@ -4,19 +4,19 @@
 
 use std::collections::{HashMap, HashSet};
 
-use regex::Regex;
 use serde_json::Value;
 
 use crate::error_codes::SchemaErrorCode;
 use crate::json_source_locator::JsonSourceLocator;
 use crate::types::{
     is_valid_type, JsonLocation, SchemaValidatorOptions, ValidationError, ValidationResult,
-    COMPOSITION_KEYWORDS, KNOWN_EXTENSIONS, SCHEMA_KEYWORDS, VALIDATION_EXTENSION_KEYWORDS,
+    COMPOSITION_KEYWORDS, KNOWN_EXTENSIONS, VALIDATION_EXTENSION_KEYWORDS,
 };
 
 /// Validates JSON Structure schema documents.
 pub struct SchemaValidator {
     options: SchemaValidatorOptions,
+    #[allow(dead_code)]
     external_schemas: HashMap<String, Value>,
 }
 
@@ -100,7 +100,7 @@ impl SchemaValidator {
                 // Boolean schemas are valid
                 return;
             }
-            Value::Object(obj) => {
+            Value::Object(_obj) => {
                 // Continue validation
             }
             _ => {
@@ -294,7 +294,7 @@ impl SchemaValidator {
         result: &mut ValidationResult,
         path: &str,
         visited_refs: &mut HashSet<String>,
-        depth: usize,
+        _depth: usize,
     ) {
         let ref_path = format!("{}/$ref", path);
 
@@ -399,7 +399,7 @@ impl SchemaValidator {
         locator: &JsonSourceLocator,
         result: &mut ValidationResult,
         path: &str,
-        enabled_extensions: &HashSet<&str>,
+        _enabled_extensions: &HashSet<&str>,
         depth: usize,
     ) {
         // Validate properties
@@ -806,7 +806,7 @@ impl SchemaValidator {
         locator: &JsonSourceLocator,
         result: &mut ValidationResult,
         path: &str,
-        enabled_extensions: &HashSet<&str>,
+        _enabled_extensions: &HashSet<&str>,
         visited_refs: &mut HashSet<String>,
         depth: usize,
     ) {

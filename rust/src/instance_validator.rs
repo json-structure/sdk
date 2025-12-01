@@ -2,10 +2,8 @@
 //!
 //! Validates JSON data instances against JSON Structure schemas.
 
-use std::collections::{HashMap, HashSet};
-
 use base64::Engine;
-use chrono::{NaiveDate, NaiveTime, DateTime, Utc};
+use chrono::{NaiveDate, NaiveTime, DateTime};
 use regex::Regex;
 use serde_json::Value;
 use uuid::Uuid;
@@ -14,7 +12,6 @@ use crate::error_codes::InstanceErrorCode;
 use crate::json_source_locator::JsonSourceLocator;
 use crate::types::{
     InstanceValidatorOptions, JsonLocation, ValidationError, ValidationResult,
-    NUMERIC_TYPES, INTEGER_TYPES,
 };
 
 /// Validates JSON instances against JSON Structure schemas.
@@ -409,18 +406,18 @@ impl InstanceValidator {
     fn validate_int32(
         &self,
         instance: &Value,
-        schema_obj: &serde_json::Map<String, Value>,
+        _schema_obj: &serde_json::Map<String, Value>,
         result: &mut ValidationResult,
         path: &str,
         locator: &JsonSourceLocator,
     ) {
-        self.validate_int_range(instance, schema_obj, result, path, locator, i32::MIN as i64, i32::MAX as i64, "int32")
+        self.validate_int_range(instance, _schema_obj, result, path, locator, i32::MIN as i64, i32::MAX as i64, "int32")
     }
 
     fn validate_int_range(
         &self,
         instance: &Value,
-        schema_obj: &serde_json::Map<String, Value>,
+        _schema_obj: &serde_json::Map<String, Value>,
         result: &mut ValidationResult,
         path: &str,
         locator: &JsonSourceLocator,
@@ -472,7 +469,7 @@ impl InstanceValidator {
     fn validate_uint_range(
         &self,
         instance: &Value,
-        schema_obj: &serde_json::Map<String, Value>,
+        _schema_obj: &serde_json::Map<String, Value>,
         result: &mut ValidationResult,
         path: &str,
         locator: &JsonSourceLocator,
@@ -517,7 +514,7 @@ impl InstanceValidator {
     fn validate_int64(
         &self,
         instance: &Value,
-        schema_obj: &serde_json::Map<String, Value>,
+        _schema_obj: &serde_json::Map<String, Value>,
         result: &mut ValidationResult,
         path: &str,
         locator: &JsonSourceLocator,
@@ -558,7 +555,7 @@ impl InstanceValidator {
     fn validate_int128(
         &self,
         instance: &Value,
-        schema_obj: &serde_json::Map<String, Value>,
+        _schema_obj: &serde_json::Map<String, Value>,
         result: &mut ValidationResult,
         path: &str,
         locator: &JsonSourceLocator,
@@ -589,18 +586,18 @@ impl InstanceValidator {
     fn validate_uint32(
         &self,
         instance: &Value,
-        schema_obj: &serde_json::Map<String, Value>,
+        _schema_obj: &serde_json::Map<String, Value>,
         result: &mut ValidationResult,
         path: &str,
         locator: &JsonSourceLocator,
     ) {
-        self.validate_uint_range(instance, schema_obj, result, path, locator, 0, u32::MAX as u64, "uint32")
+        self.validate_uint_range(instance, _schema_obj, result, path, locator, 0, u32::MAX as u64, "uint32")
     }
 
     fn validate_uint64(
         &self,
         instance: &Value,
-        schema_obj: &serde_json::Map<String, Value>,
+        _schema_obj: &serde_json::Map<String, Value>,
         result: &mut ValidationResult,
         path: &str,
         locator: &JsonSourceLocator,
@@ -644,7 +641,7 @@ impl InstanceValidator {
     fn validate_uint128(
         &self,
         instance: &Value,
-        schema_obj: &serde_json::Map<String, Value>,
+        _schema_obj: &serde_json::Map<String, Value>,
         result: &mut ValidationResult,
         path: &str,
         locator: &JsonSourceLocator,

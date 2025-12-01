@@ -57,9 +57,9 @@ impl JsonSourceLocator {
                         }
 
                         // Expect property name (string)
-                        if chars[i] == '"' {
-                            let key_line = line;
-                            let key_column = column;
+                        if chars[i] == '\"' {
+                            let _key_line = line;
+                            let _key_column = column;
                             let key = self.parse_string(&chars, &mut i, &mut line, &mut column);
                             
                             // Skip colon
