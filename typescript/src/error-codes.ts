@@ -50,6 +50,9 @@ export const SCHEMA_ROOT_MISSING_ID = "SCHEMA_ROOT_MISSING_ID";
 /** Root schema with 'type' must have a 'name' property. */
 export const SCHEMA_ROOT_MISSING_NAME = "SCHEMA_ROOT_MISSING_NAME";
 
+/** Unknown keyword found in schema. */
+export const SCHEMA_UNKNOWN_KEYWORD = "SCHEMA_UNKNOWN_KEYWORD";
+
 /** Validation extension keyword is used but validation extensions are not enabled. */
 export const SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED = "SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED";
 
@@ -509,6 +512,7 @@ export const ErrorCodes = {
   SCHEMA_ROOT_MISSING_TYPE,
   SCHEMA_ROOT_MISSING_ID,
   SCHEMA_ROOT_MISSING_NAME,
+  SCHEMA_UNKNOWN_KEYWORD,
   SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED,
   SCHEMA_NAME_INVALID,
   SCHEMA_CONSTRAINT_INVALID_FOR_TYPE,

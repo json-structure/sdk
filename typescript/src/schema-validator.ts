@@ -43,12 +43,11 @@ export class SchemaValidator {
   private sourceLocator: JsonSourceLocator | null = null;
   private allowImport: boolean;
   private externalSchemas: Map<string, JsonValue>;
-  private maxValidationDepth: number;
   private warnOnUnusedExtensionKeywords: boolean;
 
   constructor(options: SchemaValidatorOptions = {}) {
     this.allowImport = options.allowImport ?? false;
-    this.maxValidationDepth = options.maxValidationDepth ?? 64;
+    // Note: maxValidationDepth is accepted in options but not currently implemented
     this.warnOnUnusedExtensionKeywords = options.warnOnUnusedExtensionKeywords ?? true;
     this.externalSchemas = new Map<string, JsonValue>();
     

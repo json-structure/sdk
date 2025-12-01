@@ -654,7 +654,7 @@ export class InstanceValidator {
     }
   }
 
-  private validateKeyName(key: string, keyNamesSchema: JsonObject, path: string): boolean {
+  private validateKeyName(key: string, keyNamesSchema: JsonObject, _path: string): boolean {
     // Check type (must be string for map keys)
     const type = keyNamesSchema.type;
     if (type && type !== 'string') {

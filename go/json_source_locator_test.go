@@ -16,10 +16,8 @@ func TestJsonSourceLocatorBasic(t *testing.T) {
 	
 	// Test root location
 	loc := locator.GetLocation("")
-	// Empty path should return unknown
-	if loc.Line != 0 && loc.Column != 0 {
-		// May return unknown for empty path
-	}
+	// Empty path should return unknown - just verify no panic
+	_ = loc
 }
 
 func TestJsonSourceLocatorPropertyPath(t *testing.T) {
