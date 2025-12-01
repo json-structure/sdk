@@ -1,0 +1,51 @@
+{
+  "$schema": "https://schemas.example.com/financial-types",
+  "invoiceNumber": "INV-2023-001",
+  "issueDate": "2023-11-13",
+  "dueDate": "2023-12-13",
+  "paymentTermsDays": 30,
+  "lineItems": [
+    {
+      "description": "Professional Services",
+      "quantity": 10,
+      "unitPrice": {
+        "amount": "150.00",
+        "currency": "USD"
+      },
+      "totalPrice": {
+        "amount": "1500.00",
+        "currency": "USD"
+      },
+      "weight": 0.0,
+      "discountPercent": 0
+    },
+    {
+      "description": "Software License",
+      "quantity": 1,
+      "unitPrice": {
+        "amount": "299.99",
+        "currency": "USD"
+      },
+      "totalPrice": {
+        "amount": "299.99",
+        "currency": "USD"
+      },
+      "weight": 0.5,
+      "discountPercent": 10.5
+    }
+  ],
+  "subtotal": {
+    "amount": "1799.99",
+    "currency": "USD"
+  },
+  "taxRate": "0.0875",
+  "taxAmount": {
+    "amount": "157.50",
+    "currency": "USD"
+  },
+  "totalAmount": {
+    "amount": "1957.49",
+    "currency": "USD"
+  },
+  "cancelledDate": null
+}

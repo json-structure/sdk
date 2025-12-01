@@ -1,0 +1,51 @@
+{
+  "$schema": "https://schemas.example.com/financial-types",
+  "invoiceNumber": "INV-2023-003",
+  "issueDate": "2023-11-15",
+  "dueDate": "2023-12-15",
+  "paymentTermsDays": 30,
+  "lineItems": [
+    {
+      "description": "Consulting Hours",
+      "quantity": 26,
+      "unitPrice": {
+        "amount": "200.00",
+        "currency": "GBP"
+      },
+      "totalPrice": {
+        "amount": "5200.00",
+        "currency": "GBP"
+      },
+      "weight": 0.0,
+      "discountPercent": 5
+    },
+    {
+      "description": "Travel Expenses",
+      "quantity": 1,
+      "unitPrice": {
+        "amount": "450.75",
+        "currency": "GBP"
+      },
+      "totalPrice": {
+        "amount": "450.75",
+        "currency": "GBP"
+      },
+      "weight": 15.5,
+      "discountPercent": 0
+    }
+  ],
+  "subtotal": {
+    "amount": "5650.75",
+    "currency": "GBP"
+  },
+  "taxRate": "0.2000",
+  "taxAmount": {
+    "amount": "1130.15",
+    "currency": "GBP"
+  },
+  "totalAmount": {
+    "amount": "6780.90",
+    "currency": "GBP"
+  },
+  "cancelledDate": null
+}

@@ -499,6 +499,7 @@ export class JsonStructureHoverProvider implements vscode.HoverProvider {
 
     private findPathToPosition(text: string, offset: number): string[] {
         const path: string[] = [];
+        const depthStack: number[] = []; // Track at which depth each path element was added
         const beforeCursor = text.substring(0, offset);
         
         let depth = 0;
@@ -519,16 +520,19 @@ export class JsonStructureHoverProvider implements vscode.HoverProvider {
                 }
             } else if (!inString) {
                 if (char === '{' || char === '[') {
+                    depth++;
                     if (currentKey) {
                         path.push(currentKey);
+                        depthStack.push(depth);
                         currentKey = '';
                     }
-                    depth++;
                 } else if (char === '}' || char === ']') {
-                    depth--;
-                    if (path.length > depth) {
+                    // Pop any path elements that were added at this depth
+                    while (depthStack.length > 0 && depthStack[depthStack.length - 1] === depth) {
                         path.pop();
+                        depthStack.pop();
                     }
+                    depth--;
                 }
             }
         }
@@ -553,20 +557,85 @@ export class JsonStructureHoverProvider implements vscode.HoverProvider {
 
         // Navigate to the current path
         for (const segment of path) {
+            // First check if we have properties at this level
             if (current.properties && typeof current.properties === 'object') {
                 const props = current.properties as Record<string, unknown>;
                 if (props[segment] && typeof props[segment] === 'object') {
                     current = props[segment] as Record<string, unknown>;
+                    
+                    // Handle direct $ref on the property
                     if (current.$ref && typeof current.$ref === 'string') {
                         const resolved = this.resolveRef(current.$ref, schema);
                         if (resolved) {
                             current = resolved;
                         }
                     }
+                    
+                    // Handle $ref inside type (JSON Structure style: type: { $ref: "..." })
+                    if (current.type && typeof current.type === 'object' && !Array.isArray(current.type)) {
+                        const typeObj = current.type as Record<string, unknown>;
+                        if (typeObj.$ref && typeof typeObj.$ref === 'string') {
+                            const resolved = this.resolveRef(typeObj.$ref, schema);
+                            if (resolved) {
+                                current = resolved;
+                            }
+                        }
+                    }
                     continue;
                 }
             }
+            
+            // Check if current is an array type with items that reference another type
+            if (current.type === 'array' && current.items && typeof current.items === 'object') {
+                const items = current.items as Record<string, unknown>;
+                // Handle items: { type: { $ref: "..." } }
+                if (items.type && typeof items.type === 'object' && !Array.isArray(items.type)) {
+                    const typeObj = items.type as Record<string, unknown>;
+                    if (typeObj.$ref && typeof typeObj.$ref === 'string') {
+                        const resolved = this.resolveRef(typeObj.$ref, schema);
+                        if (resolved) {
+                            current = resolved;
+                            // Now look for the segment in the resolved schema
+                            if (current.properties && typeof current.properties === 'object') {
+                                const props = current.properties as Record<string, unknown>;
+                                if (props[segment] && typeof props[segment] === 'object') {
+                                    current = props[segment] as Record<string, unknown>;
+                                    
+                                    // Handle $ref inside type for this property too
+                                    if (current.type && typeof current.type === 'object' && !Array.isArray(current.type)) {
+                                        const innerTypeObj = current.type as Record<string, unknown>;
+                                        if (innerTypeObj.$ref && typeof innerTypeObj.$ref === 'string') {
+                                            const innerResolved = this.resolveRef(innerTypeObj.$ref, schema);
+                                            if (innerResolved) {
+                                                current = innerResolved;
+                                            }
+                                        }
+                                    }
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
             return null;
+        }
+
+        // After navigating the path, if we ended up at an array type, 
+        // we need to look inside the items schema for properties
+        if (current.type === 'array' && current.items && typeof current.items === 'object') {
+            const items = current.items as Record<string, unknown>;
+            // Handle items: { type: { $ref: "..." } }
+            if (items.type && typeof items.type === 'object' && !Array.isArray(items.type)) {
+                const typeObj = items.type as Record<string, unknown>;
+                if (typeObj.$ref && typeof typeObj.$ref === 'string') {
+                    const resolved = this.resolveRef(typeObj.$ref, schema);
+                    if (resolved) {
+                        current = resolved;
+                    }
+                }
+            }
         }
 
         // Now look for the property
