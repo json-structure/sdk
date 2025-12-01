@@ -684,16 +684,17 @@ public class InstanceValidatorTests
     }
 
     [Fact]
-    public void Validate_Tuple_ValidPrefixItems_ReturnsSuccess()
+    public void Validate_Tuple_ValidProperties_ReturnsSuccess()
     {
         var schema = new JsonObject
         {
             ["type"] = "tuple",
-            ["prefixItems"] = new JsonArray
+            ["properties"] = new JsonObject
             {
-                new JsonObject { ["type"] = "string" },
-                new JsonObject { ["type"] = "int32" }
-            }
+                ["name"] = new JsonObject { ["type"] = "string" },
+                ["age"] = new JsonObject { ["type"] = "int32" }
+            },
+            ["tuple"] = new JsonArray { "name", "age" }
         };
 
         var instance = new JsonArray { "name", 42 };

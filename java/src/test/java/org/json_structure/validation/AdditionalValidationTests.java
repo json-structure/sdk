@@ -1405,10 +1405,11 @@ class AdditionalValidationTests {
             String schema = """
                 {
                     "type": "tuple",
-                    "prefixItems": [
-                        { "type": "string" },
-                        { "type": "int32" }
-                    ]
+                    "properties": {
+                        "name": { "type": "string" },
+                        "age": { "type": "int32" }
+                    },
+                    "tuple": ["name", "age"]
                 }
                 """;
             
@@ -3392,7 +3393,10 @@ class AdditionalValidationTests {
                     "$id": "https://test.example.com/schema/tupleobj",
                     "name": "TupleObjSchema",
                     "type": "tuple",
-                    "prefixItems": [{ "type": "string" }]
+                    "properties": {
+                        "name": { "type": "string" }
+                    },
+                    "tuple": ["name"]
                 }
                 """;
             

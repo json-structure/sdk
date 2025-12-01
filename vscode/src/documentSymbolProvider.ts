@@ -185,16 +185,18 @@ export class JsonStructureDocumentSymbolProvider implements vscode.DocumentSymbo
             }
         }
 
-        // Add prefixItems as children for tuple types
-        if (def.type === 'tuple' && Array.isArray(def.prefixItems)) {
-            for (let i = 0; i < def.prefixItems.length; i++) {
-                const item = def.prefixItems[i];
-                if (!item || typeof item !== 'object') continue;
+        // Add tuple properties as children for tuple types
+        // JSON Structure tuples use 'properties' + 'tuple' keyword (NOT prefixItems)
+        if (def.type === 'tuple' && def.tuple && Array.isArray(def.tuple) && def.properties && typeof def.properties === 'object') {
+            for (let i = 0; i < def.tuple.length; i++) {
+                const propName = def.tuple[i];
+                const propDef = def.properties[propName];
+                if (!propDef || typeof propDef !== 'object') continue;
                 
-                const itemObj = item as Record<string, unknown>;
-                const typeStr = typeof itemObj.type === 'string' ? itemObj.type : 'unknown';
+                const propObj = propDef as Record<string, unknown>;
+                const typeStr = typeof propObj.type === 'string' ? propObj.type : 'unknown';
                 const itemSymbol = new vscode.DocumentSymbol(
-                    `[${i}]`,
+                    `[${i}] ${propName}`,
                     typeStr,
                     vscode.SymbolKind.Field,
                     range,

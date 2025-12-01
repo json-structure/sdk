@@ -1061,17 +1061,18 @@ public class AdditionalValidationTests
     }
     
     [Fact]
-    public void InstanceValidator_ValidatePrefixItems_Valid_Succeeds()
+    public void InstanceValidator_ValidateTupleWithProperties_Valid_Succeeds()
     {
         var validator = new InstanceValidator();
         var schema = new JsonObject
         {
-            ["type"] = "array",
-            ["prefixItems"] = new JsonArray
+            ["type"] = "tuple",
+            ["properties"] = new JsonObject
             {
-                new JsonObject { ["type"] = "string" },
-                new JsonObject { ["type"] = "number" }
-            }
+                ["first"] = new JsonObject { ["type"] = "string" },
+                ["second"] = new JsonObject { ["type"] = "number" }
+            },
+            ["tuple"] = new JsonArray { "first", "second" }
         };
         var instance = new JsonArray { "hello", 42 };
         
@@ -1080,10 +1081,10 @@ public class AdditionalValidationTests
     }
     
     [Fact]
-    public void InstanceValidator_ValidatePrefixItems_Invalid_Fails()
+    public void InstanceValidator_ValidateArrayItems_Invalid_Fails()
     {
         var validator = new InstanceValidator();
-        // JSON Structure uses tuple type for positional items, not prefixItems
+        // JSON Structure uses tuple type for positional items
         var schema = new JsonObject
         {
             ["type"] = "array",
@@ -3065,39 +3066,40 @@ public class AdditionalValidationTests
     }
     
     [Fact]
-    public void InstanceValidator_Tuple_WithAdditionalItems_Schema()
+    public void InstanceValidator_Tuple_CorrectLength_Valid()
     {
         var validator = new InstanceValidator();
         var schema = new JsonObject
         {
             ["type"] = "tuple",
-            ["prefixItems"] = new JsonArray
+            ["properties"] = new JsonObject
             {
-                new JsonObject { ["type"] = "string" },
-                new JsonObject { ["type"] = "number" }
+                ["first"] = new JsonObject { ["type"] = "string" },
+                ["second"] = new JsonObject { ["type"] = "number" }
             },
-            ["items"] = new JsonObject { ["type"] = "boolean" }
+            ["tuple"] = new JsonArray { "first", "second" }
         };
-        var instance = new JsonArray { "a", 1, true, false };
+        var instance = new JsonArray { "a", 1 };
         
         var result = validator.Validate(instance, schema);
         result.IsValid.Should().BeTrue();
     }
     
     [Fact]
-    public void InstanceValidator_Tuple_WithAdditionalItems_False()
+    public void InstanceValidator_Tuple_ExtraItems_Invalid()
     {
         var validator = new InstanceValidator();
         var schema = new JsonObject
         {
             ["type"] = "tuple",
-            ["prefixItems"] = new JsonArray
+            ["properties"] = new JsonObject
             {
-                new JsonObject { ["type"] = "string" },
-                new JsonObject { ["type"] = "number" }
+                ["first"] = new JsonObject { ["type"] = "string" },
+                ["second"] = new JsonObject { ["type"] = "number" }
             },
-            ["items"] = false
+            ["tuple"] = new JsonArray { "first", "second" }
         };
+        // Instance has 3 items but tuple defines only 2
         var instance = new JsonArray { "a", 1, true };
         
         var result = validator.Validate(instance, schema);
@@ -4165,7 +4167,7 @@ public class AdditionalValidationTests
     }
     
     [Fact]
-    public void SchemaValidator_TupleSchema_MissingPrefixItems_Invalid()
+    public void SchemaValidator_TupleSchema_MissingDefinition_Invalid()
     {
         var validator = new SchemaValidator();
         var schema = new JsonObject
@@ -4173,7 +4175,7 @@ public class AdditionalValidationTests
             ["$id"] = "https://example.com/test",
             ["type"] = "tuple",
             ["name"] = "MyTuple"
-            // Missing prefixItems
+            // Missing properties and tuple keywords
         };
         
         var result = validator.Validate(schema);
@@ -4541,7 +4543,7 @@ public class AdditionalValidationTests
     }
     
     [Fact]
-    public void SchemaValidator_PrefixItems_NotArray_Invalid()
+    public void SchemaValidator_TupleOrder_NotArray_Invalid()
     {
         var validator = new SchemaValidator();
         var schema = new JsonObject
@@ -4549,7 +4551,11 @@ public class AdditionalValidationTests
             ["$id"] = "https://example.com/test",
             ["type"] = "tuple",
             ["name"] = "Tup",
-            ["prefixItems"] = "not-an-array"
+            ["properties"] = new JsonObject
+            {
+                ["item"] = new JsonObject { ["type"] = "string" }
+            },
+            ["tuple"] = "not-an-array"
         };
         
         var result = validator.Validate(schema);
@@ -4857,10 +4863,11 @@ public class AdditionalValidationTests
             ""$schema"": ""https://json-structure.org/meta/extended/v0/$id"",
             ""type"": ""tuple"",
             ""name"": ""Pair"",
-            ""prefixItems"": [
-                { ""type"": ""string"" },
-                { ""type"": ""integer"" }
-            ]
+            ""properties"": {
+                ""first"": { ""type"": ""string"" },
+                ""second"": { ""type"": ""integer"" }
+            },
+            ""tuple"": [""first"", ""second""]
         }";
         var instanceJson = @"[123, ""wrong-order""]";
         

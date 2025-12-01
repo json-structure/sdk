@@ -193,10 +193,10 @@ public class SchemaValidatorTests
             }
             else if (type == "tuple")
             {
-                schema["tuple"] = true;
+                schema["tuple"] = new JsonArray { "item0" };
                 schema["properties"] = new JsonObject
                 {
-                    ["0"] = new JsonObject { ["type"] = "string" }
+                    ["item0"] = new JsonObject { ["type"] = "string" }
                 };
             }
             else if (type == "choice")
@@ -293,12 +293,13 @@ public class SchemaValidatorTests
             ["$id"] = "urn:example:test-schema",
             ["name"] = "TestType",
             ["type"] = "tuple",
-            ["prefixItems"] = new JsonArray
+            ["properties"] = new JsonObject
             {
-                new JsonObject { ["type"] = "string" },
-                new JsonObject { ["type"] = "int32" },
-                new JsonObject { ["type"] = "boolean" }
+                ["first"] = new JsonObject { ["type"] = "string" },
+                ["second"] = new JsonObject { ["type"] = "int32" },
+                ["third"] = new JsonObject { ["type"] = "boolean" }
             },
+            ["tuple"] = new JsonArray { "first", "second", "third" },
             ["items"] = false
         };
 

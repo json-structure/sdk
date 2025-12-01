@@ -101,7 +101,8 @@ const MAP_KEYWORDS = [
  */
 const TUPLE_KEYWORDS = [
     { label: 'type', description: 'The type (must be "tuple")', insertText: '"type": "tuple"' },
-    { label: 'prefixItems', description: 'Schemas for each tuple element', insertText: '"prefixItems": [\n\t{ "type": "$1" }\n]' },
+    { label: 'properties', description: 'Schemas for tuple elements', insertText: '"properties": {\n\t"$1": { "type": "$2" }\n}' },
+    { label: 'tuple', description: 'Order of tuple elements', insertText: '"tuple": ["$1"]' },
 ];
 
 /**

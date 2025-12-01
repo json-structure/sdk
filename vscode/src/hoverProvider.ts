@@ -133,7 +133,7 @@ const TYPE_DOCUMENTATION: Record<string, { summary: string; details: string }> =
     },
     tuple: {
         summary: 'Fixed-length typed array',
-        details: 'A JSON array with a fixed number of elements, each with its own schema. Requires "prefixItems" keyword.'
+        details: 'A JSON array with a fixed number of elements, each with its own schema. Requires "properties" and "tuple" keywords.'
     },
     choice: {
         summary: 'Discriminated union (tagged union)',
@@ -209,9 +209,9 @@ const KEYWORD_DOCUMENTATION: Record<string, { summary: string; details: string }
         summary: 'Map value schema',
         details: 'Defines the schema for values in a map (dictionary).'
     },
-    prefixItems: {
-        summary: 'Tuple element schemas',
-        details: 'An array of schemas, one for each element position in the tuple.'
+    tuple: {
+        summary: 'Tuple element order',
+        details: 'An array of property names that defines the order of elements in a tuple type.'
     },
     selector: {
         summary: 'Choice discriminator',

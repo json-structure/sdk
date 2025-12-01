@@ -306,13 +306,17 @@ class JsonStructureSchemaExporter:
                 if len(args) == 2 and args[1] is ...:
                     schema["items"] = self._generate_schema(args[0], path + "/items", None)
                 else:
-                    # Fixed length tuple
-                    prefix_items = []
+                    # Fixed length tuple - JSON Structure uses properties + tuple keyword
+                    properties = {}
+                    tuple_order = []
                     for i, arg in enumerate(args):
-                        prefix_items.append(
-                            self._generate_schema(arg, f"{path}/prefixItems/{i}", None)
+                        prop_name = f"item{i}"
+                        properties[prop_name] = self._generate_schema(
+                            arg, f"{path}/properties/{prop_name}", None
                         )
-                    schema["prefixItems"] = prefix_items
+                        tuple_order.append(prop_name)
+                    schema["properties"] = properties
+                    schema["tuple"] = tuple_order
             return self._apply_transform(schema, type_, field, path)
         
         # Handle Union types (choice)

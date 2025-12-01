@@ -177,8 +177,9 @@ class TestCollectionTypes:
         schema = export_schema(Model)
         
         assert schema["properties"]["point"]["type"] == "tuple"
-        assert len(schema["properties"]["point"]["prefixItems"]) == 2
-        assert schema["properties"]["point"]["prefixItems"][0]["type"] == "int64"
+        assert len(schema["properties"]["point"]["properties"]) == 2
+        assert schema["properties"]["point"]["properties"]["item0"]["type"] == "int64"
+        assert schema["properties"]["point"]["tuple"] == ["item0", "item1"]
 
 
 class TestOptionalAndUnion:

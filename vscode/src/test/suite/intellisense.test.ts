@@ -557,11 +557,12 @@ suite('IntelliSense Provider Test Suite', () => {
     "$schema": "https://json-structure.org/meta/core/v0/#",
     "name": "CoordinateTuple",
     "type": "tuple",
-    "prefixItems": [
-        { "type": "number" },
-        { "type": "number" },
-        { "type": "number" }
-    ]
+    "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "z": { "type": "number" }
+    },
+    "tuple": ["x", "y", "z"]
 }`;
             const doc = await createTestDocument(content, true);
             
