@@ -560,7 +560,7 @@ describe('SchemaValidator', () => {
         },
         type: 'object',
         properties: {
-          home: { $ref: '#/definitions/Address' },
+          home: { type: { $ref: '#/definitions/Address' } },
         },
       };
 
@@ -576,7 +576,7 @@ describe('SchemaValidator', () => {
         name: 'TestType',
         type: 'object',
         properties: {
-          home: { $ref: '#/definitions/NotFound' },
+          home: { type: { $ref: '#/definitions/NotFound' } },
         },
       };
 
@@ -593,11 +593,11 @@ describe('SchemaValidator', () => {
         $id: 'urn:example:test-schema',
         name: 'TestType',
         definitions: {
-          recursive: { $ref: '#/definitions/recursive' },
+          recursive: { type: { $ref: '#/definitions/recursive' } },
         },
         type: 'object',
         properties: {
-          value: { $ref: '#/definitions/recursive' },
+          value: { type: { $ref: '#/definitions/recursive' } },
         },
       };
 

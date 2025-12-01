@@ -844,13 +844,13 @@ class InstanceValidatorTests {
         void validRef() {
             String schema = """
                 {
-                    "$defs": {
+                    "definitions": {
                         "name": { "type": "string", "minLength": 1 }
                     },
                     "type": "object",
                     "properties": {
-                        "firstName": { "$ref": "#/$defs/name" },
-                        "lastName": { "$ref": "#/$defs/name" }
+                        "firstName": { "type": { "$ref": "#/definitions/name" } },
+                        "lastName": { "type": { "$ref": "#/definitions/name" } }
                     }
                 }
                 """;
@@ -867,12 +867,12 @@ class InstanceValidatorTests {
         void invalidRefViolatesReferencedSchema() {
             String schema = """
                 {
-                    "$defs": {
+                    "definitions": {
                         "name": { "type": "string", "minLength": 1 }
                     },
                     "type": "object",
                     "properties": {
-                        "firstName": { "$ref": "#/$defs/name" }
+                        "firstName": { "type": { "$ref": "#/definitions/name" } }
                     }
                 }
                 """;

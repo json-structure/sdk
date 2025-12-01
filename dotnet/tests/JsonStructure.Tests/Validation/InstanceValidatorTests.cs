@@ -316,11 +316,11 @@ public class InstanceValidatorTests
     {
         var schema = new JsonObject
         {
-            ["$defs"] = new JsonObject
+            ["definitions"] = new JsonObject
             {
                 ["Name"] = new JsonObject { ["type"] = "string" }
             },
-            ["$ref"] = "#/$defs/Name"
+            ["type"] = new JsonObject { ["$ref"] = "#/definitions/Name" }
         };
 
         var instance = JsonValue.Create("John");

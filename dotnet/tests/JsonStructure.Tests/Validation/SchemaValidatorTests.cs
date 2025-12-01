@@ -144,7 +144,8 @@ public class SchemaValidatorTests
         var schema = new JsonObject
         {
             ["$id"] = "urn:example:test-schema",
-            ["$defs"] = new JsonObject
+            ["name"] = "TestSchema",
+            ["definitions"] = new JsonObject
             {
                 ["Address"] = new JsonObject
                 {
@@ -155,7 +156,7 @@ public class SchemaValidatorTests
                     }
                 }
             },
-            ["$ref"] = "#/$defs/Address"
+            ["type"] = new JsonObject { ["$ref"] = "#/definitions/Address" }
         };
 
         var result = _validator.Validate(schema);

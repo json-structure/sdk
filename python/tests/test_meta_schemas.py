@@ -79,9 +79,9 @@ def test_core_metaschema_has_definitions():
         schema = json.load(f)
     
     # The core metaschema should have key definitions
-    assert "definitions" in schema or "$defs" in schema, "Core metaschema must have definitions"
+    assert "definitions" in schema, "Core metaschema must have definitions"
     
-    defs = schema.get("definitions", schema.get("$defs", {}))
+    defs = schema.get("definitions", {})
     
     # Check for some expected core types (actual names from the metaschema)
     expected_types = ["Type", "ObjectType", "Property", "SchemaDocument"]

@@ -4,9 +4,9 @@
     "name": "SchemaWithRefs",
     "type": "object",
     "properties": {
-        "primaryAddress": { "$ref": "#/definitions/Address" },
-        "billingAddress": { "$ref": "#/definitions/Address" },
-        "person": { "$ref": "#/definitions/Person" }
+        "primaryAddress": { "type": { "$ref": "#/definitions/Address" } },
+        "billingAddress": { "type": { "$ref": "#/definitions/Address" } },
+        "person": { "type": { "$ref": "#/definitions/Person" } }
     },
     "$root": "#/definitions/Person",
     "definitions": {
@@ -24,7 +24,7 @@
             "properties": {
                 "name": { "type": "string" },
                 "age": { "type": "int32" },
-                "address": { "$ref": "#/definitions/Address" }
+                "address": { "type": { "$ref": "#/definitions/Address" } }
             },
             "required": ["name"]
         }

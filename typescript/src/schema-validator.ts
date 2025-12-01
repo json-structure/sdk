@@ -135,8 +135,10 @@ export class SchemaValidator {
     if ('definitions' in schema) {
       this.validateDefinitions(schema.definitions, `${path}/definitions`);
     }
+    // Note: $defs is NOT a JSON Structure keyword (it's JSON Schema).
+    // JSON Structure uses 'definitions' only.
     if ('$defs' in schema) {
-      this.validateDefinitions(schema.$defs, `${path}/$defs`);
+      this.addError(`${path}/$defs`, "'$defs' is not a valid JSON Structure keyword. Use 'definitions' instead.", ErrorCodes.SCHEMA_UNKNOWN_KEYWORD);
     }
 
     // If there's a $root, validate that the referenced type exists
@@ -164,7 +166,7 @@ export class SchemaValidator {
       );
       // Must have type OR $root, OR just definitions
       // If it has only meta+definitions, it needs to have definitions content
-      if (!hasOnlyMeta || !('definitions' in schema || '$defs' in schema)) {
+      if (!hasOnlyMeta || !('definitions' in schema)) {
         this.addError(path, "Schema must have a 'type' property or '$root' reference", ErrorCodes.SCHEMA_ROOT_MISSING_TYPE);
       }
     }
@@ -257,13 +259,18 @@ export class SchemaValidator {
   private validateTypeDefinition(schema: JsonObject, path: string): void {
     const type = schema.type;
 
-    // Handle $ref
+    // Check for bare $ref - this is NOT permitted per spec Section 3.4.1
+    // $ref is ONLY permitted inside the 'type' attribute value
     if ('$ref' in schema) {
-      this.validateRef(schema.$ref, path);
+      this.addError(
+        `${path}/$ref`,
+        "'$ref' is only permitted inside the 'type' attribute. Use { \"type\": { \"$ref\": \"...\" } } instead of { \"$ref\": \"...\" }",
+        ErrorCodes.SCHEMA_REF_NOT_IN_TYPE
+      );
       return;
     }
 
-    // Type is required unless it's a conditional-only schema or has $ref
+    // Type is required unless it's a conditional-only schema
     if (type === undefined) {
       const conditionalKeywords = ['allOf', 'anyOf', 'oneOf', 'not', 'if'];
       const hasConditional = conditionalKeywords.some(k => k in schema);
@@ -716,11 +723,21 @@ export class SchemaValidator {
         // Circular references to properly defined types are valid in JSON Structure
         // (e.g., ObjectType -> Property -> Type -> ObjectType in metaschemas)
         // However, a direct self-reference with no content is invalid
-        // We detect this by checking if the resolved schema is ONLY a $ref
+        // We detect this by checking if the resolved schema is ONLY a $ref or type: { $ref: ... }
         const resolved = this.resolveRef(ref);
-        if (resolved !== null && Object.keys(resolved).length === 1 && '$ref' in resolved) {
-          // This is a definition that's only a $ref - direct circular with no content
-          this.addError(path, `Circular reference detected: ${ref}`, ErrorCodes.SCHEMA_REF_CIRCULAR);
+        if (resolved !== null) {
+          const keys = Object.keys(resolved);
+          // Check for bare $ref: { "$ref": "..." }
+          const isBareRef = keys.length === 1 && '$ref' in resolved;
+          // Check for type-wrapped ref only: { "type": { "$ref": "..." } }
+          const isTypeRefOnly = keys.length === 1 && 'type' in resolved && 
+            typeof resolved.type === 'object' && resolved.type !== null && !Array.isArray(resolved.type) &&
+            Object.keys(resolved.type as object).length === 1 && '$ref' in (resolved.type as object);
+          
+          if (isBareRef || isTypeRefOnly) {
+            // This is a definition that's only a $ref - direct circular with no content
+            this.addError(path, `Circular reference detected: ${ref}`, ErrorCodes.SCHEMA_REF_CIRCULAR);
+          }
         }
         // For other circular refs, just stop recursing to prevent infinite loops
         return;

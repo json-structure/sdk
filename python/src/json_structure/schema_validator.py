@@ -98,7 +98,6 @@ class JSONStructureSchemaCoreValidator:
         self.source_text = None
         self.source_locator: Optional[JsonSourceLocator] = None
         self.allow_import = allow_import
-        self.visited_refs: set = set()  # Track visited $ref paths for circular reference detection
         self.import_map = import_map if import_map is not None else {}
         self.extended = extended
         self.warn_on_unused_extension_keywords = warn_on_unused_extension_keywords
@@ -183,7 +182,6 @@ class JSONStructureSchemaCoreValidator:
         """
         self.errors = []
         self.warnings = []
-        self.visited_refs = set()  # Reset visited refs for each validation
         self.doc = doc
         self.source_text = source_text
         
@@ -228,6 +226,13 @@ class JSONStructureSchemaCoreValidator:
         # Check for composition keywords at root if no type is present
         if self.extended and "type" not in doc:
             self._check_composition_keywords(doc, "#")
+        
+        # Check that document has either 'type', '$root', or composition keywords at root
+        has_type = "type" in doc
+        has_root = "$root" in doc
+        has_composition = self.extended and self._has_composition_keywords(doc)
+        if not has_type and not has_root and not has_composition:
+            self._err("Document must have 'type', '$root', or composition keywords at root.", "#", ErrorCodes.SCHEMA_ROOT_MISSING_TYPE)
             
         return self.errors
 
@@ -466,7 +471,8 @@ class JSONStructureSchemaCoreValidator:
             subpath = f"{path}/{k}"
             if isinstance(v, dict) and ("type" in v or "$ref" in v or 
                                        (self.extended and self._has_composition_keywords(v))):
-                self._validate_schema(v, is_root=False, path=subpath, name_in_namespace=k)
+                # Pass the definition path for self-reference detection
+                self._validate_schema(v, is_root=False, path=subpath, name_in_namespace=k, definition_path=subpath)
             else:
                 if not isinstance(v, dict):
                     self._err(f"{subpath} is not a valid namespace or schema object.", subpath)
@@ -479,9 +485,16 @@ class JSONStructureSchemaCoreValidator:
         """
         return any(key in obj for key in self.COMPOSITION_KEYWORDS)
 
-    def _validate_schema(self, schema_obj, is_root=False, path="", name_in_namespace=None):
+    def _validate_schema(self, schema_obj, is_root=False, path="", name_in_namespace=None, definition_path=None):
         """
         Validates an individual schema object.
+        
+        Args:
+            schema_obj: The schema object to validate
+            is_root: Whether this is the root schema
+            path: The JSON pointer path to this schema
+            name_in_namespace: The name of this definition in the namespace (if any)
+            definition_path: The definition path for self-reference detection (e.g., "#/definitions/MyType")
         """
         if not isinstance(schema_obj, dict):
             self._err(f"{path} must be an object to be a schema.", path)
@@ -505,31 +518,24 @@ class JSONStructureSchemaCoreValidator:
                 self._err(f"'abstract' keyword must be boolean.", path + "/abstract")
         if "$extends" in schema_obj:
             self._validate_extends_keyword(schema_obj["$extends"], path + "/$extends")
+        
+        # Check for bare $ref - this is NOT permitted per spec Section 3.4.1
+        # $ref is ONLY permitted inside the 'type' attribute value
+        if "$ref" in schema_obj:
+            self._err(
+                "'$ref' is only permitted inside the 'type' attribute. "
+                "Use { \"type\": { \"$ref\": \"...\" } } instead of { \"$ref\": \"...\" }",
+                path + "/$ref",
+                ErrorCodes.SCHEMA_REF_NOT_IN_TYPE
+            )
+            return
                 
         # Check if this is a non-schema with composition keywords
-        has_type_or_ref = "type" in schema_obj or "$ref" in schema_obj
+        has_type = "type" in schema_obj
         has_composition = self.extended and self._has_composition_keywords(schema_obj)
         
-        if not has_type_or_ref and not has_composition:
-            self._err("Missing required 'type' or '$ref' in schema object.", path)
-            return
-            
-        if "type" in schema_obj and "$ref" in schema_obj:
-            self._err("Cannot have both 'type' and '$ref'.", path)
-            return
-            
-        if "$ref" in schema_obj:
-            if not isinstance(schema_obj["$ref"], str):
-                self._err("'$ref' must be a string.", path + "/$ref")
-            else:
-                ref = schema_obj["$ref"]
-                self._check_json_pointer(ref, self.doc, path + "/$ref")
-                # Check for pure circular reference (bare $ref only)
-                if len(schema_obj) == 1:  # Only $ref, no other properties
-                    if ref in self.visited_refs:
-                        self._err(f"Circular reference detected: {ref}", path + "/$ref", ErrorCodes.SCHEMA_REF_CIRCULAR)
-                        return
-                    self.visited_refs.add(ref)
+        if not has_type and not has_composition:
+            self._err("Missing required 'type' in schema object.", path)
             return
             
         if "type" in schema_obj:
@@ -547,7 +553,14 @@ class JSONStructureSchemaCoreValidator:
                     else:
                         self._err("Type dict must have '$ref' or be a valid schema object.", path + "/type")
                 else:
-                    self._check_json_pointer(tval["$ref"], self.doc, path + "/type/$ref")
+                    ref = tval["$ref"]
+                    self._check_json_pointer(ref, self.doc, path + "/type/$ref")
+                    # Check for circular self-reference: type: { $ref: ... } pointing to the same definition
+                    # e.g., "recursive": { "type": { "$ref": "#/definitions/recursive" } }
+                    if len(schema_obj) == 1 and len(tval) == 1 and definition_path is not None:
+                        if ref == definition_path:
+                            self._err(f"Circular reference detected: {ref}", path + "/type/$ref", ErrorCodes.SCHEMA_REF_CIRCULAR)
+                            return
             else:
                 if not isinstance(tval, str):
                     self._err("Type must be a string, list, or object with $ref.", path + "/type")
@@ -578,16 +591,45 @@ class JSONStructureSchemaCoreValidator:
             self._check_extended_validation_keywords(schema_obj, path)
                             
         if "required" in schema_obj:
+            req_val = schema_obj["required"]
             if "type" in schema_obj and isinstance(schema_obj["type"], str):
                 if schema_obj["type"] != "object":
                     self._err("'required' can only appear in an object schema.", path + "/required")
+            if not isinstance(req_val, list):
+                self._err("'required' must be an array.", path + "/required")
+            else:
+                # Check each required property is a string
+                for idx, item in enumerate(req_val):
+                    if not isinstance(item, str):
+                        self._err(f"'required[{idx}]' must be a string.", f"{path}/required[{idx}]")
+                # Check that required properties exist in properties
+                if "properties" in schema_obj and isinstance(schema_obj["properties"], dict):
+                    for idx, item in enumerate(req_val):
+                        if isinstance(item, str) and item not in schema_obj["properties"]:
+                            self._err(f"'required' references property '{item}' that is not in 'properties'.", f"{path}/required[{idx}]")
         if "additionalProperties" in schema_obj:
             if "type" in schema_obj and isinstance(schema_obj["type"], str):
                 if schema_obj["type"] != "object":
                     self._err("'additionalProperties' can only appear in an object schema.", path + "/additionalProperties")
         if "enum" in schema_obj:
-            if not isinstance(schema_obj["enum"], list):
-                self._err("Enum must be an array.", path + "/enum")
+            enum_val = schema_obj["enum"]
+            if not isinstance(enum_val, list):
+                self._err("'enum' must be an array.", path + "/enum")
+            else:
+                if len(enum_val) == 0:
+                    self._err("'enum' array cannot be empty.", path + "/enum")
+                # Check for duplicates (using JSON serialization for comparison)
+                seen = []
+                for idx, item in enumerate(enum_val):
+                    # Convert to JSON string for comparison (handles objects/arrays)
+                    import json
+                    try:
+                        item_str = json.dumps(item, sort_keys=True)
+                        if item_str in seen:
+                            self._err(f"'enum' contains duplicate value at index {idx}.", f"{path}/enum[{idx}]")
+                        seen.append(item_str)
+                    except (TypeError, ValueError):
+                        pass  # Can't serialize, skip duplicate check for this item
             if "type" in schema_obj and isinstance(schema_obj["type"], str):
                 if schema_obj["type"] in self.COMPOUND_TYPES:
                     self._err("'enum' cannot be used with compound types.", path + "/enum")
@@ -645,45 +687,60 @@ class JSONStructureSchemaCoreValidator:
     def _check_extended_validation_keywords(self, obj, path):
         """
         Check extended validation keywords based on type.
+        Always validates keyword values (e.g., minLength must be non-negative).
+        Emits warnings when validation extension is not enabled.
+        Also checks for constraint type mismatches (e.g., minLength on numeric type).
         """
-        if "JSONStructureValidation" not in self.enabled_extensions:
-            # Emit warnings for validation keywords present without the extension enabled
-            all_validation_keywords = (self.NUMERIC_VALIDATION_KEYWORDS | 
-                                     self.STRING_VALIDATION_KEYWORDS | 
-                                     self.ARRAY_VALIDATION_KEYWORDS | 
-                                     self.OBJECT_VALIDATION_KEYWORDS | 
-                                     {"default"})
-            for key in all_validation_keywords:
-                if key in obj:
-                    self._add_extension_keyword_warning(key, path)
-            return
-            
+        validation_enabled = "JSONStructureValidation" in self.enabled_extensions
+        
         tval = obj.get("type")
         if isinstance(tval, str):
-            # Check numeric validation keywords
-            if tval in ["number", "integer", "float", "double", "decimal", 
-                       "int8", "uint8", "int16", "uint16", "int32", "uint32", 
-                       "int64", "uint64", "int128", "uint128", "float8"]:
-                self._check_numeric_validation(obj, path, tval)
-                
-            # Check string validation keywords
+            # Define type categories
+            numeric_types = ["number", "integer", "float", "double", "decimal", 
+                           "int8", "uint8", "int16", "uint16", "int32", "uint32", 
+                           "int64", "uint64", "int128", "uint128", "float8"]
+            array_types = ["array", "set", "tuple"]
+            object_types = ["object", "map"]
+            
+            # Check for constraint type mismatches
+            string_constraints = ["minLength", "maxLength", "pattern"]
+            numeric_constraints = ["minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf"]
+            array_constraints = ["minItems", "maxItems", "uniqueItems", "contains", "minContains", "maxContains"]
+            
+            # Check string constraints on non-string types
+            if tval != "string":
+                for key in string_constraints:
+                    if key in obj:
+                        self._err(f"'{key}' constraint is only valid for string type, not '{tval}'.", f"{path}/{key}")
+            
+            # Check numeric constraints on non-numeric types
+            if tval not in numeric_types:
+                for key in numeric_constraints:
+                    if key in obj:
+                        self._err(f"'{key}' constraint is only valid for numeric types, not '{tval}'.", f"{path}/{key}")
+            
+            # Check array constraints on non-array types
+            if tval not in array_types:
+                for key in array_constraints:
+                    if key in obj:
+                        self._err(f"'{key}' constraint is only valid for array/set/tuple types, not '{tval}'.", f"{path}/{key}")
+            
+            # Now validate the constraint values for matching types
+            if tval in numeric_types:
+                self._check_numeric_validation(obj, path, tval, validation_enabled)
             elif tval == "string":
-                self._check_string_validation(obj, path)
-                
-            # Check array/set validation keywords
+                self._check_string_validation(obj, path, validation_enabled)
             elif tval in ["array", "set"]:
-                self._check_array_validation(obj, path, tval)
-                
-            # Check object/map validation keywords
-            elif tval in ["object", "map"]:
-                self._check_object_validation(obj, path, tval)
+                self._check_array_validation(obj, path, tval, validation_enabled)
+            elif tval in object_types:
+                self._check_object_validation(obj, path, tval, validation_enabled)
                 
         # Check default keyword
         if "default" in obj:
-            # Default can be any value, just ensure it's present
-            pass
+            if not validation_enabled:
+                self._add_extension_keyword_warning("default", path)
 
-    def _check_numeric_validation(self, obj, path, type_name):
+    def _check_numeric_validation(self, obj, path, type_name, validation_enabled=True):
         """
         Check numeric validation keywords.
         """
@@ -693,6 +750,8 @@ class JSONStructureSchemaCoreValidator:
         
         for key in ["minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf"]:
             if key in obj:
+                if not validation_enabled:
+                    self._add_extension_keyword_warning(key, path)
                 val = obj[key]
                 if expects_string:
                     if not isinstance(val, str):
@@ -702,22 +761,43 @@ class JSONStructureSchemaCoreValidator:
                         self._err(f"'{key}' must be a number.", f"{path}/{key}")
                     elif key == "multipleOf" and val <= 0:
                         self._err(f"'multipleOf' must be a positive number.", f"{path}/{key}")
+        
+        # Check minimum <= maximum
+        if "minimum" in obj and "maximum" in obj:
+            min_val = obj["minimum"]
+            max_val = obj["maximum"]
+            if isinstance(min_val, (int, float)) and isinstance(max_val, (int, float)):
+                if min_val > max_val:
+                    self._err("'minimum' cannot be greater than 'maximum'.", f"{path}")
 
-    def _check_string_validation(self, obj, path):
+    def _check_string_validation(self, obj, path, validation_enabled=True):
         """
         Check string validation keywords.
         """
         if "minLength" in obj:
+            if not validation_enabled:
+                self._add_extension_keyword_warning("minLength", path)
             val = obj["minLength"]
             if not isinstance(val, int) or val < 0:
                 self._err("'minLength' must be a non-negative integer.", f"{path}/minLength")
         
         if "maxLength" in obj:
+            if not validation_enabled:
+                self._add_extension_keyword_warning("maxLength", path)
             val = obj["maxLength"]
             if not isinstance(val, int) or val < 0:
                 self._err("'maxLength' must be a non-negative integer.", f"{path}/maxLength")
+        
+        # Check minLength <= maxLength
+        if "minLength" in obj and "maxLength" in obj:
+            min_val = obj["minLength"]
+            max_val = obj["maxLength"]
+            if isinstance(min_val, int) and isinstance(max_val, int) and min_val > max_val:
+                self._err("'minLength' cannot be greater than 'maxLength'.", f"{path}")
                 
         if "pattern" in obj:
+            if not validation_enabled:
+                self._add_extension_keyword_warning("pattern", path)
             val = obj["pattern"]
             if not isinstance(val, str):
                 self._err("'pattern' must be a string.", f"{path}/pattern")
@@ -729,23 +809,51 @@ class JSONStructureSchemaCoreValidator:
                     self._err(f"'pattern' is not a valid regular expression: {e}", f"{path}/pattern")
                     
         if "format" in obj:
+            if not validation_enabled:
+                self._add_extension_keyword_warning("format", path)
             val = obj["format"]
             if not isinstance(val, str):
                 self._err("'format' must be a string.", f"{path}/format")
             elif val not in self.VALID_FORMATS:
                 self._err(f"Unknown format '{val}'.", f"{path}/format")
+        
+        # Content encoding/media type keywords
+        if "contentEncoding" in obj:
+            if not validation_enabled:
+                self._add_extension_keyword_warning("contentEncoding", path)
+            val = obj["contentEncoding"]
+            if not isinstance(val, str):
+                self._err("'contentEncoding' must be a string.", f"{path}/contentEncoding")
+                
+        if "contentMediaType" in obj:
+            if not validation_enabled:
+                self._add_extension_keyword_warning("contentMediaType", path)
+            val = obj["contentMediaType"]
+            if not isinstance(val, str):
+                self._err("'contentMediaType' must be a string.", f"{path}/contentMediaType")
 
-    def _check_array_validation(self, obj, path, type_name):
+    def _check_array_validation(self, obj, path, type_name, validation_enabled=True):
         """
         Check array/set validation keywords.
         """
         for key in ["minItems", "maxItems"]:
             if key in obj:
+                if not validation_enabled:
+                    self._add_extension_keyword_warning(key, path)
                 val = obj[key]
                 if not isinstance(val, int) or val < 0:
                     self._err(f"'{key}' must be a non-negative integer.", f"{path}/{key}")
+        
+        # Check minItems <= maxItems
+        if "minItems" in obj and "maxItems" in obj:
+            min_val = obj["minItems"]
+            max_val = obj["maxItems"]
+            if isinstance(min_val, int) and isinstance(max_val, int) and min_val > max_val:
+                self._err("'minItems' cannot be greater than 'maxItems'.", f"{path}")
                     
         if "uniqueItems" in obj:
+            if not validation_enabled:
+                self._add_extension_keyword_warning("uniqueItems", path)
             val = obj["uniqueItems"]
             if not isinstance(val, bool):
                 self._err("'uniqueItems' must be a boolean.", f"{path}/uniqueItems")
@@ -753,6 +861,8 @@ class JSONStructureSchemaCoreValidator:
                 self._err("'uniqueItems' cannot be false for 'set' type.", f"{path}/uniqueItems")
                 
         if "contains" in obj:
+            if not validation_enabled:
+                self._add_extension_keyword_warning("contains", path)
             val = obj["contains"]
             if isinstance(val, dict):
                 self._validate_schema(val, is_root=False, path=f"{path}/contains")
@@ -761,6 +871,8 @@ class JSONStructureSchemaCoreValidator:
                 
         for key in ["minContains", "maxContains"]:
             if key in obj:
+                if not validation_enabled:
+                    self._add_extension_keyword_warning(key, path)
                 val = obj[key]
                 if not isinstance(val, int) or val < 0:
                     self._err(f"'{key}' must be a non-negative integer.", f"{path}/{key}")
@@ -768,7 +880,7 @@ class JSONStructureSchemaCoreValidator:
                 if "contains" not in obj:
                     self._err(f"'{key}' requires 'contains' to be present.", f"{path}/{key}")
 
-    def _check_object_validation(self, obj, path, type_name):
+    def _check_object_validation(self, obj, path, type_name, validation_enabled=True):
         """
         Check object/map validation keywords.
         """
@@ -778,6 +890,8 @@ class JSONStructureSchemaCoreValidator:
         
         for key in [min_key, max_key, "minProperties", "maxProperties", "minEntries", "maxEntries"]:
             if key in obj:
+                if not validation_enabled:
+                    self._add_extension_keyword_warning(key, path)
                 # Check if using the right keyword for the type
                 if type_name == "map" and key in ["minProperties", "maxProperties"]:
                     self._err(f"Use '{key.replace('Properties', 'Entries')}' for map type instead of '{key}'.", f"{path}/{key}")
@@ -789,6 +903,8 @@ class JSONStructureSchemaCoreValidator:
                     self._err(f"'{key}' must be a non-negative integer.", f"{path}/{key}")
                     
         if "dependentRequired" in obj:
+            if not validation_enabled:
+                self._add_extension_keyword_warning("dependentRequired", path)
             if type_name != "object":
                 self._err("'dependentRequired' only applies to object type.", f"{path}/dependentRequired")
             else:
@@ -808,6 +924,8 @@ class JSONStructureSchemaCoreValidator:
         pattern_key = "patternKeys" if type_name == "map" else "patternProperties"
         for key in ["patternProperties", "patternKeys"]:
             if key in obj:
+                if not validation_enabled:
+                    self._add_extension_keyword_warning(key, path)
                 if type_name == "map" and key == "patternProperties":
                     self._err(f"Use 'patternKeys' for map type instead of 'patternProperties'.", f"{path}/{key}")
                 elif type_name == "object" and key == "patternKeys":
@@ -833,6 +951,8 @@ class JSONStructureSchemaCoreValidator:
         name_key = "keyNames" if type_name == "map" else "propertyNames"
         for key in ["propertyNames", "keyNames"]:
             if key in obj:
+                if not validation_enabled:
+                    self._add_extension_keyword_warning(key, path)
                 if type_name == "map" and key == "propertyNames":
                     self._err(f"Use 'keyNames' for map type instead of 'propertyNames'.", f"{path}/{key}")
                 elif type_name == "object" and key == "keyNames":
@@ -848,6 +968,8 @@ class JSONStructureSchemaCoreValidator:
                     self._err(f"'{key}' must be a schema object.", f"{path}/{key}")
                     
         if "has" in obj:
+            if not validation_enabled:
+                self._add_extension_keyword_warning("has", path)
             val = obj["has"]
             if isinstance(val, dict):
                 self._validate_schema(val, is_root=False, path=f"{path}/has")

@@ -256,7 +256,7 @@ func main() {
 		"type":    "object",
 		"properties": map[string]interface{}{
 			"name":    map[string]interface{}{"type": "string"},
-			"address": map[string]interface{}{"$ref": "#/definitions/Imported/Address"},
+			"address": map[string]interface{}{"type": map[string]interface{}{"$ref": "#/definitions/Imported/Address"}},
 		},
 		"definitions": map[string]interface{}{
 			"Imported": map[string]interface{}{
@@ -406,7 +406,7 @@ func (v *InstanceValidator) ValidateJSON(instanceData, schemaData []byte) (Valid
 ## References
 
 - `$ref` - Reference to another schema (JSON Pointer)
-- `definitions` / `$defs` - Schema definitions
+- `definitions` - Schema definitions (type namespace hierarchy)
 
 ## Development
 

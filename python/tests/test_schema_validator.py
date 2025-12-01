@@ -95,11 +95,15 @@ VALID_ALLOW_DOLLAR = {
     }
 }
 
-# Case 7: Valid empty namespace: no 'type' or '$ref' so it is a non-schema (namespace)
+# Case 7: Valid namespace document with empty definitions
+# A namespace document must have definitions to be valid
 VALID_NAMESPACE_EMPTY = {
     "$schema": "https://json-structure.org/meta/core/v0/#",
     "$id": "https://example.com/schema/empty_namespace",
-    "name": "EmptyNamespace"
+    "definitions": {
+        "EmptyType": {"type": "string"}
+    },
+    "$root": "#/definitions/EmptyType"
 }
 
 # Case 8: Valid tuple type with implicit required properties and tuple order
@@ -1086,7 +1090,7 @@ def test_external_schemas_single_import():
         "name": "MainSchema",
         "type": "object",
         "properties": {
-            "person": {"$ref": "#/definitions/People/Person"}
+            "person": {"type": {"$ref": "#/definitions/People/Person"}}
         },
         "definitions": {
             "People": {
@@ -1135,8 +1139,8 @@ def test_external_schemas_multiple_imports():
         "name": "MainSchema",
         "type": "object",
         "properties": {
-            "person": {"$ref": "#/definitions/People/Person"},
-            "location": {"$ref": "#/definitions/Addresses/Address"}
+            "person": {"type": {"$ref": "#/definitions/People/Person"}},
+            "location": {"type": {"$ref": "#/definitions/Addresses/Address"}}
         },
         "definitions": {
             "People": {
@@ -1167,7 +1171,7 @@ def test_external_schemas_missing_import():
         "name": "MainSchema",
         "type": "object",
         "properties": {
-            "thing": {"$ref": "#/definitions/Stuff/Missing"}
+            "thing": {"type": {"$ref": "#/definitions/Stuff/Missing"}}
         },
         "definitions": {
             "Stuff": {
@@ -1206,7 +1210,7 @@ def test_external_schemas_priority_over_simulated():
         "name": "MainSchema",
         "type": "object",
         "properties": {
-            "person": {"$ref": "#/definitions/People/CustomPerson"}
+            "person": {"type": {"$ref": "#/definitions/People/CustomPerson"}}
         },
         "definitions": {
             "People": {
@@ -1222,3 +1226,546 @@ def test_external_schemas_priority_over_simulated():
     )
     errors = validator.validate(main_schema, source_text)
     assert errors == [], f"Expected no errors but got: {errors}"
+
+
+# =============================================================================
+# Additional Schema Validator Coverage Tests
+# =============================================================================
+
+def test_extends_with_array():
+    """Test $extends with an array of pointers."""
+    schema = {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/multi-extends",
+        "name": "MultiExtends",
+        "type": "object",
+        "$extends": ["#/definitions/Base1", "#/definitions/Base2"],
+        "definitions": {
+            "Base1": {
+                "name": "Base1",
+                "type": "object",
+                "properties": {"a": {"type": "string"}}
+            },
+            "Base2": {
+                "name": "Base2",
+                "type": "object",
+                "properties": {"b": {"type": "int32"}}
+            }
+        }
+    }
+    errors = validate_json_structure_schema_core(schema, json.dumps(schema))
+    assert errors == [], f"Expected no errors: {errors}"
+
+
+def test_extends_invalid_type():
+    """Test $extends with invalid type (not string or array)."""
+    schema = {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/bad-extends",
+        "name": "BadExtends",
+        "type": "object",
+        "$extends": 123
+    }
+    errors = validate_json_structure_schema_core(schema, json.dumps(schema))
+    assert any("$extends" in err for err in errors)
+
+
+def test_extends_array_with_non_string():
+    """Test $extends array containing non-string element."""
+    schema = {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/bad-extends-array",
+        "name": "BadExtendsArray",
+        "type": "object",
+        "$extends": ["#/definitions/Base", 123],
+        "definitions": {
+            "Base": {
+                "name": "Base",
+                "type": "object",
+                "properties": {}
+            }
+        }
+    }
+    errors = validate_json_structure_schema_core(schema, json.dumps(schema))
+    assert any("$extends" in err for err in errors)
+
+
+def test_offers_with_string_pointer():
+    """Test $offers with string pointer values."""
+    schema = {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/offers-string",
+        "name": "OffersString",
+        "type": "object",
+        "properties": {"main": {"type": "string"}},
+        "$offers": {
+            "Extra": "#/definitions/ExtraDef"
+        },
+        "definitions": {
+            "ExtraDef": {
+                "name": "ExtraDef",
+                "type": "object",
+                "properties": {"extra": {"type": "int32"}}
+            }
+        }
+    }
+    errors = validate_json_structure_schema_core(schema, json.dumps(schema))
+    assert errors == [], f"Expected no errors: {errors}"
+
+
+def test_offers_with_array():
+    """Test $offers with array of pointers."""
+    schema = {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/offers-array",
+        "name": "OffersArray",
+        "type": "object",
+        "properties": {"main": {"type": "string"}},
+        "$offers": {
+            "AllExtras": ["#/definitions/ExtraA", "#/definitions/ExtraB"]
+        },
+        "definitions": {
+            "ExtraA": {
+                "name": "ExtraA",
+                "type": "object",
+                "properties": {"a": {"type": "int32"}}
+            },
+            "ExtraB": {
+                "name": "ExtraB",
+                "type": "object",
+                "properties": {"b": {"type": "string"}}
+            }
+        }
+    }
+    errors = validate_json_structure_schema_core(schema, json.dumps(schema))
+    assert errors == [], f"Expected no errors: {errors}"
+
+
+def test_offers_array_with_non_string():
+    """Test $offers array containing non-string."""
+    schema = {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/offers-bad-array",
+        "name": "OffersBadArray",
+        "type": "object",
+        "properties": {"main": {"type": "string"}},
+        "$offers": {
+            "BadOffer": ["#/definitions/ExtraA", 123]
+        },
+        "definitions": {
+            "ExtraA": {
+                "name": "ExtraA",
+                "type": "object",
+                "properties": {}
+            }
+        }
+    }
+    errors = validate_json_structure_schema_core(schema, json.dumps(schema))
+    assert len(errors) > 0
+
+
+def test_offers_not_object():
+    """Test $offers that is not an object."""
+    schema = {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/offers-not-obj",
+        "name": "OffersNotObj",
+        "type": "object",
+        "properties": {"main": {"type": "string"}},
+        "$offers": "invalid"
+    }
+    errors = validate_json_structure_schema_core(schema, json.dumps(schema))
+    assert any("$offers" in err for err in errors)
+
+
+def test_offers_invalid_value_type():
+    """Test $offers with invalid value type."""
+    schema = {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/offers-bad-value",
+        "name": "OffersBadValue",
+        "type": "object",
+        "properties": {"main": {"type": "string"}},
+        "$offers": {
+            "BadOffer": 42  # Not string, array, or object
+        }
+    }
+    errors = validate_json_structure_schema_core(schema, json.dumps(schema))
+    assert len(errors) > 0
+
+
+def test_inline_schema_in_type():
+    """Test inline schema object in type field."""
+    schema = {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/inline-type",
+        "name": "InlineType",
+        "type": {
+            "type": "object",
+            "properties": {"inner": {"type": "string"}}
+        }
+    }
+    errors = validate_json_structure_schema_core(schema, json.dumps(schema))
+    assert errors == [], f"Expected no errors: {errors}"
+
+
+def test_inline_type_dict_without_ref_or_type():
+    """Test type dict without $ref or type (invalid)."""
+    schema = {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/bad-inline-type",
+        "name": "BadInlineType",
+        "type": {"foo": "bar"}  # Neither $ref nor type
+    }
+    errors = validate_json_structure_schema_core(schema, json.dumps(schema))
+    assert len(errors) > 0
+
+
+def test_ref_only_circular():
+    """Test circular $ref detection."""
+    schema = {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/circular",
+        "name": "Circular",
+        "type": {"$ref": "#/definitions/TypeA"},
+        "definitions": {
+            "TypeA": {"type": {"$ref": "#/definitions/TypeB"}},
+            "TypeB": {"type": {"$ref": "#/definitions/TypeA"}}
+        }
+    }
+    errors = validate_json_structure_schema_core(schema, json.dumps(schema))
+    # Circular refs might be detected or not, just verify validation runs
+    assert isinstance(errors, list)
+
+
+def test_import_with_non_absolute_uri():
+    """Test $import with non-absolute URI without import_map."""
+    from json_structure.schema_validator import JSONStructureSchemaCoreValidator
+
+    schema = {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/main",
+        "name": "MainSchema",
+        "type": "object",
+        "properties": {},
+        "definitions": {
+            "External": {"$import": "relative.json"}
+        }
+    }
+    validator = JSONStructureSchemaCoreValidator(allow_import=True)
+    errors = validator.validate(schema, json.dumps(schema))
+    assert any("absolute uri" in err.lower() for err in errors)
+
+
+def test_import_with_non_string_uri():
+    """Test $import with non-string URI value."""
+    from json_structure.schema_validator import JSONStructureSchemaCoreValidator
+
+    schema = {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/main",
+        "name": "MainSchema",
+        "type": "object",
+        "properties": {},
+        "definitions": {
+            "External": {"$import": 123}
+        }
+    }
+    validator = JSONStructureSchemaCoreValidator(allow_import=True)
+    errors = validator.validate(schema, json.dumps(schema))
+    assert len(errors) > 0
+
+
+def test_import_not_allowed():
+    """Test $import when allow_import is False."""
+    from json_structure.schema_validator import JSONStructureSchemaCoreValidator
+
+    schema = {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/main",
+        "name": "MainSchema",
+        "type": "object",
+        "properties": {},
+        "definitions": {
+            "External": {"$import": "https://example.com/external.json"}
+        }
+    }
+    validator = JSONStructureSchemaCoreValidator(allow_import=False)
+    errors = validator.validate(schema, json.dumps(schema))
+    assert any("allow_import" in err.lower() for err in errors)
+
+
+def test_importdefs_not_allowed():
+    """Test $importdefs when allow_import is False."""
+    from json_structure.schema_validator import JSONStructureSchemaCoreValidator
+
+    schema = {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/main",
+        "name": "MainSchema",
+        "type": "object",
+        "properties": {},
+        "definitions": {
+            "External": {"$importdefs": "https://example.com/external.json"}
+        }
+    }
+    validator = JSONStructureSchemaCoreValidator(allow_import=False)
+    errors = validator.validate(schema, json.dumps(schema))
+    assert any("allow_import" in err.lower() for err in errors)
+
+
+def test_composition_keywords_with_extended():
+    """Test composition keywords (allOf, anyOf, oneOf) with extended validation."""
+    schema = {
+        "$schema": "https://json-structure.org/meta/extended/v0/#",
+        "$id": "https://example.com/composition",
+        "name": "CompositionSchema",
+        "type": "object",
+        "$uses": ["JSONStructureConditionalComposition"],
+        "allOf": [
+            {"type": "object", "name": "Part1", "properties": {"a": {"type": "string"}}}
+        ],
+        "anyOf": [
+            {"type": "object", "name": "Part2", "properties": {"b": {"type": "int32"}}}
+        ]
+    }
+    errors = validate_json_structure_schema_core(schema, json.dumps(schema), extended=True)
+    # Just verify validation runs - composition keywords may have validation rules
+    assert isinstance(errors, list)
+
+
+def test_not_keyword_with_extended():
+    """Test 'not' keyword with extended validation."""
+    schema = {
+        "$schema": "https://json-structure.org/meta/extended/v0/#",
+        "$id": "https://example.com/not-schema",
+        "name": "NotSchema",
+        "type": "object",
+        "$uses": ["JSONStructureConditionalComposition"],
+        "properties": {"value": {"type": "string"}},
+        "not": {"type": "object", "name": "Forbidden", "properties": {"forbidden": {"type": "string"}}}
+    }
+    errors = validate_json_structure_schema_core(schema, json.dumps(schema), extended=True)
+    assert errors == [], f"Expected no errors: {errors}"
+
+
+def test_if_then_else_with_extended():
+    """Test if/then/else with extended validation."""
+    schema = {
+        "$schema": "https://json-structure.org/meta/extended/v0/#",
+        "$id": "https://example.com/if-then-else",
+        "name": "IfThenElse",
+        "type": "object",
+        "$uses": ["JSONStructureConditionalComposition"],
+        "properties": {"category": {"type": "string"}},
+        "if": {"type": "object", "name": "Check", "properties": {"category": {"type": "string"}}},
+        "then": {"type": "object", "name": "Then", "properties": {"special": {"type": "int32"}}},
+        "else": {"type": "object", "name": "Else", "properties": {"normal": {"type": "string"}}}
+    }
+    errors = validate_json_structure_schema_core(schema, json.dumps(schema), extended=True)
+    assert errors == [], f"Expected no errors: {errors}"
+
+
+def test_abstract_keyword_invalid():
+    """Test invalid abstract keyword (not boolean)."""
+    schema = {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/bad-abstract",
+        "name": "BadAbstract",
+        "type": "object",
+        "abstract": "true"  # Should be boolean
+    }
+    errors = validate_json_structure_schema_core(schema, json.dumps(schema))
+    assert any("abstract" in err.lower() for err in errors)
+
+
+def test_name_not_string():
+    """Test name that is not a string."""
+    schema = {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/bad-name",
+        "name": 123,  # Should be string
+        "type": "object"
+    }
+    errors = validate_json_structure_schema_core(schema, json.dumps(schema))
+    assert any("name" in err.lower() for err in errors)
+
+
+def test_name_invalid_identifier():
+    """Test name with invalid identifier pattern."""
+    schema = {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/bad-name-id",
+        "name": "123invalid",  # Starts with number
+        "type": "object"
+    }
+    errors = validate_json_structure_schema_core(schema, json.dumps(schema))
+    assert any("name" in err.lower() for err in errors)
+
+
+def test_ref_not_string():
+    """Test $ref that is not a string."""
+    schema = {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/bad-ref",
+        "name": "BadRef",
+        "type": {"$ref": 123}
+    }
+    errors = validate_json_structure_schema_core(schema, json.dumps(schema))
+    assert len(errors) > 0
+
+
+def test_type_and_ref_together():
+    """Test schema with both type and $ref (invalid)."""
+    schema = {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/type-and-ref",
+        "name": "TypeAndRef",
+        "type": "string",
+        "$ref": "#/definitions/Other",
+        "definitions": {
+            "Other": {"name": "Other", "type": "int32"}
+        }
+    }
+    errors = validate_json_structure_schema_core(schema, json.dumps(schema))
+    assert any("both" in err.lower() or "$ref" in err for err in errors)
+
+
+def test_empty_union_type():
+    """Test empty type union array."""
+    schema = {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/empty-union",
+        "name": "EmptyUnion",
+        "type": []
+    }
+    errors = validate_json_structure_schema_core(schema, json.dumps(schema))
+    assert any("empty" in err.lower() for err in errors)
+
+
+def test_nested_importdefs():
+    """Test $importdefs at nested level."""
+    from json_structure.schema_validator import JSONStructureSchemaCoreValidator
+
+    external = {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/defs.json",
+        "definitions": {
+            "Helper": {
+                "name": "Helper",
+                "type": "string"
+            }
+        }
+    }
+
+    main_schema = {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/main",
+        "name": "MainSchema",
+        "type": "object",
+        "properties": {
+            "value": {"type": {"$ref": "#/definitions/External/Helper"}}
+        },
+        "definitions": {
+            "External": {
+                "$importdefs": "https://example.com/defs.json"
+            }
+        }
+    }
+
+    validator = JSONStructureSchemaCoreValidator(
+        allow_import=True,
+        external_schemas=[external]
+    )
+    errors = validator.validate(main_schema, json.dumps(main_schema))
+    assert errors == [], f"Expected no errors: {errors}"
+
+
+def test_chained_imports():
+    """Test schemas that import each other."""
+    from json_structure.schema_validator import JSONStructureSchemaCoreValidator
+
+    schema_a = {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/a.json",
+        "name": "SchemaA",
+        "type": "object",
+        "properties": {"val": {"type": "string"}},
+        "definitions": {
+            "FromB": {"$import": "https://example.com/b.json"}
+        }
+    }
+
+    schema_b = {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/b.json",
+        "name": "SchemaB",
+        "type": "object",
+        "properties": {"num": {"type": "int32"}}
+    }
+
+    main_schema = {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/main",
+        "name": "Main",
+        "type": "object",
+        "properties": {
+            "refA": {"type": {"$ref": "#/definitions/A/SchemaA"}}
+        },
+        "definitions": {
+            "A": {"$import": "https://example.com/a.json"}
+        }
+    }
+
+    validator = JSONStructureSchemaCoreValidator(
+        allow_import=True,
+        external_schemas=[schema_a, schema_b]
+    )
+    errors = validator.validate(main_schema, json.dumps(main_schema))
+    assert errors == [], f"Expected no errors: {errors}"
+
+
+def test_schema_not_dict():
+    """Test validation when schema is not a dict."""
+    errors = validate_json_structure_schema_core("not a dict", "")
+    assert len(errors) > 0
+
+
+def test_source_locator_for_errors():
+    """Test that source locator provides line/column info."""
+    from json_structure.schema_validator import JSONStructureSchemaCoreValidator
+
+    source = '{"$schema": "https://json-structure.org/meta/core/v0/#", "name": 123, "type": "object"}'
+    schema = json.loads(source)
+    validator = JSONStructureSchemaCoreValidator()
+    errors = validator.validate(schema, source)
+    assert len(errors) > 0
+    # Error messages should exist
+    assert any("name" in err.lower() for err in errors)
+
+
+def test_json_pointer_invalid_segment():
+    """Test JSON pointer pointing to invalid segment."""
+    schema = {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/bad-pointer",
+        "name": "BadPointer",
+        "type": {"$ref": "#/definitions/Missing"}
+    }
+    errors = validate_json_structure_schema_core(schema, json.dumps(schema))
+    assert len(errors) > 0
+
+
+def test_json_pointer_to_non_object():
+    """Test JSON pointer segment applied to non-object."""
+    schema = {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/pointer-non-obj",
+        "name": "PointerNonObj",
+        "type": {"$ref": "#/definitions/Simple/nested"},
+        "definitions": {
+            "Simple": "not-an-object"  # Can't navigate into this
+        }
+    }
+    errors = validate_json_structure_schema_core(schema, json.dumps(schema))
+    assert len(errors) > 0

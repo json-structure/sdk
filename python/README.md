@@ -174,7 +174,7 @@ main_schema = {
     "type": "object",
     "properties": {
         "name": {"type": "string"},
-        "address": {"$ref": "#/definitions/Imported/Address"}
+        "address": {"type": {"$ref": "#/definitions/Imported/Address"}}
     },
     "definitions": {
         "Imported": {

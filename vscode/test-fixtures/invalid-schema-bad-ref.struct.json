@@ -5,7 +5,7 @@
     "type": "object",
     "properties": {
         "data": {
-            "$ref": "#/definitions/NonExistent"
+            "type": { "$ref": "#/definitions/NonExistent" }
         }
     }
 }

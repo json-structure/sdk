@@ -181,10 +181,6 @@ const KEYWORD_DOCUMENTATION: Record<string, { summary: string; details: string }
         summary: 'Type definitions',
         details: 'A collection of named type definitions that can be referenced using $ref.'
     },
-    $defs: {
-        summary: 'Type definitions (alias)',
-        details: 'Alternative name for "definitions". A collection of named type definitions.'
-    },
     properties: {
         summary: 'Object properties',
         details: 'Defines the properties of an object type. Each property has a name and a schema.'
@@ -424,14 +420,9 @@ export class JsonStructureHoverProvider implements vscode.HoverProvider {
     }
 
     private getDefinition(schema: Record<string, unknown>, name: string): Record<string, unknown> | null {
+        // JSON Structure uses 'definitions' (not JSON Schema's '$defs')
         if (schema.definitions && typeof schema.definitions === 'object') {
             const defs = schema.definitions as Record<string, unknown>;
-            if (defs[name] && typeof defs[name] === 'object') {
-                return defs[name] as Record<string, unknown>;
-            }
-        }
-        if (schema.$defs && typeof schema.$defs === 'object') {
-            const defs = schema.$defs as Record<string, unknown>;
             if (defs[name] && typeof defs[name] === 'object') {
                 return defs[name] as Record<string, unknown>;
             }

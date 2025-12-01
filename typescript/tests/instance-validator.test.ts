@@ -325,7 +325,7 @@ describe('InstanceValidator', () => {
         },
         type: 'object',
         properties: {
-          home: { $ref: '#/definitions/Address' },
+          home: { type: { $ref: '#/definitions/Address' } },
         },
       };
       const validator = new InstanceValidator();

@@ -450,7 +450,7 @@ suite('IntelliSense Provider Test Suite', () => {
             "type": "object",
             "properties": {
                 "name": { "type": "string" },
-                "address": { "$ref": "#/definitions/Address" }
+                "address": { "type": { "$ref": "#/definitions/Address" } }
             }
         }
     }
@@ -520,11 +520,12 @@ suite('IntelliSense Provider Test Suite', () => {
             
             const content = `{
     "$schema": "https://json-structure.org/meta/core/v0/#",
+    "$id": "urn:example:shape-choice",
     "name": "ShapeChoice",
     "type": "choice",
     "choices": {
-        "circle": { "$ref": "#/definitions/Circle" },
-        "rectangle": { "$ref": "#/definitions/Rectangle" }
+        "circle": { "type": { "$ref": "#/definitions/Circle" } },
+        "rectangle": { "type": { "$ref": "#/definitions/Rectangle" } }
     },
     "definitions": {
         "Circle": {
@@ -589,7 +590,7 @@ suite('IntelliSense Provider Test Suite', () => {
         "name": { "type": "string", "minLength": 1, "maxLength": 100 },
         "created": { "type": "datetime" },
         "tags": { "type": "array", "items": { "type": "string" } },
-        "metadata": { "$ref": "#/definitions/Metadata" }
+        "metadata": { "type": { "$ref": "#/definitions/Metadata" } }
     },
     "required": ["id", "name"],
     "definitions": {

@@ -120,9 +120,9 @@ func TestSchemaValidatorDefinitions(t *testing.T) {
 			},
 		},
 		"properties": map[string]interface{}{
-			"home":  map[string]interface{}{"$ref": "#/definitions/Address"},
-			"work":  map[string]interface{}{"$ref": "#/definitions/Address"},
-			"phone": map[string]interface{}{"$ref": "#/definitions/Phone"},
+			"home":  map[string]interface{}{"type": map[string]interface{}{"$ref": "#/definitions/Address"}},
+			"work":  map[string]interface{}{"type": map[string]interface{}{"$ref": "#/definitions/Address"}},
+			"phone": map[string]interface{}{"type": map[string]interface{}{"$ref": "#/definitions/Phone"}},
 		},
 	}
 
@@ -371,7 +371,7 @@ func TestInstanceValidatorRefWithValidation(t *testing.T) {
 			},
 		},
 		"properties": map[string]interface{}{
-			"count": map[string]interface{}{"$ref": "#/definitions/PositiveInt"},
+			"count": map[string]interface{}{"type": map[string]interface{}{"$ref": "#/definitions/PositiveInt"}},
 		},
 	}
 

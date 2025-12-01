@@ -152,7 +152,7 @@ class PrimerSamplesIntegrationTests {
                 "$schema": "https://json-structure.org/draft/2025-02/schema",
                 "$id": "https://test.example.com/product/product-catalog-schema",
                 "name": "ProductCatalog",
-                "$defs": {
+                "definitions": {
                     "price": {
                         "type": "object",
                         "properties": {
@@ -167,7 +167,7 @@ class PrimerSamplesIntegrationTests {
                             "id": { "type": "uuid" },
                             "name": { "type": "string", "minLength": 1 },
                             "description": { "type": "string" },
-                            "price": { "$ref": "#/$defs/price" },
+                            "price": { "type": { "$ref": "#/definitions/price" } },
                             "inStock": { "type": "boolean" }
                         },
                         "required": ["id", "name", "price"]
@@ -177,7 +177,7 @@ class PrimerSamplesIntegrationTests {
                 "properties": {
                     "catalog": {
                         "type": "array",
-                        "items": { "$ref": "#/$defs/product" }
+                        "items": { "type": { "$ref": "#/definitions/product" } }
                     }
                 }
             }

@@ -174,12 +174,10 @@ export class JsonStructureReferenceProvider implements vscode.ReferenceProvider 
         }
 
         // Determine the full reference path
-        // For simplicity, assume it's in definitions or $defs
+        // JSON Structure uses 'definitions' (not JSON Schema's '$defs')
         let refPath = '';
         if (text.includes(`"definitions"`) && text.indexOf(`"${word}"`) > text.indexOf(`"definitions"`)) {
             refPath = `#/definitions/${word}`;
-        } else if (text.includes(`"$defs"`) && text.indexOf(`"${word}"`) > text.indexOf(`"$defs"`)) {
-            refPath = `#/$defs/${word}`;
         }
 
         if (!refPath) {

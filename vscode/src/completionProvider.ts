@@ -63,7 +63,6 @@ const SCHEMA_DOCUMENT_KEYWORDS = [
     { label: 'type', description: 'The type of the root value', insertText: '"type": "$1"' },
     { label: '$root', description: 'Reference to the root type definition', insertText: '"$root": "#/definitions/$1"' },
     { label: 'definitions', description: 'Named type definitions', insertText: '"definitions": {\n\t"$1": {\n\t\t"type": "$2"\n\t}\n}' },
-    { label: '$defs', description: 'Named type definitions (alias for definitions)', insertText: '"$defs": {\n\t"$1": {\n\t\t"type": "$2"\n\t}\n}' },
 ];
 
 /**
@@ -111,7 +110,7 @@ const TUPLE_KEYWORDS = [
 const CHOICE_KEYWORDS = [
     { label: 'type', description: 'The type (must be "choice")', insertText: '"type": "choice"' },
     { label: 'selector', description: 'The property used to discriminate variants', insertText: '"selector": "$1"' },
-    { label: 'choices', description: 'The variant types', insertText: '"choices": {\n\t"$1": { "$ref": "#/definitions/$2" }\n}' },
+    { label: 'choices', description: 'The variant types', insertText: '"choices": {\n\t"$1": { "type": { "$ref": "#/definitions/$2" } }\n}' },
 ];
 
 /**
@@ -149,7 +148,6 @@ const PROPERTY_KEYWORDS = [
     { label: 'const', description: 'Fixed constant value', insertText: '"const": $1' },
     { label: 'enum', description: 'List of allowed values', insertText: '"enum": [$1]' },
     { label: 'examples', description: 'Example values', insertText: '"examples": [$1]' },
-    { label: '$ref', description: 'Reference to a type definition', insertText: '"$ref": "#/definitions/$1"' },
     { label: 'deprecated', description: 'Mark as deprecated', insertText: '"deprecated": true' },
 ];
 
@@ -232,14 +230,9 @@ export class JsonStructureCompletionProvider implements vscode.CompletionItemPro
             if (obj.$schema && typeof obj.$schema === 'string' && obj.$schema.includes('json-structure.org/meta')) {
                 context.isSchemaDocument = true;
             }
-            // Extract definitions
+            // Extract definitions (JSON Structure uses 'definitions', not JSON Schema's '$defs')
             if (obj.definitions && typeof obj.definitions === 'object') {
                 for (const [name, def] of Object.entries(obj.definitions as Record<string, unknown>)) {
-                    context.definitions.set(name, def);
-                }
-            }
-            if (obj.$defs && typeof obj.$defs === 'object') {
-                for (const [name, def] of Object.entries(obj.$defs as Record<string, unknown>)) {
                     context.definitions.set(name, def);
                 }
             }
@@ -389,8 +382,8 @@ export class JsonStructureCompletionProvider implements vscode.CompletionItemPro
             return SCHEMA_DOCUMENT_KEYWORDS;
         }
 
-        // Inside definitions
-        if (path.includes('definitions') || path.includes('$defs')) {
+        // Inside definitions (JSON Structure uses 'definitions', not JSON Schema's '$defs')
+        if (path.includes('definitions')) {
             // At the definition level, offer type keywords
             return [...PROPERTY_KEYWORDS, ...OBJECT_KEYWORDS];
         }

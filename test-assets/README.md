@@ -69,7 +69,7 @@ Each invalid schema file tests a specific edge case that should cause schema val
 | `minlength-negative.struct.json` | Negative minLength |
 | `minitems-negative.struct.json` | Negative minItems |
 | `properties-not-object.struct.json` | `properties` is not an object |
-| `defs-not-object.struct.json` | `$defs` is an array |
+| `defs-not-object.struct.json` | `definitions` is an array |
 | `allof-not-array.struct.json` | `allOf` is not an array |
 | `enum-duplicates.struct.json` | Duplicate values in enum |
 

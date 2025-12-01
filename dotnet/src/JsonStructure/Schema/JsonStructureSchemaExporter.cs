@@ -167,11 +167,11 @@ public static class JsonStructureSchemaExporter
             type = underlyingType;
         }
 
-        // Check for recursion
+        // Check for recursion - per JSON Structure spec, $ref must be inside type
         if (visitedTypes.Contains(type) && !type.IsPrimitive && type != typeof(string))
         {
-            // Use $ref for recursive types
-            schema["$ref"] = $"#/$defs/{GetTypeName(type)}";
+            // Use $ref inside type property for recursive types
+            schema["type"] = new JsonObject { ["$ref"] = $"#/definitions/{GetTypeName(type)}" };
             return schema;
         }
 

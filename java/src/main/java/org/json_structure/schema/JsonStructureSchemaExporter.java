@@ -77,9 +77,11 @@ public final class JsonStructureSchemaExporter {
         // Handle wrapper types
         type = unwrapType(type);
 
-        // Check for recursion
+        // Check for recursion - per JSON Structure spec, $ref must be inside type
         if (visitedTypes.contains(type) && !type.isPrimitive() && type != String.class) {
-            schema.put("$ref", "#/$defs/" + getTypeName(type));
+            ObjectNode refObj = mapper.createObjectNode();
+            refObj.put("$ref", "#/definitions/" + getTypeName(type));
+            schema.set("type", refObj);
             return applyTransform(schema, type, null, null, path, options);
         }
 

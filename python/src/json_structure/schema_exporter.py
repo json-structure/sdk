@@ -227,9 +227,9 @@ class JsonStructureSchemaExporter:
         
         schema = self._generate_schema(type_, "", None)
         
-        # Add $defs if there are any
+        # Add definitions if there are any
         if self._definitions:
-            schema["$defs"] = self._definitions
+            schema["definitions"] = self._definitions
         
         return schema
     
@@ -262,10 +262,11 @@ class JsonStructureSchemaExporter:
                 origin = get_origin(type_)
                 args = get_args(type_)
         
-        # Check for recursion
+        # Check for recursion - per JSON Structure spec, $ref must be inside type
         if self._is_complex_type(type_) and type_ in self._visited_types:
             type_name = self._get_type_name(type_)
-            return {"$ref": f"#/$defs/{type_name}"}
+            schema["type"] = {"$ref": f"#/definitions/{type_name}"}
+            return schema
         
         # Map type to JSON Structure type
         structure_type = self._get_json_structure_type(type_)

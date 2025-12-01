@@ -136,8 +136,6 @@ def test_invalid_instance_fails_validation(sample_name, instance_file):
             target_schema = dict(resolved)
             if "definitions" in schema:
                 target_schema["definitions"] = schema["definitions"]
-            if "$defs" in schema:
-                target_schema["$defs"] = schema["$defs"]
     
     # Validate - Python API takes schema in constructor
     # Need extended=True to enable validation addins like maxLength, minLength, pattern, etc.

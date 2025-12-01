@@ -56,16 +56,9 @@ export class JsonStructureDocumentSymbolProvider implements vscode.DocumentSymbo
             }
         }
 
-        // Add definitions
+        // Add definitions (JSON Structure uses 'definitions', not JSON Schema's '$defs')
         if (parsed.definitions && typeof parsed.definitions === 'object') {
             const defsSymbol = this.createDefinitionsSymbol(document, text, 'definitions', parsed.definitions);
-            if (defsSymbol) {
-                rootSymbol.children.push(defsSymbol);
-            }
-        }
-
-        if (parsed.$defs && typeof parsed.$defs === 'object') {
-            const defsSymbol = this.createDefinitionsSymbol(document, text, '$defs', parsed.$defs);
             if (defsSymbol) {
                 rootSymbol.children.push(defsSymbol);
             }
@@ -369,10 +362,9 @@ export class JsonStructureDocumentSymbolProvider implements vscode.DocumentSymbo
         text: string,
         name: string
     ): vscode.Range | null {
-        // Look for the definition within definitions or $defs
+        // Look for the definition within definitions (JSON Structure uses 'definitions', not JSON Schema's '$defs')
         const defsPatterns = [
-            `"definitions"\\s*:\\s*\\{[^]*?"${this.escapeRegex(name)}"\\s*:\\s*\\{`,
-            `"\\$defs"\\s*:\\s*\\{[^]*?"${this.escapeRegex(name)}"\\s*:\\s*\\{`
+            `"definitions"\\s*:\\s*\\{[^]*?"${this.escapeRegex(name)}"\\s*:\\s*\\{`
         ];
 
         for (const patternStr of defsPatterns) {
