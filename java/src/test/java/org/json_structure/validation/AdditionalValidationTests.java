@@ -1442,7 +1442,7 @@ class AdditionalValidationTests {
             String schema = """
                 {
                     "type": "choice",
-                    "options": {
+                    "choices": {
                         "stringOption": { "type": "string" },
                         "numberOption": { "type": "int32" }
                     }
@@ -3374,10 +3374,9 @@ class AdditionalValidationTests {
                     "$id": "https://test.example.com/schema/choicestr",
                     "name": "ChoiceStrSchema",
                     "type": "choice",
-                    "options": {
+                    "choices": {
                         "a": { "type": "object" }
                     }
-                }
                 """;
             
             // Invalid - string instead of object
