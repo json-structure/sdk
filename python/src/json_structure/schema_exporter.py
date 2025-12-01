@@ -320,13 +320,13 @@ class JsonStructureSchemaExporter:
             non_none_args = [a for a in args if a is not type(None)]
             if len(non_none_args) > 1:
                 schema["type"] = "choice"
-                options = {}
+                choices = {}
                 for i, arg in enumerate(non_none_args):
-                    option_name = self._get_type_name(arg)
-                    options[option_name] = self._generate_schema(
-                        arg, f"{path}/options/{option_name}", None
+                    choice_name = self._get_type_name(arg)
+                    choices[choice_name] = self._generate_schema(
+                        arg, f"{path}/choices/{choice_name}", None
                     )
-                schema["options"] = options
+                schema["choices"] = choices
                 return self._apply_transform(schema, type_, field, path)
         
         # Handle dataclasses (objects)

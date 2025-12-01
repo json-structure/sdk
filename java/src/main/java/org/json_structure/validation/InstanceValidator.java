@@ -1038,37 +1038,37 @@ public final class InstanceValidator {
 
         // JSON Structure uses 'choices' keyword (NOT 'options' or 'oneOf')
         if (!schema.has("choices") || !schema.get("choices").isObject()) {
-            addError(result, ErrorCodes.INSTANCE_CHOICE_MISSING_OPTIONS, "Choice schema must have 'choices' keyword", path);
+            addError(result, ErrorCodes.INSTANCE_CHOICE_MISSING_CHOICES, "Choice schema must have 'choices' keyword", path);
             return;
         }
 
         ObjectNode choices = (ObjectNode) schema.get("choices");
 
-        // Get discriminator or selector
+        // Get selector (support legacy 'discriminator' for backward compatibility)
         String discriminator = schema.has("discriminator") ? schema.get("discriminator").asText() : null;
         String selector = schema.has("selector") ? schema.get("selector").asText() : null;
-        String discProp = (discriminator != null && !discriminator.isEmpty()) ? discriminator 
-                        : (selector != null && !selector.isEmpty()) ? selector : null;
+        String selectorProp = (selector != null && !selector.isEmpty()) ? selector 
+                        : (discriminator != null && !discriminator.isEmpty()) ? discriminator : null;
 
-        if (discProp != null) {
-            // Use discriminator/selector property to determine type
-            if (!obj.has(discProp)) {
-                addError(result, ErrorCodes.INSTANCE_CHOICE_DISCRIMINATOR_MISSING, "Choice requires discriminator/selector property: " + discProp, path);
+        if (selectorProp != null) {
+            // Use selector property to determine type
+            if (!obj.has(selectorProp)) {
+                addError(result, ErrorCodes.INSTANCE_CHOICE_SELECTOR_MISSING, "Choice requires selector property: " + selectorProp, path);
                 return;
             }
 
-            String discValue = obj.get(discProp).asText();
-            if (discValue == null || discValue.isEmpty()) {
-                addError(result, ErrorCodes.INSTANCE_CHOICE_DISCRIMINATOR_NOT_STRING, "Discriminator/selector value must be a string", path);
+            String selectorValue = obj.get(selectorProp).asText();
+            if (selectorValue == null || selectorValue.isEmpty()) {
+                addError(result, ErrorCodes.INSTANCE_CHOICE_SELECTOR_NOT_STRING, "Selector value must be a string", path);
                 return;
             }
 
-            if (!choices.has(discValue)) {
-                addError(result, ErrorCodes.INSTANCE_CHOICE_OPTION_UNKNOWN, "Unknown choice option: " + discValue, path);
+            if (!choices.has(selectorValue)) {
+                addError(result, ErrorCodes.INSTANCE_CHOICE_UNKNOWN, "Unknown choice: " + selectorValue, path);
                 return;
             }
 
-            validateInstance(instance, choices.get(discValue), rootSchema, result, path, depth + 1);
+            validateInstance(instance, choices.get(selectorValue), rootSchema, result, path, depth + 1);
         } else {
             // No discriminator - check if this is a tagged choice format
             // Tagged format: single-key object where key is the option name

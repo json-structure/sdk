@@ -243,14 +243,14 @@ const (
 	InstanceTupleAdditionalItems = "INSTANCE_TUPLE_ADDITIONAL_ITEMS"
 	// InstanceChoiceExpected indicates value must be an object (choice).
 	InstanceChoiceExpected = "INSTANCE_CHOICE_EXPECTED"
-	// InstanceChoiceMissingOptions indicates choice schema is missing options.
-	InstanceChoiceMissingOptions = "INSTANCE_CHOICE_MISSING_OPTIONS"
-	// InstanceChoiceDiscriminatorMissing indicates choice discriminator property is missing.
-	InstanceChoiceDiscriminatorMissing = "INSTANCE_CHOICE_DISCRIMINATOR_MISSING"
-	// InstanceChoiceDiscriminatorNotString indicates discriminator value must be a string.
-	InstanceChoiceDiscriminatorNotString = "INSTANCE_CHOICE_DISCRIMINATOR_NOT_STRING"
-	// InstanceChoiceOptionUnknown indicates unknown choice option.
-	InstanceChoiceOptionUnknown = "INSTANCE_CHOICE_OPTION_UNKNOWN"
+	// InstanceChoiceMissingChoices indicates choice schema is missing choices.
+	InstanceChoiceMissingChoices = "INSTANCE_CHOICE_MISSING_CHOICES"
+	// InstanceChoiceSelectorMissing indicates choice selector property is missing.
+	InstanceChoiceSelectorMissing = "INSTANCE_CHOICE_SELECTOR_MISSING"
+	// InstanceChoiceSelectorNotString indicates selector value must be a string.
+	InstanceChoiceSelectorNotString = "INSTANCE_CHOICE_SELECTOR_NOT_STRING"
+	// InstanceChoiceUnknown indicates unknown choice.
+	InstanceChoiceUnknown = "INSTANCE_CHOICE_UNKNOWN"
 	// InstanceChoiceNoMatch indicates value does not match any choice option.
 	InstanceChoiceNoMatch = "INSTANCE_CHOICE_NO_MATCH"
 	// InstanceChoiceMultipleMatches indicates value matches multiple choice options.

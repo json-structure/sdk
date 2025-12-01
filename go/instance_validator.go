@@ -826,7 +826,7 @@ func (v *InstanceValidator) validateChoice(instance interface{}, schema map[stri
 	_, hasExtends := schema["$extends"]
 
 	if choices == nil {
-		v.addError(path, "Choice schema must have 'choices'", InstanceChoiceMissingOptions)
+		v.addError(path, "Choice schema must have 'choices'", InstanceChoiceMissingChoices)
 		return
 	}
 
@@ -834,12 +834,12 @@ func (v *InstanceValidator) validateChoice(instance interface{}, schema map[stri
 		// Inline union: use selector property
 		selectorValue, ok := obj[selector].(string)
 		if !ok {
-			v.addError(path, fmt.Sprintf("Selector '%s' must be a string", selector), InstanceChoiceDiscriminatorNotString)
+			v.addError(path, fmt.Sprintf("Selector '%s' must be a string", selector), InstanceChoiceSelectorNotString)
 			return
 		}
 		choiceSchema, ok := choices[selectorValue].(map[string]interface{})
 		if !ok {
-			v.addError(path, fmt.Sprintf("Selector value '%s' not in choices", selectorValue), InstanceChoiceOptionUnknown)
+			v.addError(path, fmt.Sprintf("Selector value '%s' not in choices", selectorValue), InstanceChoiceUnknown)
 			return
 		}
 		// Validate remaining properties
@@ -863,7 +863,7 @@ func (v *InstanceValidator) validateChoice(instance interface{}, schema map[stri
 		key := keys[0]
 		choiceSchema, ok := choices[key].(map[string]interface{})
 		if !ok {
-			v.addError(path, fmt.Sprintf("Property '%s' not in choices", key), InstanceChoiceOptionUnknown)
+			v.addError(path, fmt.Sprintf("Property '%s' not in choices", key), InstanceChoiceUnknown)
 			return
 		}
 		v.validateInstance(obj[key], choiceSchema, path+"/"+key)

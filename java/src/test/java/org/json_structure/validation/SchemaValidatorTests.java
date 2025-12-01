@@ -231,14 +231,14 @@ class SchemaValidatorTests {
     }
 
     @Test
-    @DisplayName("Valid choice schema with discriminator")
-    void validChoiceSchemaWithDiscriminator() {
+    @DisplayName("Valid choice schema with selector")
+    void validChoiceSchemaWithSelector() {
         String schema = """
             {
-                "$id": "https://test.example.com/schema/choiceWithDiscriminator",
+                "$id": "https://test.example.com/schema/choiceWithSelector",
                 "name": "TestSchema",
                 "type": "choice",
-                "discriminator": "type",
+                "selector": "type",
                 "choices": {
                     "circle": { "type": "object", "properties": { "radius": { "type": "double" } } },
                     "rectangle": { "type": "object", "properties": { "width": { "type": "double" }, "height": { "type": "double" } } }
@@ -555,13 +555,13 @@ class SchemaValidatorTests {
 
     @Test
     @DisplayName("Choice type requires 'choices' keyword")
-    void choiceTypeRequiresDiscriminator() {
+    void choiceTypeRequiresChoices() {
         String validSchema = """
             {
                 "$id": "https://test.example.com/schema/choiceWithChoices",
                 "name": "TestSchema",
                 "type": "choice",
-                "discriminator": "type",
+                "selector": "type",
                 "choices": {
                     "a": { "type": "object", "properties": {} },
                     "b": { "type": "object", "properties": {} }

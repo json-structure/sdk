@@ -1303,40 +1303,40 @@ public sealed class InstanceValidator
         // JSON Structure uses 'choices' keyword (NOT 'options' or 'oneOf')
         if (!schema.TryGetPropertyValue("choices", out var choicesValue) || choicesValue is not JsonObject choices)
         {
-            AddError(result, ErrorCodes.InstanceChoiceMissingOptions, "Choice schema must have 'choices' keyword", path);
+            AddError(result, ErrorCodes.InstanceChoiceMissingChoices, "Choice schema must have 'choices' keyword", path);
             return;
         }
 
-        // Get discriminator - support both "discriminator" and "selector"
-        string? discriminator = null;
-        if (schema.TryGetPropertyValue("discriminator", out var discValue))
+        // Get selector (support legacy 'discriminator' for backward compatibility)
+        string? selector = null;
+        if (schema.TryGetPropertyValue("selector", out var selectorValue))
         {
-            discriminator = discValue?.GetValue<string>();
+            selector = selectorValue?.GetValue<string>();
         }
-        else if (schema.TryGetPropertyValue("selector", out var selectorValue))
+        else if (schema.TryGetPropertyValue("discriminator", out var discValue))
         {
-            discriminator = selectorValue?.GetValue<string>();
+            selector = discValue?.GetValue<string>();
         }
 
-        if (!string.IsNullOrEmpty(discriminator))
+        if (!string.IsNullOrEmpty(selector))
         {
-            // Use discriminator to determine type
-            if (!obj.TryGetPropertyValue(discriminator, out var discValueNode))
+            // Use selector to determine type
+            if (!obj.TryGetPropertyValue(selector, out var selectorValueNode))
             {
-                AddError(result, ErrorCodes.InstanceChoiceDiscriminatorMissing, $"Choice requires discriminator property: {discriminator}", path);
+                AddError(result, ErrorCodes.InstanceChoiceSelectorMissing, $"Choice requires selector property: {selector}", path);
                 return;
             }
 
-            var discStr = discValueNode?.GetValue<string>();
-            if (string.IsNullOrEmpty(discStr))
+            var selectorStr = selectorValueNode?.GetValue<string>();
+            if (string.IsNullOrEmpty(selectorStr))
             {
-                AddError(result, ErrorCodes.InstanceChoiceDiscriminatorNotString, $"Discriminator value must be a string", path);
+                AddError(result, ErrorCodes.InstanceChoiceSelectorNotString, $"Selector value must be a string", path);
                 return;
             }
 
-            if (!choices.TryGetPropertyValue(discStr, out var optionSchema) || optionSchema is null)
+            if (!choices.TryGetPropertyValue(selectorStr, out var optionSchema) || optionSchema is null)
             {
-                AddError(result, ErrorCodes.InstanceChoiceOptionUnknown, $"Unknown choice option: {discStr}", path);
+                AddError(result, ErrorCodes.InstanceChoiceUnknown, $"Unknown choice: {selectorStr}", path);
                 return;
             }
 

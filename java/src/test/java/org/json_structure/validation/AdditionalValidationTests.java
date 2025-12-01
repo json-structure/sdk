@@ -2493,14 +2493,14 @@ class AdditionalValidationTests {
         }
         
         @Test
-        @DisplayName("Should validate choice with discriminator")
-        void shouldValidateChoiceWithDiscriminator() {
+        @DisplayName("Should validate choice with selector")
+        void shouldValidateChoiceWithSelector() {
             String schema = """
                 {
                     "$id": "https://test.example.com/schema/choicedisc",
                     "name": "ChoiceDiscSchema",
                     "type": "choice",
-                    "discriminator": "kind",
+                    "selector": "kind",
                     "choices": {
                         "person": {
                             "type": "object",
@@ -2528,18 +2528,18 @@ class AdditionalValidationTests {
             result = validator.validate("{\"kind\": \"company\", \"companyName\": \"Acme\"}", schema);
             assertThat(result.isValid()).isTrue();
             
-            // Invalid - missing discriminator
+            // Invalid - missing selector
             result = validator.validate("{\"name\": \"John\"}", schema);
             assertThat(result.isValid()).isFalse();
             
-            // Invalid - unknown option
+            // Invalid - unknown choice
             result = validator.validate("{\"kind\": \"unknown\"}", schema);
             assertThat(result.isValid()).isFalse();
         }
         
         @Test
-        @DisplayName("Should validate choice with selector keyword")
-        void shouldValidateChoiceWithSelector() {
+        @DisplayName("Should validate choice with selector keyword (alternate test)")
+        void shouldValidateChoiceWithSelectorAlternate() {
             String schema = """
                 {
                     "$id": "https://test.example.com/schema/choiceselector",
@@ -2566,7 +2566,7 @@ class AdditionalValidationTests {
                     "$id": "https://test.example.com/schema/choiceschoices",
                     "name": "ChoicesKeywordSchema",
                     "type": "choice",
-                    "discriminator": "kind",
+                    "selector": "kind",
                     "choices": {
                         "option1": { "type": "object" }
                     }
@@ -3058,35 +3058,35 @@ class AdditionalValidationTests {
         }
         
         @Test
-        @DisplayName("Should validate choice discriminator not string")
-        void shouldValidateChoiceDiscriminatorNotString() {
+        @DisplayName("Should validate choice selector not string")
+        void shouldValidateChoiceSelectorNotString() {
             String schema = """
                 {
                     "$id": "https://test.example.com/schema/baddisc",
                     "name": "BadDiscSchema",
                     "type": "choice",
-                    "discriminator": "kind",
-                    "options": {
+                    "selector": "kind",
+                    "choices": {
                         "a": { "type": "object" }
                     }
                 }
                 """;
             
-            // Discriminator value is not a string
+            // Selector value is not a string
             ValidationResult result = validator.validate("{\"kind\": 123}", schema);
             assertThat(result.isValid()).isFalse();
         }
         
         @Test
-        @DisplayName("Should validate choice with empty discriminator value")
-        void shouldValidateChoiceWithEmptyDiscriminator() {
+        @DisplayName("Should validate choice with empty selector value")
+        void shouldValidateChoiceWithEmptySelector() {
             String schema = """
                 {
                     "$id": "https://test.example.com/schema/emptydisc",
                     "name": "EmptyDiscSchema",
                     "type": "choice",
-                    "discriminator": "kind",
-                    "options": {
+                    "selector": "kind",
+                    "choices": {
                         "a": { "type": "object" }
                     }
                 }

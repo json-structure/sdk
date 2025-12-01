@@ -3116,7 +3116,7 @@ public class AdditionalValidationTests
         {
             ["type"] = "choice",
             ["selector"] = "kind",
-            ["options"] = new JsonObject
+            ["choices"] = new JsonObject
             {
                 ["circle"] = new JsonObject
                 {
@@ -3156,7 +3156,7 @@ public class AdditionalValidationTests
         {
             ["type"] = "choice",
             ["selector"] = "kind",
-            ["options"] = new JsonObject
+            ["choices"] = new JsonObject
             {
                 ["circle"] = new JsonObject { ["type"] = "object" }
             }
@@ -3177,7 +3177,7 @@ public class AdditionalValidationTests
         var schema = new JsonObject
         {
             ["type"] = "choice",
-            ["discriminator"] = "type",
+            ["selector"] = "type",
             ["choices"] = new JsonObject
             {
                 ["A"] = new JsonObject { ["type"] = "object" },
@@ -3194,13 +3194,13 @@ public class AdditionalValidationTests
     }
     
     [Fact]
-    public void InstanceValidator_Choice_TaggedUnion_WithOptions_Valid()
+    public void InstanceValidator_Choice_TaggedUnion_WithChoices_Valid()
     {
         var validator = new InstanceValidator();
         var schema = new JsonObject
         {
             ["type"] = "choice",
-            ["options"] = new JsonObject
+            ["choices"] = new JsonObject
             {
                 ["success"] = new JsonObject
                 {
@@ -3230,14 +3230,14 @@ public class AdditionalValidationTests
     }
     
     [Fact]
-    public void InstanceValidator_Choice_DiscriminatorNotString_ThrowsOrFails()
+    public void InstanceValidator_Choice_SelectorNotString_ThrowsOrFails()
     {
         var validator = new InstanceValidator();
         var schema = new JsonObject
         {
             ["type"] = "choice",
-            ["discriminator"] = "kind",
-            ["options"] = new JsonObject
+            ["selector"] = "kind",
+            ["choices"] = new JsonObject
             {
                 ["A"] = new JsonObject { ["type"] = "object" }
             }
@@ -3247,21 +3247,21 @@ public class AdditionalValidationTests
             ["kind"] = 123  // Should be string - causes exception because GetValue<string> on int
         };
         
-        // Current implementation throws when discriminator value is non-string
+        // Current implementation throws when selector value is non-string
         // This tests that we don't crash silently
         var action = () => validator.Validate(instance, schema);
         action.Should().Throw<InvalidOperationException>();
     }
     
     [Fact]
-    public void InstanceValidator_Choice_UnknownOption_Invalid()
+    public void InstanceValidator_Choice_UnknownChoice_Invalid()
     {
         var validator = new InstanceValidator();
         var schema = new JsonObject
         {
             ["type"] = "choice",
-            ["discriminator"] = "kind",
-            ["options"] = new JsonObject
+            ["selector"] = "kind",
+            ["choices"] = new JsonObject
             {
                 ["A"] = new JsonObject { ["type"] = "object" }
             }
@@ -3282,7 +3282,7 @@ public class AdditionalValidationTests
         var schema = new JsonObject
         {
             ["type"] = "choice",
-            ["options"] = new JsonObject
+            ["choices"] = new JsonObject
             {
                 ["A"] = new JsonObject { ["type"] = "object" },
                 ["B"] = new JsonObject { ["type"] = "object" }  // Both match empty object

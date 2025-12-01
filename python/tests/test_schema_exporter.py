@@ -215,7 +215,7 @@ class TestOptionalAndUnion:
         schema = export_schema(Model)
         
         assert schema["properties"]["value"]["type"] == "choice"
-        assert "options" in schema["properties"]["value"]
+        assert "choices" in schema["properties"]["value"]
 
 
 class TestEnums:

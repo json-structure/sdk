@@ -221,14 +221,14 @@ public final class ErrorCodes {
     public static final String INSTANCE_TUPLE_ADDITIONAL_ITEMS = "INSTANCE_TUPLE_ADDITIONAL_ITEMS";
     /** Value must be an object (choice). */
     public static final String INSTANCE_CHOICE_EXPECTED = "INSTANCE_CHOICE_EXPECTED";
-    /** Choice schema is missing options. */
-    public static final String INSTANCE_CHOICE_MISSING_OPTIONS = "INSTANCE_CHOICE_MISSING_OPTIONS";
-    /** Choice discriminator property is missing. */
-    public static final String INSTANCE_CHOICE_DISCRIMINATOR_MISSING = "INSTANCE_CHOICE_DISCRIMINATOR_MISSING";
-    /** Discriminator value must be a string. */
-    public static final String INSTANCE_CHOICE_DISCRIMINATOR_NOT_STRING = "INSTANCE_CHOICE_DISCRIMINATOR_NOT_STRING";
-    /** Unknown choice option. */
-    public static final String INSTANCE_CHOICE_OPTION_UNKNOWN = "INSTANCE_CHOICE_OPTION_UNKNOWN";
+    /** Choice schema is missing choices. */
+    public static final String INSTANCE_CHOICE_MISSING_CHOICES = "INSTANCE_CHOICE_MISSING_CHOICES";
+    /** Choice selector property is missing. */
+    public static final String INSTANCE_CHOICE_SELECTOR_MISSING = "INSTANCE_CHOICE_SELECTOR_MISSING";
+    /** Selector value must be a string. */
+    public static final String INSTANCE_CHOICE_SELECTOR_NOT_STRING = "INSTANCE_CHOICE_SELECTOR_NOT_STRING";
+    /** Unknown choice. */
+    public static final String INSTANCE_CHOICE_UNKNOWN = "INSTANCE_CHOICE_UNKNOWN";
     /** Value does not match any choice option. */
     public static final String INSTANCE_CHOICE_NO_MATCH = "INSTANCE_CHOICE_NO_MATCH";
     /** Value matches multiple choice options. */

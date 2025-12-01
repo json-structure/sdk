@@ -321,17 +321,17 @@ public static class ErrorCodes
     /// <summary>Value must be an object (choice).</summary>
     public const string InstanceChoiceExpected = "INSTANCE_CHOICE_EXPECTED";
     
-    /// <summary>Choice schema is missing options.</summary>
-    public const string InstanceChoiceMissingOptions = "INSTANCE_CHOICE_MISSING_OPTIONS";
+    /// <summary>Choice schema is missing choices.</summary>
+    public const string InstanceChoiceMissingChoices = "INSTANCE_CHOICE_MISSING_CHOICES";
     
-    /// <summary>Choice discriminator property is missing.</summary>
-    public const string InstanceChoiceDiscriminatorMissing = "INSTANCE_CHOICE_DISCRIMINATOR_MISSING";
+    /// <summary>Choice selector property is missing.</summary>
+    public const string InstanceChoiceSelectorMissing = "INSTANCE_CHOICE_SELECTOR_MISSING";
     
-    /// <summary>Discriminator value must be a string.</summary>
-    public const string InstanceChoiceDiscriminatorNotString = "INSTANCE_CHOICE_DISCRIMINATOR_NOT_STRING";
+    /// <summary>Selector value must be a string.</summary>
+    public const string InstanceChoiceSelectorNotString = "INSTANCE_CHOICE_SELECTOR_NOT_STRING";
     
-    /// <summary>Unknown choice option.</summary>
-    public const string InstanceChoiceOptionUnknown = "INSTANCE_CHOICE_OPTION_UNKNOWN";
+    /// <summary>Unknown choice.</summary>
+    public const string InstanceChoiceUnknown = "INSTANCE_CHOICE_UNKNOWN";
     
     /// <summary>Value does not match any choice option.</summary>
     public const string InstanceChoiceNoMatch = "INSTANCE_CHOICE_NO_MATCH";

@@ -690,33 +690,33 @@
       "message": "Value must be an object (choice)",
       "parameters": []
     },
-    "INSTANCE_CHOICE_MISSING_OPTIONS": {
-      "code": "INSTANCE_CHOICE_MISSING_OPTIONS",
+    "INSTANCE_CHOICE_MISSING_CHOICES": {
+      "code": "INSTANCE_CHOICE_MISSING_CHOICES",
       "severity": "error",
       "category": "instance",
-      "message": "Choice schema must have 'options' or 'choices'",
+      "message": "Choice schema must have 'choices'",
       "parameters": []
     },
-    "INSTANCE_CHOICE_DISCRIMINATOR_MISSING": {
-      "code": "INSTANCE_CHOICE_DISCRIMINATOR_MISSING",
+    "INSTANCE_CHOICE_SELECTOR_MISSING": {
+      "code": "INSTANCE_CHOICE_SELECTOR_MISSING",
       "severity": "error",
       "category": "instance",
-      "message": "Choice requires discriminator property: {discriminator}",
-      "parameters": ["discriminator"]
+      "message": "Choice requires selector property: {selector}",
+      "parameters": ["selector"]
     },
-    "INSTANCE_CHOICE_DISCRIMINATOR_NOT_STRING": {
-      "code": "INSTANCE_CHOICE_DISCRIMINATOR_NOT_STRING",
+    "INSTANCE_CHOICE_SELECTOR_NOT_STRING": {
+      "code": "INSTANCE_CHOICE_SELECTOR_NOT_STRING",
       "severity": "error",
       "category": "instance",
-      "message": "Discriminator value must be a string",
+      "message": "Selector value must be a string",
       "parameters": []
     },
-    "INSTANCE_CHOICE_OPTION_UNKNOWN": {
-      "code": "INSTANCE_CHOICE_OPTION_UNKNOWN",
+    "INSTANCE_CHOICE_UNKNOWN": {
+      "code": "INSTANCE_CHOICE_UNKNOWN",
       "severity": "error",
       "category": "instance",
-      "message": "Unknown choice option: {optionName}",
-      "parameters": ["optionName"]
+      "message": "Unknown choice: {choiceName}",
+      "parameters": ["choiceName"]
     },
     "INSTANCE_CHOICE_NO_MATCH": {
       "code": "INSTANCE_CHOICE_NO_MATCH",
