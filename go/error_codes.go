@@ -92,8 +92,6 @@ const (
 	SchemaMapMissingValues = "SCHEMA_MAP_MISSING_VALUES"
 	// SchemaChoiceMissingChoices indicates choice type requires 'choices' keyword.
 	SchemaChoiceMissingChoices = "SCHEMA_CHOICE_MISSING_CHOICES"
-	// SchemaOptionsNotObject indicates options must be an object.
-	SchemaOptionsNotObject = "SCHEMA_OPTIONS_NOT_OBJECT"
 	// SchemaChoicesNotObject indicates choices must be an object.
 	SchemaChoicesNotObject = "SCHEMA_CHOICES_NOT_OBJECT"
 	// SchemaPatternInvalid indicates pattern is not a valid regular expression.

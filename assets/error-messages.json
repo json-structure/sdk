@@ -185,13 +185,6 @@
       "message": "choice type requires 'choices' keyword",
       "parameters": []
     },
-    "SCHEMA_OPTIONS_NOT_OBJECT": {
-      "code": "SCHEMA_OPTIONS_NOT_OBJECT",
-      "severity": "error",
-      "category": "schema",
-      "message": "options must be an object",
-      "parameters": []
-    },
     "SCHEMA_CHOICES_NOT_OBJECT": {
       "code": "SCHEMA_CHOICES_NOT_OBJECT",
       "severity": "error",
@@ -729,7 +722,7 @@
       "code": "INSTANCE_CHOICE_MULTIPLE_MATCHES",
       "severity": "error",
       "category": "instance",
-      "message": "Value matches {matchCount} choice options (should match exactly one)",
+      "message": "Value matches {matchCount} choices (should match exactly one)",
       "parameters": ["matchCount"]
     },
     "INSTANCE_DATE_EXPECTED": {

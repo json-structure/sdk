@@ -642,10 +642,6 @@ export class JsonStructureHoverProvider implements vscode.HoverProvider {
             markdown.appendMarkdown(`Default: \`${JSON.stringify(propSchema.default)}\`\n\n`);
         }
         
-        if (propSchema.deprecated === true) {
-            markdown.appendMarkdown(`⚠️ *Deprecated*\n\n`);
-        }
-        
         return new vscode.Hover(markdown);
     }
 }

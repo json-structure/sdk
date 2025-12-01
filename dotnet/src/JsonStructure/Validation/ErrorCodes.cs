@@ -95,9 +95,6 @@ public static class ErrorCodes
     /// <summary>Choice type requires 'choices' keyword.</summary>
     public const string SchemaChoiceMissingChoices = "SCHEMA_CHOICE_MISSING_CHOICES";
     
-    /// <summary>Options must be an object.</summary>
-    public const string SchemaOptionsNotObject = "SCHEMA_OPTIONS_NOT_OBJECT";
-    
     /// <summary>Choices must be an object.</summary>
     public const string SchemaChoicesNotObject = "SCHEMA_CHOICES_NOT_OBJECT";
     

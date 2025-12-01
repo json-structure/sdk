@@ -70,8 +70,6 @@ public final class ErrorCodes {
     public static final String SCHEMA_MAP_MISSING_VALUES = "SCHEMA_MAP_MISSING_VALUES";
     /** Choice type requires 'choices' keyword. */
     public static final String SCHEMA_CHOICE_MISSING_CHOICES = "SCHEMA_CHOICE_MISSING_CHOICES";
-    /** Options must be an object. */
-    public static final String SCHEMA_OPTIONS_NOT_OBJECT = "SCHEMA_OPTIONS_NOT_OBJECT";
     /** Choices must be an object. */
     public static final String SCHEMA_CHOICES_NOT_OBJECT = "SCHEMA_CHOICES_NOT_OBJECT";
     /** Pattern is not a valid regular expression. */
