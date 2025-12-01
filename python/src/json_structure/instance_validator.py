@@ -480,15 +480,19 @@ class JSONStructureInstanceValidator:
                         self.validate_instance(instance[prop], prop_schema, f"{path}/{prop}")
                 if "additionalProperties" in schema:
                     addl = schema["additionalProperties"]
-                    # $schema is a built-in property allowed in all instances
-                    reserved_props = {"$schema"}
+                    # $schema and $uses are reserved properties allowed in instances at root level
+                    reserved_instance_props = {"$schema", "$uses"}
                     if addl is False:
                         for key in instance.keys():
-                            if key not in props and key not in reserved_props:
+                            # Only allow reserved instance props at root level (path == '#')
+                            is_reserved_at_root = path == "#" and key in reserved_instance_props
+                            if key not in props and not is_reserved_at_root:
                                 self.errors.append(f"Additional property '{key}' not allowed at {path}")
                     elif isinstance(addl, dict):
                         for key in instance.keys():
-                            if key not in props and key not in reserved_props:
+                            # Only allow reserved instance props at root level (path == '#')
+                            is_reserved_at_root = path == "#" and key in reserved_instance_props
+                            if key not in props and not is_reserved_at_root:
                                 self.validate_instance(instance[key], addl, f"{path}/{key}")
                 # Extended object constraint: "has" keyword. [Metaschema: ObjectValidationAddIn]
                 if "has" in schema:

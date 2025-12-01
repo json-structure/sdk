@@ -583,19 +583,24 @@ func (v *InstanceValidator) validateObject(instance interface{}, schema map[stri
 	}
 
 	// Validate additionalProperties
+	// $schema and $uses are reserved properties allowed in instances at root level
 	if additionalProperties != nil {
 		switch ap := additionalProperties.(type) {
 		case bool:
 			if !ap {
 				for key := range obj {
-					if properties == nil || properties[key] == nil {
+					// Only allow reserved instance props at root level (path == "#")
+					isReservedAtRoot := path == "#" && (key == "$schema" || key == "$uses")
+					if (properties == nil || properties[key] == nil) && !isReservedAtRoot {
 						v.addError(path, fmt.Sprintf("Additional property not allowed: %s", key), InstanceAdditionalPropertyNotAllowed)
 					}
 				}
 			}
 		case map[string]interface{}:
 			for key, val := range obj {
-				if properties == nil || properties[key] == nil {
+				// Only allow reserved instance props at root level (path == "#")
+				isReservedAtRoot := path == "#" && (key == "$schema" || key == "$uses")
+				if (properties == nil || properties[key] == nil) && !isReservedAtRoot {
 					v.validateInstance(val, ap, path+"/"+key)
 				}
 			}
@@ -629,19 +634,24 @@ func (v *InstanceValidator) validateObjectConstraints(obj map[string]interface{}
 	}
 
 	// Validate additionalProperties
+	// $schema and $uses are reserved properties allowed in instances at root level
 	if additionalProperties != nil {
 		switch ap := additionalProperties.(type) {
 		case bool:
 			if !ap {
 				for key := range obj {
-					if properties == nil || properties[key] == nil {
+					// Only allow reserved instance props at root level (path == "#")
+					isReservedAtRoot := path == "#" && (key == "$schema" || key == "$uses")
+					if (properties == nil || properties[key] == nil) && !isReservedAtRoot {
 						v.addError(path, fmt.Sprintf("Additional property not allowed: %s", key), InstanceAdditionalPropertyNotAllowed)
 					}
 				}
 			}
 		case map[string]interface{}:
 			for key, val := range obj {
-				if properties == nil || properties[key] == nil {
+				// Only allow reserved instance props at root level (path == "#")
+				isReservedAtRoot := path == "#" && (key == "$schema" || key == "$uses")
+				if (properties == nil || properties[key] == nil) && !isReservedAtRoot {
 					v.validateInstance(val, ap, path+"/"+key)
 				}
 			}

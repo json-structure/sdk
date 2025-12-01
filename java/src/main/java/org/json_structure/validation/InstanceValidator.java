@@ -748,15 +748,16 @@ public final class InstanceValidator {
         }
 
         // Validate additionalProperties
+        // $schema and $uses are reserved properties allowed in instances at root level
         if (schema.has("additionalProperties")) {
             JsonNode additional = schema.get("additionalProperties");
             if (additional.isBoolean() && !additional.asBoolean()) {
                 Iterator<String> fieldNames = obj.fieldNames();
                 while (fieldNames.hasNext()) {
                     String fieldName = fieldNames.next();
-                    // Skip $schema - it's a meta-property
-                    if (fieldName.equals("$schema")) continue;
-                    if (!definedProps.contains(fieldName)) {
+                    // Only allow reserved instance props at root level (path is empty)
+                    boolean isReservedAtRoot = path.isEmpty() && (fieldName.equals("$schema") || fieldName.equals("$uses"));
+                    if (!definedProps.contains(fieldName) && !isReservedAtRoot) {
                         addError(result, ErrorCodes.INSTANCE_ADDITIONAL_PROPERTY_NOT_ALLOWED, "Additional property not allowed: " + fieldName, path);
                     }
                 }
@@ -764,9 +765,9 @@ public final class InstanceValidator {
                 Iterator<Map.Entry<String, JsonNode>> fields = obj.fields();
                 while (fields.hasNext()) {
                     Map.Entry<String, JsonNode> field = fields.next();
-                    // Skip $schema
-                    if (field.getKey().equals("$schema")) continue;
-                    if (!definedProps.contains(field.getKey())) {
+                    // Only allow reserved instance props at root level (path is empty)
+                    boolean isReservedAtRoot = path.isEmpty() && (field.getKey().equals("$schema") || field.getKey().equals("$uses"));
+                    if (!definedProps.contains(field.getKey()) && !isReservedAtRoot) {
                         validateInstance(field.getValue(), additional, rootSchema,
                                 result, appendPath(path, field.getKey()), depth + 1);
                     }

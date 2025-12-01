@@ -209,6 +209,21 @@ describe('InstanceValidator', () => {
       expect(validator.validate({ name: 'Alice' }, schema).isValid).toBe(true);
       expect(validator.validate({ name: 'Alice', extra: 'data' }, schema).isValid).toBe(false);
     });
+
+    it('should allow $schema with additionalProperties: false', () => {
+      const schema = {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+        },
+        additionalProperties: false,
+      };
+      const validator = new InstanceValidator();
+
+      // $schema and $uses are reserved properties allowed at root level only
+      expect(validator.validate({ $schema: 'https://example.com/schema', name: 'Alice' }, schema).isValid).toBe(true);
+      expect(validator.validate({ $schema: 'https://example.com/schema', $uses: ['SomeAddin'], name: 'Alice' }, schema).isValid).toBe(true);
+    });
   });
 
   describe('array type', () => {

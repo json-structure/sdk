@@ -536,15 +536,21 @@ export class InstanceValidator {
     }
 
     // Validate additionalProperties
+    // $schema and $uses are reserved properties allowed in instances at root level
+    const reservedInstanceProps = new Set(['$schema', '$uses']);
     if (additionalProperties === false) {
       for (const key of Object.keys(instance)) {
-        if (properties && !(key in properties)) {
+        // Only allow reserved instance props at root level (path === '#')
+        const isReservedAtRoot = path === '#' && reservedInstanceProps.has(key);
+        if (properties && !(key in properties) && !isReservedAtRoot) {
           this.addError(path, `Additional property not allowed: ${key}`, ErrorCodes.INSTANCE_ADDITIONAL_PROPERTY_NOT_ALLOWED);
         }
       }
     } else if (this.isObject(additionalProperties)) {
       for (const key of Object.keys(instance)) {
-        if (!properties || !(key in properties)) {
+        // Only allow reserved instance props at root level (path === '#')
+        const isReservedAtRoot = path === '#' && reservedInstanceProps.has(key);
+        if ((!properties || !(key in properties)) && !isReservedAtRoot) {
           this.validateInstance(instance[key], additionalProperties, `${path}/${key}`);
         }
       }

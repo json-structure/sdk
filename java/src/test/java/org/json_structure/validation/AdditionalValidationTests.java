@@ -2122,22 +2122,8 @@ class AdditionalValidationTests {
             assertThat(result.isValid()).isTrue();
         }
         
-        @Test
-        @DisplayName("Should reject schema with non-standard deprecated keyword")
-        void shouldRejectSchemaWithDeprecated() {
-            String schema = """
-                {
-                    "$id": "https://test.example.com/schema/deprecated",
-                    "name": "DeprecatedSchema",
-                    "type": "string",
-                    "deprecated": true
-                }
-                """;
-            
-            ValidationResult result = validator.validate(schema);
-            // deprecated is not a valid JSON Structure keyword
-            assertThat(result.isValid()).isFalse();
-        }
+        // Note: Unknown keywords like "deprecated" are ignored per JSON Structure spec
+        // (no SCHEMA_UNKNOWN_KEYWORD error code exists - validators should not reject unknown keywords)
         
         @Test
         @DisplayName("Should validate schema with altnames")

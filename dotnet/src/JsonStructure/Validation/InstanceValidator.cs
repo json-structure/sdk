@@ -955,6 +955,7 @@ public sealed class InstanceValidator
         }
 
         // Validate additionalProperties
+        // $schema and $uses are reserved properties allowed in instances at root level
         if (schema.TryGetPropertyValue("additionalProperties", out var additionalValue))
         {
             if (additionalValue is JsonValue apv && apv.TryGetValue<bool>(out var allowed))
@@ -963,10 +964,10 @@ public sealed class InstanceValidator
                 {
                     foreach (var prop in obj)
                     {
-                        // Skip $schema - it's a meta-property, not data
-                        if (prop.Key == "$schema") continue;
+                        // Only allow reserved instance props at root level (path is empty)
+                        var isReservedAtRoot = string.IsNullOrEmpty(path) && (prop.Key == "$schema" || prop.Key == "$uses");
                         
-                        if (!definedProps.Contains(prop.Key))
+                        if (!definedProps.Contains(prop.Key) && !isReservedAtRoot)
                         {
                             AddError(result, ErrorCodes.InstanceAdditionalPropertyNotAllowed, $"Additional property not allowed: {prop.Key}", path);
                         }
@@ -977,10 +978,10 @@ public sealed class InstanceValidator
             {
                 foreach (var prop in obj)
                 {
-                    // Skip $schema - it's a meta-property, not data
-                    if (prop.Key == "$schema") continue;
+                    // Only allow reserved instance props at root level (path is empty)
+                    var isReservedAtRoot = string.IsNullOrEmpty(path) && (prop.Key == "$schema" || prop.Key == "$uses");
                     
-                    if (!definedProps.Contains(prop.Key))
+                    if (!definedProps.Contains(prop.Key) && !isReservedAtRoot)
                     {
                         ValidateInstance(prop.Value, additionalSchema, rootSchema, result,
                             AppendPath(path, prop.Key), depth + 1);
