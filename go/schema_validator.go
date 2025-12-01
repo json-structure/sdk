@@ -129,8 +129,10 @@ func (v *SchemaValidator) validateSchemaDocument(schema map[string]interface{}, 
 	if defs, ok := schema["definitions"]; ok {
 		v.validateDefinitions(defs, path+"/definitions")
 	}
-	if defs, ok := schema["$defs"]; ok {
-		v.validateDefinitions(defs, path+"/$defs")
+	// Note: $defs is NOT a JSON Structure keyword (it's JSON Schema).
+	// JSON Structure uses 'definitions' only.
+	if _, ok := schema["$defs"]; ok {
+		v.addError(path+"/$defs", "'$defs' is not a valid JSON Structure keyword. Use 'definitions' instead.", SchemaKeywordInvalidType)
 	}
 
 	// If there's a $root, validate that the referenced type exists
@@ -163,8 +165,7 @@ func (v *SchemaValidator) validateSchemaDocument(schema map[string]interface{}, 
 			}
 		}
 		_, hasDefs := schema["definitions"]
-		_, hasDollarDefs := schema["$defs"]
-		if !hasOnlyMeta || (!hasDefs && !hasDollarDefs) {
+		if !hasOnlyMeta || !hasDefs {
 			v.addError(path, "Schema must have a 'type' property or '$root' reference", SchemaMissingType)
 		}
 	}
@@ -277,9 +278,8 @@ func (v *SchemaValidator) isTypeDefinition(schema map[string]interface{}) bool {
 	if _, hasType := schema["type"]; hasType {
 		return true
 	}
-	if _, hasRef := schema["$ref"]; hasRef {
-		return true
-	}
+	// Note: bare $ref is NOT a valid type definition per spec Section 3.4.1
+	// $ref is only permitted inside the 'type' attribute
 	conditionalKeywords := []string{"allOf", "anyOf", "oneOf", "not", "if"}
 	for _, k := range conditionalKeywords {
 		if _, ok := schema[k]; ok {
@@ -290,15 +290,16 @@ func (v *SchemaValidator) isTypeDefinition(schema map[string]interface{}) bool {
 }
 
 func (v *SchemaValidator) validateTypeDefinition(schema map[string]interface{}, path string) {
-	// Handle $ref
-	if ref, ok := schema["$ref"]; ok {
-		v.validateRef(ref, path)
+	// Check for bare $ref - this is NOT permitted per spec Section 3.4.1
+	// $ref is ONLY permitted inside the 'type' attribute value
+	if _, hasRef := schema["$ref"]; hasRef {
+		v.addError(path+"/$ref", "'$ref' is only permitted inside the 'type' attribute. Use { \"type\": { \"$ref\": \"...\" } } instead of { \"$ref\": \"...\" }", SchemaRefNotInType)
 		return
 	}
 
 	typeVal, hasType := schema["type"]
 
-	// Type is required unless it's a conditional-only schema or has $ref
+	// Type is required unless it's a conditional-only schema
 	if !hasType {
 		conditionalKeywords := []string{"allOf", "anyOf", "oneOf", "not", "if"}
 		hasConditional := false
@@ -461,13 +462,13 @@ func (v *SchemaValidator) validateMapType(schema map[string]interface{}, path st
 func (v *SchemaValidator) validateTupleType(schema map[string]interface{}, path string) {
 	tuple, hasTuple := schema["tuple"]
 	if !hasTuple {
-		v.addError(path, "Tuple type must have 'tuple' property defining element order", SchemaTupleMissingPrefixItems)
+		v.addError(path, "Tuple type must have 'tuple' property defining element order", SchemaTupleMissingDefinition)
 		return
 	}
 
 	tupleArr, isArr := tuple.([]interface{})
 	if !isArr {
-		v.addError(path+"/tuple", "tuple must be an array", SchemaPrefixItemsNotArray)
+		v.addError(path+"/tuple", "tuple must be an array", SchemaTupleOrderNotArray)
 		return
 	}
 
@@ -487,7 +488,7 @@ func (v *SchemaValidator) validateTupleType(schema map[string]interface{}, path 
 func (v *SchemaValidator) validateChoiceType(schema map[string]interface{}, path string) {
 	choices, hasChoices := schema["choices"]
 	if !hasChoices {
-		v.addError(path, "Choice type must have 'choices' property", SchemaChoiceMissingOptions)
+		v.addError(path, "Choice type must have 'choices' property", SchemaChoiceMissingChoices)
 		return
 	}
 
@@ -763,9 +764,20 @@ func (v *SchemaValidator) validateRef(ref interface{}, path string) {
 			// However, a direct self-reference with no content is invalid
 			resolved := v.resolveRef(refStr)
 			if len(resolved) == 1 {
+				// Check for bare $ref: { "$ref": "..." }
 				if _, hasRef := resolved["$ref"]; hasRef {
 					// This is a definition that's only a $ref - direct circular with no content
 					v.addError(path, fmt.Sprintf("Circular reference detected: %s", refStr), SchemaRefCircular)
+				}
+				// Check for type-wrapped ref only: { "type": { "$ref": "..." } }
+				if typeVal, hasType := resolved["type"]; hasType {
+					if typeObj, isMap := typeVal.(map[string]interface{}); isMap {
+						if len(typeObj) == 1 {
+							if _, hasRef := typeObj["$ref"]; hasRef {
+								v.addError(path, fmt.Sprintf("Circular reference detected: %s", refStr), SchemaRefCircular)
+							}
+						}
+					}
 				}
 			}
 			// For other circular refs, just stop recursing to prevent infinite loops

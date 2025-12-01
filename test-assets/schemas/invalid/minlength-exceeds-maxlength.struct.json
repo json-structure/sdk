@@ -1,5 +1,7 @@
 {
   "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/minlength-exceeds-maxlength",
+  "name": "MinlengthExceedsMaxlengthTest",
   "type": "string",
   "minLength": 10,
   "maxLength": 5,

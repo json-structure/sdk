@@ -34,6 +34,8 @@ public final class ErrorCodes {
     public static final String SCHEMA_REF_NOT_FOUND = "SCHEMA_REF_NOT_FOUND";
     /** Circular reference detected. */
     public static final String SCHEMA_REF_CIRCULAR = "SCHEMA_REF_CIRCULAR";
+    /** $ref is only permitted inside the 'type' attribute. */
+    public static final String SCHEMA_REF_NOT_IN_TYPE = "SCHEMA_REF_NOT_IN_TYPE";
     /** Schema must have a 'type' keyword. */
     public static final String SCHEMA_MISSING_TYPE = "SCHEMA_MISSING_TYPE";
     /** Root schema must have 'type', '$root', or other schema-defining keyword. */
@@ -58,16 +60,16 @@ public final class ErrorCodes {
     public static final String SCHEMA_REQUIRED_PROPERTY_NOT_DEFINED = "SCHEMA_REQUIRED_PROPERTY_NOT_DEFINED";
     /** additionalProperties must be a boolean or schema. */
     public static final String SCHEMA_ADDITIONAL_PROPERTIES_INVALID = "SCHEMA_ADDITIONAL_PROPERTIES_INVALID";
-    /** Array type requires 'items' or 'contains' schema. */
+    /** Array type requires 'items' schema. */
     public static final String SCHEMA_ARRAY_MISSING_ITEMS = "SCHEMA_ARRAY_MISSING_ITEMS";
-    /** Tuple type requires 'prefixItems' or 'tuple'. */
-    public static final String SCHEMA_TUPLE_MISSING_PREFIX_ITEMS = "SCHEMA_TUPLE_MISSING_PREFIX_ITEMS";
-    /** prefixItems must be an array. */
-    public static final String SCHEMA_PREFIX_ITEMS_NOT_ARRAY = "SCHEMA_PREFIX_ITEMS_NOT_ARRAY";
+    /** Tuple type requires 'properties' and 'tuple' keywords. */
+    public static final String SCHEMA_TUPLE_MISSING_DEFINITION = "SCHEMA_TUPLE_MISSING_DEFINITION";
+    /** 'tuple' keyword must be an array of property names. */
+    public static final String SCHEMA_TUPLE_ORDER_NOT_ARRAY = "SCHEMA_TUPLE_ORDER_NOT_ARRAY";
     /** Map type requires 'values' schema. */
     public static final String SCHEMA_MAP_MISSING_VALUES = "SCHEMA_MAP_MISSING_VALUES";
-    /** Choice type requires 'options', 'choices', or 'oneOf'. */
-    public static final String SCHEMA_CHOICE_MISSING_OPTIONS = "SCHEMA_CHOICE_MISSING_OPTIONS";
+    /** Choice type requires 'choices' keyword. */
+    public static final String SCHEMA_CHOICE_MISSING_CHOICES = "SCHEMA_CHOICE_MISSING_CHOICES";
     /** Options must be an object. */
     public static final String SCHEMA_OPTIONS_NOT_OBJECT = "SCHEMA_OPTIONS_NOT_OBJECT";
     /** Choices must be an object. */

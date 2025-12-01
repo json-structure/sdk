@@ -73,6 +73,13 @@
       "message": "Circular reference detected: {refPath}",
       "parameters": ["refPath"]
     },
+    "SCHEMA_REF_NOT_IN_TYPE": {
+      "code": "SCHEMA_REF_NOT_IN_TYPE",
+      "severity": "error",
+      "category": "schema",
+      "message": "$ref is only permitted inside the 'type' attribute. Use { \"type\": { \"$ref\": \"...\" } } instead of { \"$ref\": \"...\" }",
+      "parameters": []
+    },
     "SCHEMA_MISSING_TYPE": {
       "code": "SCHEMA_MISSING_TYPE",
       "severity": "error",
@@ -150,18 +157,18 @@
       "message": "array type requires 'items' or 'contains' schema",
       "parameters": []
     },
-    "SCHEMA_TUPLE_MISSING_PREFIX_ITEMS": {
-      "code": "SCHEMA_TUPLE_MISSING_PREFIX_ITEMS",
+    "SCHEMA_TUPLE_MISSING_DEFINITION": {
+      "code": "SCHEMA_TUPLE_MISSING_DEFINITION",
       "severity": "error",
       "category": "schema",
-      "message": "tuple type requires 'prefixItems' or 'tuple' with 'properties'",
+      "message": "tuple type requires 'properties' and 'tuple' keywords",
       "parameters": []
     },
-    "SCHEMA_PREFIX_ITEMS_NOT_ARRAY": {
-      "code": "SCHEMA_PREFIX_ITEMS_NOT_ARRAY",
+    "SCHEMA_TUPLE_ORDER_NOT_ARRAY": {
+      "code": "SCHEMA_TUPLE_ORDER_NOT_ARRAY",
       "severity": "error",
       "category": "schema",
-      "message": "prefixItems must be an array",
+      "message": "'tuple' keyword must be an array of property names",
       "parameters": []
     },
     "SCHEMA_MAP_MISSING_VALUES": {
@@ -171,11 +178,11 @@
       "message": "map type requires 'values' schema",
       "parameters": []
     },
-    "SCHEMA_CHOICE_MISSING_OPTIONS": {
-      "code": "SCHEMA_CHOICE_MISSING_OPTIONS",
+    "SCHEMA_CHOICE_MISSING_CHOICES": {
+      "code": "SCHEMA_CHOICE_MISSING_CHOICES",
       "severity": "error",
       "category": "schema",
-      "message": "choice type requires 'options', 'choices', or 'oneOf'",
+      "message": "choice type requires 'choices' keyword",
       "parameters": []
     },
     "SCHEMA_OPTIONS_NOT_OBJECT": {

@@ -1,5 +1,7 @@
 {
   "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/enum-duplicates",
+  "name": "EnumDuplicatesTest",
   "type": "string",
   "enum": ["valid", "valid"],
   "description": "Invalid: enum contains duplicate values"

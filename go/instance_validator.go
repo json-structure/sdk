@@ -794,7 +794,7 @@ func (v *InstanceValidator) validateTuple(instance interface{}, schema map[strin
 	properties, _ := schema["properties"].(map[string]interface{})
 
 	if !hasTuple {
-		v.addError(path, "Tuple schema must have 'tuple' array", SchemaTupleMissingPrefixItems)
+		v.addError(path, "Tuple schema must have 'tuple' array", SchemaTupleMissingDefinition)
 		return
 	}
 

@@ -1,6 +1,9 @@
 {
   "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/minitems-exceeds-maxitems",
+  "name": "MinitemsExceedsMaxitemsTest",
   "type": "array",
+  "items": { "type": "string" },
   "minItems": 10,
   "maxItems": 5,
   "description": "Invalid: minItems greater than maxItems"

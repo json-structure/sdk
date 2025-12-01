@@ -1,5 +1,7 @@
 {
   "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/required-missing-property",
+  "name": "RequiredMissingPropertyTest",
   "type": "object",
   "properties": {
     "name": { "type": "string" }

@@ -1,5 +1,7 @@
 {
   "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/properties-not-object",
+  "name": "PropertiesNotObjectTest",
   "type": "object",
   "properties": "not-an-object",
   "description": "Invalid: properties must be an object"

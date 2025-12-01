@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/tuple-missing-definition",
+  "name": "TupleMissingDefinitionTest",
+  "type": "tuple",
+  "description": "Invalid: tuple type without 'properties' and 'tuple' keywords"
+}

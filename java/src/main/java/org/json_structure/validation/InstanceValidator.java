@@ -1000,7 +1000,7 @@ public final class InstanceValidator {
 
         ArrayNode arr = (ArrayNode) instance;
 
-        // Handle JSON Structure tuple with "tuple" and "properties" keywords
+        // JSON Structure tuples use 'properties' + 'tuple' keyword (NOT prefixItems)
         if (schema.has("tuple") && schema.get("tuple").isArray() && schema.has("properties")) {
             ArrayNode tupleOrder = (ArrayNode) schema.get("tuple");
             ObjectNode properties = (ObjectNode) schema.get("properties");
@@ -1024,33 +1024,6 @@ public final class InstanceValidator {
                     result.addError("Tuple property '" + propName + "' not defined in properties", path);
                 }
             }
-            return;
-        }
-
-        // Validate prefixItems (JSON Schema style)
-        if (schema.has("prefixItems") && schema.get("prefixItems").isArray()) {
-            ArrayNode prefixArr = (ArrayNode) schema.get("prefixItems");
-            for (int i = 0; i < prefixArr.size(); i++) {
-                if (i < arr.size()) {
-                    validateInstance(arr.get(i), prefixArr.get(i), rootSchema, result,
-                            appendPath(path, String.valueOf(i)), depth + 1);
-                }
-            }
-
-            // Check for additional items
-            if (schema.has("items")) {
-                JsonNode items = schema.get("items");
-                if (items.isBoolean()) {
-                    if (!items.asBoolean() && arr.size() > prefixArr.size()) {
-                        addError(result, ErrorCodes.INSTANCE_TUPLE_ADDITIONAL_ITEMS, "Tuple has " + arr.size() + " items but only " + prefixArr.size() + " are defined", path);
-                    }
-                } else if (items.isObject()) {
-                    for (int i = prefixArr.size(); i < arr.size(); i++) {
-                        validateInstance(arr.get(i), items, rootSchema, result,
-                                appendPath(path, String.valueOf(i)), depth + 1);
-                    }
-                }
-            }
         }
     }
 
@@ -1063,14 +1036,13 @@ public final class InstanceValidator {
 
         ObjectNode obj = (ObjectNode) instance;
 
-        // Accept either "options" or "choices" keyword
-        String optionsKey = schema.has("options") ? "options" : (schema.has("choices") ? "choices" : null);
-        if (optionsKey == null || !schema.get(optionsKey).isObject()) {
-            addError(result, ErrorCodes.INSTANCE_CHOICE_MISSING_OPTIONS, "Choice schema must have 'options' or 'choices'", path);
+        // JSON Structure uses 'choices' keyword (NOT 'options' or 'oneOf')
+        if (!schema.has("choices") || !schema.get("choices").isObject()) {
+            addError(result, ErrorCodes.INSTANCE_CHOICE_MISSING_OPTIONS, "Choice schema must have 'choices' keyword", path);
             return;
         }
 
-        ObjectNode options = (ObjectNode) schema.get(optionsKey);
+        ObjectNode choices = (ObjectNode) schema.get("choices");
 
         // Get discriminator or selector
         String discriminator = schema.has("discriminator") ? schema.get("discriminator").asText() : null;
@@ -1091,12 +1063,12 @@ public final class InstanceValidator {
                 return;
             }
 
-            if (!options.has(discValue)) {
+            if (!choices.has(discValue)) {
                 addError(result, ErrorCodes.INSTANCE_CHOICE_OPTION_UNKNOWN, "Unknown choice option: " + discValue, path);
                 return;
             }
 
-            validateInstance(instance, options.get(discValue), rootSchema, result, path, depth + 1);
+            validateInstance(instance, choices.get(discValue), rootSchema, result, path, depth + 1);
         } else {
             // No discriminator - check if this is a tagged choice format
             // Tagged format: single-key object where key is the option name
@@ -1109,7 +1081,7 @@ public final class InstanceValidator {
             // Check for tagged union format: instance has a key that matches a choice option
             String matchedTag = null;
             for (String key : objKeys) {
-                if (options.has(key)) {
+                if (choices.has(key)) {
                     matchedTag = key;
                     break;
                 }
@@ -1117,20 +1089,20 @@ public final class InstanceValidator {
             
             if (matchedTag != null) {
                 // This is a tagged choice - validate the value against the option schema
-                JsonNode optionSchema = options.get(matchedTag);
+                JsonNode optionSchema = choices.get(matchedTag);
                 JsonNode tagValue = obj.get(matchedTag);
                 validateInstance(tagValue, optionSchema, rootSchema, result, appendPath(path, matchedTag), depth + 1);
                 return;
             }
             
-            // Try to match one of the options directly (inline/untagged union)
+            // Try to match one of the choices directly (inline/untagged union)
             int matchCount = 0;
-            Iterator<Map.Entry<String, JsonNode>> optFields = options.fields();
-            while (optFields.hasNext()) {
-                Map.Entry<String, JsonNode> opt = optFields.next();
-                ValidationResult optResult = new ValidationResult();
-                validateInstance(instance, opt.getValue(), rootSchema, optResult, path, depth + 1);
-                if (optResult.isValid()) {
+            Iterator<Map.Entry<String, JsonNode>> choiceFields = choices.fields();
+            while (choiceFields.hasNext()) {
+                Map.Entry<String, JsonNode> choice = choiceFields.next();
+                ValidationResult choiceResult = new ValidationResult();
+                validateInstance(instance, choice.getValue(), rootSchema, choiceResult, path, depth + 1);
+                if (choiceResult.isValid()) {
                     matchCount++;
                 }
             }

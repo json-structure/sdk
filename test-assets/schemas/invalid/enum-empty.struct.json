@@ -1,5 +1,7 @@
 {
   "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/enum-empty",
+  "name": "EnumEmptyTest",
   "type": "string",
   "enum": [],
   "description": "Invalid: enum array is empty"

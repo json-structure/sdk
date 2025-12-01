@@ -72,7 +72,7 @@ public final class SchemaValidator {
      * Valid top-level schema keywords.
      */
     public static final Set<String> SCHEMA_KEYWORDS = Set.of(
-            "$schema", "$id", "$ref", "$defs", "definitions", "$import", "$importdefs",
+            "$schema", "$id", "$ref", "definitions", "$import", "$importdefs",
             "$comment", "$anchor", "$extends", "$abstract", "$root", "$uses",
             "name", "abstract",
             "type", "enum", "const", "default", "deprecated",
@@ -131,7 +131,7 @@ public final class SchemaValidator {
     private final ValidationOptions options;
     private final ObjectMapper objectMapper;
     private Map<String, JsonNode> externalSchemaMap; // Map of import URI to schema for import processing
-    private Set<String> definedRefs; // Track defined $defs/$definitions for $ref validation
+    private Set<String> definedRefs; // Track defined definitions for $ref validation
     private Set<String> importNamespaces; // Track namespaces with $import/$importdefs
     private JsonSourceLocator sourceLocator; // For source location tracking
     private JsonNode rootSchema; // Store root schema for resolving local refs
@@ -329,7 +329,7 @@ public final class SchemaValidator {
     }
 
     /**
-     * Collects all defined references ($defs and definitions) from the schema.
+     * Collects all defined references (definitions) from the schema.
      */
     private Set<String> collectDefinedRefs(JsonNode schema) {
         Set<String> refs = new HashSet<>();
@@ -340,22 +340,8 @@ public final class SchemaValidator {
     private void collectDefinedRefsRecursive(JsonNode node, String path, Set<String> refs) {
         if (!node.isObject()) return;
         
-        if (node.has("$defs") && node.get("$defs").isObject()) {
-            JsonNode defs = node.get("$defs");
-            Iterator<String> names = defs.fieldNames();
-            while (names.hasNext()) {
-                String name = names.next();
-                String refPath = path + "/$defs/" + name;
-                refs.add(refPath);
-                JsonNode defNode = defs.get(name);
-                collectDefinedRefsRecursive(defNode, refPath, refs);
-                // Also recurse into nested namespace objects (objects with nested definitions but no type)
-                if (defNode.isObject() && !defNode.has("type") && !defNode.has("$ref") && 
-                    !defNode.has("allOf") && !defNode.has("anyOf") && !defNode.has("oneOf")) {
-                    collectNestedNamespaceRefs(defNode, refPath, refs);
-                }
-            }
-        }
+        // Note: $defs is NOT a JSON Structure keyword (it's JSON Schema).
+        // JSON Structure uses 'definitions' keyword.
         
         if (node.has("definitions") && node.get("definitions").isObject()) {
             JsonNode defs = node.get("definitions");
@@ -421,16 +407,6 @@ public final class SchemaValidator {
             namespaces.add(path);
         }
         
-        // Recurse into $defs
-        if (node.has("$defs") && node.get("$defs").isObject()) {
-            Iterator<String> names = node.get("$defs").fieldNames();
-            while (names.hasNext()) {
-                String name = names.next();
-                String defPath = path + "/$defs/" + name;
-                collectImportNamespacesRecursive(node.get("$defs").get(name), defPath, namespaces);
-            }
-        }
-        
         // Recurse into definitions
         if (node.has("definitions") && node.get("definitions").isObject()) {
             Iterator<String> names = node.get("definitions").fieldNames();
@@ -492,47 +468,12 @@ public final class SchemaValidator {
             validateStringProperty(schema.get("$id"), "$id", path, result);
         }
 
-        // Validate $ref if present - check if target exists
+        // Check for bare $ref - this is NOT permitted per spec Section 3.4.1
+        // $ref is ONLY permitted inside the 'type' attribute value
         if (schema.has("$ref")) {
-            JsonNode refNode = schema.get("$ref");
-            validateReference(refNode, "$ref", path, result);
-            if (refNode.isTextual()) {
-                String refStr = refNode.asText();
-                // Check if reference target exists
-                if (refStr.startsWith("#/")) {
-                    if (!definedRefs.contains(refStr)) {
-                        // Check if this ref points into an import namespace
-                        // (e.g., #/definitions/FinanceTypes/PaymentMethod where FinanceTypes has $importdefs)
-                        boolean isImportedRef = false;
-                        for (String importNs : importNamespaces) {
-                            if (refStr.startsWith(importNs + "/")) {
-                                isImportedRef = true;
-                                break;
-                            }
-                        }
-                        if (!isImportedRef) {
-                            addError(result, ErrorCodes.SCHEMA_REF_NOT_FOUND, "$ref target does not exist: " + refStr, appendPath(path, "$ref"));
-                        }
-                    } else {
-                        // Check for circular reference to the same definition we're inside
-                        // Circular references to properly defined types are valid in JSON Structure
-                        // (e.g., ObjectType -> Property -> Type -> ObjectType in metaschemas)
-                        // However, a direct self-reference with no content is invalid
-                        if (visitedRefs.contains(refStr)) {
-                            // Only report as error if the target is a bare $ref (no actual type)
-                            JsonNode target = resolveLocalRef(refStr);
-                            if (target != null && target.isObject()) {
-                                ObjectNode targetObj = (ObjectNode) target;
-                                // Check if this definition only contains a $ref (direct circular with no content)
-                                if (targetObj.size() == 1 && targetObj.has("$ref")) {
-                                    addError(result, ErrorCodes.SCHEMA_REF_CIRCULAR, "Circular reference detected: " + refStr, appendPath(path, "$ref"));
-                                }
-                            }
-                            // For other circular refs, just skip - they're valid
-                        }
-                    }
-                }
-            }
+            addError(result, ErrorCodes.SCHEMA_REF_NOT_IN_TYPE, 
+                    "'$ref' is only permitted inside the 'type' attribute. Use { \"type\": { \"$ref\": \"...\" } } instead of { \"$ref\": \"...\" }", 
+                    appendPath(path, "$ref"));
         }
 
         // Validate $anchor if present
@@ -540,12 +481,14 @@ public final class SchemaValidator {
             validateIdentifier(schema.get("$anchor"), "$anchor", path, result);
         }
 
-        // Validate $defs if present
+        // $defs is NOT a JSON Structure keyword (it's JSON Schema) - reject it
         if (schema.has("$defs")) {
-            validateDefinitions(schema.get("$defs"), "$defs", path, result, depth, visitedRefs);
+            addError(result, ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE, 
+                    "'$defs' is not a valid JSON Structure keyword. Use 'definitions' instead.", 
+                    appendPath(path, "$defs"));
         }
 
-        // Validate definitions if present (alternate name for $defs)
+        // Validate definitions if present
         if (schema.has("definitions")) {
             validateDefinitions(schema.get("definitions"), "definitions", path, result, depth, visitedRefs);
         }
@@ -571,7 +514,7 @@ public final class SchemaValidator {
         // Validate type if present
         if (schema.has("type")) {
             JsonNode typeValue = schema.get("type");
-            validateType(typeValue, path, result);
+            validateType(typeValue, path, result, visitedRefs);
             typeStr = getTypeString(typeValue);
 
             // Type-specific validation
@@ -613,9 +556,10 @@ public final class SchemaValidator {
             validateAltnames(schema.get("altnames"), path, result);
         }
         
-        // A schema must have at least one schema-defining keyword (type, $ref, allOf, anyOf, oneOf, $extends)
-        // unless it only defines $defs/definitions (a pure definition container) or uses conditional keywords
-        boolean hasSchemaKeyword = schema.has("type") || schema.has("$ref") || 
+        // A schema must have at least one schema-defining keyword (type, allOf, anyOf, oneOf, $extends)
+        // unless it only defines definitions (a pure definition container) or uses conditional keywords
+        // Note: $ref is NOT a valid schema-level keyword - it can only appear inside 'type'
+        boolean hasSchemaKeyword = schema.has("type") || 
                                    schema.has("allOf") || schema.has("anyOf") || 
                                    schema.has("oneOf") || schema.has("$extends") ||
                                    schema.has("enum") || schema.has("const") ||
@@ -623,7 +567,7 @@ public final class SchemaValidator {
                                    schema.has("items") || schema.has("prefixItems") ||
                                    schema.has("not") || schema.has("$import") ||
                                    schema.has("$importdefs");
-        boolean isPureDefContainer = (schema.has("$defs") || schema.has("definitions")) &&
+        boolean isPureDefContainer = schema.has("definitions") &&
                                      !schema.has("properties") && !schema.has("items") &&
                                      !schema.has("prefixItems") && !schema.has("values");
         
@@ -836,7 +780,7 @@ public final class SchemaValidator {
         }
     }
 
-    private void validateType(JsonNode value, String path, ValidationResult result) {
+    private void validateType(JsonNode value, String path, ValidationResult result, Set<String> visitedRefs) {
         String typePath = appendPath(path, "type");
 
         if (value.isTextual()) {
@@ -864,6 +808,8 @@ public final class SchemaValidator {
                     // Type union can include $ref objects
                     if (item.has("$ref")) {
                         validateReference(item.get("$ref"), "$ref", typePath, result);
+                        // Also check that the ref resolves
+                        validateRefResolution(item.get("$ref").asText(), appendPath(typePath, "$ref"), result);
                     } else {
                         addError(result, ErrorCodes.SCHEMA_TYPE_OBJECT_MISSING_REF, "type array objects must contain $ref", typePath);
                     }
@@ -877,7 +823,25 @@ public final class SchemaValidator {
         // JSON Structure allows type to be an object with $ref
         if (value.isObject()) {
             if (value.has("$ref")) {
+                String refStr = value.get("$ref").asText();
                 validateReference(value.get("$ref"), "$ref", typePath, result);
+                // Also check that the ref resolves
+                validateRefResolution(refStr, appendPath(typePath, "$ref"), result);
+                
+                // Check for circular reference (type: { $ref } with no other content in the target)
+                if (refStr.startsWith("#/") && visitedRefs.contains(refStr)) {
+                    JsonNode target = resolveLocalRef(refStr);
+                    if (target != null && target.isObject()) {
+                        ObjectNode targetObj = (ObjectNode) target;
+                        // Check if this definition only contains type: { $ref } (direct circular with no content)
+                        if (targetObj.size() == 1 && targetObj.has("type")) {
+                            JsonNode typeNode = targetObj.get("type");
+                            if (typeNode.isObject() && typeNode.size() == 1 && typeNode.has("$ref")) {
+                                addError(result, ErrorCodes.SCHEMA_REF_CIRCULAR, "Circular reference detected: " + refStr, appendPath(typePath, "$ref"));
+                            }
+                        }
+                    }
+                }
             } else {
                 addError(result, ErrorCodes.SCHEMA_TYPE_OBJECT_MISSING_REF, "type object must contain $ref", typePath);
             }
@@ -885,6 +849,32 @@ public final class SchemaValidator {
         }
 
         addError(result, ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE, "type must be a string, array of strings, or object with $ref", typePath);
+    }
+
+    /**
+     * Validates that a $ref string actually resolves to a valid target in the schema.
+     */
+    private void validateRefResolution(String refStr, String path, ValidationResult result) {
+        if (refStr == null || refStr.isBlank()) {
+            return;  // Already handled by validateReference
+        }
+        
+        if (refStr.startsWith("#/")) {
+            JsonNode resolved = resolveLocalRef(refStr);
+            if (resolved == null) {
+                // Check if this ref points into an import namespace
+                boolean isImportedRef = false;
+                for (String importNs : importNamespaces) {
+                    if (refStr.startsWith(importNs + "/")) {
+                        isImportedRef = true;
+                        break;
+                    }
+                }
+                if (!isImportedRef) {
+                    addError(result, ErrorCodes.SCHEMA_REF_NOT_FOUND, "$ref target does not exist: " + refStr, path);
+                }
+            }
+        }
     }
 
     private String getTypeString(JsonNode value) {
@@ -1014,44 +1004,27 @@ public final class SchemaValidator {
     }
 
     private void validateTupleSchema(ObjectNode schema, String path, ValidationResult result, int depth, Set<String> visitedRefs) {
-        // Tuple type can use either:
-        // 1. prefixItems (JSON Schema style)
-        // 2. tuple + properties (JSON Structure style)
-        boolean hasPrefixItems = schema.has("prefixItems");
+        // JSON Structure tuples use 'properties' + 'tuple' keyword (NOT prefixItems)
         boolean hasTupleKeyword = schema.has("tuple") && schema.has("properties");
         
-        if (!hasPrefixItems && !hasTupleKeyword) {
-            addError(result, ErrorCodes.SCHEMA_TUPLE_MISSING_PREFIX_ITEMS, "tuple type requires 'prefixItems' or 'tuple' with 'properties' definition", path);
+        if (!hasTupleKeyword) {
+            addError(result, ErrorCodes.SCHEMA_TUPLE_MISSING_DEFINITION, "tuple type requires 'properties' and 'tuple' keyword defining element order", path);
             return;
         }
         
-        if (hasPrefixItems) {
-            JsonNode prefixItems = schema.get("prefixItems");
-            if (!prefixItems.isArray()) {
-                addError(result, ErrorCodes.SCHEMA_PREFIX_ITEMS_NOT_ARRAY, "prefixItems must be an array", appendPath(path, "prefixItems"));
-            } else {
-                ArrayNode arr = (ArrayNode) prefixItems;
-                for (int i = 0; i < arr.size(); i++) {
-                    validateSchemaCore(arr.get(i), result, appendPath(path, "prefixItems/" + i), depth + 1, visitedRefs);
-                }
-            }
-        }
-        
-        if (hasTupleKeyword) {
-            JsonNode tupleNode = schema.get("tuple");
-            if (!tupleNode.isArray()) {
-                addError(result, ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE, "tuple must be an array of property names", appendPath(path, "tuple"));
-            } else {
-                // Validate that all items in tuple array refer to valid properties
-                ObjectNode properties = (ObjectNode) schema.get("properties");
-                for (JsonNode item : tupleNode) {
-                    if (!item.isTextual()) {
-                        addError(result, ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE, "tuple array must contain strings", appendPath(path, "tuple"));
-                    } else {
-                        String propName = item.asText();
-                        if (!properties.has(propName)) {
-                            addError(result, ErrorCodes.SCHEMA_REF_NOT_FOUND, "tuple references undefined property: " + propName, appendPath(path, "tuple"));
-                        }
+        JsonNode tupleNode = schema.get("tuple");
+        if (!tupleNode.isArray()) {
+            addError(result, ErrorCodes.SCHEMA_TUPLE_ORDER_NOT_ARRAY, "tuple must be an array of property names", appendPath(path, "tuple"));
+        } else {
+            // Validate that all items in tuple array refer to valid properties
+            ObjectNode properties = (ObjectNode) schema.get("properties");
+            for (JsonNode item : tupleNode) {
+                if (!item.isTextual()) {
+                    addError(result, ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE, "tuple array must contain strings", appendPath(path, "tuple"));
+                } else {
+                    String propName = item.asText();
+                    if (!properties.has(propName)) {
+                        addError(result, ErrorCodes.SCHEMA_REF_NOT_FOUND, "tuple references undefined property: " + propName, appendPath(path, "tuple"));
                     }
                 }
             }
@@ -1098,30 +1071,13 @@ public final class SchemaValidator {
     }
 
     private void validateChoiceSchema(ObjectNode schema, String path, ValidationResult result, int depth, Set<String> visitedRefs) {
-        // Choice type requires options, choices, or oneOf
-        boolean hasOptions = schema.has("options");
+        // Choice type requires 'choices' keyword (JSON Structure)
         boolean hasChoices = schema.has("choices");
-        boolean hasOneOf = schema.has("oneOf");
-        if (!hasOptions && !hasChoices && !hasOneOf) {
-            addError(result, ErrorCodes.SCHEMA_CHOICE_MISSING_OPTIONS, "choice type requires 'options', 'choices', or 'oneOf'", path);
+        if (!hasChoices) {
+            addError(result, ErrorCodes.SCHEMA_CHOICE_MISSING_CHOICES, "choice type requires 'choices' keyword", path);
         }
 
-        // Validate options (legacy keyword)
-        if (schema.has("options")) {
-            JsonNode options = schema.get("options");
-            if (!options.isObject()) {
-                addError(result, ErrorCodes.SCHEMA_OPTIONS_NOT_OBJECT, "options must be an object", appendPath(path, "options"));
-            } else {
-                Iterator<Map.Entry<String, JsonNode>> fields = options.fields();
-                while (fields.hasNext()) {
-                    Map.Entry<String, JsonNode> field = fields.next();
-                    validateSchemaCore(field.getValue(),
-                            result, appendPath(path, "options/" + field.getKey()), depth + 1, visitedRefs);
-                }
-            }
-        }
-
-        // Validate choices (current keyword)
+        // Validate choices keyword
         if (schema.has("choices")) {
             JsonNode choices = schema.get("choices");
             if (!choices.isObject()) {
@@ -1410,9 +1366,9 @@ public final class SchemaValidator {
             }
         }
         
-        // Handle $import in $defs
-        if (schemaObj.has("$defs") && schemaObj.get("$defs").isObject()) {
-            ObjectNode defs = (ObjectNode) schemaObj.get("$defs");
+        // Handle $import in definitions
+        if (schemaObj.has("definitions") && schemaObj.get("definitions").isObject()) {
+            ObjectNode defs = (ObjectNode) schemaObj.get("definitions");
             Iterator<String> names = defs.fieldNames();
             List<String> namesList = new ArrayList<>();
             while (names.hasNext()) {
@@ -1467,8 +1423,6 @@ public final class SchemaValidator {
         ObjectNode defs;
         if (target.has("definitions")) {
             defs = (ObjectNode) target.get("definitions");
-        } else if (target.has("$defs")) {
-            defs = (ObjectNode) target.get("$defs");
         } else {
             defs = objectMapper.createObjectNode();
             target.set("definitions", defs);
@@ -1484,9 +1438,6 @@ public final class SchemaValidator {
             // Merge definitions from imported schema
             if (importedObj.has("definitions") && importedObj.get("definitions").isObject()) {
                 mergeDefinitions(defs, (ObjectNode) importedObj.get("definitions"), uri);
-            }
-            if (importedObj.has("$defs") && importedObj.get("$defs").isObject()) {
-                mergeDefinitions(defs, (ObjectNode) importedObj.get("$defs"), uri);
             }
         }
         

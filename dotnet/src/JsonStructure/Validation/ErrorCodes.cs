@@ -41,6 +41,9 @@ public static class ErrorCodes
     /// <summary>Circular reference detected.</summary>
     public const string SchemaRefCircular = "SCHEMA_REF_CIRCULAR";
     
+    /// <summary>$ref is only permitted inside the 'type' attribute.</summary>
+    public const string SchemaRefNotInType = "SCHEMA_REF_NOT_IN_TYPE";
+    
     /// <summary>Schema must have a 'type' keyword.</summary>
     public const string SchemaMissingType = "SCHEMA_MISSING_TYPE";
     
@@ -80,17 +83,17 @@ public static class ErrorCodes
     /// <summary>Array type requires 'items' or 'contains' schema.</summary>
     public const string SchemaArrayMissingItems = "SCHEMA_ARRAY_MISSING_ITEMS";
     
-    /// <summary>Tuple type requires 'prefixItems' or 'tuple'.</summary>
-    public const string SchemaTupleMissingPrefixItems = "SCHEMA_TUPLE_MISSING_PREFIX_ITEMS";
+    /// <summary>Tuple type requires 'properties' and 'tuple' keyword.</summary>
+    public const string SchemaTupleMissingDefinition = "SCHEMA_TUPLE_MISSING_DEFINITION";
     
-    /// <summary>prefixItems must be an array.</summary>
-    public const string SchemaPrefixItemsNotArray = "SCHEMA_PREFIX_ITEMS_NOT_ARRAY";
+    /// <summary>tuple must be an array.</summary>
+    public const string SchemaTupleOrderNotArray = "SCHEMA_TUPLE_ORDER_NOT_ARRAY";
     
     /// <summary>Map type requires 'values' schema.</summary>
     public const string SchemaMapMissingValues = "SCHEMA_MAP_MISSING_VALUES";
     
-    /// <summary>Choice type requires 'options', 'choices', or 'oneOf'.</summary>
-    public const string SchemaChoiceMissingOptions = "SCHEMA_CHOICE_MISSING_OPTIONS";
+    /// <summary>Choice type requires 'choices' keyword.</summary>
+    public const string SchemaChoiceMissingChoices = "SCHEMA_CHOICE_MISSING_CHOICES";
     
     /// <summary>Options must be an object.</summary>
     public const string SchemaOptionsNotObject = "SCHEMA_OPTIONS_NOT_OBJECT";

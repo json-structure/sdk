@@ -35,6 +35,9 @@ export const SCHEMA_REF_NOT_FOUND = "SCHEMA_REF_NOT_FOUND";
 /** Circular reference detected. */
 export const SCHEMA_REF_CIRCULAR = "SCHEMA_REF_CIRCULAR";
 
+/** $ref is only permitted inside the 'type' attribute. */
+export const SCHEMA_REF_NOT_IN_TYPE = "SCHEMA_REF_NOT_IN_TYPE";
+
 /** Schema must have a 'type' keyword. */
 export const SCHEMA_MISSING_TYPE = "SCHEMA_MISSING_TYPE";
 
@@ -80,20 +83,20 @@ export const SCHEMA_REQUIRED_PROPERTY_NOT_DEFINED = "SCHEMA_REQUIRED_PROPERTY_NO
 /** additionalProperties must be a boolean or schema. */
 export const SCHEMA_ADDITIONAL_PROPERTIES_INVALID = "SCHEMA_ADDITIONAL_PROPERTIES_INVALID";
 
-/** Array type requires 'items' or 'contains' schema. */
+/** Array type requires 'items' schema. */
 export const SCHEMA_ARRAY_MISSING_ITEMS = "SCHEMA_ARRAY_MISSING_ITEMS";
 
-/** Tuple type requires 'prefixItems' or 'tuple'. */
-export const SCHEMA_TUPLE_MISSING_PREFIX_ITEMS = "SCHEMA_TUPLE_MISSING_PREFIX_ITEMS";
+/** Tuple type requires 'properties' and 'tuple' keywords. */
+export const SCHEMA_TUPLE_MISSING_DEFINITION = "SCHEMA_TUPLE_MISSING_DEFINITION";
 
-/** prefixItems must be an array. */
-export const SCHEMA_PREFIX_ITEMS_NOT_ARRAY = "SCHEMA_PREFIX_ITEMS_NOT_ARRAY";
+/** 'tuple' keyword must be an array of property names. */
+export const SCHEMA_TUPLE_ORDER_NOT_ARRAY = "SCHEMA_TUPLE_ORDER_NOT_ARRAY";
 
 /** Map type requires 'values' schema. */
 export const SCHEMA_MAP_MISSING_VALUES = "SCHEMA_MAP_MISSING_VALUES";
 
-/** Choice type requires 'options', 'choices', or 'oneOf'. */
-export const SCHEMA_CHOICE_MISSING_OPTIONS = "SCHEMA_CHOICE_MISSING_OPTIONS";
+/** Choice type requires 'choices' keyword. */
+export const SCHEMA_CHOICE_MISSING_CHOICES = "SCHEMA_CHOICE_MISSING_CHOICES";
 
 /** Options must be an object. */
 export const SCHEMA_OPTIONS_NOT_OBJECT = "SCHEMA_OPTIONS_NOT_OBJECT";
@@ -148,9 +151,6 @@ export const SCHEMA_TUPLE_MISSING_ORDER = "SCHEMA_TUPLE_MISSING_ORDER";
 
 /** Tuple property is not defined. */
 export const SCHEMA_TUPLE_PROPERTY_NOT_DEFINED = "SCHEMA_TUPLE_PROPERTY_NOT_DEFINED";
-
-/** Choice type is missing choices. */
-export const SCHEMA_CHOICE_MISSING_CHOICES = "SCHEMA_CHOICE_MISSING_CHOICES";
 
 /** Enum contains duplicate value. */
 export const SCHEMA_ENUM_DUPLICATE_VALUE = "SCHEMA_ENUM_DUPLICATE_VALUE";
@@ -506,6 +506,7 @@ export const ErrorCodes = {
   SCHEMA_TYPE_OBJECT_MISSING_REF,
   SCHEMA_REF_NOT_FOUND,
   SCHEMA_REF_CIRCULAR,
+  SCHEMA_REF_NOT_IN_TYPE,
   SCHEMA_REF_INVALID,
   SCHEMA_MISSING_TYPE,
   SCHEMA_ROOT_MISSING_TYPE,
@@ -522,10 +523,10 @@ export const ErrorCodes = {
   SCHEMA_REQUIRED_PROPERTY_NOT_DEFINED,
   SCHEMA_ADDITIONAL_PROPERTIES_INVALID,
   SCHEMA_ARRAY_MISSING_ITEMS,
-  SCHEMA_TUPLE_MISSING_PREFIX_ITEMS,
-  SCHEMA_PREFIX_ITEMS_NOT_ARRAY,
+  SCHEMA_TUPLE_MISSING_DEFINITION,
+  SCHEMA_TUPLE_ORDER_NOT_ARRAY,
   SCHEMA_MAP_MISSING_VALUES,
-  SCHEMA_CHOICE_MISSING_OPTIONS,
+  SCHEMA_CHOICE_MISSING_CHOICES,
   SCHEMA_OPTIONS_NOT_OBJECT,
   SCHEMA_CHOICES_NOT_OBJECT,
   SCHEMA_PATTERN_INVALID,
@@ -544,7 +545,6 @@ export const ErrorCodes = {
   SCHEMA_ITEMS_INVALID_FOR_TUPLE,
   SCHEMA_TUPLE_MISSING_ORDER,
   SCHEMA_TUPLE_PROPERTY_NOT_DEFINED,
-  SCHEMA_CHOICE_MISSING_CHOICES,
   SCHEMA_ENUM_DUPLICATE_VALUE,
   SCHEMA_CONSTRAINT_VALUE_INVALID,
   SCHEMA_CONSTRAINT_RANGE_INVALID,

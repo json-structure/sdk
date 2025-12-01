@@ -262,6 +262,17 @@ public sealed class InstanceValidator
                         ValidateInstance(instance, resolvedTypeSchema, rootSchema, result, path, depth + 1);
                         return;
                     }
+                    else
+                    {
+                        // Only error if the schema doesn't use imports (which might provide the ref)
+                        // Check if root schema has $import at any level that could provide this ref
+                        if (!HasImportThatCouldProvide(typeRefStr, rootSchema))
+                        {
+                            AddError(result, ErrorCodes.InstanceRefUnresolved, $"Unable to resolve type reference: {typeRefStr}", path);
+                            return;
+                        }
+                        // If imports exist, fall through - the ref might be valid via imports
+                    }
                 }
             }
         }
@@ -1255,64 +1266,8 @@ public sealed class InstanceValidator
             return;
         }
 
-        // Validate prefixItems format
-        if (schema.TryGetPropertyValue("prefixItems", out var prefixValue) && prefixValue is JsonArray prefixArr)
-        {
-            // Validate tuple length (exact match required for prefixItems format)
-            if (arr.Count != prefixArr.Count)
-            {
-                // Check if additional items are allowed
-                if (schema.TryGetPropertyValue("items", out var itemsValue))
-                {
-                    if (itemsValue is JsonValue jv && jv.TryGetValue<bool>(out var allowed) && !allowed)
-                    {
-                        if (arr.Count != prefixArr.Count)
-                        {
-                            AddError(result, ErrorCodes.InstanceTupleLengthMismatch, $"Tuple has {arr.Count} items but schema defines {prefixArr.Count}", path);
-                        }
-                    }
-                }
-                else if (arr.Count < prefixArr.Count)
-                {
-                    AddError(result, ErrorCodes.InstanceTupleLengthMismatch, $"Tuple has {arr.Count} items but schema defines {prefixArr.Count}", path);
-                }
-            }
-
-            for (var i = 0; i < prefixArr.Count; i++)
-            {
-                if (i < arr.Count)
-                {
-                    var itemSchema = prefixArr[i];
-                    if (itemSchema is not null)
-                    {
-                        ValidateInstance(arr[i], itemSchema, rootSchema, result,
-                            AppendPath(path, i.ToString()), depth + 1);
-                    }
-                }
-            }
-
-            // Check for additional items
-            if (schema.TryGetPropertyValue("items", out var additionalItemsValue))
-            {
-                if (additionalItemsValue is JsonValue jv && jv.TryGetValue<bool>(out var allowed))
-                {
-                    if (!allowed && arr.Count > prefixArr.Count)
-                    {
-                        AddError(result, ErrorCodes.InstanceTupleAdditionalItems, $"Tuple has {arr.Count} items but only {prefixArr.Count} are defined", path);
-                    }
-                }
-                else if (additionalItemsValue is JsonObject additionalSchema)
-                {
-                    for (var i = prefixArr.Count; i < arr.Count; i++)
-                    {
-                        ValidateInstance(arr[i], additionalSchema, rootSchema, result,
-                            AppendPath(path, i.ToString()), depth + 1);
-                    }
-                }
-            }
-        }
-        // Validate tuple + properties format
-        else if (schema.TryGetPropertyValue("tuple", out var tupleValue) && tupleValue is JsonArray tupleArr)
+        // JSON Structure tuples use 'properties' + 'tuple' keyword (NOT prefixItems)
+        if (schema.TryGetPropertyValue("tuple", out var tupleValue) && tupleValue is JsonArray tupleArr)
         {
             if (schema.TryGetPropertyValue("properties", out var propsValue) && propsValue is JsonObject props)
             {
@@ -1345,20 +1300,10 @@ public sealed class InstanceValidator
             return;
         }
 
-        // Support both "options" and "choices" keywords
-        JsonObject? options = null;
-        if (schema.TryGetPropertyValue("options", out var optionsValue) && optionsValue is JsonObject optionsObj)
+        // JSON Structure uses 'choices' keyword (NOT 'options' or 'oneOf')
+        if (!schema.TryGetPropertyValue("choices", out var choicesValue) || choicesValue is not JsonObject choices)
         {
-            options = optionsObj;
-        }
-        else if (schema.TryGetPropertyValue("choices", out var choicesValue) && choicesValue is JsonObject choicesObj)
-        {
-            options = choicesObj;
-        }
-
-        if (options is null)
-        {
-            AddError(result, ErrorCodes.InstanceChoiceMissingOptions, "Choice schema must have 'options' or 'choices'", path);
+            AddError(result, ErrorCodes.InstanceChoiceMissingOptions, "Choice schema must have 'choices' keyword", path);
             return;
         }
 
@@ -1389,7 +1334,7 @@ public sealed class InstanceValidator
                 return;
             }
 
-            if (!options.TryGetPropertyValue(discStr, out var optionSchema) || optionSchema is null)
+            if (!choices.TryGetPropertyValue(discStr, out var optionSchema) || optionSchema is null)
             {
                 AddError(result, ErrorCodes.InstanceChoiceOptionUnknown, $"Unknown choice option: {discStr}", path);
                 return;
@@ -1403,23 +1348,23 @@ public sealed class InstanceValidator
             if (obj.Count == 1)
             {
                 var key = obj.First().Key;
-                if (options.TryGetPropertyValue(key, out var taggedSchema) && taggedSchema is not null)
+                if (choices.TryGetPropertyValue(key, out var taggedSchema) && taggedSchema is not null)
                 {
-                    // Validate the value against the matched option schema
+                    // Validate the value against the matched choice schema
                     ValidateInstance(obj[key], taggedSchema, rootSchema, result, AppendPath(path, key), depth + 1);
                     return;
                 }
             }
 
-            // Try to match one of the options
+            // Try to match one of the choices
             var matchCount = 0;
-            foreach (var option in options)
+            foreach (var choice in choices)
             {
-                if (option.Value is not null)
+                if (choice.Value is not null)
                 {
-                    var optResult = new ValidationResult();
-                    ValidateInstance(instance, option.Value, rootSchema, optResult, path, depth + 1);
-                    if (optResult.IsValid)
+                    var choiceResult = new ValidationResult();
+                    ValidateInstance(instance, choice.Value, rootSchema, choiceResult, path, depth + 1);
+                    if (choiceResult.IsValid)
                     {
                         matchCount++;
                     }
@@ -1675,6 +1620,46 @@ public sealed class InstanceValidator
         }
     }
 
+    /// <summary>
+    /// Checks if the schema has $import/$importdefs that could provide a ref.
+    /// This is a heuristic - if the ref starts with #/definitions/ and the schema has imports,
+    /// we assume the import might provide the ref.
+    /// </summary>
+    private static bool HasImportThatCouldProvide(string refStr, JsonNode rootSchema)
+    {
+        if (rootSchema is not JsonObject rootObj)
+            return false;
+            
+        // If ref is to definitions and root has $import, the import might provide it
+        if (refStr.StartsWith("#/definitions/"))
+        {
+            if (rootObj.ContainsKey("$import"))
+                return true;
+        }
+        
+        // Check if definitions contains namespaces with $import
+        if (rootObj.TryGetPropertyValue("definitions", out var defs) && defs is JsonObject defsObj)
+        {
+            return HasImportInObject(defsObj);
+        }
+        
+        return false;
+    }
+    
+    private static bool HasImportInObject(JsonObject obj)
+    {
+        if (obj.ContainsKey("$import") || obj.ContainsKey("$importdefs"))
+            return true;
+            
+        foreach (var prop in obj)
+        {
+            if (prop.Value is JsonObject childObj && HasImportInObject(childObj))
+                return true;
+        }
+        
+        return false;
+    }
+
     private JsonNode? ResolveRef(string reference, JsonNode rootSchema)
     {
         if (_resolvedRefs.TryGetValue(reference, out var cached))
@@ -1762,10 +1747,6 @@ public sealed class InstanceValidator
                                     if (importedObj.TryGetPropertyValue("definitions", out var defs) && defs is not null)
                                     {
                                         return ResolveJsonPointer(remainingPath, defs);
-                                    }
-                                    else if (importedObj.TryGetPropertyValue("$defs", out var dollarDefs) && dollarDefs is not null)
-                                    {
-                                        return ResolveJsonPointer(remainingPath, dollarDefs);
                                     }
                                 }
                                 else

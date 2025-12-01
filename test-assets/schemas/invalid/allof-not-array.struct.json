@@ -1,5 +1,7 @@
 {
   "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/allof-not-array",
+  "name": "AllofNotArrayTest",
   "type": "object",
   "allOf": "not-an-array",
   "description": "Invalid: allOf must be an array"

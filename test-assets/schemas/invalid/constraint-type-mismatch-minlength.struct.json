@@ -1,5 +1,7 @@
 {
   "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/constraint-type-mismatch-minlength",
+  "name": "ConstraintTypeMismatchMinlengthTest",
   "type": "int32",
   "minLength": 5,
   "description": "Invalid: minLength constraint on numeric type (should be on string types)"

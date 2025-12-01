@@ -54,7 +54,7 @@ public sealed class SchemaValidator
     /// </summary>
     public static readonly HashSet<string> SchemaKeywords = new(StringComparer.Ordinal)
     {
-        "$schema", "$id", "$ref", "$defs", "definitions", "$import", "$importdefs",
+        "$schema", "$id", "$ref", "definitions", "$import", "$importdefs",
         "$comment", "$anchor", "$extends", "$abstract", "$root", "$uses",
         "name", "abstract",
         "type", "enum", "const", "default", "deprecated",
@@ -375,15 +375,8 @@ public sealed class SchemaValidator
     {
         if (node is not JsonObject obj) return;
 
-        if (obj.TryGetPropertyValue("$defs", out var defs) && defs is JsonObject defsObj)
-        {
-            foreach (var prop in defsObj)
-            {
-                var refPath = $"{path}/$defs/{prop.Key}";
-                refs.Add(refPath);
-                CollectDefinedRefsFromDefinition(prop.Value, refPath, refs);
-            }
-        }
+        // Note: $defs is NOT a JSON Structure keyword (it's JSON Schema).
+        // JSON Structure uses 'definitions' keyword.
 
         if (obj.TryGetPropertyValue("definitions", out var definitions) && definitions is JsonObject defsObj2)
         {
@@ -401,7 +394,8 @@ public sealed class SchemaValidator
         if (node is not JsonObject obj) return;
 
         // Check if this is a type definition or a namespace
-        bool isTypeDef = obj.ContainsKey("type") || obj.ContainsKey("$ref") || 
+        // Note: bare $ref is NOT a valid schema keyword per spec Section 3.4.1
+        bool isTypeDef = obj.ContainsKey("type") || 
                          obj.ContainsKey("allOf") || obj.ContainsKey("anyOf") || 
                          obj.ContainsKey("oneOf") || obj.ContainsKey("properties") ||
                          obj.ContainsKey("items") || obj.ContainsKey("enum") || 
@@ -411,7 +405,7 @@ public sealed class SchemaValidator
 
         if (isTypeDef)
         {
-            // It's a type definition - check for nested $defs/definitions
+            // It's a type definition - check for nested definitions
             CollectDefinedRefsRecursive(node, path, refs);
         }
         else
@@ -441,15 +435,6 @@ public sealed class SchemaValidator
         if (obj.ContainsKey("$import") || obj.ContainsKey("$importdefs"))
         {
             namespaces.Add(path);
-        }
-
-        // Recurse into $defs
-        if (obj.TryGetPropertyValue("$defs", out var defs) && defs is JsonObject defsObj)
-        {
-            foreach (var prop in defsObj)
-            {
-                CollectImportNamespacesRecursive(prop.Value, $"{path}/$defs/{prop.Key}", namespaces);
-            }
         }
 
         // Recurse into definitions
@@ -530,56 +515,13 @@ public sealed class SchemaValidator
             ValidateStringProperty(idValue, "$id", path, result);
         }
 
-        // Validate $ref if present - check if target exists and isn't circular
-        if (schema.TryGetPropertyValue("$ref", out var refValue))
+        // Check for bare $ref - this is NOT permitted per spec Section 3.4.1
+        // $ref is ONLY permitted inside the 'type' attribute value
+        if (schema.TryGetPropertyValue("$ref", out _))
         {
-            ValidateReference(refValue, "$ref", path, result);
-            if (refValue is JsonValue rv && rv.TryGetValue<string>(out var refStr))
-            {
-                if (refStr.StartsWith("#/"))
-                {
-                    if (!_definedRefs.Contains(refStr))
-                    {
-                        // Check if this ref points into an import namespace
-                        var isImportedRef = _importNamespaces.Any(ns => refStr.StartsWith(ns + "/"));
-                        if (!isImportedRef)
-                        {
-                            AddError(result, ErrorCodes.SchemaRefNotFound, $"$ref target does not exist: {refStr}", AppendPath(path, "$ref"));
-                        }
-                    }
-                    else
-                    {
-                        // Check for circular reference
-                        if (visitedRefs.Contains(refStr))
-                        {
-                            // Circular references to properly defined types are valid in JSON Structure
-                            // (e.g., ObjectType -> Property -> Type -> ObjectType in metaschemas)
-                            // However, a direct self-reference with no content is invalid
-                            var targetSchema = ResolveLocalRef(refStr);
-                            if (targetSchema is JsonObject targetObj)
-                            {
-                                // Check if this is a definition that's only a $ref (no actual content)
-                                var keys = targetObj.AsObject().Select(p => p.Key).ToList();
-                                if (keys.Count == 1 && keys[0] == "$ref")
-                                {
-                                    AddError(result, ErrorCodes.SchemaRefCircular, $"Circular reference detected: {refStr}", AppendPath(path, "$ref"));
-                                }
-                            }
-                            // For other circular refs, just stop recursing to prevent infinite loops
-                        }
-                        else
-                        {
-                            // Follow the ref to validate its target (with this ref in visited set)
-                            var targetSchema = ResolveLocalRef(refStr);
-                            if (targetSchema is JsonObject targetObj)
-                            {
-                                var newVisited = new HashSet<string>(visitedRefs) { refStr };
-                                ValidateSchemaCore(targetObj, result, refStr, depth + 1, newVisited);
-                            }
-                        }
-                    }
-                }
-            }
+            AddError(result, ErrorCodes.SchemaRefNotInType,
+                "'$ref' is only permitted inside the 'type' attribute. Use { \"type\": { \"$ref\": \"...\" } } instead of { \"$ref\": \"...\" }",
+                AppendPath(path, "$ref"));
         }
 
         // Validate $anchor if present
@@ -588,13 +530,15 @@ public sealed class SchemaValidator
             ValidateIdentifier(anchorValue, "$anchor", path, result);
         }
 
-        // Validate $defs if present
-        if (schema.TryGetPropertyValue("$defs", out var defsValue))
+        // $defs is NOT a JSON Structure keyword (it's JSON Schema) - reject it
+        if (schema.TryGetPropertyValue("$defs", out _))
         {
-            ValidateDefinitions(defsValue, "$defs", path, result, depth, visitedRefs);
+            AddError(result, ErrorCodes.SchemaKeywordInvalidType, 
+                "'$defs' is not a valid JSON Structure keyword. Use 'definitions' instead.", 
+                AppendPath(path, "$defs"));
         }
 
-        // Validate definitions if present (alternate name for $defs)
+        // Validate definitions if present
         if (schema.TryGetPropertyValue("definitions", out var definitionsValue))
         {
             ValidateDefinitions(definitionsValue, "definitions", path, result, depth, visitedRefs);
@@ -620,8 +564,9 @@ public sealed class SchemaValidator
 
         // Check if type is required - schemas defining data should have a type
         // Root schemas can have $root OR type, non-root schemas need type or composition keywords
+        // Note: bare $ref is NOT a valid schema keyword per spec Section 3.4.1
         var isRootSchema = string.IsNullOrEmpty(path);
-        var hasSchemaDefiningKeyword = schema.ContainsKey("type") || schema.ContainsKey("$ref") ||
+        var hasSchemaDefiningKeyword = schema.ContainsKey("type") ||
             schema.ContainsKey("allOf") || schema.ContainsKey("anyOf") || schema.ContainsKey("oneOf") ||
             schema.ContainsKey("enum") || schema.ContainsKey("const") || schema.ContainsKey("$root") ||
             schema.ContainsKey("if") || schema.ContainsKey("then") || schema.ContainsKey("properties") ||
@@ -635,7 +580,7 @@ public sealed class SchemaValidator
         if (isRootSchema)
         {
             // Root schema should have $root, type, or other schema-defining keywords
-            // But skip if it's just $defs (pure definition container)
+            // But skip if it's just definitions (pure definition container)
             var hasOnlyMeta = schema.All(p => 
                 p.Key == "$schema" || p.Key == "description" || p.Key == "title" || 
                 p.Key == "$id" || p.Key == "$comment");
@@ -656,7 +601,7 @@ public sealed class SchemaValidator
         string? typeStr = null;
         if (schema.TryGetPropertyValue("type", out var typeValue))
         {
-            ValidateType(typeValue, path, result);
+            ValidateType(typeValue, path, result, visitedRefs);
             typeStr = GetTypeString(typeValue);
             
             // Type-specific validation
@@ -858,10 +803,11 @@ public sealed class SchemaValidator
     {
         // Check if this is a namespace (object without 'type' but containing nested schemas)
         // or a schema definition (object with 'type' or other schema keywords)
+        // Note: bare $ref is NOT a valid schema keyword per spec Section 3.4.1
         if (value is JsonObject obj)
         {
-            // If it has 'type', '$ref', 'allOf', 'anyOf', 'oneOf', 'properties', or other schema keywords, it's a schema
-            if (obj.ContainsKey("type") || obj.ContainsKey("$ref") || obj.ContainsKey("allOf") || 
+            // If it has 'type', 'allOf', 'anyOf', 'oneOf', 'properties', or other schema keywords, it's a schema
+            if (obj.ContainsKey("type") || obj.ContainsKey("allOf") || 
                 obj.ContainsKey("anyOf") || obj.ContainsKey("oneOf") || obj.ContainsKey("properties") ||
                 obj.ContainsKey("items") || obj.ContainsKey("enum") || obj.ContainsKey("const") ||
                 obj.ContainsKey("$extends") || obj.ContainsKey("abstract"))
@@ -898,9 +844,13 @@ public sealed class SchemaValidator
         }
     }
 
-    private void ValidateType(JsonNode? value, string path, ValidationResult result)
+    private void ValidateType(JsonNode? value, string path, ValidationResult result, HashSet<string> visitedRefs)
     {
         var typePath = AppendPath(path, "type");
+        
+        // Extract the definition path if we're inside a definition
+        // e.g., "#/definitions/Foo/properties/bar" -> "#/definitions/Foo"
+        string? definitionPath = ExtractDefinitionPath(path);
 
         if (value is JsonValue jv && jv.TryGetValue<string>(out var typeStr))
         {
@@ -935,6 +885,7 @@ public sealed class SchemaValidator
                     if (typeRefObj.TryGetPropertyValue("$ref", out var refValue))
                     {
                         ValidateReference(refValue, "$ref", typePath, result);
+                        ValidateTypeRefResolution(refValue, typePath, result, visitedRefs, typeRefObj.Count == 1, definitionPath);
                     }
                     else
                     {
@@ -955,6 +906,7 @@ public sealed class SchemaValidator
             if (typeObj.TryGetPropertyValue("$ref", out var refValue))
             {
                 ValidateReference(refValue, "$ref", typePath, result);
+                ValidateTypeRefResolution(refValue, typePath, result, visitedRefs, typeObj.Count == 1, definitionPath);
             }
             else
             {
@@ -964,6 +916,95 @@ public sealed class SchemaValidator
         }
 
         AddError(result, ErrorCodes.SchemaKeywordInvalidType, "type must be a string, array of strings, or object with $ref", typePath);
+    }
+
+    /// <summary>
+    /// Extracts the definition path from a schema path.
+    /// e.g., "#/definitions/Foo/properties/bar" -> "#/definitions/Foo"
+    /// </summary>
+    private static string? ExtractDefinitionPath(string path)
+    {
+        // Look for #/definitions/Name pattern
+        if (!path.StartsWith("#/definitions/") && !path.StartsWith("/definitions/"))
+            return null;
+            
+        var startIdx = path.StartsWith("#") ? 14 : 13; // length of "#/definitions/" or "/definitions/"
+        var slashIdx = path.IndexOf('/', startIdx);
+        if (slashIdx < 0)
+        {
+            // The path IS a definition path like "#/definitions/Foo"
+            return path.StartsWith("#") ? path : "#" + path;
+        }
+        
+        // Extract up to the definition name
+        var defPath = path.Substring(0, slashIdx);
+        return defPath.StartsWith("#") ? defPath : "#" + defPath;
+    }
+
+    /// <summary>
+    /// Validates that a type $ref resolves and checks for circular references.
+    /// </summary>
+    private void ValidateTypeRefResolution(JsonNode? refValue, string typePath, ValidationResult result, HashSet<string> visitedRefs, bool isOnlyRefInType, string? definitionPath)
+    {
+        if (refValue is JsonValue rv && rv.TryGetValue<string>(out var refStr) && refStr.StartsWith("#/"))
+        {
+            // Check if ref resolves
+            if (!_definedRefs.Contains(refStr))
+            {
+                var isImportedRef = _importNamespaces.Any(ns => refStr.StartsWith(ns + "/"));
+                if (!isImportedRef)
+                {
+                    AddError(result, ErrorCodes.SchemaRefNotFound, $"$ref target does not exist: {refStr}", AppendPath(typePath, "$ref"));
+                }
+            }
+            
+            // Check for direct self-reference: a definition that only contains type: { $ref } pointing to itself
+            // e.g., "recursive": { "type": { "$ref": "#/definitions/recursive" } }
+            if (definitionPath != null && refStr == definitionPath)
+            {
+                // This is a self-reference. Check if the definition has ONLY this type ref (no other content)
+                var targetSchema = ResolveLocalRef(refStr);
+                if (targetSchema is JsonObject targetObj)
+                {
+                    var keys = targetObj.AsObject().Select(p => p.Key).ToList();
+                    // Check if this is a definition that only contains type: { $ref }
+                    if (keys.Count == 1 && keys[0] == "type")
+                    {
+                        var targetType = targetObj["type"];
+                        if (targetType is JsonObject targetTypeObj)
+                        {
+                            var typeKeys = targetTypeObj.AsObject().Select(p => p.Key).ToList();
+                            if (typeKeys.Count == 1 && typeKeys[0] == "$ref")
+                            {
+                                AddError(result, ErrorCodes.SchemaRefCircular, $"Circular reference detected: {refStr}", AppendPath(typePath, "$ref"));
+                            }
+                        }
+                    }
+                }
+            }
+            // Also check for visited refs (for non-direct circular refs)
+            else if (visitedRefs.Contains(refStr))
+            {
+                var targetSchema = ResolveLocalRef(refStr);
+                if (targetSchema is JsonObject targetObj)
+                {
+                    var keys = targetObj.AsObject().Select(p => p.Key).ToList();
+                    // Check if this is a definition that only contains type: { $ref }
+                    if (keys.Count == 1 && keys[0] == "type")
+                    {
+                        var targetType = targetObj["type"];
+                        if (targetType is JsonObject targetTypeObj)
+                        {
+                            var typeKeys = targetTypeObj.AsObject().Select(p => p.Key).ToList();
+                            if (typeKeys.Count == 1 && typeKeys[0] == "$ref")
+                            {
+                                AddError(result, ErrorCodes.SchemaRefCircular, $"Circular reference detected: {refStr}", AppendPath(typePath, "$ref"));
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private string? GetTypeString(JsonNode? value)
@@ -1231,55 +1272,36 @@ public sealed class SchemaValidator
 
     private void ValidateTupleSchema(JsonObject schema, string path, ValidationResult result, int depth, HashSet<string> visitedRefs)
     {
-        var hasPrefixItems = schema.ContainsKey("prefixItems");
+        // JSON Structure tuples use 'properties' + 'tuple' keyword (NOT prefixItems)
         var hasTupleProperties = schema.ContainsKey("tuple") && schema.ContainsKey("properties");
         
-        // Tuple requires either prefixItems or (tuple + properties) format
-        if (!hasPrefixItems && !hasTupleProperties)
+        if (!hasTupleProperties)
         {
-            AddError(result, ErrorCodes.SchemaTupleMissingPrefixItems, "tuple type requires 'prefixItems' or 'tuple' with 'properties'", path);
-        }
-        
-        // Validate prefixItems
-        if (schema.TryGetPropertyValue("prefixItems", out var prefixValue))
-        {
-            if (prefixValue is not JsonArray prefixArr)
-            {
-                AddError(result, ErrorCodes.SchemaPrefixItemsNotArray, "prefixItems must be an array", AppendPath(path, "prefixItems"));
-            }
-            else
-            {
-                for (var i = 0; i < prefixArr.Count; i++)
-                {
-                    var item = prefixArr[i];
-                    if (item is not null)
-                    {
-                        ValidateSchemaCore(item, result, AppendPath(path, $"prefixItems/{i}"), depth + 1, visitedRefs);
-                    }
-                }
-            }
+            AddError(result, ErrorCodes.SchemaTupleMissingDefinition, "tuple type requires 'properties' and 'tuple' keyword defining element order", path);
+            return;
         }
         
         // Validate tuple + properties format
-        if (hasTupleProperties)
+        if (schema.TryGetPropertyValue("tuple", out var tupleValue))
         {
-            if (schema.TryGetPropertyValue("tuple", out var tupleValue) && tupleValue is JsonArray tupleArr)
+            if (tupleValue is not JsonArray tupleArr)
             {
-                if (schema.TryGetPropertyValue("properties", out var propsValue) && propsValue is JsonObject props)
+                AddError(result, ErrorCodes.SchemaTupleOrderNotArray, "tuple must be an array of property names", AppendPath(path, "tuple"));
+            }
+            else if (schema.TryGetPropertyValue("properties", out var propsValue) && propsValue is JsonObject props)
+            {
+                foreach (var propName in tupleArr)
                 {
-                    foreach (var propName in tupleArr)
+                    var name = propName?.GetValue<string>();
+                    if (name is not null && props.TryGetPropertyValue(name, out var propSchema))
                     {
-                        var name = propName?.GetValue<string>();
-                        if (name is not null && props.TryGetPropertyValue(name, out var propSchema))
-                        {
-                            ValidateSchemaCore(propSchema!, result, AppendPath(path, $"properties/{name}"), depth + 1, visitedRefs);
-                        }
+                        ValidateSchemaCore(propSchema!, result, AppendPath(path, $"properties/{name}"), depth + 1, visitedRefs);
                     }
                 }
             }
         }
 
-        // Validate items (for additional items after prefixItems)
+        // Validate items (for additional items after tuple)
         if (schema.TryGetPropertyValue("items", out var itemsValue))
         {
             if (itemsValue is JsonValue jv && jv.TryGetValue<bool>(out _))
@@ -1296,7 +1318,6 @@ public sealed class SchemaValidator
             }
         }
     }
-
     private void ValidateMapSchema(JsonObject schema, string path, ValidationResult result, int depth, HashSet<string> visitedRefs)
     {
         // Map type requires values schema
@@ -1349,35 +1370,14 @@ public sealed class SchemaValidator
 
     private void ValidateChoiceSchema(JsonObject schema, string path, ValidationResult result, int depth, HashSet<string> visitedRefs)
     {
-        // Choice type requires options, choices, or oneOf
-        var hasOptions = schema.ContainsKey("options");
+        // JSON Structure choice type requires 'choices' keyword (NOT 'options' or 'oneOf')
         var hasChoices = schema.ContainsKey("choices");
-        var hasOneOf = schema.ContainsKey("oneOf");
-        if (!hasOptions && !hasChoices && !hasOneOf)
+        if (!hasChoices)
         {
-            AddError(result, ErrorCodes.SchemaChoiceMissingOptions, "choice type requires 'options', 'choices', or 'oneOf'", path);
+            AddError(result, ErrorCodes.SchemaChoiceMissingChoices, "choice type requires 'choices' keyword", path);
         }
 
-        // Validate options (legacy keyword)
-        if (schema.TryGetPropertyValue("options", out var optionsValue))
-        {
-            if (optionsValue is not JsonObject opts)
-            {
-                AddError(result, ErrorCodes.SchemaOptionsNotObject, "options must be an object", AppendPath(path, "options"));
-            }
-            else
-            {
-                foreach (var opt in opts)
-                {
-                    if (opt.Value is not null)
-                    {
-                        ValidateSchemaCore(opt.Value, result, AppendPath(path, $"options/{opt.Key}"), depth + 1, visitedRefs);
-                    }
-                }
-            }
-        }
-
-        // Validate choices (current keyword)
+        // Validate choices keyword
         if (schema.TryGetPropertyValue("choices", out var choicesValue))
         {
             if (choicesValue is not JsonObject choices)

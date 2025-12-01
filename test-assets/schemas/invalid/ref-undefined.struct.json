@@ -1,8 +1,10 @@
 {
   "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/ref-undefined",
+  "name": "RefUndefinedTest",
   "type": "object",
   "properties": {
-    "value": { "$ref": "#/$defs/undefined" }
+    "value": { "type": { "$ref": "#/definitions/undefined" } }
   },
   "description": "Invalid: $ref points to non-existent definition"
 }

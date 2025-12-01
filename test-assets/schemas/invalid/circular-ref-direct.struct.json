@@ -1,11 +1,13 @@
 {
   "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/circular-ref-direct",
+  "name": "CircularRefDirectTest",
   "type": "object",
-  "$defs": {
-    "recursive": { "$ref": "#/$defs/recursive" }
+  "definitions": {
+    "recursive": { "type": { "$ref": "#/definitions/recursive" } }
   },
   "properties": {
-    "value": { "$ref": "#/$defs/recursive" }
+    "value": { "type": { "$ref": "#/definitions/recursive" } }
   },
   "description": "Invalid: direct circular reference without base case"
 }

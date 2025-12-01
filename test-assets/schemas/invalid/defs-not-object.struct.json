@@ -1,6 +1,8 @@
 {
   "$schema": "https://json-structure.org/meta/core/v0/#",
-  "$defs": [],
+  "$id": "https://example.com/defs-not-object",
+  "name": "DefsNotObjectTest",
+  "definitions": [],
   "type": "object",
-  "description": "Invalid: $defs must be an object, not an array"
+  "description": "Invalid: definitions must be an object, not an array"
 }

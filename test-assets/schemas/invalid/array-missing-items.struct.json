@@ -1,5 +1,7 @@
 {
   "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/array-missing-items",
+  "name": "ArrayMissingItemsTest",
   "type": "array",
   "description": "Invalid: array type without items definition"
 }

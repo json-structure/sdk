@@ -1,5 +1,7 @@
 {
   "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/required-not-array",
+  "name": "RequiredNotArrayTest",
   "type": "object",
   "properties": {
     "value": { "type": "string" }

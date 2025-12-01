@@ -1,5 +1,7 @@
 {
   "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/multipleof-zero",
+  "name": "MultipleofZeroTest",
   "type": "int32",
   "multipleOf": 0,
   "description": "Invalid: multipleOf must be greater than 0"

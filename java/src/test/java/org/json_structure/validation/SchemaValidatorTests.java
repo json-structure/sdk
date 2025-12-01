@@ -112,12 +112,12 @@ class SchemaValidatorTests {
     }
 
     @Test
-    @DisplayName("Valid schema with $defs and $ref")
+    @DisplayName("Valid schema with definitions and $ref")
     void validSchemaWithDefsAndRef() {
         String schema = """
             {
                 "$id": "https://test.example.com/schema/defsAndRef",
-                "$defs": {
+                "definitions": {
                     "Address": {
                         "name": "Address",
                         "type": "object",
@@ -130,8 +130,8 @@ class SchemaValidatorTests {
                 "name": "TestSchema",
                 "type": "object",
                 "properties": {
-                    "home": { "$ref": "#/$defs/Address" },
-                    "work": { "$ref": "#/$defs/Address" }
+                    "home": { "type": { "$ref": "#/definitions/Address" } },
+                    "work": { "type": { "$ref": "#/definitions/Address" } }
                 }
             }
             """;
@@ -217,12 +217,12 @@ class SchemaValidatorTests {
                 "$id": "https://test.example.com/schema/tuple",
                 "name": "TestSchema",
                 "type": "tuple",
-                "prefixItems": [
-                    { "type": "string" },
-                    { "type": "int32" },
-                    { "type": "boolean" }
-                ],
-                "items": false
+                "properties": {
+                    "first": { "type": "string" },
+                    "second": { "type": "int32" },
+                    "third": { "type": "boolean" }
+                },
+                "tuple": ["first", "second", "third"]
             }
             """;
         
@@ -239,7 +239,7 @@ class SchemaValidatorTests {
                 "name": "TestSchema",
                 "type": "choice",
                 "discriminator": "type",
-                "options": {
+                "choices": {
                     "circle": { "type": "object", "properties": { "radius": { "type": "double" } } },
                     "rectangle": { "type": "object", "properties": { "width": { "type": "double" }, "height": { "type": "double" } } }
                 }
@@ -527,24 +527,25 @@ class SchemaValidatorTests {
     }
 
     @Test
-    @DisplayName("Tuple type requires prefixItems")
+    @DisplayName("Tuple type requires 'properties' and 'tuple' keyword")
     void tupleTypeRequiresPrefixItems() {
         String validSchema = """
             {
-                "$id": "https://test.example.com/schema/tupleWithPrefixItems",
+                "$id": "https://test.example.com/schema/tupleWithDefinition",
                 "name": "TestSchema",
                 "type": "tuple",
-                "prefixItems": [
-                    { "type": "string" },
-                    { "type": "int32" }
-                ]
+                "properties": {
+                    "first": { "type": "string" },
+                    "second": { "type": "int32" }
+                },
+                "tuple": ["first", "second"]
             }
             """;
         assertThat(validator.validate(validSchema).isValid()).isTrue();
 
         String invalidSchema = """
             {
-                "$id": "https://test.example.com/schema/tupleWithoutPrefixItems",
+                "$id": "https://test.example.com/schema/tupleWithoutDefinition",
                 "name": "TestSchema",
                 "type": "tuple"
             }
@@ -553,15 +554,15 @@ class SchemaValidatorTests {
     }
 
     @Test
-    @DisplayName("Choice type requires discriminator or oneOf")
+    @DisplayName("Choice type requires 'choices' keyword")
     void choiceTypeRequiresDiscriminator() {
         String validSchema = """
             {
-                "$id": "https://test.example.com/schema/choiceWithDiscriminator",
+                "$id": "https://test.example.com/schema/choiceWithChoices",
                 "name": "TestSchema",
                 "type": "choice",
                 "discriminator": "type",
-                "options": {
+                "choices": {
                     "a": { "type": "object", "properties": {} },
                     "b": { "type": "object", "properties": {} }
                 }
@@ -571,7 +572,7 @@ class SchemaValidatorTests {
 
         String invalidSchema = """
             {
-                "$id": "https://test.example.com/schema/choiceWithoutDiscriminator",
+                "$id": "https://test.example.com/schema/choiceWithoutChoices",
                 "name": "TestSchema",
                 "type": "choice"
             }

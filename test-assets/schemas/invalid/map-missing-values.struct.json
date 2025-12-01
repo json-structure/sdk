@@ -1,5 +1,7 @@
 {
   "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/map-missing-values",
+  "name": "MapMissingValuesTest",
   "type": "map",
   "description": "Invalid: map type without values definition"
 }

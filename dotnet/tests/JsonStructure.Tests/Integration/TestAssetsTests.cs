@@ -77,7 +77,7 @@ public class TestAssetsTests
         ["ref-undefined.struct.json"] = [ErrorCodes.SchemaRefNotFound],
         ["required-missing-property.struct.json"] = [ErrorCodes.SchemaRequiredPropertyNotDefined],
         ["required-not-array.struct.json"] = [ErrorCodes.SchemaRequiredNotArray],
-        ["tuple-missing-prefixitems.struct.json"] = [ErrorCodes.SchemaTupleMissingPrefixItems],
+        ["tuple-missing-definition.struct.json"] = [ErrorCodes.SchemaTupleMissingDefinition],
         ["unknown-type.struct.json"] = [ErrorCodes.SchemaTypeInvalid],
     };
     
