@@ -188,9 +188,10 @@ export class JsonStructureDocumentSymbolProvider implements vscode.DocumentSymbo
         // Add tuple properties as children for tuple types
         // JSON Structure tuples use 'properties' + 'tuple' keyword (NOT prefixItems)
         if (def.type === 'tuple' && def.tuple && Array.isArray(def.tuple) && def.properties && typeof def.properties === 'object') {
+            const properties = def.properties as Record<string, unknown>;
             for (let i = 0; i < def.tuple.length; i++) {
                 const propName = def.tuple[i];
-                const propDef = def.properties[propName];
+                const propDef = properties[propName];
                 if (!propDef || typeof propDef !== 'object') continue;
                 
                 const propObj = propDef as Record<string, unknown>;
