@@ -1044,20 +1044,17 @@ public final class InstanceValidator {
 
         ObjectNode choices = (ObjectNode) schema.get("choices");
 
-        // Get selector (support legacy 'discriminator' for backward compatibility)
-        String discriminator = schema.has("discriminator") ? schema.get("discriminator").asText() : null;
+        // Get selector
         String selector = schema.has("selector") ? schema.get("selector").asText() : null;
-        String selectorProp = (selector != null && !selector.isEmpty()) ? selector 
-                        : (discriminator != null && !discriminator.isEmpty()) ? discriminator : null;
 
-        if (selectorProp != null) {
+        if (selector != null && !selector.isEmpty()) {
             // Use selector property to determine type
-            if (!obj.has(selectorProp)) {
-                addError(result, ErrorCodes.INSTANCE_CHOICE_SELECTOR_MISSING, "Choice requires selector property: " + selectorProp, path);
+            if (!obj.has(selector)) {
+                addError(result, ErrorCodes.INSTANCE_CHOICE_SELECTOR_MISSING, "Choice requires selector property: " + selector, path);
                 return;
             }
 
-            String selectorValue = obj.get(selectorProp).asText();
+            String selectorValue = obj.get(selector).asText();
             if (selectorValue == null || selectorValue.isEmpty()) {
                 addError(result, ErrorCodes.INSTANCE_CHOICE_SELECTOR_NOT_STRING, "Selector value must be a string", path);
                 return;
@@ -1294,10 +1291,6 @@ public final class InstanceValidator {
         if (reference.startsWith("#/")) {
             String pointer = reference.substring(1); // Remove leading #
             resolved = resolveJsonPointer(pointer, rootSchema);
-        } else if (reference.startsWith("#")) {
-            // Anchor reference
-            String anchor = reference.substring(1);
-            resolved = findAnchor(anchor, rootSchema);
         } else if (options.getReferenceResolver() != null) {
             resolved = options.getReferenceResolver().apply(reference);
         }
@@ -1342,25 +1335,6 @@ public final class InstanceValidator {
         }
 
         return current;
-    }
-
-    private JsonNode findAnchor(String anchor, JsonNode node) {
-        if (node.isObject()) {
-            if (node.has("$anchor") && anchor.equals(node.get("$anchor").asText())) {
-                return node;
-            }
-            Iterator<Map.Entry<String, JsonNode>> fields = node.fields();
-            while (fields.hasNext()) {
-                JsonNode found = findAnchor(anchor, fields.next().getValue());
-                if (found != null) return found;
-            }
-        } else if (node.isArray()) {
-            for (JsonNode item : node) {
-                JsonNode found = findAnchor(anchor, item);
-                if (found != null) return found;
-            }
-        }
-        return null;
     }
 
     private boolean jsonNodeEquals(JsonNode a, JsonNode b) {

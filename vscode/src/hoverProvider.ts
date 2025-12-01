@@ -237,10 +237,6 @@ const KEYWORD_DOCUMENTATION: Record<string, { summary: string; details: string }
         summary: 'Example values',
         details: 'An array of example values for documentation purposes.'
     },
-    deprecated: {
-        summary: 'Deprecation marker',
-        details: 'When true, indicates this type or property is deprecated and should not be used.'
-    },
     // Constraints
     minLength: {
         summary: 'Minimum string length',

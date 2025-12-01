@@ -1307,15 +1307,11 @@ public sealed class InstanceValidator
             return;
         }
 
-        // Get selector (support legacy 'discriminator' for backward compatibility)
+        // Get selector
         string? selector = null;
         if (schema.TryGetPropertyValue("selector", out var selectorValue))
         {
             selector = selectorValue?.GetValue<string>();
-        }
-        else if (schema.TryGetPropertyValue("discriminator", out var discValue))
-        {
-            selector = discValue?.GetValue<string>();
         }
 
         if (!string.IsNullOrEmpty(selector))
@@ -1675,12 +1671,6 @@ public sealed class InstanceValidator
             var pointer = reference[1..]; // Remove leading #
             resolved = ResolveJsonPointer(pointer, rootSchema);
         }
-        else if (reference.StartsWith("#"))
-        {
-            // Anchor reference
-            var anchor = reference[1..];
-            resolved = FindAnchor(anchor, rootSchema);
-        }
         else if (_options.ReferenceResolver is not null)
         {
             resolved = _options.ReferenceResolver(reference);
@@ -1798,42 +1788,6 @@ public sealed class InstanceValidator
 
         _loadedImports[uri] = loaded;
         return loaded;
-    }
-
-    private JsonNode? FindAnchor(string anchor, JsonNode node)
-    {
-        if (node is JsonObject obj)
-        {
-            if (obj.TryGetPropertyValue("$anchor", out var anchorValue))
-            {
-                if (anchorValue?.GetValue<string>() == anchor)
-                {
-                    return obj;
-                }
-            }
-
-            foreach (var prop in obj)
-            {
-                if (prop.Value is not null)
-                {
-                    var found = FindAnchor(anchor, prop.Value);
-                    if (found is not null) return found;
-                }
-            }
-        }
-        else if (node is JsonArray arr)
-        {
-            foreach (var item in arr)
-            {
-                if (item is not null)
-                {
-                    var found = FindAnchor(anchor, item);
-                    if (found is not null) return found;
-                }
-            }
-        }
-
-        return null;
     }
 
     private bool JsonNodeEquals(JsonNode? a, JsonNode? b)

@@ -336,15 +336,6 @@ class TestFieldConstraints:
         assert schema["properties"]["tags"]["maxItems"] == 10
         assert schema["properties"]["tags"]["uniqueItems"] is True
     
-    def test_deprecated_field(self):
-        @dataclass
-        class Model:
-            old_field: str = field(metadata=field_constraints(deprecated=True))
-        
-        schema = export_schema(Model)
-        
-        assert schema["properties"]["old_field"]["deprecated"] is True
-    
     def test_description_constraint(self):
         @dataclass
         class Model:

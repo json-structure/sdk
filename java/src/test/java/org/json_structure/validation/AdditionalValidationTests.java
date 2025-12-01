@@ -2123,8 +2123,8 @@ class AdditionalValidationTests {
         }
         
         @Test
-        @DisplayName("Should validate schema with deprecated")
-        void shouldValidateSchemaWithDeprecated() {
+        @DisplayName("Should reject schema with non-standard deprecated keyword")
+        void shouldRejectSchemaWithDeprecated() {
             String schema = """
                 {
                     "$id": "https://test.example.com/schema/deprecated",
@@ -2135,7 +2135,8 @@ class AdditionalValidationTests {
                 """;
             
             ValidationResult result = validator.validate(schema);
-            assertThat(result.isValid()).isTrue();
+            // deprecated is not a valid JSON Structure keyword
+            assertThat(result.isValid()).isFalse();
         }
         
         @Test

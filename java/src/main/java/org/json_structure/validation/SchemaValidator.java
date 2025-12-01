@@ -73,25 +73,26 @@ public final class SchemaValidator {
      */
     public static final Set<String> SCHEMA_KEYWORDS = Set.of(
             "$schema", "$id", "$ref", "definitions", "$import", "$importdefs",
-            "$comment", "$anchor", "$extends", "$abstract", "$root", "$uses",
+            "$comment", "$extends", "$abstract", "$root", "$uses", "$offers",
             "name", "abstract",
-            "type", "enum", "const", "default", "deprecated",
+            "type", "enum", "const", "default",
             "title", "description", "examples",
             // Object keywords
             "properties", "additionalProperties", "required", "propertyNames",
             "minProperties", "maxProperties", "dependentRequired",
             // Array/Set/Tuple keywords
-            "items", "prefixItems", "minItems", "maxItems", "uniqueItems", "contains",
+            "items", "minItems", "maxItems", "uniqueItems", "contains",
             "minContains", "maxContains",
             // String keywords
             "minLength", "maxLength", "pattern", "format", "contentEncoding", "contentMediaType",
+            "contentCompression",
             // Number keywords
             "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf",
             "precision", "scale",
             // Map keywords
             "values",
             // Choice keywords
-            "options", "choices", "discriminator", "selector",
+            "choices", "selector",
             // Tuple keywords
             "tuple",
             // Conditional composition
@@ -476,10 +477,7 @@ public final class SchemaValidator {
                     appendPath(path, "$ref"));
         }
 
-        // Validate $anchor if present
-        if (schema.has("$anchor")) {
-            validateIdentifier(schema.get("$anchor"), "$anchor", path, result);
-        }
+
 
         // $defs is NOT a JSON Structure keyword (it's JSON Schema) - reject it
         if (schema.has("$defs")) {
@@ -564,12 +562,12 @@ public final class SchemaValidator {
                                    schema.has("oneOf") || schema.has("$extends") ||
                                    schema.has("enum") || schema.has("const") ||
                                    schema.has("if") || schema.has("properties") ||
-                                   schema.has("items") || schema.has("prefixItems") ||
+                                   schema.has("items") || schema.has("tuple") ||
                                    schema.has("not") || schema.has("$import") ||
                                    schema.has("$importdefs");
         boolean isPureDefContainer = schema.has("definitions") &&
                                      !schema.has("properties") && !schema.has("items") &&
-                                     !schema.has("prefixItems") && !schema.has("values");
+                                     !schema.has("tuple") && !schema.has("values");
         
         if (!hasSchemaKeyword && !isPureDefContainer) {
             addError(result, ErrorCodes.SCHEMA_MISSING_TYPE, "Schema must have a 'type', '$ref', 'allOf', 'anyOf', 'oneOf', or '$extends' keyword", path);
@@ -1030,7 +1028,7 @@ public final class SchemaValidator {
             }
         }
 
-        // Validate items (for additional items after prefixItems)
+        // Validate items (for arrays, can also be used for additional items beyond tuple)
         if (schema.has("items")) {
             JsonNode items = schema.get("items");
             if (items.isBoolean()) {
@@ -1090,11 +1088,6 @@ public final class SchemaValidator {
                             result, appendPath(path, "choices/" + field.getKey()), depth + 1, visitedRefs);
                 }
             }
-        }
-
-        // Validate discriminator
-        if (schema.has("discriminator")) {
-            validateStringProperty(schema.get("discriminator"), "discriminator", path, result);
         }
 
         // Validate selector

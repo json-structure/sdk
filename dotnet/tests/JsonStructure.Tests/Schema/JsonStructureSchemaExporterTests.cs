@@ -730,36 +730,6 @@ public class JsonStructureSchemaExporterTests
     }
 
     [Fact]
-    public void GetJsonStructureSchemaAsNode_WithObsolete_MarksDeprecated()
-    {
-        var schema = JsonStructureSchemaExporter.GetJsonStructureSchemaAsNode<ClassWithObsolete>();
-
-        var schemaObj = schema.AsObject();
-        
-        // Check root schema structure
-        schemaObj["$schema"]!.GetValue<string>().Should().Be("https://json-structure.org/meta/core/v0/#");
-        schemaObj["type"]!.GetValue<string>().Should().Be("object");
-        schemaObj["title"]!.GetValue<string>().Should().Be("ClassWithObsolete");
-        
-        var props = schemaObj["properties"]!.AsObject();
-        props.Count.Should().Be(2);
-        
-        var oldProp = props["OldProperty"]!.AsObject();
-        oldProp["type"]!.GetValue<string>().Should().Be("string");
-        oldProp["deprecated"]!.GetValue<bool>().Should().BeTrue();
-        
-        var newProp = props["NewProperty"]!.AsObject();
-        newProp["type"]!.GetValue<string>().Should().Be("string");
-        newProp.ContainsKey("deprecated").Should().BeFalse();
-        
-        // Verify required
-        var required = schemaObj["required"]!.AsArray().Select(v => v!.GetValue<string>()).ToList();
-        required.Should().HaveCount(2);
-        required.Should().Contain("OldProperty");
-        required.Should().Contain("NewProperty");
-    }
-
-    [Fact]
     public void GetJsonStructureSchemaAsNode_ExcludesJsonIgnore()
     {
         var schema = JsonStructureSchemaExporter.GetJsonStructureSchemaAsNode<ClassWithIgnore>();
@@ -1003,14 +973,6 @@ public class JsonStructureSchemaExporterTests
 
         [System.ComponentModel.DataAnnotations.Range(0.0, 100.0)]
         public double Score { get; set; }
-    }
-
-    private class ClassWithObsolete
-    {
-        [Obsolete("Use NewProperty instead")]
-        public string OldProperty { get; set; } = "";
-
-        public string NewProperty { get; set; } = "";
     }
 
     private class ClassWithIgnore

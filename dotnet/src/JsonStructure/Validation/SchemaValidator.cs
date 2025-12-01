@@ -55,25 +55,26 @@ public sealed class SchemaValidator
     public static readonly HashSet<string> SchemaKeywords = new(StringComparer.Ordinal)
     {
         "$schema", "$id", "$ref", "definitions", "$import", "$importdefs",
-        "$comment", "$anchor", "$extends", "$abstract", "$root", "$uses",
+        "$comment", "$extends", "$abstract", "$root", "$uses", "$offers",
         "name", "abstract",
-        "type", "enum", "const", "default", "deprecated",
+        "type", "enum", "const", "default",
         "title", "description", "examples",
         // Object keywords
         "properties", "additionalProperties", "required", "propertyNames",
         "minProperties", "maxProperties", "dependentRequired",
         // Array/Set/Tuple keywords
-        "items", "prefixItems", "minItems", "maxItems", "uniqueItems", "contains",
+        "items", "minItems", "maxItems", "uniqueItems", "contains",
         "minContains", "maxContains",
         // String keywords
         "minLength", "maxLength", "pattern", "format", "contentEncoding", "contentMediaType",
+        "contentCompression",
         // Number keywords
         "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf",
         "precision", "scale",
         // Map keywords
         "values",
         // Choice keywords
-        "options", "choices", "discriminator", "selector",
+        "choices", "selector",
         // Tuple keywords
         "tuple",
         // Conditional composition
@@ -524,11 +525,7 @@ public sealed class SchemaValidator
                 AppendPath(path, "$ref"));
         }
 
-        // Validate $anchor if present
-        if (schema.TryGetPropertyValue("$anchor", out var anchorValue))
-        {
-            ValidateIdentifier(anchorValue, "$anchor", path, result);
-        }
+
 
         // $defs is NOT a JSON Structure keyword (it's JSON Schema) - reject it
         if (schema.TryGetPropertyValue("$defs", out _))
@@ -1396,13 +1393,7 @@ public sealed class SchemaValidator
             }
         }
 
-        // Validate discriminator
-        if (schema.TryGetPropertyValue("discriminator", out var discValue))
-        {
-            ValidateStringProperty(discValue, "discriminator", path, result);
-        }
-
-        // Validate selector (alternative to discriminator)
+        // Validate selector
         if (schema.TryGetPropertyValue("selector", out var selectorValue))
         {
             ValidateStringProperty(selectorValue, "selector", path, result);

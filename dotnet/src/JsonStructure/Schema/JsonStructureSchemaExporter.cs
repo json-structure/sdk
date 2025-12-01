@@ -296,12 +296,6 @@ public static class JsonStructureSchemaExporter
                         }
                     }
 
-                    // Check for deprecated
-                    if (prop.GetCustomAttribute<ObsoleteAttribute>() is not null)
-                    {
-                        propSchemaObj["deprecated"] = true;
-                    }
-
                     // Validation extension keywords - only emit when UseExtendedValidation is enabled
                     if (exporterOptions.UseExtendedValidation)
                     {

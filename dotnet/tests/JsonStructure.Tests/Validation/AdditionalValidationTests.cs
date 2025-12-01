@@ -3983,38 +3983,6 @@ public class AdditionalValidationTests
     }
     
     [Fact]
-    public void SchemaValidator_Anchor_Valid()
-    {
-        var validator = new SchemaValidator();
-        var schema = new JsonObject
-        {
-            ["$id"] = "https://example.com/test",
-            ["$anchor"] = "MyAnchor",
-            ["type"] = "string",
-            ["name"] = "Anchored"
-        };
-        
-        var result = validator.Validate(schema);
-        result.IsValid.Should().BeTrue();
-    }
-    
-    [Fact]
-    public void SchemaValidator_Anchor_InvalidIdentifier()
-    {
-        var validator = new SchemaValidator();
-        var schema = new JsonObject
-        {
-            ["$id"] = "https://example.com/test",
-            ["$anchor"] = "123-invalid",
-            ["type"] = "string",
-            ["name"] = "BadAnchor"
-        };
-        
-        var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
-    }
-    
-    [Fact]
     public void SchemaValidator_ObjectSchema_RequiredNotInProperties()
     {
         var validator = new SchemaValidator();

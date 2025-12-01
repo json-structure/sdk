@@ -149,7 +149,6 @@ const PROPERTY_KEYWORDS = [
     { label: 'const', description: 'Fixed constant value', insertText: '"const": $1' },
     { label: 'enum', description: 'List of allowed values', insertText: '"enum": [$1]' },
     { label: 'examples', description: 'Example values', insertText: '"examples": [$1]' },
-    { label: 'deprecated', description: 'Mark as deprecated', insertText: '"deprecated": true' },
 ];
 
 interface JsonContext {

@@ -90,7 +90,6 @@ class FieldConstraints:
     MIN_ITEMS = "min_items"
     MAX_ITEMS = "max_items"
     UNIQUE_ITEMS = "unique_items"
-    DEPRECATED = "deprecated"
     TITLE = "title"
     DESCRIPTION = "description"
     EXAMPLES = "examples"
@@ -108,7 +107,6 @@ def field_constraints(
     min_items: Optional[int] = None,
     max_items: Optional[int] = None,
     unique_items: Optional[bool] = None,
-    deprecated: Optional[bool] = None,
     title: Optional[str] = None,
     description: Optional[str] = None,
     examples: Optional[List[Any]] = None,
@@ -134,7 +132,6 @@ def field_constraints(
         min_items: Minimum array length.
         max_items: Maximum array length.
         unique_items: Whether array items must be unique.
-        deprecated: Whether the field is deprecated.
         title: Title for the field schema.
         description: Description for the field schema.
         examples: Example values for the field.
@@ -166,8 +163,6 @@ def field_constraints(
         result[FieldConstraints.MAX_ITEMS] = max_items
     if unique_items is not None:
         result[FieldConstraints.UNIQUE_ITEMS] = unique_items
-    if deprecated is not None:
-        result[FieldConstraints.DEPRECATED] = deprecated
     if title is not None:
         result[FieldConstraints.TITLE] = title
     if description is not None:
@@ -449,8 +444,6 @@ class JsonStructureSchemaExporter:
             schema["uniqueItems"] = metadata[FieldConstraints.UNIQUE_ITEMS]
         
         # Metadata
-        if FieldConstraints.DEPRECATED in metadata:
-            schema["deprecated"] = metadata[FieldConstraints.DEPRECATED]
         if FieldConstraints.EXAMPLES in metadata:
             schema["examples"] = metadata[FieldConstraints.EXAMPLES]
     

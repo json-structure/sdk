@@ -173,11 +173,6 @@ public final class JsonStructureSchemaExporter {
                         }
                     }
 
-                    // Check for deprecated
-                    if (isDeprecated(prop)) {
-                        propSchema.put("deprecated", true);
-                    }
-
                     // Check for validation annotations
                     addValidationConstraints(prop, propSchema);
 
@@ -275,14 +270,6 @@ public final class JsonStructureSchemaExporter {
         if (member != null) {
             JsonIgnore ignore = member.getAnnotation(JsonIgnore.class);
             if (ignore != null && ignore.value()) return true;
-        }
-        return false;
-    }
-
-    private static boolean isDeprecated(BeanPropertyDefinition prop) {
-        AnnotatedMember member = prop.getPrimaryMember();
-        if (member != null) {
-            return member.getAnnotation(Deprecated.class) != null;
         }
         return false;
     }
