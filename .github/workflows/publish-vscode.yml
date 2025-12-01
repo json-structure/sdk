@@ -63,7 +63,13 @@ jobs:
             # Extract version from the triggering workflow's tag
             # The head_branch contains the tag name for tag-triggered workflows
             TAG="${{ github.event.workflow_run.head_branch }}"
-            VERSION=${TAG#v}
+            # Only use the tag if it looks like a version tag (starts with 'v')
+            if [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+              VERSION=${TAG#v}
+            else
+              # Non-tag push (e.g., master branch) - use latest from npm
+              VERSION=$(npm view @json-structure/sdk version)
+            fi
           elif [ "${{ github.event_name }}" == "push" ]; then
             # Extract version from the pushed tag
             TAG="${{ github.ref_name }}"
