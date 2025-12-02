@@ -1,0 +1,24 @@
+{
+    "$schema": "https://json-structure.org/meta/core/v0/#",
+    "$id": "https://example.com/hover-edge-cases",
+    "name": "HoverEdgeCasesSchema",
+    "type": "object",
+    "properties": {
+        "constProp": {
+            "type": "string",
+            "const": "fixedValue"
+        },
+        "defaultProp": {
+            "type": "string",
+            "default": "defaultValue"
+        },
+        "enumProp": {
+            "type": "string",
+            "enum": ["a", "b", "c"]
+        },
+        "descriptionProp": {
+            "type": "string",
+            "description": "This is a description"
+        }
+    }
+}

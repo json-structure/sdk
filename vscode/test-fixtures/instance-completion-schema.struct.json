@@ -1,0 +1,76 @@
+{
+    "$schema": "https://json-structure.org/meta/core/v0/#",
+    "$id": "https://example.com/completion-test-schema",
+    "name": "CompletionTestSchema",
+    "type": "object",
+    "properties": {
+        "status": {
+            "type": "string",
+            "enum": ["active", "inactive", "pending"]
+        },
+        "enabled": {
+            "type": "boolean"
+        },
+        "nullValue": {
+            "type": "null"
+        },
+        "constValue": {
+            "type": "string",
+            "const": "fixed-value"
+        },
+        "nested": {
+            "$ref": "#/definitions/NestedType"
+        },
+        "stringProp": {
+            "type": "string"
+        },
+        "numberProp": {
+            "type": "number"
+        },
+        "intProp": {
+            "type": "int32"
+        },
+        "int64Prop": {
+            "type": "int64"
+        },
+        "int128Prop": {
+            "type": "int128"
+        },
+        "uint128Prop": {
+            "type": "uint128"
+        },
+        "decimalProp": {
+            "type": "decimal"
+        },
+        "arrayProp": {
+            "type": "array",
+            "items": { "type": "string" }
+        },
+        "objectProp": {
+            "type": "object"
+        },
+        "numericEnum": {
+            "type": "int32",
+            "enum": [1, 2, 3]
+        },
+        "numericConst": {
+            "type": "int32",
+            "const": 42
+        },
+        "setProp": {
+            "type": "set",
+            "items": { "type": "string" }
+        }
+    },
+    "required": ["status", "enabled"],
+    "definitions": {
+        "NestedType": {
+            "type": "object",
+            "properties": {
+                "nestedName": {
+                    "type": "string"
+                }
+            }
+        }
+    }
+}

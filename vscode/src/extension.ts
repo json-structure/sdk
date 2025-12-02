@@ -5,7 +5,7 @@ import { InstanceValidator } from './instanceValidator';
 import { DiagnosticsManager } from './diagnosticsManager';
 import { JsonStructureCompletionProvider } from './completionProvider';
 import { JsonStructureHoverProvider } from './hoverProvider';
-import { JsonStructureDefinitionProvider } from './definitionProvider';
+import { JsonStructureDefinitionProvider, JsonStructureDocumentLinkProvider, JsonStructureReferenceProvider } from './definitionProvider';
 import { JsonStructureDocumentSymbolProvider } from './documentSymbolProvider';
 import { SchemaStatusCodeLensProvider, SchemaStatusTracker } from './schemaStatusCodeLensProvider';
 
@@ -154,6 +154,22 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.languages.registerDefinitionProvider(
             jsonSelector,
             new JsonStructureDefinitionProvider()
+        )
+    );
+
+    // Document link provider for clickable $ref, $extends, $root references
+    context.subscriptions.push(
+        vscode.languages.registerDocumentLinkProvider(
+            jsonSelector,
+            new JsonStructureDocumentLinkProvider()
+        )
+    );
+
+    // Reference provider for finding usages of definitions
+    context.subscriptions.push(
+        vscode.languages.registerReferenceProvider(
+            jsonSelector,
+            new JsonStructureReferenceProvider()
         )
     );
 
