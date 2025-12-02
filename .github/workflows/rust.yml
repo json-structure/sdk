@@ -40,7 +40,7 @@ jobs:
           submodules: recursive
 
       - name: Install Rust ${{ matrix.rust }}
-        uses: dtolnay/rust-action@stable
+        uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
           components: rustfmt, clippy
@@ -85,9 +85,7 @@ jobs:
           submodules: recursive
 
       - name: Install Rust stable
-        uses: dtolnay/rust-action@stable
-        with:
-          toolchain: stable
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Build release
         working-directory: rust
@@ -115,9 +113,7 @@ jobs:
           submodules: recursive
 
       - name: Install Rust stable
-        uses: dtolnay/rust-action@stable
-        with:
-          toolchain: stable
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Publish to crates.io
         working-directory: rust
