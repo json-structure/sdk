@@ -11,7 +11,7 @@ use crate::types::JsonLocation;
 ///
 /// Maps JSON Pointer paths to their source locations (line/column)
 /// in the original JSON document.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct JsonSourceLocator {
     /// Map from JSON Pointer paths to source locations.
     locations: HashMap<String, JsonLocation>,
@@ -383,9 +383,9 @@ impl JsonSourceLocator {
     }
 
     /// Gets the source location for a JSON Pointer path.
-    pub fn get_location(&self, path: &str) -> JsonLocation {
+    pub fn get_location(&self, path: impl AsRef<str>) -> JsonLocation {
         self.locations
-            .get(path)
+            .get(path.as_ref())
             .copied()
             .unwrap_or_else(JsonLocation::unknown)
     }
@@ -401,14 +401,6 @@ impl JsonSourceLocator {
 enum PathSegment {
     Property(String),
     Index(usize),
-}
-
-impl Default for JsonSourceLocator {
-    fn default() -> Self {
-        Self {
-            locations: HashMap::new(),
-        }
-    }
 }
 
 #[cfg(test)]

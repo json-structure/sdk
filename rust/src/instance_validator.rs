@@ -256,8 +256,7 @@ impl InstanceValidator {
 
     /// Resolves a $ref reference.
     fn resolve_ref<'a>(&self, ref_str: &str, root_schema: &'a Value) -> Option<&'a Value> {
-        if ref_str.starts_with("#/definitions/") {
-            let def_name = &ref_str[14..];
+        if let Some(def_name) = ref_str.strip_prefix("#/definitions/") {
             root_schema
                 .get("definitions")
                 .and_then(|defs| defs.get(def_name))
@@ -791,7 +790,7 @@ impl InstanceValidator {
     ) {
         match instance {
             Value::Number(n) => {
-                if n.as_i64().is_none() && n.as_f64().map_or(true, |f| f.fract() != 0.0) {
+                if n.as_i64().is_none() && n.as_f64().is_none_or(|f| f.fract() != 0.0) {
                     result.add_error(ValidationError::instance_error(
                         InstanceErrorCode::InstanceIntegerExpected,
                         "Expected int64",
@@ -1805,10 +1804,8 @@ impl InstanceValidator {
                 if let Some(then_schema) = schema_obj.get("then") {
                     self.validate_instance(instance, then_schema, root_schema, result, path, locator, depth + 1);
                 }
-            } else {
-                if let Some(else_schema) = schema_obj.get("else") {
-                    self.validate_instance(instance, else_schema, root_schema, result, path, locator, depth + 1);
-                }
+            } else if let Some(else_schema) = schema_obj.get("else") {
+                self.validate_instance(instance, else_schema, root_schema, result, path, locator, depth + 1);
             }
         }
     }

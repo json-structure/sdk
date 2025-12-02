@@ -182,12 +182,10 @@ impl SchemaValidator {
         // Collect enabled extensions from root schema (extensions are inherited)
         let mut enabled_extensions = HashSet::new();
         if let Some(root_obj) = root_schema.as_object() {
-            if let Some(uses) = root_obj.get("$uses") {
-                if let Value::Array(arr) = uses {
-                    for ext in arr {
-                        if let Value::String(s) = ext {
-                            enabled_extensions.insert(s.as_str());
-                        }
+            if let Some(Value::Array(arr)) = root_obj.get("$uses") {
+                for ext in arr {
+                    if let Value::String(s) = ext {
+                        enabled_extensions.insert(s.as_str());
                     }
                 }
             }

@@ -1,6 +1,10 @@
 //! # JSON Structure
 //!
 //! A Rust implementation of the JSON Structure schema validation library.
+
+#![allow(clippy::too_many_arguments)]
+#![allow(clippy::needless_borrows_for_generic_args)]
+#![allow(clippy::collapsible_match)]
 //!
 //! JSON Structure is a type-oriented schema language for JSON, designed for defining
 //! data structures that can be validated and mapped to programming language types.
