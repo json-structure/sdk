@@ -1,7 +1,7 @@
 /**
  * @file types.c
- * @brief Core types implementation for JSON Structure validation
- * 
+ * @brief JSON Structure core types implementation
+ *
  * Copyright (c) 2024 JSON Structure Contributors
  * SPDX-License-Identifier: MIT
  */
@@ -9,286 +9,542 @@
 #include "json_structure/types.h"
 #include <stdlib.h>
 #include <string.h>
-#include <stdarg.h>
 #include <stdio.h>
 
 /* ============================================================================
- * Default allocator
+ * Default Allocator
  * ============================================================================ */
 
-static void* default_alloc(size_t size, void* user_data) {
-    (void)user_data;
+static void* default_malloc(size_t size) {
     return malloc(size);
 }
 
-static void* default_realloc(void* ptr, size_t size, void* user_data) {
-    (void)user_data;
+static void* default_realloc(void* ptr, size_t size) {
     return realloc(ptr, size);
 }
 
-static void default_free(void* ptr, void* user_data) {
-    (void)user_data;
+static void default_free(void* ptr) {
     free(ptr);
 }
 
-static const js_allocator_t s_default_allocator = {
-    .alloc = default_alloc,
-    .realloc = default_realloc,
-    .free = default_free,
-    .user_data = NULL
+/* Global allocator - initialized to default */
+static js_allocator_t g_allocator = {
+    default_malloc,
+    default_realloc,
+    default_free,
+    NULL
 };
 
-const js_allocator_t* js_default_allocator(void) {
-    return &s_default_allocator;
-}
-
 /* ============================================================================
- * String utilities
+ * Allocator Functions
  * ============================================================================ */
 
-bool js_str_eq(js_str_t a, js_str_t b) {
-    if (a.len != b.len) return false;
-    if (a.len == 0) return true;
-    if (a.data == NULL || b.data == NULL) return a.data == b.data;
-    return memcmp(a.data, b.data, a.len) == 0;
-}
-
-bool js_str_eq_cstr(js_str_t s, const char* cstr) {
-    if (cstr == NULL) return s.data == NULL || s.len == 0;
-    size_t clen = strlen(cstr);
-    if (s.len != clen) return false;
-    if (s.data == NULL) return false;
-    return memcmp(s.data, cstr, clen) == 0;
-}
-
-/* ============================================================================
- * Validation result
- * ============================================================================ */
-
-void js_result_init(js_result_t* result, const js_allocator_t* alloc) {
-    if (!result) return;
-    memset(result, 0, sizeof(*result));
-    result->alloc = alloc ? alloc : js_default_allocator();
-}
-
-void js_result_cleanup(js_result_t* result) {
-    if (!result) return;
-    if (result->errors && result->alloc) {
-        result->alloc->free(result->errors, result->alloc->user_data);
-    }
-    memset(result, 0, sizeof(*result));
-}
-
-static bool js_result_grow(js_result_t* result) {
-    size_t new_cap = result->error_capacity == 0 
-        ? JS_INITIAL_CAPACITY 
-        : result->error_capacity * 2;
-    
-    if (new_cap > JS_MAX_ERRORS) {
-        new_cap = JS_MAX_ERRORS;
-        if (result->error_count >= new_cap) {
-            return false;
-        }
-    }
-    
-    js_error_t* new_errors = (js_error_t*)result->alloc->realloc(
-        result->errors,
-        new_cap * sizeof(js_error_t),
-        result->alloc->user_data
-    );
-    
-    if (!new_errors) return false;
-    
-    result->errors = new_errors;
-    result->error_capacity = new_cap;
-    return true;
-}
-
-bool js_result_add_error(js_result_t* result, int code, js_severity_t severity,
-                         js_location_t location, const char* path, const char* message) {
-    if (!result) return false;
-    
-    if (result->error_count >= result->error_capacity) {
-        if (!js_result_grow(result)) {
-            return false;
-        }
-    }
-    
-    js_error_t* err = &result->errors[result->error_count];
-    err->code = code;
-    err->severity = severity;
-    err->location = location;
-    
-    if (path) {
-        strncpy(err->path, path, JS_MAX_PATH_LEN - 1);
-        err->path[JS_MAX_PATH_LEN - 1] = '\0';
+void js_set_allocator(js_allocator_t alloc) {
+    if (alloc.malloc && alloc.free) {
+        g_allocator = alloc;
+        /* Configure cJSON to use our allocator */
+        cJSON_Hooks hooks = {
+            .malloc_fn = alloc.malloc,
+            .free_fn = alloc.free
+        };
+        cJSON_InitHooks(&hooks);
     } else {
-        err->path[0] = '\0';
+        /* Reset to defaults */
+        g_allocator.malloc = default_malloc;
+        g_allocator.realloc = default_realloc;
+        g_allocator.free = default_free;
+        g_allocator.user_data = NULL;
+        cJSON_InitHooks(NULL);
     }
-    
-    if (message) {
-        strncpy(err->message, message, JS_MAX_MESSAGE_LEN - 1);
-        err->message[JS_MAX_MESSAGE_LEN - 1] = '\0';
-    } else {
-        err->message[0] = '\0';
+}
+
+js_allocator_t js_get_allocator(void) {
+    return g_allocator;
+}
+
+void* js_malloc(size_t size) {
+    return g_allocator.malloc(size);
+}
+
+void* js_realloc(void* ptr, size_t size) {
+    if (g_allocator.realloc) {
+        return g_allocator.realloc(ptr, size);
     }
-    
-    result->error_count++;
-    if (severity == JS_SEVERITY_WARNING) {
-        result->warning_count++;
+    /* Fallback: allocate new, copy, free old */
+    void* new_ptr = g_allocator.malloc(size);
+    if (new_ptr && ptr) {
+        /* Warning: This is not ideal as we don't know original size */
+        g_allocator.free(ptr);
     }
-    
-    return true;
+    return new_ptr;
 }
 
-bool js_result_add_errorf(js_result_t* result, int code, js_severity_t severity,
-                          js_location_t location, const char* path, const char* fmt, ...) {
-    char message[JS_MAX_MESSAGE_LEN];
-    va_list args;
-    va_start(args, fmt);
-    vsnprintf(message, sizeof(message), fmt, args);
-    va_end(args);
-    return js_result_add_error(result, code, severity, location, path, message);
+void js_free(void* ptr) {
+    if (ptr) {
+        g_allocator.free(ptr);
+    }
 }
 
-bool js_result_is_valid(const js_result_t* result) {
-    if (!result) return true;
-    /* Valid if no errors (warnings are OK) */
-    return (result->error_count - result->warning_count) == 0;
-}
-
-bool js_result_is_clean(const js_result_t* result) {
-    if (!result) return true;
-    return result->error_count == 0;
-}
-
-size_t js_result_error_count(const js_result_t* result) {
-    if (!result) return 0;
-    return result->error_count - result->warning_count;
-}
-
-size_t js_result_warning_count(const js_result_t* result) {
-    if (!result) return 0;
-    return result->warning_count;
+char* js_strdup(const char* s) {
+    if (!s) return NULL;
+    size_t len = strlen(s) + 1;
+    char* copy = (char*)js_malloc(len);
+    if (copy) {
+        memcpy(copy, s, len);
+    }
+    return copy;
 }
 
 /* ============================================================================
- * Type utilities
+ * Type Utilities
  * ============================================================================ */
+
+bool js_type_is_primitive(js_type_t type) {
+    switch (type) {
+        case JS_TYPE_NULL:
+        case JS_TYPE_BOOLEAN:
+        case JS_TYPE_INTEGER:
+        case JS_TYPE_NUMBER:
+        case JS_TYPE_STRING:
+        case JS_TYPE_BINARY:
+        case JS_TYPE_INT8:
+        case JS_TYPE_INT16:
+        case JS_TYPE_INT32:
+        case JS_TYPE_INT64:
+        case JS_TYPE_UINT8:
+        case JS_TYPE_UINT16:
+        case JS_TYPE_UINT32:
+        case JS_TYPE_UINT64:
+        case JS_TYPE_FLOAT16:
+        case JS_TYPE_FLOAT32:
+        case JS_TYPE_FLOAT64:
+        case JS_TYPE_FLOAT128:
+        case JS_TYPE_DECIMAL:
+        case JS_TYPE_DECIMAL64:
+        case JS_TYPE_DECIMAL128:
+        case JS_TYPE_DATETIME:
+        case JS_TYPE_DATE:
+        case JS_TYPE_TIME:
+        case JS_TYPE_DURATION:
+        case JS_TYPE_UUID:
+        case JS_TYPE_URI:
+        case JS_TYPE_URI_REFERENCE:
+        case JS_TYPE_URI_TEMPLATE:
+        case JS_TYPE_REGEX:
+        case JS_TYPE_CHAR:
+        case JS_TYPE_IPV4:
+        case JS_TYPE_IPV6:
+        case JS_TYPE_EMAIL:
+        case JS_TYPE_IDN_EMAIL:
+        case JS_TYPE_HOSTNAME:
+        case JS_TYPE_IDN_HOSTNAME:
+        case JS_TYPE_IRI:
+        case JS_TYPE_IRI_REFERENCE:
+        case JS_TYPE_JSON_POINTER:
+        case JS_TYPE_RELATIVE_JSON_POINTER:
+            return true;
+        default:
+            return false;
+    }
+}
+
+bool js_type_is_numeric(js_type_t type) {
+    switch (type) {
+        case JS_TYPE_INTEGER:
+        case JS_TYPE_NUMBER:
+        case JS_TYPE_INT8:
+        case JS_TYPE_INT16:
+        case JS_TYPE_INT32:
+        case JS_TYPE_INT64:
+        case JS_TYPE_UINT8:
+        case JS_TYPE_UINT16:
+        case JS_TYPE_UINT32:
+        case JS_TYPE_UINT64:
+        case JS_TYPE_FLOAT16:
+        case JS_TYPE_FLOAT32:
+        case JS_TYPE_FLOAT64:
+        case JS_TYPE_FLOAT128:
+        case JS_TYPE_DECIMAL:
+        case JS_TYPE_DECIMAL64:
+        case JS_TYPE_DECIMAL128:
+            return true;
+        default:
+            return false;
+    }
+}
+
+bool js_type_is_string(js_type_t type) {
+    switch (type) {
+        case JS_TYPE_STRING:
+        case JS_TYPE_BINARY:
+        case JS_TYPE_DATETIME:
+        case JS_TYPE_DATE:
+        case JS_TYPE_TIME:
+        case JS_TYPE_DURATION:
+        case JS_TYPE_UUID:
+        case JS_TYPE_URI:
+        case JS_TYPE_URI_REFERENCE:
+        case JS_TYPE_URI_TEMPLATE:
+        case JS_TYPE_REGEX:
+        case JS_TYPE_CHAR:
+        case JS_TYPE_IPV4:
+        case JS_TYPE_IPV6:
+        case JS_TYPE_EMAIL:
+        case JS_TYPE_IDN_EMAIL:
+        case JS_TYPE_HOSTNAME:
+        case JS_TYPE_IDN_HOSTNAME:
+        case JS_TYPE_IRI:
+        case JS_TYPE_IRI_REFERENCE:
+        case JS_TYPE_JSON_POINTER:
+        case JS_TYPE_RELATIVE_JSON_POINTER:
+            return true;
+        default:
+            return false;
+    }
+}
+
+bool js_type_is_integer(js_type_t type) {
+    switch (type) {
+        case JS_TYPE_INTEGER:
+        case JS_TYPE_INT8:
+        case JS_TYPE_INT16:
+        case JS_TYPE_INT32:
+        case JS_TYPE_INT64:
+        case JS_TYPE_UINT8:
+        case JS_TYPE_UINT16:
+        case JS_TYPE_UINT32:
+        case JS_TYPE_UINT64:
+            return true;
+        default:
+            return false;
+    }
+}
 
 /* Type name lookup table */
 static const struct {
     const char* name;
     js_type_t type;
-} s_type_names[] = {
-    {"string", JS_TYPE_STRING},
-    {"boolean", JS_TYPE_BOOLEAN},
+} g_type_names[] = {
+    {"any", JS_TYPE_ANY},
     {"null", JS_TYPE_NULL},
-    {"number", JS_TYPE_NUMBER},
+    {"boolean", JS_TYPE_BOOLEAN},
     {"integer", JS_TYPE_INTEGER},
+    {"number", JS_TYPE_NUMBER},
+    {"string", JS_TYPE_STRING},
+    {"binary", JS_TYPE_BINARY},
+    {"object", JS_TYPE_OBJECT},
+    {"array", JS_TYPE_ARRAY},
+    {"map", JS_TYPE_MAP},
+    {"abstract", JS_TYPE_ABSTRACT},
     {"int8", JS_TYPE_INT8},
     {"int16", JS_TYPE_INT16},
     {"int32", JS_TYPE_INT32},
     {"int64", JS_TYPE_INT64},
-    {"int128", JS_TYPE_INT128},
     {"uint8", JS_TYPE_UINT8},
     {"uint16", JS_TYPE_UINT16},
     {"uint32", JS_TYPE_UINT32},
     {"uint64", JS_TYPE_UINT64},
-    {"uint128", JS_TYPE_UINT128},
-    {"float", JS_TYPE_FLOAT},
-    {"float8", JS_TYPE_FLOAT8},
-    {"double", JS_TYPE_DOUBLE},
+    {"float16", JS_TYPE_FLOAT16},
+    {"float32", JS_TYPE_FLOAT32},
+    {"float64", JS_TYPE_FLOAT64},
+    {"float128", JS_TYPE_FLOAT128},
+    {"float", JS_TYPE_FLOAT32},
+    {"double", JS_TYPE_FLOAT64},
     {"decimal", JS_TYPE_DECIMAL},
+    {"decimal64", JS_TYPE_DECIMAL64},
+    {"decimal128", JS_TYPE_DECIMAL128},
+    {"datetime", JS_TYPE_DATETIME},
     {"date", JS_TYPE_DATE},
     {"time", JS_TYPE_TIME},
-    {"datetime", JS_TYPE_DATETIME},
     {"duration", JS_TYPE_DURATION},
     {"uuid", JS_TYPE_UUID},
     {"uri", JS_TYPE_URI},
-    {"binary", JS_TYPE_BINARY},
-    {"jsonpointer", JS_TYPE_JSONPOINTER},
-    {"object", JS_TYPE_OBJECT},
-    {"array", JS_TYPE_ARRAY},
-    {"set", JS_TYPE_SET},
-    {"map", JS_TYPE_MAP},
-    {"tuple", JS_TYPE_TUPLE},
-    {"choice", JS_TYPE_CHOICE},
-    {"any", JS_TYPE_ANY},
-    {NULL, JS_TYPE_UNKNOWN}
+    {"uri-reference", JS_TYPE_URI_REFERENCE},
+    {"uri-template", JS_TYPE_URI_TEMPLATE},
+    {"regex", JS_TYPE_REGEX},
+    {"char", JS_TYPE_CHAR},
+    {"ipv4", JS_TYPE_IPV4},
+    {"ipv6", JS_TYPE_IPV6},
+    {"email", JS_TYPE_EMAIL},
+    {"idn-email", JS_TYPE_IDN_EMAIL},
+    {"hostname", JS_TYPE_HOSTNAME},
+    {"idn-hostname", JS_TYPE_IDN_HOSTNAME},
+    {"iri", JS_TYPE_IRI},
+    {"iri-reference", JS_TYPE_IRI_REFERENCE},
+    {"json-pointer", JS_TYPE_JSON_POINTER},
+    {"relative-json-pointer", JS_TYPE_RELATIVE_JSON_POINTER},
 };
 
-bool js_type_is_primitive(js_type_t type) {
-    return type >= JS_TYPE_STRING && type <= JS_TYPE_JSONPOINTER;
-}
+static const size_t g_type_names_count = sizeof(g_type_names) / sizeof(g_type_names[0]);
 
-bool js_type_is_compound(js_type_t type) {
-    return type >= JS_TYPE_OBJECT && type <= JS_TYPE_ANY;
-}
-
-bool js_type_is_numeric(js_type_t type) {
-    return type == JS_TYPE_NUMBER ||
-           type == JS_TYPE_INTEGER ||
-           (type >= JS_TYPE_INT8 && type <= JS_TYPE_DECIMAL);
-}
-
-bool js_type_is_integer(js_type_t type) {
-    return type == JS_TYPE_INTEGER ||
-           (type >= JS_TYPE_INT8 && type <= JS_TYPE_UINT128);
-}
-
-js_type_t js_type_from_str(js_str_t name) {
-    if (JS_STR_IS_EMPTY(name)) return JS_TYPE_UNKNOWN;
-    
-    for (size_t i = 0; s_type_names[i].name != NULL; i++) {
-        if (js_str_eq_cstr(name, s_type_names[i].name)) {
-            return s_type_names[i].type;
-        }
-    }
-    return JS_TYPE_UNKNOWN;
-}
-
-const char* js_type_to_str(js_type_t type) {
-    for (size_t i = 0; s_type_names[i].name != NULL; i++) {
-        if (s_type_names[i].type == type) {
-            return s_type_names[i].name;
+const char* js_type_name(js_type_t type) {
+    for (size_t i = 0; i < g_type_names_count; ++i) {
+        if (g_type_names[i].type == type) {
+            return g_type_names[i].name;
         }
     }
     return "unknown";
 }
 
-/* ============================================================================
- * Extension utilities
- * ============================================================================ */
+js_type_t js_type_from_name(const char* name) {
+    if (!name) return JS_TYPE_UNKNOWN;
 
-static const struct {
-    const char* name;
-    js_extension_t ext;
-} s_extension_names[] = {
-    {"JSONStructureValidation", JS_EXT_VALIDATION},
-    {"JSONStructureConditionalComposition", JS_EXT_CONDITIONAL_COMPOSITION},
-    {"JSONStructureImport", JS_EXT_IMPORT},
-    {"JSONStructureAlternateNames", JS_EXT_ALTERNATE_NAMES},
-    {"JSONStructureUnits", JS_EXT_UNITS},
-    {NULL, JS_EXT_NONE}
-};
-
-js_extension_t js_extension_from_str(js_str_t name) {
-    if (JS_STR_IS_EMPTY(name)) return JS_EXT_NONE;
-    
-    for (size_t i = 0; s_extension_names[i].name != NULL; i++) {
-        if (js_str_eq_cstr(name, s_extension_names[i].name)) {
-            return s_extension_names[i].ext;
+    for (size_t i = 0; i < g_type_names_count; ++i) {
+        if (strcmp(name, g_type_names[i].name) == 0) {
+            return g_type_names[i].type;
         }
     }
-    return JS_EXT_NONE;
+    return JS_TYPE_UNKNOWN;
 }
 
-const char* js_extension_to_str(js_extension_t ext) {
-    for (size_t i = 0; s_extension_names[i].name != NULL; i++) {
-        if (s_extension_names[i].ext == ext) {
-            return s_extension_names[i].name;
+js_type_t js_type_of_json(const cJSON* json) {
+    if (!json) return JS_TYPE_UNKNOWN;
+
+    if (cJSON_IsNull(json)) return JS_TYPE_NULL;
+    if (cJSON_IsBool(json)) return JS_TYPE_BOOLEAN;
+    if (cJSON_IsNumber(json)) return JS_TYPE_NUMBER;
+    if (cJSON_IsString(json)) return JS_TYPE_STRING;
+    if (cJSON_IsObject(json)) return JS_TYPE_OBJECT;
+    if (cJSON_IsArray(json)) return JS_TYPE_ARRAY;
+
+    return JS_TYPE_UNKNOWN;
+}
+
+/* ============================================================================
+ * Error Functions
+ * ============================================================================ */
+
+void js_error_init(js_error_t* error) {
+    if (error) {
+        error->code = 0;
+        error->severity = JS_SEVERITY_ERROR;
+        error->location.line = 0;
+        error->location.column = 0;
+        error->location.offset = 0;
+        error->path = NULL;
+        error->message = NULL;
+    }
+}
+
+void js_error_cleanup(js_error_t* error) {
+    if (error) {
+        js_free(error->path);
+        js_free(error->message);
+        error->path = NULL;
+        error->message = NULL;
+    }
+}
+
+bool js_error_set(js_error_t* error, js_error_code_t code, js_severity_t severity,
+                  const char* path, const char* message) {
+    if (!error) return false;
+
+    js_error_cleanup(error);
+
+    error->code = code;
+    error->severity = severity;
+    error->path = path ? js_strdup(path) : NULL;
+    error->message = message ? js_strdup(message) : NULL;
+
+    /* Check allocation success */
+    if ((path && !error->path) || (message && !error->message)) {
+        js_error_cleanup(error);
+        return false;
+    }
+
+    return true;
+}
+
+/* ============================================================================
+ * Result Functions
+ * ============================================================================ */
+
+void js_result_init(js_result_t* result) {
+    if (result) {
+        result->valid = true;
+        result->errors = NULL;
+        result->error_count = 0;
+        result->error_capacity = 0;
+    }
+}
+
+void js_result_cleanup(js_result_t* result) {
+    if (result && result->errors) {
+        for (size_t i = 0; i < result->error_count; ++i) {
+            js_error_cleanup(&result->errors[i]);
+        }
+        js_free(result->errors);
+        result->errors = NULL;
+        result->error_count = 0;
+        result->error_capacity = 0;
+    }
+}
+
+static bool js_result_grow(js_result_t* result) {
+    if (result->error_count >= JS_MAX_ERRORS) {
+        return false;
+    }
+
+    size_t new_capacity = result->error_capacity == 0
+        ? JS_INITIAL_ERROR_CAPACITY
+        : result->error_capacity * 2;
+
+    if (new_capacity > JS_MAX_ERRORS) {
+        new_capacity = JS_MAX_ERRORS;
+    }
+
+    js_error_t* new_errors = (js_error_t*)js_realloc(
+        result->errors, new_capacity * sizeof(js_error_t));
+    if (!new_errors) return false;
+
+    result->errors = new_errors;
+    result->error_capacity = new_capacity;
+    return true;
+}
+
+bool js_result_add_error(js_result_t* result, js_error_code_t code,
+                         const char* message, const char* path) {
+    if (!result) return false;
+
+    result->valid = false;
+
+    if (result->error_count >= result->error_capacity) {
+        if (!js_result_grow(result)) return false;
+    }
+
+    js_error_t* error = &result->errors[result->error_count];
+    js_error_init(error);
+    error->code = code;
+    error->severity = JS_SEVERITY_ERROR;
+    error->path = path ? js_strdup(path) : NULL;
+    error->message = message ? js_strdup(message) : NULL;
+
+    if ((path && !error->path) || (message && !error->message)) {
+        js_error_cleanup(error);
+        return false;
+    }
+
+    result->error_count++;
+    return true;
+}
+
+bool js_result_add_warning(js_result_t* result, js_error_code_t code,
+                           const char* message, const char* path) {
+    if (!result) return false;
+
+    if (result->error_count >= result->error_capacity) {
+        if (!js_result_grow(result)) return false;
+    }
+
+    js_error_t* error = &result->errors[result->error_count];
+    js_error_init(error);
+    error->code = code;
+    error->severity = JS_SEVERITY_WARNING;
+    error->path = path ? js_strdup(path) : NULL;
+    error->message = message ? js_strdup(message) : NULL;
+
+    if ((path && !error->path) || (message && !error->message)) {
+        js_error_cleanup(error);
+        return false;
+    }
+
+    result->error_count++;
+    return true;
+}
+
+bool js_result_add_error_with_location(js_result_t* result, js_error_code_t code,
+                                       const char* message, const char* path,
+                                       js_location_t location) {
+    if (!result) return false;
+
+    result->valid = false;
+
+    if (result->error_count >= result->error_capacity) {
+        if (!js_result_grow(result)) return false;
+    }
+
+    js_error_t* error = &result->errors[result->error_count];
+    js_error_init(error);
+    error->code = code;
+    error->severity = JS_SEVERITY_ERROR;
+    error->location = location;
+    error->path = path ? js_strdup(path) : NULL;
+    error->message = message ? js_strdup(message) : NULL;
+
+    if ((path && !error->path) || (message && !error->message)) {
+        js_error_cleanup(error);
+        return false;
+    }
+
+    result->error_count++;
+    return true;
+}
+
+bool js_result_merge(js_result_t* dest, const js_result_t* src) {
+    if (!dest || !src) return false;
+
+    for (size_t i = 0; i < src->error_count; ++i) {
+        const js_error_t* e = &src->errors[i];
+        if (e->severity == JS_SEVERITY_ERROR) {
+            if (!js_result_add_error_with_location(dest, e->code, e->message,
+                                                   e->path, e->location)) {
+                return false;
+            }
+        } else {
+            if (!js_result_add_warning(dest, e->code, e->message, e->path)) {
+                return false;
+            }
         }
     }
-    return NULL;
+
+    return true;
+}
+
+char* js_result_to_string(const js_result_t* result) {
+    if (!result) return NULL;
+
+    /* Calculate required buffer size */
+    size_t total_len = 0;
+    for (size_t i = 0; i < result->error_count; ++i) {
+        const js_error_t* e = &result->errors[i];
+        /* Format: "[SEVERITY] path: message\n" */
+        total_len += 20; /* Severity + brackets + colon + spaces + newline */
+        if (e->path) total_len += strlen(e->path);
+        if (e->message) total_len += strlen(e->message);
+    }
+
+    if (total_len == 0) {
+        return js_strdup(result->valid ? "Valid" : "Invalid (no errors recorded)");
+    }
+
+    char* buffer = (char*)js_malloc(total_len + 1);
+    if (!buffer) return NULL;
+
+    char* ptr = buffer;
+    for (size_t i = 0; i < result->error_count; ++i) {
+        const js_error_t* e = &result->errors[i];
+        const char* sev = e->severity == JS_SEVERITY_ERROR ? "ERROR"
+                        : e->severity == JS_SEVERITY_WARNING ? "WARNING"
+                        : "INFO";
+        int written = sprintf(ptr, "[%s] %s: %s\n",
+                              sev,
+                              e->path ? e->path : "",
+                              e->message ? e->message : "");
+        ptr += written;
+    }
+
+    return buffer;
+}
+
+/* ============================================================================
+ * Location Functions
+ * ============================================================================ */
+
+js_location_t js_location_make(int line, int column, size_t offset) {
+    js_location_t loc = { line, column, offset };
+    return loc;
+}
+
+bool js_location_is_valid(js_location_t location) {
+    return location.line > 0;
 }
