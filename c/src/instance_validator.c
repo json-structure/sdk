@@ -867,34 +867,70 @@ static bool check_integer_range(validate_context_t* ctx, double value, const cha
 }
 
 /* ============================================================================
+ * UTF-8 Support
+ * 
+ * JSON strings are UTF-8 encoded. The minLength/maxLength constraints should
+ * count Unicode code points, not bytes. This matches JSON Schema behavior.
+ * ============================================================================ */
+
+/**
+ * @brief Count Unicode code points in a UTF-8 string
+ * 
+ * This counts code points (not grapheme clusters), which matches JSON Schema
+ * and most programming languages' string length semantics.
+ * 
+ * @param str UTF-8 encoded string
+ * @return Number of Unicode code points
+ */
+static size_t utf8_codepoint_count(const char* str) {
+    size_t count = 0;
+    const unsigned char* s = (const unsigned char*)str;
+    
+    while (*s) {
+        /* Count only start bytes, skip continuation bytes (10xxxxxx) */
+        if ((*s & 0xC0) != 0x80) {
+            count++;
+        }
+        s++;
+    }
+    
+    return count;
+}
+
+/* ============================================================================
  * Constraint Validation
  * ============================================================================ */
 
 static bool validate_string_constraints(validate_context_t* ctx, const cJSON* instance, 
                                          const cJSON* schema) {
     const char* str = instance->valuestring;
-    size_t len = strlen(str);
     bool valid = true;
     
     const cJSON* minLength = cJSON_GetObjectItemCaseSensitive(schema, "minLength");
     const cJSON* maxLength = cJSON_GetObjectItemCaseSensitive(schema, "maxLength");
     const cJSON* pattern = cJSON_GetObjectItemCaseSensitive(schema, "pattern");
     
+    /* Use UTF-8 code point count for length constraints (matches JSON Schema) */
+    size_t codepoint_len = 0;
+    if (minLength || maxLength) {
+        codepoint_len = utf8_codepoint_count(str);
+    }
+    
     if (minLength && cJSON_IsNumber(minLength)) {
-        if (len < (size_t)minLength->valuedouble) {
+        if (codepoint_len < (size_t)minLength->valuedouble) {
             char msg[128];
             snprintf(msg, sizeof(msg), "String too short (min %d, got %zu)",
-                    (int)minLength->valuedouble, len);
+                    (int)minLength->valuedouble, codepoint_len);
             add_error(ctx, JS_INSTANCE_STRING_TOO_SHORT, msg);
             valid = false;
         }
     }
     
     if (maxLength && cJSON_IsNumber(maxLength)) {
-        if (len > (size_t)maxLength->valuedouble) {
+        if (codepoint_len > (size_t)maxLength->valuedouble) {
             char msg[128];
             snprintf(msg, sizeof(msg), "String too long (max %d, got %zu)",
-                    (int)maxLength->valuedouble, len);
+                    (int)maxLength->valuedouble, codepoint_len);
             add_error(ctx, JS_INSTANCE_STRING_TOO_LONG, msg);
             valid = false;
         }
