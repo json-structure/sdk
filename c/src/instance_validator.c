@@ -1099,6 +1099,10 @@ static bool validate_array_constraints(validate_context_t* ctx, const cJSON* ins
                 contains_count++;
             } else {
                 /* Remove errors from failed contains check - these are expected */
+                /* Clean up the error strings before reducing count */
+                for (size_t e = prev_errors; e < ctx->result->error_count; e++) {
+                    js_error_cleanup(&ctx->result->errors[e]);
+                }
                 ctx->result->error_count = prev_errors;
             }
             
