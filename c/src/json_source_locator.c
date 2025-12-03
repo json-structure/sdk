@@ -47,15 +47,32 @@ static bool js_source_locator_init(js_source_locator_t* locator, const char* sou
     locator->line_offsets[0] = 0;
     locator->line_count = 1;
     
-    /* Find all line starts */
+    /* Find all line starts (limit to prevent resource exhaustion) */
+    #define MAX_LINES 1000000  /* 1 million lines max */
     for (size_t i = 0; i < locator->source_len; ++i) {
         if (source[i] == '\n') {
             /* Next line starts after this newline */
             if (locator->line_count >= locator->line_capacity) {
+                /* Check for maximum line limit */
+                if (locator->line_capacity >= MAX_LINES) {
+                    /* Reached max - stop tracking but don't fail */
+                    break;
+                }
                 size_t new_capacity = locator->line_capacity * 2;
+                if (new_capacity > MAX_LINES) new_capacity = MAX_LINES;
+                /* Check for multiplication overflow */
+                if (new_capacity > SIZE_MAX / sizeof(size_t)) {
+                    js_free(locator->line_offsets);
+                    locator->line_offsets = NULL;
+                    return false;
+                }
                 size_t* new_offsets = (size_t*)js_realloc(
                     locator->line_offsets, new_capacity * sizeof(size_t));
-                if (!new_offsets) return false;
+                if (!new_offsets) {
+                    js_free(locator->line_offsets);
+                    locator->line_offsets = NULL;
+                    return false;
+                }
                 locator->line_offsets = new_offsets;
                 locator->line_capacity = new_capacity;
             }
@@ -63,6 +80,7 @@ static bool js_source_locator_init(js_source_locator_t* locator, const char* sou
             locator->line_count++;
         }
     }
+    #undef MAX_LINES
     
     return true;
 }

@@ -13,6 +13,7 @@
 
 #include "types.h"
 #include "error_codes.h"
+#include "instance_validator.h"  /* For js_import_registry_t */
 
 #ifdef __cplusplus
 extern "C" {
@@ -28,10 +29,11 @@ extern "C" {
 typedef struct js_schema_options {
     bool allow_import;          /**< Allow $import and $importdefs keywords */
     bool warnings_enabled;      /**< Report warnings (e.g., unused validation keywords) */
+    const js_import_registry_t* import_registry;  /**< External schemas for import resolution (optional) */
 } js_schema_options_t;
 
 /** Default options */
-#define JS_SCHEMA_OPTIONS_DEFAULT ((js_schema_options_t){false, true})
+#define JS_SCHEMA_OPTIONS_DEFAULT ((js_schema_options_t){false, true, NULL})
 
 /* ============================================================================
  * Schema Validator

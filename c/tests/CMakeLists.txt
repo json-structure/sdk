@@ -6,6 +6,7 @@ add_executable(json_structure_tests
     test_schema_validator.c
     test_instance_validator.c
     test_conformance.c
+    test_assets.c
     main.c
 )
 

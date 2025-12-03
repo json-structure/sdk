@@ -63,6 +63,7 @@ add_library(json_structure
     src/schema_validator.c
     src/instance_validator.c
     src/json_source_locator.c
+    src/regex_utils.cpp
 )
 
 target_include_directories(json_structure

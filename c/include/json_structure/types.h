@@ -79,7 +79,10 @@ typedef enum js_type {
     JS_TYPE_OBJECT,
     JS_TYPE_ARRAY,
     JS_TYPE_MAP,
+    JS_TYPE_SET,
     JS_TYPE_ABSTRACT,
+    JS_TYPE_CHOICE,
+    JS_TYPE_TUPLE,
 
     /* Extended numeric types */
     JS_TYPE_INT8,

@@ -13,6 +13,7 @@ extern int test_types(void);
 extern int test_schema_validator(void);
 extern int test_instance_validator(void);
 extern int test_conformance(void);
+extern int test_assets(void);
 
 int main(int argc, char* argv[]) {
     (void)argc;
@@ -46,6 +47,12 @@ int main(int argc, char* argv[]) {
     failed += conformance_failed;
     total++;
     printf("Conformance: %s\n\n", conformance_failed == 0 ? "PASSED" : "FAILED");
+    
+    printf("Running test-assets integration tests...\n");
+    int assets_failed = test_assets();
+    failed += assets_failed;
+    total++;
+    printf("Test Assets: %s\n\n", assets_failed == 0 ? "PASSED" : "FAILED");
     
     printf("=== Summary ===\n");
     printf("Total: %d, Passed: %d, Failed: %d\n", 

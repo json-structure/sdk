@@ -29,7 +29,7 @@ static const char* g_schema_error_messages[] = {
     [JS_SCHEMA_REF_CIRCULAR] = "Circular reference detected",
     [JS_SCHEMA_REF_INVALID] = "Invalid reference format",
     
-    [JS_SCHEMA_DEFINITIONS_MUST_BE_OBJECT] = "$defs must be an object",
+    [JS_SCHEMA_DEFINITIONS_MUST_BE_OBJECT] = "definitions must be an object",
     [JS_SCHEMA_DEFINITION_MISSING_TYPE] = "Definition missing type",
     [JS_SCHEMA_DEFINITION_INVALID] = "Invalid definition",
     

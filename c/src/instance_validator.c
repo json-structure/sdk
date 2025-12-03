@@ -7,8 +7,10 @@
  */
 
 #include "json_structure/instance_validator.h"
+#include "regex_utils.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <math.h>
 #include <ctype.h>
 #include <stdint.h>
@@ -19,6 +21,7 @@
 
 #define MAX_DEPTH 100
 #define PATH_BUFFER_SIZE 1024
+#define MAX_IMPORT_DEPTH 16
 
 /* ============================================================================
  * Internal Types
@@ -33,6 +36,12 @@ typedef struct validate_context {
     int depth;
 } validate_context_t;
 
+typedef struct import_context {
+    const js_instance_validator_t* validator;
+    js_result_t* result;
+    int import_depth;
+} import_context_t;
+
 /* ============================================================================
  * Forward Declarations
  * ============================================================================ */
@@ -40,6 +49,7 @@ typedef struct validate_context {
 static bool validate_instance(validate_context_t* ctx, const cJSON* instance, const cJSON* schema);
 static bool validate_set_instance(validate_context_t* ctx, const cJSON* instance, const cJSON* schema);
 static bool check_integer_range(validate_context_t* ctx, double value, const char* type_name);
+static bool process_imports(import_context_t* ctx, cJSON* obj, const char* path);
 
 /* ============================================================================
  * Helper Functions
@@ -47,6 +57,14 @@ static bool check_integer_range(validate_context_t* ctx, double value, const cha
 
 static void push_path(validate_context_t* ctx, const char* segment) {
     size_t len = strlen(ctx->path);
+    size_t seg_len = strlen(segment);
+    size_t needed = seg_len + (len > 0 && segment[0] != '[' ? 1 : 0);  /* +1 for dot separator */
+    
+    /* Check for buffer overflow - silently truncate if path too long */
+    if (len + needed >= PATH_BUFFER_SIZE) {
+        return;  /* Path too long, skip appending */
+    }
+    
     if (len == 0) {
         snprintf(ctx->path, PATH_BUFFER_SIZE, "%s", segment);
     } else if (segment[0] == '[') {
@@ -71,8 +89,16 @@ static void add_error(validate_context_t* ctx, js_error_code_t code, const char*
 static const cJSON* resolve_ref(validate_context_t* ctx, const char* ref) {
     if (!ref) return NULL;
 
-    /* Handle internal references: #/$defs/Name */
+    /* Handle internal references */
     if (ref[0] == '#') {
+        /* Primary format: #/definitions/Name */
+        if (strncmp(ref, "#/definitions/", 14) == 0) {
+            const char* def_name = ref + 14;
+            if (ctx->definitions) {
+                return cJSON_GetObjectItemCaseSensitive(ctx->definitions, def_name);
+            }
+        }
+        /* Also support: #/$defs/Name (JSON Schema compatibility) */
         if (strncmp(ref, "#/$defs/", 8) == 0) {
             const char* def_name = ref + 8;
             if (ctx->definitions) {
@@ -88,6 +114,473 @@ static const cJSON* resolve_ref(validate_context_t* ctx, const char* ref) {
     }
 
     return NULL;
+}
+
+/* ============================================================================
+ * Import Processing ($import and $importdefs)
+ * ============================================================================ */
+
+/**
+ * @brief Fetch an external schema by URI from the import registry
+ * @param validator Validator with import registry
+ * @param uri URI to look up
+ * @return Parsed schema or NULL if not found
+ */
+static cJSON* fetch_external_schema(const js_instance_validator_t* validator, const char* uri) {
+    if (!validator || !uri) return NULL;
+    
+    const js_import_registry_t* registry = validator->options.import_registry;
+    if (!registry || !registry->entries) return NULL;
+    
+    for (size_t i = 0; i < registry->count; i++) {
+        const js_import_entry_t* entry = &registry->entries[i];
+        if (!entry->uri) continue;
+        
+        /* Check if URI matches */
+        if (strcmp(entry->uri, uri) == 0) {
+            /* If schema is provided directly, duplicate it */
+            if (entry->schema) {
+                return cJSON_Duplicate(entry->schema, true);
+            }
+            
+            /* If file path is provided, load from file */
+            if (entry->file_path) {
+                FILE* f = fopen(entry->file_path, "rb");
+                if (!f) return NULL;
+                
+                fseek(f, 0, SEEK_END);
+                long size = ftell(f);
+                fseek(f, 0, SEEK_SET);
+                
+                if (size <= 0 || size > 10 * 1024 * 1024) {  /* 10MB limit */
+                    fclose(f);
+                    return NULL;
+                }
+                
+                char* content = (char*)malloc((size_t)size + 1);
+                if (!content) {
+                    fclose(f);
+                    return NULL;
+                }
+                
+                size_t read_size = fread(content, 1, (size_t)size, f);
+                fclose(f);
+                content[read_size] = '\0';
+                
+                cJSON* schema = cJSON_Parse(content);
+                free(content);
+                return schema;
+            }
+        }
+        
+        /* Also check if schema's $id matches the requested URI */
+        if (entry->schema) {
+            const cJSON* id = cJSON_GetObjectItemCaseSensitive(entry->schema, "$id");
+            if (id && cJSON_IsString(id) && strcmp(id->valuestring, uri) == 0) {
+                return cJSON_Duplicate(entry->schema, true);
+            }
+        }
+    }
+    
+    return NULL;
+}
+
+/**
+ * @brief Rewrite $ref pointers in imported content to point to new location
+ * @param obj Object to rewrite
+ * @param target_path Path where content is being merged (e.g., "#/definitions")
+ */
+static void rewrite_refs(cJSON* obj, const char* target_path) {
+    if (!obj || !target_path) return;
+    
+    if (cJSON_IsObject(obj)) {
+        cJSON* item = NULL;
+        cJSON_ArrayForEach(item, obj) {
+            if (strcmp(item->string, "$ref") == 0 && cJSON_IsString(item)) {
+                const char* ref = item->valuestring;
+                if (ref && ref[0] == '#') {
+                    /* Extract the referenced name (last component) */
+                    const char* last_slash = strrchr(ref, '/');
+                    const char* ref_name = last_slash ? last_slash + 1 : ref + 1;
+                    
+                    if (ref_name && *ref_name) {
+                        /* Build new ref: target_path/ref_name */
+                        size_t new_len = strlen(target_path) + 1 + strlen(ref_name) + 1;
+                        char* new_ref = (char*)malloc(new_len);
+                        if (new_ref) {
+                            snprintf(new_ref, new_len, "%s/%s", target_path, ref_name);
+                            cJSON_SetValuestring(item, new_ref);
+                            free(new_ref);
+                        }
+                    }
+                }
+            } else if (strcmp(item->string, "$extends") == 0) {
+                /* $extends can be a string or array */
+                if (cJSON_IsString(item)) {
+                    const char* ref = item->valuestring;
+                    if (ref && ref[0] == '#') {
+                        const char* last_slash = strrchr(ref, '/');
+                        const char* ref_name = last_slash ? last_slash + 1 : ref + 1;
+                        if (ref_name && *ref_name) {
+                            size_t new_len = strlen(target_path) + 1 + strlen(ref_name) + 1;
+                            char* new_ref = (char*)malloc(new_len);
+                            if (new_ref) {
+                                snprintf(new_ref, new_len, "%s/%s", target_path, ref_name);
+                                cJSON_SetValuestring(item, new_ref);
+                                free(new_ref);
+                            }
+                        }
+                    }
+                } else if (cJSON_IsArray(item)) {
+                    cJSON* arr_item = NULL;
+                    cJSON_ArrayForEach(arr_item, item) {
+                        if (cJSON_IsString(arr_item)) {
+                            const char* ref = arr_item->valuestring;
+                            if (ref && ref[0] == '#') {
+                                const char* last_slash = strrchr(ref, '/');
+                                const char* ref_name = last_slash ? last_slash + 1 : ref + 1;
+                                if (ref_name && *ref_name) {
+                                    size_t new_len = strlen(target_path) + 1 + strlen(ref_name) + 1;
+                                    char* new_ref = (char*)malloc(new_len);
+                                    if (new_ref) {
+                                        snprintf(new_ref, new_len, "%s/%s", target_path, ref_name);
+                                        cJSON_SetValuestring(arr_item, new_ref);
+                                        free(new_ref);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                rewrite_refs(item, target_path);
+            }
+        }
+    } else if (cJSON_IsArray(obj)) {
+        cJSON* item = NULL;
+        cJSON_ArrayForEach(item, obj) {
+            rewrite_refs(item, target_path);
+        }
+    }
+}
+
+/**
+ * @brief Process $import and $importdefs keywords in schema
+ * @param ctx Import context
+ * @param obj Schema object to process (modified in place)
+ * @param path Current JSON pointer path
+ * @return true if processing succeeded, false on error
+ */
+static bool process_imports(import_context_t* ctx, cJSON* obj, const char* path) {
+    if (!obj || !cJSON_IsObject(obj)) return true;
+    
+    /* Prevent infinite recursion */
+    if (ctx->import_depth >= MAX_IMPORT_DEPTH) {
+        js_result_add_error(ctx->result, JS_SCHEMA_IMPORT_NOT_ALLOWED, 
+                           "Maximum import depth exceeded", path);
+        return false;
+    }
+    
+    /* Collect keys to process (we modify the object during iteration) */
+    const char* import_key = NULL;
+    cJSON* import_value = NULL;
+    
+    cJSON* import_item = cJSON_GetObjectItemCaseSensitive(obj, "$import");
+    if (import_item) {
+        import_key = "$import";
+        import_value = import_item;
+    } else {
+        import_item = cJSON_GetObjectItemCaseSensitive(obj, "$importdefs");
+        if (import_item) {
+            import_key = "$importdefs";
+            import_value = import_item;
+        }
+    }
+    
+    if (import_key && import_value) {
+        /* Check if imports are allowed */
+        if (!ctx->validator->options.allow_import) {
+            char msg[256];
+            snprintf(msg, sizeof(msg), "Import keyword '%s' encountered but allow_import not enabled", import_key);
+            js_result_add_error(ctx->result, JS_SCHEMA_IMPORT_NOT_ALLOWED, msg, path);
+            return false;
+        }
+        
+        /* Validate URI */
+        if (!cJSON_IsString(import_value)) {
+            char msg[256];
+            snprintf(msg, sizeof(msg), "Import keyword '%s' value must be a string URI", import_key);
+            js_result_add_error(ctx->result, JS_SCHEMA_IMPORT_NOT_ALLOWED, msg, path);
+            return false;
+        }
+        
+        const char* uri = import_value->valuestring;
+        
+        /* Fetch external schema */
+        cJSON* external = fetch_external_schema(ctx->validator, uri);
+        if (!external) {
+            char msg[256];
+            snprintf(msg, sizeof(msg), "Unable to fetch external schema from URI: %s", uri);
+            js_result_add_error(ctx->result, JS_SCHEMA_IMPORT_NOT_ALLOWED, msg, path);
+            return false;
+        }
+        
+        /* Recursively process imports in the fetched schema */
+        ctx->import_depth++;
+        bool import_result = process_imports(ctx, external, "#");
+        ctx->import_depth--;
+        
+        if (!import_result) {
+            cJSON_Delete(external);
+            return false;
+        }
+        
+        /* Determine what to import */
+        cJSON* imported_defs = cJSON_CreateObject();
+        if (!imported_defs) {
+            cJSON_Delete(external);
+            return false;
+        }
+        
+        if (strcmp(import_key, "$import") == 0) {
+            /* $import: Import root type (if has type+name) and definitions */
+            const cJSON* type_field = cJSON_GetObjectItemCaseSensitive(external, "type");
+            const cJSON* name_field = cJSON_GetObjectItemCaseSensitive(external, "name");
+            
+            if (type_field && name_field && cJSON_IsString(name_field)) {
+                /* Deep copy the external schema as a type definition */
+                cJSON* ext_copy = cJSON_Duplicate(external, true);
+                if (ext_copy) {
+                    cJSON_AddItemToObject(imported_defs, name_field->valuestring, ext_copy);
+                }
+            }
+            
+            /* Also import definitions */
+            const cJSON* ext_defs = cJSON_GetObjectItemCaseSensitive(external, "definitions");
+            if (!ext_defs) {
+                ext_defs = cJSON_GetObjectItemCaseSensitive(external, "$defs");
+            }
+            if (ext_defs && cJSON_IsObject(ext_defs)) {
+                cJSON* def = NULL;
+                cJSON_ArrayForEach(def, ext_defs) {
+                    if (def->string && !cJSON_GetObjectItemCaseSensitive(imported_defs, def->string)) {
+                        cJSON* def_copy = cJSON_Duplicate(def, true);
+                        if (def_copy) {
+                            cJSON_AddItemToObject(imported_defs, def->string, def_copy);
+                        }
+                    }
+                }
+            }
+        } else {
+            /* $importdefs: Import only definitions */
+            const cJSON* ext_defs = cJSON_GetObjectItemCaseSensitive(external, "definitions");
+            if (!ext_defs) {
+                ext_defs = cJSON_GetObjectItemCaseSensitive(external, "$defs");
+            }
+            if (ext_defs && cJSON_IsObject(ext_defs)) {
+                cJSON* def = NULL;
+                cJSON_ArrayForEach(def, ext_defs) {
+                    if (def->string) {
+                        cJSON* def_copy = cJSON_Duplicate(def, true);
+                        if (def_copy) {
+                            cJSON_AddItemToObject(imported_defs, def->string, def_copy);
+                        }
+                    }
+                }
+            }
+        }
+        
+        /* Determine merge target and ref rewrite path */
+        const char* target_path;
+        cJSON* merge_target;
+        bool is_root = (strcmp(path, "#") == 0);
+        
+        if (is_root) {
+            target_path = "#/definitions";
+            /* Ensure definitions object exists */
+            cJSON* defs = cJSON_GetObjectItemCaseSensitive(obj, "definitions");
+            if (!defs) {
+                defs = cJSON_CreateObject();
+                if (defs) {
+                    cJSON_AddItemToObject(obj, "definitions", defs);
+                }
+            }
+            merge_target = defs;
+        } else {
+            target_path = path;
+            merge_target = obj;
+        }
+        
+        /* Rewrite $ref pointers in imported content */
+        cJSON* def = NULL;
+        cJSON_ArrayForEach(def, imported_defs) {
+            rewrite_refs(def, target_path);
+        }
+        
+        /* Merge imported definitions (don't overwrite existing) 
+           First collect keys to merge, then merge them to avoid modifying during iteration */
+        if (merge_target) {
+            /* Count and collect keys */
+            int count = cJSON_GetArraySize(imported_defs);
+            if (count > 0) {
+                char** keys_to_merge = (char**)malloc(sizeof(char*) * (size_t)count);
+                if (keys_to_merge) {
+                    int merge_count = 0;
+                    cJSON* item = NULL;
+                    cJSON_ArrayForEach(item, imported_defs) {
+                        if (item->string && !cJSON_GetObjectItemCaseSensitive(merge_target, item->string)) {
+                            keys_to_merge[merge_count++] = item->string;
+                        }
+                    }
+                    
+                    /* Now detach and merge */
+                    for (int i = 0; i < merge_count; i++) {
+                        cJSON* detached = cJSON_DetachItemFromObject(imported_defs, keys_to_merge[i]);
+                        if (detached) {
+                            cJSON_AddItemToObject(merge_target, keys_to_merge[i], detached);
+                        }
+                    }
+                    
+                    free(keys_to_merge);
+                }
+            }
+        }
+        
+        /* Remove the import keyword from the schema */
+        cJSON_DeleteItemFromObject(obj, import_key);
+        
+        /* Clean up */
+        cJSON_Delete(imported_defs);
+        cJSON_Delete(external);
+    }
+    
+    /* Recursively process nested objects (but skip 'properties' values) */
+    cJSON* child = NULL;
+    cJSON_ArrayForEach(child, obj) {
+        if (child->string && strcmp(child->string, "properties") == 0) {
+            continue;  /* Don't process inside properties - those are property names */
+        }
+        
+        if (cJSON_IsObject(child)) {
+            char child_path[PATH_BUFFER_SIZE];
+            snprintf(child_path, sizeof(child_path), "%s/%s", path, child->string ? child->string : "");
+            if (!process_imports(ctx, child, child_path)) {
+                return false;
+            }
+        } else if (cJSON_IsArray(child)) {
+            int idx = 0;
+            cJSON* arr_item = NULL;
+            cJSON_ArrayForEach(arr_item, child) {
+                if (cJSON_IsObject(arr_item)) {
+                    char arr_path[PATH_BUFFER_SIZE];
+                    snprintf(arr_path, sizeof(arr_path), "%s/%s[%d]", path, child->string ? child->string : "", idx);
+                    if (!process_imports(ctx, arr_item, arr_path)) {
+                        return false;
+                    }
+                }
+                idx++;
+            }
+        }
+    }
+    
+    return true;
+}
+
+/* ============================================================================
+ * Efficient uniqueItems Check with Hash-Based Optimization
+ * 
+ * For primitive arrays (numbers, strings, bools), we use a simple hash set
+ * to achieve O(n) average case instead of O(n²) pairwise comparison.
+ * For mixed/complex arrays, we fall back to O(n²) cJSON_Compare.
+ * ============================================================================ */
+
+/* Simple hash for primitive JSON values */
+static uint64_t hash_primitive(const cJSON* item) {
+    if (cJSON_IsNull(item)) return 0;
+    if (cJSON_IsBool(item)) return cJSON_IsTrue(item) ? 1 : 2;
+    if (cJSON_IsNumber(item)) {
+        /* Hash the double bits directly */
+        union { double d; uint64_t u; } val;
+        val.d = item->valuedouble;
+        return val.u ^ 0x9e3779b97f4a7c15ULL;
+    }
+    if (cJSON_IsString(item) && item->valuestring) {
+        /* djb2 hash for strings */
+        uint64_t hash = 5381;
+        const char* s = item->valuestring;
+        while (*s) {
+            hash = ((hash << 5) + hash) ^ (unsigned char)*s++;
+        }
+        return hash;
+    }
+    return 0xFFFFFFFFFFFFFFFFULL; /* Marker for complex types */
+}
+
+/* Check if array contains only hashable primitives */
+static bool is_primitive_array(const cJSON* arr) {
+    cJSON* item = NULL;
+    cJSON_ArrayForEach(item, arr) {
+        if (cJSON_IsObject(item) || cJSON_IsArray(item)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* Hash-based uniqueness check for primitive arrays - O(n) average */
+static bool check_unique_primitive(const cJSON* arr, int* dup_i, int* dup_j) {
+    int size = cJSON_GetArraySize(arr);
+    if (size <= 1) return true;
+    
+    /* Use a simple open-addressing hash table */
+    size_t table_size = (size_t)size * 2; /* Load factor ~0.5 */
+    if (table_size < 16) table_size = 16;
+    
+    /* Each slot: hash, index, occupied flag */
+    typedef struct { uint64_t hash; int index; } slot_t;
+    slot_t* table = (slot_t*)calloc(table_size, sizeof(slot_t));
+    if (!table) {
+        /* Fall back by signaling we couldn't check */
+        *dup_i = -1;
+        return true;
+    }
+    
+    bool unique = true;
+    int i = 0;
+    cJSON* item = NULL;
+    cJSON_ArrayForEach(item, arr) {
+        uint64_t h = hash_primitive(item);
+        size_t pos = h % table_size;
+        
+        /* Linear probe for open slot or hash collision */
+        for (size_t probe = 0; probe < table_size; probe++) {
+            size_t idx = (pos + probe) % table_size;
+            
+            if (table[idx].hash == 0 && table[idx].index == 0) {
+                /* Empty slot - insert */
+                table[idx].hash = h ? h : 1; /* Avoid 0 as it marks empty */
+                table[idx].index = i + 1;    /* 1-indexed to distinguish from empty */
+                break;
+            }
+            
+            if (table[idx].hash == (h ? h : 1)) {
+                /* Hash collision - check actual equality */
+                cJSON* other = cJSON_GetArrayItem(arr, table[idx].index - 1);
+                if (cJSON_Compare(item, other, true)) {
+                    *dup_i = table[idx].index - 1;
+                    *dup_j = i;
+                    unique = false;
+                    break;
+                }
+            }
+        }
+        
+        if (!unique) break;
+        i++;
+    }
+    
+    free(table);
+    return unique;
 }
 
 /* ============================================================================
@@ -190,72 +683,113 @@ static bool is_valid_uuid(const char* str) {
  * Type Validation
  * ============================================================================ */
 
+/**
+ * @brief Check if instance matches the expected JSON Structure type
+ * 
+ * Uses js_type_from_name for O(n) type string lookup once, then O(1) switch.
+ * This is more efficient than the previous chain of strcmp calls.
+ */
 static bool check_type_match(const cJSON* instance, const char* type_name) {
-    if (strcmp(type_name, "any") == 0) return true;
-    if (strcmp(type_name, "null") == 0) return cJSON_IsNull(instance);
-    if (strcmp(type_name, "boolean") == 0) return cJSON_IsBool(instance);
-    if (strcmp(type_name, "number") == 0) return cJSON_IsNumber(instance);
-    if (strcmp(type_name, "integer") == 0) {
-        if (!cJSON_IsNumber(instance)) return false;
-        double val = instance->valuedouble;
-        return val == floor(val);
+    js_type_t type = js_type_from_name(type_name);
+    
+    switch (type) {
+        case JS_TYPE_ANY:
+            return true;
+            
+        case JS_TYPE_NULL:
+            return cJSON_IsNull(instance);
+            
+        case JS_TYPE_BOOLEAN:
+            return cJSON_IsBool(instance);
+            
+        case JS_TYPE_NUMBER:
+            return cJSON_IsNumber(instance);
+            
+        case JS_TYPE_INTEGER:
+            if (!cJSON_IsNumber(instance)) return false;
+            return instance->valuedouble == floor(instance->valuedouble);
+            
+        case JS_TYPE_STRING:
+            return cJSON_IsString(instance);
+            
+        case JS_TYPE_OBJECT:
+            return cJSON_IsObject(instance);
+            
+        case JS_TYPE_ARRAY:
+            return cJSON_IsArray(instance);
+            
+        case JS_TYPE_MAP:
+            return cJSON_IsObject(instance);
+            
+        case JS_TYPE_SET:
+            return cJSON_IsArray(instance);
+            
+        /* Integer numeric types - require integer value */
+        case JS_TYPE_INT8:
+        case JS_TYPE_INT16:
+        case JS_TYPE_INT32:
+        case JS_TYPE_INT64:
+        case JS_TYPE_UINT8:
+        case JS_TYPE_UINT16:
+        case JS_TYPE_UINT32:
+        case JS_TYPE_UINT64:
+            if (!cJSON_IsNumber(instance)) return false;
+            return instance->valuedouble == floor(instance->valuedouble);
+            
+        /* Floating point numeric types */
+        case JS_TYPE_FLOAT16:
+        case JS_TYPE_FLOAT32:
+        case JS_TYPE_FLOAT64:
+        case JS_TYPE_FLOAT128:
+        case JS_TYPE_DECIMAL:
+        case JS_TYPE_DECIMAL64:
+        case JS_TYPE_DECIMAL128:
+            return cJSON_IsNumber(instance);
+            
+        /* Datetime with format validation */
+        case JS_TYPE_DATETIME:
+            if (!cJSON_IsString(instance)) return false;
+            return is_valid_datetime(instance->valuestring);
+            
+        /* UUID with format validation */
+        case JS_TYPE_UUID:
+            if (!cJSON_IsString(instance)) return false;
+            return is_valid_uuid(instance->valuestring);
+            
+        /* String-based types without strict format validation */
+        case JS_TYPE_BINARY:
+        case JS_TYPE_DATE:
+        case JS_TYPE_TIME:
+        case JS_TYPE_DURATION:
+        case JS_TYPE_URI:
+        case JS_TYPE_URI_REFERENCE:
+        case JS_TYPE_URI_TEMPLATE:
+        case JS_TYPE_REGEX:
+        case JS_TYPE_CHAR:
+        case JS_TYPE_IPV4:
+        case JS_TYPE_IPV6:
+        case JS_TYPE_EMAIL:
+        case JS_TYPE_IDN_EMAIL:
+        case JS_TYPE_HOSTNAME:
+        case JS_TYPE_IDN_HOSTNAME:
+        case JS_TYPE_IRI:
+        case JS_TYPE_IRI_REFERENCE:
+        case JS_TYPE_JSON_POINTER:
+        case JS_TYPE_RELATIVE_JSON_POINTER:
+            return cJSON_IsString(instance);
+            
+        /* Abstract, choice, and tuple types */
+        case JS_TYPE_ABSTRACT:
+        case JS_TYPE_CHOICE:
+            return cJSON_IsObject(instance);
+            
+        case JS_TYPE_TUPLE:
+            return cJSON_IsArray(instance);
+            
+        case JS_TYPE_UNKNOWN:
+        default:
+            return false;
     }
-    if (strcmp(type_name, "string") == 0) return cJSON_IsString(instance);
-    if (strcmp(type_name, "object") == 0) return cJSON_IsObject(instance);
-    if (strcmp(type_name, "array") == 0) return cJSON_IsArray(instance);
-    if (strcmp(type_name, "map") == 0) return cJSON_IsObject(instance);
-    if (strcmp(type_name, "set") == 0) return cJSON_IsArray(instance);
-    
-    /* Numeric types - all are represented as JSON numbers */
-    if (strcmp(type_name, "int8") == 0 || strcmp(type_name, "int16") == 0 ||
-        strcmp(type_name, "int32") == 0 || strcmp(type_name, "int64") == 0 ||
-        strcmp(type_name, "uint8") == 0 || strcmp(type_name, "uint16") == 0 ||
-        strcmp(type_name, "uint32") == 0 || strcmp(type_name, "uint64") == 0) {
-        if (!cJSON_IsNumber(instance)) return false;
-        double val = instance->valuedouble;
-        return val == floor(val);
-    }
-    
-    if (strcmp(type_name, "float") == 0 || strcmp(type_name, "float16") == 0 ||
-        strcmp(type_name, "float32") == 0 || strcmp(type_name, "float64") == 0 ||
-        strcmp(type_name, "float128") == 0 || strcmp(type_name, "double") == 0 ||
-        strcmp(type_name, "decimal") == 0 || strcmp(type_name, "decimal64") == 0 ||
-        strcmp(type_name, "decimal128") == 0) {
-        return cJSON_IsNumber(instance);
-    }
-    
-    /* String-based types with format validation */
-    if (strcmp(type_name, "datetime") == 0) {
-        if (!cJSON_IsString(instance)) return false;
-        return is_valid_datetime(instance->valuestring);
-    }
-    
-    if (strcmp(type_name, "uuid") == 0) {
-        if (!cJSON_IsString(instance)) return false;
-        return is_valid_uuid(instance->valuestring);
-    }
-    
-    /* String-based types without strict format validation */
-    if (strcmp(type_name, "binary") == 0 ||
-        strcmp(type_name, "date") == 0 ||
-        strcmp(type_name, "time") == 0 || strcmp(type_name, "duration") == 0 ||
-        strcmp(type_name, "uri") == 0 ||
-        strcmp(type_name, "uri-reference") == 0 || strcmp(type_name, "uri-template") == 0 ||
-        strcmp(type_name, "regex") == 0 || strcmp(type_name, "char") == 0 ||
-        strcmp(type_name, "ipv4") == 0 || strcmp(type_name, "ipv6") == 0 ||
-        strcmp(type_name, "email") == 0 || strcmp(type_name, "idn-email") == 0 ||
-        strcmp(type_name, "hostname") == 0 || strcmp(type_name, "idn-hostname") == 0 ||
-        strcmp(type_name, "iri") == 0 || strcmp(type_name, "iri-reference") == 0 ||
-        strcmp(type_name, "json-pointer") == 0 || strcmp(type_name, "relative-json-pointer") == 0) {
-        return cJSON_IsString(instance);
-    }
-    
-    /* Abstract and choice types need special handling */
-    if (strcmp(type_name, "abstract") == 0) return cJSON_IsObject(instance);
-    if (strcmp(type_name, "choice") == 0) return cJSON_IsObject(instance);
-    if (strcmp(type_name, "tuple") == 0) return cJSON_IsArray(instance);
-    
-    return false;
 }
 
 /* Check if integer value is within the range for the given integer type */
@@ -266,51 +800,68 @@ static bool check_integer_range(validate_context_t* ctx, double value, const cha
     }
     
     int64_t int_val = (int64_t)value;
+    js_type_t type = js_type_from_name(type_name);
     
-    if (strcmp(type_name, "int8") == 0) {
-        if (int_val < -128 || int_val > 127) {
-            char msg[128];
-            snprintf(msg, sizeof(msg), "Value %lld is out of int8 range [-128, 127]", (long long)int_val);
-            add_error(ctx, JS_INSTANCE_INTEGER_OUT_OF_RANGE, msg);
-            return false;
-        }
-    } else if (strcmp(type_name, "int16") == 0) {
-        if (int_val < -32768 || int_val > 32767) {
-            char msg[128];
-            snprintf(msg, sizeof(msg), "Value %lld is out of int16 range [-32768, 32767]", (long long)int_val);
-            add_error(ctx, JS_INSTANCE_INTEGER_OUT_OF_RANGE, msg);
-            return false;
-        }
-    } else if (strcmp(type_name, "int32") == 0 || strcmp(type_name, "integer") == 0) {
-        if (int_val < INT32_MIN || int_val > INT32_MAX) {
-            char msg[128];
-            snprintf(msg, sizeof(msg), "Value %lld is out of int32 range", (long long)int_val);
-            add_error(ctx, JS_INSTANCE_INTEGER_OUT_OF_RANGE, msg);
-            return false;
-        }
-    } else if (strcmp(type_name, "uint8") == 0) {
-        if (int_val < 0 || int_val > 255) {
-            char msg[128];
-            snprintf(msg, sizeof(msg), "Value %lld is out of uint8 range [0, 255]", (long long)int_val);
-            add_error(ctx, JS_INSTANCE_INTEGER_OUT_OF_RANGE, msg);
-            return false;
-        }
-    } else if (strcmp(type_name, "uint16") == 0) {
-        if (int_val < 0 || int_val > 65535) {
-            char msg[128];
-            snprintf(msg, sizeof(msg), "Value %lld is out of uint16 range [0, 65535]", (long long)int_val);
-            add_error(ctx, JS_INSTANCE_INTEGER_OUT_OF_RANGE, msg);
-            return false;
-        }
-    } else if (strcmp(type_name, "uint32") == 0) {
-        if (int_val < 0 || (uint64_t)int_val > UINT32_MAX) {
-            char msg[128];
-            snprintf(msg, sizeof(msg), "Value %lld is out of uint32 range [0, 4294967295]", (long long)int_val);
-            add_error(ctx, JS_INSTANCE_INTEGER_OUT_OF_RANGE, msg);
-            return false;
-        }
+    switch (type) {
+        case JS_TYPE_INT8:
+            if (int_val < -128 || int_val > 127) {
+                char msg[128];
+                snprintf(msg, sizeof(msg), "Value %lld is out of int8 range [-128, 127]", (long long)int_val);
+                add_error(ctx, JS_INSTANCE_INTEGER_OUT_OF_RANGE, msg);
+                return false;
+            }
+            break;
+            
+        case JS_TYPE_INT16:
+            if (int_val < -32768 || int_val > 32767) {
+                char msg[128];
+                snprintf(msg, sizeof(msg), "Value %lld is out of int16 range [-32768, 32767]", (long long)int_val);
+                add_error(ctx, JS_INSTANCE_INTEGER_OUT_OF_RANGE, msg);
+                return false;
+            }
+            break;
+            
+        case JS_TYPE_INT32:
+        case JS_TYPE_INTEGER:
+            if (int_val < INT32_MIN || int_val > INT32_MAX) {
+                char msg[128];
+                snprintf(msg, sizeof(msg), "Value %lld is out of int32 range", (long long)int_val);
+                add_error(ctx, JS_INSTANCE_INTEGER_OUT_OF_RANGE, msg);
+                return false;
+            }
+            break;
+            
+        case JS_TYPE_UINT8:
+            if (int_val < 0 || int_val > 255) {
+                char msg[128];
+                snprintf(msg, sizeof(msg), "Value %lld is out of uint8 range [0, 255]", (long long)int_val);
+                add_error(ctx, JS_INSTANCE_INTEGER_OUT_OF_RANGE, msg);
+                return false;
+            }
+            break;
+            
+        case JS_TYPE_UINT16:
+            if (int_val < 0 || int_val > 65535) {
+                char msg[128];
+                snprintf(msg, sizeof(msg), "Value %lld is out of uint16 range [0, 65535]", (long long)int_val);
+                add_error(ctx, JS_INSTANCE_INTEGER_OUT_OF_RANGE, msg);
+                return false;
+            }
+            break;
+            
+        case JS_TYPE_UINT32:
+            if (int_val < 0 || (uint64_t)int_val > UINT32_MAX) {
+                char msg[128];
+                snprintf(msg, sizeof(msg), "Value %lld is out of uint32 range [0, 4294967295]", (long long)int_val);
+                add_error(ctx, JS_INSTANCE_INTEGER_OUT_OF_RANGE, msg);
+                return false;
+            }
+            break;
+            
+        default:
+            /* int64, uint64 - no range check needed as they match the native type */
+            break;
     }
-    /* int64, uint64 - no range check needed as they match the native type */
     
     return true;
 }
@@ -350,8 +901,13 @@ static bool validate_string_constraints(validate_context_t* ctx, const cJSON* in
     }
     
     if (pattern && cJSON_IsString(pattern)) {
-        /* TODO: Implement regex matching with PCRE2 when available */
-        (void)pattern;
+        if (!js_regex_match(pattern->valuestring, str)) {
+            char msg[256];
+            snprintf(msg, sizeof(msg), "String '%s' does not match pattern '%s'",
+                    str, pattern->valuestring);
+            add_error(ctx, JS_INSTANCE_STRING_PATTERN_MISMATCH, msg);
+            valid = false;
+        }
     }
     
     return valid;
@@ -430,6 +986,9 @@ static bool validate_array_constraints(validate_context_t* ctx, const cJSON* ins
     const cJSON* minItems = cJSON_GetObjectItemCaseSensitive(schema, "minItems");
     const cJSON* maxItems = cJSON_GetObjectItemCaseSensitive(schema, "maxItems");
     const cJSON* uniqueItems = cJSON_GetObjectItemCaseSensitive(schema, "uniqueItems");
+    const cJSON* contains = cJSON_GetObjectItemCaseSensitive(schema, "contains");
+    const cJSON* minContains = cJSON_GetObjectItemCaseSensitive(schema, "minContains");
+    const cJSON* maxContains = cJSON_GetObjectItemCaseSensitive(schema, "maxContains");
     
     if (minItems && cJSON_IsNumber(minItems)) {
         if (size < (int)minItems->valuedouble) {
@@ -452,20 +1011,78 @@ static bool validate_array_constraints(validate_context_t* ctx, const cJSON* ins
     }
     
     if (uniqueItems && cJSON_IsTrue(uniqueItems)) {
-        /* Check for duplicate items */
-        for (int i = 0; i < size; i++) {
-            cJSON* item_i = cJSON_GetArrayItem(instance, i);
-            for (int j = i + 1; j < size; j++) {
-                cJSON* item_j = cJSON_GetArrayItem(instance, j);
-                if (cJSON_Compare(item_i, item_j, true)) {
-                    char msg[128];
-                    snprintf(msg, sizeof(msg), "Array items at indices %d and %d are not unique",
-                            i, j);
-                    add_error(ctx, JS_INSTANCE_ARRAY_NOT_UNIQUE, msg);
-                    valid = false;
-                    break;
+        /* Use optimized O(n) hash-based check for primitive arrays */
+        if (is_primitive_array(instance)) {
+            int dup_i = -1, dup_j = -1;
+            if (!check_unique_primitive(instance, &dup_i, &dup_j)) {
+                char msg[128];
+                snprintf(msg, sizeof(msg), "Array items at indices %d and %d are not unique",
+                        dup_i, dup_j);
+                add_error(ctx, JS_INSTANCE_ARRAY_NOT_UNIQUE, msg);
+                valid = false;
+            }
+        } else {
+            /* Fall back to O(n²) for arrays with objects/arrays */
+            for (int i = 0; i < size && valid; i++) {
+                cJSON* item_i = cJSON_GetArrayItem(instance, i);
+                for (int j = i + 1; j < size; j++) {
+                    cJSON* item_j = cJSON_GetArrayItem(instance, j);
+                    if (cJSON_Compare(item_i, item_j, true)) {
+                        char msg[128];
+                        snprintf(msg, sizeof(msg), "Array items at indices %d and %d are not unique",
+                                i, j);
+                        add_error(ctx, JS_INSTANCE_ARRAY_NOT_UNIQUE, msg);
+                        valid = false;
+                        break;
+                    }
                 }
             }
+        }
+    }
+    
+    /* Validate contains constraint */
+    if (contains && cJSON_IsObject(contains)) {
+        int contains_count = 0;
+        int min_contains_val = minContains && cJSON_IsNumber(minContains) ? 
+                               (int)minContains->valuedouble : 1;
+        int max_contains_val = maxContains && cJSON_IsNumber(maxContains) ? 
+                               (int)maxContains->valuedouble : size + 1;
+        
+        /* Count items matching the contains schema */
+        for (int i = 0; i < size; i++) {
+            cJSON* item = cJSON_GetArrayItem(instance, i);
+            size_t prev_errors = ctx->result->error_count;
+            
+            /* Try to validate item against contains schema */
+            size_t prev_path_len = strlen(ctx->path);
+            char index_str[32];
+            snprintf(index_str, sizeof(index_str), "[%d]", i);
+            push_path(ctx, index_str);
+            
+            if (validate_instance(ctx, item, contains)) {
+                contains_count++;
+            } else {
+                /* Remove errors from failed contains check - these are expected */
+                ctx->result->error_count = prev_errors;
+            }
+            
+            pop_path(ctx, prev_path_len);
+        }
+        
+        if (contains_count < min_contains_val) {
+            char msg[128];
+            snprintf(msg, sizeof(msg), "Array does not contain enough matching items (min %d, got %d)",
+                    min_contains_val, contains_count);
+            add_error(ctx, JS_INSTANCE_ARRAY_CONTAINS_TOO_FEW, msg);
+            valid = false;
+        }
+        
+        if (contains_count > max_contains_val) {
+            char msg[128];
+            snprintf(msg, sizeof(msg), "Array contains too many matching items (max %d, got %d)",
+                    max_contains_val, contains_count);
+            add_error(ctx, JS_INSTANCE_ARRAY_CONTAINS_TOO_MANY, msg);
+            valid = false;
         }
     }
     
@@ -537,6 +1154,7 @@ static bool validate_object_instance(validate_context_t* ctx, const cJSON* insta
     const cJSON* properties = cJSON_GetObjectItemCaseSensitive(schema, "properties");
     const cJSON* required = cJSON_GetObjectItemCaseSensitive(schema, "required");
     const cJSON* additionalProperties = cJSON_GetObjectItemCaseSensitive(schema, "additionalProperties");
+    const cJSON* dependentRequired = cJSON_GetObjectItemCaseSensitive(schema, "dependentRequired");
     
     /* Check required properties */
     if (required && cJSON_IsArray(required)) {
@@ -550,6 +1168,33 @@ static bool validate_object_instance(validate_context_t* ctx, const cJSON* insta
                             req_item->valuestring);
                     add_error(ctx, JS_INSTANCE_REQUIRED_MISSING, msg);
                     valid = false;
+                }
+            }
+        }
+    }
+    
+    /* Check dependentRequired - if property X is present, properties Y, Z, ... must also be present */
+    if (dependentRequired && cJSON_IsObject(dependentRequired)) {
+        cJSON* dep;
+        cJSON_ArrayForEach(dep, dependentRequired) {
+            const char* trigger_prop = dep->string;
+            /* Only check if the trigger property is present in the instance */
+            const cJSON* trigger = cJSON_GetObjectItemCaseSensitive(instance, trigger_prop);
+            if (trigger && cJSON_IsArray(dep)) {
+                /* Check that all required dependent properties are present */
+                cJSON* req_prop;
+                cJSON_ArrayForEach(req_prop, dep) {
+                    if (cJSON_IsString(req_prop)) {
+                        const cJSON* prop = cJSON_GetObjectItemCaseSensitive(instance, req_prop->valuestring);
+                        if (!prop) {
+                            char msg[256];
+                            snprintf(msg, sizeof(msg), 
+                                    "Property '%s' requires property '%s' to also be present",
+                                    trigger_prop, req_prop->valuestring);
+                            add_error(ctx, JS_INSTANCE_DEPENDENT_REQUIRED_MISSING, msg);
+                            valid = false;
+                        }
+                    }
                 }
             }
         }
@@ -723,8 +1368,13 @@ static bool validate_map_instance(validate_context_t* ctx, const cJSON* instance
         if (keys && cJSON_IsObject(keys)) {
             const cJSON* key_pattern = cJSON_GetObjectItemCaseSensitive(keys, "pattern");
             if (key_pattern && cJSON_IsString(key_pattern)) {
-                /* TODO: Validate key against pattern using PCRE2 */
-                (void)key;
+                if (!js_regex_match(key_pattern->valuestring, key)) {
+                    char msg[256];
+                    snprintf(msg, sizeof(msg), "Map key '%s' does not match pattern '%s'",
+                            key, key_pattern->valuestring);
+                    add_error(ctx, JS_INSTANCE_MAP_KEY_PATTERN_MISMATCH, msg);
+                    valid = false;
+                }
             }
         }
         
@@ -745,26 +1395,74 @@ static bool validate_map_instance(validate_context_t* ctx, const cJSON* instance
     
     /* Validate map size constraints */
     int size = cJSON_GetArraySize(instance);
-    const cJSON* minProperties = cJSON_GetObjectItemCaseSensitive(schema, "minProperties");
-    const cJSON* maxProperties = cJSON_GetObjectItemCaseSensitive(schema, "maxProperties");
+    const cJSON* minEntries = cJSON_GetObjectItemCaseSensitive(schema, "minEntries");
+    const cJSON* maxEntries = cJSON_GetObjectItemCaseSensitive(schema, "maxEntries");
     
-    if (minProperties && cJSON_IsNumber(minProperties)) {
-        if (size < (int)minProperties->valuedouble) {
+    /* Fall back to minProperties/maxProperties for compatibility */
+    if (!minEntries) minEntries = cJSON_GetObjectItemCaseSensitive(schema, "minProperties");
+    if (!maxEntries) maxEntries = cJSON_GetObjectItemCaseSensitive(schema, "maxProperties");
+    
+    if (minEntries && cJSON_IsNumber(minEntries)) {
+        if (size < (int)minEntries->valuedouble) {
             char msg[128];
             snprintf(msg, sizeof(msg), "Map has too few entries (min %d, got %d)",
-                    (int)minProperties->valuedouble, size);
+                    (int)minEntries->valuedouble, size);
             add_error(ctx, JS_INSTANCE_MAP_TOO_FEW_ENTRIES, msg);
             valid = false;
         }
     }
     
-    if (maxProperties && cJSON_IsNumber(maxProperties)) {
-        if (size > (int)maxProperties->valuedouble) {
+    if (maxEntries && cJSON_IsNumber(maxEntries)) {
+        if (size > (int)maxEntries->valuedouble) {
             char msg[128];
             snprintf(msg, sizeof(msg), "Map has too many entries (max %d, got %d)",
-                    (int)maxProperties->valuedouble, size);
+                    (int)maxEntries->valuedouble, size);
             add_error(ctx, JS_INSTANCE_MAP_TOO_MANY_ENTRIES, msg);
             valid = false;
+        }
+    }
+    
+    /* Validate keyNames if specified */
+    const cJSON* keyNames = cJSON_GetObjectItemCaseSensitive(schema, "keyNames");
+    if (keyNames && cJSON_IsObject(keyNames)) {
+        const cJSON* key_pattern = cJSON_GetObjectItemCaseSensitive(keyNames, "pattern");
+        const cJSON* minLength = cJSON_GetObjectItemCaseSensitive(keyNames, "minLength");
+        const cJSON* maxLength = cJSON_GetObjectItemCaseSensitive(keyNames, "maxLength");
+        
+        cJSON* entry2;
+        cJSON_ArrayForEach(entry2, instance) {
+            const char* key = entry2->string;
+            size_t key_len = strlen(key);
+            
+            if (minLength && cJSON_IsNumber(minLength)) {
+                if (key_len < (size_t)minLength->valuedouble) {
+                    char msg[256];
+                    snprintf(msg, sizeof(msg), "Map key '%s' too short (min %d)", 
+                            key, (int)minLength->valuedouble);
+                    add_error(ctx, JS_INSTANCE_MAP_KEY_PATTERN_MISMATCH, msg);
+                    valid = false;
+                }
+            }
+            
+            if (maxLength && cJSON_IsNumber(maxLength)) {
+                if (key_len > (size_t)maxLength->valuedouble) {
+                    char msg[256];
+                    snprintf(msg, sizeof(msg), "Map key '%s' too long (max %d)", 
+                            key, (int)maxLength->valuedouble);
+                    add_error(ctx, JS_INSTANCE_MAP_KEY_PATTERN_MISMATCH, msg);
+                    valid = false;
+                }
+            }
+            
+            if (key_pattern && cJSON_IsString(key_pattern)) {
+                if (!js_regex_match(key_pattern->valuestring, key)) {
+                    char msg[256];
+                    snprintf(msg, sizeof(msg), "Map key '%s' does not match pattern '%s'",
+                            key, key_pattern->valuestring);
+                    add_error(ctx, JS_INSTANCE_MAP_KEY_PATTERN_MISMATCH, msg);
+                    valid = false;
+                }
+            }
         }
     }
     
@@ -1142,22 +1840,56 @@ bool js_instance_validate(const js_instance_validator_t* validator,
         return false;
     }
     
-    /* Cache definitions for reference resolution */
-    const cJSON* defs = cJSON_GetObjectItemCaseSensitive(schema, "$defs");
+    /* Always process imports - either to resolve them (if allowed) or to detect errors */
+    cJSON* schema_copy = NULL;
+    const cJSON* working_schema = schema;
+    
+    /* Create a mutable copy of the schema for import processing */
+    schema_copy = cJSON_Duplicate(schema, true);
+    if (!schema_copy) {
+        js_result_add_error(result, JS_SCHEMA_NULL, "Failed to copy schema", "");
+        return false;
+    }
+    
+    /* Process imports - will report error if found but not allowed */
+    import_context_t import_ctx = {
+        .validator = validator,
+        .result = result,
+        .import_depth = 0
+    };
+    
+    if (!process_imports(&import_ctx, schema_copy, "#")) {
+        cJSON_Delete(schema_copy);
+        return false;
+    }
+    
+    working_schema = schema_copy;
+    
+    /* Cache definitions for reference resolution - primary keyword is "definitions" */
+    const cJSON* defs = cJSON_GetObjectItemCaseSensitive(working_schema, "definitions");
     if (!defs) {
-        defs = cJSON_GetObjectItemCaseSensitive(schema, "$definitions");
+        defs = cJSON_GetObjectItemCaseSensitive(working_schema, "$defs");
+    }
+    if (!defs) {
+        defs = cJSON_GetObjectItemCaseSensitive(working_schema, "$definitions");
     }
     
     validate_context_t ctx = {
         .validator = validator,
         .result = result,
-        .root_schema = schema,
+        .root_schema = working_schema,
         .definitions = defs,
         .path = "",
         .depth = 0
     };
     
-    return validate_instance(&ctx, instance, schema);
+    bool valid = validate_instance(&ctx, instance, working_schema);
+    
+    if (schema_copy) {
+        cJSON_Delete(schema_copy);
+    }
+    
+    return valid;
 }
 
 bool js_instance_validate_strings(const js_instance_validator_t* validator,

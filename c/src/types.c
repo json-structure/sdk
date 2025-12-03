@@ -70,13 +70,14 @@ void* js_realloc(void* ptr, size_t size) {
     if (g_allocator.realloc) {
         return g_allocator.realloc(ptr, size);
     }
-    /* Fallback: allocate new, copy, free old */
-    void* new_ptr = g_allocator.malloc(size);
-    if (new_ptr && ptr) {
-        /* Warning: This is not ideal as we don't know original size */
-        g_allocator.free(ptr);
+    /* No realloc provided - cannot safely reallocate without knowing original size.
+     * Return NULL to signal failure. Callers should ensure realloc is provided
+     * in custom allocators, or this path should not be reached with default allocator. */
+    if (ptr) {
+        return NULL;  /* Cannot safely reallocate existing memory */
     }
-    return new_ptr;
+    /* For NULL ptr, realloc acts like malloc */
+    return g_allocator.malloc(size);
 }
 
 void js_free(void* ptr) {
@@ -235,7 +236,10 @@ static const struct {
     {"object", JS_TYPE_OBJECT},
     {"array", JS_TYPE_ARRAY},
     {"map", JS_TYPE_MAP},
+    {"set", JS_TYPE_SET},
     {"abstract", JS_TYPE_ABSTRACT},
+    {"choice", JS_TYPE_CHOICE},
+    {"tuple", JS_TYPE_TUPLE},
     {"int8", JS_TYPE_INT8},
     {"int16", JS_TYPE_INT16},
     {"int32", JS_TYPE_INT32},
@@ -503,34 +507,50 @@ bool js_result_merge(js_result_t* dest, const js_result_t* src) {
 char* js_result_to_string(const js_result_t* result) {
     if (!result) return NULL;
 
-    /* Calculate required buffer size */
+    /* Calculate required buffer size with overflow checking */
     size_t total_len = 0;
     for (size_t i = 0; i < result->error_count; ++i) {
         const js_error_t* e = &result->errors[i];
         /* Format: "[SEVERITY] path: message\n" */
-        total_len += 20; /* Severity + brackets + colon + spaces + newline */
-        if (e->path) total_len += strlen(e->path);
-        if (e->message) total_len += strlen(e->message);
+        size_t entry_len = 20; /* Severity + brackets + colon + spaces + newline */
+        if (e->path) entry_len += strlen(e->path);
+        if (e->message) entry_len += strlen(e->message);
+        
+        /* Check for overflow */
+        if (total_len > SIZE_MAX - entry_len) {
+            return NULL;  /* Would overflow */
+        }
+        total_len += entry_len;
     }
 
     if (total_len == 0) {
         return js_strdup(result->valid ? "Valid" : "Invalid (no errors recorded)");
     }
 
+    /* Check for final overflow when adding null terminator */
+    if (total_len > SIZE_MAX - 1) {
+        return NULL;
+    }
+    
     char* buffer = (char*)js_malloc(total_len + 1);
     if (!buffer) return NULL;
 
     char* ptr = buffer;
+    size_t remaining = total_len + 1;
     for (size_t i = 0; i < result->error_count; ++i) {
         const js_error_t* e = &result->errors[i];
         const char* sev = e->severity == JS_SEVERITY_ERROR ? "ERROR"
                         : e->severity == JS_SEVERITY_WARNING ? "WARNING"
                         : "INFO";
-        int written = sprintf(ptr, "[%s] %s: %s\n",
-                              sev,
-                              e->path ? e->path : "",
-                              e->message ? e->message : "");
+        int written = snprintf(ptr, remaining, "[%s] %s: %s\n",
+                               sev,
+                               e->path ? e->path : "",
+                               e->message ? e->message : "");
+        if (written < 0 || (size_t)written >= remaining) {
+            break;  /* Truncated or error - stop */
+        }
         ptr += written;
+        remaining -= (size_t)written;
     }
 
     return buffer;

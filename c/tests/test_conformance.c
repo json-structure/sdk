@@ -268,16 +268,10 @@ TEST(invalid_required_missing_property) {
     js_result_t result;
     js_result_init(&result);
     bool valid = js_validate_schema(schema, &result);
-    /* Should produce a warning, not error - count warnings in errors array */
-    bool has_warning = false;
-    for (size_t i = 0; i < result.error_count; i++) {
-        if (result.errors[i].severity == JS_SEVERITY_WARNING) {
-            has_warning = true;
-            break;
-        }
-    }
+    /* Should produce an error - required property not in properties */
+    bool has_error = !valid && result.error_count > 0;
     js_result_cleanup(&result);
-    return has_warning ? 0 : 1;
+    return has_error ? 0 : 1;
 }
 
 TEST(invalid_required_not_array) {
@@ -1686,6 +1680,198 @@ TEST(instance_unique_items) {
 }
 
 /* ============================================================================
+ * Import Tests
+ * ============================================================================ */
+
+/* Test $import not allowed when allow_import is false */
+TEST(import_not_allowed) {
+    const char* schema = "{"
+        "\"$id\": \"test\","
+        "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
+        "\"name\": \"Test\","
+        "\"type\": \"object\","
+        "\"$import\": \"http://example.com/types.json\""
+    "}";
+    
+    js_schema_validator_t validator;
+    js_schema_validator_init(&validator);  /* allow_import defaults to false */
+    
+    js_result_t result;
+    js_result_init(&result);
+    
+    cJSON* schema_json = cJSON_Parse(schema);
+    bool valid = js_schema_validate(&validator, schema_json, &result);
+    cJSON_Delete(schema_json);
+    
+    /* Should fail because allow_import is false */
+    js_result_cleanup(&result);
+    return !valid ? 0 : 1;
+}
+
+/* Test $import with external schema registry */
+TEST(import_basic) {
+    /* External schema to import */
+    const char* external_schema = "{"
+        "\"$id\": \"http://example.com/address.json\","
+        "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
+        "\"name\": \"Address\","
+        "\"type\": \"object\","
+        "\"properties\": {"
+            "\"street\": {\"type\": \"string\"},"
+            "\"city\": {\"type\": \"string\"}"
+        "}"
+    "}";
+    
+    /* Main schema that imports the external one */
+    const char* main_schema = "{"
+        "\"$id\": \"http://example.com/person.json\","
+        "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
+        "\"name\": \"Person\","
+        "\"type\": \"object\","
+        "\"$import\": \"http://example.com/address.json\","
+        "\"properties\": {"
+            "\"name\": {\"type\": \"string\"},"
+            "\"address\": {\"$ref\": \"#/definitions/Address\"}"
+        "}"
+    "}";
+    
+    /* Parse external schema */
+    cJSON* ext_json = cJSON_Parse(external_schema);
+    if (!ext_json) return 1;
+    
+    /* Set up import registry */
+    js_import_entry_t entry = {
+        .uri = "http://example.com/address.json",
+        .file_path = NULL,
+        .schema = ext_json
+    };
+    
+    js_import_registry_t registry = {
+        .entries = &entry,
+        .count = 1
+    };
+    
+    /* Configure validator with import enabled */
+    js_instance_options_t options = {
+        .allow_additional_properties = true,
+        .validate_formats = true,
+        .allow_import = true,
+        .import_registry = &registry
+    };
+    
+    js_instance_validator_t validator;
+    js_instance_validator_init_with_options(&validator, options);
+    
+    /* Test instance */
+    const char* instance = "{"
+        "\"name\": \"John\","
+        "\"address\": {"
+            "\"street\": \"123 Main St\","
+            "\"city\": \"New York\""
+        "}"
+    "}";
+    
+    js_result_t result;
+    js_result_init(&result);
+    
+    cJSON* main_json = cJSON_Parse(main_schema);
+    cJSON* instance_json = cJSON_Parse(instance);
+    
+    bool valid = js_instance_validate(&validator, instance_json, main_json, &result);
+    
+    cJSON_Delete(main_json);
+    cJSON_Delete(instance_json);
+    cJSON_Delete(ext_json);
+    js_result_cleanup(&result);
+    
+    return valid ? 0 : 1;
+}
+
+/* Test $importdefs imports only definitions */
+TEST(importdefs_basic) {
+    /* External schema with definitions */
+    const char* external_schema = "{"
+        "\"$id\": \"http://example.com/types.json\","
+        "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
+        "\"name\": \"Types\","
+        "\"type\": \"object\","
+        "\"definitions\": {"
+            "\"PhoneNumber\": {\"type\": \"string\", \"pattern\": \"^\\\\d{10}$\"},"
+            "\"Email\": {\"type\": \"email\"}"
+        "}"
+    "}";
+    
+    /* Main schema that uses $importdefs */
+    const char* main_schema = "{"
+        "\"$id\": \"http://example.com/contact.json\","
+        "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
+        "\"name\": \"Contact\","
+        "\"type\": \"object\","
+        "\"$importdefs\": \"http://example.com/types.json\","
+        "\"properties\": {"
+            "\"phone\": {\"$ref\": \"#/definitions/PhoneNumber\"}"
+        "}"
+    "}";
+    
+    cJSON* ext_json = cJSON_Parse(external_schema);
+    if (!ext_json) return 1;
+    
+    js_import_entry_t entry = {
+        .uri = "http://example.com/types.json",
+        .file_path = NULL,
+        .schema = ext_json
+    };
+    
+    js_import_registry_t registry = {
+        .entries = &entry,
+        .count = 1
+    };
+    
+    js_instance_options_t options = {
+        .allow_additional_properties = true,
+        .validate_formats = true,
+        .allow_import = true,
+        .import_registry = &registry
+    };
+    
+    js_instance_validator_t validator;
+    js_instance_validator_init_with_options(&validator, options);
+    
+    /* Valid phone number */
+    const char* valid_instance = "{\"phone\": \"1234567890\"}";
+    /* Invalid phone number */
+    const char* invalid_instance = "{\"phone\": \"123\"}";
+    
+    js_result_t result;
+    cJSON* main_json = cJSON_Parse(main_schema);
+    
+    /* Test valid instance */
+    js_result_init(&result);
+    cJSON* valid_json = cJSON_Parse(valid_instance);
+    bool valid = js_instance_validate(&validator, valid_json, main_json, &result);
+    cJSON_Delete(valid_json);
+    js_result_cleanup(&result);
+    if (!valid) {
+        cJSON_Delete(main_json);
+        cJSON_Delete(ext_json);
+        return 1;
+    }
+    
+    /* Test invalid instance */
+    js_result_init(&result);
+    cJSON* invalid_json = cJSON_Parse(invalid_instance);
+    valid = js_instance_validate(&validator, invalid_json, main_json, &result);
+    cJSON_Delete(invalid_json);
+    js_result_cleanup(&result);
+    
+    cJSON_Delete(main_json);
+    cJSON_Delete(ext_json);
+    
+    /* Invalid instance should fail */
+    return !valid ? 0 : 1;
+}
+
+/* ============================================================================
  * Test Runner
  * ============================================================================ */
 
@@ -1763,6 +1949,11 @@ int test_conformance(void) {
     RUN_TEST(instance_empty_array);
     RUN_TEST(instance_object_property_count);
     RUN_TEST(instance_unique_items);
+    
+    printf("\n  --- Import Tests ---\n");
+    RUN_TEST(import_not_allowed);
+    RUN_TEST(import_basic);
+    RUN_TEST(importdefs_basic);
     
     printf("\n  Conformance: %d passed, %d failed, %d total\n", passed, failed, total);
     

@@ -19,6 +19,29 @@ extern "C" {
 #endif
 
 /* ============================================================================
+ * Import Support Types
+ * ============================================================================ */
+
+/**
+ * @brief Entry for mapping URIs to file paths or schemas
+ * 
+ * Used for resolving $import and $importdefs keywords.
+ */
+typedef struct js_import_entry {
+    const char* uri;            /**< The URI to match (e.g., "http://example.com/schema.json") */
+    const char* file_path;      /**< File path to load schema from (NULL if schema provided) */
+    const cJSON* schema;        /**< Pre-parsed schema (NULL if file_path provided) */
+} js_import_entry_t;
+
+/**
+ * @brief Registry for external schemas used during import resolution
+ */
+typedef struct js_import_registry {
+    const js_import_entry_t* entries;  /**< Array of import entries */
+    size_t count;                       /**< Number of entries */
+} js_import_registry_t;
+
+/* ============================================================================
  * Instance Validator Options
  * ============================================================================ */
 
@@ -28,10 +51,12 @@ extern "C" {
 typedef struct js_instance_options {
     bool allow_additional_properties;   /**< Allow properties not in schema (default true) */
     bool validate_formats;              /**< Validate format constraints (default true) */
+    bool allow_import;                  /**< Allow $import and $importdefs keywords (default false) */
+    const js_import_registry_t* import_registry;  /**< External schemas for import resolution (optional) */
 } js_instance_options_t;
 
 /** Default options */
-#define JS_INSTANCE_OPTIONS_DEFAULT ((js_instance_options_t){true, true})
+#define JS_INSTANCE_OPTIONS_DEFAULT ((js_instance_options_t){true, true, false, NULL})
 
 /* ============================================================================
  * Instance Validator

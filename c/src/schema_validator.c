@@ -7,8 +7,10 @@
  */
 
 #include "json_structure/schema_validator.h"
+#include "regex_utils.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 /* ============================================================================
  * Internal Constants
@@ -45,6 +47,8 @@ static const char* g_compound_types[] = {
  * Internal Types
  * ============================================================================ */
 
+#define MAX_IMPORT_DEPTH 16
+
 typedef struct validate_context {
     const js_schema_validator_t* validator;
     js_result_t* result;
@@ -53,6 +57,12 @@ typedef struct validate_context {
     char path[PATH_BUFFER_SIZE];
     int depth;
 } validate_context_t;
+
+typedef struct import_context {
+    const js_schema_validator_t* validator;
+    js_result_t* result;
+    int import_depth;
+} import_context_t;
 
 /* ============================================================================
  * Forward Declarations
@@ -64,6 +74,7 @@ static bool validate_array_items(validate_context_t* ctx, const cJSON* schema);
 static bool validate_map_values(validate_context_t* ctx, const cJSON* schema);
 static bool validate_choice_schema(validate_context_t* ctx, const cJSON* schema);
 static bool validate_constraints(validate_context_t* ctx, const cJSON* schema, const char* type_name);
+static bool process_imports(import_context_t* ctx, cJSON* obj, const char* path);
 
 /* ============================================================================
  * Helper Functions
@@ -71,6 +82,14 @@ static bool validate_constraints(validate_context_t* ctx, const cJSON* schema, c
 
 static void push_path(validate_context_t* ctx, const char* segment) {
     size_t len = strlen(ctx->path);
+    size_t seg_len = strlen(segment);
+    size_t needed = seg_len + (len > 0 && segment[0] != '[' ? 1 : 0);  /* +1 for dot separator */
+    
+    /* Check for buffer overflow - silently truncate if path too long */
+    if (len + needed >= PATH_BUFFER_SIZE) {
+        return;  /* Path too long, skip appending */
+    }
+    
     if (len == 0) {
         snprintf(ctx->path, PATH_BUFFER_SIZE, "%s", segment);
     } else if (segment[0] == '[') {
@@ -124,8 +143,16 @@ static bool is_valid_type_name(const char* type_name) {
 static const cJSON* resolve_ref(validate_context_t* ctx, const char* ref) {
     if (!ref) return NULL;
 
-    /* Handle internal references: #/$defs/Name */
+    /* Handle internal references */
     if (ref[0] == '#') {
+        /* Primary format: #/definitions/Name */
+        if (strncmp(ref, "#/definitions/", 14) == 0) {
+            const char* def_name = ref + 14;
+            if (ctx->definitions) {
+                return cJSON_GetObjectItemCaseSensitive(ctx->definitions, def_name);
+            }
+        }
+        /* Also support: #/$defs/Name (JSON Schema compatibility) */
         if (strncmp(ref, "#/$defs/", 8) == 0) {
             const char* def_name = ref + 8;
             if (ctx->definitions) {
@@ -142,6 +169,360 @@ static const cJSON* resolve_ref(validate_context_t* ctx, const char* ref) {
     }
 
     return NULL;
+}
+
+/* ============================================================================
+ * Import Processing ($import and $importdefs)
+ * ============================================================================ */
+
+/**
+ * @brief Fetch an external schema by URI from the import registry
+ */
+static cJSON* fetch_external_schema(const js_schema_validator_t* validator, const char* uri) {
+    if (!validator || !uri) return NULL;
+    
+    const js_import_registry_t* registry = validator->options.import_registry;
+    if (!registry || !registry->entries) return NULL;
+    
+    for (size_t i = 0; i < registry->count; i++) {
+        const js_import_entry_t* entry = &registry->entries[i];
+        if (!entry->uri) continue;
+        
+        if (strcmp(entry->uri, uri) == 0) {
+            if (entry->schema) {
+                char* json_str = cJSON_PrintUnformatted(entry->schema);
+                if (!json_str) return NULL;
+                cJSON* copy = cJSON_Parse(json_str);
+                free(json_str);
+                return copy;
+            }
+            
+            if (entry->file_path) {
+                FILE* f = fopen(entry->file_path, "rb");
+                if (!f) return NULL;
+                
+                fseek(f, 0, SEEK_END);
+                long size = ftell(f);
+                fseek(f, 0, SEEK_SET);
+                
+                if (size <= 0 || size > 10 * 1024 * 1024) {
+                    fclose(f);
+                    return NULL;
+                }
+                
+                char* content = (char*)malloc((size_t)size + 1);
+                if (!content) {
+                    fclose(f);
+                    return NULL;
+                }
+                
+                size_t read_size = fread(content, 1, (size_t)size, f);
+                fclose(f);
+                content[read_size] = '\0';
+                
+                cJSON* schema = cJSON_Parse(content);
+                free(content);
+                return schema;
+            }
+        }
+        
+        if (entry->schema) {
+            const cJSON* id = cJSON_GetObjectItemCaseSensitive(entry->schema, "$id");
+            if (id && cJSON_IsString(id) && strcmp(id->valuestring, uri) == 0) {
+                char* json_str = cJSON_PrintUnformatted(entry->schema);
+                if (!json_str) return NULL;
+                cJSON* copy = cJSON_Parse(json_str);
+                free(json_str);
+                return copy;
+            }
+        }
+    }
+    
+    return NULL;
+}
+
+/**
+ * @brief Rewrite $ref pointers in imported content to point to new location
+ */
+static void rewrite_refs_schema(cJSON* obj, const char* target_path) {
+    if (!obj || !target_path) return;
+    
+    if (cJSON_IsObject(obj)) {
+        cJSON* item = NULL;
+        cJSON_ArrayForEach(item, obj) {
+            if (strcmp(item->string, "$ref") == 0 && cJSON_IsString(item)) {
+                const char* ref = item->valuestring;
+                if (ref && ref[0] == '#') {
+                    const char* last_slash = strrchr(ref, '/');
+                    const char* ref_name = last_slash ? last_slash + 1 : ref + 1;
+                    
+                    if (ref_name && *ref_name) {
+                        size_t new_len = strlen(target_path) + 1 + strlen(ref_name) + 1;
+                        char* new_ref = (char*)malloc(new_len);
+                        if (new_ref) {
+                            snprintf(new_ref, new_len, "%s/%s", target_path, ref_name);
+                            cJSON_SetValuestring(item, new_ref);
+                            free(new_ref);
+                        }
+                    }
+                }
+            } else if (strcmp(item->string, "$extends") == 0) {
+                if (cJSON_IsString(item)) {
+                    const char* ref = item->valuestring;
+                    if (ref && ref[0] == '#') {
+                        const char* last_slash = strrchr(ref, '/');
+                        const char* ref_name = last_slash ? last_slash + 1 : ref + 1;
+                        if (ref_name && *ref_name) {
+                            size_t new_len = strlen(target_path) + 1 + strlen(ref_name) + 1;
+                            char* new_ref = (char*)malloc(new_len);
+                            if (new_ref) {
+                                snprintf(new_ref, new_len, "%s/%s", target_path, ref_name);
+                                cJSON_SetValuestring(item, new_ref);
+                                free(new_ref);
+                            }
+                        }
+                    }
+                } else if (cJSON_IsArray(item)) {
+                    cJSON* arr_item = NULL;
+                    cJSON_ArrayForEach(arr_item, item) {
+                        if (cJSON_IsString(arr_item)) {
+                            const char* ref = arr_item->valuestring;
+                            if (ref && ref[0] == '#') {
+                                const char* last_slash = strrchr(ref, '/');
+                                const char* ref_name = last_slash ? last_slash + 1 : ref + 1;
+                                if (ref_name && *ref_name) {
+                                    size_t new_len = strlen(target_path) + 1 + strlen(ref_name) + 1;
+                                    char* new_ref = (char*)malloc(new_len);
+                                    if (new_ref) {
+                                        snprintf(new_ref, new_len, "%s/%s", target_path, ref_name);
+                                        cJSON_SetValuestring(arr_item, new_ref);
+                                        free(new_ref);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                rewrite_refs_schema(item, target_path);
+            }
+        }
+    } else if (cJSON_IsArray(obj)) {
+        cJSON* item = NULL;
+        cJSON_ArrayForEach(item, obj) {
+            rewrite_refs_schema(item, target_path);
+        }
+    }
+}
+
+/**
+ * @brief Process $import and $importdefs keywords in schema
+ */
+static bool process_imports(import_context_t* ctx, cJSON* obj, const char* path) {
+    if (!obj || !cJSON_IsObject(obj)) return true;
+    
+    if (ctx->import_depth >= MAX_IMPORT_DEPTH) {
+        js_result_add_error(ctx->result, JS_SCHEMA_IMPORT_NOT_ALLOWED, 
+                           "Maximum import depth exceeded", path);
+        return false;
+    }
+    
+    const char* import_key = NULL;
+    cJSON* import_value = NULL;
+    
+    cJSON* import_item = cJSON_GetObjectItemCaseSensitive(obj, "$import");
+    if (import_item) {
+        import_key = "$import";
+        import_value = import_item;
+    } else {
+        import_item = cJSON_GetObjectItemCaseSensitive(obj, "$importdefs");
+        if (import_item) {
+            import_key = "$importdefs";
+            import_value = import_item;
+        }
+    }
+    
+    if (import_key && import_value) {
+        if (!ctx->validator->options.allow_import) {
+            char msg[256];
+            snprintf(msg, sizeof(msg), "Import keyword '%s' encountered but allow_import not enabled", import_key);
+            js_result_add_error(ctx->result, JS_SCHEMA_IMPORT_NOT_ALLOWED, msg, path);
+            return false;
+        }
+        
+        if (!cJSON_IsString(import_value)) {
+            char msg[256];
+            snprintf(msg, sizeof(msg), "Import keyword '%s' value must be a string URI", import_key);
+            js_result_add_error(ctx->result, JS_SCHEMA_IMPORT_NOT_ALLOWED, msg, path);
+            return false;
+        }
+        
+        const char* uri = import_value->valuestring;
+        
+        cJSON* external = fetch_external_schema(ctx->validator, uri);
+        if (!external) {
+            char msg[256];
+            snprintf(msg, sizeof(msg), "Unable to fetch external schema from URI: %s", uri);
+            js_result_add_error(ctx->result, JS_SCHEMA_IMPORT_NOT_ALLOWED, msg, path);
+            return false;
+        }
+        
+        ctx->import_depth++;
+        bool import_result = process_imports(ctx, external, "#");
+        ctx->import_depth--;
+        
+        if (!import_result) {
+            cJSON_Delete(external);
+            return false;
+        }
+        
+        cJSON* imported_defs = cJSON_CreateObject();
+        if (!imported_defs) {
+            cJSON_Delete(external);
+            return false;
+        }
+        
+        if (strcmp(import_key, "$import") == 0) {
+            const cJSON* type_field = cJSON_GetObjectItemCaseSensitive(external, "type");
+            const cJSON* name_field = cJSON_GetObjectItemCaseSensitive(external, "name");
+            
+            if (type_field && name_field && cJSON_IsString(name_field)) {
+                char* ext_str = cJSON_PrintUnformatted(external);
+                if (ext_str) {
+                    cJSON* ext_copy = cJSON_Parse(ext_str);
+                    free(ext_str);
+                    if (ext_copy) {
+                        cJSON_AddItemToObject(imported_defs, name_field->valuestring, ext_copy);
+                    }
+                }
+            }
+            
+            const cJSON* ext_defs = cJSON_GetObjectItemCaseSensitive(external, "definitions");
+            if (!ext_defs) {
+                ext_defs = cJSON_GetObjectItemCaseSensitive(external, "$defs");
+            }
+            if (ext_defs && cJSON_IsObject(ext_defs)) {
+                cJSON* def = NULL;
+                cJSON_ArrayForEach(def, ext_defs) {
+                    if (def->string && !cJSON_GetObjectItemCaseSensitive(imported_defs, def->string)) {
+                        char* def_str = cJSON_PrintUnformatted(def);
+                        if (def_str) {
+                            cJSON* def_copy = cJSON_Parse(def_str);
+                            free(def_str);
+                            if (def_copy) {
+                                cJSON_AddItemToObject(imported_defs, def->string, def_copy);
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            const cJSON* ext_defs = cJSON_GetObjectItemCaseSensitive(external, "definitions");
+            if (!ext_defs) {
+                ext_defs = cJSON_GetObjectItemCaseSensitive(external, "$defs");
+            }
+            if (ext_defs && cJSON_IsObject(ext_defs)) {
+                cJSON* def = NULL;
+                cJSON_ArrayForEach(def, ext_defs) {
+                    if (def->string) {
+                        char* def_str = cJSON_PrintUnformatted(def);
+                        if (def_str) {
+                            cJSON* def_copy = cJSON_Parse(def_str);
+                            free(def_str);
+                            if (def_copy) {
+                                cJSON_AddItemToObject(imported_defs, def->string, def_copy);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        const char* target_path;
+        cJSON* merge_target;
+        bool is_root = (strcmp(path, "#") == 0);
+        
+        if (is_root) {
+            target_path = "#/definitions";
+            cJSON* defs = cJSON_GetObjectItemCaseSensitive(obj, "definitions");
+            if (!defs) {
+                defs = cJSON_CreateObject();
+                if (defs) {
+                    cJSON_AddItemToObject(obj, "definitions", defs);
+                }
+            }
+            merge_target = defs;
+        } else {
+            target_path = path;
+            merge_target = obj;
+        }
+        
+        cJSON* def = NULL;
+        cJSON_ArrayForEach(def, imported_defs) {
+            rewrite_refs_schema(def, target_path);
+        }
+        
+        /* Merge imported definitions - collect keys first to avoid modifying during iteration */
+        if (merge_target) {
+            int count = cJSON_GetArraySize(imported_defs);
+            if (count > 0) {
+                char** keys_to_merge = (char**)malloc(sizeof(char*) * (size_t)count);
+                if (keys_to_merge) {
+                    int merge_count = 0;
+                    cJSON* item = NULL;
+                    cJSON_ArrayForEach(item, imported_defs) {
+                        if (item->string && !cJSON_GetObjectItemCaseSensitive(merge_target, item->string)) {
+                            keys_to_merge[merge_count++] = item->string;
+                        }
+                    }
+                    
+                    for (int i = 0; i < merge_count; i++) {
+                        cJSON* detached = cJSON_DetachItemFromObject(imported_defs, keys_to_merge[i]);
+                        if (detached) {
+                            cJSON_AddItemToObject(merge_target, keys_to_merge[i], detached);
+                        }
+                    }
+                    
+                    free(keys_to_merge);
+                }
+            }
+        }
+        
+        cJSON_DeleteItemFromObject(obj, import_key);
+        
+        cJSON_Delete(imported_defs);
+        cJSON_Delete(external);
+    }
+    
+    cJSON* child = NULL;
+    cJSON_ArrayForEach(child, obj) {
+        if (child->string && strcmp(child->string, "properties") == 0) {
+            continue;
+        }
+        
+        if (cJSON_IsObject(child)) {
+            char child_path[PATH_BUFFER_SIZE];
+            snprintf(child_path, sizeof(child_path), "%s/%s", path, child->string ? child->string : "");
+            if (!process_imports(ctx, child, child_path)) {
+                return false;
+            }
+        } else if (cJSON_IsArray(child)) {
+            int idx = 0;
+            cJSON* arr_item = NULL;
+            cJSON_ArrayForEach(arr_item, child) {
+                if (cJSON_IsObject(arr_item)) {
+                    char arr_path[PATH_BUFFER_SIZE];
+                    snprintf(arr_path, sizeof(arr_path), "%s/%s[%d]", path, child->string ? child->string : "", idx);
+                    if (!process_imports(ctx, arr_item, arr_path)) {
+                        return false;
+                    }
+                }
+                idx++;
+            }
+        }
+    }
+    
+    return true;
 }
 
 /* ============================================================================
@@ -185,8 +566,15 @@ static bool validate_string_constraints(validate_context_t* ctx, const cJSON* sc
         if (!cJSON_IsString(pattern)) {
             add_error(ctx, JS_SCHEMA_PATTERN_INVALID, "pattern must be a string");
             valid = false;
+        } else {
+            /* Validate regex syntax */
+            if (!js_regex_is_valid(pattern->valuestring)) {
+                char msg[256];
+                snprintf(msg, sizeof(msg), "Invalid regex pattern: %s", pattern->valuestring);
+                add_error(ctx, JS_SCHEMA_PATTERN_INVALID, msg);
+                valid = false;
+            }
         }
-        /* TODO: Validate regex syntax if PCRE2 is available */
     }
     
     return valid;
@@ -274,20 +662,55 @@ static bool validate_array_constraints(validate_context_t* ctx, const cJSON* sch
 
 static bool validate_constraints(validate_context_t* ctx, const cJSON* schema, const char* type_name) {
     bool valid = true;
+    bool is_string_type = (strcmp(type_name, "string") == 0 || js_type_is_string(js_type_from_name(type_name)));
+    bool is_numeric_type = (strcmp(type_name, "number") == 0 || strcmp(type_name, "integer") == 0 ||
+                           js_type_is_numeric(js_type_from_name(type_name)));
+    bool is_array_type = (strcmp(type_name, "array") == 0 || strcmp(type_name, "set") == 0);
+    
+    /* Check for constraint type mismatches */
+    const cJSON* minimum = cJSON_GetObjectItemCaseSensitive(schema, "minimum");
+    const cJSON* maximum = cJSON_GetObjectItemCaseSensitive(schema, "maximum");
+    const cJSON* exclusiveMinimum = cJSON_GetObjectItemCaseSensitive(schema, "exclusiveMinimum");
+    const cJSON* exclusiveMaximum = cJSON_GetObjectItemCaseSensitive(schema, "exclusiveMaximum");
+    const cJSON* multipleOf = cJSON_GetObjectItemCaseSensitive(schema, "multipleOf");
+    
+    if (!is_numeric_type && (minimum || maximum || exclusiveMinimum || exclusiveMaximum || multipleOf)) {
+        add_error(ctx, JS_SCHEMA_CONSTRAINT_TYPE_MISMATCH, 
+                 "Numeric constraints (minimum, maximum, etc.) can only be used with numeric types");
+        valid = false;
+    }
+    
+    const cJSON* minLength = cJSON_GetObjectItemCaseSensitive(schema, "minLength");
+    const cJSON* maxLength = cJSON_GetObjectItemCaseSensitive(schema, "maxLength");
+    const cJSON* pattern = cJSON_GetObjectItemCaseSensitive(schema, "pattern");
+    
+    if (!is_string_type && (minLength || maxLength || pattern)) {
+        add_error(ctx, JS_SCHEMA_CONSTRAINT_TYPE_MISMATCH, 
+                 "String constraints (minLength, maxLength, pattern) can only be used with string types");
+        valid = false;
+    }
+    
+    const cJSON* minItems = cJSON_GetObjectItemCaseSensitive(schema, "minItems");
+    const cJSON* maxItems = cJSON_GetObjectItemCaseSensitive(schema, "maxItems");
+    
+    if (!is_array_type && (minItems || maxItems)) {
+        add_error(ctx, JS_SCHEMA_CONSTRAINT_TYPE_MISMATCH, 
+                 "Array constraints (minItems, maxItems) can only be used with array types");
+        valid = false;
+    }
     
     /* String constraints */
-    if (strcmp(type_name, "string") == 0 || js_type_is_string(js_type_from_name(type_name))) {
+    if (is_string_type) {
         valid = validate_string_constraints(ctx, schema) && valid;
     }
     
     /* Numeric constraints */
-    if (strcmp(type_name, "number") == 0 || strcmp(type_name, "integer") == 0 ||
-        js_type_is_numeric(js_type_from_name(type_name))) {
+    if (is_numeric_type) {
         valid = validate_numeric_constraints(ctx, schema) && valid;
     }
     
     /* Array constraints */
-    if (strcmp(type_name, "array") == 0 || strcmp(type_name, "set") == 0) {
+    if (is_array_type) {
         valid = validate_array_constraints(ctx, schema) && valid;
     }
     
@@ -338,13 +761,13 @@ static bool validate_type_value(validate_context_t* ctx, const cJSON* type_node)
 
 static bool validate_definitions(validate_context_t* ctx, const cJSON* defs) {
     if (!cJSON_IsObject(defs)) {
-        add_error(ctx, JS_SCHEMA_DEFINITIONS_MUST_BE_OBJECT, "$defs must be an object");
+        add_error(ctx, JS_SCHEMA_DEFINITIONS_MUST_BE_OBJECT, "definitions must be an object");
         return false;
     }
     
     bool valid = true;
     size_t prev_len = strlen(ctx->path);
-    push_path(ctx, "$defs");
+    push_path(ctx, "definitions");
     
     cJSON* def;
     cJSON_ArrayForEach(def, defs) {
@@ -409,7 +832,8 @@ static bool validate_object_properties(validate_context_t* ctx, const cJSON* sch
                         char msg[256];
                         snprintf(msg, sizeof(msg), "Required property '%s' not defined in properties",
                                 req_item->valuestring);
-                        add_warning(ctx, JS_SCHEMA_REQUIRED_PROPERTY_NOT_DEFINED, msg);
+                        add_error(ctx, JS_SCHEMA_REQUIRED_PROPERTY_NOT_DEFINED, msg);
+                        valid = false;
                     }
                 }
             }
@@ -740,8 +1164,39 @@ static bool validate_schema_node(validate_context_t* ctx, const cJSON* schema) {
         if (!cJSON_IsString(ref)) {
             add_error(ctx, JS_SCHEMA_REF_NOT_STRING, "$ref must be a string");
             valid = false;
+        } else {
+            /* Validate that the reference target exists */
+            const char* ref_str = ref->valuestring;
+            if (ref_str[0] == '#') {
+                /* Internal reference - verify it exists in definitions */
+                const char* def_name = NULL;
+                if (strncmp(ref_str, "#/definitions/", 14) == 0) {
+                    def_name = ref_str + 14;
+                } else if (strncmp(ref_str, "#/$defs/", 8) == 0) {
+                    def_name = ref_str + 8;
+                } else if (strncmp(ref_str, "#/$definitions/", 15) == 0) {
+                    def_name = ref_str + 15;
+                }
+                
+                if (def_name) {
+                    if (ctx->definitions) {
+                        const cJSON* target = cJSON_GetObjectItemCaseSensitive(ctx->definitions, def_name);
+                        if (!target) {
+                            char msg[256];
+                            snprintf(msg, sizeof(msg), "Reference target '%s' not found in definitions", def_name);
+                            add_error(ctx, JS_SCHEMA_REF_NOT_FOUND, msg);
+                            valid = false;
+                        }
+                    } else {
+                        char msg[256];
+                        snprintf(msg, sizeof(msg), "Reference '%s' used but no definitions defined", ref_str);
+                        add_error(ctx, JS_SCHEMA_REF_NOT_FOUND, msg);
+                        valid = false;
+                    }
+                }
+                /* Note: Circular reference detection happens during instance validation */
+            }
         }
-        /* TODO: Validate reference resolution and circular refs */
         ctx->depth--;
         return valid;
     }
@@ -788,10 +1243,21 @@ static bool validate_schema_node(validate_context_t* ctx, const cJSON* schema) {
         if (!validate_definitions(ctx, defs)) valid = false;
     }
     
-    /* Legacy support */
+    /* Legacy support for $definitions */
     const cJSON* definitions = cJSON_GetObjectItemCaseSensitive(schema, "$definitions");
     if (definitions && !defs) {
         if (!validate_definitions(ctx, definitions)) valid = false;
+    }
+    
+    /* Legacy support for definitions (no $ prefix) */
+    const cJSON* definitions_legacy = cJSON_GetObjectItemCaseSensitive(schema, "definitions");
+    if (definitions_legacy && !defs && !definitions) {
+        if (!cJSON_IsObject(definitions_legacy)) {
+            add_error(ctx, JS_SCHEMA_DEFINITIONS_MUST_BE_OBJECT, "definitions must be an object");
+            valid = false;
+        } else {
+            if (!validate_definitions(ctx, definitions_legacy)) valid = false;
+        }
     }
     
     /* Validate composition keywords */
@@ -845,8 +1311,11 @@ static bool validate_root_schema(validate_context_t* ctx, const cJSON* schema) {
         valid = false;
     }
     
-    /* Cache definitions for reference resolution */
-    ctx->definitions = cJSON_GetObjectItemCaseSensitive(schema, "$defs");
+    /* Cache definitions for reference resolution - primary keyword is "definitions" */
+    ctx->definitions = cJSON_GetObjectItemCaseSensitive(schema, "definitions");
+    if (!ctx->definitions) {
+        ctx->definitions = cJSON_GetObjectItemCaseSensitive(schema, "$defs");
+    }
     if (!ctx->definitions) {
         ctx->definitions = cJSON_GetObjectItemCaseSensitive(schema, "$definitions");
     }
@@ -888,16 +1357,53 @@ bool js_schema_validate(const js_schema_validator_t* validator,
         return false;
     }
     
+    /* Always process imports - either to resolve them (if allowed) or to detect errors */
+    cJSON* schema_copy = NULL;
+    const cJSON* working_schema = schema;
+    
+    /* Create a mutable copy for import processing */
+    char* schema_str = cJSON_PrintUnformatted(schema);
+    if (!schema_str) {
+        js_result_add_error(result, JS_SCHEMA_NULL, "Failed to process schema", "");
+        return false;
+    }
+    schema_copy = cJSON_Parse(schema_str);
+    free(schema_str);
+    
+    if (!schema_copy) {
+        js_result_add_error(result, JS_SCHEMA_NULL, "Failed to copy schema", "");
+        return false;
+    }
+    
+    import_context_t import_ctx = {
+        .validator = validator,
+        .result = result,
+        .import_depth = 0
+    };
+    
+    if (!process_imports(&import_ctx, schema_copy, "#")) {
+        cJSON_Delete(schema_copy);
+        return false;
+    }
+    
+    working_schema = schema_copy;
+    
     validate_context_t ctx = {
         .validator = validator,
         .result = result,
-        .root_schema = schema,
+        .root_schema = working_schema,
         .definitions = NULL,
         .path = "",
         .depth = 0
     };
     
-    return validate_root_schema(&ctx, schema);
+    bool valid = validate_root_schema(&ctx, working_schema);
+    
+    if (schema_copy) {
+        cJSON_Delete(schema_copy);
+    }
+    
+    return valid;
 }
 
 bool js_schema_validate_string(const js_schema_validator_t* validator,
