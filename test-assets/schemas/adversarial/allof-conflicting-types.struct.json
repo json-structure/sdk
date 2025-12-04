@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-structure.org/meta/extended/v0/#",
+  "$id": "https://test.json-structure.org/adversarial/allof-conflicting-types",
+  "name": "AllOfConflictingTypes",
+  "$uses": ["JSONStructureConditionalComposition"],
+  "description": "allOf with conflicting type requirements - should be impossible to satisfy",
+  "allOf": [
+    { "type": "string" },
+    { "type": "int32" }
+  ]
+}

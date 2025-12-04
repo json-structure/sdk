@@ -134,6 +134,7 @@ public final class SchemaValidator {
     private Map<String, JsonNode> externalSchemaMap; // Map of import URI to schema for import processing
     private Set<String> definedRefs; // Track defined definitions for $ref validation
     private Set<String> importNamespaces; // Track namespaces with $import/$importdefs
+    private Set<String> visitedExtends; // Track visited $extends references for cycle detection
     private JsonSourceLocator sourceLocator; // For source location tracking
     private JsonNode rootSchema; // Store root schema for resolving local refs
     private boolean validationExtensionEnabled; // Whether validation extension is enabled via $schema or $uses
@@ -221,6 +222,9 @@ public final class SchemaValidator {
 
         // Store root schema for resolving local refs
         this.rootSchema = schema;
+        
+        // Reset visited extends for cycle detection
+        this.visitedExtends = new HashSet<>();
         
         // Detect if validation extensions are enabled
         this.validationExtensionEnabled = isValidationExtensionEnabled(schema);
@@ -674,6 +678,8 @@ public final class SchemaValidator {
             String str = value.asText();
             if (str.isBlank()) {
                 addError(result, ErrorCodes.SCHEMA_KEYWORD_EMPTY, "$extends cannot be empty", appendPath(path, "$extends"));
+            } else {
+                validateExtendsRef(str, path, result);
             }
             return;
         }
@@ -689,15 +695,41 @@ public final class SchemaValidator {
                     addError(result, ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE, "$extends array items must be strings", appendPath(path, "$extends"));
                     break;
                 }
-                if (item.asText().isBlank()) {
+                String refStr = item.asText();
+                if (refStr.isBlank()) {
                     addError(result, ErrorCodes.SCHEMA_KEYWORD_EMPTY, "$extends array items cannot be empty", appendPath(path, "$extends"));
                     break;
                 }
+                validateExtendsRef(refStr, path, result);
             }
             return;
         }
 
         addError(result, ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE, "$extends must be a string or array of strings", appendPath(path, "$extends"));
+    }
+
+    /**
+     * Validates a single $extends reference for circular references.
+     */
+    private void validateExtendsRef(String refStr, String path, ValidationResult result) {
+        // Check for circular reference
+        if (visitedExtends.contains(refStr)) {
+            addError(result, ErrorCodes.SCHEMA_EXTENDS_CIRCULAR, 
+                "Circular $extends reference detected: " + refStr, appendPath(path, "$extends"));
+            return;
+        }
+
+        // Mark as visited
+        visitedExtends.add(refStr);
+
+        // Resolve and validate the base schema
+        JsonNode baseSchema = resolveLocalRef(refStr);
+        if (baseSchema != null && baseSchema.isObject() && baseSchema.has("$extends")) {
+            validateExtendsKeyword(baseSchema.get("$extends"), refStr, result);
+        }
+
+        // Unmark after processing
+        visitedExtends.remove(refStr);
     }
 
     private void validateImport(JsonNode value, String keyword, String path, ValidationResult result) {

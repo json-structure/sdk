@@ -1,0 +1,15 @@
+{
+  "$schema": "https://test.json-structure.org/adversarial/additionalProperties-combined",
+  "known": "expected property",
+  "unknown1": {
+    "nested": 42,
+    "extraNested": [
+      {},
+      { "valid": "empty objects only" }
+    ]
+  },
+  "unknown2": {
+    "nested": -1,
+    "moreExtra": []
+  }
+}

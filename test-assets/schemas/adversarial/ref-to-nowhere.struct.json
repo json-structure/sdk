@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://test.json-structure.org/adversarial/ref-to-nowhere",
+  "name": "RefToNowhere",
+  "description": "References that point to non-existent definitions",
+  "type": "object",
+  "properties": {
+    "missingDef": { "$ref": "#/$defs/DoesNotExist" },
+    "missingNested": { "$ref": "#/$defs/Exists/$defs/DoesNotExist" },
+    "externalMissing": { "$ref": "https://example.com/missing.schema.json" },
+    "malformedPointer": { "$ref": "#/$defs/has spaces" },
+    "invalidEscape": { "$ref": "#/$defs/~2invalid" }
+  },
+  "$defs": {
+    "Exists": {
+      "type": "string"
+    }
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://test.json-structure.org/adversarial/indirect-circular-ref",
+  "name": "IndirectCircularRef",
+  "description": "Indirect circular reference chain: A -> B -> C -> A - tests cycle detection",
+  "type": "object",
+  "definitions": {
+    "TypeA": {
+      "type": "object",
+      "properties": {
+        "next": { "type": { "$ref": "#/definitions/TypeB" } }
+      }
+    },
+    "TypeB": {
+      "type": "object", 
+      "properties": {
+        "next": { "type": { "$ref": "#/definitions/TypeC" } }
+      }
+    },
+    "TypeC": {
+      "type": "object",
+      "properties": {
+        "next": { "type": { "$ref": "#/definitions/TypeA" } }
+      }
+    }
+  },
+  "properties": {
+    "start": { "type": { "$ref": "#/definitions/TypeA" } }
+  }
+}

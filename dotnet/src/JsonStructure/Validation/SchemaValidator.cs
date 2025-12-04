@@ -96,6 +96,7 @@ public sealed class SchemaValidator
     private readonly ValidationOptions _options;
     private HashSet<string> _definedRefs = new();
     private HashSet<string> _importNamespaces = new();
+    private HashSet<string> _visitedExtends = new();
     private JsonNode? _rootSchema;
     private JsonSourceLocator? _sourceLocator;
     private Dictionary<string, JsonNode> _externalSchemas = new();
@@ -274,6 +275,9 @@ public sealed class SchemaValidator
 
         // Store root schema for ref resolution
         _rootSchema = schema;
+        
+        // Reset visited extends for cycle detection
+        _visitedExtends = new HashSet<string>();
         
         // Detect if validation extensions are enabled
         _validationExtensionEnabled = IsValidationExtensionEnabled(schema);
@@ -707,17 +711,18 @@ public sealed class SchemaValidator
     private void ValidateExtendsKeyword(JsonNode? value, string path, ValidationResult result)
     {
         // $extends can be a string (single base type) or array of strings (multiple inheritance)
+        var refs = new List<(string Ref, string RefPath)>();
+        
         if (value is JsonValue jv && jv.TryGetValue<string>(out var str))
         {
-            // Single reference
             if (string.IsNullOrWhiteSpace(str))
             {
                 AddError(result, ErrorCodes.SchemaKeywordEmpty, "$extends cannot be empty", AppendPath(path, "$extends"));
+                return;
             }
-            return;
+            refs.Add((str, AppendPath(path, "$extends")));
         }
-
-        if (value is JsonArray arr)
+        else if (value is JsonArray arr)
         {
             if (arr.Count == 0)
             {
@@ -725,23 +730,56 @@ public sealed class SchemaValidator
                 return;
             }
             
-            foreach (var item in arr)
+            for (int i = 0; i < arr.Count; i++)
             {
+                var item = arr[i];
                 if (item is not JsonValue itemValue || !itemValue.TryGetValue<string>(out var itemStr))
                 {
                     AddError(result, ErrorCodes.SchemaKeywordInvalidType, "$extends array items must be strings", AppendPath(path, "$extends"));
-                    break;
+                    return;
                 }
                 if (string.IsNullOrWhiteSpace(itemStr))
                 {
                     AddError(result, ErrorCodes.SchemaKeywordEmpty, "$extends array items cannot be empty", AppendPath(path, "$extends"));
-                    break;
+                    return;
                 }
+                refs.Add((itemStr, $"{AppendPath(path, "$extends")}[{i}]"));
             }
+        }
+        else
+        {
+            AddError(result, ErrorCodes.SchemaKeywordInvalidType, "$extends must be a string or array of strings", AppendPath(path, "$extends"));
             return;
         }
-
-        AddError(result, ErrorCodes.SchemaKeywordInvalidType, "$extends must be a string or array of strings", AppendPath(path, "$extends"));
+        
+        // Check each reference for circular $extends
+        foreach (var (refStr, refPath) in refs)
+        {
+            if (!refStr.StartsWith("#/"))
+                continue; // External references handled elsewhere
+            
+            // Check for circular $extends
+            if (_visitedExtends.Contains(refStr))
+            {
+                AddError(result, ErrorCodes.SchemaExtendsCircular, $"Circular $extends reference detected: {refStr}", refPath);
+                continue;
+            }
+            
+            _visitedExtends.Add(refStr);
+            
+            var resolved = ResolveLocalRef(refStr);
+            if (resolved is null)
+            {
+                AddError(result, ErrorCodes.SchemaExtendsNotFound, $"$extends reference '{refStr}' not found", refPath);
+            }
+            else if (resolved is JsonObject resolvedObj && resolvedObj.TryGetPropertyValue("$extends", out var nestedExtends))
+            {
+                // Recursively validate the extended schema's $extends
+                ValidateExtendsKeyword(nestedExtends, refPath, result);
+            }
+            
+            _visitedExtends.Remove(refStr);
+        }
     }
 
     private void ValidateImport(JsonNode? value, string keyword, string path, ValidationResult result)

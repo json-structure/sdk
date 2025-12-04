@@ -1,0 +1,9 @@
+{
+  "$schema": "https://test.json-structure.org/adversarial/pattern-with-flags",
+  "caseInsensitive": "HELLO",
+  "multiline": "line",
+  "dotAll": "text\nwith\nnewlines",
+  "unicode": "Héllo",
+  "lookbehind": "prefixcontent",
+  "namedGroups": "abc"
+}

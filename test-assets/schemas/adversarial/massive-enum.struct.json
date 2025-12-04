@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://test.json-structure.org/adversarial/massive-enum",
+  "name": "MassiveEnum",
+  "description": "Extremely large enum to test memory and lookup performance",
+  "type": "object",
+  "properties": {
+    "selection": {
+      "type": "string",
+      "enum": [
+        "value_0001", "value_0002", "value_0003", "value_0004", "value_0005",
+        "value_0006", "value_0007", "value_0008", "value_0009", "value_0010",
+        "value_0011", "value_0012", "value_0013", "value_0014", "value_0015",
+        "value_0016", "value_0017", "value_0018", "value_0019", "value_0020",
+        "value_0021", "value_0022", "value_0023", "value_0024", "value_0025",
+        "value_0026", "value_0027", "value_0028", "value_0029", "value_0030",
+        "value_0031", "value_0032", "value_0033", "value_0034", "value_0035",
+        "value_0036", "value_0037", "value_0038", "value_0039", "value_0040",
+        "value_0041", "value_0042", "value_0043", "value_0044", "value_0045",
+        "value_0046", "value_0047", "value_0048", "value_0049", "value_0050",
+        "value_0051", "value_0052", "value_0053", "value_0054", "value_0055",
+        "value_0056", "value_0057", "value_0058", "value_0059", "value_0060",
+        "value_0061", "value_0062", "value_0063", "value_0064", "value_0065",
+        "value_0066", "value_0067", "value_0068", "value_0069", "value_0070",
+        "value_0071", "value_0072", "value_0073", "value_0074", "value_0075",
+        "value_0076", "value_0077", "value_0078", "value_0079", "value_0080",
+        "value_0081", "value_0082", "value_0083", "value_0084", "value_0085",
+        "value_0086", "value_0087", "value_0088", "value_0089", "value_0090",
+        "value_0091", "value_0092", "value_0093", "value_0094", "value_0095",
+        "value_0096", "value_0097", "value_0098", "value_0099", "value_0100"
+      ],
+      "description": "One of 100 possible values"
+    }
+  }
+}

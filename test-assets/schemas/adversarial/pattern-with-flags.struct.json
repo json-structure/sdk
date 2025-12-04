@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://test.json-structure.org/adversarial/pattern-with-flags",
+  "name": "PatternWithFlags",
+  "description": "Regex patterns with flags that may not be universally supported",
+  "type": "object",
+  "properties": {
+    "caseInsensitive": {
+      "type": "string",
+      "pattern": "(?i)^hello$",
+      "description": "Case insensitive flag - not portable"
+    },
+    "multiline": {
+      "type": "string",
+      "pattern": "(?m)^line$",
+      "description": "Multiline flag"
+    },
+    "dotAll": {
+      "type": "string",
+      "pattern": "(?s).*",
+      "description": "Dot matches newline flag"
+    },
+    "unicode": {
+      "type": "string",
+      "pattern": "\\p{L}+",
+      "description": "Unicode property escapes - not all engines support"
+    },
+    "lookbehind": {
+      "type": "string",
+      "pattern": "(?<=prefix)content",
+      "description": "Lookbehind - not supported in all engines"
+    },
+    "namedGroups": {
+      "type": "string",
+      "pattern": "(?<name>[a-z]+)",
+      "description": "Named capture groups"
+    }
+  }
+}

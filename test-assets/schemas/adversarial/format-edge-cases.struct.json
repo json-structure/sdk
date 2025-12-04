@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://test.json-structure.org/adversarial/format-edge-cases",
+  "name": "FormatEdgeCases",
+  "description": "Format validation edge cases",
+  "type": "object",
+  "properties": {
+    "dateTime": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "uri": {
+      "type": "string",
+      "format": "uri"
+    },
+    "email": {
+      "type": "string",
+      "format": "email"
+    },
+    "uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "unknownFormat": {
+      "type": "string",
+      "format": "not-a-real-format"
+    }
+  }
+}

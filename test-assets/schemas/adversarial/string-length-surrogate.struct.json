@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://test.json-structure.org/adversarial/string-length-surrogate",
+  "name": "StringLengthSurrogate",
+  "description": "Tests string length calculation with surrogate pairs",
+  "type": "object",
+  "properties": {
+    "exactLengthEmoji": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1,
+      "description": "Single emoji like 😀 - is it length 1 or 2 (surrogate pair)?"
+    },
+    "countingTest": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 3,
+      "description": "Test: 'a😀b' - is length 3, 4, or 5?"
+    },
+    "familyEmoji": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1,
+      "description": "👨‍👩‍👧‍👦 is rendered as 1 char but has many code points"
+    },
+    "flagEmoji": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2,
+      "description": "🇺🇸 is rendered as 1 char but is 2 regional indicators"
+    }
+  }
+}

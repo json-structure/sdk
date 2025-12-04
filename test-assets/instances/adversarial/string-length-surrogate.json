@@ -1,0 +1,7 @@
+{
+  "$schema": "https://test.json-structure.org/adversarial/string-length-surrogate",
+  "exactLengthEmoji": "😀",
+  "countingTest": "a😀b",
+  "familyEmoji": "👨‍👩‍👧‍👦",
+  "flagEmoji": "🇺🇸"
+}

@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://test.json-structure.org/adversarial/extends-circular-chain",
+  "name": "ExtendsCircularChain",
+  "description": "Circular $extends chain: A extends B, B extends C, C extends A",
+  "type": "object",
+  "definitions": {
+    "TypeA": {
+      "type": "object",
+      "abstract": true,
+      "$extends": "#/definitions/TypeC",
+      "properties": {
+        "a": { "type": "string" }
+      }
+    },
+    "TypeB": {
+      "type": "object",
+      "abstract": true,
+      "$extends": "#/definitions/TypeA",
+      "properties": {
+        "b": { "type": "string" }
+      }
+    },
+    "TypeC": {
+      "type": "object",
+      "abstract": true,
+      "$extends": "#/definitions/TypeB",
+      "properties": {
+        "c": { "type": "string" }
+      }
+    }
+  },
+  "properties": {
+    "data": { "type": "string" }
+  }
+}

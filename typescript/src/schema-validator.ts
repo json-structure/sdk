@@ -40,6 +40,7 @@ export class SchemaValidator {
   private warnings: ValidationError[] = [];
   private schema: JsonObject | null = null;
   private seenRefs: Set<string> = new Set();
+  private seenExtends: Set<string> = new Set();
   private sourceLocator: JsonSourceLocator | null = null;
   private allowImport: boolean;
   private externalSchemas: Map<string, JsonValue>;
@@ -90,6 +91,7 @@ export class SchemaValidator {
     this.errors = [];
     this.warnings = [];
     this.seenRefs = new Set();
+    this.seenExtends = new Set();
     
     // Set up source locator if JSON string provided
     if (schemaJson) {
@@ -267,6 +269,11 @@ export class SchemaValidator {
         ErrorCodes.SCHEMA_REF_NOT_IN_TYPE
       );
       return;
+    }
+
+    // Validate $extends if present
+    if ('$extends' in schema) {
+      this.validateExtends(schema.$extends, `${path}/$extends`);
     }
 
     // Type is required unless it's a conditional-only schema
@@ -707,6 +714,55 @@ export class SchemaValidator {
       if (constraint in schema && !numericTypes.includes(type)) {
         this.addError(`${path}/${constraint}`, `${constraint} constraint is only valid for numeric types, not ${type}`, ErrorCodes.SCHEMA_CONSTRAINT_TYPE_MISMATCH);
       }
+    }
+  }
+
+  private validateExtends(extendsValue: JsonValue, path: string): void {
+    const refs: string[] = [];
+    
+    if (typeof extendsValue === 'string') {
+      refs.push(extendsValue);
+    } else if (Array.isArray(extendsValue)) {
+      for (let i = 0; i < extendsValue.length; i++) {
+        const item = extendsValue[i];
+        if (typeof item === 'string') {
+          refs.push(item);
+        } else {
+          this.addError(`${path}[${i}]`, '$extends array items must be strings', ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE);
+        }
+      }
+    } else {
+      this.addError(path, '$extends must be a string or array of strings', ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE);
+      return;
+    }
+
+    // Validate each $extends reference
+    for (let i = 0; i < refs.length; i++) {
+      const ref = refs[i];
+      const refPath = Array.isArray(extendsValue) ? `${path}[${i}]` : path;
+      
+      if (!ref.startsWith('#/')) {
+        // External reference - just check if it exists
+        continue;
+      }
+
+      // Check for circular $extends
+      if (this.seenExtends.has(ref)) {
+        this.addError(refPath, `Circular $extends reference detected: ${ref}`, ErrorCodes.SCHEMA_EXTENDS_CIRCULAR);
+        continue;
+      }
+
+      this.seenExtends.add(ref);
+      const resolved = this.resolveRef(ref);
+      if (resolved === null) {
+        this.addError(refPath, `$extends reference '${ref}' not found`, ErrorCodes.SCHEMA_EXTENDS_NOT_FOUND);
+      } else {
+        // Recursively validate the extended schema (which may have its own $extends)
+        if ('$extends' in resolved) {
+          this.validateExtends(resolved.$extends, refPath);
+        }
+      }
+      this.seenExtends.delete(ref);
     }
   }
 

@@ -594,4 +594,159 @@ class TestAssetsIntegrationTests {
         
         return tests.stream();
     }
+    
+    // ========================================================================
+    // Adversarial Tests - stress test the validators
+    // ========================================================================
+    
+    /**
+     * Schemas that MUST fail schema validation.
+     */
+    private static final Set<String> INVALID_ADVERSARIAL_SCHEMAS = Set.of(
+        "ref-to-nowhere.struct.json",
+        "malformed-json-pointer.struct.json",
+        "self-referencing-extends.struct.json",
+        "extends-circular-chain.struct.json"
+    );
+    
+    /**
+     * Maps instance files to their corresponding schema.
+     */
+    private static final java.util.Map<String, String> ADVERSARIAL_INSTANCE_SCHEMA_MAP = java.util.Map.ofEntries(
+        java.util.Map.entry("deep-nesting.json", "deep-nesting-100.struct.json"),
+        java.util.Map.entry("recursive-tree.json", "recursive-array-items.struct.json"),
+        java.util.Map.entry("property-name-edge-cases.json", "property-name-edge-cases.struct.json"),
+        java.util.Map.entry("unicode-edge-cases.json", "unicode-edge-cases.struct.json"),
+        java.util.Map.entry("string-length-surrogate.json", "string-length-surrogate.struct.json"),
+        java.util.Map.entry("int64-precision.json", "int64-precision-loss.struct.json"),
+        java.util.Map.entry("floating-point.json", "floating-point-precision.struct.json"),
+        java.util.Map.entry("null-edge-cases.json", "null-edge-cases.struct.json"),
+        java.util.Map.entry("empty-collections-invalid.json", "empty-arrays-objects.struct.json"),
+        java.util.Map.entry("redos-attack.json", "redos-pattern.struct.json"),
+        java.util.Map.entry("allof-conflict.json", "allof-conflicting-types.struct.json"),
+        java.util.Map.entry("oneof-all-match.json", "oneof-all-match.struct.json"),
+        java.util.Map.entry("type-union-int.json", "type-union-ambiguous.struct.json"),
+        java.util.Map.entry("type-union-number.json", "type-union-ambiguous.struct.json"),
+        java.util.Map.entry("conflicting-constraints.json", "conflicting-constraints.struct.json"),
+        java.util.Map.entry("format-invalid.json", "format-edge-cases.struct.json"),
+        java.util.Map.entry("format-valid.json", "format-edge-cases.struct.json"),
+        java.util.Map.entry("pattern-flags.json", "pattern-with-flags.struct.json"),
+        java.util.Map.entry("additionalProperties-combined.json", "additionalProperties-combined.struct.json"),
+        java.util.Map.entry("extends-override.json", "extends-with-overrides.struct.json"),
+        java.util.Map.entry("quadratic-blowup.json", "quadratic-blowup.struct.json"),
+        java.util.Map.entry("anyof-none-match.json", "anyof-none-match.struct.json")
+    );
+    
+    @TestFactory
+    @DisplayName("Adversarial Schema Tests")
+    Stream<DynamicTest> testAdversarialSchemas() throws IOException {
+        if (testAssetsPath == null) {
+            return Stream.of(dynamicTest("test-assets not found", () -> 
+                System.out.println("Warning: test-assets path not found, skipping adversarial tests")));
+        }
+        
+        Path adversarialSchemasDir = testAssetsPath.resolve("schemas/adversarial");
+        if (!Files.exists(adversarialSchemasDir)) {
+            return Stream.of(dynamicTest("adversarial schemas not found", () -> 
+                System.out.println("Warning: adversarial schemas directory not found")));
+        }
+        
+        return Files.list(adversarialSchemasDir)
+            .filter(p -> p.getFileName().toString().endsWith(".struct.json"))
+            .map(schemaPath -> {
+                String fileName = schemaPath.getFileName().toString();
+                String testName = fileName.replace(".struct.json", "");
+                
+                return dynamicTest(testName + " is handled correctly", () -> {
+                    JsonNode schema = mapper.readTree(schemaPath.toFile());
+                    
+                    ValidationResult result = schemaValidator.validate(schema);
+                    
+                    System.out.println("Schema: " + fileName);
+                    System.out.println("Valid: " + result.isValid());
+                    System.out.println("Errors: " + result.getErrors().size());
+                    
+                    if (INVALID_ADVERSARIAL_SCHEMAS.contains(fileName)) {
+                        assertThat(result.isValid())
+                            .withFailMessage("Adversarial schema " + fileName + " should be invalid")
+                            .isFalse();
+                    }
+                });
+            });
+    }
+    
+    @TestFactory
+    @DisplayName("Adversarial Instance Tests")
+    Stream<DynamicTest> testAdversarialInstances() throws IOException {
+        if (testAssetsPath == null) {
+            return Stream.of(dynamicTest("test-assets not found", () -> 
+                System.out.println("Warning: test-assets path not found, skipping adversarial tests")));
+        }
+        
+        Path adversarialInstancesDir = testAssetsPath.resolve("instances/adversarial");
+        Path adversarialSchemasDir = testAssetsPath.resolve("schemas/adversarial");
+        
+        if (!Files.exists(adversarialInstancesDir)) {
+            return Stream.of(dynamicTest("adversarial instances not found", () -> 
+                System.out.println("Warning: adversarial instances directory not found")));
+        }
+        
+        return Files.list(adversarialInstancesDir)
+            .filter(p -> p.getFileName().toString().endsWith(".json"))
+            .filter(p -> ADVERSARIAL_INSTANCE_SCHEMA_MAP.containsKey(p.getFileName().toString()))
+            .map(instancePath -> {
+                String instanceFileName = instancePath.getFileName().toString();
+                String schemaFileName = ADVERSARIAL_INSTANCE_SCHEMA_MAP.get(instanceFileName);
+                String testName = instanceFileName.replace(".json", "");
+                
+                return dynamicTest(testName + " does not crash", () -> {
+                    Path schemaPath = adversarialSchemasDir.resolve(schemaFileName);
+                    assumeTrue(Files.exists(schemaPath), "Schema not found: " + schemaFileName);
+                    
+                    JsonNode schema = mapper.readTree(schemaPath.toFile());
+                    JsonNode instance = mapper.readTree(instancePath.toFile());
+                    
+                    // Remove $schema from instance
+                    if (instance instanceof ObjectNode) {
+                        ((ObjectNode) instance).remove("$schema");
+                    }
+                    
+                    System.out.println("Instance: " + instanceFileName);
+                    System.out.println("Schema: " + schemaFileName);
+                    
+                    // Should complete without throwing or hanging
+                    ValidationResult result = instanceValidator.validate(instance, schema);
+                    
+                    System.out.println("Valid: " + result.isValid());
+                    System.out.println("Errors: " + result.getErrors().size());
+                });
+            });
+    }
+    
+    @TestFactory
+    @DisplayName("Adversarial Directory Verification")
+    Stream<DynamicTest> testAdversarialDirectories() {
+        List<DynamicTest> tests = new ArrayList<>();
+        
+        tests.add(dynamicTest("Adversarial schemas directory exists", () -> {
+            if (testAssetsPath == null) {
+                System.out.println("Warning: test-assets path not found");
+                return;
+            }
+            
+            Path adversarialSchemasDir = testAssetsPath.resolve("schemas/adversarial");
+            assertThat(Files.exists(adversarialSchemasDir))
+                .withFailMessage("Adversarial schemas directory should exist at " + adversarialSchemasDir)
+                .isTrue();
+            
+            long count = Files.list(adversarialSchemasDir)
+                .filter(p -> p.getFileName().toString().endsWith(".struct.json"))
+                .count();
+            
+            System.out.println("Found " + count + " adversarial schema files");
+            assertThat(count).isGreaterThanOrEqualTo(10);
+        }));
+        
+        return tests.stream();
+    }
 }

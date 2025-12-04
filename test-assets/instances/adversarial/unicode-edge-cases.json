@@ -1,0 +1,10 @@
+{
+  "$schema": "https://test.json-structure.org/adversarial/unicode-edge-cases",
+  "emojiKey": "Hello 😀 World 🎉",
+  "nullCharacter": "\u0000\u0001\u001F",
+  "bom": "\uFEFFtext after BOM",
+  "surrogates": "𝄞𝄢",
+  "rtlOverride": "\u202Ereversed\u202C",
+  "zeroWidth": "a\u200Bb\u200Cc\u200D",
+  "combining": "café"
+}

@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-structure.org/meta/extended/v0/#",
+  "$id": "https://test.json-structure.org/adversarial/deeply-nested-allof",
+  "name": "DeeplyNestedAllOf",
+  "$uses": ["JSONStructureConditionalComposition"],
+  "description": "Deeply nested allOf/anyOf/oneOf composition - exponential validation complexity",
+  "allOf": [
+    {
+      "anyOf": [
+        {
+          "oneOf": [
+            {
+              "allOf": [
+                {
+                  "anyOf": [
+                    { "type": "string" },
+                    { "type": "int32" }
+                  ]
+                },
+                {
+                  "anyOf": [
+                    { "type": "string" },
+                    { "type": "int32" }
+                  ]
+                }
+              ]
+            },
+            { "type": "boolean" }
+          ]
+        },
+        { "type": "null" }
+      ]
+    },
+    {
+      "anyOf": [
+        {
+          "oneOf": [
+            { "type": "string" },
+            { "type": "int32" },
+            { "type": "boolean" }
+          ]
+        },
+        { "type": "null" }
+      ]
+    }
+  ]
+}

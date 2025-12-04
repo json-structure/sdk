@@ -1,0 +1,4 @@
+{
+  "$schema": "https://test.json-structure.org/adversarial/type-union-ambiguous",
+  "value": 42.0
+}

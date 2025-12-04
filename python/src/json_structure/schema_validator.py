@@ -184,6 +184,7 @@ class JSONStructureSchemaCoreValidator:
         self.warnings = []
         self.doc = doc
         self.source_text = source_text
+        self._seen_extends = set()  # Track visited $extends references for cycle detection
         
         # Initialize source locator for location tracking
         if source_text:
@@ -1156,17 +1157,62 @@ class JSONStructureSchemaCoreValidator:
         """
         Validates the $extends keyword value.
         $extends can be either a single JSON Pointer string or an array of JSON Pointer strings.
+        Detects circular $extends references.
         """
+        refs = []
         if isinstance(extends_value, str):
-            self._check_json_pointer(extends_value, self.doc, path)
+            refs.append((extends_value, path))
         elif isinstance(extends_value, list):
             for i, item in enumerate(extends_value):
                 if not isinstance(item, str):
-                    self._err(f"'$extends' array element must be a JSON pointer string.", f"{path}/{i}")
+                    self._err(f"'$extends' array element must be a JSON pointer string.", f"{path}[{i}]")
                 else:
-                    self._check_json_pointer(item, self.doc, f"{path}/{i}")
+                    refs.append((item, f"{path}[{i}]"))
         else:
             self._err("'$extends' must be a JSON pointer string or an array of JSON pointer strings.", path)
+            return
+
+        for ref, ref_path in refs:
+            if not ref.startswith("#"):
+                continue  # External references handled elsewhere
+            
+            # Check for circular $extends
+            if ref in self._seen_extends:
+                self._err(f"Circular $extends reference detected: {ref}", ref_path, ErrorCodes.SCHEMA_EXTENDS_CIRCULAR)
+                continue
+            
+            self._seen_extends.add(ref)
+            
+            # Resolve the reference and check if it has $extends
+            resolved = self._resolve_json_pointer(ref)
+            if resolved is None:
+                self._err(f"$extends reference '{ref}' not found.", ref_path, ErrorCodes.SCHEMA_EXTENDS_NOT_FOUND)
+            elif isinstance(resolved, dict) and "$extends" in resolved:
+                # Recursively validate the extended schema's $extends
+                self._validate_extends_keyword(resolved["$extends"], ref_path)
+            
+            self._seen_extends.discard(ref)
+
+    def _resolve_json_pointer(self, pointer):
+        """
+        Resolves a JSON Pointer within the document.
+        Returns the resolved value or None if not found.
+        """
+        if not isinstance(pointer, str) or not pointer.startswith("#"):
+            return None
+        if pointer == "#":
+            return self.doc
+        parts = pointer.split("/")
+        cur = self.doc
+        for i, p in enumerate(parts):
+            if i == 0:
+                continue
+            p = p.replace("~1", "/").replace("~0", "~")
+            if isinstance(cur, dict) and p in cur:
+                cur = cur[p]
+            else:
+                return None
+        return cur
 
     def _check_offers(self, offers, path):
         """

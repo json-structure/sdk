@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://test.json-structure.org/adversarial/property-name-edge-cases",
+  "name": "PropertyNameEdgeCases",
+  "description": "Unusual property names that may cause issues",
+  "type": "object",
+  "properties": {
+    "": { 
+      "type": "string", 
+      "description": "Empty string property name" 
+    },
+    "__proto__": { 
+      "type": "string", 
+      "description": "Prototype pollution vector" 
+    },
+    "constructor": { 
+      "type": "string", 
+      "description": "Another prototype pollution vector" 
+    },
+    "hasOwnProperty": { 
+      "type": "string", 
+      "description": "Override built-in method name" 
+    },
+    "toString": { 
+      "type": "string", 
+      "description": "Override toString" 
+    },
+    "$ref": { 
+      "type": "string", 
+      "description": "Looks like a reference but is a property" 
+    },
+    "type": { 
+      "type": "string", 
+      "description": "Property named type" 
+    },
+    "properties": { 
+      "type": "string", 
+      "description": "Property named properties" 
+    },
+    "a.b.c": { 
+      "type": "string", 
+      "description": "Dots in property name" 
+    },
+    "a/b/c": { 
+      "type": "string", 
+      "description": "Slashes in property name - JSON Pointer confusion" 
+    },
+    "a~0b~1c": { 
+      "type": "string", 
+      "description": "JSON Pointer escape sequences as literal name" 
+    }
+  },
+  "additionalProperties": false
+}

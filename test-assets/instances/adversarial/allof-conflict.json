@@ -1,0 +1,4 @@
+{
+  "$schema": "https://test.json-structure.org/adversarial/allof-conflicting-types",
+  "impossible": "this should fail validation"
+}

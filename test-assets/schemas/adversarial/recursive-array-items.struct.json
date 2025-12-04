@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://test.json-structure.org/adversarial/recursive-array-items",
+  "name": "RecursiveArrayItems",
+  "description": "Array where items can contain arrays of the same type - tests recursion limits",
+  "type": "object",
+  "$defs": {
+    "NestedNode": {
+      "type": "object",
+      "properties": {
+        "value": { "type": "string" },
+        "children": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/NestedNode" }
+        }
+      }
+    }
+  },
+  "properties": {
+    "root": { "$ref": "#/$defs/NestedNode" }
+  }
+}

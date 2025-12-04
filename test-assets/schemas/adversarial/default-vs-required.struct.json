@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://test.json-structure.org/adversarial/default-vs-required",
+  "name": "DefaultVsRequired",
+  "description": "Interaction between default values and required properties",
+  "type": "object",
+  "properties": {
+    "requiredWithDefault": {
+      "type": "string",
+      "default": "defaultValue"
+    },
+    "optionalWithDefault": {
+      "type": "int32",
+      "default": 42
+    },
+    "requiredNoDefault": {
+      "type": "boolean"
+    }
+  },
+  "required": ["requiredWithDefault", "requiredNoDefault"],
+  "additionalProperties": false
+}

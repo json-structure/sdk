@@ -1,0 +1,32 @@
+{
+  "$schema": "https://test.json-structure.org/adversarial/recursive-array-items",
+  "root": {
+    "value": "root",
+    "children": [
+      {
+        "value": "child1",
+        "children": [
+          {
+            "value": "grandchild1",
+            "children": [
+              { "value": "great1", "children": [] },
+              { "value": "great2", "children": [] }
+            ]
+          }
+        ]
+      },
+      {
+        "value": "child2",
+        "children": [
+          { "value": "grandchild2", "children": [] },
+          { "value": "grandchild3", "children": [] },
+          { "value": "grandchild4", "children": [] }
+        ]
+      },
+      {
+        "value": "child3",
+        "children": []
+      }
+    ]
+  }
+}

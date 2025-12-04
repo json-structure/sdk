@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://test.json-structure.org/adversarial/self-referencing-extends",
+  "name": "SelfReferencingExtends",
+  "description": "Type that extends itself - should be rejected",
+  "type": "object",
+  "definitions": {
+    "Recursive": {
+      "type": "object",
+      "abstract": true,
+      "$extends": "#/definitions/Recursive",
+      "properties": {
+        "value": { "type": "string" }
+      }
+    }
+  },
+  "properties": {
+    "data": { "type": { "$ref": "#/definitions/Recursive" } }
+  }
+}

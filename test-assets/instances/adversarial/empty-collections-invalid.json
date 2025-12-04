@@ -1,0 +1,7 @@
+{
+  "$schema": "https://test.json-structure.org/adversarial/empty-arrays-objects",
+  "emptyArray": [],
+  "nonEmptyArray": [],
+  "emptyObject": {},
+  "emptyObjectWithRequired": {}
+}

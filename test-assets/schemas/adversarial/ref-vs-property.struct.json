@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://test.json-structure.org/adversarial/ref-vs-property",
+  "name": "RefVsProperty",
+  "description": "Tests if $ref is treated as reference vs property",
+  "type": "object",
+  "$defs": {
+    "RealType": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" }
+      }
+    }
+  },
+  "properties": {
+    "usesRef": { "$ref": "#/$defs/RealType" },
+    "hasRefProperty": {
+      "type": "object",
+      "properties": {
+        "$ref": { 
+          "type": "string",
+          "description": "This $ref is a property, not a reference"
+        },
+        "otherProp": { "type": "int32" }
+      }
+    }
+  }
+}

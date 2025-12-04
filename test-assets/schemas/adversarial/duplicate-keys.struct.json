@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://test.json-structure.org/adversarial/duplicate-keys",
+  "name": "DuplicatePropertyNames",
+  "description": "Schema with logically duplicate property definitions - not actually valid JSON but tests parser"
+}

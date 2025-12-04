@@ -1,0 +1,44 @@
+{
+  "$schema": "https://test.json-structure.org/adversarial/deep-nesting-100",
+  "level1": {
+    "level2": {
+      "level3": {
+        "level4": {
+          "level5": {
+            "level6": {
+              "level7": {
+                "level8": {
+                  "level9": {
+                    "level10": {
+                      "level11": {
+                        "level12": {
+                          "level13": {
+                            "level14": {
+                              "level15": {
+                                "level16": {
+                                  "level17": {
+                                    "level18": {
+                                      "level19": {
+                                        "level20": {
+                                          "value": "deep"
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

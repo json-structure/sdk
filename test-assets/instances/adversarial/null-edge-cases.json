@@ -1,0 +1,7 @@
+{
+  "$schema": "https://test.json-structure.org/adversarial/null-edge-cases",
+  "nullableString": null,
+  "nullInArray": [1, null, 2, null, 3],
+  "nonNullableWithNull": null,
+  "nullDefault": null
+}

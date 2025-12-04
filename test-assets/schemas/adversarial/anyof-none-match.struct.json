@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://test.json-structure.org/adversarial/anyof-none-match",
+  "name": "AnyOfNoneMatch",
+  "description": "anyOf where no branch can possibly match the given type",
+  "type": "object",
+  "properties": {
+    "cantMatch": {
+      "anyOf": [
+        { "type": "int32", "minimum": 100 },
+        { "type": "int32", "maximum": -100 }
+      ],
+      "description": "anyOf but value must be between -99 and 99"
+    }
+  }
+}

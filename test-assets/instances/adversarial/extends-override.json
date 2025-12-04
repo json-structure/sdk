@@ -1,0 +1,8 @@
+{
+  "$schema": "https://test.json-structure.org/adversarial/extends-with-overrides",
+  "item": {
+    "value": "ab",
+    "count": 9999999999999,
+    "extra": true
+  }
+}

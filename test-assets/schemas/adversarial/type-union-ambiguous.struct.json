@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://test.json-structure.org/adversarial/type-union-ambiguous",
+  "name": "TypeUnionAmbiguous",
+  "description": "Type union with ambiguous matching - tests first-match semantics",
+  "type": "object",
+  "properties": {
+    "value": {
+      "type": ["int32", "number", "string"],
+      "description": "Value '42' could match int32 or number; '42.0' could match number"
+    }
+  }
+}

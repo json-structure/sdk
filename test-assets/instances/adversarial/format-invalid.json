@@ -1,0 +1,8 @@
+{
+  "$schema": "https://test.json-structure.org/adversarial/format-edge-cases",
+  "dateTime": "2024-02-30T25:61:99Z",
+  "uri": "not a uri at all",
+  "email": "not@an@email@address",
+  "uuid": "not-a-uuid",
+  "unknownFormat": "anything"
+}

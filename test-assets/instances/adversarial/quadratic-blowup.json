@@ -1,0 +1,8 @@
+{
+  "$schema": "https://test.json-structure.org/adversarial/quadratic-blowup",
+  "deep1": { "final": "a" },
+  "deep2": { "final": "b" },
+  "deep3": { "final": "c" },
+  "deep4": { "final": "d" },
+  "deep5": { "final": "e" }
+}

@@ -1,0 +1,8 @@
+{
+  "$schema": "https://test.json-structure.org/adversarial/conflicting-constraints",
+  "impossibleRange": 75,
+  "impossibleLength": "short",
+  "impossibleArray": [1, 2, 3, 4, 5],
+  "impossibleMultiple": 14,
+  "contradictoryEnum": "a"
+}

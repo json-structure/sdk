@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-structure.org/meta/extended/v0/#",
+  "$id": "https://test.json-structure.org/adversarial/redos-pattern",
+  "name": "ReDoSPattern",
+  "$uses": ["JSONStructureValidation"],
+  "description": "ReDoS (Regular Expression Denial of Service) vulnerable pattern - tests regex timeout protection",
+  "type": "string",
+  "pattern": "^(a+)+$"
+}

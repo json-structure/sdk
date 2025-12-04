@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-structure.org/meta/extended/v0/#",
+  "$id": "https://test.json-structure.org/adversarial/int64-precision-loss",
+  "name": "Int64PrecisionLoss",
+  "$uses": ["JSONStructureValidation"],
+  "description": "Int64 values that may lose precision in JavaScript Number",
+  "type": "object",
+  "properties": {
+    "large_int64": { 
+      "type": "int64",
+      "description": "Value larger than Number.MAX_SAFE_INTEGER (9007199254740991)"
+    },
+    "negative_large_int64": {
+      "type": "int64",
+      "description": "Negative value smaller than Number.MIN_SAFE_INTEGER"
+    }
+  }
+}

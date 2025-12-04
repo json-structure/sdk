@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://test.json-structure.org/adversarial/malformed-json-pointer",
+  "name": "MalformedJsonPointer",
+  "description": "Various malformed JSON Pointer references",
+  "type": "object",
+  "$defs": {
+    "Valid": { "type": "string" }
+  },
+  "properties": {
+    "noHash": { "$ref": "/$defs/Valid" },
+    "doubleHash": { "$ref": "##/$defs/Valid" },
+    "backslash": { "$ref": "#\\$defs\\Valid" },
+    "dotNotation": { "$ref": "#.$defs.Valid" },
+    "urlEncoded": { "$ref": "#/%24defs/Valid" },
+    "trailingSlash": { "$ref": "#/$defs/Valid/" },
+    "doubleSlash": { "$ref": "#/$defs//Valid" },
+    "relative": { "$ref": "../other.json#/$defs/Type" },
+    "fragment": { "$ref": "#/$defs/Valid#extra" }
+  }
+}

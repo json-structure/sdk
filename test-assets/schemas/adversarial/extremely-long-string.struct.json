@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://test.json-structure.org/adversarial/extremely-long-string",
+  "name": "ExtremelyLongString",
+  "description": "Tests handling of very long strings",
+  "type": "object",
+  "properties": {
+    "longPattern": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9]{1,1000000}$",
+      "description": "Pattern allows up to 1M characters"
+    },
+    "longMinLength": {
+      "type": "string",
+      "minLength": 100000,
+      "description": "Requires at least 100K characters"
+    },
+    "exactlyMaxInt": {
+      "type": "string",
+      "maxLength": 2147483647,
+      "description": "maxLength at 32-bit int max"
+    }
+  }
+}

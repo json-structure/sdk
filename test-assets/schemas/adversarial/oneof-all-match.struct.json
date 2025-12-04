@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-structure.org/meta/extended/v0/#",
+  "$id": "https://test.json-structure.org/adversarial/oneof-all-match",
+  "name": "OneOfAllMatch",
+  "$uses": ["JSONStructureConditionalComposition"],
+  "description": "oneOf where all branches can match - should validate exactly one",
+  "type": "object",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": { "a": { "type": "string" } }
+    },
+    {
+      "type": "object",
+      "properties": { "b": { "type": "string" } }
+    },
+    {
+      "type": "object",
+      "properties": { "c": { "type": "string" } }
+    }
+  ],
+  "properties": {
+    "a": { "type": "string" },
+    "b": { "type": "string" },
+    "c": { "type": "string" }
+  }
+}

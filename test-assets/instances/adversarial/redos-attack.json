@@ -1,0 +1,4 @@
+{
+  "$schema": "https://test.json-structure.org/adversarial/redos-pattern",
+  "vulnerable": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab"
+}

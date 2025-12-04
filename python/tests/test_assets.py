@@ -20,8 +20,10 @@ TEST_ASSETS = SDK_ROOT / "test-assets"
 INVALID_SCHEMAS = TEST_ASSETS / "schemas" / "invalid"
 WARNING_SCHEMAS = TEST_ASSETS / "schemas" / "warnings"
 VALIDATION_SCHEMAS = TEST_ASSETS / "schemas" / "validation"
+ADVERSARIAL_SCHEMAS = TEST_ASSETS / "schemas" / "adversarial"
 INVALID_INSTANCES = TEST_ASSETS / "instances" / "invalid"
 VALIDATION_INSTANCES = TEST_ASSETS / "instances" / "validation"
+ADVERSARIAL_INSTANCES = TEST_ASSETS / "instances" / "adversarial"
 SAMPLES_ROOT = SDK_ROOT / "primer-and-samples" / "samples" / "core"
 
 
@@ -406,3 +408,115 @@ def test_warnings_directory_exists():
     assert WARNING_SCHEMAS.exists(), "Warning schemas directory should exist"
     schemas = list(WARNING_SCHEMAS.glob("*.struct.json"))
     assert len(schemas) > 0, "Should have warning schema test files"
+
+
+# =============================================================================
+# Adversarial Tests - Stress test the validators
+# =============================================================================
+
+# Schemas that are intentionally invalid and MUST fail schema validation
+INVALID_ADVERSARIAL_SCHEMAS = {
+    "ref-to-nowhere.struct.json",
+    "malformed-json-pointer.struct.json",
+    "self-referencing-extends.struct.json",
+    "extends-circular-chain.struct.json",
+}
+
+# Map instance files to their corresponding schema
+ADVERSARIAL_INSTANCE_SCHEMA_MAP = {
+    "deep-nesting.json": "deep-nesting-100.struct.json",
+    "recursive-tree.json": "recursive-array-items.struct.json",
+    "property-name-edge-cases.json": "property-name-edge-cases.struct.json",
+    "unicode-edge-cases.json": "unicode-edge-cases.struct.json",
+    "string-length-surrogate.json": "string-length-surrogate.struct.json",
+    "int64-precision.json": "int64-precision-loss.struct.json",
+    "floating-point.json": "floating-point-precision.struct.json",
+    "null-edge-cases.json": "null-edge-cases.struct.json",
+    "empty-collections-invalid.json": "empty-arrays-objects.struct.json",
+    "redos-attack.json": "redos-pattern.struct.json",
+    "allof-conflict.json": "allof-conflicting-types.struct.json",
+    "oneof-all-match.json": "oneof-all-match.struct.json",
+    "type-union-int.json": "type-union-ambiguous.struct.json",
+    "type-union-number.json": "type-union-ambiguous.struct.json",
+    "conflicting-constraints.json": "conflicting-constraints.struct.json",
+    "format-invalid.json": "format-edge-cases.struct.json",
+    "format-valid.json": "format-edge-cases.struct.json",
+    "pattern-flags.json": "pattern-with-flags.struct.json",
+    "additionalProperties-combined.json": "additionalProperties-combined.struct.json",
+    "extends-override.json": "extends-with-overrides.struct.json",
+    "quadratic-blowup.json": "quadratic-blowup.struct.json",
+    "anyof-none-match.json": "anyof-none-match.struct.json",
+}
+
+
+def get_adversarial_schema_files():
+    """Get all adversarial schema files from test-assets."""
+    if not ADVERSARIAL_SCHEMAS.exists():
+        return []
+    return list(ADVERSARIAL_SCHEMAS.glob("*.struct.json"))
+
+
+def get_adversarial_instance_files():
+    """Get all adversarial instance files from test-assets."""
+    if not ADVERSARIAL_INSTANCES.exists():
+        return []
+    return list(ADVERSARIAL_INSTANCES.glob("*.json"))
+
+
+@pytest.mark.skipif(not ADVERSARIAL_SCHEMAS.exists(), reason="adversarial schemas not found")
+@pytest.mark.parametrize("schema_file", get_adversarial_schema_files(), ids=lambda f: f.name)
+def test_adversarial_schema(schema_file):
+    """Test that adversarial schemas are handled correctly."""
+    with open(schema_file, "r", encoding="utf-8") as f:
+        schema = json.load(f)
+    
+    validator = SchemaValidator(extended=True)
+    errors = validator.validate(schema)
+    
+    # Check if this schema MUST be invalid
+    if schema_file.name in INVALID_ADVERSARIAL_SCHEMAS:
+        assert len(errors) > 0, f"Schema {schema_file.name} should be invalid"
+    else:
+        # Other adversarial schemas should validate without crashing
+        assert isinstance(errors, list)
+
+
+@pytest.mark.skipif(not ADVERSARIAL_INSTANCES.exists(), reason="adversarial instances not found")
+@pytest.mark.parametrize("instance_file", get_adversarial_instance_files(), ids=lambda f: f.name)
+@pytest.mark.timeout(5)  # 5 second timeout to catch infinite loops
+def test_adversarial_instance_does_not_crash(instance_file):
+    """Test that adversarial instances don't crash or hang the validator."""
+    schema_name = ADVERSARIAL_INSTANCE_SCHEMA_MAP.get(instance_file.name)
+    if not schema_name:
+        pytest.skip(f"No schema mapping for {instance_file.name}")
+    
+    schema_file = ADVERSARIAL_SCHEMAS / schema_name
+    if not schema_file.exists():
+        pytest.skip(f"Schema not found: {schema_name}")
+    
+    with open(schema_file, "r", encoding="utf-8") as f:
+        schema = json.load(f)
+    
+    with open(instance_file, "r", encoding="utf-8") as f:
+        instance = json.load(f)
+    
+    # Remove $schema from instance before validation
+    instance.pop("$schema", None)
+    
+    validator = InstanceValidator(schema, extended=True)
+    
+    # Should complete without raising exceptions or hanging
+    try:
+        errors = validator.validate_instance(instance)
+        # Just verify it returns a result
+        assert isinstance(errors, list)
+    except Exception as e:
+        pytest.fail(f"Adversarial instance {instance_file.name} caused unexpected exception: {e}")
+
+
+@pytest.mark.skipif(not ADVERSARIAL_SCHEMAS.exists(), reason="adversarial schemas not found")
+def test_adversarial_schemas_directory_exists():
+    """Verify that the adversarial schemas directory exists and has files."""
+    assert ADVERSARIAL_SCHEMAS.exists(), "Adversarial schemas directory should exist"
+    schemas = list(ADVERSARIAL_SCHEMAS.glob("*.struct.json"))
+    assert len(schemas) > 0, "Should have adversarial schema test files"

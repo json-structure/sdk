@@ -1,0 +1,8 @@
+{
+  "$schema": "https://test.json-structure.org/adversarial/int64-precision-loss",
+  "maxSafeInteger": 9007199254740991,
+  "beyondSafe": 9007199254740993,
+  "nearInt64Max": 9223372036854775807,
+  "exactInt64Max": 9223372036854775807,
+  "negativeLimit": -9223372036854775808
+}

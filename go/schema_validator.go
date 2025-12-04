@@ -15,6 +15,7 @@ type SchemaValidator struct {
 	warnings        []ValidationError
 	schema          map[string]interface{}
 	seenRefs        map[string]bool
+	seenExtends     map[string]bool
 	sourceLocator   *JsonSourceLocator
 	externalSchemas map[string]interface{}
 }
@@ -29,6 +30,7 @@ func NewSchemaValidator(options *SchemaValidatorOptions) *SchemaValidator {
 		options:         opts,
 		errors:          []ValidationError{},
 		seenRefs:        make(map[string]bool),
+		seenExtends:     make(map[string]bool),
 		sourceLocator:   nil,
 		externalSchemas: make(map[string]interface{}),
 	}
@@ -67,6 +69,7 @@ func (v *SchemaValidator) Validate(schema interface{}) ValidationResult {
 	v.errors = []ValidationError{}
 	v.warnings = []ValidationError{}
 	v.seenRefs = make(map[string]bool)
+	v.seenExtends = make(map[string]bool)
 
 	schemaMap, ok := schema.(map[string]interface{})
 	if !ok {
@@ -85,7 +88,6 @@ func (v *SchemaValidator) Validate(schema interface{}) ValidationResult {
 
 	return v.result()
 }
-
 // ValidateJSON validates a JSON Structure schema from JSON bytes.
 func (v *SchemaValidator) ValidateJSON(jsonData []byte) (ValidationResult, error) {
 	var schema interface{}
@@ -295,6 +297,11 @@ func (v *SchemaValidator) validateTypeDefinition(schema map[string]interface{}, 
 	if _, hasRef := schema["$ref"]; hasRef {
 		v.addError(path+"/$ref", "'$ref' is only permitted inside the 'type' attribute. Use { \"type\": { \"$ref\": \"...\" } } instead of { \"$ref\": \"...\" }", SchemaRefNotInType)
 		return
+	}
+
+	// Validate $extends if present
+	if extendsVal, hasExtends := schema["$extends"]; hasExtends {
+		v.validateExtends(extendsVal, path+"/$extends")
 	}
 
 	typeVal, hasType := schema["type"]
@@ -746,6 +753,53 @@ func (v *SchemaValidator) validateConstraintTypeMatch(typeStr string, schema map
 		if _, ok := schema[constraint]; ok && !isNumericType(typeStr) {
 			v.addError(path+"/"+constraint, fmt.Sprintf("%s constraint is only valid for numeric types, not %s", constraint, typeStr), SchemaConstraintInvalidForType)
 		}
+	}
+}
+
+func (v *SchemaValidator) validateExtends(extendsVal interface{}, path string) {
+	var refs []string
+	var refPaths []string
+
+	switch ev := extendsVal.(type) {
+	case string:
+		refs = append(refs, ev)
+		refPaths = append(refPaths, path)
+	case []interface{}:
+		for i, item := range ev {
+			if refStr, ok := item.(string); ok {
+				refs = append(refs, refStr)
+				refPaths = append(refPaths, fmt.Sprintf("%s[%d]", path, i))
+			} else {
+				v.addError(fmt.Sprintf("%s[%d]", path, i), "$extends array items must be strings", SchemaKeywordInvalidType)
+			}
+		}
+	default:
+		v.addError(path, "$extends must be a string or array of strings", SchemaKeywordInvalidType)
+		return
+	}
+
+	for i, ref := range refs {
+		refPath := refPaths[i]
+
+		if !strings.HasPrefix(ref, "#/") {
+			continue // External references handled elsewhere
+		}
+
+		// Check for circular $extends
+		if v.seenExtends[ref] {
+			v.addError(refPath, fmt.Sprintf("Circular $extends reference detected: %s", ref), SchemaExtendsCircular)
+			continue
+		}
+
+		v.seenExtends[ref] = true
+		resolved := v.resolveRef(ref)
+		if resolved == nil {
+			v.addError(refPath, fmt.Sprintf("$extends reference '%s' not found", ref), SchemaExtendsNotFound)
+		} else if extendsVal, hasExtends := resolved["$extends"]; hasExtends {
+			// Recursively validate the extended schema's $extends
+			v.validateExtends(extendsVal, refPath)
+		}
+		delete(v.seenExtends, ref)
 	}
 }
 

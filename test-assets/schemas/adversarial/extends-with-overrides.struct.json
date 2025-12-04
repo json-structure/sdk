@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://test.json-structure.org/adversarial/extends-with-overrides",
+  "name": "ExtendsWithOverrides",
+  "description": "Type extension with conflicting property definitions",
+  "$defs": {
+    "Base": {
+      "type": "object",
+      "properties": {
+        "value": { "type": "string", "minLength": 5 },
+        "count": { "type": "int32", "minimum": 0 }
+      },
+      "required": ["value"]
+    },
+    "Derived": {
+      "$extends": "#/$defs/Base",
+      "properties": {
+        "value": { "type": "string", "maxLength": 3 },
+        "count": { "type": "int64" },
+        "extra": { "type": "boolean" }
+      },
+      "required": ["extra"]
+    }
+  },
+  "type": "object",
+  "properties": {
+    "item": { "$ref": "#/$defs/Derived" }
+  }
+}

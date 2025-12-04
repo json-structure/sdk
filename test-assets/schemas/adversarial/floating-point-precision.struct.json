@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://test.json-structure.org/adversarial/floating-point-precision",
+  "name": "FloatingPointPrecision",
+  "description": "Tests floating point precision edge cases",
+  "type": "object",
+  "properties": {
+    "almostZero": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Test: -0.0000000000000001 - should fail"
+    },
+    "infinityTest": {
+      "type": "number",
+      "maximum": 1e308,
+      "description": "Values near infinity"
+    },
+    "nanTest": {
+      "type": "number",
+      "description": "NaN is not valid JSON but could leak through"
+    },
+    "denormalized": {
+      "type": "number",
+      "minimum": 0,
+      "exclusiveMaximum": 1e-300,
+      "description": "Denormalized floating point range"
+    },
+    "precisionLoss": {
+      "type": "number",
+      "enum": [0.1, 0.2, 0.3],
+      "description": "0.1 + 0.2 != 0.3 in IEEE754"
+    },
+    "negativeZero": {
+      "type": "number",
+      "exclusiveMaximum": 0,
+      "description": "Is -0.0 less than 0? IEEE says no"
+    }
+  }
+}

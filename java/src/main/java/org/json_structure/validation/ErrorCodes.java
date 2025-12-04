@@ -34,6 +34,10 @@ public final class ErrorCodes {
     public static final String SCHEMA_REF_NOT_FOUND = "SCHEMA_REF_NOT_FOUND";
     /** Circular reference detected. */
     public static final String SCHEMA_REF_CIRCULAR = "SCHEMA_REF_CIRCULAR";
+    /** Circular $extends reference detected. */
+    public static final String SCHEMA_EXTENDS_CIRCULAR = "SCHEMA_EXTENDS_CIRCULAR";
+    /** $extends reference not found. */
+    public static final String SCHEMA_EXTENDS_NOT_FOUND = "SCHEMA_EXTENDS_NOT_FOUND";
     /** $ref is only permitted inside the 'type' attribute. */
     public static final String SCHEMA_REF_NOT_IN_TYPE = "SCHEMA_REF_NOT_IN_TYPE";
     /** Schema must have a 'type' keyword. */

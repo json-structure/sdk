@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://test.json-structure.org/adversarial/additionalProperties-combined",
+  "name": "AdditionalPropertiesCombined",
+  "description": "Complex additionalProperties interactions",
+  "type": "object",
+  "properties": {
+    "known": { "type": "string" }
+  },
+  "additionalProperties": {
+    "type": "object",
+    "properties": {
+      "nested": { "type": "int32" }
+    },
+    "additionalProperties": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false
+      }
+    }
+  }
+}

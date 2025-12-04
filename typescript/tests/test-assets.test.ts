@@ -123,8 +123,10 @@ describe('Test Assets Integration', () => {
   const invalidSchemasDir = join(testAssetsDir, 'schemas', 'invalid');
   const warningSchemasDir = join(testAssetsDir, 'schemas', 'warnings');
   const validationSchemasDir = join(testAssetsDir, 'schemas', 'validation');
+  const adversarialSchemasDir = join(testAssetsDir, 'schemas', 'adversarial');
   const invalidInstancesDir = join(testAssetsDir, 'instances', 'invalid');
   const validationInstancesDir = join(testAssetsDir, 'instances', 'validation');
+  const adversarialInstancesDir = join(testAssetsDir, 'instances', 'adversarial');
 
   describe('Invalid Schema Tests', () => {
     const schemaFiles = getFilesInDir(invalidSchemasDir, '.struct.json');
@@ -303,6 +305,119 @@ describe('Test Assets Integration', () => {
             expect(result.isValid).toBe(false);
           });
         }
+      });
+    }
+  });
+
+  // ==========================================================================
+  // Adversarial Tests - stress test the validators
+  // ==========================================================================
+
+  describe('Adversarial Schema Tests', () => {
+    const schemaFiles = getFilesInDir(adversarialSchemasDir, '.struct.json');
+    const schemaValidator = new SchemaValidator({ extended: true });
+
+    if (schemaFiles.length === 0) {
+      it.skip('No adversarial schema files found', () => {});
+      return;
+    }
+
+    // Schemas that are intentionally invalid and MUST fail schema validation
+    const invalidSchemas = new Set([
+      'ref-to-nowhere.struct.json',
+      'malformed-json-pointer.struct.json',
+      'self-referencing-extends.struct.json',
+      'extends-circular-chain.struct.json',
+    ]);
+
+    for (const schemaFile of schemaFiles) {
+      const fileName = basename(schemaFile);
+      const testName = basename(schemaFile, '.struct.json');
+
+      if (invalidSchemas.has(fileName)) {
+        it(`${testName} should be invalid`, () => {
+          const schema = loadJson(schemaFile);
+          expect(schema).not.toBeNull();
+          const result = schemaValidator.validate(schema);
+          expect(result.isValid).toBe(false);
+        });
+      } else {
+        it(`${testName} should validate without crashing`, () => {
+          const schema = loadJson(schemaFile);
+          expect(schema).not.toBeNull();
+          const result = schemaValidator.validate(schema);
+          expect(result).toBeDefined();
+          expect(typeof result.isValid).toBe('boolean');
+        });
+      }
+    }
+  });
+
+  describe('Adversarial Instance Tests', () => {
+    const instanceFiles = getFilesInDir(adversarialInstancesDir, '.json');
+    
+    if (instanceFiles.length === 0) {
+      it.skip('No adversarial instance files found', () => {});
+      return;
+    }
+
+    // Map instance files to their corresponding schema
+    const instanceSchemaMap: Record<string, string> = {
+      'deep-nesting.json': 'deep-nesting-100.struct.json',
+      'recursive-tree.json': 'recursive-array-items.struct.json',
+      'property-name-edge-cases.json': 'property-name-edge-cases.struct.json',
+      'unicode-edge-cases.json': 'unicode-edge-cases.struct.json',
+      'string-length-surrogate.json': 'string-length-surrogate.struct.json',
+      'int64-precision.json': 'int64-precision-loss.struct.json',
+      'floating-point.json': 'floating-point-precision.struct.json',
+      'null-edge-cases.json': 'null-edge-cases.struct.json',
+      'empty-collections-invalid.json': 'empty-arrays-objects.struct.json',
+      'redos-attack.json': 'redos-pattern.struct.json',
+      'allof-conflict.json': 'allof-conflicting-types.struct.json',
+      'oneof-all-match.json': 'oneof-all-match.struct.json',
+      'type-union-int.json': 'type-union-ambiguous.struct.json',
+      'type-union-number.json': 'type-union-ambiguous.struct.json',
+      'conflicting-constraints.json': 'conflicting-constraints.struct.json',
+      'format-invalid.json': 'format-edge-cases.struct.json',
+      'format-valid.json': 'format-edge-cases.struct.json',
+      'pattern-flags.json': 'pattern-with-flags.struct.json',
+      'additionalProperties-combined.json': 'additionalProperties-combined.struct.json',
+      'extends-override.json': 'extends-with-overrides.struct.json',
+      'quadratic-blowup.json': 'quadratic-blowup.struct.json',
+      'anyof-none-match.json': 'anyof-none-match.struct.json',
+    };
+
+    for (const instanceFile of instanceFiles) {
+      const instanceName = basename(instanceFile);
+      const testName = basename(instanceFile, '.json');
+      const schemaName = instanceSchemaMap[instanceName];
+      
+      if (!schemaName) {
+        it.skip(`${testName} - no schema mapping`, () => {});
+        continue;
+      }
+
+      const schemaFile = join(adversarialSchemasDir, schemaName);
+      if (!existsSync(schemaFile)) {
+        it.skip(`${testName} - schema not found: ${schemaName}`, () => {});
+        continue;
+      }
+
+      it(`${testName} should validate without crashing (timeout 5s)`, () => {
+        const schema = loadJson(schemaFile);
+        const instance = loadJson(instanceFile);
+        expect(schema).not.toBeNull();
+        expect(instance).not.toBeNull();
+
+        // Remove $schema from instance before validation
+        const cleanInstance = { ...instance };
+        delete cleanInstance.$schema;
+
+        const validator = new InstanceValidator({ extended: true });
+        // Should complete without throwing or hanging
+        const result = validator.validate(cleanInstance, schema);
+        expect(result).toBeDefined();
+        expect(typeof result.isValid).toBe('boolean');
       });
     }
   });

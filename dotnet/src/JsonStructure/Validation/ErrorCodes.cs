@@ -41,6 +41,12 @@ public static class ErrorCodes
     /// <summary>Circular reference detected.</summary>
     public const string SchemaRefCircular = "SCHEMA_REF_CIRCULAR";
     
+    /// <summary>Circular $extends reference detected.</summary>
+    public const string SchemaExtendsCircular = "SCHEMA_EXTENDS_CIRCULAR";
+    
+    /// <summary>$extends reference not found.</summary>
+    public const string SchemaExtendsNotFound = "SCHEMA_EXTENDS_NOT_FOUND";
+    
     /// <summary>$ref is only permitted inside the 'type' attribute.</summary>
     public const string SchemaRefNotInType = "SCHEMA_REF_NOT_IN_TYPE";
     

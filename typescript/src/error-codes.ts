@@ -35,6 +35,12 @@ export const SCHEMA_REF_NOT_FOUND = "SCHEMA_REF_NOT_FOUND";
 /** Circular reference detected. */
 export const SCHEMA_REF_CIRCULAR = "SCHEMA_REF_CIRCULAR";
 
+/** Circular $extends reference detected. */
+export const SCHEMA_EXTENDS_CIRCULAR = "SCHEMA_EXTENDS_CIRCULAR";
+
+/** $extends reference not found. */
+export const SCHEMA_EXTENDS_NOT_FOUND = "SCHEMA_EXTENDS_NOT_FOUND";
+
 /** $ref is only permitted inside the 'type' attribute. */
 export const SCHEMA_REF_NOT_IN_TYPE = "SCHEMA_REF_NOT_IN_TYPE";
 
@@ -506,6 +512,8 @@ export const ErrorCodes = {
   SCHEMA_TYPE_OBJECT_MISSING_REF,
   SCHEMA_REF_NOT_FOUND,
   SCHEMA_REF_CIRCULAR,
+  SCHEMA_EXTENDS_CIRCULAR,
+  SCHEMA_EXTENDS_NOT_FOUND,
   SCHEMA_REF_NOT_IN_TYPE,
   SCHEMA_REF_INVALID,
   SCHEMA_MISSING_TYPE,

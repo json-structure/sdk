@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://test.json-structure.org/adversarial/conflicting-constraints",
+  "name": "ConflictingConstraints",
+  "description": "Constraints that are logically impossible to satisfy",
+  "type": "object",
+  "properties": {
+    "impossibleRange": {
+      "type": "int32",
+      "minimum": 100,
+      "maximum": 50,
+      "description": "min > max - impossible"
+    },
+    "impossibleLength": {
+      "type": "string",
+      "minLength": 10,
+      "maxLength": 5,
+      "description": "minLength > maxLength - impossible"
+    },
+    "impossibleArray": {
+      "type": "array",
+      "minItems": 10,
+      "maxItems": 3,
+      "description": "minItems > maxItems - impossible"
+    },
+    "impossibleMultiple": {
+      "type": "int32",
+      "multipleOf": 7,
+      "minimum": 10,
+      "maximum": 13,
+      "description": "No multiple of 7 between 10 and 13"
+    },
+    "contradictoryEnum": {
+      "type": "string",
+      "enum": ["a", "b", "c"],
+      "minLength": 5,
+      "description": "All enum values are shorter than minLength"
+    }
+  }
+}

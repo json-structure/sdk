@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://test.json-structure.org/adversarial/unicode-edge-cases",
+  "name": "UnicodeEdgeCases",
+  "description": "Unicode handling edge cases that can crash parsers",
+  "type": "object",
+  "properties": {
+    "emojiKey": {
+      "type": "string",
+      "description": "Test emoji in values"
+    },
+    "nullCharacter": {
+      "type": "string",
+      "pattern": "^[\\x00-\\x1F]*$",
+      "description": "Pattern matching control characters"
+    },
+    "bom": {
+      "type": "string",
+      "description": "BOM character handling"
+    },
+    "surrogates": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 10,
+      "description": "Length counting with surrogate pairs"
+    },
+    "rtlOverride": {
+      "type": "string",
+      "description": "Right-to-left override characters"
+    },
+    "zeroWidth": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Zero-width characters should still count"
+    },
+    "combining": {
+      "type": "string",
+      "maxLength": 5,
+      "description": "Combining diacritical marks - é vs e+combining"
+    }
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://test.json-structure.org/adversarial/empty-arrays-objects",
+  "name": "EmptyCollections",
+  "description": "Tests handling of empty arrays and objects with various constraints",
+  "type": "object",
+  "properties": {
+    "emptyArray": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 0,
+      "maxItems": 0,
+      "description": "Must be exactly empty"
+    },
+    "nonEmptyArray": {
+      "type": "array", 
+      "items": { "type": "int32" },
+      "minItems": 1,
+      "description": "Empty array should fail"
+    },
+    "emptyObject": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Must be exactly empty object"
+    },
+    "emptyObjectWithRequired": {
+      "type": "object",
+      "properties": {
+        "mustExist": { "type": "string" }
+      },
+      "required": ["mustExist"],
+      "additionalProperties": false,
+      "description": "Empty object should fail due to missing required"
+    }
+  }
+}

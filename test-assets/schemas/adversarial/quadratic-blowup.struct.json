@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://test.json-structure.org/adversarial/quadratic-blowup",
+  "name": "QuadraticBlowup",
+  "description": "Tests for O(n^2) or worse algorithmic complexity",
+  "type": "object",
+  "$defs": {
+    "A": { "$ref": "#/$defs/B" },
+    "B": { "$ref": "#/$defs/C" },
+    "C": { "$ref": "#/$defs/D" },
+    "D": { "$ref": "#/$defs/E" },
+    "E": { "$ref": "#/$defs/F" },
+    "F": { "$ref": "#/$defs/G" },
+    "G": { "$ref": "#/$defs/H" },
+    "H": { "$ref": "#/$defs/I" },
+    "I": { "$ref": "#/$defs/J" },
+    "J": { 
+      "type": "object",
+      "properties": {
+        "final": { "type": "string" }
+      }
+    }
+  },
+  "properties": {
+    "deep1": { "$ref": "#/$defs/A" },
+    "deep2": { "$ref": "#/$defs/A" },
+    "deep3": { "$ref": "#/$defs/A" },
+    "deep4": { "$ref": "#/$defs/A" },
+    "deep5": { "$ref": "#/$defs/A" }
+  }
+}

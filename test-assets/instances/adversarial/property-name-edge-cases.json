@@ -1,0 +1,14 @@
+{
+  "$schema": "https://test.json-structure.org/adversarial/property-name-edge-cases",
+  "": "empty string key",
+  "__proto__": "prototype pollution attempt",
+  "constructor": "another pollution vector",
+  "hasOwnProperty": "override builtin",
+  "toString": "override toString",
+  "$ref": "looks like reference but is value",
+  "type": "property named type",
+  "properties": "property named properties",
+  "a.b.c": "dots in name",
+  "a/b/c": "slashes in name",
+  "a~0b~1c": "json pointer escapes"
+}

@@ -1,0 +1,9 @@
+{
+  "$schema": "https://test.json-structure.org/adversarial/floating-point-precision",
+  "almostZero": -0.0000000000000001,
+  "infinityTest": 1e307,
+  "nanTest": 0,
+  "denormalized": 1e-320,
+  "precisionLoss": 0.1,
+  "negativeZero": -0.0
+}

@@ -54,6 +54,10 @@ const (
 	SchemaRefNotFound = "SCHEMA_REF_NOT_FOUND"
 	// SchemaRefCircular indicates circular reference detected.
 	SchemaRefCircular = "SCHEMA_REF_CIRCULAR"
+	// SchemaExtendsCircular indicates circular $extends reference detected.
+	SchemaExtendsCircular = "SCHEMA_EXTENDS_CIRCULAR"
+	// SchemaExtendsNotFound indicates $extends reference not found.
+	SchemaExtendsNotFound = "SCHEMA_EXTENDS_NOT_FOUND"
 	// SchemaRefNotInType indicates $ref is only permitted inside the 'type' attribute.
 	SchemaRefNotInType = "SCHEMA_REF_NOT_IN_TYPE"
 	// SchemaMissingType indicates schema must have a 'type' keyword.

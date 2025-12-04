@@ -1,0 +1,8 @@
+{
+  "$schema": "https://test.json-structure.org/adversarial/format-edge-cases",
+  "dateTime": "2024-01-15T10:30:00+00:00",
+  "uri": "https://example.com/path?query=value#fragment",
+  "email": "test@example.com",
+  "uuid": "550e8400-e29b-41d4-a716-446655440000",
+  "unknownFormat": "should pass - unknown format"
+}

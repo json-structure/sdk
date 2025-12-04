@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-structure.org/meta/extended/v0/#",
+  "$id": "https://test.json-structure.org/adversarial/integer-boundary-values",
+  "name": "IntegerBoundaryValues",
+  "$uses": ["JSONStructureValidation"],
+  "description": "Tests integer boundary values at type limits",
+  "type": "object",
+  "properties": {
+    "int8_min": { "type": "int8", "minimum": -128 },
+    "int8_max": { "type": "int8", "maximum": 127 },
+    "int16_min": { "type": "int16", "minimum": -32768 },
+    "int16_max": { "type": "int16", "maximum": 32767 },
+    "int32_min": { "type": "int32", "minimum": -2147483648 },
+    "int32_max": { "type": "int32", "maximum": 2147483647 },
+    "uint8_max": { "type": "uint8", "maximum": 255 },
+    "uint16_max": { "type": "uint16", "maximum": 65535 },
+    "uint32_max": { "type": "uint32", "maximum": 4294967295 }
+  }
+}

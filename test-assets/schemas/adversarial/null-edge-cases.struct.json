@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://test.json-structure.org/adversarial/null-edge-cases",
+  "name": "NullEdgeCases",
+  "description": "Tests null handling in various contexts",
+  "type": "object",
+  "properties": {
+    "nullableString": {
+      "type": ["string", "null"],
+      "description": "Should accept null or string"
+    },
+    "nullInArray": {
+      "type": "array",
+      "items": { "type": ["int32", "null"] },
+      "description": "Array with mixed nulls and ints"
+    },
+    "nonNullableWithNull": {
+      "type": "string",
+      "description": "Null should fail here"
+    },
+    "nullDefault": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Default is explicitly null"
+    }
+  }
+}
