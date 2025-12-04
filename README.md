@@ -15,6 +15,7 @@ that can be validated and mapped to programming language types.
 | [TypeScript/JavaScript](./typescript/) | `json-structure` | ✅ Available |
 | [Go](./go/) | `github.com/json-structure/sdk-go` | ✅ Available |
 | [Rust](./rust/) | `json-structure` | ✅ Available |
+| [C](./c/) | `json-structure` | ✅ Available |
 
 ## Features
 
@@ -235,6 +236,50 @@ fn main() {
     let instance_validator = InstanceValidator::new();
     let instance_result = instance_validator.validate(&instance, &schema);
     println!("Instance valid: {}", instance_result.is_valid());
+}
+```
+
+### C
+
+```bash
+# Build with CMake
+mkdir build && cd build
+cmake ..
+cmake --build .
+```
+
+```c
+#include "json_structure.h"
+#include <stdio.h>
+
+int main() {
+    // Define a schema
+    const char* schema_json = "{\n"
+        "\"$schema\": \"https://json-structure.org/meta/core/v0/#\",\n"
+        "\"name\": \"Person\",\n"
+        "\"type\": \"object\",\n"
+        "\"properties\": {\n"
+        "    \"name\": {\"type\": \"string\"},\n"
+        "    \"age\": {\"type\": \"int32\"}\n"
+        "}\n"
+    "}";
+
+    // Parse and validate the schema
+    cJSON* schema = cJSON_Parse(schema_json);
+    JsValidationResult result = js_validate_schema(schema);
+    printf("Schema valid: %s\n", result.is_valid ? "true" : "false");
+    js_result_cleanup(&result);
+
+    // Validate an instance
+    const char* instance_json = "{\"name\": \"Alice\", \"age\": 30}";
+    cJSON* instance = cJSON_Parse(instance_json);
+    result = js_validate_instance(instance, schema);
+    printf("Instance valid: %s\n", result.is_valid ? "true" : "false");
+    
+    js_result_cleanup(&result);
+    cJSON_Delete(instance);
+    cJSON_Delete(schema);
+    return 0;
 }
 ```
 

@@ -1,0 +1,87 @@
+name: C SDK
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - 'c/**'
+      - 'test-assets/**'
+      - '.github/workflows/c.yml'
+  pull_request:
+    branches: [master, main]
+    paths:
+      - 'c/**'
+      - 'test-assets/**'
+      - '.github/workflows/c.yml'
+
+jobs:
+  build-and-test:
+    name: Build and Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install CMake (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential
+
+      - name: Install CMake (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install cmake
+
+      - name: Configure CMake
+        working-directory: c
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+
+      - name: Build
+        working-directory: c
+        run: cmake --build build --config Release
+
+      - name: Run Tests (Unix)
+        if: runner.os != 'Windows'
+        working-directory: c
+        run: ./build/tests/json_structure_tests
+
+      - name: Run Tests (Windows)
+        if: runner.os == 'Windows'
+        working-directory: c
+        run: .\build\tests\Release\json_structure_tests.exe
+
+  memory-check:
+    name: Memory Check (Valgrind)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential valgrind
+
+      - name: Configure CMake (Debug)
+        working-directory: c
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+
+      - name: Build
+        working-directory: c
+        run: cmake --build build
+
+      - name: Run Valgrind
+        working-directory: c
+        run: |
+          valgrind --leak-check=full --error-exitcode=1 \
+            --suppressions=/dev/null \
+            ./build/tests/json_structure_tests
