@@ -1,0 +1,9 @@
+json-structure provides CMake targets:
+
+    find_package(json_structure CONFIG REQUIRED)
+
+    # For C projects
+    target_link_libraries(main PRIVATE json_structure::json_structure)
+
+    # For C++ projects (includes C++ bindings)
+    target_link_libraries(main PRIVATE json_structure::json_structure_cpp)

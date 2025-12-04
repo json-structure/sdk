@@ -13,12 +13,30 @@ Designed for embedded systems and cross-platform development.
 - **Portable** - Minimal dependencies, works on Windows, Linux, macOS, and embedded platforms
 - **Well-documented** - Comprehensive API documentation and examples
 
+## Installation
+
+### vcpkg
+
+```bash
+vcpkg install json-structure
+
+# With regex support
+vcpkg install json-structure[regex]
+```
+
+Then in your CMakeLists.txt:
+
+```cmake
+find_package(json_structure CONFIG REQUIRED)
+target_link_libraries(your_target PRIVATE json_structure::json_structure)
+```
+
+### Manual Build
+
 ## Dependencies
 
 - **cJSON** - Lightweight JSON parser (automatically fetched via CMake)
 - **PCRE2** (optional) - For regex pattern validation
-
-## Building
 
 ### Prerequisites
 

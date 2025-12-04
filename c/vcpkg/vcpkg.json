@@ -1,0 +1,27 @@
+{
+  "name": "json-structure",
+  "version": "0.1.0",
+  "description": "JSON Structure Schema Validator - A portable, C99-compatible JSON Structure schema validator with modern C++11 bindings",
+  "homepage": "https://github.com/json-structure/sdk",
+  "license": "MIT",
+  "supports": "!uwp",
+  "dependencies": [
+    "cjson",
+    {
+      "name": "vcpkg-cmake",
+      "host": true
+    },
+    {
+      "name": "vcpkg-cmake-config",
+      "host": true
+    }
+  ],
+  "features": {
+    "regex": {
+      "description": "Enable regex pattern validation using PCRE2",
+      "dependencies": [
+        "pcre2"
+      ]
+    }
+  }
+}
