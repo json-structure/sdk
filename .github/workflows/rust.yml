@@ -116,6 +116,20 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Extract version from tag
+        id: get_version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Extracted version: $VERSION"
+
+      - name: Update Cargo.toml version
+        working-directory: rust
+        run: |
+          sed -i 's/^version = ".*"/version = "${{ steps.get_version.outputs.VERSION }}"/' Cargo.toml
+          echo "Updated Cargo.toml to version ${{ steps.get_version.outputs.VERSION }}"
+          grep '^version' Cargo.toml
+
       - name: Publish to crates.io
         working-directory: rust
         env:
