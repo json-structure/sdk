@@ -1,6 +1,6 @@
 {
   "name": "json-structure",
-  "version": "0.1.0",
+  "version": "0.4.0",
   "description": "JSON Structure Schema Validator - A portable, C99-compatible JSON Structure schema validator with modern C++11 bindings",
   "homepage": "https://github.com/json-structure/sdk",
   "license": "MIT",
