@@ -86,27 +86,36 @@ When releasing a new version:
 4. Run `vcpkg x-add-version json-structure --overwrite-version`
 5. Commit and submit PR to microsoft/vcpkg
 
-## Automation
+## Update Scripts
 
-The workflow `.github/workflows/vcpkg.yml` automatically updates the port files when a new version tag is pushed. It:
+Use the provided scripts to update port files for a new release:
 
-1. Extracts the version from the git tag
-2. Downloads the release tarball and calculates its SHA512
-3. Updates `vcpkg.json` and `portfile.cmake`
-4. Commits the changes back to the repository
+### PowerShell (Windows)
 
-### Enabling Automated PRs to microsoft/vcpkg
+```powershell
+# Update to latest git tag and calculate SHA512
+./update-port.ps1 -CalculateSha
 
-The workflow contains a commented-out job that can automatically create PRs to the official vcpkg registry. To enable it:
+# Update to specific version
+./update-port.ps1 -Version 0.1.0 -CalculateSha
+```
 
-1. Create a GitHub Personal Access Token (PAT) with `repo` scope
-2. Add it as a repository secret named `VCPKG_PAT` in the SDK repo settings
-3. Uncomment the `create-vcpkg-pr` job in `.github/workflows/vcpkg.yml`
+### Bash (Linux/macOS)
 
-Once enabled, pushing a version tag will automatically:
-- Update the local port files
-- Fork/update the vcpkg repository
-- Create a PR to `microsoft/vcpkg`
+```bash
+# Update to latest git tag and calculate SHA512
+./update-port.sh --calculate-sha
+
+# Update to specific version
+./update-port.sh 0.1.0 --calculate-sha
+```
+
+The scripts will:
+1. Update the version in `vcpkg.json`
+2. Download the release tarball and calculate its SHA512 (if `--calculate-sha` is specified)
+3. Update the SHA512 in `portfile.cmake`
+
+> **Note:** The release tag must exist on GitHub before the SHA512 can be calculated.
 
 ## Using as an Overlay Port
 
