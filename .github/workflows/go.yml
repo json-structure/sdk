@@ -76,4 +76,4 @@ jobs:
           working-directory: go
 
   # Go modules are automatically published when tagged
-  # Users can get the module with: go get github.com/json-structure/sdk-go@v1.0.0
+  # Users can get the module with: go get github.com/json-structure/sdk/go@v1.0.0

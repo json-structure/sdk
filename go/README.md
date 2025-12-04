@@ -5,7 +5,7 @@ A Go implementation of validators for [JSON Structure](https://json-structure.or
 ## Installation
 
 ```bash
-go get github.com/json-structure/sdk-go
+go get github.com/json-structure/sdk/go
 ```
 
 ## Usage
@@ -21,7 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	jsonstructure "github.com/json-structure/sdk-go"
+	jsonstructure "github.com/json-structure/sdk/go"
 )
 
 func main() {
@@ -69,7 +69,7 @@ package main
 import (
 	"fmt"
 
-	jsonstructure "github.com/json-structure/sdk-go"
+	jsonstructure "github.com/json-structure/sdk/go"
 )
 
 func main() {
@@ -139,7 +139,7 @@ package main
 import (
 	"fmt"
 
-	jsonstructure "github.com/json-structure/sdk-go"
+	jsonstructure "github.com/json-structure/sdk/go"
 )
 
 func main() {
@@ -188,7 +188,7 @@ import (
 	"fmt"
 	"time"
 
-	js "github.com/json-structure/sdk-go"
+	js "github.com/json-structure/sdk/go"
 )
 
 type Person struct {
@@ -235,7 +235,7 @@ package main
 import (
 	"fmt"
 
-	jsonstructure "github.com/json-structure/sdk-go"
+	jsonstructure "github.com/json-structure/sdk/go"
 )
 
 func main() {

@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	jsonstructure "github.com/json-structure/sdk-go"
+	jsonstructure "github.com/json-structure/sdk/go"
 )
 
 func main() {

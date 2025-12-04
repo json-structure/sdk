@@ -13,7 +13,7 @@ that can be validated and mapped to programming language types.
 | [.NET](./dotnet/) | `JsonStructure` | ✅ Available |
 | [Java](./java/) | `json-structure` | ✅ Available |
 | [TypeScript/JavaScript](./typescript/) | `json-structure` | ✅ Available |
-| [Go](./go/) | `github.com/json-structure/sdk-go` | ✅ Available |
+| [Go](./go/) | `github.com/json-structure/sdk/go` | ✅ Available |
 | [Rust](./rust/) | `json-structure` | ✅ Available |
 | [C](./c/) | `json-structure` | ✅ Available |
 
@@ -160,7 +160,7 @@ const instanceResult = instanceValidator.validate(instance, schema);
 ### Go
 
 ```bash
-go get github.com/json-structure/sdk-go
+go get github.com/json-structure/sdk/go
 ```
 
 ```go
@@ -169,7 +169,7 @@ package main
 import (
     "encoding/json"
     "fmt"
-    jsonstructure "github.com/json-structure/sdk-go"
+    jsonstructure "github.com/json-structure/sdk/go"
 )
 
 func main() {
