@@ -86,6 +86,28 @@ When releasing a new version:
 4. Run `vcpkg x-add-version json-structure --overwrite-version`
 5. Commit and submit PR to microsoft/vcpkg
 
+## Automation
+
+The workflow `.github/workflows/vcpkg.yml` automatically updates the port files when a new version tag is pushed. It:
+
+1. Extracts the version from the git tag
+2. Downloads the release tarball and calculates its SHA512
+3. Updates `vcpkg.json` and `portfile.cmake`
+4. Commits the changes back to the repository
+
+### Enabling Automated PRs to microsoft/vcpkg
+
+The workflow contains a commented-out job that can automatically create PRs to the official vcpkg registry. To enable it:
+
+1. Create a GitHub Personal Access Token (PAT) with `repo` scope
+2. Add it as a repository secret named `VCPKG_PAT` in the SDK repo settings
+3. Uncomment the `create-vcpkg-pr` job in `.github/workflows/vcpkg.yml`
+
+Once enabled, pushing a version tag will automatically:
+- Update the local port files
+- Fork/update the vcpkg repository
+- Create a PR to `microsoft/vcpkg`
+
 ## Using as an Overlay Port
 
 Before the package is available in the vcpkg registry, or to use the latest development version, you can use this directory as an overlay port:
