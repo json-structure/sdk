@@ -12,98 +12,100 @@ This directory contains the vcpkg port files for the JSON Structure C/C++ SDK.
 
 ### Prerequisites
 
-1. Fork the [vcpkg repository](https://github.com/Microsoft/vcpkg)
-2. Clone your fork locally
-3. Ensure you have a tagged release (e.g., `v0.1.0`)
+1. [vcpkg installed and bootstrapped](https://learn.microsoft.com/en-us/vcpkg/get_started/get-started-packaging#1---set-up-vcpkg)
+2. Fork the [vcpkg repository](https://github.com/Microsoft/vcpkg)
+3. A tagged release in the SDK repo (e.g., `v0.1.0`)
 
 ### Steps
 
-1. **Create a topic branch in your vcpkg fork:**
+1. **Clone your vcpkg fork and add it as a remote:**
 
-   ```bash
-   cd /path/to/vcpkg
+   ```powershell
+   git clone https://github.com/microsoft/vcpkg.git
+   cd vcpkg
+   .\bootstrap-vcpkg.bat
+   git remote add myfork https://github.com/<Your-GitHub-Username>/vcpkg.git
+   ```
+
+2. **Create a topic branch:**
+
+   ```powershell
    git checkout -b add-json-structure
    ```
 
-2. **Copy the port files to vcpkg:**
+3. **Copy the port files to vcpkg:**
 
-   ```bash
-   mkdir -p ports/json-structure
-   cp /path/to/sdk/c/vcpkg/* ports/json-structure/
+   ```powershell
+   Copy-Item -Path <path/to/sdk/c/vcpkg>/* -Destination ports/json-structure -Recurse
    ```
 
-3. **Calculate the SHA512 hash for the release tarball:**
+4. **Get the correct SHA512 hash (run install to get the hash error):**
 
-   ```bash
-   # Get the hash for the tagged release
-   vcpkg hash https://github.com/json-structure/sdk/archive/refs/tags/v0.1.0.tar.gz
+   ```powershell
+   vcpkg install json-structure
    ```
 
-4. **Update `portfile.cmake` with the correct SHA512:**
+   The command will fail and show the actual SHA512. Copy that value and update `portfile.cmake`.
 
-   Replace `SHA512 0` with the actual hash from step 3.
+5. **Verify the port builds correctly:**
 
-5. **Test the port locally:**
-
-   ```bash
-   # From vcpkg root
-   ./vcpkg install json-structure
+   ```powershell
+   vcpkg install json-structure
    
    # With regex feature
-   ./vcpkg install json-structure[regex]
+   vcpkg install json-structure[regex]
    ```
 
-6. **Add version information:**
+6. **Commit the port and add version information:**
 
-   ```bash
+   ```powershell
+   git add ports/json-structure
+   git commit -m "[json-structure] Add new port"
+   
    vcpkg x-add-version json-structure
-   git add versions/ ports/json-structure/
-   git commit -m "Add json-structure port"
+   
+   git add versions/
+   git commit --amend --no-edit
    ```
 
 7. **Push and create a pull request:**
 
-   ```bash
-   git push origin add-json-structure
+   ```powershell
+   git push myfork add-json-structure
    ```
 
-   Then create a PR from your fork to `microsoft/vcpkg`.
+   Then navigate to your fork on GitHub and create a Pull Request to `microsoft/vcpkg`.
 
-## Using as an Overlay Port
-
-Before the package is accepted into vcpkg, you can use it as an overlay port:
-
-```bash
-# Clone the SDK
-git clone https://github.com/json-structure/sdk.git
-
-# Use as overlay
-vcpkg install json-structure --overlay-ports=/path/to/sdk/c/vcpkg
-```
-
-Or in your `vcpkg.json`:
-
-```json
-{
-  "dependencies": ["json-structure"]
-}
-```
-
-With `vcpkg-configuration.json`:
-
-```json
-{
-  "overlay-ports": ["./path/to/sdk/c/vcpkg"]
-}
-```
-
-## Version Updates
+### Version Updates
 
 When releasing a new version:
 
 1. Update `version` in `vcpkg.json`
-2. Create a git tag (e.g., `v0.2.0`)
-3. Calculate new SHA512 hash
-4. Update `portfile.cmake` with new SHA512
-5. Run `vcpkg x-add-version --overwrite-version json-structure`
-6. Submit PR to vcpkg
+2. Update `SHA512` in `portfile.cmake` (or set to 0 and run install to get it)
+3. Copy updated files to `vcpkg/ports/json-structure`
+4. Run `vcpkg x-add-version json-structure --overwrite-version`
+5. Commit and submit PR to microsoft/vcpkg
+
+## Using as an Overlay Port
+
+Before the package is available in the vcpkg registry, or to use the latest development version, you can use this directory as an overlay port:
+
+```powershell
+# Clone the SDK repo (or use existing checkout)
+git clone https://github.com/json-structure/sdk.git
+
+# Install using overlay port
+vcpkg install json-structure --overlay-ports=<path/to/sdk/c/vcpkg>
+
+# With regex feature
+vcpkg install json-structure[regex] --overlay-ports=<path/to/sdk/c/vcpkg>
+```
+
+This allows immediate use without waiting for the official registry to accept the PR.
+
+## Resources
+
+- [vcpkg Packaging Tutorial](https://learn.microsoft.com/en-us/vcpkg/get_started/get-started-packaging)
+- [Adding Ports to the Registry](https://learn.microsoft.com/en-us/vcpkg/get_started/get-started-adding-to-registry)
+- [vcpkg Maintainer Guide](https://github.com/microsoft/vcpkg/blob/master/docs/maintainers/maintainer-guide.md)
+- [vcpkg Port Review Checklist](https://github.com/microsoft/vcpkg/blob/master/docs/maintainers/pr-review-checklist.md)
