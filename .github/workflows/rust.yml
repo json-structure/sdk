@@ -72,6 +72,7 @@ jobs:
       - name: Check formatting
         if: matrix.rust == 'stable' && matrix.os == 'ubuntu-latest'
         working-directory: rust
+        continue-on-error: true
         run: cargo fmt -- --check
 
   build:

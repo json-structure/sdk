@@ -459,11 +459,26 @@ fn test_invalid_instances() {
 /// Check if schema uses extended validation keywords
 fn has_extended_keywords(value: &Value) -> bool {
     let extended_keywords = [
-        "minLength", "maxLength", "pattern",
-        "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf",
-        "minItems", "maxItems", "uniqueItems",
-        "minProperties", "maxProperties",
-        "allOf", "anyOf", "oneOf", "not", "if", "then", "else",
+        "minLength",
+        "maxLength",
+        "pattern",
+        "minimum",
+        "maximum",
+        "exclusiveMinimum",
+        "exclusiveMaximum",
+        "multipleOf",
+        "minItems",
+        "maxItems",
+        "uniqueItems",
+        "minProperties",
+        "maxProperties",
+        "allOf",
+        "anyOf",
+        "oneOf",
+        "not",
+        "if",
+        "then",
+        "else",
         "$extends",
     ];
 
@@ -528,7 +543,11 @@ fn test_sample_schemas_are_valid() {
         if result.is_valid() {
             passed += 1;
         } else {
-            eprintln!("  ✗ {} - should be valid: {:?}", test_name, result.errors().next());
+            eprintln!(
+                "  ✗ {} - should be valid: {:?}",
+                test_name,
+                result.errors().next()
+            );
             failed += 1;
         }
     }
