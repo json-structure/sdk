@@ -14,6 +14,7 @@ that can be validated and mapped to programming language types.
 | [Java](./java/) | `json-structure` | ✅ Available |
 | [TypeScript/JavaScript](./typescript/) | `json-structure` | ✅ Available |
 | [Go](./go/) | `github.com/json-structure/sdk-go` | ✅ Available |
+| [Rust](./rust/) | `json-structure` | ✅ Available |
 
 ## Features
 
@@ -199,6 +200,41 @@ func main() {
     instanceValidator := jsonstructure.NewInstanceValidator(nil)
     instanceResult := instanceValidator.Validate(instance, schema)
     fmt.Printf("Instance valid: %v\n", instanceResult.IsValid)
+}
+```
+
+### Rust
+
+```bash
+cargo add json-structure
+```
+
+```rust
+use json_structure::{SchemaValidator, InstanceValidator};
+use serde_json::json;
+
+fn main() {
+    // Define a schema
+    let schema = json!({
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "name": "Person",
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "age": {"type": "int32"}
+        }
+    });
+
+    // Validate the schema
+    let schema_validator = SchemaValidator::new();
+    let schema_result = schema_validator.validate(&schema);
+    println!("Schema valid: {}", schema_result.is_valid());
+
+    // Validate an instance
+    let instance = json!({"name": "Alice", "age": 30});
+    let instance_validator = InstanceValidator::new();
+    let instance_result = instance_validator.validate(&instance, &schema);
+    println!("Instance valid: {}", instance_result.is_valid());
 }
 ```
 
