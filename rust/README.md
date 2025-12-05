@@ -245,6 +245,93 @@ fn validate_something() -> Result<(), Box<dyn std::error::Error>> {
 
 MIT License - see [LICENSE](LICENSE) for details.
 
+## Command Line Interface
+
+The SDK includes `jstruct`, a CLI tool for validating schemas and instances.
+
+### Installation
+
+```bash
+cargo install json-structure --features cli
+```
+
+Or build from source:
+
+```bash
+cargo build --release --features cli
+```
+
+### Commands
+
+#### Check Schema(s)
+
+Validate one or more JSON Structure schema files:
+
+```bash
+# Check a single schema
+jstruct check schema.struct.json
+
+# Check multiple schemas
+jstruct check schema1.json schema2.json
+
+# Use quiet mode (no output, just exit code)
+jstruct check -q schema.json
+
+# Output as JSON
+jstruct check --format json schema.json
+
+# Output as TAP (Test Anything Protocol)
+jstruct check --format tap schema.json
+```
+
+#### Validate Instance(s)
+
+Validate JSON instances against a schema:
+
+```bash
+# Validate instance against schema
+jstruct validate --schema schema.json data.json
+
+# Validate multiple instances
+jstruct validate -s schema.json data1.json data2.json
+
+# With extended validation (constraint keywords)
+jstruct validate --extended -s schema.json data.json
+
+# Output as JSON
+jstruct validate -s schema.json --format json data.json
+```
+
+### Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | All files valid |
+| 1 | One or more files invalid |
+| 2 | Error (file not found, etc.) |
+
+### Output Formats
+
+**Text (default):**
+```
+✓ schema.json: valid
+✗ bad-schema.json: invalid
+  - /$id: Missing required property "$id"
+```
+
+**JSON:**
+```json
+[{"file":"schema.json","valid":true,"errors":[]}]
+```
+
+**TAP:**
+```tap
+1..2
+ok 1 - schema.json
+not ok 2 - bad-schema.json
+  - /$id: Missing required property "$id"
+```
+
 ## Related
 
 - [JSON Structure Specification](https://json-structure.github.io/core/)

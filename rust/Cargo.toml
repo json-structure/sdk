@@ -21,15 +21,25 @@ uuid = { version = "1.6", features = ["v4", "serde"] }
 url = { version = "2.5", features = ["serde"] }
 base64 = "0.21"
 indexmap = { version = "2.1", features = ["serde"] }
+clap = { version = "4.4", features = ["derive"], optional = true }
 
 [dev-dependencies]
 pretty_assertions = "1.4"
 test-case = "3.3"
+assert_cmd = "2.0"
+predicates = "3.0"
+tempfile = "3.10"
 
 [features]
 default = []
 extended = []  # Enable extended validation keywords
+cli = ["clap"]
 
 [lib]
 name = "json_structure"
 path = "src/lib.rs"
+
+[[bin]]
+name = "jstruct"
+path = "src/bin/jstruct.rs"
+required-features = ["cli"]
