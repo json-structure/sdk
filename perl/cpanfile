@@ -1,0 +1,24 @@
+# JSON::Structure Perl SDK dependencies
+# Run: cpanm --installdeps .
+
+requires 'perl', '5.020';
+
+# Core dependencies (most are in core, but specifying versions for clarity)
+requires 'JSON::PP', '2.0';
+requires 'MIME::Base64', '3.0';
+requires 'Scalar::Util', '1.0';
+requires 'Exporter', '5.0';
+
+# Test dependencies
+on 'test' => sub {
+    requires 'Test::More', '1.0';
+    requires 'Test::Deep', '0';
+    requires 'File::Spec', '0';
+    requires 'FindBin', '0';
+};
+
+# Development dependencies
+on 'develop' => sub {
+    requires 'Devel::Cover', '0';
+    requires 'Pod::Coverage', '0';
+};
