@@ -1426,7 +1426,7 @@ sub _check_constraint_type_mismatch {
     my ($self, $schema, $type, $path) = @_;
     
     # Numeric constraints can only be on numeric types
-    my @numeric_types = qw(int8 int16 int32 int64 uint8 uint16 uint32 uint64 float16 float32 float64 decimal integer double);
+    my @numeric_types = qw(int8 int16 int32 int64 uint8 uint16 uint32 uint64 float16 float32 float64 decimal integer double number float);
     my $is_numeric = grep { $_ eq $type } @numeric_types;
     
     for my $keyword (qw(minimum maximum exclusiveMinimum exclusiveMaximum multipleOf)) {
