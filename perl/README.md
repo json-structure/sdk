@@ -269,6 +269,46 @@ prove -l t/02_schema_validator.t
 cover -test
 ```
 
+## Publishing to CPAN
+
+The SDK includes CI/CD automation for publishing to CPAN.
+
+### Prerequisites
+
+1. **PAUSE Account**: Request an account at https://pause.perl.org/pause/query?ACTION=request_id
+2. **GitHub Secrets**: Configure these secrets in your repository:
+   - `PAUSE_USERNAME`: Your PAUSE username
+   - `PAUSE_PASSWORD`: Your PAUSE password
+3. **GitHub Environment**: Create a protected environment named `cpan` for the secrets
+
+### Release Process
+
+1. Update the version number in the modules if needed
+2. Create and push a version tag:
+   ```bash
+   git tag v0.02
+   git push origin v0.02
+   ```
+3. The CI workflow will automatically:
+   - Run all tests across multiple Perl versions and platforms
+   - Build the distribution tarball
+   - Upload to CPAN via PAUSE
+
+### Manual Upload
+
+You can also upload manually:
+
+```bash
+# Build the distribution
+perl Makefile.PL
+make
+make manifest
+make dist
+
+# Upload to CPAN
+cpan-upload -u YOUR_PAUSE_USERNAME JSON-Structure-0.01.tar.gz
+```
+
 ## Integration with Test Assets
 
 The SDK can use the shared test assets for cross-SDK compatibility testing:
