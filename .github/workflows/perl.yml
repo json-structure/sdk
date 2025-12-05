@@ -58,8 +58,10 @@ jobs:
         if: matrix.perl-version == '5.38' && matrix.os == 'ubuntu-latest'
         working-directory: perl
         run: |
-          cpanm --notest Devel::Cover
-          cover -test -report text
+          cpanm --notest Devel::Cover Devel::Cover::Report::Clover
+          perl Makefile.PL
+          HARNESS_PERL_SWITCHES=-MDevel::Cover prove -l t/
+          cover -report text
 
   lint:
     name: Perl Critic
