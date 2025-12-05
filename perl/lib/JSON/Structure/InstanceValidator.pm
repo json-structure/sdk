@@ -1024,6 +1024,7 @@ sub _validate_map {
     if ($self->{extended}) {
         my $count = scalar(keys %$value);
         
+        # Check minProperties (for object type)
         if (exists $schema->{minProperties}) {
             if ($count < $schema->{minProperties}) {
                 $self->_add_error(
@@ -1035,6 +1036,7 @@ sub _validate_map {
             }
         }
         
+        # Check maxProperties (for object type)
         if (exists $schema->{maxProperties}) {
             if ($count > $schema->{maxProperties}) {
                 $self->_add_error(
@@ -1043,6 +1045,48 @@ sub _validate_map {
                     $path,
                     $schema_path
                 );
+            }
+        }
+        
+        # Check minEntries (for map type)
+        if (exists $schema->{minEntries}) {
+            if ($count < $schema->{minEntries}) {
+                $self->_add_error(
+                    INSTANCE_MAP_MIN_ENTRIES,
+                    "Map has $count entries, minimum is $schema->{minEntries}",
+                    $path,
+                    $schema_path
+                );
+            }
+        }
+        
+        # Check maxEntries (for map type)
+        if (exists $schema->{maxEntries}) {
+            if ($count > $schema->{maxEntries}) {
+                $self->_add_error(
+                    INSTANCE_MAP_MAX_ENTRIES,
+                    "Map has $count entries, maximum is $schema->{maxEntries}",
+                    $path,
+                    $schema_path
+                );
+            }
+        }
+        
+        # Check keyNames pattern
+        if (exists $schema->{keyNames}) {
+            my $key_schema = $schema->{keyNames};
+            if (ref($key_schema) eq 'HASH' && exists $key_schema->{pattern}) {
+                my $pattern = $key_schema->{pattern};
+                for my $key (keys %$value) {
+                    if ($key !~ /$pattern/) {
+                        $self->_add_error(
+                            INSTANCE_MAP_KEY_PATTERN_MISMATCH,
+                            "Map key '$key' does not match pattern '$pattern'",
+                            "$path/$key",
+                            "$schema_path/keyNames/pattern"
+                        );
+                    }
+                }
             }
         }
     }

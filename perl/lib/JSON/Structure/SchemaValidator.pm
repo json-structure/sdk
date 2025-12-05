@@ -63,7 +63,17 @@ my %RESERVED_KEYWORDS = map { $_ => 1 } qw(
 # Extended keywords for conditional composition
 my %COMPOSITION_KEYWORDS = map { $_ => 1 } qw(allOf anyOf oneOf not if then else);
 
-# Extended keywords for validation
+# Extended keywords for validation - combined for warning generation
+my %VALIDATION_EXTENSION_KEYWORDS = map { $_ => 1 } qw(
+    pattern format minLength maxLength
+    minimum maximum exclusiveMinimum exclusiveMaximum multipleOf
+    minItems maxItems uniqueItems contains minContains maxContains
+    minProperties maxProperties dependentRequired patternProperties
+    propertyNames default contentEncoding contentMediaType
+    minEntries maxEntries patternKeys keyNames has
+);
+
+# Extended keywords for validation - categorized for constraint validation
 my %NUMERIC_VALIDATION_KEYWORDS = map { $_ => 1 } qw(
     minimum maximum exclusiveMinimum exclusiveMaximum multipleOf
 );
@@ -77,6 +87,14 @@ my %OBJECT_VALIDATION_KEYWORDS = map { $_ => 1 } qw(
     minProperties maxProperties minEntries maxEntries
     dependentRequired patternProperties patternKeys
     propertyNames keyNames has default
+);
+
+# Combined validation keywords for warning detection
+my %ALL_VALIDATION_KEYWORDS = (
+    %NUMERIC_VALIDATION_KEYWORDS,
+    %STRING_VALIDATION_KEYWORDS,
+    %ARRAY_VALIDATION_KEYWORDS,
+    %OBJECT_VALIDATION_KEYWORDS,
 );
 
 # Valid format values
@@ -109,6 +127,7 @@ sub new {
         source_text              => undef,
         source_locator           => undef,
         seen_extends             => {},
+        seen_refs                => {},
         current_depth            => 0,
     }, $class;
     
@@ -141,6 +160,7 @@ sub validate {
     $self->{doc} = $doc;
     $self->{source_text} = $source_text;
     $self->{seen_extends} = {};
+    $self->{seen_refs} = {};
     $self->{enabled_extensions} = {};
     $self->{current_depth} = 0;
     
@@ -244,6 +264,11 @@ sub validate {
         );
     }
     
+    # Check for validation extension keywords without $uses (warnings)
+    if ($self->{extended}) {
+        $self->_check_validation_keyword_warnings($doc, '#');
+    }
+    
     return $self->_make_result();
 }
 
@@ -288,6 +313,96 @@ sub _add_warning {
         severity => JSON::Structure::Types::ValidationSeverity::WARNING,
         location => $location,
     );
+}
+
+sub _check_validation_keyword_warnings {
+    my ($self, $schema, $path) = @_;
+    
+    return unless ref($schema) eq 'HASH';
+    
+    # Check if $uses is present at this level
+    my $has_uses = exists $schema->{'$uses'};
+    
+    # Check for validation keywords without $uses
+    for my $key (keys %$schema) {
+        if (exists $ALL_VALIDATION_KEYWORDS{$key} && !$has_uses) {
+            $self->_add_warning(
+                SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED,
+                "Validation keyword '$key' found but no '\$uses' declaration in scope. Add '\$uses' with an appropriate validation extension to enable this keyword.",
+                "$path/$key"
+            );
+        }
+    }
+    
+    # Recurse into nested schemas
+    if (exists $schema->{type}) {
+        my $type = $schema->{type};
+        
+        if ($type eq 'array' && exists $schema->{items}) {
+            $self->_check_validation_keyword_warnings($schema->{items}, "$path/items");
+        }
+        elsif ($type eq 'map' && exists $schema->{values}) {
+            $self->_check_validation_keyword_warnings($schema->{values}, "$path/values");
+        }
+        elsif ($type eq 'object') {
+            if (exists $schema->{properties} && ref($schema->{properties}) eq 'HASH') {
+                for my $prop (keys %{$schema->{properties}}) {
+                    $self->_check_validation_keyword_warnings($schema->{properties}{$prop}, "$path/properties/$prop");
+                }
+            }
+            if (exists $schema->{optionalProperties} && ref($schema->{optionalProperties}) eq 'HASH') {
+                for my $prop (keys %{$schema->{optionalProperties}}) {
+                    $self->_check_validation_keyword_warnings($schema->{optionalProperties}{$prop}, "$path/optionalProperties/$prop");
+                }
+            }
+        }
+        elsif ($type eq 'tuple' && exists $schema->{items} && ref($schema->{items}) eq 'ARRAY') {
+            for my $i (0 .. $#{$schema->{items}}) {
+                $self->_check_validation_keyword_warnings($schema->{items}[$i], "$path/items/$i");
+            }
+        }
+    }
+    
+    # Check composition keywords
+    for my $comp_key (qw(allOf anyOf oneOf)) {
+        if (exists $schema->{$comp_key} && ref($schema->{$comp_key}) eq 'ARRAY') {
+            for my $i (0 .. $#{$schema->{$comp_key}}) {
+                $self->_check_validation_keyword_warnings($schema->{$comp_key}[$i], "$path/$comp_key/$i");
+            }
+        }
+    }
+    
+    # Check if keyword
+    if (exists $schema->{if}) {
+        $self->_check_validation_keyword_warnings($schema->{if}, "$path/if");
+        $self->_check_validation_keyword_warnings($schema->{then}, "$path/then") if exists $schema->{then};
+        $self->_check_validation_keyword_warnings($schema->{else}, "$path/else") if exists $schema->{else};
+    }
+    
+    # Check definitions
+    if (exists $schema->{definitions} && ref($schema->{definitions}) eq 'HASH') {
+        $self->_check_definitions_warnings($schema->{definitions}, "$path/definitions");
+    }
+}
+
+sub _check_definitions_warnings {
+    my ($self, $defs, $path) = @_;
+    
+    return unless ref($defs) eq 'HASH';
+    
+    for my $key (keys %$defs) {
+        my $val = $defs->{$key};
+        if (ref($val) eq 'HASH') {
+            if (exists $val->{type}) {
+                # This is a schema
+                $self->_check_validation_keyword_warnings($val, "$path/$key");
+            }
+            else {
+                # This might be a namespace
+                $self->_check_definitions_warnings($val, "$path/$key");
+            }
+        }
+    }
 }
 
 sub _check_required_top_level_keywords {
@@ -791,6 +906,8 @@ sub _validate_schema {
     # Validate extended keywords if enabled
     if ($self->{extended}) {
         $self->_validate_extended_keywords($schema, $type, $path);
+        # Also check composition keywords within schemas with type
+        $self->_check_composition_keywords($schema, $path);
     }
     
     # Validate altnames
@@ -930,6 +1047,19 @@ sub _validate_ref {
         return;
     }
     
+    # Check for circular references
+    if (exists $self->{seen_refs}{$ref}) {
+        $self->_add_error(
+            SCHEMA_CIRCULAR_REF,
+            "Circular reference detected: $ref",
+            $path
+        );
+        return;
+    }
+    
+    # Mark this ref as being processed
+    $self->{seen_refs}{$ref} = 1;
+    
     # Check if reference resolves
     my $target = $self->_resolve_json_pointer($ref, $self->{doc});
     if (!defined $target) {
@@ -947,6 +1077,42 @@ sub _validate_ref {
             $self->_add_error(
                 SCHEMA_REF_NOT_FOUND,
                 "\$ref target does not exist: $ref",
+                $path
+            );
+        }
+    }
+    else {
+        # Validate the target schema, checking for circular refs
+        if (ref($target) eq 'HASH' && exists $target->{type}) {
+            $self->_check_type_for_circular_ref($target, $ref, $path);
+        }
+    }
+    
+    # Clear the seen ref after processing
+    delete $self->{seen_refs}{$ref};
+}
+
+sub _check_type_for_circular_ref {
+    my ($self, $schema, $original_ref, $path) = @_;
+    
+    return unless ref($schema) eq 'HASH';
+    
+    my $type = $schema->{type};
+    return unless defined $type;
+    
+    if (ref($type) eq 'HASH' && exists $type->{'$ref'}) {
+        my $nested_ref = $type->{'$ref'};
+        if ($nested_ref eq $original_ref) {
+            $self->_add_error(
+                SCHEMA_CIRCULAR_REF,
+                "Direct circular reference detected: type references $nested_ref which references itself",
+                $path
+            );
+        }
+        elsif (exists $self->{seen_refs}{$nested_ref}) {
+            $self->_add_error(
+                SCHEMA_CIRCULAR_REF,
+                "Circular reference chain detected involving: $nested_ref",
                 $path
             );
         }
@@ -1256,10 +1422,45 @@ sub _validate_extends {
     }
 }
 
+sub _check_constraint_type_mismatch {
+    my ($self, $schema, $type, $path) = @_;
+    
+    # Numeric constraints can only be on numeric types
+    my @numeric_types = qw(int8 int16 int32 int64 uint8 uint16 uint32 uint64 float16 float32 float64 decimal integer double);
+    my $is_numeric = grep { $_ eq $type } @numeric_types;
+    
+    for my $keyword (qw(minimum maximum exclusiveMinimum exclusiveMaximum multipleOf)) {
+        if (exists $schema->{$keyword} && !$is_numeric) {
+            $self->_add_error(
+                SCHEMA_CONSTRAINT_TYPE_MISMATCH,
+                "Constraint '$keyword' is only valid for numeric types, not '$type'",
+                "$path/$keyword"
+            );
+        }
+    }
+    
+    # String constraints can only be on string types
+    my @string_types = qw(string date time datetime duration uri base64 binary uuid jsonpointer name);
+    my $is_string = grep { $_ eq $type } @string_types;
+    
+    for my $keyword (qw(minLength maxLength pattern format contentEncoding contentMediaType)) {
+        if (exists $schema->{$keyword} && !$is_string) {
+            $self->_add_error(
+                SCHEMA_CONSTRAINT_TYPE_MISMATCH,
+                "Constraint '$keyword' is only valid for string types, not '$type'",
+                "$path/$keyword"
+            );
+        }
+    }
+}
+
 sub _validate_extended_keywords {
     my ($self, $schema, $type, $path) = @_;
     
     $type //= '';
+    
+    # Check constraint-type mismatches
+    $self->_check_constraint_type_mismatch($schema, $type, $path);
     
     # Check numeric constraints
     for my $keyword (keys %NUMERIC_VALIDATION_KEYWORDS) {
@@ -1306,6 +1507,43 @@ sub _validate_extended_keywords {
         }
     }
     
+    # Check for negative values where not allowed
+    if (exists $schema->{minItems}) {
+        my $value = $schema->{minItems};
+        if (defined $value && !ref($value) && $value =~ /^-?\d+$/ && $value < 0) {
+            $self->_add_error(
+                SCHEMA_MIN_ITEMS_NEGATIVE,
+                'minItems cannot be negative',
+                "$path/minItems"
+            );
+        }
+    }
+    
+    if (exists $schema->{minLength}) {
+        my $value = $schema->{minLength};
+        if (defined $value && !ref($value) && $value =~ /^-?\d+$/ && $value < 0) {
+            $self->_add_error(
+                SCHEMA_MIN_LENGTH_NEGATIVE,
+                'minLength cannot be negative',
+                "$path/minLength"
+            );
+        }
+    }
+    
+    # Check multipleOf must be positive
+    if (exists $schema->{multipleOf}) {
+        my $value = $schema->{multipleOf};
+        if (defined $value && !ref($value) && $value =~ /^-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?$/) {
+            if ($value <= 0) {
+                $self->_add_error(
+                    SCHEMA_MULTIPLE_OF_NOT_POSITIVE,
+                    'multipleOf must be greater than 0',
+                    "$path/multipleOf"
+                );
+            }
+        }
+    }
+    
     # Check pattern
     if (exists $schema->{pattern}) {
         my $pattern = $schema->{pattern};
@@ -1331,7 +1569,7 @@ sub _validate_extended_keywords {
     # Check uniqueItems
     if (exists $schema->{uniqueItems}) {
         my $value = $schema->{uniqueItems};
-        if (ref($value) || !_is_boolean($value)) {
+        if (!_is_boolean($value)) {
             $self->_add_error(
                 SCHEMA_UNIQUE_ITEMS_NOT_BOOLEAN,
                 'uniqueItems must be a boolean',
@@ -1343,8 +1581,9 @@ sub _validate_extended_keywords {
 
 sub _is_boolean {
     my ($value) = @_;
-    return 0 if ref($value);
+    # JSON::PP booleans are blessed references
     return 1 if JSON::PP::is_bool($value);
+    return 0 if ref($value);
     return 1 if $value =~ /^[01]$/;
     return 1 if $value eq 'true' || $value eq 'false';
     return 0;
