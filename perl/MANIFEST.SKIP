@@ -1,0 +1,33 @@
+# Avoid version control files
+^\.git
+^\.gitignore$
+
+# Avoid build artifacts
+^blib/
+^Makefile$
+^Makefile\.old$
+^pm_to_blib$
+^MYMETA\.*
+^JSON-Structure-.*\.tar\.gz$
+
+# Avoid temp files
+~$
+\.bak$
+\.old$
+\.swp$
+\.tmp$
+
+# Avoid OS files
+^\.DS_Store$
+^Thumbs\.db$
+
+# Avoid IDE files
+^\.vscode/
+^\.idea/
+
+# Avoid coverage output
+^cover_db/
+^coverage/
+
+# Avoid test temp files
+^t/tmp/

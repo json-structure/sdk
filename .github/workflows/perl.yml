@@ -1,0 +1,202 @@
+name: Perl SDK
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - 'perl/**'
+      - 'meta/**'
+      - 'test-assets/**'
+      - '.github/workflows/perl.yml'
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  pull_request:
+    branches: [master, main]
+    paths:
+      - 'perl/**'
+      - 'meta/**'
+      - 'test-assets/**'
+      - '.github/workflows/perl.yml'
+
+jobs:
+  test:
+    name: Test Perl ${{ matrix.perl-version }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        perl-version: ['5.20', '5.26', '5.32', '5.38']
+        exclude:
+          # Windows perl setup can be slow, test fewer versions
+          - os: windows-latest
+            perl-version: '5.20'
+          - os: windows-latest
+            perl-version: '5.26'
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Perl ${{ matrix.perl-version }}
+        uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: ${{ matrix.perl-version }}
+
+      - name: Install dependencies
+        working-directory: perl
+        run: |
+          cpanm --installdeps --notest .
+
+      - name: Run tests
+        working-directory: perl
+        run: |
+          prove -l -v t/
+
+      - name: Run tests with coverage
+        if: matrix.perl-version == '5.38' && matrix.os == 'ubuntu-latest'
+        working-directory: perl
+        run: |
+          cpanm --notest Devel::Cover
+          cover -test -report text
+
+  lint:
+    name: Perl Critic
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Perl
+        uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: '5.38'
+
+      - name: Install Perl::Critic
+        run: cpanm --notest Perl::Critic
+
+      - name: Run Perl::Critic (gentle)
+        working-directory: perl
+        run: |
+          perlcritic --gentle lib/ || true
+        continue-on-error: true
+
+  build:
+    name: Build distribution
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Perl
+        uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: '5.38'
+
+      - name: Install build dependencies
+        run: |
+          cpanm --notest ExtUtils::MakeMaker Module::Build
+
+      - name: Build distribution
+        working-directory: perl
+        run: |
+          perl Makefile.PL
+          make
+          make manifest
+          make dist
+
+      - name: Verify distribution
+        working-directory: perl
+        run: |
+          # Find the tarball
+          TARBALL=$(ls JSON-Structure-*.tar.gz 2>/dev/null | head -1)
+          if [ -n "$TARBALL" ]; then
+            echo "Built: $TARBALL"
+            tar -tzf "$TARBALL" | head -20
+          else
+            echo "No tarball found, creating with make dist"
+            make dist
+          fi
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: perl-distribution
+          path: perl/JSON-Structure-*.tar.gz
+
+  # CPAN publishing is typically done manually or via PAUSE
+  # This job prepares the distribution for upload
+  prepare-cpan:
+    name: Prepare for CPAN
+    runs-on: ubuntu-latest
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Perl
+        uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: '5.38'
+
+      - name: Install dependencies
+        run: |
+          cpanm --notest ExtUtils::MakeMaker Test::More Test::Deep
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Update version in modules
+        working-directory: perl
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          # Update version in all .pm files
+          find lib -name '*.pm' -exec sed -i "s/VERSION = '0.01'/VERSION = '$VERSION'/" {} \;
+
+      - name: Build final distribution
+        working-directory: perl
+        run: |
+          perl Makefile.PL
+          make
+          make manifest
+          make dist
+
+      - name: Upload CPAN-ready distribution
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpan-distribution
+          path: perl/JSON-Structure-*.tar.gz
+
+      - name: Create release notes
+        run: |
+          echo "## Perl SDK v${{ steps.version.outputs.version }}" > release-notes.md
+          echo "" >> release-notes.md
+          echo "### Installation" >> release-notes.md
+          echo "" >> release-notes.md
+          echo "From CPAN (when available):" >> release-notes.md
+          echo '```bash' >> release-notes.md
+          echo "cpanm JSON::Structure" >> release-notes.md
+          echo '```' >> release-notes.md
+          echo "" >> release-notes.md
+          echo "From this release:" >> release-notes.md
+          echo '```bash' >> release-notes.md
+          echo "cpanm JSON-Structure-${{ steps.version.outputs.version }}.tar.gz" >> release-notes.md
+          echo '```' >> release-notes.md
+
+      - name: Upload release notes
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: release-notes.md
