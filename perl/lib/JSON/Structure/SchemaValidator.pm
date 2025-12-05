@@ -4,6 +4,9 @@ use strict;
 use warnings;
 use v5.20;
 
+our $VERSION = '0.01';
+
+use JSON::PP ();
 use JSON::Structure::Types;
 use JSON::Structure::ErrorCodes qw(:all);
 use JSON::Structure::JsonSourceLocator;

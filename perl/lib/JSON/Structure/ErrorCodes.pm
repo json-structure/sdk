@@ -4,6 +4,8 @@ use strict;
 use warnings;
 use v5.20;
 
+our $VERSION = '0.01';
+
 use Exporter 'import';
 
 =head1 NAME

@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 
 use strict;
-use warnings;
+use warnings FATAL => 'all';
 use v5.20;
 
 use Test::More;

@@ -4,6 +4,8 @@ use strict;
 use warnings;
 use v5.20;
 
+our $VERSION = '0.01';
+
 use JSON::Structure::Types;
 
 =head1 NAME
@@ -27,6 +29,25 @@ This module tracks line and column positions in a JSON document and maps
 JSON Pointer paths to source locations. It parses the JSON text to build
 a map of paths to character offsets, then converts offsets to line/column
 positions.
+
+B<Limitations:> This is a lightweight, hand-rolled JSON path locator optimized
+for typical JSON Structure schemas. It may report incorrect positions for:
+
+=over 4
+
+=item * Complex escape sequences in strings (e.g., C<\uXXXX> surrogate pairs)
+
+=item * Deeply nested structures with many embedded strings containing braces/brackets
+
+=item * Non-standard "relaxed" JSON (comments, trailing commas, unquoted keys)
+
+=item * Very large documents where character-by-character parsing is slow
+
+=back
+
+For production use requiring precise positions in complex JSON, consider using
+a streaming tokenizer like L<JSON::Streaming::Reader> or L<JSON::SL> that can
+report byte offsets during parsing.
 
 =cut
 

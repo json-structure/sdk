@@ -15,6 +15,9 @@ WriteMakefile(
         'MIME::Base64'  => '3.0',
         'Scalar::Util'  => '1.0',
         'Exporter'      => '5.0',
+        'Math::BigInt'  => '1.9993',  # For int128/uint128 range validation
+        'Time::Local'   => '1.25',    # For calendar date validation
+        'B'             => '0',       # For SV flag inspection
     },
     
     TEST_REQUIRES => {

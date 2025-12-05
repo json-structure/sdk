@@ -4,27 +4,43 @@ use strict;
 use warnings;
 use v5.20;
 
+our $VERSION = '0.01';
+
 use JSON::PP;
 use B;
 use MIME::Base64 ();
 use Scalar::Util qw(looks_like_number blessed);
+use Time::Local;
 
 use JSON::Structure::Types;
 use JSON::Structure::ErrorCodes qw(:all);
 use JSON::Structure::JsonSourceLocator;
 
-# Helper to check if a scalar was a number in the original JSON
-# Uses B module to inspect internal flags
+# Helper to check if a scalar was a number in the original JSON.
+# Uses B module to inspect internal flags set by JSON::PP during parsing.
+# Note: This approach relies on Perl's internal SV flags which are set when
+# JSON::PP parses numeric literals. The flags IOK (integer OK) and NOK 
+# (numeric OK) indicate the value originated as a JSON number.
+# Limitation: May behave differently with dualvars or tied scalars.
 sub _is_numeric {
     my ($value) = @_;
     return 0 unless defined $value && !ref($value);
+    # Exclude booleans first
+    return 0 if JSON::PP::is_bool($value);
     my $b_obj = B::svref_2object(\$value);
     my $flags = $b_obj->FLAGS;
     # Check if the value has numeric flags set (IOK/NOK)
     return ($flags & (B::SVf_IOK | B::SVf_NOK)) ? 1 : 0;
 }
 
-# Helper to check if a value is a pure string (no numeric flags)
+# Helper to check if a value is a pure string (no numeric flags).
+# A "pure string" is a non-reference scalar that:
+#   1. Is not a JSON::PP boolean
+#   2. Has POK (string OK) flag set
+#   3. Does NOT have IOK/NOK (numeric) flags set
+# This distinguishes JSON string values like "123" from numeric 123.
+# Note: Numeric-looking strings (e.g., "42") are treated as strings per
+# JSON Structure semantics - the JSON encoding determines the type.
 sub _is_pure_string {
     my ($value) = @_;
     return 0 unless defined $value && !ref($value);
@@ -82,9 +98,9 @@ my %INT_RANGES = (
 my $DATE_REGEX = qr/^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])$/;
 my $TIME_REGEX = qr/^(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)?$/i;
 my $DATETIME_REGEX = qr/^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)?$/i;
-my $DURATION_REGEX = qr/^P(?:\d+Y)?(?:\d+M)?(?:\d+W)?(?:\d+D)?(?:T(?:\d+H)?(?:\d+M)?(?:\d+(?:\.\d+)?S)?)?$/;
+my $DURATION_REGEX = qr/^P(?:(?:\d+Y)?(?:\d+M)?(?:\d+W)?(?:\d+D)?)?(?:T(?:\d+H)?(?:\d+M)?(?:\d+(?:\.\d+)?S)?)?$/;
 my $UUID_REGEX = qr/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-my $URI_REGEX = qr/^[a-zA-Z][a-zA-Z0-9+\-.]*:\/\//;
+my $URI_REGEX = qr/^[a-zA-Z][a-zA-Z0-9+\-.]*:/;  # Any valid scheme (not just :// based)
 my $JSONPOINTER_REGEX = qr/^(?:\/(?:[^~\/]|~[01])*)*$/;
 my $EMAIL_REGEX = qr/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 my $IPV4_REGEX = qr/^(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)$/;
@@ -206,8 +222,8 @@ sub _validate_value {
         return;
     }
     
-    # Handle boolean schemas
-    if (!ref($schema)) {
+    # Handle boolean schemas (both raw scalars and JSON::PP::Boolean objects)
+    if (!ref($schema) || JSON::PP::is_bool($schema)) {
         if (_is_false($schema)) {
             $self->_add_error(
                 INSTANCE_SCHEMA_FALSE,
@@ -612,6 +628,15 @@ sub _validate_format {
 sub _validate_number {
     my ($self, $value, $type, $schema, $path, $schema_path) = @_;
     
+    # Decimal type can accept string representations for high precision
+    if ($type eq 'decimal' && defined $value && !ref($value)) {
+        # Accept numeric values or string representations of numbers
+        if (_is_numeric($value) || $value =~ /^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/) {
+            $self->_validate_numeric_constraints($value, $schema, $path, $schema_path);
+            return;
+        }
+    }
+    
     # Must be a numeric value, not a string that looks like a number
     unless (defined $value && !ref($value) && _is_numeric($value)) {
         $self->_add_error(
@@ -628,6 +653,30 @@ sub _validate_number {
 
 sub _validate_integer {
     my ($self, $value, $type, $schema, $path, $schema_path) = @_;
+    
+    # int64 and uint64 can accept string representations for large values
+    if (($type eq 'int64' || $type eq 'uint64') && defined $value && !ref($value) && $value =~ /^-?\d+$/) {
+        # String representation of large integer - valid
+        my $range = $INT_RANGES{$type};
+        
+        # Use Math::BigInt for proper range checking with large values
+        require Math::BigInt;
+        my $big_val = Math::BigInt->new($value);
+        my $big_min = Math::BigInt->new($range->{min});
+        my $big_max = Math::BigInt->new($range->{max});
+        
+        if ($big_val < $big_min || $big_val > $big_max) {
+            $self->_add_error(
+                INSTANCE_INT_RANGE_INVALID,
+                "Value $value is not a valid $type",
+                $path,
+                $schema_path
+            );
+        }
+        
+        $self->_validate_numeric_constraints($value, $schema, $path, $schema_path);
+        return;
+    }
     
     # Must be a numeric value, not a string
     unless (defined $value && !ref($value) && _is_numeric($value)) {
@@ -1146,16 +1195,6 @@ sub _validate_tuple {
 sub _validate_choice {
     my ($self, $value, $schema, $path, $schema_path) = @_;
     
-    unless (ref($value) eq 'HASH') {
-        $self->_add_error(
-            INSTANCE_CHOICE_EXPECTED,
-            'Value must be an object (choice)',
-            $path,
-            $schema_path
-        );
-        return;
-    }
-    
     my $choices = $schema->{choices};
     unless (defined $choices && ref($choices) eq 'HASH') {
         $self->_add_error(
@@ -1170,7 +1209,17 @@ sub _validate_choice {
     my $selector = $schema->{selector};
     
     if (defined $selector) {
-        # Selector-based choice
+        # Selector-based choice - value MUST be an object
+        unless (ref($value) eq 'HASH') {
+            $self->_add_error(
+                INSTANCE_CHOICE_EXPECTED,
+                'Value must be an object (choice with selector)',
+                $path,
+                $schema_path
+            );
+            return;
+        }
+        
         unless (exists $value->{$selector}) {
             $self->_add_error(
                 INSTANCE_CHOICE_SELECTOR_MISSING,
@@ -1260,7 +1309,37 @@ sub _validate_date {
             $path,
             $schema_path
         );
+        return;
     }
+    
+    # Additional calendar validation
+    unless (_is_valid_calendar_date($value)) {
+        $self->_add_error(
+            INSTANCE_DATE_FORMAT_INVALID,
+            "Invalid calendar date: $value",
+            $path,
+            $schema_path
+        );
+    }
+}
+
+# Helper to validate calendar dates using Time::Local
+sub _is_valid_calendar_date {
+    my ($date_str) = @_;
+    return 0 unless $date_str =~ /^(\d{4})-(\d{2})-(\d{2})$/;
+    
+    my ($year, $month, $day) = ($1, $2, $3);
+    
+    # Basic range check for month
+    return 0 if $month < 1 || $month > 12;
+    return 0 if $day < 1 || $day > 31;
+    
+    # Use Time::Local to validate the date - it throws an error for invalid dates
+    eval {
+        # timelocal expects month 0-11, year as actual year
+        Time::Local::timelocal(0, 0, 0, $day, $month - 1, $year);
+    };
+    return $@ ? 0 : 1;
 }
 
 sub _validate_time {
@@ -1322,7 +1401,7 @@ sub _validate_duration {
         return;
     }
     
-    unless ($value =~ $DURATION_REGEX) {
+    unless ($value =~ $DURATION_REGEX && $value ne 'P' && $value ne 'PT') {
         $self->_add_error(
             INSTANCE_DURATION_FORMAT_INVALID,
             "Invalid duration format: $value",
@@ -1391,11 +1470,34 @@ sub _validate_binary {
         return;
     }
     
-    # Validate base64 encoding
-    eval {
-        MIME::Base64::decode_base64($value);
-    };
-    if ($@) {
+    # Validate base64 encoding - must be valid base64 characters only
+    # and proper padding
+    my $valid = 1;
+    
+    # Empty string is valid base64
+    if ($value eq '') {
+        return;
+    }
+    
+    # Base64 must only contain [A-Za-z0-9+/=]
+    unless ($value =~ /^[A-Za-z0-9+\/]*={0,2}$/) {
+        $valid = 0;
+    }
+    
+    # Length must be multiple of 4 after padding
+    if ($valid && length($value) % 4 != 0) {
+        $valid = 0;
+    }
+    
+    # Check for proper padding
+    if ($valid && $value =~ /=/) {
+        # = can only appear at end
+        unless ($value =~ /^[A-Za-z0-9+\/]*={1,2}$/) {
+            $valid = 0;
+        }
+    }
+    
+    unless ($valid) {
         $self->_add_error(
             INSTANCE_BINARY_ENCODING_INVALID,
             'Invalid base64 encoding',
