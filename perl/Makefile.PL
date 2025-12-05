@@ -9,6 +9,7 @@ WriteMakefile(
     AUTHOR           => 'JSON Structure Contributors',
     LICENSE          => 'mit',
     MIN_PERL_VERSION => '5.020',
+    EXE_FILES        => ['bin/pjstruct'],
     
     PREREQ_PM => {
         'JSON::PP'      => '2.0',
@@ -18,6 +19,8 @@ WriteMakefile(
         'Math::BigInt'  => '1.9993',  # For int128/uint128 range validation
         'Time::Local'   => '1.25',    # For calendar date validation
         'B'             => '0',       # For SV flag inspection
+        'Getopt::Long'  => '2.0',     # For CLI argument parsing
+        'Pod::Usage'    => '1.0',     # For CLI help
     },
     
     TEST_REQUIRES => {

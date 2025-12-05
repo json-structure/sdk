@@ -46,6 +46,60 @@ perl Makefile.PL
 make test
 ```
 
+## Command-Line Interface
+
+The SDK includes `pjstruct`, a command-line tool for schema and instance validation.
+
+### Usage
+
+```bash
+# Check if a schema is valid
+pjstruct check schema.struct.json
+
+# Validate an instance against a schema
+pjstruct validate -s schema.struct.json data.json
+
+# Validate multiple files
+pjstruct validate -s schema.struct.json *.json
+
+# Output in JSON format
+pjstruct validate -s schema.struct.json data.json --format=json
+
+# Output in TAP format (for test harnesses)
+pjstruct check *.struct.json --format=tap
+
+# Quiet mode (exit code only)
+pjstruct validate -s schema.struct.json data.json -q
+```
+
+### Commands
+
+| Command | Alias | Description |
+|---------|-------|-------------|
+| `check` | `c` | Validate schema file(s) against the meta-schema |
+| `validate` | `v` | Validate instance file(s) against a schema |
+| `help` | | Show help for a command |
+| `version` | | Show version information |
+
+### Options
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--schema` | `-s` | Schema file (required for `validate`) |
+| `--format` | `-f` | Output format: `text`, `json`, `tap` (default: `text`) |
+| `--quiet` | `-q` | Suppress output, use exit code only |
+| `--verbose` | `-v` | Show detailed validation information |
+| `--help` | `-h` | Show help |
+| `--version` | `-V` | Show version |
+
+### Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | All files are valid |
+| 1 | One or more files failed validation |
+| 2 | Error (file not found, parse error, missing options) |
+
 ## Quick Start
 
 ### Schema Validation
