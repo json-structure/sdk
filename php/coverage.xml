@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<coverage generated="1765016670">
-  <project timestamp="1765016670" name="Clover Coverage">
+<coverage generated="1765016847">
+  <project timestamp="1765016847" name="Clover Coverage">
     <package name="JsonStructure">
       <file name="/home/runner/work/sdk/sdk/php/src/JsonStructure/ErrorCodes.php">
         <class name="JsonStructure\ErrorCodes" namespace="JsonStructure">
@@ -166,9 +166,9 @@
         <line num="311" type="stmt" count="309"/>
         <line num="312" type="stmt" count="16"/>
         <line num="314" type="stmt" count="306"/>
-        <line num="315" type="stmt" count="177"/>
+        <line num="315" type="stmt" count="178"/>
         <line num="316" type="stmt" count="34"/>
-        <line num="318" type="stmt" count="177"/>
+        <line num="318" type="stmt" count="178"/>
         <line num="320" type="stmt" count="254"/>
         <line num="321" type="stmt" count="6"/>
         <line num="322" type="stmt" count="1"/>
@@ -333,16 +333,16 @@
         <line num="560" type="stmt" count="0"/>
         <line num="565" type="method" name="validateObject" visibility="private" complexity="25" crap="25" count="103"/>
         <line num="567" type="stmt" count="103"/>
-        <line num="568" type="stmt" count="7"/>
-        <line num="569" type="stmt" count="7"/>
+        <line num="568" type="stmt" count="6"/>
+        <line num="569" type="stmt" count="6"/>
         <line num="572" type="stmt" count="101"/>
         <line num="573" type="stmt" count="101"/>
         <line num="576" type="stmt" count="101"/>
         <line num="577" type="stmt" count="38"/>
         <line num="578" type="stmt" count="14"/>
         <line num="583" type="stmt" count="101"/>
-        <line num="584" type="stmt" count="100"/>
-        <line num="585" type="stmt" count="96"/>
+        <line num="584" type="stmt" count="101"/>
+        <line num="585" type="stmt" count="97"/>
         <line num="590" type="stmt" count="101"/>
         <line num="591" type="stmt" count="11"/>
         <line num="592" type="stmt" count="11"/>
@@ -608,13 +608,13 @@
         <line num="1051" type="stmt" count="22"/>
         <line num="1053" type="stmt" count="2"/>
         <line num="1057" type="stmt" count="21"/>
-        <line num="1060" type="method" name="addError" visibility="private" complexity="1" crap="1" count="230"/>
-        <line num="1062" type="stmt" count="230"/>
-        <line num="1063" type="stmt" count="230"/>
-        <line num="1064" type="stmt" count="230"/>
-        <line num="1065" type="stmt" count="230"/>
-        <line num="1066" type="stmt" count="230"/>
-        <line num="1067" type="stmt" count="230"/>
+        <line num="1060" type="method" name="addError" visibility="private" complexity="1" crap="1" count="229"/>
+        <line num="1062" type="stmt" count="229"/>
+        <line num="1063" type="stmt" count="229"/>
+        <line num="1064" type="stmt" count="229"/>
+        <line num="1065" type="stmt" count="229"/>
+        <line num="1066" type="stmt" count="229"/>
+        <line num="1067" type="stmt" count="229"/>
         <metrics loc="1070" ncloc="997" classes="1" methods="18" coveredmethods="10" conditionals="0" coveredconditionals="0" statements="585" coveredstatements="505" elements="603" coveredelements="515"/>
       </file>
       <file name="/home/runner/work/sdk/sdk/php/src/JsonStructure/JsonLocation.php">
@@ -1468,8 +1468,8 @@
         <class name="JsonStructure\ValidationError" namespace="JsonStructure">
           <metrics complexity="5" methods="2" coveredmethods="2" conditionals="0" coveredconditionals="0" statements="11" coveredstatements="11" elements="13" coveredelements="13"/>
         </class>
-        <line num="12" type="method" name="__construct" visibility="public" complexity="1" crap="1" count="358"/>
-        <line num="19" type="stmt" count="358"/>
+        <line num="12" type="method" name="__construct" visibility="public" complexity="1" crap="1" count="357"/>
+        <line num="19" type="stmt" count="357"/>
         <line num="21" type="method" name="__toString" visibility="public" complexity="4" crap="4" count="34"/>
         <line num="23" type="stmt" count="34"/>
         <line num="25" type="stmt" count="34"/>
