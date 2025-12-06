@@ -6,6 +6,7 @@ on:
     paths:
       - 'swift/**'
       - 'meta/**'
+      - 'test-assets/**'
       - '.github/workflows/swift.yml'
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
@@ -14,6 +15,7 @@ on:
     paths:
       - 'swift/**'
       - 'meta/**'
+      - 'test-assets/**'
       - '.github/workflows/swift.yml'
 
 permissions:
@@ -21,25 +23,13 @@ permissions:
 
 jobs:
   test-macos:
-    name: Test Swift ${{ matrix.swift-version }} on macOS
-    runs-on: macos-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        swift-version: ['5.9', '5.10']
-
+    name: Test Swift on macOS
+    runs-on: macos-14
+    
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-
-      - name: Select Xcode version
-        run: |
-          if [ "${{ matrix.swift-version }}" = "5.9" ]; then
-            sudo xcode-select -s /Applications/Xcode_15.2.app
-          else
-            sudo xcode-select -s /Applications/Xcode_15.4.app
-          fi
 
       - name: Show Swift version
         run: swift --version
@@ -53,15 +43,11 @@ jobs:
         run: swift test -v
 
   test-linux:
-    name: Test Swift ${{ matrix.swift-version }} on Linux
+    name: Test Swift on Linux
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        swift-version: ['5.9', '5.10']
 
     container:
-      image: swift:${{ matrix.swift-version }}
+      image: swift:5.10
 
     steps:
       - uses: actions/checkout@v4
@@ -81,7 +67,7 @@ jobs:
 
   lint:
     name: Lint
-    runs-on: macos-latest
+    runs-on: macos-14
 
     steps:
       - uses: actions/checkout@v4
