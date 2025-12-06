@@ -1502,8 +1502,8 @@ sub _validate_extended_keywords {
                 "$path/pattern" );
         }
         else {
-            eval { qr/$pattern/ };
-            if ($@) {
+            my $pattern_ok = eval { qr/$pattern/; 1 };
+            if ( !$pattern_ok ) {
                 $self->_add_error( SCHEMA_PATTERN_INVALID,
                     "pattern is not a valid regular expression: '$pattern'",
                     "$path/pattern" );

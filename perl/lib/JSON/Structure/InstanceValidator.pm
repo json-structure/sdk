@@ -542,7 +542,7 @@ sub _validate_string {
 
         if ( exists $schema->{pattern} ) {
             my $pattern = $schema->{pattern};
-            eval {
+            my $pattern_ok = eval {
                 if ( $value !~ qr/$pattern/ ) {
                     $self->_add_error(
                         INSTANCE_STRING_PATTERN_MISMATCH,
@@ -550,8 +550,9 @@ sub _validate_string {
                         $path, $schema_path
                     );
                 }
+                1;
             };
-            if ($@) {
+            if ( !$pattern_ok ) {
                 $self->_add_error( INSTANCE_PATTERN_INVALID,
                     "Invalid regex pattern: $pattern",
                     $path, $schema_path );
@@ -1288,12 +1289,13 @@ sub _is_valid_calendar_date {
     return 0 if $month < 1 || $month > 12;
     return 0 if $day < 1   || $day > 31;
 
-   # Use Time::Local to validate the date - it throws an error for invalid dates
-    eval {
+    # Use Time::Local to validate the date - it throws an error for invalid dates
+    my $valid = eval {
         # timelocal expects month 0-11, year as actual year
         Time::Local::timelocal( 0, 0, 0, $day, $month - 1, $year );
+        1;
     };
-    return $@ ? 0 : 1;
+    return $valid ? 1 : 0;
 }
 
 sub _validate_time {

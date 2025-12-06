@@ -1,0 +1,75 @@
+# Perl::Critic configuration for JSON::Structure
+# Run with: perlcritic --profile .perlcriticrc lib/
+
+severity = 3
+
+# Disable overly pedantic policies that don't improve code quality
+# for this project's context
+
+# POD Documentation - we have our own documentation style
+[-Documentation::RequirePodAtEnd]
+[-Documentation::RequirePodSections]
+
+# Constants - 'use constant' is fine for simple numeric/string constants
+# Readonly adds a dependency and constant is core Perl
+[-ValuesAndExpressions::ProhibitConstantPragma]
+
+# Version strings - v5.20 is clearer than 5.020
+[-ValuesAndExpressions::ProhibitVersionStrings]
+
+# Regular expressions - extended formatting is not always clearer for simple patterns
+[-RegularExpressions::RequireExtendedFormatting]
+[-RegularExpressions::RequireDotMatchAnything]
+[-RegularExpressions::RequireLineBoundaryMatching]
+
+# Control structures - postfix if/unless is idiomatic Perl for simple cases
+[-ControlStructures::ProhibitPostfixControls]
+[-ControlStructures::ProhibitUnlessBlocks]
+[-ControlStructures::ProhibitCascadingIfElse]
+
+# References - double sigils ($$, @$, %$) are fine
+[-References::ProhibitDoubleSigils]
+
+# Builtins - parentheses with builtins is a style preference
+[-CodeLayout::ProhibitParensWithBuiltins]
+
+# Strings - these are style preferences
+[-ValuesAndExpressions::ProhibitEmptyQuotes]
+[-ValuesAndExpressions::ProhibitNoisyQuotes]
+[-ValuesAndExpressions::ProhibitInterpolationOfLiterals]
+[-ValuesAndExpressions::RequireInterpolationOfMetachars]
+
+# Numbers - separators in numbers are a style preference
+[-ValuesAndExpressions::RequireNumberSeparators]
+
+# Magic numbers - we use numeric constants meaningfully
+[-ValuesAndExpressions::ProhibitMagicNumbers]
+
+# Subroutines - allow more flexibility
+[-Subroutines::RequireFinalReturn]
+[-Subroutines::RequireArgUnpacking]
+[-Subroutines::ProhibitManyArgs]
+
+# We allow explicit return undef in scalar-context functions
+[-Subroutines::ProhibitExplicitReturnUndef]
+
+# Complex regexes are sometimes necessary
+[-RegularExpressions::ProhibitComplexRegexes]
+[-RegularExpressions::ProhibitEnumeratedClasses]
+[-RegularExpressions::ProhibitEscapedMetacharacters]
+
+# Deep nests and C-style loops are sometimes the clearest solution
+[-ControlStructures::ProhibitDeepNests]
+[-ControlStructures::ProhibitCStyleForLoops]
+
+# Multiple packages in a file - we have Result class in validators
+[-Modules::ProhibitMultiplePackages]
+
+# Punctuation vars - $@ is idiomatic for eval
+[-Variables::ProhibitPunctuationVars]
+
+# Negative expressions in unless - sometimes clearer
+[-ControlStructures::ProhibitNegativeExpressionsInUnlessAndUntilConditions]
+
+# Excess complexity - we have complex validation logic by necessity
+[-Subroutines::ProhibitExcessComplexity]
