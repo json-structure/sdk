@@ -242,6 +242,11 @@ jobs:
           CPAN_USERNAME: ${{ secrets.PAUSE_USERNAME }}
           CPAN_PASSWORD: ${{ secrets.PAUSE_PASSWORD }}
         run: |
+          if [ -z "$CPAN_USERNAME" ] || [ -z "$CPAN_PASSWORD" ]; then
+            echo "::warning::PAUSE credentials not configured. Skipping CPAN upload."
+            echo "To enable CPAN publishing, set PAUSE_USERNAME and PAUSE_PASSWORD secrets."
+            exit 0
+          fi
           TARBALL=$(ls JSON-Structure-*.tar.gz | head -1)
           if [ -z "$TARBALL" ]; then
             echo "Error: No distribution tarball found"
