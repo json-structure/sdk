@@ -7,11 +7,11 @@ namespace JsonStructure;
 /**
  * Represents a location in a JSON document with line and column information.
  */
-readonly class JsonLocation
+class JsonLocation
 {
     public function __construct(
-        public int $line,
-        public int $column
+        public readonly int $line,
+        public readonly int $column
     ) {}
 
     /**
