@@ -1,0 +1,99 @@
+name: Swift SDK
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - 'swift/**'
+      - 'meta/**'
+      - '.github/workflows/swift.yml'
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  pull_request:
+    branches: [master, main]
+    paths:
+      - 'swift/**'
+      - 'meta/**'
+      - '.github/workflows/swift.yml'
+
+jobs:
+  test-macos:
+    name: Test Swift ${{ matrix.swift-version }} on macOS
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        swift-version: ['5.9', '5.10']
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Select Xcode version
+        run: |
+          if [ "${{ matrix.swift-version }}" = "5.9" ]; then
+            sudo xcode-select -s /Applications/Xcode_15.2.app
+          else
+            sudo xcode-select -s /Applications/Xcode_15.4.app
+          fi
+
+      - name: Show Swift version
+        run: swift --version
+
+      - name: Build
+        working-directory: swift
+        run: swift build -v
+
+      - name: Run tests
+        working-directory: swift
+        run: swift test -v
+
+  test-linux:
+    name: Test Swift ${{ matrix.swift-version }} on Linux
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        swift-version: ['5.9', '5.10']
+
+    container:
+      image: swift:${{ matrix.swift-version }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Show Swift version
+        run: swift --version
+
+      - name: Build
+        working-directory: swift
+        run: swift build -v
+
+      - name: Run tests
+        working-directory: swift
+        run: swift test -v
+
+  lint:
+    name: Lint
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Build
+        working-directory: swift
+        run: swift build -v
+
+      # SwiftLint is typically used for linting Swift code
+      # Uncomment when swiftlint configuration is added
+      # - name: Install SwiftLint
+      #   run: brew install swiftlint
+      # 
+      # - name: Run SwiftLint
+      #   working-directory: swift
+      #   run: swiftlint lint --strict

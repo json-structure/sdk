@@ -1,0 +1,164 @@
+client:
+  name: basic
+  file-system: device-agnostic
+tools: {}
+targets:
+  "JSONStructure-x86_64-unknown-linux-gnu-debug.module": ["<JSONStructure-x86_64-unknown-linux-gnu-debug.module>"]
+  "JSONStructurePackageDiscoveredTests-x86_64-unknown-linux-gnu-debug.module": ["<JSONStructurePackageDiscoveredTests-x86_64-unknown-linux-gnu-debug.module>"]
+  "JSONStructurePackageTests-x86_64-unknown-linux-gnu-debug.module": ["<JSONStructurePackageTests-x86_64-unknown-linux-gnu-debug.module>"]
+  "JSONStructurePackageTests-x86_64-unknown-linux-gnu-debug.test": ["<JSONStructurePackageTests-x86_64-unknown-linux-gnu-debug.test>"]
+  "JSONStructureTests-x86_64-unknown-linux-gnu-debug.module": ["<JSONStructureTests-x86_64-unknown-linux-gnu-debug.module>"]
+  "PackageStructure": ["<PackageStructure>"]
+  "main": ["<JSONStructure-x86_64-unknown-linux-gnu-debug.module>"]
+  "test": ["<JSONStructure-x86_64-unknown-linux-gnu-debug.module>","<JSONStructurePackageTests-x86_64-unknown-linux-gnu-debug.test>","<JSONStructureTests-x86_64-unknown-linux-gnu-debug.module>"]
+default: "main"
+nodes:
+  "/home/runner/work/sdk/sdk/swift/Sources/JSONStructure/":
+    is-directory-structure: true
+    content-exclusion-patterns: [".git",".build"]
+  "/home/runner/work/sdk/sdk/swift/Tests/JSONStructureTests/":
+    is-directory-structure: true
+    content-exclusion-patterns: [".git",".build"]
+commands:
+  "/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructure.build/JSONStructure.swiftmodule.o":
+    tool: shell
+    inputs: ["/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/Modules/JSONStructure.swiftmodule"]
+    outputs: ["/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructure.build/JSONStructure.swiftmodule.o"]
+    description: "Wrapping AST for JSONStructure for debugging"
+    args: ["/usr/share/swift/usr/bin/swiftc","-modulewrap","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/Modules/JSONStructure.swiftmodule","-o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructure.build/JSONStructure.swiftmodule.o","-target","x86_64-unknown-linux-gnu"]
+
+  "/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructure.build/sources":
+    tool: write-auxiliary-file
+    inputs: ["<sources-file-list>","/home/runner/work/sdk/sdk/swift/Sources/JSONStructure/ErrorCodes.swift","/home/runner/work/sdk/sdk/swift/Sources/JSONStructure/InstanceValidator.swift","/home/runner/work/sdk/sdk/swift/Sources/JSONStructure/JsonSourceLocator.swift","/home/runner/work/sdk/sdk/swift/Sources/JSONStructure/SchemaValidator.swift","/home/runner/work/sdk/sdk/swift/Sources/JSONStructure/Types.swift"]
+    outputs: ["/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructure.build/sources"]
+    description: "Write auxiliary file /home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructure.build/sources"
+
+  "/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageDiscoveredTests.build/JSONStructurePackageDiscoveredTests.swiftmodule.o":
+    tool: shell
+    inputs: ["/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/Modules/JSONStructurePackageDiscoveredTests.swiftmodule"]
+    outputs: ["/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageDiscoveredTests.build/JSONStructurePackageDiscoveredTests.swiftmodule.o"]
+    description: "Wrapping AST for JSONStructurePackageDiscoveredTests for debugging"
+    args: ["/usr/share/swift/usr/bin/swiftc","-modulewrap","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/Modules/JSONStructurePackageDiscoveredTests.swiftmodule","-o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageDiscoveredTests.build/JSONStructurePackageDiscoveredTests.swiftmodule.o","-target","x86_64-unknown-linux-gnu"]
+
+  "/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageDiscoveredTests.build/sources":
+    tool: write-auxiliary-file
+    inputs: ["<sources-file-list>","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageDiscoveredTests.derived/JSONStructureTests.swift","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageDiscoveredTests.derived/all-discovered-tests.swift"]
+    outputs: ["/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageDiscoveredTests.build/sources"]
+    description: "Write auxiliary file /home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageDiscoveredTests.build/sources"
+
+  "/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageDiscoveredTests.derived/all-discovered-tests.swift":
+    tool: test-discovery-tool
+    inputs: ["/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructureTests.build/InstanceValidatorTests.swift.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructureTests.build/SchemaValidatorTests.swift.o"]
+    outputs: ["/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageDiscoveredTests.derived/JSONStructureTests.swift","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageDiscoveredTests.derived/all-discovered-tests.swift"]
+
+  "/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageTests.build/JSONStructurePackageTests.swiftmodule.o":
+    tool: shell
+    inputs: ["/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/Modules/JSONStructurePackageTests.swiftmodule"]
+    outputs: ["/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageTests.build/JSONStructurePackageTests.swiftmodule.o"]
+    description: "Wrapping AST for JSONStructurePackageTests for debugging"
+    args: ["/usr/share/swift/usr/bin/swiftc","-modulewrap","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/Modules/JSONStructurePackageTests.swiftmodule","-o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageTests.build/JSONStructurePackageTests.swiftmodule.o","-target","x86_64-unknown-linux-gnu"]
+
+  "/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageTests.build/sources":
+    tool: write-auxiliary-file
+    inputs: ["<sources-file-list>","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageTests.derived/runner.swift"]
+    outputs: ["/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageTests.build/sources"]
+    description: "Write auxiliary file /home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageTests.build/sources"
+
+  "/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageTests.derived/runner.swift":
+    tool: test-entry-point-tool
+    inputs: ["/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/Modules/JSONStructurePackageDiscoveredTests.swiftmodule"]
+    outputs: ["/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageTests.derived/runner.swift"]
+
+  "/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageTests.product/Objects.LinkFileList":
+    tool: write-auxiliary-file
+    inputs: ["<link-file-list>","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructure.build/ErrorCodes.swift.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructure.build/InstanceValidator.swift.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructure.build/JSONStructure.swiftmodule.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructure.build/JsonSourceLocator.swift.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructure.build/SchemaValidator.swift.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructure.build/Types.swift.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageDiscoveredTests.build/JSONStructurePackageDiscoveredTests.swiftmodule.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageDiscoveredTests.build/JSONStructureTests.swift.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageDiscoveredTests.build/all-discovered-tests.swift.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageTests.build/JSONStructurePackageTests.swiftmodule.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageTests.build/runner.swift.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructureTests.build/InstanceValidatorTests.swift.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructureTests.build/JSONStructureTests.swiftmodule.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructureTests.build/SchemaValidatorTests.swift.o"]
+    outputs: ["/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageTests.product/Objects.LinkFileList"]
+    description: "Write auxiliary file /home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageTests.product/Objects.LinkFileList"
+
+  "/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructureTests.build/JSONStructureTests.swiftmodule.o":
+    tool: shell
+    inputs: ["/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/Modules/JSONStructureTests.swiftmodule"]
+    outputs: ["/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructureTests.build/JSONStructureTests.swiftmodule.o"]
+    description: "Wrapping AST for JSONStructureTests for debugging"
+    args: ["/usr/share/swift/usr/bin/swiftc","-modulewrap","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/Modules/JSONStructureTests.swiftmodule","-o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructureTests.build/JSONStructureTests.swiftmodule.o","-target","x86_64-unknown-linux-gnu"]
+
+  "/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructureTests.build/sources":
+    tool: write-auxiliary-file
+    inputs: ["<sources-file-list>","/home/runner/work/sdk/sdk/swift/Tests/JSONStructureTests/InstanceValidatorTests.swift","/home/runner/work/sdk/sdk/swift/Tests/JSONStructureTests/SchemaValidatorTests.swift"]
+    outputs: ["/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructureTests.build/sources"]
+    description: "Write auxiliary file /home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructureTests.build/sources"
+
+  "/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/swift-version--1BFCD5C06E9F820A.txt":
+    tool: write-auxiliary-file
+    inputs: ["<swift-get-version>","/usr/share/swift/usr/bin/swiftc"]
+    outputs: ["/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/swift-version--1BFCD5C06E9F820A.txt"]
+    always-out-of-date: "true"
+    description: "Write auxiliary file /home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/swift-version--1BFCD5C06E9F820A.txt"
+
+  "<JSONStructure-x86_64-unknown-linux-gnu-debug.module>":
+    tool: phony
+    inputs: ["/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructure.build/ErrorCodes.swift.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructure.build/InstanceValidator.swift.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructure.build/JsonSourceLocator.swift.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructure.build/SchemaValidator.swift.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructure.build/Types.swift.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/Modules/JSONStructure.swiftmodule"]
+    outputs: ["<JSONStructure-x86_64-unknown-linux-gnu-debug.module>"]
+
+  "<JSONStructurePackageDiscoveredTests-x86_64-unknown-linux-gnu-debug.module>":
+    tool: phony
+    inputs: ["/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageDiscoveredTests.build/JSONStructureTests.swift.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageDiscoveredTests.build/all-discovered-tests.swift.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/Modules/JSONStructurePackageDiscoveredTests.swiftmodule"]
+    outputs: ["<JSONStructurePackageDiscoveredTests-x86_64-unknown-linux-gnu-debug.module>"]
+
+  "<JSONStructurePackageTests-x86_64-unknown-linux-gnu-debug.module>":
+    tool: phony
+    inputs: ["/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageTests.build/runner.swift.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/Modules/JSONStructurePackageTests.swiftmodule"]
+    outputs: ["<JSONStructurePackageTests-x86_64-unknown-linux-gnu-debug.module>"]
+
+  "<JSONStructurePackageTests-x86_64-unknown-linux-gnu-debug.test>":
+    tool: phony
+    inputs: ["/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageTests.xctest"]
+    outputs: ["<JSONStructurePackageTests-x86_64-unknown-linux-gnu-debug.test>"]
+
+  "<JSONStructureTests-x86_64-unknown-linux-gnu-debug.module>":
+    tool: phony
+    inputs: ["/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructureTests.build/InstanceValidatorTests.swift.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructureTests.build/SchemaValidatorTests.swift.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/Modules/JSONStructureTests.swiftmodule"]
+    outputs: ["<JSONStructureTests-x86_64-unknown-linux-gnu-debug.module>"]
+
+  "C.JSONStructure-x86_64-unknown-linux-gnu-debug.module":
+    tool: shell
+    inputs: ["/home/runner/work/sdk/sdk/swift/Sources/JSONStructure/ErrorCodes.swift","/home/runner/work/sdk/sdk/swift/Sources/JSONStructure/InstanceValidator.swift","/home/runner/work/sdk/sdk/swift/Sources/JSONStructure/JsonSourceLocator.swift","/home/runner/work/sdk/sdk/swift/Sources/JSONStructure/SchemaValidator.swift","/home/runner/work/sdk/sdk/swift/Sources/JSONStructure/Types.swift","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/swift-version--1BFCD5C06E9F820A.txt","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructure.build/sources"]
+    outputs: ["/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructure.build/ErrorCodes.swift.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructure.build/InstanceValidator.swift.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructure.build/JsonSourceLocator.swift.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructure.build/SchemaValidator.swift.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructure.build/Types.swift.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/Modules/JSONStructure.swiftmodule"]
+    description: "Compiling Swift Module 'JSONStructure' (5 sources)"
+    args: ["/usr/share/swift/usr/bin/swiftc","-module-name","JSONStructure","-emit-dependencies","-emit-module","-emit-module-path","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/Modules/JSONStructure.swiftmodule","-output-file-map","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructure.build/output-file-map.json","-parse-as-library","-incremental","-c","@/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructure.build/sources","-I","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/Modules","-target","x86_64-unknown-linux-gnu","-incremental","-enable-batch-mode","-serialize-diagnostics","-index-store-path","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/index/store","-Onone","-enable-testing","-j4","-DSWIFT_PACKAGE","-DDEBUG","-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE","-module-cache-path","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/ModuleCache","-parseable-output","-parse-as-library","-emit-objc-header","-emit-objc-header-path","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructure.build/include/JSONStructure-Swift.h","-swift-version","5","-g","-Xcc","-fPIC","-Xcc","-g","-package-name","swift","-Xcc","-fno-omit-frame-pointer"]
+
+  "C.JSONStructurePackageDiscoveredTests-x86_64-unknown-linux-gnu-debug.module":
+    tool: shell
+    inputs: ["/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageDiscoveredTests.derived/JSONStructureTests.swift","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageDiscoveredTests.derived/all-discovered-tests.swift","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/swift-version--1BFCD5C06E9F820A.txt","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/Modules/JSONStructureTests.swiftmodule","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageDiscoveredTests.build/sources"]
+    outputs: ["/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageDiscoveredTests.build/JSONStructureTests.swift.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageDiscoveredTests.build/all-discovered-tests.swift.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/Modules/JSONStructurePackageDiscoveredTests.swiftmodule"]
+    description: "Compiling Swift Module 'JSONStructurePackageDiscoveredTests' (2 sources)"
+    args: ["/usr/share/swift/usr/bin/swiftc","-module-name","JSONStructurePackageDiscoveredTests","-emit-dependencies","-emit-module","-emit-module-path","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/Modules/JSONStructurePackageDiscoveredTests.swiftmodule","-output-file-map","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageDiscoveredTests.build/output-file-map.json","-parse-as-library","-incremental","-c","@/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageDiscoveredTests.build/sources","-I","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/Modules","-target","x86_64-unknown-linux-gnu","-incremental","-enable-batch-mode","-serialize-diagnostics","-index-store-path","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/index/store","-Onone","-enable-testing","-Xfrontend","-enable-cross-import-overlays","-j4","-DSWIFT_PACKAGE","-DDEBUG","-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE","-module-cache-path","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/ModuleCache","-parseable-output","-parse-as-library","-emit-objc-header","-emit-objc-header-path","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageDiscoveredTests.build/include/JSONStructurePackageDiscoveredTests-Swift.h","-g","-Xcc","-fPIC","-Xcc","-g","-package-name","swift","-Xcc","-fno-omit-frame-pointer"]
+
+  "C.JSONStructurePackageTests-x86_64-unknown-linux-gnu-debug.module":
+    tool: shell
+    inputs: ["/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageTests.derived/runner.swift","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/swift-version--1BFCD5C06E9F820A.txt","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/Modules/JSONStructureTests.swiftmodule","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/Modules/JSONStructurePackageDiscoveredTests.swiftmodule","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageTests.build/sources"]
+    outputs: ["/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageTests.build/runner.swift.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/Modules/JSONStructurePackageTests.swiftmodule"]
+    description: "Compiling Swift Module 'JSONStructurePackageTests' (1 sources)"
+    args: ["/usr/share/swift/usr/bin/swiftc","-module-name","JSONStructurePackageTests","-emit-dependencies","-emit-module","-emit-module-path","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/Modules/JSONStructurePackageTests.swiftmodule","-output-file-map","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageTests.build/output-file-map.json","-parse-as-library","-incremental","-c","@/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageTests.build/sources","-I","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/Modules","-target","x86_64-unknown-linux-gnu","-incremental","-enable-batch-mode","-serialize-diagnostics","-index-store-path","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/index/store","-Onone","-enable-testing","-Xfrontend","-enable-cross-import-overlays","-j4","-DSWIFT_PACKAGE","-DDEBUG","-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE","-module-cache-path","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/ModuleCache","-parseable-output","-parse-as-library","-emit-objc-header","-emit-objc-header-path","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageTests.build/include/JSONStructurePackageTests-Swift.h","-g","-Xcc","-fPIC","-Xcc","-g","-package-name","swift","-Xcc","-fno-omit-frame-pointer"]
+
+  "C.JSONStructurePackageTests-x86_64-unknown-linux-gnu-debug.test":
+    tool: shell
+    inputs: ["/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructure.build/ErrorCodes.swift.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructure.build/InstanceValidator.swift.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructure.build/JSONStructure.swiftmodule.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructure.build/JsonSourceLocator.swift.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructure.build/SchemaValidator.swift.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructure.build/Types.swift.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageDiscoveredTests.build/JSONStructurePackageDiscoveredTests.swiftmodule.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageDiscoveredTests.build/JSONStructureTests.swift.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageDiscoveredTests.build/all-discovered-tests.swift.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageTests.build/JSONStructurePackageTests.swiftmodule.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageTests.build/runner.swift.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructureTests.build/InstanceValidatorTests.swift.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructureTests.build/JSONStructureTests.swiftmodule.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructureTests.build/SchemaValidatorTests.swift.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageTests.product/Objects.LinkFileList"]
+    outputs: ["/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageTests.xctest"]
+    description: "Linking ./.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageTests.xctest"
+    args: ["/usr/share/swift/usr/bin/swiftc","-L","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug","-o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageTests.xctest","-module-name","JSONStructurePackageTests","-emit-executable","-Xlinker","-rpath=$ORIGIN","@/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructurePackageTests.product/Objects.LinkFileList","-target","x86_64-unknown-linux-gnu","-g"]
+
+  "C.JSONStructureTests-x86_64-unknown-linux-gnu-debug.module":
+    tool: shell
+    inputs: ["/home/runner/work/sdk/sdk/swift/Tests/JSONStructureTests/InstanceValidatorTests.swift","/home/runner/work/sdk/sdk/swift/Tests/JSONStructureTests/SchemaValidatorTests.swift","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/swift-version--1BFCD5C06E9F820A.txt","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/Modules/JSONStructure.swiftmodule","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructureTests.build/sources"]
+    outputs: ["/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructureTests.build/InstanceValidatorTests.swift.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructureTests.build/SchemaValidatorTests.swift.o","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/Modules/JSONStructureTests.swiftmodule"]
+    description: "Compiling Swift Module 'JSONStructureTests' (2 sources)"
+    args: ["/usr/share/swift/usr/bin/swiftc","-module-name","JSONStructureTests","-emit-dependencies","-emit-module","-emit-module-path","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/Modules/JSONStructureTests.swiftmodule","-output-file-map","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructureTests.build/output-file-map.json","-parse-as-library","-incremental","-c","@/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/JSONStructureTests.build/sources","-I","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/Modules","-target","x86_64-unknown-linux-gnu","-incremental","-enable-batch-mode","-serialize-diagnostics","-index-store-path","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/index/store","-Onone","-enable-testing","-Xfrontend","-enable-cross-import-overlays","-j4","-DSWIFT_PACKAGE","-DDEBUG","-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE","-module-cache-path","/home/runner/work/sdk/sdk/swift/.build/x86_64-unknown-linux-gnu/debug/ModuleCache","-parseable-output","-parse-as-library","-swift-version","5","-g","-Xcc","-fPIC","-Xcc","-g","-package-name","swift","-Xcc","-fno-omit-frame-pointer"]
+
+  "PackageStructure":
+    tool: package-structure-tool
+    inputs: ["/home/runner/work/sdk/sdk/swift/Sources/JSONStructure/","/home/runner/work/sdk/sdk/swift/Tests/JSONStructureTests/","/home/runner/work/sdk/sdk/swift/Package.swift","/home/runner/work/sdk/sdk/swift/Package.resolved"]
+    outputs: ["<PackageStructure>"]
+    description: "Planning build"
+    allow-missing-inputs: true
+

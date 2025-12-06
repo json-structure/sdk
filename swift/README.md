@@ -1,0 +1,285 @@
+# JSONStructure Swift SDK
+
+A Swift SDK for JSON Structure schema and instance validation. JSON Structure is a type-oriented schema language for JSON, designed for defining data structures that can be validated and mapped to programming language types.
+
+## Features
+
+- **Schema Validation**: Validate JSON Structure schema documents for conformance
+- **Instance Validation**: Validate JSON instances against JSON Structure schemas
+- **Error Reporting**: Line/column information for validation errors
+- **Full Type Support**: All 34 primitive and compound types from JSON Structure Core v0
+- **Cross-platform**: macOS, iOS, tvOS, watchOS, and Linux support
+- **Pure Swift**: No Apple-only framework dependencies
+
+## Requirements
+
+- Swift 5.9+
+- macOS 10.15+ / iOS 13+ / tvOS 13+ / watchOS 6+
+- Linux support via Swift on Linux
+
+## Installation
+
+### Swift Package Manager
+
+Add the following to your `Package.swift` file:
+
+```swift
+dependencies: [
+    .package(url: "https://github.com/json-structure/sdk", from: "1.0.0")
+]
+```
+
+Then add `JSONStructure` to your target dependencies:
+
+```swift
+.target(
+    name: "YourTarget",
+    dependencies: ["JSONStructure"]
+)
+```
+
+## Usage
+
+### Schema Validation
+
+Validate that a JSON Structure schema document is syntactically and semantically correct:
+
+```swift
+import JSONStructure
+
+let validator = SchemaValidator()
+
+let schema: [String: Any] = [
+    "$id": "urn:example:person",
+    "name": "Person",
+    "type": "object",
+    "properties": [
+        "name": ["type": "string"],
+        "age": ["type": "int32"]
+    ],
+    "required": ["name"]
+]
+
+let result = validator.validate(schema)
+
+if result.isValid {
+    print("Schema is valid!")
+} else {
+    for error in result.errors {
+        print("Error at \(error.path): \(error.message)")
+    }
+}
+```
+
+### Instance Validation
+
+Validate JSON data instances against a JSON Structure schema:
+
+```swift
+import JSONStructure
+
+let schema: [String: Any] = [
+    "$id": "urn:example:person",
+    "name": "Person",
+    "type": "object",
+    "properties": [
+        "name": ["type": "string"],
+        "age": ["type": "int32"]
+    ],
+    "required": ["name"]
+]
+
+let instance: [String: Any] = [
+    "name": "John Doe",
+    "age": 30
+]
+
+let validator = InstanceValidator()
+let result = validator.validate(instance, schema: schema)
+
+if result.isValid {
+    print("Instance is valid!")
+} else {
+    for error in result.errors {
+        print("Error at \(error.path): \(error.message)")
+    }
+}
+```
+
+### Validation from JSON Strings
+
+You can also validate from JSON strings or data:
+
+```swift
+import JSONStructure
+
+let schemaJSON = """
+{
+    "$id": "urn:example:greeting",
+    "name": "Greeting",
+    "type": "string"
+}
+"""
+
+let schemaValidator = SchemaValidator()
+let schemaResult = try schemaValidator.validateJSONString(schemaJSON)
+
+let instanceValidator = InstanceValidator()
+let instanceResult = try instanceValidator.validateJSONStrings(
+    "\"Hello, World!\"",
+    schemaString: schemaJSON
+)
+```
+
+### Extended Validation
+
+Enable extended validation features for constraint keywords:
+
+```swift
+import JSONStructure
+
+let schema: [String: Any] = [
+    "$id": "urn:example:username",
+    "$uses": ["JSONStructureValidation"],
+    "name": "Username",
+    "type": "string",
+    "minLength": 3,
+    "maxLength": 20,
+    "pattern": "^[a-zA-Z][a-zA-Z0-9_]*$"
+]
+
+let validator = InstanceValidator(options: InstanceValidatorOptions(extended: true))
+let result = validator.validate("user123", schema: schema)
+```
+
+### Conditional Composition
+
+Use allOf, anyOf, oneOf, not, and if/then/else:
+
+```swift
+import JSONStructure
+
+let schema: [String: Any] = [
+    "$id": "urn:example:stringOrNumber",
+    "$uses": ["JSONStructureConditionalComposition"],
+    "name": "StringOrNumber",
+    "anyOf": [
+        ["type": "string"],
+        ["type": "int32"]
+    ]
+]
+
+let validator = InstanceValidator(options: InstanceValidatorOptions(extended: true))
+
+// Both are valid
+let result1 = validator.validate("hello", schema: schema)  // valid
+let result2 = validator.validate(42, schema: schema)       // valid
+let result3 = validator.validate(true, schema: schema)     // invalid
+```
+
+## Supported Types
+
+### Primitive Types
+
+| Type | Description |
+|------|-------------|
+| `string` | UTF-8 string |
+| `boolean` | `true` or `false` |
+| `null` | Null value |
+| `number` | Any JSON number |
+| `integer` | Alias for int32 |
+| `int8`, `int16`, `int32`, `int64`, `int128` | Signed integers |
+| `uint8`, `uint16`, `uint32`, `uint64`, `uint128` | Unsigned integers |
+| `float`, `float8`, `double`, `decimal` | Floating-point numbers |
+| `date` | Date in YYYY-MM-DD format |
+| `time` | Time in HH:MM:SS format |
+| `datetime` | ISO 8601 datetime |
+| `duration` | ISO 8601 duration |
+| `uuid` | RFC 9562 UUID |
+| `uri` | RFC 3986 URI |
+| `binary` | Base64-encoded bytes |
+| `jsonpointer` | RFC 6901 JSON Pointer |
+
+### Compound Types
+
+| Type | Description |
+|------|-------------|
+| `object` | JSON object with typed properties |
+| `array` | Homogeneous list |
+| `set` | Unique homogeneous list |
+| `map` | Dictionary with string keys |
+| `tuple` | Fixed-length typed array |
+| `choice` | Discriminated union |
+| `any` | Any JSON value |
+
+## Error Codes
+
+The SDK uses standardized error codes for consistent error reporting. Common error codes include:
+
+### Schema Errors
+- `SCHEMA_TYPE_INVALID` - Invalid type name
+- `SCHEMA_REF_NOT_FOUND` - $ref target does not exist
+- `SCHEMA_ARRAY_MISSING_ITEMS` - Array requires 'items' schema
+- `SCHEMA_MAP_MISSING_VALUES` - Map requires 'values' schema
+
+### Instance Errors
+- `INSTANCE_TYPE_MISMATCH` - Value does not match expected type
+- `INSTANCE_REQUIRED_PROPERTY_MISSING` - Required property is missing
+- `INSTANCE_ENUM_MISMATCH` - Value not in enum
+- `INSTANCE_CONST_MISMATCH` - Value does not match const
+
+## API Reference
+
+### SchemaValidator
+
+```swift
+public class SchemaValidator {
+    public init(options: SchemaValidatorOptions = SchemaValidatorOptions())
+    public func validate(_ schema: Any) -> ValidationResult
+    public func validateJSON(_ jsonData: Data) throws -> ValidationResult
+    public func validateJSONString(_ jsonString: String) throws -> ValidationResult
+}
+```
+
+### InstanceValidator
+
+```swift
+public class InstanceValidator {
+    public init(options: InstanceValidatorOptions = InstanceValidatorOptions())
+    public func validate(_ instance: Any, schema: Any) -> ValidationResult
+    public func validateJSON(_ instanceData: Data, schemaData: Data) throws -> ValidationResult
+    public func validateJSONStrings(_ instanceString: String, schemaString: String) throws -> ValidationResult
+}
+```
+
+### ValidationResult
+
+```swift
+public struct ValidationResult {
+    public let isValid: Bool
+    public let errors: [ValidationError]
+    public let warnings: [ValidationError]
+}
+```
+
+### ValidationError
+
+```swift
+public struct ValidationError {
+    public let code: String
+    public let message: String
+    public let path: String
+    public let severity: ValidationSeverity
+    public let location: JsonLocation
+}
+```
+
+## License
+
+MIT License - see [LICENSE](../LICENSE) for details.
+
+## Related Resources
+
+- [JSON Structure Specification](https://json-structure.github.io/core/)
+- [SDK Guidelines](../SDK-GUIDELINES.md)
+- [Test Assets](../test-assets/)
