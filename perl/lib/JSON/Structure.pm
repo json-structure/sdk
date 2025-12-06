@@ -6,7 +6,7 @@ use v5.20;
 
 our $VERSION = '0.01';
 
-use JSON::Structure::Types qw(:all);
+use JSON::Structure::Types      qw(:all);
 use JSON::Structure::ErrorCodes qw(:all);
 use JSON::Structure::JsonSourceLocator;
 use JSON::Structure::SchemaValidator;
@@ -15,16 +15,14 @@ use JSON::Structure::InstanceValidator;
 use Exporter 'import';
 
 our @EXPORT_OK = qw(
-    validate_schema
-    validate_instance
-    SchemaValidator
-    InstanceValidator
-    JsonSourceLocator
+  validate_schema
+  validate_instance
+  SchemaValidator
+  InstanceValidator
+  JsonSourceLocator
 );
 
-our %EXPORT_TAGS = (
-    all => \@EXPORT_OK,
-);
+our %EXPORT_TAGS = ( all => \@EXPORT_OK, );
 
 =head1 NAME
 
@@ -101,15 +99,16 @@ MIT License
 =cut
 
 sub validate_schema {
-    my ($schema, $source_text) = @_;
+    my ( $schema, $source_text ) = @_;
     my $validator = JSON::Structure::SchemaValidator->new();
-    return $validator->validate($schema, $source_text);
+    return $validator->validate( $schema, $source_text );
 }
 
 sub validate_instance {
-    my ($instance, $schema, $source_text) = @_;
-    my $validator = JSON::Structure::InstanceValidator->new(schema => $schema);
-    return $validator->validate($instance, $source_text);
+    my ( $instance, $schema, $source_text ) = @_;
+    my $validator =
+      JSON::Structure::InstanceValidator->new( schema => $schema );
+    return $validator->validate( $instance, $source_text );
 }
 
 1;

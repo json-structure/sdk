@@ -26,3 +26,5 @@ cover_db/
 # Allow lib directory (override parent .gitignore)
 !lib/
 !bin/
+
+local
