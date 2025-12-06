@@ -5,7 +5,7 @@ use warnings FATAL => 'all';
 use v5.20;
 
 use Test::More;
-use JSON::PP;
+use JSON::MaybeXS;
 use FindBin qw($Bin);
 use lib "$Bin/../lib";
 
@@ -13,7 +13,7 @@ use JSON::Structure::InstanceValidator;
 use JSON::Structure::SchemaValidator;
 use JSON::Structure::ErrorCodes qw(:instance);
 
-my $json = JSON::PP->new->utf8->allow_nonref;
+my $json = JSON::MaybeXS->new->utf8->allow_nonref;
 
 # Helper to create a basic schema
 sub schema {

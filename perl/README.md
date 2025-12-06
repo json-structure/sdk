@@ -14,9 +14,7 @@ JSON::Structure is a Perl SDK for validating JSON documents against JSON Structu
 ## Requirements
 
 - Perl 5.20 or later
-- JSON::PP (included in Perl core since 5.14)
-- MIME::Base64 (included in Perl core)
-- Scalar::Util (included in Perl core)
+- JSON::MaybeXS (for transparent JSON::XS acceleration when available)
 
 ## Installation
 
@@ -24,6 +22,14 @@ JSON::Structure is a Perl SDK for validating JSON documents against JSON Structu
 
 ```bash
 cpanm JSON::Structure
+```
+
+### From GitHub
+
+Install directly from GitHub using cpanm:
+
+```bash
+cpanm git://github.com/json-structure/sdk.git@perl-sdk
 ```
 
 ### From Source
@@ -106,7 +112,7 @@ pjstruct validate -s schema.struct.json data.json -q
 
 ```perl
 use JSON::Structure::SchemaValidator;
-use JSON::PP;
+use JSON::MaybeXS;
 
 # Create a validator
 my $validator = JSON::Structure::SchemaValidator->new();
@@ -134,7 +140,7 @@ if ($result->is_valid) {
 
 ```perl
 use JSON::Structure::InstanceValidator;
-use JSON::PP;
+use JSON::MaybeXS;
 
 # Define your schema
 my $schema = {

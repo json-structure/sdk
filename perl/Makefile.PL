@@ -12,15 +12,7 @@ WriteMakefile(
     EXE_FILES        => ['bin/pjstruct'],
     
     PREREQ_PM => {
-        'JSON::PP'      => '2.0',
-        'MIME::Base64'  => '3.0',
-        'Scalar::Util'  => '1.0',
-        'Exporter'      => '5.0',
-        'Math::BigInt'  => '1.9993',  # For int128/uint128 range validation
-        'Time::Local'   => '1.25',    # For calendar date validation
-        'B'             => '0',       # For SV flag inspection
-        'Getopt::Long'  => '2.0',     # For CLI argument parsing
-        'Pod::Usage'    => '1.0',     # For CLI help
+        'JSON::MaybeXS' => '1.004000',  # Transparent fast JSON with fallback
     },
     
     TEST_REQUIRES => {

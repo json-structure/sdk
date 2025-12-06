@@ -5,7 +5,7 @@ use warnings FATAL => 'all';
 use v5.20;
 
 use Test::More;
-use JSON::PP;
+use JSON::MaybeXS;
 use FindBin qw($Bin);
 use lib "$Bin/../lib";
 
@@ -20,7 +20,7 @@ use constant ValidationError  => 'JSON::Structure::Types::ValidationError';
 use constant ValidationSeverity => 'JSON::Structure::Types::ValidationSeverity';
 use constant JsonLocation => 'JSON::Structure::Types::JsonLocation';
 
-my $json = JSON::PP->new->utf8->allow_nonref;
+my $json = JSON::MaybeXS->new->utf8->allow_nonref;
 
 # Helper to create a basic schema
 sub schema {
@@ -292,8 +292,8 @@ subtest 'Boolean type' => sub {
     my $s = schema(type => 'boolean');
     my $v = validator($s);
     
-    ok($v->validate(JSON::PP::true)->is_valid, 'boolean: true is valid');
-    ok($v->validate(JSON::PP::false)->is_valid, 'boolean: false is valid');
+    ok($v->validate(JSON::MaybeXS::true)->is_valid, 'boolean: true is valid');
+    ok($v->validate(JSON::MaybeXS::false)->is_valid, 'boolean: false is valid');
     ok(!$v->validate(1)->is_valid, 'boolean: 1 is invalid');
     ok(!$v->validate(0)->is_valid, 'boolean: 0 is invalid');
     ok(!$v->validate("true")->is_valid, 'boolean: "true" string is invalid');
@@ -306,7 +306,7 @@ subtest 'Null type' => sub {
     ok($v->validate(undef)->is_valid, 'null: undef is valid');
     ok(!$v->validate(0)->is_valid, 'null: 0 is invalid');
     ok(!$v->validate("")->is_valid, 'null: empty string is invalid');
-    ok(!$v->validate(JSON::PP::false)->is_valid, 'null: false is invalid');
+    ok(!$v->validate(JSON::MaybeXS::false)->is_valid, 'null: false is invalid');
 };
 
 subtest 'Any type' => sub {
@@ -315,7 +315,7 @@ subtest 'Any type' => sub {
     
     ok($v->validate("string")->is_valid, 'any: string is valid');
     ok($v->validate(42)->is_valid, 'any: number is valid');
-    ok($v->validate(JSON::PP::true)->is_valid, 'any: boolean is valid');
+    ok($v->validate(JSON::MaybeXS::true)->is_valid, 'any: boolean is valid');
     ok($v->validate([1, 2, 3])->is_valid, 'any: array is valid');
     ok($v->validate({a => 1})->is_valid, 'any: object is valid');
     ok($v->validate(undef)->is_valid, 'any: null is valid');
@@ -496,7 +496,7 @@ subtest 'Object - additionalProperties false' => sub {
         properties => {
             name => {type => 'string'}
         },
-        additionalProperties => JSON::PP::false
+        additionalProperties => JSON::MaybeXS::false
     );
     my $v = validator($s);
     
@@ -616,10 +616,10 @@ subtest 'Tuple - positional validation' => sub {
     );
     my $v = validator($s);
     
-    ok($v->validate(['hello', 42, JSON::PP::true])->is_valid, 'tuple: correct types is valid');
-    ok(!$v->validate([42, 'hello', JSON::PP::true])->is_valid, 'tuple: wrong order is invalid');
+    ok($v->validate(['hello', 42, JSON::MaybeXS::true])->is_valid, 'tuple: correct types is valid');
+    ok(!$v->validate([42, 'hello', JSON::MaybeXS::true])->is_valid, 'tuple: wrong order is invalid');
     ok(!$v->validate(['hello', 42])->is_valid, 'tuple: missing element is invalid');
-    ok(!$v->validate(['hello', 42, JSON::PP::true, 'extra'])->is_valid, 'tuple: extra element is invalid');
+    ok(!$v->validate(['hello', 42, JSON::MaybeXS::true, 'extra'])->is_valid, 'tuple: extra element is invalid');
 };
 
 #############################################################################
@@ -640,7 +640,7 @@ subtest 'Choice - without selector (inferred)' => sub {
     # The value itself is matched against the choice schemas
     ok($v->validate('hello')->is_valid, 'choice: string matches stringType');
     ok($v->validate(42)->is_valid, 'choice: number matches numberType');
-    ok(!$v->validate(JSON::PP::true)->is_valid, 'choice: boolean matches nothing');
+    ok(!$v->validate(JSON::MaybeXS::true)->is_valid, 'choice: boolean matches nothing');
 };
 
 subtest 'Choice - with selector' => sub {
@@ -691,12 +691,12 @@ subtest 'Enum - string values' => sub {
 };
 
 subtest 'Enum - mixed values' => sub {
-    my $s = schema(enum => [1, 'one', JSON::PP::true]);
+    my $s = schema(enum => [1, 'one', JSON::MaybeXS::true]);
     my $v = validator($s);
     
     ok($v->validate(1)->is_valid, 'enum mixed: 1 is valid');
     ok($v->validate('one')->is_valid, 'enum mixed: "one" is valid');
-    ok($v->validate(JSON::PP::true)->is_valid, 'enum mixed: true is valid');
+    ok($v->validate(JSON::MaybeXS::true)->is_valid, 'enum mixed: true is valid');
     ok(!$v->validate(2)->is_valid, 'enum mixed: 2 is invalid');
 };
 
@@ -737,7 +737,7 @@ subtest 'anyOf - at least one schema must match' => sub {
     
     ok($v->validate('hello')->is_valid, 'anyOf: string is valid');
     ok($v->validate(42)->is_valid, 'anyOf: int32 is valid');
-    ok(!$v->validate(JSON::PP::true)->is_valid, 'anyOf: boolean is invalid');
+    ok(!$v->validate(JSON::MaybeXS::true)->is_valid, 'anyOf: boolean is invalid');
     ok(!$v->validate([1, 2, 3])->is_valid, 'anyOf: array is invalid');
 };
 
@@ -752,7 +752,7 @@ subtest 'oneOf - exactly one schema must match' => sub {
     
     ok($v->validate('hello')->is_valid, 'oneOf: string is valid');
     ok($v->validate(42)->is_valid, 'oneOf: int32 is valid');
-    ok(!$v->validate(JSON::PP::true)->is_valid, 'oneOf: boolean is invalid');
+    ok(!$v->validate(JSON::MaybeXS::true)->is_valid, 'oneOf: boolean is invalid');
 };
 
 subtest 'oneOf - fails when multiple match' => sub {
@@ -776,7 +776,7 @@ subtest 'not - must not match' => sub {
     my $v = validator($s);
     
     ok($v->validate(42)->is_valid, 'not: number is valid');
-    ok($v->validate(JSON::PP::true)->is_valid, 'not: boolean is valid');
+    ok($v->validate(JSON::MaybeXS::true)->is_valid, 'not: boolean is valid');
     ok($v->validate([1, 2, 3])->is_valid, 'not: array is valid');
     ok(!$v->validate('hello')->is_valid, 'not: string is invalid');
 };
@@ -858,7 +858,7 @@ subtest '$root - schema entry point' => sub {
 #############################################################################
 
 subtest 'Boolean schema - true accepts all' => sub {
-    my $v = JSON::Structure::InstanceValidator->new(schema => JSON::PP::true);
+    my $v = JSON::Structure::InstanceValidator->new(schema => JSON::MaybeXS::true);
     
     ok($v->validate('string')->is_valid, 'true schema: string is valid');
     ok($v->validate(42)->is_valid, 'true schema: number is valid');
@@ -868,7 +868,7 @@ subtest 'Boolean schema - true accepts all' => sub {
 };
 
 subtest 'Boolean schema - false rejects all' => sub {
-    my $v = JSON::Structure::InstanceValidator->new(schema => JSON::PP::false);
+    my $v = JSON::Structure::InstanceValidator->new(schema => JSON::MaybeXS::false);
     
     ok(!$v->validate('string')->is_valid, 'false schema: string is invalid');
     ok(!$v->validate(42)->is_valid, 'false schema: number is invalid');

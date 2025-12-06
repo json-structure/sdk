@@ -6,7 +6,7 @@ use v5.20;
 
 our $VERSION = '0.01';
 
-use JSON::PP;
+use JSON::MaybeXS;
 use B;
 use MIME::Base64 ();
 use Scalar::Util qw(looks_like_number blessed);
@@ -16,17 +16,41 @@ use JSON::Structure::Types;
 use JSON::Structure::ErrorCodes qw(:all);
 use JSON::Structure::JsonSourceLocator;
 
+# List of known JSON boolean classes from various JSON implementations
+my @JSON_BOOL_CLASSES = qw(
+    JSON::PP::Boolean
+    JSON::XS::Boolean
+    Cpanel::JSON::XS::Boolean
+    JSON::Tiny::_Bool
+    Mojo::JSON::_Bool
+    Types::Serialiser::Boolean
+);
+
+# Helper to check if a value is a JSON boolean from any JSON parser.
+# Uses blessed() and isa() to support multiple JSON implementations:
+# JSON::PP, JSON::XS, Cpanel::JSON::XS, etc.
+sub _is_json_bool {
+    my ($value) = @_;
+    return 0 unless defined $value && blessed($value);
+    for my $class (@JSON_BOOL_CLASSES) {
+        return 1 if $value->isa($class);
+    }
+    # Also check for is_bool if available (JSON::MaybeXS compatibility)
+    return 1 if JSON::MaybeXS::is_bool($value);
+    return 0;
+}
+
 # Helper to check if a scalar was a number in the original JSON.
-# Uses B module to inspect internal flags set by JSON::PP during parsing.
+# Uses B module to inspect internal flags set by JSON parsers during parsing.
 # Note: This approach relies on Perl's internal SV flags which are set when
-# JSON::PP parses numeric literals. The flags IOK (integer OK) and NOK 
+# JSON parsers parse numeric literals. The flags IOK (integer OK) and NOK 
 # (numeric OK) indicate the value originated as a JSON number.
 # Limitation: May behave differently with dualvars or tied scalars.
 sub _is_numeric {
     my ($value) = @_;
     return 0 unless defined $value && !ref($value);
     # Exclude booleans first
-    return 0 if JSON::PP::is_bool($value);
+    return 0 if _is_json_bool($value);
     my $b_obj = B::svref_2object(\$value);
     my $flags = $b_obj->FLAGS;
     # Check if the value has numeric flags set (IOK/NOK)
@@ -35,7 +59,7 @@ sub _is_numeric {
 
 # Helper to check if a value is a pure string (no numeric flags).
 # A "pure string" is a non-reference scalar that:
-#   1. Is not a JSON::PP boolean
+#   1. Is not a JSON boolean
 #   2. Has POK (string OK) flag set
 #   3. Does NOT have IOK/NOK (numeric) flags set
 # This distinguishes JSON string values like "123" from numeric 123.
@@ -45,7 +69,7 @@ sub _is_pure_string {
     my ($value) = @_;
     return 0 unless defined $value && !ref($value);
     # If it's a boolean, it's not a pure string
-    return 0 if JSON::PP::is_bool($value);
+    return 0 if _is_json_bool($value);
     my $b_obj = B::svref_2object(\$value);
     my $flags = $b_obj->FLAGS;
     # Check if POK (string) is set but not IOK/NOK (numeric)
@@ -222,8 +246,8 @@ sub _validate_value {
         return;
     }
     
-    # Handle boolean schemas (both raw scalars and JSON::PP::Boolean objects)
-    if (!ref($schema) || JSON::PP::is_bool($schema)) {
+    # Handle boolean schemas (both raw scalars and JSON boolean objects)
+    if (!ref($schema) || _is_json_bool($schema)) {
         if (_is_false($schema)) {
             $self->_add_error(
                 INSTANCE_SCHEMA_FALSE,
@@ -418,7 +442,7 @@ sub _check_type {
         return !defined $value || (ref($value) eq '' && $value eq 'null');
     }
     elsif ($type eq 'boolean') {
-        return JSON::PP::is_bool($value) || 
+        return _is_json_bool($value) || 
                (defined $value && !ref($value) && ($value eq 'true' || $value eq 'false' || $value =~ /^[01]$/));
     }
     elsif ($type eq 'string') {
@@ -460,8 +484,8 @@ sub _validate_null {
 sub _validate_boolean {
     my ($self, $value, $path, $schema_path) = @_;
     
-    # Only accept JSON::PP booleans (true/false from JSON parsing)
-    unless (JSON::PP::is_bool($value)) {
+    # Accept JSON booleans from any JSON parser (JSON::PP, JSON::XS, etc.)
+    unless (_is_json_bool($value)) {
         $self->_add_error(
             INSTANCE_BOOLEAN_EXPECTED,
             'Value must be a boolean',
@@ -1717,7 +1741,7 @@ sub _value_to_key {
         return 'null';
     }
     elsif (!ref($value)) {
-        if (JSON::PP::is_bool($value)) {
+        if (_is_json_bool($value)) {
             return $value ? 'true' : 'false';
         }
         return "s:$value";
@@ -1737,7 +1761,7 @@ sub _is_false {
     my ($value) = @_;
     return 0 unless defined $value;
     return 1 if ref($value) eq '' && ($value eq '0' || $value eq 'false' || $value eq '');
-    return 1 if JSON::PP::is_bool($value) && !$value;
+    return 1 if _is_json_bool($value) && !$value;
     return 0;
 }
 

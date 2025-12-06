@@ -19,7 +19,7 @@ use warnings FATAL => 'all';
 use v5.20;
 
 use Test::More;
-use JSON::PP;
+use JSON::MaybeXS;
 use File::Spec;
 use File::Find;
 use FindBin qw($Bin);
@@ -28,7 +28,7 @@ use lib "$Bin/../lib";
 use JSON::Structure::SchemaValidator;
 use JSON::Structure::InstanceValidator;
 
-my $json = JSON::PP->new->utf8->allow_nonref;
+my $json = JSON::MaybeXS->new->utf8->allow_nonref;
 
 # Get paths to test-assets
 my $SDK_ROOT = File::Spec->catdir($Bin, '..', '..');

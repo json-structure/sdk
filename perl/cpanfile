@@ -3,20 +3,8 @@
 
 requires 'perl', '5.020';
 
-# Core dependencies (most are in core, but specifying versions for clarity)
-requires 'JSON::PP', '2.0';
-requires 'MIME::Base64', '3.0';
-requires 'Scalar::Util', '1.0';
-requires 'Exporter', '5.0';
-
-# Used for int128/uint128 range validation
-requires 'Math::BigInt', '1.9993';
-
-# Used for calendar date validation
-requires 'Time::Local', '1.25';
-
-# Used for SV flag inspection in type detection
-requires 'B', '0';
+# JSON parsing with transparent XS acceleration when available
+requires 'JSON::MaybeXS', '1.004000';
 
 # Test dependencies
 on 'test' => sub {

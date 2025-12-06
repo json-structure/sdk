@@ -5,14 +5,14 @@ use warnings FATAL => 'all';
 use v5.20;
 
 use Test::More;
-use JSON::PP;
+use JSON::MaybeXS;
 use FindBin qw($Bin);
 use lib "$Bin/../lib";
 
 use JSON::Structure::SchemaValidator;
 use JSON::Structure::ErrorCodes qw(:schema);
 
-my $json = JSON::PP->new->utf8->allow_nonref;
+my $json = JSON::MaybeXS->new->utf8->allow_nonref;
 
 # Helper to check if any error has the given code
 sub has_error_code {

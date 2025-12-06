@@ -6,7 +6,8 @@ use v5.20;
 
 our $VERSION = '0.01';
 
-use JSON::PP ();
+use JSON::MaybeXS;
+use Scalar::Util qw(blessed);
 use JSON::Structure::Types;
 use JSON::Structure::ErrorCodes qw(:all);
 use JSON::Structure::JsonSourceLocator;
@@ -774,7 +775,7 @@ sub _validate_schema {
     # Handle boolean schemas
     if (!ref($schema)) {
         if ($schema eq '1' || $schema eq '0' || 
-            JSON::PP::is_bool($schema) || 
+            _is_json_bool($schema) || 
             $schema eq 'true' || $schema eq 'false') {
             $self->{current_depth}--;
             return;  # Boolean schema is valid
@@ -1371,7 +1372,7 @@ sub _validate_additional_properties {
     elsif (!ref($additional)) {
         # Boolean is valid
         if ($additional !~ /^[01]$/ && 
-            !JSON::PP::is_bool($additional) &&
+            !_is_json_bool($additional) &&
             $additional ne 'true' && $additional ne 'false') {
             # Plain strings that aren't booleans aren't valid
             $self->_add_error(
@@ -1582,10 +1583,31 @@ sub _validate_extended_keywords {
     }
 }
 
+# List of known JSON boolean classes from various JSON implementations
+my @JSON_BOOL_CLASSES = qw(
+    JSON::PP::Boolean
+    JSON::XS::Boolean
+    Cpanel::JSON::XS::Boolean
+    JSON::Tiny::_Bool
+    Mojo::JSON::_Bool
+    Types::Serialiser::Boolean
+);
+
+# Helper to check if a value is a JSON boolean from any JSON parser
+sub _is_json_bool {
+    my ($value) = @_;
+    return 0 unless defined $value && blessed($value);
+    for my $class (@JSON_BOOL_CLASSES) {
+        return 1 if $value->isa($class);
+    }
+    return 1 if JSON::MaybeXS::is_bool($value);
+    return 0;
+}
+
 sub _is_boolean {
     my ($value) = @_;
-    # JSON::PP booleans are blessed references
-    return 1 if JSON::PP::is_bool($value);
+    # JSON booleans are blessed references
+    return 1 if _is_json_bool($value);
     return 0 if ref($value);
     return 1 if $value =~ /^[01]$/;
     return 1 if $value eq 'true' || $value eq 'false';

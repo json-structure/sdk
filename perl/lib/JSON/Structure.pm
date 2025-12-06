@@ -33,7 +33,7 @@ JSON::Structure - JSON Structure validation library for Perl
 =head1 SYNOPSIS
 
     use JSON::Structure qw(:all);
-    use JSON::PP;
+    use JSON::MaybeXS;
     
     # Validate a schema
     my $schema = decode_json($schema_json);

@@ -5,14 +5,14 @@ use warnings FATAL => 'all';
 use v5.20;
 
 use Test::More;
-use JSON::PP;
+use JSON::MaybeXS;
 use FindBin qw($Bin);
 use lib "$Bin/../lib";
 
 use JSON::Structure::InstanceValidator;
 use JSON::Structure::ErrorCodes qw(:instance);
 
-my $json = JSON::PP->new->utf8->allow_nonref;
+my $json = JSON::MaybeXS->new->utf8->allow_nonref;
 
 # Helper to check if any error has the given code
 sub has_error_code {
@@ -44,8 +44,8 @@ subtest 'Boolean type validation' => sub {
     my $s = schema(type => 'boolean');
     my $validator = JSON::Structure::InstanceValidator->new(schema => $s);
     
-    ok($validator->validate(JSON::PP::true)->is_valid, 'JSON true is valid');
-    ok($validator->validate(JSON::PP::false)->is_valid, 'JSON false is valid');
+    ok($validator->validate(JSON::MaybeXS::true)->is_valid, 'JSON true is valid');
+    ok($validator->validate(JSON::MaybeXS::false)->is_valid, 'JSON false is valid');
     ok(!$validator->validate('true')->is_valid, 'string "true" is not valid boolean');
     ok(!$validator->validate(1)->is_valid, 'number 1 is not valid boolean');
 };
@@ -149,7 +149,7 @@ subtest 'Additional properties' => sub {
         properties => {
             name => { type => 'string' },
         },
-        additionalProperties => JSON::PP::false,
+        additionalProperties => JSON::MaybeXS::false,
     );
     my $validator = JSON::Structure::InstanceValidator->new(schema => $s);
     

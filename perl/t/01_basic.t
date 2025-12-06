@@ -5,7 +5,7 @@ use warnings FATAL => 'all';
 use v5.20;
 
 use Test::More;
-use JSON::PP;
+use JSON::MaybeXS;
 use FindBin qw($Bin);
 use lib "$Bin/../lib";
 

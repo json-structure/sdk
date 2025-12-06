@@ -8,7 +8,7 @@ use 5.020;
 use Test::More;
 use File::Temp qw(tempfile tempdir);
 use File::Spec;
-use JSON::PP;
+use JSON::MaybeXS;
 
 # Path to the CLI script
 my $cli = File::Spec->catfile($FindBin::Bin, '..', 'bin', 'pjstruct');
@@ -44,7 +44,7 @@ my $tmpdir = tempdir(CLEANUP => 1);
 my $schema_file = File::Spec->catfile($tmpdir, 'test.struct.json');
 {
     open my $fh, '>', $schema_file or die "Cannot create schema: $!";
-    print $fh JSON::PP->new->encode({
+    print $fh JSON::MaybeXS->new->encode({
         '$schema' => 'https://json-structure.org/meta/core/v0/#',
         '$id'     => 'https://example.com/test-person',
         type      => 'object',
@@ -62,7 +62,7 @@ my $schema_file = File::Spec->catfile($tmpdir, 'test.struct.json');
 my $valid_file = File::Spec->catfile($tmpdir, 'valid.json');
 {
     open my $fh, '>', $valid_file or die "Cannot create valid instance: $!";
-    print $fh JSON::PP->new->encode({
+    print $fh JSON::MaybeXS->new->encode({
         name => 'Alice',
         age  => 30,
     });
@@ -73,7 +73,7 @@ my $valid_file = File::Spec->catfile($tmpdir, 'valid.json');
 my $invalid_file = File::Spec->catfile($tmpdir, 'invalid.json');
 {
     open my $fh, '>', $invalid_file or die "Cannot create invalid instance: $!";
-    print $fh JSON::PP->new->encode({
+    print $fh JSON::MaybeXS->new->encode({
         age => 'not a number',
     });
     close $fh;
@@ -91,7 +91,7 @@ my $bad_json_file = File::Spec->catfile($tmpdir, 'bad.json');
 my $bad_schema_file = File::Spec->catfile($tmpdir, 'bad.struct.json');
 {
     open my $fh, '>', $bad_schema_file or die "Cannot create bad schema: $!";
-    print $fh JSON::PP->new->encode({
+    print $fh JSON::MaybeXS->new->encode({
         type => 'invalid-type',
     });
     close $fh;
@@ -152,9 +152,9 @@ my $bad_schema_file = File::Spec->catfile($tmpdir, 'bad.struct.json');
 {
     my ($code, $out) = run_cli('validate', '-s', $schema_file, $valid_file, '-f', 'json');
     is($code, 0, 'validate with json format exits with 0');
-    my $result = eval { JSON::PP->new->decode($out) };
+    my $result = eval { JSON::MaybeXS->new->decode($out) };
     ok(defined $result, 'validate with json format outputs valid JSON');
-    is($result->{valid}, JSON::PP::true, 'JSON output shows valid: true');
+    is($result->{valid}, JSON::MaybeXS::true, 'JSON output shows valid: true');
 }
 
 # Test: validate with TAP output
