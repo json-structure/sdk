@@ -1,0 +1,21 @@
+# JSON::Structure Perl SDK dependencies
+# Run: cpanm --installdeps .
+
+requires 'perl', '5.020';
+
+# JSON parsing with transparent XS acceleration when available
+requires 'JSON::MaybeXS', '1.004000';
+
+# Test dependencies
+on 'test' => sub {
+    requires 'Test::More', '1.0';
+    requires 'Test::Deep', '0';
+    requires 'File::Spec', '0';
+    requires 'FindBin', '0';
+};
+
+# Development dependencies
+on 'develop' => sub {
+    requires 'Devel::Cover', '0';
+    requires 'Pod::Coverage', '0';
+};

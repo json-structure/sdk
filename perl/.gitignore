@@ -1,0 +1,30 @@
+# Perl build artifacts
+MYMETA.*
+Makefile
+blib/
+pm_to_blib
+*.o
+*.bs
+
+# Distribution files
+JSON-Structure-*
+MANIFEST
+MANIFEST.bak
+
+# Coverage
+cover_db/
+*.gcov
+*.gcda
+*.gcno
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+
+# Allow lib directory (override parent .gitignore)
+!lib/
+!bin/
+
+local

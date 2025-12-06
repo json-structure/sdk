@@ -1,0 +1,665 @@
+#!/usr/bin/env perl
+# ABSTRACT: JSON-Structure validator CLI for Perl
+# PODNAME: pjstruct
+
+use strict;
+use warnings;
+use 5.020;
+use feature 'signatures';
+no warnings 'experimental::signatures';
+
+use Getopt::Long qw(:config gnu_getopt bundling);
+use Pod::Usage;
+use JSON::MaybeXS;
+use File::Basename;
+
+use JSON::Structure;
+
+our $VERSION = '0.01';
+
+# Exit codes
+use constant {
+    EXIT_SUCCESS => 0,
+    EXIT_INVALID => 1,
+    EXIT_ERROR   => 2,
+};
+
+# Main entry point
+exit main(@ARGV);
+
+sub main (@args) {
+    local @ARGV = @args;
+    
+    # Global options
+    my %opts = (
+        format  => 'text',
+        quiet   => 0,
+        verbose => 0,
+        help    => 0,
+        version => 0,
+    );
+    
+    # Parse global options first
+    Getopt::Long::Configure('pass_through');
+    GetOptions(
+        'h|help'    => \$opts{help},
+        'V|version' => \$opts{version},
+    ) or return EXIT_ERROR;
+    
+    if ($opts{version}) {
+        say "pjstruct version $VERSION (JSON::Structure $JSON::Structure::VERSION)";
+        return EXIT_SUCCESS;
+    }
+    
+    # Get command
+    my $command = shift @ARGV // '';
+    
+    if ($opts{help} || $command eq 'help' || $command eq '') {
+        return cmd_help($command eq 'help' ? shift @ARGV : undef);
+    }
+    
+    # Dispatch to command
+    my %commands = (
+        'validate' => \&cmd_validate,
+        'v'        => \&cmd_validate,
+        'check'    => \&cmd_check,
+        'c'        => \&cmd_check,
+        'version'  => sub { say "pjstruct version $VERSION"; return EXIT_SUCCESS; },
+    );
+    
+    if (my $handler = $commands{$command}) {
+        return $handler->(\%opts);
+    }
+    else {
+        warn "pjstruct: unknown command '$command'\n";
+        warn "Run 'pjstruct help' for usage.\n";
+        return EXIT_ERROR;
+    }
+}
+
+sub cmd_help ($topic = undef) {
+    if (!defined $topic) {
+        print_usage();
+        return EXIT_SUCCESS;
+    }
+    
+    my %topics = (
+        'validate' => \&help_validate,
+        'v'        => \&help_validate,
+        'check'    => \&help_check,
+        'c'        => \&help_check,
+    );
+    
+    if (my $handler = $topics{$topic}) {
+        $handler->();
+        return EXIT_SUCCESS;
+    }
+    else {
+        warn "pjstruct: unknown help topic '$topic'\n";
+        return EXIT_ERROR;
+    }
+}
+
+sub print_usage {
+    print <<"EOF";
+pjstruct - JSON-Structure validator for Perl
+
+Usage: pjstruct <command> [options] [files...]
+
+Commands:
+  validate, v    Validate instance(s) against a schema
+  check, c       Check schema(s) for validity
+  help           Show help for a command
+  version        Show version information
+
+Options:
+  -h, --help     Show help
+  -V, --version  Show version
+
+Examples:
+  pjstruct check schema.struct.json
+  pjstruct validate -s schema.struct.json data.json
+  pjstruct v -s schema.struct.json *.json
+
+Run 'pjstruct help <command>' for more information on a command.
+EOF
+}
+
+sub help_validate {
+    print <<"EOF";
+pjstruct validate - Validate instance(s) against a schema
+
+Usage: pjstruct validate [options] <file>...
+
+Options:
+  -s, --schema <file>   Schema file (required)
+  -f, --format <fmt>    Output format: text, json, tap (default: text)
+  -q, --quiet           Suppress output, use exit code only
+  -v, --verbose         Show detailed validation information
+  -h, --help            Show this help
+
+Arguments:
+  <file>...             JSON instance file(s) to validate
+                        Use '-' to read from stdin
+
+Exit codes:
+  0  All instances are valid
+  1  One or more instances are invalid
+  2  Error (file not found, parse error, etc.)
+
+Examples:
+  pjstruct validate -s schema.struct.json data.json
+  pjstruct validate -s schema.struct.json *.json
+  pjstruct validate -s schema.struct.json data.json --format=json
+  cat data.json | pjstruct validate -s schema.struct.json -
+EOF
+}
+
+sub help_check {
+    print <<"EOF";
+pjstruct check - Check schema(s) for validity
+
+Usage: pjstruct check [options] <file>...
+
+Options:
+  -f, --format <fmt>    Output format: text, json, tap (default: text)
+  -q, --quiet           Suppress output, use exit code only
+  -v, --verbose         Show detailed validation information
+  -h, --help            Show this help
+
+Arguments:
+  <file>...             Schema file(s) to check
+                        Use '-' to read from stdin
+
+Exit codes:
+  0  All schemas are valid
+  1  One or more schemas are invalid
+  2  Error (file not found, parse error, etc.)
+
+Examples:
+  pjstruct check schema.struct.json
+  pjstruct check *.struct.json
+  pjstruct check schema.struct.json --format=json
+EOF
+}
+
+sub cmd_validate ($global_opts) {
+    my %opts = (
+        schema  => undef,
+        format  => 'text',
+        quiet   => 0,
+        verbose => 0,
+        help    => 0,
+    );
+    
+    Getopt::Long::Configure('no_pass_through');
+    GetOptions(
+        's|schema=s' => \$opts{schema},
+        'f|format=s' => \$opts{format},
+        'q|quiet'    => \$opts{quiet},
+        'v|verbose'  => \$opts{verbose},
+        'h|help'     => \$opts{help},
+    ) or return EXIT_ERROR;
+    
+    if ($opts{help}) {
+        help_validate();
+        return EXIT_SUCCESS;
+    }
+    
+    unless ($opts{schema}) {
+        warn "pjstruct validate: missing required option --schema\n";
+        warn "Run 'pjstruct help validate' for usage.\n";
+        return EXIT_ERROR;
+    }
+    
+    unless (@ARGV) {
+        warn "pjstruct validate: no input files specified\n";
+        warn "Run 'pjstruct help validate' for usage.\n";
+        return EXIT_ERROR;
+    }
+    
+    # Validate format option
+    unless ($opts{format} =~ /^(text|json|tap)$/) {
+        warn "pjstruct validate: invalid format '$opts{format}'\n";
+        warn "Valid formats: text, json, tap\n";
+        return EXIT_ERROR;
+    }
+    
+    # Load schema
+    my ($schema, $schema_error) = load_json_file($opts{schema});
+    unless (defined $schema) {
+        output_error(\%opts, $opts{schema}, $schema_error, 'schema');
+        return EXIT_ERROR;
+    }
+    
+    # Check schema is valid first
+    my $schema_validator = JSON::Structure::SchemaValidator->new();
+    my $schema_result = $schema_validator->validate($schema);
+    if (!$schema_result->is_valid) {
+        my $first_error = $schema_result->errors->[0];
+        output_error(\%opts, $opts{schema}, "invalid schema: " . $first_error->message, 'schema');
+        return EXIT_ERROR;
+    }
+    
+    # Create instance validator
+    my $validator = JSON::Structure::InstanceValidator->new(schema => $schema);
+    
+    my @results;
+    my $has_invalid = 0;
+    my $has_error = 0;
+    
+    for my $file (@ARGV) {
+        my ($instance, $load_error) = load_json_file($file);
+        
+        if (!defined $instance) {
+            push @results, {
+                file   => $file,
+                valid  => JSON::MaybeXS::false,
+                error  => $load_error,
+                errors => [],
+            };
+            $has_error = 1;
+            next;
+        }
+        
+        my $result = $validator->validate($instance);
+        my $valid = $result->is_valid;
+        
+        # Convert ValidationError objects to plain hashes for output
+        my @errors = map { error_to_hash($_) } @{$result->errors};
+        
+        push @results, {
+            file   => $file,
+            valid  => $valid ? JSON::MaybeXS::true : JSON::MaybeXS::false,
+            errors => \@errors,
+        };
+        
+        $has_invalid = 1 unless $valid;
+    }
+    
+    # Output results
+    output_results(\%opts, \@results, 'validate');
+    
+    return $has_error ? EXIT_ERROR : ($has_invalid ? EXIT_INVALID : EXIT_SUCCESS);
+}
+
+sub cmd_check ($global_opts) {
+    my %opts = (
+        format  => 'text',
+        quiet   => 0,
+        verbose => 0,
+        help    => 0,
+    );
+    
+    Getopt::Long::Configure('no_pass_through');
+    GetOptions(
+        'f|format=s' => \$opts{format},
+        'q|quiet'    => \$opts{quiet},
+        'v|verbose'  => \$opts{verbose},
+        'h|help'     => \$opts{help},
+    ) or return EXIT_ERROR;
+    
+    if ($opts{help}) {
+        help_check();
+        return EXIT_SUCCESS;
+    }
+    
+    unless (@ARGV) {
+        warn "pjstruct check: no input files specified\n";
+        warn "Run 'pjstruct help check' for usage.\n";
+        return EXIT_ERROR;
+    }
+    
+    # Validate format option
+    unless ($opts{format} =~ /^(text|json|tap)$/) {
+        warn "pjstruct check: invalid format '$opts{format}'\n";
+        warn "Valid formats: text, json, tap\n";
+        return EXIT_ERROR;
+    }
+    
+    my $validator = JSON::Structure::SchemaValidator->new();
+    
+    my @results;
+    my $has_invalid = 0;
+    my $has_error = 0;
+    
+    for my $file (@ARGV) {
+        my ($schema, $load_error) = load_json_file($file);
+        
+        if (!defined $schema) {
+            push @results, {
+                file   => $file,
+                valid  => JSON::MaybeXS::false,
+                error  => $load_error,
+                errors => [],
+            };
+            $has_error = 1;
+            next;
+        }
+        
+        my $result = $validator->validate($schema);
+        my $valid = $result->is_valid;
+        
+        # Convert ValidationError objects to plain hashes for output
+        my @errors = map { error_to_hash($_) } @{$result->errors};
+        
+        push @results, {
+            file   => $file,
+            valid  => $valid ? JSON::MaybeXS::true : JSON::MaybeXS::false,
+            errors => \@errors,
+        };
+        
+        $has_invalid = 1 unless $valid;
+    }
+    
+    # Output results
+    output_results(\%opts, \@results, 'check');
+    
+    return $has_error ? EXIT_ERROR : ($has_invalid ? EXIT_INVALID : EXIT_SUCCESS);
+}
+
+sub load_json_file ($file) {
+    my $content;
+    
+    if ($file eq '-') {
+        local $/;
+        $content = <STDIN>;
+    }
+    else {
+        unless (-f $file) {
+            return (undef, "file not found: $file");
+        }
+        
+        open my $fh, '<:encoding(UTF-8)', $file
+            or return (undef, "cannot open file: $!");
+        
+        local $/;
+        $content = <$fh>;
+        close $fh;
+    }
+    
+    my $json = JSON::MaybeXS->new->utf8(0)->allow_nonref;
+    my $data = eval { $json->decode($content) };
+    
+    if ($@) {
+        my $error = $@;
+        $error =~ s/ at \S+ line \d+.*//s;
+        return (undef, "JSON parse error: $error");
+    }
+    
+    return ($data, undef);
+}
+
+# Convert a ValidationError object to a plain hash for output
+sub error_to_hash ($error) {
+    my $location = $error->location;
+    return {
+        path    => $error->path // '/',
+        message => $error->message // 'Unknown error',
+        code    => $error->code,
+        ($location && $location->is_known ? (
+            line   => $location->line,
+            column => $location->column,
+        ) : ()),
+        (defined $error->schema_path ? (schema_path => $error->schema_path) : ()),
+    };
+}
+
+sub output_results ($opts, $results, $command) {
+    return if $opts->{quiet};
+    
+    my $format = $opts->{format};
+    
+    if ($format eq 'json') {
+        output_json($results);
+    }
+    elsif ($format eq 'tap') {
+        output_tap($results, $opts->{verbose});
+    }
+    else {
+        output_text($results, $opts->{verbose});
+    }
+}
+
+sub output_error ($opts, $file, $error, $type) {
+    return if $opts->{quiet};
+    
+    my $format = $opts->{format};
+    
+    if ($format eq 'json') {
+        my $json = JSON::MaybeXS->new->utf8->pretty->canonical;
+        say $json->encode({
+            file  => $file,
+            valid => JSON::MaybeXS::false,
+            error => $error,
+        });
+    }
+    elsif ($format eq 'tap') {
+        say "1..1";
+        say "not ok 1 - $file";
+        say "  # $error";
+    }
+    else {
+        say STDERR "✗ $file: $error";
+    }
+}
+
+sub output_text ($results, $verbose) {
+    for my $result (@$results) {
+        my $file = $result->{file};
+        
+        if ($result->{error}) {
+            say "✗ $file: $result->{error}";
+        }
+        elsif ($result->{valid}) {
+            say "✓ $file: valid";
+        }
+        else {
+            say "✗ $file: invalid";
+            for my $error (@{$result->{errors}}) {
+                my $path = $error->{path} // '/';
+                my $msg = $error->{message};
+                my $loc = '';
+                if ($verbose && $error->{line}) {
+                    $loc = " (line $error->{line}, col $error->{column})";
+                }
+                say "  - $path: $msg$loc";
+            }
+        }
+    }
+}
+
+sub output_json ($results) {
+    my $json = JSON::MaybeXS->new->utf8->pretty->canonical;
+    
+    # Single result: output object, multiple: output array
+    if (@$results == 1) {
+        print $json->encode($results->[0]);
+    }
+    else {
+        print $json->encode($results);
+    }
+}
+
+sub output_tap ($results, $verbose) {
+    my $count = scalar @$results;
+    say "1..$count";
+    
+    my $n = 0;
+    for my $result (@$results) {
+        $n++;
+        my $file = $result->{file};
+        
+        if ($result->{error}) {
+            say "not ok $n - $file";
+            say "  # Error: $result->{error}";
+        }
+        elsif ($result->{valid}) {
+            say "ok $n - $file";
+        }
+        else {
+            say "not ok $n - $file";
+            for my $error (@{$result->{errors}}) {
+                my $path = $error->{path} // '/';
+                my $msg = $error->{message};
+                say "  # $path: $msg";
+            }
+        }
+    }
+}
+
+__END__
+
+=head1 NAME
+
+pjstruct - JSON-Structure validator CLI for Perl
+
+=head1 SYNOPSIS
+
+    pjstruct <command> [options] [files...]
+
+    # Check a schema is valid
+    pjstruct check schema.struct.json
+
+    # Validate instances against a schema
+    pjstruct validate -s schema.struct.json data.json
+    pjstruct validate -s schema.struct.json *.json
+
+    # Output formats
+    pjstruct validate -s schema.struct.json data.json --format=json
+    pjstruct validate -s schema.struct.json data.json --format=tap
+
+    # Quiet mode (exit code only)
+    pjstruct validate -s schema.struct.json data.json -q
+
+=head1 DESCRIPTION
+
+B<pjstruct> is a command-line interface for validating JSON-Structure schemas
+and validating JSON instances against those schemas.
+
+=head1 COMMANDS
+
+=over 4
+
+=item B<validate>, B<v>
+
+Validate JSON instance(s) against a schema. Requires C<--schema> option.
+
+=item B<check>, B<c>
+
+Check that schema file(s) are valid JSON-Structure schemas.
+
+=item B<help>
+
+Show help for a command.
+
+=item B<version>
+
+Show version information.
+
+=back
+
+=head1 OPTIONS
+
+=over 4
+
+=item B<-s>, B<--schema> I<file>
+
+Schema file to validate against (required for validate command).
+
+=item B<-f>, B<--format> I<format>
+
+Output format: text (default), json, or tap.
+
+=item B<-q>, B<--quiet>
+
+Suppress all output. Use exit code to determine result.
+
+=item B<-v>, B<--verbose>
+
+Show detailed information including line/column numbers.
+
+=item B<-h>, B<--help>
+
+Show help.
+
+=item B<-V>, B<--version>
+
+Show version.
+
+=back
+
+=head1 EXIT CODES
+
+=over 4
+
+=item B<0>
+
+Success - all files are valid.
+
+=item B<1>
+
+Invalid - one or more files failed validation.
+
+=item B<2>
+
+Error - file not found, parse error, or other error.
+
+=back
+
+=head1 OUTPUT FORMATS
+
+=head2 text (default)
+
+Human-readable output with checkmarks and error details.
+
+    ✓ data.json: valid
+    ✗ bad.json: invalid
+      - /name: expected string, got number
+
+=head2 json
+
+JSON output suitable for machine processing.
+
+    {"file":"data.json","valid":true,"errors":[]}
+
+=head2 tap
+
+Test Anything Protocol output, compatible with Perl test harnesses.
+
+    1..2
+    ok 1 - data.json
+    not ok 2 - bad.json
+      # /name: expected string, got number
+
+=head1 EXAMPLES
+
+    # Check multiple schemas
+    pjstruct check schemas/*.struct.json
+
+    # Validate with JSON output for CI
+    pjstruct validate -s schema.struct.json data.json -f json
+
+    # Use in shell scripts
+    if pjstruct validate -s schema.struct.json data.json -q; then
+        echo "Valid!"
+    else
+        echo "Invalid!"
+    fi
+
+    # Read from stdin
+    curl -s https://api.example.com/data | pjstruct validate -s schema.struct.json -
+
+=head1 SEE ALSO
+
+L<JSON::Structure>, L<JSON::Structure::SchemaValidator>, L<JSON::Structure::InstanceValidator>
+
+=head1 AUTHOR
+
+JSON-Structure Contributors
+
+=head1 LICENSE
+
+MIT License
+
+=cut

@@ -1,0 +1,580 @@
+name: Release CLI
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 0.1.0)'
+        required: true
+        type: string
+
+env:
+  CARGO_TERM_COLOR: always
+  BINARY_NAME: jstruct
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x86_64
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-22.04
+            archive: tar.gz
+            
+          # Linux x86_64 musl (static binary)
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-22.04
+            archive: tar.gz
+            
+          # Linux ARM64
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-22.04
+            archive: tar.gz
+            cross: true
+            
+          # Linux ARM64 musl
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-22.04
+            archive: tar.gz
+            cross: true
+            
+          # macOS x86_64 (Intel)
+          - target: x86_64-apple-darwin
+            os: macos-13
+            archive: tar.gz
+            
+          # macOS ARM64 (Apple Silicon)
+          - target: aarch64-apple-darwin
+            os: macos-14
+            archive: tar.gz
+            
+          # Windows x86_64
+          - target: x86_64-pc-windows-msvc
+            os: windows-2022
+            archive: zip
+            
+          # Windows ARM64
+          - target: aarch64-pc-windows-msvc
+            os: windows-2022
+            archive: zip
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-action@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross-compilation tools
+        if: matrix.cross
+        run: |
+          cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Install musl tools
+        if: contains(matrix.target, 'musl') && !matrix.cross
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+
+      - name: Build binary
+        shell: bash
+        run: |
+          if [ "${{ matrix.cross }}" = "true" ]; then
+            cross build --release --features cli --target ${{ matrix.target }}
+          else
+            cargo build --release --features cli --target ${{ matrix.target }}
+          fi
+
+      - name: Prepare artifacts (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp target/${{ matrix.target }}/release/${{ env.BINARY_NAME }} dist/
+          cp README.md LICENSE dist/ 2>/dev/null || true
+          cd dist
+          tar -czvf ../${{ env.BINARY_NAME }}-${{ matrix.target }}.tar.gz *
+
+      - name: Prepare artifacts (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist
+          Copy-Item "target/${{ matrix.target }}/release/${{ env.BINARY_NAME }}.exe" dist/
+          Copy-Item README.md, LICENSE dist/ -ErrorAction SilentlyContinue
+          Compress-Archive -Path dist/* -DestinationPath "${{ env.BINARY_NAME }}-${{ matrix.target }}.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-${{ matrix.target }}
+          path: |
+            ${{ env.BINARY_NAME }}-${{ matrix.target }}.${{ matrix.archive }}
+
+  # Create Debian package
+  package-deb:
+    name: Package DEB
+    needs: build
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            arch: amd64
+          - target: aarch64-unknown-linux-gnu
+            arch: arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download binary
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-${{ matrix.target }}
+
+      - name: Extract binary
+        run: |
+          tar -xzf ${{ env.BINARY_NAME }}-${{ matrix.target }}.tar.gz
+
+      - name: Get version
+        id: version
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create DEB package
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          PKG_NAME=${{ env.BINARY_NAME }}
+          ARCH=${{ matrix.arch }}
+          
+          mkdir -p pkg/DEBIAN
+          mkdir -p pkg/usr/bin
+          mkdir -p pkg/usr/share/doc/$PKG_NAME
+          mkdir -p pkg/usr/share/man/man1
+          
+          cp ${{ env.BINARY_NAME }} pkg/usr/bin/
+          chmod 755 pkg/usr/bin/${{ env.BINARY_NAME }}
+          
+          # Create control file
+          cat > pkg/DEBIAN/control << EOF
+          Package: $PKG_NAME
+          Version: $VERSION
+          Section: devel
+          Priority: optional
+          Architecture: $ARCH
+          Maintainer: JSON Structure Contributors <json-structure@example.com>
+          Description: JSON Structure schema validation CLI
+           A command-line tool for validating JSON Structure schemas and instances.
+           Supports text, JSON, and TAP output formats.
+          Homepage: https://github.com/json-structure/sdk
+          EOF
+          
+          # Create copyright file
+          cp LICENSE pkg/usr/share/doc/$PKG_NAME/copyright 2>/dev/null || echo "MIT License" > pkg/usr/share/doc/$PKG_NAME/copyright
+          
+          # Build package
+          dpkg-deb --build pkg ${PKG_NAME}_${VERSION}_${ARCH}.deb
+
+      - name: Upload DEB
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-${{ matrix.arch }}.deb
+          path: "*.deb"
+
+  # Create RPM package
+  package-rpm:
+    name: Package RPM
+    needs: build
+    runs-on: ubuntu-22.04
+    container: fedora:latest
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            arch: x86_64
+          - target: aarch64-unknown-linux-gnu
+            arch: aarch64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install RPM tools
+        run: |
+          dnf install -y rpm-build rpmdevtools
+
+      - name: Download binary
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-${{ matrix.target }}
+
+      - name: Extract binary
+        run: |
+          tar -xzf ${{ env.BINARY_NAME }}-${{ matrix.target }}.tar.gz
+
+      - name: Get version
+        id: version
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create RPM package
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          PKG_NAME=${{ env.BINARY_NAME }}
+          ARCH=${{ matrix.arch }}
+          
+          # Setup rpmbuild structure
+          rpmdev-setuptree
+          
+          # Copy binary
+          mkdir -p ~/rpmbuild/BUILDROOT/${PKG_NAME}-${VERSION}-1.${ARCH}/usr/bin
+          cp ${{ env.BINARY_NAME }} ~/rpmbuild/BUILDROOT/${PKG_NAME}-${VERSION}-1.${ARCH}/usr/bin/
+          chmod 755 ~/rpmbuild/BUILDROOT/${PKG_NAME}-${VERSION}-1.${ARCH}/usr/bin/${{ env.BINARY_NAME }}
+          
+          # Create spec file
+          cat > ~/rpmbuild/SPECS/${PKG_NAME}.spec << EOF
+          Name:           $PKG_NAME
+          Version:        $VERSION
+          Release:        1
+          Summary:        JSON Structure schema validation CLI
+          License:        MIT
+          URL:            https://github.com/json-structure/sdk
+          
+          %description
+          A command-line tool for validating JSON Structure schemas and instances.
+          Supports text, JSON, and TAP output formats.
+          
+          %files
+          %attr(755, root, root) /usr/bin/$PKG_NAME
+          EOF
+          
+          # Build RPM
+          rpmbuild -bb --target $ARCH ~/rpmbuild/SPECS/${PKG_NAME}.spec
+          
+          cp ~/rpmbuild/RPMS/$ARCH/*.rpm .
+
+      - name: Upload RPM
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-${{ matrix.arch }}.rpm
+          path: "*.rpm"
+
+  # Create macOS universal binary and PKG installer
+  package-macos:
+    name: Package macOS
+    needs: build
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download x86_64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-x86_64-apple-darwin
+
+      - name: Download ARM64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-aarch64-apple-darwin
+          path: arm64/
+
+      - name: Get version
+        id: version
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create universal binary
+        run: |
+          tar -xzf ${{ env.BINARY_NAME }}-x86_64-apple-darwin.tar.gz -C .
+          mv ${{ env.BINARY_NAME }} ${{ env.BINARY_NAME }}-x86_64
+          tar -xzf arm64/${{ env.BINARY_NAME }}-aarch64-apple-darwin.tar.gz -C .
+          mv ${{ env.BINARY_NAME }} ${{ env.BINARY_NAME }}-arm64
+          
+          # Create universal binary
+          lipo -create -output ${{ env.BINARY_NAME }} ${{ env.BINARY_NAME }}-x86_64 ${{ env.BINARY_NAME }}-arm64
+          
+          # Verify
+          lipo -info ${{ env.BINARY_NAME }}
+
+      - name: Create PKG installer
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          PKG_NAME=${{ env.BINARY_NAME }}
+          
+          # Create package structure
+          mkdir -p pkg/usr/local/bin
+          cp ${{ env.BINARY_NAME }} pkg/usr/local/bin/
+          chmod 755 pkg/usr/local/bin/${{ env.BINARY_NAME }}
+          
+          # Build package
+          pkgbuild --root pkg \
+                   --identifier com.json-structure.jstruct \
+                   --version $VERSION \
+                   --install-location / \
+                   ${PKG_NAME}-${VERSION}-universal.pkg
+
+      - name: Create tarball
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          mkdir -p dist
+          cp ${{ env.BINARY_NAME }} dist/
+          cp README.md LICENSE dist/ 2>/dev/null || true
+          cd dist
+          tar -czvf ../${{ env.BINARY_NAME }}-${VERSION}-macos-universal.tar.gz *
+
+      - name: Upload PKG
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-macos.pkg
+          path: "*.pkg"
+
+      - name: Upload universal tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-macos-universal.tar.gz
+          path: "*-macos-universal.tar.gz"
+
+  # Create Windows MSIX package
+  package-msix:
+    name: Package MSIX
+    needs: build
+    runs-on: windows-2022
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download x64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-x86_64-pc-windows-msvc
+
+      - name: Download ARM64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-aarch64-pc-windows-msvc
+          path: arm64/
+
+      - name: Get version
+        id: version
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup Windows SDK
+        uses: ChristopheLav/windows-sdk-install@v1
+        with:
+          version-sdk: "22621"
+
+      - name: Create MSIX packages
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          # MSIX requires 4-part version
+          $msixVersion = "$version.0"
+          if ($version -match '^\d+\.\d+$') {
+            $msixVersion = "$version.0.0"
+          } elseif ($version -match '^\d+\.\d+\.\d+$') {
+            $msixVersion = "$version.0"
+          }
+          
+          # Extract binaries
+          Expand-Archive -Path "${{ env.BINARY_NAME }}-x86_64-pc-windows-msvc.zip" -DestinationPath x64
+          Expand-Archive -Path "arm64/${{ env.BINARY_NAME }}-aarch64-pc-windows-msvc.zip" -DestinationPath arm64-extracted
+          
+          # Create x64 package structure
+          New-Item -ItemType Directory -Force -Path msix-x64
+          Copy-Item x64/${{ env.BINARY_NAME }}.exe msix-x64/
+          
+          # Create AppxManifest for x64
+          @"
+          <?xml version="1.0" encoding="utf-8"?>
+          <Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+                   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+                   xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
+                   xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10">
+            <Identity Name="JSONStructure.jstruct"
+                      Publisher="CN=JSON Structure"
+                      Version="$msixVersion"
+                      ProcessorArchitecture="x64" />
+            <Properties>
+              <DisplayName>jstruct</DisplayName>
+              <PublisherDisplayName>JSON Structure Contributors</PublisherDisplayName>
+              <Description>JSON Structure schema validation CLI</Description>
+              <Logo>Assets\StoreLogo.png</Logo>
+            </Properties>
+            <Resources>
+              <Resource Language="en-us" />
+            </Resources>
+            <Dependencies>
+              <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.22621.0" />
+            </Dependencies>
+            <Capabilities>
+              <rescap:Capability Name="runFullTrust" xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities" />
+            </Capabilities>
+            <Applications>
+              <Application Id="jstruct" Executable="jstruct.exe" EntryPoint="Windows.FullTrustApplication">
+                <uap:VisualElements DisplayName="jstruct"
+                                    Description="JSON Structure CLI"
+                                    BackgroundColor="transparent"
+                                    Square150x150Logo="Assets\Square150x150Logo.png"
+                                    Square44x44Logo="Assets\Square44x44Logo.png">
+                </uap:VisualElements>
+                <Extensions>
+                  <uap3:Extension Category="windows.appExecutionAlias">
+                    <uap3:AppExecutionAlias>
+                      <desktop:ExecutionAlias Alias="jstruct.exe" />
+                    </uap3:AppExecutionAlias>
+                  </uap3:Extension>
+                </Extensions>
+              </Application>
+            </Applications>
+          </Package>
+          "@ | Out-File -Encoding utf8 msix-x64/AppxManifest.xml
+          
+          # Create placeholder assets
+          New-Item -ItemType Directory -Force -Path msix-x64/Assets
+          
+          # Create simple PNG placeholders (1x1 transparent)
+          $pngHeader = [byte[]](0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)
+          # Minimal valid PNG
+          $minPng = [Convert]::FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")
+          [IO.File]::WriteAllBytes("msix-x64/Assets/StoreLogo.png", $minPng)
+          [IO.File]::WriteAllBytes("msix-x64/Assets/Square150x150Logo.png", $minPng)
+          [IO.File]::WriteAllBytes("msix-x64/Assets/Square44x44Logo.png", $minPng)
+          
+          # Build MSIX using makeappx
+          $sdkPath = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\makeappx.exe" | 
+                     Sort-Object { [version]($_.Directory.Parent.Name) } -Descending | 
+                     Select-Object -First 1
+          & $sdkPath.FullName pack /d msix-x64 /p "${{ env.BINARY_NAME }}-$version-x64.msix" /o
+          
+          # Create ARM64 package
+          New-Item -ItemType Directory -Force -Path msix-arm64
+          Copy-Item arm64-extracted/${{ env.BINARY_NAME }}.exe msix-arm64/
+          
+          # Update manifest for ARM64
+          (Get-Content msix-x64/AppxManifest.xml) -replace 'ProcessorArchitecture="x64"', 'ProcessorArchitecture="arm64"' |
+            Out-File -Encoding utf8 msix-arm64/AppxManifest.xml
+          
+          Copy-Item msix-x64/Assets msix-arm64/Assets -Recurse
+          
+          & $sdkPath.FullName pack /d msix-arm64 /p "${{ env.BINARY_NAME }}-$version-arm64.msix" /o
+
+      - name: Upload MSIX x64
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-x64.msix
+          path: "*-x64.msix"
+
+      - name: Upload MSIX ARM64
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-arm64.msix
+          path: "*-arm64.msix"
+
+  # Create GitHub Release
+  release:
+    name: Create Release
+    needs: [build, package-deb, package-rpm, package-macos, package-msix]
+    runs-on: ubuntu-22.04
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Get version
+        id: version
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Prepare release files
+        run: |
+          mkdir release
+          find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.deb" -o -name "*.rpm" -o -name "*.pkg" -o -name "*.msix" \) -exec cp {} release/ \;
+          ls -la release/
+
+      - name: Create checksums
+        run: |
+          cd release
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}
+          name: jstruct v${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.version, '-') }}
+          generate_release_notes: true
+          files: |
+            release/*
+          body: |
+            ## Installation
+
+            ### Linux (Debian/Ubuntu)
+            ```bash
+            sudo dpkg -i jstruct_${{ steps.version.outputs.version }}_amd64.deb
+            ```
+
+            ### Linux (Fedora/RHEL)
+            ```bash
+            sudo rpm -i jstruct-${{ steps.version.outputs.version }}-1.x86_64.rpm
+            ```
+
+            ### macOS
+            ```bash
+            # Using PKG installer
+            sudo installer -pkg jstruct-${{ steps.version.outputs.version }}-universal.pkg -target /
+
+            # Or manually
+            tar -xzf jstruct-${{ steps.version.outputs.version }}-macos-universal.tar.gz
+            sudo mv jstruct /usr/local/bin/
+            ```
+
+            ### Windows
+            Download and run the MSIX installer, or extract the ZIP and add to PATH.
+
+            ### From source
+            ```bash
+            cargo install json-structure --features cli
+            ```
+
+            ## Verification
+            ```bash
+            # Verify checksums
+            sha256sum -c SHA256SUMS.txt
+            ```

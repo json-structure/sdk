@@ -15,6 +15,7 @@ that can be validated and mapped to programming language types.
 | [TypeScript/JavaScript](./typescript/) | `json-structure` | ✅ Available |
 | [Go](./go/) | `github.com/json-structure/sdk/go` | ✅ Available |
 | [Rust](./rust/) | `json-structure` | ✅ Available |
+| [Perl](./perl/) | `JSON::Structure` | ✅ Available |
 | [C](./c/) | `json-structure` | ✅ Available |
 
 ## Features
@@ -202,6 +203,40 @@ func main() {
     instanceResult := instanceValidator.Validate(instance, schema)
     fmt.Printf("Instance valid: %v\n", instanceResult.IsValid)
 }
+```
+
+### Perl
+
+```bash
+cpanm JSON::Structure
+```
+
+```perl
+use JSON::Structure::SchemaValidator;
+use JSON::Structure::InstanceValidator;
+use JSON::MaybeXS;
+
+# Define a schema
+my $schema = decode_json(q|{
+    "$schema": "https://json-structure.org/meta/core/v0/#",
+    "name": "Person",
+    "type": "object",
+    "properties": {
+        "name": {"type": "string"},
+        "age": {"type": "int32"}
+    }
+}|);
+
+# Validate the schema
+my $schema_validator = JSON::Structure::SchemaValidator->new();
+my $schema_result = $schema_validator->validate($schema);
+print "Schema valid: ", ($schema_result->is_valid ? "true" : "false"), "\n";
+
+# Validate an instance
+my $instance = decode_json('{"name": "Alice", "age": 30}');
+my $instance_validator = JSON::Structure::InstanceValidator->new(schema => $schema);
+my $instance_result = $instance_validator->validate($instance);
+print "Instance valid: ", ($instance_result->is_valid ? "true" : "false"), "\n";
 ```
 
 ### Rust
