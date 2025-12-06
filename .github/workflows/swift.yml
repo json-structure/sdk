@@ -16,6 +16,9 @@ on:
       - 'meta/**'
       - '.github/workflows/swift.yml'
 
+permissions:
+  contents: read
+
 jobs:
   test-macos:
     name: Test Swift ${{ matrix.swift-version }} on macOS

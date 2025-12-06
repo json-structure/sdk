@@ -19,6 +19,9 @@ public class InstanceValidator: @unchecked Sendable {
     private static let uuidRegex = try! NSRegularExpression(pattern: #"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"#)
     private static let jsonPtrRegex = try! NSRegularExpression(pattern: #"^(?:|(?:/(?:[^~/]|~[01])*)*)$"#)
     
+    /// Tolerance for floating-point comparison in multipleOf validation.
+    private static let floatComparisonTolerance: Double = 1e-10
+    
     /// Creates a new InstanceValidator with the given options.
     public init(options: InstanceValidatorOptions = InstanceValidatorOptions()) {
         self.options = options
@@ -1009,7 +1012,7 @@ public class InstanceValidator: @unchecked Sendable {
                     }
                 }
                 if let multipleOf = toDouble(schema["multipleOf"] as Any) {
-                    if abs(num.truncatingRemainder(dividingBy: multipleOf)) > 1e-10 {
+                    if abs(num.truncatingRemainder(dividingBy: multipleOf)) > InstanceValidator.floatComparisonTolerance {
                         addError(path, "Value \(num) is not a multiple of \(multipleOf)", instanceNumberMultipleOf)
                     }
                 }

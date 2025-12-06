@@ -246,7 +246,7 @@ public class JsonSourceLocator: @unchecked Sendable {
         }
         let start = jsonText.index(jsonText.startIndex, offsetBy: offset)
         let end = jsonText.index(start, offsetBy: prefix.count)
-        return String(jsonText[start..<end]) == prefix
+        return jsonText[start..<end].elementsEqual(prefix)
     }
     
     /// Skips an entire JSON object.
