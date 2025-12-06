@@ -607,8 +607,8 @@ class FinalCoverageTest extends TestCase
             'type' => 'map',
             'values' => ['type' => 'int32'],
         ]);
-        // Empty object - use a non-list empty array
-        $errors = $validator->validate(json_decode('{}', true) ?: ['_dummy' => 1]);
-        $this->assertIsArray($errors);
+        // Test with a non-empty map - PHP cannot distinguish empty {} from []
+        $errors = $validator->validate(['key' => 1]);
+        $this->assertCount(0, $errors);
     }
 }

@@ -1311,18 +1311,16 @@ class AdditionalValidationTest extends TestCase
     // Edge Case Tests
     // =========================================================================
 
-    public function testValidateEmptyObject(): void
+    public function testValidateNonEmptyObject(): void
     {
         $validator = new InstanceValidator([
             'type' => 'object',
-            'properties' => [],
+            'properties' => [
+                'name' => ['type' => 'string'],
+            ],
         ]);
-        // In PHP, use an associative array (even if empty) or stdClass for objects
-        // An empty array [] is a list in PHP 8.1+, so use a non-list indicator
-        $instance = new \stdClass(); // Empty object
-        $errors = $validator->validate((array) $instance); // Convert to associative array (still empty but marked)
-        // Unfortunately empty arrays are ambiguous in PHP. Let's test with a non-empty then empty delete
-        $errors = $validator->validate(['_dummy_' => true]); // Non-empty object
+        // Test with a simple object with one property
+        $errors = $validator->validate(['name' => 'test']);
         $this->assertCount(0, $errors);
     }
 
