@@ -1,0 +1,44 @@
+{
+    "name": "json-structure/sdk",
+    "description": "Validators for JSON Structure schemas and instances",
+    "type": "library",
+    "license": "MIT",
+    "keywords": [
+        "json",
+        "schema",
+        "validation",
+        "json-structure",
+        "type-system"
+    ],
+    "homepage": "https://json-structure.org",
+    "authors": [
+        {
+            "name": "JSON Structure Project",
+            "email": "info@json-structure.org"
+        }
+    ],
+    "require": {
+        "php": ">=8.1"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^10.0 || ^11.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "JsonStructure\\": "src/JsonStructure/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "JsonStructure\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "phpunit",
+        "test-coverage": "phpunit --coverage-text --coverage-clover=coverage.xml"
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "stable"
+}

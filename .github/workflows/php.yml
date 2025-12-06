@@ -1,0 +1,56 @@
+name: PHP SDK
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - 'php/**'
+      - '.github/workflows/php.yml'
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  pull_request:
+    branches: [master, main]
+    paths:
+      - 'php/**'
+      - '.github/workflows/php.yml'
+
+jobs:
+  test:
+    name: Test PHP ${{ matrix.php-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php-version: ['8.1', '8.2', '8.3']
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up PHP ${{ matrix.php-version }}
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php-version }}
+          extensions: bcmath, json, mbstring
+          coverage: xdebug
+
+      - name: Validate composer.json
+        working-directory: php
+        run: composer validate --strict
+
+      - name: Install dependencies
+        working-directory: php
+        run: composer install --prefer-dist --no-progress
+
+      - name: Run tests
+        working-directory: php
+        run: vendor/bin/phpunit --coverage-text --coverage-clover=coverage.xml
+
+      - name: Upload coverage reports
+        if: matrix.php-version == '8.2'
+        uses: codecov/codecov-action@v4
+        with:
+          file: php/coverage.xml
+          flags: php
+          fail_ci_if_error: false
