@@ -59,10 +59,10 @@ class ValidationResult
     public function merge(ValidationResult $other): void
     {
         foreach ($other->getErrors() as $error) {
-            $this->errors[] = $error;
+            $this->addError($error);
         }
         foreach ($other->getWarnings() as $warning) {
-            $this->warnings[] = $warning;
+            $this->addWarning($warning);
         }
     }
 }

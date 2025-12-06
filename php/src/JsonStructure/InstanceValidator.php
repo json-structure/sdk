@@ -511,9 +511,54 @@ class InstanceValidator
             return;
         }
 
-        // Compare as strings using bccomp if available, or simple comparison for smaller values
-        if (bccomp($instance, $min) < 0 || bccomp($instance, $max) > 0) {
-            $this->addError("{$typeName} value at {$path} out of range", $path, ErrorCodes::INSTANCE_INT_RANGE_INVALID);
+        // Compare as strings using bccomp if available, or simple string comparison otherwise
+        if (function_exists('bccomp')) {
+            if (bccomp($instance, $min) < 0 || bccomp($instance, $max) > 0) {
+                $this->addError("{$typeName} value at {$path} out of range", $path, ErrorCodes::INSTANCE_INT_RANGE_INVALID);
+            }
+        } else {
+            // Fallback to string comparison for large integers
+            // This works for numeric strings with the same length
+            $instanceClean = ltrim($instance, '-');
+            $minClean = ltrim($min, '-');
+            $maxClean = ltrim($max, '-');
+
+            $instanceNeg = str_starts_with($instance, '-');
+            $minNeg = str_starts_with($min, '-');
+
+            // Simple range check - assumes valid numeric strings
+            $inRange = true;
+            if ($instanceNeg && !$minNeg) {
+                // Negative instance vs non-negative min
+                $inRange = false;
+            } elseif (!$instanceNeg && $minNeg) {
+                // Non-negative instance is always >= negative min
+                // Check against max
+                if (strlen($instanceClean) > strlen($maxClean) ||
+                    (strlen($instanceClean) === strlen($maxClean) && strcmp($instanceClean, $maxClean) > 0)) {
+                    $inRange = false;
+                }
+            } elseif ($instanceNeg && $minNeg) {
+                // Both negative: larger absolute value is smaller
+                if (strlen($instanceClean) > strlen($minClean) ||
+                    (strlen($instanceClean) === strlen($minClean) && strcmp($instanceClean, $minClean) > 0)) {
+                    $inRange = false; // More negative than min
+                }
+            } else {
+                // Both non-negative
+                if (strlen($instanceClean) < strlen($minClean) ||
+                    (strlen($instanceClean) === strlen($minClean) && strcmp($instanceClean, $minClean) < 0)) {
+                    $inRange = false; // Less than min
+                }
+                if (strlen($instanceClean) > strlen($maxClean) ||
+                    (strlen($instanceClean) === strlen($maxClean) && strcmp($instanceClean, $maxClean) > 0)) {
+                    $inRange = false; // Greater than max
+                }
+            }
+
+            if (!$inRange) {
+                $this->addError("{$typeName} value at {$path} out of range", $path, ErrorCodes::INSTANCE_INT_RANGE_INVALID);
+            }
         }
     }
 

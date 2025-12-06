@@ -7,6 +7,7 @@ namespace JsonStructure\Tests;
 use JsonStructure\SchemaValidator;
 use JsonStructure\InstanceValidator;
 use JsonStructure\ErrorCodes;
+use JsonStructure\ValidationSeverity;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -281,7 +282,7 @@ class TestAssetsTest extends TestCase
         $errors = $validator->validate($schema);
 
         // Filter out warnings (only keep errors)
-        $realErrors = array_filter($errors, fn($e) => $e->severity->value !== 'warning');
+        $realErrors = array_filter($errors, fn($e) => $e->severity !== ValidationSeverity::WARNING);
 
         $this->assertCount(
             0,

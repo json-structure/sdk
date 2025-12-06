@@ -17,7 +17,7 @@ class SchemaValidator
     private array $errors = [];
 
     /** @var ValidationError[] */
-    public array $warnings = [];
+    private array $warnings = [];
 
     private mixed $doc = null;
     private ?string $sourceText = null;
