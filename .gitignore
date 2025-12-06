@@ -70,3 +70,7 @@ TestResults/
 *.trx
 nupkg/
 go/coverage
+
+# PHP
+php/vendor/
+php/composer.lock
