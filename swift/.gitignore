@@ -1,0 +1,21 @@
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# Xcode
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+*.playground/
+
+# DerivedData
+DerivedData/
+
+# Swift Package Manager support
+Packages/
+.packages/
+
+# IDE
+.idea/
+*.xcuserstate
