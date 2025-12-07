@@ -141,6 +141,9 @@ final class TestAssetsTests: XCTestCase {
         }
         
         let invalidDir = (testAssetsPath as NSString).appendingPathComponent("schemas/invalid")
+        guard FileManager.default.fileExists(atPath: invalidDir) else {
+            throw XCTSkip("test-assets/schemas/invalid not found")
+        }
         let files = Self.getFiles(inDirectory: invalidDir, withExtension: ".struct.json")
         
         XCTAssertGreaterThanOrEqual(files.count, 25, "Expected at least 25 invalid schemas, got \(files.count)")

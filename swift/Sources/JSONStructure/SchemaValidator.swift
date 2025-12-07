@@ -4,7 +4,7 @@
 import Foundation
 
 /// Validates JSON Structure schema documents.
-public class SchemaValidator: @unchecked Sendable {
+public class SchemaValidator {
     private var options: SchemaValidatorOptions
     private var errors: [ValidationError] = []
     private var warnings: [ValidationError] = []
@@ -20,7 +20,7 @@ public class SchemaValidator: @unchecked Sendable {
         "minItems", "maxItems", "uniqueItems", "contains", "minContains", "maxContains",
         "minProperties", "maxProperties", "propertyNames", "patternProperties", "dependentRequired",
         "minEntries", "maxEntries", "patternKeys", "keyNames",
-        "contentEncoding", "contentMediaType",
+        "contentEncoding", "contentMediaType", "contentCompression",
         "has", "default"
     ]
     
@@ -239,6 +239,11 @@ public class SchemaValidator: @unchecked Sendable {
         // Validate $extends if present
         if let extendsVal = schema["$extends"] {
             validateExtends(extendsVal, "\(path)/$extends")
+        }
+
+        // Validate alternate names
+        if let altnames = schema["altnames"] {
+            validateAltnames(altnames, path)
         }
         
         guard let typeVal = schema["type"] else {
@@ -770,6 +775,18 @@ public class SchemaValidator: @unchecked Sendable {
             }
             
             seenRefs.remove(refStr)
+        }
+    }
+
+    private func validateAltnames(_ value: Any, _ path: String) {
+        guard let obj = value as? [String: Any] else {
+            addError("\(path)/altnames", "altnames must be an object", schemaAltnamesNotObject)
+            return
+        }
+        for (key, val) in obj {
+            if !(val is String) {
+                addError("\(path)/altnames/\(key)", "altnames values must be strings", schemaAltnamesValueNotString)
+            }
         }
     }
     

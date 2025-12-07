@@ -678,14 +678,6 @@ final class EdgeCaseTests: XCTestCase {
         XCTAssertFalse(validator.validate(invalidPremium, schema: schema).isValid)
     }
     
-    func testInstanceValidatorChoiceInlineUnion() throws {
-        // This test is skipped because the $extends handling in validateInstance
-        // removes $extends before calling validateChoice, so the inline union detection
-        // in validateChoice never sees the $extends. This is a design limitation.
-        // The tagged union (without selector) works correctly.
-        throw XCTSkip("Inline union with $extends requires code refactoring")
-    }
-    
     // MARK: - JSON Serialization Edge Cases
     
     func testValidateJSONMethod() throws {

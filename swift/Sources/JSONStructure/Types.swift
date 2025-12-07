@@ -129,22 +129,34 @@ public struct SchemaValidatorOptions {
 }
 
 /// Options for instance validation.
-public struct InstanceValidatorOptions: Sendable {
+public struct InstanceValidatorOptions {
     /// Enables extended validation features (minLength, pattern, etc.).
     public var extended: Bool
     /// Enables processing of $import/$importdefs.
     public var allowImport: Bool
     /// Maximum depth for validation recursion. Default is 64.
     public var maxValidationDepth: Int
-    
+    /// Maps URIs to schema objects for import resolution.
+    public var externalSchemas: [String: Any]?
+    /// Optional function to resolve external schema references.
+    public var referenceResolver: ((String) -> [String: Any]?)?
+    /// Optional function to load imported schemas.
+    public var importLoader: ((String) -> [String: Any]?)?
+
     public init(
         extended: Bool = false,
         allowImport: Bool = false,
-        maxValidationDepth: Int = 64
+        maxValidationDepth: Int = 64,
+        externalSchemas: [String: Any]? = nil,
+        referenceResolver: ((String) -> [String: Any]?)? = nil,
+        importLoader: ((String) -> [String: Any]?)? = nil
     ) {
         self.extended = extended
         self.allowImport = allowImport
         self.maxValidationDepth = maxValidationDepth
+        self.externalSchemas = externalSchemas
+        self.referenceResolver = referenceResolver
+        self.importLoader = importLoader
     }
 }
 
