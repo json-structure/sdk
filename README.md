@@ -18,6 +18,7 @@ that can be validated and mapped to programming language types.
 | [Perl](./perl/) | `JSON::Structure` | ✅ Available |
 | [Swift](./swift/) | `JSONStructure` | ✅ Available |
 | [C](./c/) | `json-structure` | ✅ Available |
+| [PHP](./php/) | `json-structure/sdk` | ✅ Available |
 
 ## Features
 
@@ -355,6 +356,39 @@ let instance: [String: Any] = ["name": "Alice", "age": 30]
 let instanceValidator = InstanceValidator(schema: schema)
 let instanceResult = instanceValidator.validate(instance)
 print("Instance valid: \(instanceResult.isEmpty)")
+```
+
+### PHP
+
+```bash
+composer require json-structure/sdk
+```
+
+```php
+<?php
+
+use JsonStructure\SchemaValidator;
+use JsonStructure\InstanceValidator;
+
+// Validate a schema
+$schema = [
+    '$schema' => 'https://json-structure.org/meta/core/v0/#',
+    '$id' => 'https://example.com/person.struct.json',
+    'name' => 'Person',
+    'type' => 'object',
+    'properties' => [
+        'name' => ['type' => 'string'],
+        'age' => ['type' => 'int32']
+    ]
+];
+
+$schemaValidator = new SchemaValidator();
+$schemaErrors = $schemaValidator->validate($schema);
+
+// Validate an instance
+$instance = ['name' => 'Alice', 'age' => 30];
+$instanceValidator = new InstanceValidator($schema);
+$instanceErrors = $instanceValidator->validate($instance);
 ```
 
 ## Documentation
