@@ -268,6 +268,53 @@ class TestAssetsTest extends TestCase
     }
 
     // =============================================================================
+    // Warning Schema Tests
+    // =============================================================================
+
+    /**
+     * @dataProvider warningSchemaFilesProvider
+     */
+    public function testWarningSchemaIsValidButProducesWarnings(string $schemaFile): void
+    {
+        $schema = json_decode(file_get_contents($schemaFile), true);
+        $description = $schema['description'] ?? 'No description';
+
+        $validator = new SchemaValidator(extended: true, warnOnUnusedExtensionKeywords: true);
+        $errors = $validator->validate($schema);
+        $warnings = $validator->getWarnings();
+
+        // Filter out warnings (only keep errors)
+        $realErrors = array_filter($errors, fn($e) => $e->severity !== ValidationSeverity::WARNING);
+
+        // Schema should be valid (no errors)
+        $this->assertCount(
+            0,
+            $realErrors,
+            "Warning schema " . basename($schemaFile) . " should be valid. Errors: " . json_encode(array_map(fn($e) => (string) $e, $realErrors))
+        );
+
+        // Schema should produce warnings (unless it has $uses which suppresses them)
+        $hasUses = isset($schema['$uses']) && !empty($schema['$uses']);
+        if (!$hasUses) {
+            $this->assertGreaterThan(
+                0,
+                count($warnings),
+                "Warning schema " . basename($schemaFile) . " should produce warnings. Description: {$description}"
+            );
+        }
+    }
+
+    public static function warningSchemaFilesProvider(): array
+    {
+        $files = glob(self::WARNING_SCHEMAS . '/*.struct.json') ?: [];
+        $testCases = [];
+        foreach ($files as $file) {
+            $testCases[basename($file)] = [$file];
+        }
+        return $testCases;
+    }
+
+    // =============================================================================
     // Validation Enforcement Tests
     // =============================================================================
 

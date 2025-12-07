@@ -772,6 +772,20 @@ class SchemaValidator
                 }
             }
         }
+
+        // patternProperties validation extension warning
+        if (isset($obj['patternProperties'])) {
+            if (!$validationEnabled) {
+                $this->addExtensionKeywordWarning('patternProperties', $path);
+            }
+        }
+
+        // propertyNames validation extension warning
+        if (isset($obj['propertyNames'])) {
+            if (!$validationEnabled) {
+                $this->addExtensionKeywordWarning('propertyNames', $path);
+            }
+        }
     }
 
     private function checkUnionTypeItem(mixed $unionItem, string $path): void
