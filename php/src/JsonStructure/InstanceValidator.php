@@ -990,6 +990,22 @@ class InstanceValidator
                     }
                 }
             }
+
+            // patternKeys validation
+            if (isset($schema['patternKeys']) && is_array($schema['patternKeys'])) {
+                $patternKeysSchema = $schema['patternKeys'];
+                if (isset($patternKeysSchema['pattern']) && is_string($patternKeysSchema['pattern'])) {
+                    $pattern = $patternKeysSchema['pattern'];
+                    // Ensure the pattern is a valid regex
+                    if (@preg_match('/' . $pattern . '/', '') !== false) {
+                        foreach (array_keys($instance) as $keyName) {
+                            if (!preg_match('/' . $pattern . '/', (string)$keyName)) {
+                                $this->addError("Map key '{$keyName}' at {$path} does not match patternKeys pattern '{$pattern}'", $path, ErrorCodes::INSTANCE_MAP_KEY_INVALID);
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 

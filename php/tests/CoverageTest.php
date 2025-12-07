@@ -473,6 +473,32 @@ class CoverageTest extends TestCase
         $this->assertGreaterThan(0, count($errors));
     }
 
+    public function testInstanceValidatorWithPatternKeys(): void
+    {
+        // Test patternKeys validation - all keys must match the pattern
+        $validator = new InstanceValidator([
+            'type' => 'map',
+            'values' => ['type' => 'string'],
+            'patternKeys' => [
+                'type' => 'string',
+                'pattern' => '^[a-z]+$',
+            ],
+        ], extended: true);
+        
+        // Valid: all keys match lowercase pattern
+        $errors = $validator->validate(['abc' => 'x', 'def' => 'y']);
+        $this->assertCount(0, $errors);
+        
+        // Invalid: key contains uppercase
+        $errors = $validator->validate(['ABC' => 'x', 'def' => 'y']);
+        $this->assertGreaterThan(0, count($errors));
+        $this->assertEquals(ErrorCodes::INSTANCE_MAP_KEY_INVALID, $errors[0]->code);
+        
+        // Invalid: key contains numbers
+        $errors = $validator->validate(['abc123' => 'x']);
+        $this->assertGreaterThan(0, count($errors));
+    }
+
     public function testInstanceValidatorWithAdditionalPropertiesTrue(): void
     {
         $validator = new InstanceValidator([
