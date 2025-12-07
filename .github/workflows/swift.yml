@@ -1,0 +1,90 @@
+name: Swift SDK
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - 'swift/**'
+      - 'meta/**'
+      - 'test-assets/**'
+      - 'primer-and-samples/**'
+      - '.github/workflows/swift.yml'
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  pull_request:
+    branches: [master, main]
+    paths:
+      - 'swift/**'
+      - 'meta/**'
+      - 'test-assets/**'
+      - 'primer-and-samples/**'
+      - '.github/workflows/swift.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test-macos:
+    name: Test Swift on macOS
+    runs-on: macos-14
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Show Swift version
+        run: swift --version
+
+      - name: Build
+        working-directory: swift
+        run: swift build -v
+
+      - name: Run tests
+        working-directory: swift
+        run: swift test -v
+
+  test-linux:
+    name: Test Swift on Linux
+    runs-on: ubuntu-latest
+
+    container:
+      image: swift:5.10
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Show Swift version
+        run: swift --version
+
+      - name: Build
+        working-directory: swift
+        run: swift build -v
+
+      - name: Run tests
+        working-directory: swift
+        run: swift test -v
+
+  lint:
+    name: Lint
+    runs-on: macos-14
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Build
+        working-directory: swift
+        run: swift build -v
+
+      # SwiftLint is typically used for linting Swift code
+      # Uncomment when swiftlint configuration is added
+      # - name: Install SwiftLint
+      #   run: brew install swiftlint
+      # 
+      # - name: Run SwiftLint
+      #   working-directory: swift
+      #   run: swiftlint lint --strict
