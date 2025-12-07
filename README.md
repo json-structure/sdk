@@ -16,6 +16,7 @@ that can be validated and mapped to programming language types.
 | [Go](./go/) | `github.com/json-structure/sdk/go` | ✅ Available |
 | [Rust](./rust/) | `json-structure` | ✅ Available |
 | [Perl](./perl/) | `JSON::Structure` | ✅ Available |
+| [Swift](./swift/) | `JSONStructure` | ✅ Available |
 | [C](./c/) | `json-structure` | ✅ Available |
 
 ## Features
@@ -316,6 +317,44 @@ int main() {
     cJSON_Delete(schema);
     return 0;
 }
+```
+
+### Swift
+
+Add to your `Package.swift`:
+
+```swift
+dependencies: [
+    .package(url: "https://github.com/json-structure/sdk.git", from: "0.1.0")
+]
+```
+
+```swift
+import JSONStructure
+import Foundation
+
+// Define a schema
+let schema: [String: Any] = [
+    "$schema": "https://json-structure.org/meta/core/v0/#",
+    "$id": "https://example.com/person.struct.json",
+    "name": "Person",
+    "type": "object",
+    "properties": [
+        "name": ["type": "string"],
+        "age": ["type": "int32"]
+    ]
+]
+
+// Validate the schema
+let schemaValidator = SchemaValidator()
+let schemaResult = schemaValidator.validate(schema)
+print("Schema valid: \(schemaResult.isEmpty)")
+
+// Validate an instance
+let instance: [String: Any] = ["name": "Alice", "age": 30]
+let instanceValidator = InstanceValidator(schema: schema)
+let instanceResult = instanceValidator.validate(instance)
+print("Instance valid: \(instanceResult.isEmpty)")
 ```
 
 ## Documentation
