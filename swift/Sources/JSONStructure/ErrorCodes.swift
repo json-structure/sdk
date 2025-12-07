@@ -268,3 +268,7 @@ public let instanceDecimalExpected = "INSTANCE_DECIMAL_EXPECTED"
 public let instanceStringNotExpected = "INSTANCE_STRING_NOT_EXPECTED"
 /// Custom type reference not yet supported.
 public let instanceCustomTypeNotSupported = "INSTANCE_CUSTOM_TYPE_NOT_SUPPORTED"
+/// Object has no property value matching the 'has' schema.
+public let instanceHasNoMatch = "INSTANCE_HAS_NO_MATCH"
+/// Property value does not match patternProperties schema.
+public let instancePatternPropertyMismatch = "INSTANCE_PATTERN_PROPERTY_MISMATCH"

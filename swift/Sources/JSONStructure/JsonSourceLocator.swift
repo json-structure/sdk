@@ -4,7 +4,7 @@
 import Foundation
 
 /// Tracks line and column positions in a JSON document and maps JSON Pointer paths to source locations.
-public class JsonSourceLocator: @unchecked Sendable {
+public class JsonSourceLocator {
     private let jsonText: String
     private let lineOffsets: [Int]
     

@@ -719,4 +719,169 @@ final class AdditionalValidationTests: XCTestCase {
         ]
         XCTAssertFalse(validator.validate(invalid, schema: schema).isValid)
     }
+    
+    // MARK: - Has Keyword Tests
+    
+    func testHasKeywordValidation() throws {
+        let validator = InstanceValidator()
+        
+        // Schema with 'has' keyword - at least one property value must be a string
+        let schema: [String: Any] = [
+            "$id": "urn:test",
+            "name": "T",
+            "type": "object",
+            "has": ["type": "string"]
+        ]
+        
+        // Valid - contains a string value
+        let validWithString: [String: Any] = [
+            "a": 123,
+            "b": "hello",
+            "c": true
+        ]
+        XCTAssertTrue(validator.validate(validWithString, schema: schema).isValid)
+        
+        // Valid - all string values
+        let allStrings: [String: Any] = [
+            "a": "one",
+            "b": "two"
+        ]
+        XCTAssertTrue(validator.validate(allStrings, schema: schema).isValid)
+        
+        // Invalid - no string values
+        let noStrings: [String: Any] = [
+            "a": 123,
+            "b": true,
+            "c": 45.6
+        ]
+        XCTAssertFalse(validator.validate(noStrings, schema: schema).isValid)
+        
+        // Invalid - empty object
+        let empty: [String: Any] = [:]
+        XCTAssertFalse(validator.validate(empty, schema: schema).isValid)
+    }
+    
+    func testHasKeywordWithComplexSchema() throws {
+        let validator = InstanceValidator()
+        
+        // Schema with 'has' keyword - at least one value must be an object with name property
+        let schema: [String: Any] = [
+            "$id": "urn:test",
+            "name": "T",
+            "type": "object",
+            "has": [
+                "type": "object",
+                "properties": ["name": ["type": "string"]],
+                "required": ["name"]
+            ]
+        ]
+        
+        // Valid - contains an object with name
+        let valid: [String: Any] = [
+            "item1": 123,
+            "item2": ["name": "John"]
+        ]
+        XCTAssertTrue(validator.validate(valid, schema: schema).isValid)
+        
+        // Invalid - no object with name property
+        let invalid: [String: Any] = [
+            "item1": 123,
+            "item2": ["age": 30]
+        ]
+        XCTAssertFalse(validator.validate(invalid, schema: schema).isValid)
+    }
+    
+    // MARK: - PatternProperties Tests
+    
+    func testPatternPropertiesValidation() throws {
+        let validator = InstanceValidator()
+        
+        // Schema with patternProperties - properties starting with uppercase must be strings
+        let schema: [String: Any] = [
+            "$id": "urn:test",
+            "name": "T",
+            "type": "object",
+            "patternProperties": [
+                "^[A-Z]": ["type": "string"]
+            ]
+        ]
+        
+        // Valid - uppercase properties are strings
+        let valid: [String: Any] = [
+            "Name": "John",
+            "Age": "thirty",
+            "lowercase": 123  // lowercase property, no constraint
+        ]
+        XCTAssertTrue(validator.validate(valid, schema: schema).isValid)
+        
+        // Invalid - uppercase property is not a string
+        let invalid: [String: Any] = [
+            "Name": 123,
+            "lowercase": "test"
+        ]
+        XCTAssertFalse(validator.validate(invalid, schema: schema).isValid)
+    }
+    
+    func testPatternPropertiesWithMultiplePatterns() throws {
+        let validator = InstanceValidator()
+        
+        // Schema with multiple patternProperties patterns
+        let schema: [String: Any] = [
+            "$id": "urn:test",
+            "name": "T",
+            "type": "object",
+            "patternProperties": [
+                "^str_": ["type": "string"],
+                "^num_": ["type": "number"]
+            ]
+        ]
+        
+        // Valid - properties match their patterns
+        let valid: [String: Any] = [
+            "str_name": "John",
+            "str_city": "NYC",
+            "num_age": 30,
+            "num_score": 95.5,
+            "other": true  // no pattern match, no constraint
+        ]
+        XCTAssertTrue(validator.validate(valid, schema: schema).isValid)
+        
+        // Invalid - str_ property is not a string
+        let invalid1: [String: Any] = [
+            "str_name": 123
+        ]
+        XCTAssertFalse(validator.validate(invalid1, schema: schema).isValid)
+        
+        // Invalid - num_ property is not a number
+        let invalid2: [String: Any] = [
+            "num_age": "thirty"
+        ]
+        XCTAssertFalse(validator.validate(invalid2, schema: schema).isValid)
+    }
+    
+    // MARK: - Unit Keyword Tests
+    
+    func testUnitKeywordInSchema() throws {
+        let validator = SchemaValidator(options: SchemaValidatorOptions(extended: true))
+        
+        // Schema with 'unit' annotation keyword
+        let schema: [String: Any] = [
+            "$id": "urn:test",
+            "name": "Speed",
+            "type": "object",
+            "properties": [
+                "velocity": [
+                    "type": "number",
+                    "unit": "m/s"
+                ],
+                "acceleration": [
+                    "type": "number",
+                    "unit": "m/s^2"
+                ]
+            ]
+        ]
+        
+        // Unit keyword should be accepted without error
+        XCTAssertTrue(validator.validate(schema).isValid)
+    }
 }

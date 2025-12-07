@@ -4,12 +4,13 @@
 import Foundation
 
 /// Validates JSON instances against JSON Structure schemas.
-public class InstanceValidator: @unchecked Sendable {
+public class InstanceValidator {
     private var options: InstanceValidatorOptions
     private var errors: [ValidationError] = []
     private var rootSchema: [String: Any] = [:]
     private var enabledExtensions: Set<String> = []
     private var sourceLocator: JsonSourceLocator?
+    private var loadedImports: [String: [String: Any]?] = [:]
     
     // Regular expressions for format validation
     private static let dateRegex = try! NSRegularExpression(pattern: #"^\d{4}-\d{2}-\d{2}$"#)
@@ -18,9 +19,6 @@ public class InstanceValidator: @unchecked Sendable {
     private static let durationRegex = try! NSRegularExpression(pattern: #"^P(?:\d+Y)?(?:\d+M)?(?:\d+D)?(?:T(?:\d+H)?(?:\d+M)?(?:\d+(?:\.\d+)?S)?)?$|^P\d+W$"#)
     private static let uuidRegex = try! NSRegularExpression(pattern: #"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"#)
     private static let jsonPtrRegex = try! NSRegularExpression(pattern: #"^(?:|(?:/(?:[^~/]|~[01])*)*)$"#)
-    
-    /// Tolerance for floating-point comparison in multipleOf validation.
-    private static let floatComparisonTolerance: Double = 1e-10
     
     /// Creates a new InstanceValidator with the given options.
     public init(options: InstanceValidatorOptions = InstanceValidatorOptions()) {
@@ -38,6 +36,7 @@ public class InstanceValidator: @unchecked Sendable {
         }
         
         rootSchema = schemaMap
+        loadedImports = [:]
         detectEnabledExtensions()
         
         // Handle $root
@@ -50,7 +49,7 @@ public class InstanceValidator: @unchecked Sendable {
             targetSchema = resolved
         }
         
-        validateInstance(instance, targetSchema, "#")
+        validateInstance(instance, targetSchema, "#", 0)
         
         return result()
     }
@@ -101,14 +100,20 @@ public class InstanceValidator: @unchecked Sendable {
     
     // MARK: - Instance Validation
     
-    private func validateInstance(_ instance: Any, _ schema: [String: Any], _ path: String) {
+    private func validateInstance(_ instance: Any, _ schema: [String: Any], _ path: String, _ depth: Int = 0) {
+        // Check max depth
+        if depth > options.maxValidationDepth {
+            addError(path, "Maximum validation depth (\(options.maxValidationDepth)) exceeded", instanceMaxDepthExceeded)
+            return
+        }
+        
         // Handle $ref
         if let ref = schema["$ref"] as? String {
             guard let resolved = resolveRef(ref) else {
                 addError(path, "Cannot resolve $ref: \(ref)", instanceRefUnresolved)
                 return
             }
-            validateInstance(instance, resolved, path)
+            validateInstance(instance, resolved, path, depth + 1)
             return
         }
         
@@ -129,7 +134,7 @@ public class InstanceValidator: @unchecked Sendable {
                 if let resolvedType = resolved["type"] {
                     merged["type"] = resolvedType
                 }
-                validateInstance(instance, merged, path)
+                validateInstance(instance, merged, path, depth + 1)
                 return
             }
         }
@@ -204,7 +209,7 @@ public class InstanceValidator: @unchecked Sendable {
                     merged["required"] = Array(mergedRequired)
                 }
                 
-                validateInstance(instance, merged, path)
+                validateInstance(instance, merged, path, depth + 1)
                 return
             }
         }
@@ -218,7 +223,7 @@ public class InstanceValidator: @unchecked Sendable {
                 tempValidator.enabledExtensions = enabledExtensions
                 var unionSchema = schema
                 unionSchema["type"] = t
-                tempValidator.validateInstance(instance, unionSchema, path)
+                tempValidator.validateInstance(instance, unionSchema, path, depth + 1)
                 if tempValidator.errors.isEmpty {
                     valid = true
                     break
@@ -333,7 +338,7 @@ public class InstanceValidator: @unchecked Sendable {
             break
             
         case "null":
-            if !(instance is NSNull) && instance as AnyObject !== NSNull() {
+            if !(instance is NSNull) {
                 addError(path, "Expected null, got \(type(of: instance))", instanceNullExpected)
             }
             
@@ -353,43 +358,37 @@ public class InstanceValidator: @unchecked Sendable {
             }
             
         case "integer", "int32":
-            validateInt32(instance, path)
+            validateIntRange(instance, Decimal(Int32.min), Decimal(Int32.max), "int32", path)
             
         case "int8":
-            validateIntRange(instance, -128, 127, "int8", path)
+            validateIntRange(instance, Decimal(-128), Decimal(127), "int8", path)
             
         case "uint8":
-            validateIntRange(instance, 0, 255, "uint8", path)
+            validateIntRange(instance, Decimal(0), Decimal(255), "uint8", path)
             
         case "int16":
-            validateIntRange(instance, -32768, 32767, "int16", path)
+            validateIntRange(instance, Decimal(-32768), Decimal(32767), "int16", path)
             
         case "uint16":
-            validateIntRange(instance, 0, 65535, "uint16", path)
+            validateIntRange(instance, Decimal(0), Decimal(65535), "uint16", path)
             
         case "uint32":
-            validateIntRange(instance, 0, 4294967295, "uint32", path)
+            validateIntRange(instance, Decimal(0), Decimal(4294967295), "uint32", path)
             
         case "int64":
-            validateStringInt(instance, Int64.min, Int64.max, "int64", path)
+            validateStringEncodedInt(instance, Decimal(Int64.min), Decimal(Int64.max), "int64", path)
             
         case "uint64":
-            validateStringUInt(instance, UInt64.min, UInt64.max, "uint64", path)
+            validateStringEncodedInt(instance, Decimal(0), Decimal(UInt64.max), "uint64", path)
             
-        case "int128", "uint128":
-            // For int128/uint128, just validate it's a string that looks like an integer
-            guard let str = instance as? String else {
-                addError(path, "Expected \(typeStr) as string, got \(type(of: instance))", instanceStringNotExpected)
-                return
-            }
-            // Simple validation - check if it's a valid integer string
-            let pattern = typeStr == "int128" ? #"^-?\d+$"# : #"^\d+$"#
-            if let regex = try? NSRegularExpression(pattern: pattern) {
-                let range = NSRange(str.startIndex..., in: str)
-                if regex.firstMatch(in: str, range: range) == nil {
-                    addError(path, "Invalid \(typeStr) format", instanceIntegerExpected)
-                }
-            }
+        case "int128":
+            let min128 = Decimal(string: "-170141183460469231731687303715884105728")!
+            let max128 = Decimal(string: "170141183460469231731687303715884105727")!
+            validateStringEncodedInt(instance, min128, max128, "int128", path)
+            
+        case "uint128":
+            let maxU128 = Decimal(string: "340282366920938463463374607431768211455")!
+            validateStringEncodedInt(instance, Decimal(0), maxU128, "uint128", path)
             
         case "float", "float8", "double":
             if !isNumber(instance) {
@@ -397,13 +396,7 @@ public class InstanceValidator: @unchecked Sendable {
             }
             
         case "decimal":
-            if let str = instance as? String {
-                if Double(str) == nil {
-                    addError(path, "Invalid decimal format", instanceDecimalExpected)
-                }
-            } else {
-                addError(path, "Expected decimal as string, got \(type(of: instance))", instanceDecimalExpected)
-            }
+            validateStringEncodedDecimal(instance, "decimal", path)
             
         case "date":
             guard let str = instance as? String else {
@@ -502,59 +495,50 @@ public class InstanceValidator: @unchecked Sendable {
     
     // MARK: - Integer Validation
     
-    private func validateInt32(_ instance: Any, _ path: String) {
-        guard let num = toDouble(instance) else {
-            addError(path, "Expected integer", instanceIntegerExpected)
-            return
-        }
-        if num != num.rounded() {
-            addError(path, "Expected integer", instanceIntegerExpected)
-            return
-        }
-        if num < -2147483648 || num > 2147483647 {
-            addError(path, "int32 value out of range", instanceIntRangeInvalid)
-        }
-    }
-    
-    private func validateIntRange(_ instance: Any, _ min: Double, _ max: Double, _ typeName: String, _ path: String) {
-        guard let num = toDouble(instance) else {
+    private func validateIntRange(_ instance: Any, _ min: Decimal, _ max: Decimal, _ typeName: String, _ path: String) {
+        guard let dec = toDecimalNumeric(instance) else {
             addError(path, "Expected \(typeName)", instanceIntegerExpected)
             return
         }
-        if num != num.rounded() {
+        if !isIntegerDecimal(dec) {
             addError(path, "Expected \(typeName)", instanceIntegerExpected)
             return
         }
-        if num < min || num > max {
+        if dec < min || dec > max {
             addError(path, "\(typeName) value out of range", instanceIntRangeInvalid)
         }
     }
     
-    private func validateStringInt(_ instance: Any, _ min: Int64, _ max: Int64, _ typeName: String, _ path: String) {
+    /// Validate string-encoded integers (int64, uint64, int128, uint128)
+    /// Per spec, these types have base type "string" to preserve precision
+    private func validateStringEncodedInt(_ instance: Any, _ min: Decimal, _ max: Decimal, _ typeName: String, _ path: String) {
         guard let str = instance as? String else {
-            addError(path, "Expected \(typeName) as string, got \(type(of: instance))", instanceStringNotExpected)
+            addError(path, "\(typeName) must be a string", instanceStringExpected)
             return
         }
-        guard let val = Int64(str) else {
+        guard let dec = Decimal(string: str) else {
             addError(path, "Invalid \(typeName) format", instanceIntegerExpected)
             return
         }
-        if val < min || val > max {
+        if !isIntegerDecimal(dec) {
+            addError(path, "\(typeName) must be an integer", instanceIntegerExpected)
+            return
+        }
+        if dec < min || dec > max {
             addError(path, "\(typeName) value out of range", instanceIntRangeInvalid)
         }
     }
     
-    private func validateStringUInt(_ instance: Any, _ min: UInt64, _ max: UInt64, _ typeName: String, _ path: String) {
+    /// Validate string-encoded decimal
+    /// Per spec, decimal type has base type "string" to preserve precision
+    private func validateStringEncodedDecimal(_ instance: Any, _ typeName: String, _ path: String) {
         guard let str = instance as? String else {
-            addError(path, "Expected \(typeName) as string, got \(type(of: instance))", instanceStringNotExpected)
+            addError(path, "\(typeName) must be a string", instanceStringExpected)
             return
         }
-        guard let val = UInt64(str) else {
-            addError(path, "Invalid \(typeName) format", instanceIntegerExpected)
+        guard Decimal(string: str) != nil else {
+            addError(path, "Invalid \(typeName) format", instanceDecimalExpected)
             return
-        }
-        if val < min || val > max {
-            addError(path, "\(typeName) value out of range", instanceIntRangeInvalid)
         }
     }
     
@@ -610,6 +594,37 @@ public class InstanceValidator: @unchecked Sendable {
                 }
             }
         }
+        
+        // Validate 'has' keyword - at least one property value must match the schema
+        if let hasSchema = schema["has"] as? [String: Any] {
+            var hasMatch = false
+            for (_, val) in obj {
+                let tempValidator = InstanceValidator(options: options)
+                let tempResult = tempValidator.validate(val, schema: hasSchema)
+                if tempResult.isValid {
+                    hasMatch = true
+                    break
+                }
+            }
+            if !hasMatch {
+                addError(path, "Object has no property value matching 'has' schema", instanceHasNoMatch)
+            }
+        }
+        
+        // Validate patternProperties - properties matching pattern must validate against schema
+        if let patternProps = schema["patternProperties"] as? [String: Any] {
+            for (pattern, patternSchema) in patternProps {
+                if let regex = try? NSRegularExpression(pattern: pattern),
+                   let patternSchemaMap = patternSchema as? [String: Any] {
+                    for (key, val) in obj {
+                        let range = NSRange(key.startIndex..., in: key)
+                        if regex.firstMatch(in: key, range: range) != nil {
+                            validateInstance(val, patternSchemaMap, "\(path)/\(key)")
+                        }
+                    }
+                }
+            }
+        }
     }
     
     private func validateObjectConstraints(_ obj: [String: Any], _ schema: [String: Any], _ path: String) {
@@ -653,6 +668,37 @@ public class InstanceValidator: @unchecked Sendable {
                     let isReservedAtRoot = path == "#" && (key == "$schema" || key == "$uses")
                     if (properties == nil || properties?[key] == nil) && !isReservedAtRoot {
                         validateInstance(val, apSchema, "\(path)/\(key)")
+                    }
+                }
+            }
+        }
+        
+        // Validate 'has' keyword - at least one property value must match the schema
+        if let hasSchema = schema["has"] as? [String: Any] {
+            var hasMatch = false
+            for (_, val) in obj {
+                let tempValidator = InstanceValidator(options: options)
+                let tempResult = tempValidator.validate(val, schema: hasSchema)
+                if tempResult.isValid {
+                    hasMatch = true
+                    break
+                }
+            }
+            if !hasMatch {
+                addError(path, "Object has no property value matching 'has' schema", instanceHasNoMatch)
+            }
+        }
+        
+        // Validate patternProperties - properties matching pattern must validate against schema
+        if let patternProps = schema["patternProperties"] as? [String: Any] {
+            for (pattern, patternSchema) in patternProps {
+                if let regex = try? NSRegularExpression(pattern: pattern),
+                   let patternSchemaMap = patternSchema as? [String: Any] {
+                    for (key, val) in obj {
+                        let range = NSRange(key.startIndex..., in: key)
+                        if regex.firstMatch(in: key, range: range) != nil {
+                            validateInstance(val, patternSchemaMap, "\(path)/\(key)")
+                        }
                     }
                 }
             }
@@ -881,12 +927,12 @@ public class InstanceValidator: @unchecked Sendable {
     
     // MARK: - Conditional Validation
     
-    private func validateConditionals(_ instance: Any, _ schema: [String: Any], _ path: String) {
+    private func validateConditionals(_ instance: Any, _ schema: [String: Any], _ path: String, _ depth: Int = 0) {
         // allOf
         if let allOf = schema["allOf"] as? [Any] {
             for (i, subSchema) in allOf.enumerated() {
                 if let subSchemaMap = subSchema as? [String: Any] {
-                    validateInstance(instance, subSchemaMap, "\(path)/allOf[\(i)]")
+                    validateInstance(instance, subSchemaMap, "\(path)/allOf[\(i)]", depth + 1)
                 }
             }
         }
@@ -899,7 +945,7 @@ public class InstanceValidator: @unchecked Sendable {
                     let tempValidator = InstanceValidator(options: options)
                     tempValidator.rootSchema = rootSchema
                     tempValidator.enabledExtensions = enabledExtensions
-                    tempValidator.validateInstance(instance, subSchemaMap, "\(path)/anyOf[\(i)]")
+                    tempValidator.validateInstance(instance, subSchemaMap, "\(path)/anyOf[\(i)]", depth + 1)
                     if tempValidator.errors.isEmpty {
                         valid = true
                         break
@@ -919,7 +965,7 @@ public class InstanceValidator: @unchecked Sendable {
                     let tempValidator = InstanceValidator(options: options)
                     tempValidator.rootSchema = rootSchema
                     tempValidator.enabledExtensions = enabledExtensions
-                    tempValidator.validateInstance(instance, subSchemaMap, "\(path)/oneOf[\(i)]")
+                    tempValidator.validateInstance(instance, subSchemaMap, "\(path)/oneOf[\(i)]", depth + 1)
                     if tempValidator.errors.isEmpty {
                         validCount += 1
                     }
@@ -935,7 +981,7 @@ public class InstanceValidator: @unchecked Sendable {
             let tempValidator = InstanceValidator(options: options)
             tempValidator.rootSchema = rootSchema
             tempValidator.enabledExtensions = enabledExtensions
-            tempValidator.validateInstance(instance, not, "\(path)/not")
+            tempValidator.validateInstance(instance, not, "\(path)/not", depth + 1)
             if tempValidator.errors.isEmpty {
                 addError(path, "Instance must not match \"not\" schema", instanceNotMatched)
             }
@@ -946,16 +992,16 @@ public class InstanceValidator: @unchecked Sendable {
             let tempValidator = InstanceValidator(options: options)
             tempValidator.rootSchema = rootSchema
             tempValidator.enabledExtensions = enabledExtensions
-            tempValidator.validateInstance(instance, ifSchema, "\(path)/if")
+            tempValidator.validateInstance(instance, ifSchema, "\(path)/if", depth + 1)
             let ifValid = tempValidator.errors.isEmpty
             
             if ifValid {
                 if let thenSchema = schema["then"] as? [String: Any] {
-                    validateInstance(instance, thenSchema, "\(path)/then")
+                    validateInstance(instance, thenSchema, "\(path)/then", depth + 1)
                 }
             } else {
                 if let elseSchema = schema["else"] as? [String: Any] {
-                    validateInstance(instance, elseSchema, "\(path)/else")
+                    validateInstance(instance, elseSchema, "\(path)/else", depth + 1)
                 }
             }
         }
@@ -985,35 +1031,76 @@ public class InstanceValidator: @unchecked Sendable {
                         }
                     }
                 }
+                if let format = schema["format"] as? String {
+                    switch format {
+                    case "date":
+                        if !matchesRegex(str, InstanceValidator.dateRegex) {
+                            addError(path, "Invalid date format", instanceFormatDateInvalid)
+                        }
+                    case "time":
+                        if !matchesRegex(str, InstanceValidator.timeRegex) {
+                            addError(path, "Invalid time format", instanceFormatTimeInvalid)
+                        }
+                    case "datetime":
+                        if !matchesRegex(str, InstanceValidator.datetimeRegex) {
+                            addError(path, "Invalid datetime format", instanceFormatDatetimeInvalid)
+                        }
+                    case "duration":
+                        if !matchesRegex(str, InstanceValidator.durationRegex) {
+                            addError(path, "Invalid duration format", instanceDurationFormatInvalid)
+                        }
+                    case "uuid":
+                        if !matchesRegex(str, InstanceValidator.uuidRegex) {
+                            addError(path, "Invalid UUID format", instanceFormatUUIDInvalid)
+                        }
+                    case "uri":
+                        if URL(string: str) == nil {
+                            addError(path, "Invalid URI format", instanceFormatURIInvalid)
+                        }
+                    case "jsonpointer":
+                        if !matchesRegex(str, InstanceValidator.jsonPtrRegex) {
+                            addError(path, "Invalid JSON Pointer format", instanceJSONPointerFormatInvalid)
+                        }
+                    default:
+                        break
+                    }
+                }
+                if let contentEncoding = schema["contentEncoding"] as? String {
+                    if contentEncoding.lowercased() == "base64" {
+                        if Data(base64Encoded: str) == nil {
+                            addError(path, "Invalid base64 encoding", instanceBinaryEncodingInvalid)
+                        }
+                    }
+                }
             }
         }
         
         // Numeric constraints
         if isNumericType(typeStr) {
-            if let num = toDouble(instance) {
-                if let min = toDouble(schema["minimum"] as Any) {
-                    if num < min {
-                        addError(path, "Value \(num) is less than minimum \(min)", instanceNumberMinimum)
-                    }
+            if let num = toDecimal(instance) {
+                if let min = toDecimal(schema["minimum"] as Any), num < min {
+                    addError(path, "Value \(num) is less than minimum \(min)", instanceNumberMinimum)
                 }
-                if let max = toDouble(schema["maximum"] as Any) {
-                    if num > max {
-                        addError(path, "Value \(num) exceeds maximum \(max)", instanceNumberMaximum)
-                    }
+                if let max = toDecimal(schema["maximum"] as Any), num > max {
+                    addError(path, "Value \(num) exceeds maximum \(max)", instanceNumberMaximum)
                 }
-                if let exMin = toDouble(schema["exclusiveMinimum"] as Any) {
-                    if num <= exMin {
-                        addError(path, "Value \(num) is not greater than exclusiveMinimum \(exMin)", instanceNumberExclusiveMinimum)
-                    }
+                if let exMin = toDecimal(schema["exclusiveMinimum"] as Any), num <= exMin {
+                    addError(path, "Value \(num) is not greater than exclusiveMinimum \(exMin)", instanceNumberExclusiveMinimum)
                 }
-                if let exMax = toDouble(schema["exclusiveMaximum"] as Any) {
-                    if num >= exMax {
-                        addError(path, "Value \(num) is not less than exclusiveMaximum \(exMax)", instanceNumberExclusiveMaximum)
-                    }
+                if let exMax = toDecimal(schema["exclusiveMaximum"] as Any), num >= exMax {
+                    addError(path, "Value \(num) is not less than exclusiveMaximum \(exMax)", instanceNumberExclusiveMaximum)
                 }
-                if let multipleOf = toDouble(schema["multipleOf"] as Any) {
-                    if abs(num.truncatingRemainder(dividingBy: multipleOf)) > InstanceValidator.floatComparisonTolerance {
-                        addError(path, "Value \(num) is not a multiple of \(multipleOf)", instanceNumberMultipleOf)
+                if let multipleOf = toDecimal(schema["multipleOf"] as Any) {
+                    if multipleOf == 0 {
+                        addError(path, "multipleOf must be non-zero", instanceNumberMultipleOf)
+                    } else {
+                        var quotient = Decimal()
+                        var lhs = num
+                        var rhs = multipleOf
+                        NSDecimalDivide(&quotient, &lhs, &rhs, .plain)
+                        if !isIntegerDecimal(quotient) {
+                            addError(path, "Value \(num) is not a multiple of \(multipleOf)", instanceNumberMultipleOf)
+                        }
                     }
                 }
             }
@@ -1112,88 +1199,117 @@ public class InstanceValidator: @unchecked Sendable {
     }
     
     // MARK: - Helper Methods
+
+    private func isNumericType(_ type: String) -> Bool {
+        let numericTypes: Set<String> = [
+            "number", "integer", "int32", "int8", "uint8", "int16", "uint16", "uint32",
+            "int64", "uint64", "int128", "uint128", "float", "float8", "double", "decimal"
+        ]
+        return numericTypes.contains(type)
+    }
     
     private func resolveRef(_ ref: String) -> [String: Any]? {
-        guard !rootSchema.isEmpty, ref.hasPrefix("#/") else {
-            return nil
+        // Internal JSON Pointer
+        if ref.hasPrefix("#/") {
+            return resolveJsonPointer(ref, rootSchema)
         }
-        
-        let parts = ref.dropFirst(2).split(separator: "/")
-        var current: Any = rootSchema
-        
+        // External ref via referenceResolver
+        if let resolver = options.referenceResolver {
+            return resolver(ref)
+        }
+        return nil
+    }
+
+    private func resolveJsonPointer(_ pointer: String, _ root: [String: Any]) -> [String: Any]? {
+        guard !root.isEmpty else { return nil }
+        let parts = pointer.dropFirst(2).split(separator: "/")
+        var current: Any = root
+        var index = 0
         for part in parts {
             guard let currentMap = current as? [String: Any] else {
                 return nil
             }
-            
+
             // Unescape JSON Pointer
             var unescaped = String(part)
             unescaped = unescaped.replacingOccurrences(of: "~1", with: "/")
             unescaped = unescaped.replacingOccurrences(of: "~0", with: "~")
-            
-            guard let val = currentMap[unescaped] else {
+
+            if let val = currentMap[unescaped] {
+                current = val
+            } else if options.allowImport {
+                // Check for $import/$importdefs
+                if let importUri = currentMap["$import"] as? String ?? currentMap["$importdefs"] as? String {
+                    if let imported = loadImport(importUri) {
+                        let hasImportDefs = currentMap["$importdefs"] != nil
+                        let remaining = Array(parts.dropFirst(index))
+                        let remainingPath = "#/" + remaining.joined(separator: "/")
+                        if hasImportDefs {
+                            if let defs = imported["definitions"] as? [String: Any] {
+                                return resolveJsonPointer(remainingPath, defs)
+                            }
+                        } else {
+                            return resolveJsonPointer(remainingPath, imported)
+                        }
+                    }
+                }
+                return nil
+            } else {
                 return nil
             }
-            current = val
+            index += 1
         }
-        
         return current as? [String: Any]
+    }
+
+    private func loadImport(_ uri: String) -> [String: Any]? {
+        if let cached = loadedImports[uri] {
+            return cached
+        }
+        var loaded: [String: Any]? = nil
+        if let loader = options.importLoader {
+            loaded = loader(uri)
+        } else if let ext = options.externalSchemas, let schema = ext[uri] as? [String: Any] {
+            loaded = schema
+        }
+        loadedImports[uri] = loaded
+        return loaded
     }
     
     private func deepEqual(_ a: Any, _ b: Any) -> Bool {
-        // Handle null values
         if a is NSNull && b is NSNull {
             return true
         }
-        
-        // Handle primitive types directly
         if let aStr = a as? String, let bStr = b as? String {
             return aStr == bStr
         }
         if let aBool = a as? Bool, let bBool = b as? Bool {
             return aBool == bBool
         }
-        if let aNum = toDouble(a), let bNum = toDouble(b) {
-            return aNum == bNum
+        if let aDec = toDecimal(a), let bDec = toDecimal(b) {
+            return aDec == bDec
         }
-        
-        // For arrays and objects, wrap in a container for JSON serialization
         let aWrapped: [String: Any] = ["value": a]
         let bWrapped: [String: Any] = ["value": b]
-        
         guard let aData = try? JSONSerialization.data(withJSONObject: aWrapped, options: .sortedKeys),
               let bData = try? JSONSerialization.data(withJSONObject: bWrapped, options: .sortedKeys) else {
             return false
         }
         return aData == bData
     }
-    
+
     private func isNumber(_ value: Any) -> Bool {
-        return value is Double || value is Int || value is Float
+        if value is String { return false }
+        return toDecimal(value) != nil
     }
-    
-    private func toDouble(_ value: Any) -> Double? {
-        if let d = value as? Double { return d }
-        if let i = value as? Int { return Double(i) }
-        if let f = value as? Float { return Double(f) }
-        return nil
-    }
-    
+
     /// Serializes any value to a comparable string for uniqueness checks.
     private func serializeValue(_ value: Any) -> String? {
-        if value is NSNull {
-            return "null"
-        }
-        if let str = value as? String {
-            return "\"\(str)\""
-        }
-        if let bool = value as? Bool {
-            return bool ? "true" : "false"
-        }
-        if let num = toDouble(value) {
-            return String(num)
-        }
-        // For arrays and objects, wrap in a container
+        if value is NSNull { return "null" }
+        if let str = value as? String { return "\"\(str)\"" }
+        if let bool = value as? Bool { return bool ? "true" : "false" }
+        if let dec = toDecimal(value) { return dec.description }
+
         let wrapped: [String: Any] = ["v": value]
         if let data = try? JSONSerialization.data(withJSONObject: wrapped, options: .sortedKeys),
            let str = String(data: data, encoding: .utf8) {
@@ -1201,18 +1317,82 @@ public class InstanceValidator: @unchecked Sendable {
         }
         return nil
     }
-    
+
     private func matchesRegex(_ str: String, _ regex: NSRegularExpression) -> Bool {
         let range = NSRange(str.startIndex..., in: str)
         return regex.firstMatch(in: str, range: range) != nil
     }
+
+    /// Checks if a value is actually a boolean (not just an NSNumber that could bridge to Bool).
+    /// On Linux, NSNumber bridges to all compatible types, so `value is Bool` returns true for integers too.
+    private func isBoolValue(_ value: Any) -> Bool {
+        // Check for Swift Bool first
+        if type(of: value) == Bool.self {
+            return true
+        }
+        // For NSNumber, check the objCType - 'c' or 'B' indicates a boolean
+        if let num = value as? NSNumber {
+            let objCType = String(cString: num.objCType)
+            return objCType == "c" || objCType == "B"
+        }
+        return false
+    }
     
-    /// Converts any numeric value to Int.
-    private func toInt(_ value: Any) -> Int? {
-        if let i = value as? Int { return i }
-        if let d = value as? Double { return Int(d) }
-        if let f = value as? Float { return Int(f) }
+    /// Converts numeric values to Decimal (NOT strings). Used for numeric type validation.
+    private func toDecimalNumeric(_ value: Any) -> Decimal? {
+        if value is NSNull { return nil }
+        if isBoolValue(value) { return nil }
+        if let dec = value as? Decimal { return dec }
+        if let d = value as? Double {
+            return Decimal(d)
+        }
+        if let i = value as? Int {
+            return Decimal(i)
+        }
+        if let f = value as? Float {
+            return Decimal(Double(f))
+        }
+        if let num = value as? NSNumber {
+            // Only accept if it's not a boolean
+            return num.decimalValue
+        }
+        // Do NOT accept strings for numeric types
         return nil
+    }
+    
+    /// Converts to Decimal if possible (string or number). Used for numeric constraints.
+    private func toDecimal(_ value: Any) -> Decimal? {
+        if value is NSNull { return nil }
+        if isBoolValue(value) { return nil }
+        if let dec = value as? Decimal { return dec }
+        if let d = value as? Double {
+            return Decimal(d)
+        }
+        if let i = value as? Int {
+            return Decimal(i)
+        }
+        if let f = value as? Float {
+            return Decimal(Double(f))
+        }
+        if let num = value as? NSNumber {
+            return num.decimalValue
+        }
+        if let str = value as? String {
+            return Decimal(string: str)
+        }
+        return nil
+    }
+
+    private func isIntegerDecimal(_ dec: Decimal) -> Bool {
+        var value = dec
+        var rounded = Decimal()
+        NSDecimalRound(&rounded, &value, 0, .plain)
+        return rounded == dec
+    }
+
+    private func toInt(_ value: Any) -> Int? {
+        guard let dec = toDecimal(value), isIntegerDecimal(dec) else { return nil }
+        return NSDecimalNumber(decimal: dec).intValue
     }
     
     // MARK: - Error Handling
