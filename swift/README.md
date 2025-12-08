@@ -38,6 +38,46 @@ Then add `JSONStructure` to your target dependencies:
 )
 ```
 
+## Versioning
+
+The Swift SDK uses **git tags** for versioning, which is the standard approach for Swift Package Manager (SPM). No separate publish step is required.
+
+### How It Works
+
+When you specify a version dependency in your `Package.swift`:
+
+```swift
+.package(url: "https://github.com/json-structure/sdk", from: "1.0.0")
+```
+
+Swift Package Manager:
+1. Fetches the repository
+2. Finds the appropriate git tag (e.g., `v1.0.0` or `1.0.0`)
+3. Checks out that tag and reads `Package.swift`
+
+### Version Tags
+
+Releases are tagged following semantic versioning:
+- `v1.0.0` - Major release
+- `v1.1.0` - Minor release with new features
+- `v1.1.1` - Patch release with bug fixes
+
+### Specifying Versions
+
+```swift
+// Minimum version (recommended)
+.package(url: "https://github.com/json-structure/sdk", from: "1.0.0")
+
+// Exact version
+.package(url: "https://github.com/json-structure/sdk", exact: "1.2.3")
+
+// Version range
+.package(url: "https://github.com/json-structure/sdk", "1.0.0"..<"2.0.0")
+
+// Branch (for development)
+.package(url: "https://github.com/json-structure/sdk", branch: "main")
+```
+
 ## Usage
 
 ### Schema Validation
