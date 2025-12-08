@@ -3,6 +3,8 @@
 //! These tests require the cli feature to be enabled:
 //! cargo test --features cli
 
+#![cfg(feature = "cli")]
+
 use std::fs::File;
 use std::io::Write;
 
