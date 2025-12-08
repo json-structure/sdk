@@ -36,8 +36,10 @@ jobs:
         run: |
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             VERSION=${GITHUB_REF#refs/tags/v}
+            # Extract only numeric version (strip any suffix like -alpha, -beta, -dev)
+            VERSION=$(echo "$VERSION" | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
           else
-            VERSION="0.1.0-dev"
+            VERSION="0.1.0"
           fi
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
           echo "Extracted version: $VERSION"
@@ -86,8 +88,10 @@ jobs:
         run: |
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             VERSION=${GITHUB_REF#refs/tags/v}
+            # Extract only numeric version (strip any suffix like -alpha, -beta, -dev)
+            VERSION=$(echo "$VERSION" | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
           else
-            VERSION="0.1.0-dev"
+            VERSION="0.1.0"
           fi
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
           echo "Extracted version: $VERSION"
@@ -141,8 +145,10 @@ jobs:
         run: |
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             VERSION=${GITHUB_REF#refs/tags/v}
+            # Extract only numeric version (strip any suffix like -alpha, -beta, -dev)
+            VERSION=$(echo "$VERSION" | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
           else
-            VERSION="0.1.0-dev"
+            VERSION="0.1.0"
           fi
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
           echo "Extracted version: $VERSION"
