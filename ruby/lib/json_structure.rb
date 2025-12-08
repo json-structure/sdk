@@ -4,6 +4,7 @@ require 'rbconfig'
 require 'ffi'
 
 require_relative 'json_structure/version'
+require_relative 'json_structure/binary_installer'
 require_relative 'json_structure/ffi'
 require_relative 'json_structure/validation_result'
 require_relative 'json_structure/schema_validator'

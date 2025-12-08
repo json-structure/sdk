@@ -18,10 +18,11 @@ module JsonStructure
                end
 
     # Try to load from several possible locations
+    # Priority: downloaded binaries (ext/), system paths, then local build (fallback for development)
     lib_paths = [
-      ::File.expand_path("../../../../c/build/#{lib_name}", __FILE__),
       ::File.expand_path("../../../ext/#{lib_name}", __FILE__),
-      lib_name # Let FFI search in standard library paths
+      lib_name, # Let FFI search in standard library paths
+      ::File.expand_path("../../../../c/build/#{lib_name}", __FILE__) # Fallback for local development
     ]
 
     loaded = false

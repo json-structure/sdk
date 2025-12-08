@@ -30,12 +30,16 @@ Or install it yourself as:
 gem install json_structure
 ```
 
-### Prerequisites
+### Binary Distribution
 
-The gem requires the JSON Structure C library to be built. If you're installing from source:
+**The gem automatically downloads pre-built C library binaries from GitHub releases.** No compilation is required during installation.
 
-1. Ensure you have CMake 3.14+ and a C99 compiler installed
-2. The C library will be built automatically when running tests
+Supported platforms:
+- Linux (x86_64, arm64)
+- macOS (x86_64, arm64)
+- Windows (x86_64)
+
+If you're developing the gem itself or contributing, see the Development section below for building from source.
 
 ## Usage
 
@@ -164,29 +168,44 @@ warning_msgs = result.warning_messages # Array of warning messages
 
 After checking out the repo, run `bundle install` to install dependencies.
 
-Build the C library:
+### For Local Development (Building from Source)
+
+When developing the gem with the C library in the same repository:
 
 ```bash
-rake build_c_lib
+# Build the C library locally
+rake build_c_lib_local
+
+# Run the tests
+rake test
 ```
 
-Run the tests:
+The `rake test` task will attempt to download a pre-built binary first. If that fails (e.g., during development), it will fall back to building the C library from source if available.
+
+### For Production Use
+
+Production installations automatically download pre-built binaries from GitHub releases. No local build is required:
 
 ```bash
-rake test
+# Just install and use
+gem install json_structure
+# The binary will be downloaded automatically on first require
 ```
 
 ## Architecture
 
-This Ruby SDK wraps the JSON Structure C library using Ruby's FFI (Foreign Function Interface). The architecture consists of:
+This Ruby SDK treats the JSON Structure C library as an external dependency, downloading pre-built binaries from GitHub releases. The architecture consists of:
 
-1. **C Library** - Core validation logic implemented in C99
-2. **FFI Bindings** (`lib/json_structure/ffi.rb`) - Low-level FFI mappings to C functions
-3. **Ruby Wrappers** - Idiomatic Ruby classes that wrap the FFI calls
+1. **C Library Binaries** - Pre-built shared libraries (`.so`, `.dylib`, `.dll`) distributed via GitHub releases
+2. **Binary Installer** (`lib/json_structure/binary_installer.rb`) - Downloads and installs platform-specific binaries
+3. **FFI Bindings** (`lib/json_structure/ffi.rb`) - Low-level FFI mappings to C functions
+4. **Ruby Wrappers** - Idiomatic Ruby classes that wrap the FFI calls
    - `SchemaValidator` - Schema validation
    - `InstanceValidator` - Instance validation
    - `ValidationResult` - Result container
    - `ValidationError` - Error information
+
+This design allows the Ruby SDK to be distributed independently of the C library source code, treating it as a foreign SDK dependency.
 
 ## Contributing
 

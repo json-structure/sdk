@@ -45,13 +45,22 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install cmake
 
-      - name: Build C library
+      - name: Build C library (for CI testing only - production uses pre-built binaries)
         working-directory: c
         run: |
           mkdir -p build
           cd build
           cmake .. -DCMAKE_BUILD_TYPE=Release -DJS_BUILD_SHARED=ON -DJS_BUILD_TESTS=OFF -DJS_BUILD_EXAMPLES=OFF
           cmake --build .
+
+      - name: Copy C library to ext directory
+        run: |
+          mkdir -p ruby/ext
+          if [ "$RUNNER_OS" == "macOS" ]; then
+            cp c/build/libjson_structure.dylib ruby/ext/
+          else
+            cp c/build/libjson_structure.so ruby/ext/
+          fi
 
       - name: Install Ruby dependencies
         working-directory: ruby

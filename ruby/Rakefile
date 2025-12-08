@@ -1,16 +1,38 @@
 # frozen_string_literal: true
 
 require 'bundler/gem_tasks'
-require 'rspec/core/rake_task'
+require 'fileutils'
 
-RSpec::Core::RakeTask.new(:spec)
+begin
+  require 'rspec/core/rake_task'
+  RSpec::Core::RakeTask.new(:spec)
+rescue LoadError
+  # RSpec not available, skip test tasks
+  desc 'Run tests (requires rspec gem)'
+  task :spec do
+    puts 'RSpec not available. Install with: gem install rspec'
+  end
+end
 
-desc 'Build the C library (shared library for FFI)'
-task :build_c_lib do
-  puts 'Building C library...'
+desc 'Download pre-built C library binary from GitHub releases'
+task :download_binary do
+  require_relative 'lib/json_structure/binary_installer'
+  installer = JsonStructure::BinaryInstaller.new
+  installer.install
+end
+
+desc 'Build the C library locally (for development only)'
+task :build_c_lib_local do
+  puts 'Building C library locally...'
   c_dir = File.expand_path('../c', __dir__)
+  
+  unless Dir.exist?(c_dir)
+    puts 'C library source not found. Skipping local build.'
+    puts 'This is normal when installing from a gem.'
+    next
+  end
+  
   build_dir = File.join(c_dir, 'build')
-
   Dir.mkdir(build_dir) unless Dir.exist?(build_dir)
 
   Dir.chdir(build_dir) do
@@ -18,10 +40,43 @@ task :build_c_lib do
     system('cmake', '--build', '.') || raise('Build failed')
   end
 
+  # Copy to ext directory
+  ext_dir = File.expand_path('ext', __dir__)
+  FileUtils.mkdir_p(ext_dir)
+  
+  lib_name = case RbConfig::CONFIG['host_os']
+             when /darwin|mac os/
+               'libjson_structure.dylib'
+             when /mswin|msys|mingw|cygwin|bccwin|wince|emc/
+               'json_structure.dll'
+             else
+               'libjson_structure.so'
+             end
+  
+  src = File.join(build_dir, lib_name)
+  dst = File.join(ext_dir, lib_name)
+  FileUtils.cp(src, dst) if File.exist?(src)
+  
   puts 'C library built successfully!'
 end
 
-desc 'Run tests (builds C library first if needed)'
-task test: [:build_c_lib, :spec]
+desc 'Run tests (downloads binary first if needed, falls back to local build for development)'
+task :test do
+  # Try to download binary first
+  begin
+    Rake::Task[:download_binary].invoke
+  rescue StandardError => e
+    puts "Binary download failed: #{e.message}"
+    puts "Attempting local build for development..."
+    begin
+      Rake::Task[:build_c_lib_local].invoke
+    rescue StandardError => build_error
+      puts "Local build also failed: #{build_error.message}"
+      raise "Cannot obtain C library binary. Please check the error messages above."
+    end
+  end
+  
+  Rake::Task[:spec].invoke
+end
 
 task default: :test
