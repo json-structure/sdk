@@ -30,7 +30,7 @@ permissions:
 jobs:
   # Build and test job
   build-and-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-4-cores
     # Only run if:
     # - manually triggered (workflow_dispatch)
     # - TypeScript SDK workflow succeeded (workflow_run)
@@ -135,7 +135,7 @@ jobs:
 
   # Publish job - runs after successful build for tag-triggered events or manual dispatch
   publish:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-4-cores
     needs: [build-and-test]
     # Publish on workflow_run (TypeScript SDK completed), direct tag push, or manual dispatch (unless dry-run)
     if: |

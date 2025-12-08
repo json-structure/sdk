@@ -26,7 +26,7 @@ permissions:
 jobs:
   test-macos:
     name: Test Swift on macOS
-    runs-on: macos-14
+    runs-on: macos-latest-xlarge
     
     steps:
       - uses: actions/checkout@v4
@@ -46,7 +46,7 @@ jobs:
 
   test-linux:
     name: Test Swift on Linux
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-4-cores
 
     container:
       image: swift:5.10
@@ -69,7 +69,7 @@ jobs:
 
   lint:
     name: Lint
-    runs-on: macos-14
+    runs-on: macos-latest-xlarge
 
     steps:
       - uses: actions/checkout@v4

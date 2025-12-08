@@ -30,28 +30,28 @@ jobs:
         include:
           # Linux x86_64
           - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
+            os: ubuntu-latest-4-cores
             artifact: jstruct
           # Linux ARM64
           - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
+            os: ubuntu-latest-4-cores
             artifact: jstruct
             cross: true
           # Windows x86_64
           - target: x86_64-pc-windows-msvc
-            os: windows-latest
+            os: windows-latest-8-cores
             artifact: jstruct.exe
           # Windows ARM64
           - target: aarch64-pc-windows-msvc
-            os: windows-latest
+            os: windows-latest-8-cores
             artifact: jstruct.exe
           # macOS x86_64 (Intel)
           - target: x86_64-apple-darwin
-            os: macos-latest
+            os: macos-latest-xlarge
             artifact: jstruct
           # macOS ARM64 (Apple Silicon)
           - target: aarch64-apple-darwin
-            os: macos-latest
+            os: macos-latest-xlarge
             artifact: jstruct
 
     steps:
@@ -106,7 +106,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest-4-cores, windows-latest-8-cores, macos-latest-xlarge]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -130,16 +130,16 @@ jobs:
         include:
           # Native tests (can run directly)
           - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
+            os: ubuntu-latest-4-cores
             artifact: jstruct
           - target: x86_64-pc-windows-msvc
-            os: windows-latest
+            os: windows-latest-8-cores
             artifact: jstruct.exe
           - target: x86_64-apple-darwin
             os: macos-13
             artifact: jstruct
           - target: aarch64-apple-darwin
-            os: macos-latest
+            os: macos-latest-xlarge
             artifact: jstruct
 
     steps:
@@ -216,7 +216,7 @@ jobs:
   package-deb:
     name: Package DEB
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-4-cores
     strategy:
       matrix:
         arch: [amd64, arm64]
@@ -299,7 +299,7 @@ jobs:
   package-rpm:
     name: Package RPM
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-4-cores
     strategy:
       matrix:
         arch: [x86_64, aarch64]
@@ -378,7 +378,7 @@ jobs:
   package-msix:
     name: Package MSIX
     needs: build
-    runs-on: windows-latest
+    runs-on: windows-latest-8-cores
     strategy:
       matrix:
         arch: [x64, arm64]
@@ -514,7 +514,7 @@ jobs:
   package-macos:
     name: Package macOS
     needs: build
-    runs-on: macos-latest
+    runs-on: macos-latest-xlarge
     strategy:
       matrix:
         arch: [x86_64, arm64]
@@ -603,7 +603,7 @@ jobs:
   package-macos-universal:
     name: Package macOS Universal
     needs: build
-    runs-on: macos-latest
+    runs-on: macos-latest-xlarge
 
     steps:
       - uses: actions/checkout@v4
@@ -670,7 +670,7 @@ jobs:
   package-linux-tarball:
     name: Package Linux tarball
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-4-cores
     strategy:
       matrix:
         arch: [x86_64, aarch64]
@@ -716,7 +716,7 @@ jobs:
   package-windows-zip:
     name: Package Windows ZIP
     needs: build
-    runs-on: windows-latest
+    runs-on: windows-latest-8-cores
     strategy:
       matrix:
         arch: [x64, arm64]
@@ -770,7 +770,7 @@ jobs:
       - package-macos-universal
       - package-linux-tarball
       - package-windows-zip
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-4-cores
     if: startsWith(github.ref, 'refs/tags/jstruct-v')
     permissions:
       contents: write
