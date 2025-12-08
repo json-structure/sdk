@@ -20,9 +20,11 @@ Add to your `pom.xml`:
 <dependency>
     <groupId>org.json-structure</groupId>
     <artifactId>json-structure</artifactId>
-    <version>1.0.0</version>
+    <version>${version}</version>
 </dependency>
 ```
+
+Replace `${version}` with the desired version number.
 
 ## Usage
 
@@ -136,6 +138,243 @@ mapper.registerModule(new JsonStructureModule());
 
 // Supports extended numeric types like Int128, UInt128, Decimal, etc.
 ```
+
+## JVM Language Interoperability
+
+The Java SDK can be used directly from other JVM languages without any wrapper code. The following examples demonstrate how to use the SDK from popular JVM languages.
+
+### Kotlin
+
+Kotlin has 100% Java interoperability and is widely used for Android and backend development.
+
+#### Dependency (Gradle Kotlin DSL)
+
+```kotlin
+dependencies {
+    implementation("org.json-structure:json-structure:${version}")
+}
+```
+
+#### Schema Validation Example
+
+```kotlin
+import org.json_structure.validation.SchemaValidator
+import org.json_structure.validation.ValidationResult
+
+fun main() {
+    val validator = SchemaValidator()
+    val schema = """
+        {
+            "type": "object",
+            "properties": {
+                "name": { "type": "string" },
+                "age": { "type": "int32" }
+            },
+            "required": ["name"]
+        }
+    """
+    
+    val result: ValidationResult = validator.validate(schema)
+    if (result.isValid()) {
+        println("Schema is valid!")
+    } else {
+        result.getErrors().forEach { error -> 
+            println(error.getMessage())
+        }
+    }
+}
+```
+
+#### Instance Validation Example
+
+```kotlin
+import org.json_structure.validation.InstanceValidator
+import org.json_structure.validation.ValidationResult
+
+fun validateInstance() {
+    val validator = InstanceValidator()
+    val schema = """{"type": "string"}"""
+    val instance = """"Hello, World!""""
+    
+    val result: ValidationResult = validator.validate(instance, schema)
+    println("Valid: ${result.isValid()}")
+}
+```
+
+**Idiomatic Notes:**
+- Use Kotlin's null safety features - the SDK returns non-null results
+- Use `val` for immutable references (preferred in Kotlin)
+- Leverage Kotlin's string interpolation for output
+- Consider using `apply` or `let` for more functional style
+
+### Scala
+
+Scala provides full JVM interoperability and is popular in data engineering and functional programming.
+
+#### Dependency (sbt)
+
+```scala
+libraryDependencies += "org.json-structure" % "json-structure" % "${version}"
+```
+
+#### Schema Validation Example
+
+```scala
+import org.json_structure.validation.{SchemaValidator, ValidationResult}
+import scala.jdk.CollectionConverters._
+
+object SchemaValidation extends App {
+  val validator = new SchemaValidator()
+  val schema = """{
+    "type": "object",
+    "properties": {
+      "name": { "type": "string" },
+      "age": { "type": "int32" }
+    },
+    "required": ["name"]
+  }"""
+  
+  val result: ValidationResult = validator.validate(schema)
+  if (result.isValid) {
+    println("Schema is valid!")
+  } else {
+    result.getErrors.asScala.foreach(error => println(error.getMessage))
+  }
+}
+```
+
+#### Instance Validation Example
+
+```scala
+import org.json_structure.validation.{InstanceValidator, ValidationResult}
+
+object InstanceValidation extends App {
+  val validator = new InstanceValidator()
+  val schema = """{"type": "string"}"""
+  val instance = """"Hello, Scala!""""
+  
+  val result: ValidationResult = validator.validate(instance, schema)
+  println(s"Valid: ${result.isValid}")
+}
+```
+
+**Idiomatic Notes:**
+- Use `scala.jdk.CollectionConverters._` to convert Java collections to Scala collections
+- Consider wrapping results in `Option` for functional error handling
+- Use Scala's pattern matching for result processing
+- Leverage Scala's immutable collections when working with validation errors
+
+### Groovy
+
+Groovy is a dynamic JVM language used extensively in Gradle and scripting.
+
+#### Dependency (Gradle Groovy DSL)
+
+```groovy
+dependencies {
+    implementation 'org.json-structure:json-structure:${version}'
+}
+```
+
+#### Schema Validation Example
+
+```groovy
+import org.json_structure.validation.SchemaValidator
+import org.json_structure.validation.ValidationResult
+
+def validator = new SchemaValidator()
+def schema = '''
+{
+    "type": "object",
+    "properties": {
+        "name": { "type": "string" },
+        "age": { "type": "int32" }
+    },
+    "required": ["name"]
+}
+'''
+
+ValidationResult result = validator.validate(schema)
+if (result.isValid()) {
+    println "Schema is valid!"
+} else {
+    result.getErrors().each { error ->
+        println error.getMessage()
+    }
+}
+```
+
+#### Instance Validation Example
+
+```groovy
+import org.json_structure.validation.InstanceValidator
+import org.json_structure.validation.ValidationResult
+
+def validator = new InstanceValidator()
+def schema = '{"type": "string"}'
+def instance = '"Hello, Groovy!"'
+
+ValidationResult result = validator.validate(instance, schema)
+println "Valid: ${result.isValid()}"
+```
+
+**Idiomatic Notes:**
+- Groovy allows omitting parentheses in many cases for cleaner syntax
+- Use GStrings (double quotes) for string interpolation
+- Collections can be accessed with simplified syntax (`.each` instead of `.forEach`)
+- Type declarations are optional but can improve clarity
+
+### Clojure
+
+Clojure is a functional Lisp dialect on the JVM with direct Java interoperability.
+
+#### Dependency (Leiningen)
+
+```clojure
+:dependencies [[org.json-structure/json-structure "${version}"]]
+```
+
+#### Schema Validation Example
+
+```clojure
+(ns myapp.validation
+  (:import [org.json_structure.validation SchemaValidator ValidationResult]))
+
+(defn validate-schema []
+  (let [validator (SchemaValidator.)
+        schema "{\"type\": \"object\",
+                 \"properties\": {
+                   \"name\": {\"type\": \"string\"},
+                   \"age\": {\"type\": \"int32\"}
+                 },
+                 \"required\": [\"name\"]}"]
+    (let [result (.validate validator schema)]
+      (if (.isValid result)
+        (println "Schema is valid!")
+        (doseq [error (.getErrors result)]
+          (println (.getMessage error)))))))
+```
+
+#### Instance Validation Example
+
+```clojure
+(ns myapp.validation
+  (:import [org.json_structure.validation InstanceValidator ValidationResult]))
+
+(defn validate-instance []
+  (let [validator (InstanceValidator.)
+        schema "{\"type\": \"string\"}"
+        instance "\"Hello, Clojure!\""]
+    (let [result (.validate validator instance schema)]
+      (println (str "Valid: " (.isValid result))))))
+```
+
+**Idiomatic Notes:**
+- Use `(ClassName.)` syntax to create Java objects
+- Call Java methods with `(.methodName object args)`
+- Java collections can be converted to Clojure sequences with `seq`
+- Consider using `->` or `->>` threading macros for cleaner data flow
+- Leverage Clojure's immutable data structures when processing results
 
 ## Supported Types
 
