@@ -1,0 +1,849 @@
+name: jstruct CLI
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - 'rust/**'
+      - '.github/workflows/jstruct-cli.yml'
+    tags:
+      - 'jstruct-v[0-9]+.[0-9]+.[0-9]+'
+  pull_request:
+    branches: [master, main]
+    paths:
+      - 'rust/**'
+      - '.github/workflows/jstruct-cli.yml'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  CLI_NAME: jstruct
+
+jobs:
+  # Build CLI binaries for all platforms
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x86_64
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            artifact: jstruct
+          # Linux ARM64
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            artifact: jstruct
+            cross: true
+          # Windows x86_64
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            artifact: jstruct.exe
+          # Windows ARM64
+          - target: aarch64-pc-windows-msvc
+            os: windows-latest
+            artifact: jstruct.exe
+          # macOS x86_64 (Intel)
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            artifact: jstruct
+          # macOS ARM64 (Apple Silicon)
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            artifact: jstruct
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross-compilation tools (Linux ARM64)
+        if: matrix.cross && matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.target }}-cargo-
+
+      - name: Build CLI (native)
+        if: ${{ !matrix.cross }}
+        working-directory: rust
+        run: cargo build --release --features cli --target ${{ matrix.target }}
+
+      - name: Build CLI (cross)
+        if: matrix.cross
+        working-directory: rust
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+        run: cargo build --release --features cli --target ${{ matrix.target }}
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.CLI_NAME }}-${{ matrix.target }}
+          path: rust/target/${{ matrix.target }}/release/${{ matrix.artifact }}
+          if-no-files-found: error
+
+  # Run CLI tests
+  test-cli:
+    name: Test CLI
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run CLI tests
+        working-directory: rust
+        run: cargo test --features cli --test cli_tests
+
+  # Smoke test the generated binaries
+  test-binaries:
+    name: Test Binary ${{ matrix.target }}
+    needs: build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Native tests (can run directly)
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            artifact: jstruct
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            artifact: jstruct.exe
+          - target: x86_64-apple-darwin
+            os: macos-13
+            artifact: jstruct
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            artifact: jstruct
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Download binary
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.CLI_NAME }}-${{ matrix.target }}
+          path: bin
+
+      - name: Make binary executable (Unix)
+        if: runner.os != 'Windows'
+        run: chmod +x bin/${{ matrix.artifact }}
+
+      - name: Test --version
+        run: bin/${{ matrix.artifact }} --version
+
+      - name: Test --help
+        run: bin/${{ matrix.artifact }} --help
+
+      - name: Test check --help
+        run: bin/${{ matrix.artifact }} check --help
+
+      - name: Test validate --help
+        run: bin/${{ matrix.artifact }} validate --help
+
+      - name: Test check valid schema
+        run: bin/${{ matrix.artifact }} check test-assets/schemas/validation/numeric-minimum-with-uses.struct.json
+
+      - name: Test check invalid schema (expect exit 1)
+        shell: bash
+        run: |
+          if bin/${{ matrix.artifact }} check test-assets/schemas/invalid/missing-type.struct.json; then
+            echo "Expected exit code 1 but got 0"
+            exit 1
+          fi
+
+      - name: Test validate valid instance
+        shell: bash
+        run: |
+          echo '10' | bin/${{ matrix.artifact }} validate -s test-assets/schemas/validation/numeric-minimum-with-uses.struct.json -
+
+      - name: Test validate invalid instance (expect exit 1)
+        shell: bash
+        run: |
+          # Use a string where int32 is expected - type mismatch should fail
+          if echo '"not-a-number"' | bin/${{ matrix.artifact }} validate -s test-assets/schemas/validation/numeric-minimum-with-uses.struct.json -; then
+            echo "Expected exit code 1 but got 0"
+            exit 1
+          fi
+
+      - name: Test JSON output format
+        shell: bash
+        run: |
+          OUTPUT=$(bin/${{ matrix.artifact }} check --format json test-assets/schemas/validation/numeric-minimum-with-uses.struct.json)
+          echo "$OUTPUT" | grep -q '"valid": true' || (echo "JSON output missing valid field"; exit 1)
+
+      - name: Test TAP output format
+        shell: bash
+        run: |
+          OUTPUT=$(bin/${{ matrix.artifact }} check --format tap test-assets/schemas/validation/numeric-minimum-with-uses.struct.json)
+          echo "$OUTPUT" | grep -q '^ok 1' || (echo "TAP output missing ok line"; exit 1)
+
+      - name: Test multiple files
+        run: bin/${{ matrix.artifact }} check test-assets/schemas/validation/numeric-minimum-with-uses.struct.json test-assets/schemas/validation/string-pattern-with-uses.struct.json
+
+      - name: Test quiet mode
+        run: bin/${{ matrix.artifact }} check -q test-assets/schemas/validation/numeric-minimum-with-uses.struct.json
+
+  # Create DEB package for Debian/Ubuntu
+  package-deb:
+    name: Package DEB
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            target: x86_64-unknown-linux-gnu
+          - arch: arm64
+            target: aarch64-unknown-linux-gnu
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download binary
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.CLI_NAME }}-${{ matrix.target }}
+          path: binary
+
+      - name: Extract version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/jstruct-v* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/jstruct-v}
+          else
+            VERSION="0.1.0-dev"
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Create DEB package structure
+        run: |
+          mkdir -p pkg/DEBIAN
+          mkdir -p pkg/usr/bin
+          mkdir -p pkg/usr/share/doc/jstruct
+          mkdir -p pkg/usr/share/man/man1
+          
+          # Copy binary
+          cp binary/jstruct pkg/usr/bin/
+          chmod 755 pkg/usr/bin/jstruct
+          
+          # Create control file
+          cat > pkg/DEBIAN/control << EOF
+          Package: jstruct
+          Version: ${{ steps.version.outputs.VERSION }}
+          Section: utils
+          Priority: optional
+          Architecture: ${{ matrix.arch }}
+          Maintainer: JSON Structure Contributors <info@json-structure.org>
+          Homepage: https://json-structure.org
+          Description: JSON Structure schema validation CLI
+           A command-line tool for validating JSON Structure schemas and
+           validating JSON instances against JSON Structure schemas.
+           .
+           Features:
+            - Schema validation against the JSON Structure meta-schema
+            - Instance validation against user schemas
+            - Multiple output formats: text, JSON, TAP
+          EOF
+          
+          # Create copyright file
+          cat > pkg/usr/share/doc/jstruct/copyright << EOF
+          Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+          Upstream-Name: jstruct
+          Source: https://github.com/json-structure/sdk
+          
+          Files: *
+          Copyright: 2024 JSON Structure Contributors
+          License: MIT
+          EOF
+          
+          # Build package
+          dpkg-deb --build pkg jstruct_${{ steps.version.outputs.VERSION }}_${{ matrix.arch }}.deb
+
+      - name: Upload DEB package
+        uses: actions/upload-artifact@v4
+        with:
+          name: jstruct-deb-${{ matrix.arch }}
+          path: "*.deb"
+
+  # Create RPM package for Fedora/RHEL
+  package-rpm:
+    name: Package RPM
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [x86_64, aarch64]
+        include:
+          - arch: x86_64
+            target: x86_64-unknown-linux-gnu
+          - arch: aarch64
+            target: aarch64-unknown-linux-gnu
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download binary
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.CLI_NAME }}-${{ matrix.target }}
+          path: binary
+
+      - name: Install RPM tools
+        run: sudo apt-get update && sudo apt-get install -y rpm
+
+      - name: Extract version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/jstruct-v* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/jstruct-v}
+          else
+            VERSION="0.1.0"
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Create RPM package
+        run: |
+          mkdir -p rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+          mkdir -p rpmbuild/BUILDROOT/jstruct-${{ steps.version.outputs.VERSION }}-1.${{ matrix.arch }}/usr/bin
+          
+          # Copy binary
+          cp binary/jstruct rpmbuild/BUILDROOT/jstruct-${{ steps.version.outputs.VERSION }}-1.${{ matrix.arch }}/usr/bin/
+          chmod 755 rpmbuild/BUILDROOT/jstruct-${{ steps.version.outputs.VERSION }}-1.${{ matrix.arch }}/usr/bin/jstruct
+          
+          # Create spec file
+          cat > rpmbuild/SPECS/jstruct.spec << 'EOF'
+          Name:           jstruct
+          Version:        ${{ steps.version.outputs.VERSION }}
+          Release:        1
+          Summary:        JSON Structure schema validation CLI
+          License:        MIT
+          URL:            https://json-structure.org
+          
+          %description
+          A command-line tool for validating JSON Structure schemas and
+          validating JSON instances against JSON Structure schemas.
+          
+          Features:
+          - Schema validation against the JSON Structure meta-schema
+          - Instance validation against user schemas
+          - Multiple output formats: text, JSON, TAP
+          
+          %files
+          %attr(755, root, root) /usr/bin/jstruct
+          EOF
+          
+          # Build RPM
+          rpmbuild --define "_topdir $(pwd)/rpmbuild" \
+                   --define "_rpmdir $(pwd)" \
+                   --target ${{ matrix.arch }} \
+                   -bb rpmbuild/SPECS/jstruct.spec
+
+      - name: Upload RPM package
+        uses: actions/upload-artifact@v4
+        with:
+          name: jstruct-rpm-${{ matrix.arch }}
+          path: "**/*.rpm"
+
+  # Create MSIX package for Windows
+  package-msix:
+    name: Package MSIX
+    needs: build
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        arch: [x64, arm64]
+        include:
+          - arch: x64
+            target: x86_64-pc-windows-msvc
+          - arch: arm64
+            target: aarch64-pc-windows-msvc
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download binary
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.CLI_NAME }}-${{ matrix.target }}
+          path: binary
+
+      - name: Extract version
+        id: version
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF -match 'refs/tags/jstruct-v(.+)') {
+            $version = $matches[1]
+          } else {
+            $version = "0.1.0.0"
+          }
+          # Ensure 4-part version for MSIX
+          $parts = $version -split '\.'
+          while ($parts.Count -lt 4) { $parts += "0" }
+          $version = ($parts[0..3] -join '.')
+          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Create MSIX package structure
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path msix
+          Copy-Item binary/jstruct.exe msix/
+          
+          # Create AppxManifest.xml
+          @"
+          <?xml version="1.0" encoding="utf-8"?>
+          <Package
+            xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+            xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+            xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
+            xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+            IgnorableNamespaces="uap uap3 desktop">
+            
+            <Identity
+              Name="JSONStructure.jstruct"
+              Publisher="CN=JSON Structure Contributors"
+              Version="${{ steps.version.outputs.VERSION }}"
+              ProcessorArchitecture="${{ matrix.arch }}" />
+            
+            <Properties>
+              <DisplayName>jstruct</DisplayName>
+              <PublisherDisplayName>JSON Structure Contributors</PublisherDisplayName>
+              <Description>JSON Structure schema validation CLI</Description>
+              <Logo>assets\logo.png</Logo>
+            </Properties>
+            
+            <Resources>
+              <Resource Language="en-us" />
+            </Resources>
+            
+            <Dependencies>
+              <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.22621.0" />
+            </Dependencies>
+            
+            <Applications>
+              <Application Id="jstruct" Executable="jstruct.exe" EntryPoint="Windows.FullTrustApplication">
+                <uap:VisualElements
+                  DisplayName="jstruct"
+                  Description="JSON Structure CLI"
+                  BackgroundColor="transparent"
+                  Square150x150Logo="assets\logo.png"
+                  Square44x44Logo="assets\logo.png">
+                </uap:VisualElements>
+                <Extensions>
+                  <uap3:Extension Category="windows.appExecutionAlias">
+                    <uap3:AppExecutionAlias>
+                      <desktop:ExecutionAlias Alias="jstruct.exe" />
+                    </uap3:AppExecutionAlias>
+                  </uap3:Extension>
+                </Extensions>
+              </Application>
+            </Applications>
+            
+            <Capabilities>
+              <rescap:Capability Name="runFullTrust" xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities" />
+            </Capabilities>
+          </Package>
+          "@ | Out-File -Encoding utf8 msix/AppxManifest.xml
+          
+          # Create placeholder logo (44x44 and 150x150 PNG required)
+          New-Item -ItemType Directory -Force -Path msix/assets
+          
+          # Create a simple placeholder PNG using PowerShell
+          Add-Type -AssemblyName System.Drawing
+          $bmp = New-Object System.Drawing.Bitmap(150, 150)
+          $graphics = [System.Drawing.Graphics]::FromImage($bmp)
+          $graphics.Clear([System.Drawing.Color]::FromArgb(0, 120, 212))
+          $font = New-Object System.Drawing.Font("Arial", 48, [System.Drawing.FontStyle]::Bold)
+          $brush = [System.Drawing.Brushes]::White
+          $graphics.DrawString("JS", $font, $brush, 30, 40)
+          $bmp.Save("msix/assets/logo.png", [System.Drawing.Imaging.ImageFormat]::Png)
+          $graphics.Dispose()
+          $bmp.Dispose()
+
+      - name: Create MSIX package
+        shell: pwsh
+        run: |
+          # Use makeappx to create the package
+          $sdkPath = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\makeappx.exe" | 
+                     Sort-Object { [version]($_.Directory.Parent.Name) } -Descending | 
+                     Select-Object -First 1
+          
+          if (-not $sdkPath) {
+            Write-Error "makeappx.exe not found"
+            exit 1
+          }
+          
+          & $sdkPath.FullName pack /d msix /p jstruct-${{ steps.version.outputs.VERSION }}-${{ matrix.arch }}.msix /o
+
+      - name: Upload MSIX package
+        uses: actions/upload-artifact@v4
+        with:
+          name: jstruct-msix-${{ matrix.arch }}
+          path: "*.msix"
+
+  # Create macOS packages (DMG with signed binary, and pkg installer)
+  package-macos:
+    name: Package macOS
+    needs: build
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        arch: [x86_64, arm64]
+        include:
+          - arch: x86_64
+            target: x86_64-apple-darwin
+          - arch: arm64
+            target: aarch64-apple-darwin
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download binary
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.CLI_NAME }}-${{ matrix.target }}
+          path: binary
+
+      - name: Extract version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/jstruct-v* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/jstruct-v}
+          else
+            VERSION="0.1.0"
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Create PKG installer
+        run: |
+          chmod +x binary/jstruct
+          
+          # Create pkg structure
+          mkdir -p pkg-root/usr/local/bin
+          cp binary/jstruct pkg-root/usr/local/bin/
+          
+          # Create component plist
+          cat > component.plist << EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <array>
+            <dict>
+              <key>BundleHasStrictIdentifier</key>
+              <false/>
+              <key>BundleIsRelocatable</key>
+              <false/>
+              <key>BundleIsVersionChecked</key>
+              <false/>
+              <key>BundleOverwriteAction</key>
+              <string>upgrade</string>
+              <key>RootRelativeBundlePath</key>
+              <string>usr/local/bin/jstruct</string>
+            </dict>
+          </array>
+          </plist>
+          EOF
+          
+          # Build pkg
+          pkgbuild --root pkg-root \
+                   --identifier org.json-structure.jstruct \
+                   --version ${{ steps.version.outputs.VERSION }} \
+                   --install-location / \
+                   jstruct-${{ steps.version.outputs.VERSION }}-${{ matrix.arch }}.pkg
+
+      - name: Create tarball
+        run: |
+          mkdir -p dist
+          cp binary/jstruct dist/
+          chmod +x dist/jstruct
+          tar -czvf jstruct-${{ steps.version.outputs.VERSION }}-darwin-${{ matrix.arch }}.tar.gz -C dist jstruct
+
+      - name: Upload PKG
+        uses: actions/upload-artifact@v4
+        with:
+          name: jstruct-pkg-${{ matrix.arch }}
+          path: "*.pkg"
+
+      - name: Upload tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: jstruct-tarball-darwin-${{ matrix.arch }}
+          path: "*.tar.gz"
+
+  # Create universal macOS binary
+  package-macos-universal:
+    name: Package macOS Universal
+    needs: build
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download x86_64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.CLI_NAME }}-x86_64-apple-darwin
+          path: binary-x86_64
+
+      - name: Download ARM64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.CLI_NAME }}-aarch64-apple-darwin
+          path: binary-arm64
+
+      - name: Extract version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/jstruct-v* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/jstruct-v}
+          else
+            VERSION="0.1.0"
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Create universal binary
+        run: |
+          chmod +x binary-x86_64/jstruct binary-arm64/jstruct
+          lipo -create -output jstruct binary-x86_64/jstruct binary-arm64/jstruct
+          chmod +x jstruct
+          
+          # Verify it's universal
+          file jstruct
+
+      - name: Create universal PKG
+        run: |
+          mkdir -p pkg-root/usr/local/bin
+          cp jstruct pkg-root/usr/local/bin/
+          
+          pkgbuild --root pkg-root \
+                   --identifier org.json-structure.jstruct \
+                   --version ${{ steps.version.outputs.VERSION }} \
+                   --install-location / \
+                   jstruct-${{ steps.version.outputs.VERSION }}-darwin-universal.pkg
+
+      - name: Create universal tarball
+        run: |
+          tar -czvf jstruct-${{ steps.version.outputs.VERSION }}-darwin-universal.tar.gz jstruct
+
+      - name: Upload universal PKG
+        uses: actions/upload-artifact@v4
+        with:
+          name: jstruct-pkg-universal
+          path: "*.pkg"
+
+      - name: Upload universal tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: jstruct-tarball-darwin-universal
+          path: "*.tar.gz"
+
+  # Create Linux tarballs
+  package-linux-tarball:
+    name: Package Linux tarball
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [x86_64, aarch64]
+        include:
+          - arch: x86_64
+            target: x86_64-unknown-linux-gnu
+          - arch: aarch64
+            target: aarch64-unknown-linux-gnu
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download binary
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.CLI_NAME }}-${{ matrix.target }}
+          path: binary
+
+      - name: Extract version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/jstruct-v* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/jstruct-v}
+          else
+            VERSION="0.1.0"
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Create tarball
+        run: |
+          chmod +x binary/jstruct
+          mkdir -p dist
+          cp binary/jstruct dist/
+          tar -czvf jstruct-${{ steps.version.outputs.VERSION }}-linux-${{ matrix.arch }}.tar.gz -C dist jstruct
+
+      - name: Upload tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: jstruct-tarball-linux-${{ matrix.arch }}
+          path: "*.tar.gz"
+
+  # Create Windows ZIP
+  package-windows-zip:
+    name: Package Windows ZIP
+    needs: build
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        arch: [x64, arm64]
+        include:
+          - arch: x64
+            target: x86_64-pc-windows-msvc
+          - arch: arm64
+            target: aarch64-pc-windows-msvc
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download binary
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.CLI_NAME }}-${{ matrix.target }}
+          path: binary
+
+      - name: Extract version
+        id: version
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF -match 'refs/tags/jstruct-v(.+)') {
+            $version = $matches[1]
+          } else {
+            $version = "0.1.0"
+          }
+          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Create ZIP
+        shell: pwsh
+        run: |
+          Compress-Archive -Path binary/jstruct.exe -DestinationPath jstruct-${{ steps.version.outputs.VERSION }}-windows-${{ matrix.arch }}.zip
+
+      - name: Upload ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: jstruct-zip-windows-${{ matrix.arch }}
+          path: "*.zip"
+
+  # Create GitHub Release with all artifacts
+  release:
+    name: Create Release
+    needs: 
+      - test-cli
+      - test-binaries
+      - package-deb
+      - package-rpm
+      - package-msix
+      - package-macos
+      - package-macos-universal
+      - package-linux-tarball
+      - package-windows-zip
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/jstruct-v')
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Extract version
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/jstruct-v}
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release
+          
+          # Collect all packages
+          find artifacts -type f \( -name "*.deb" -o -name "*.rpm" -o -name "*.msix" -o -name "*.pkg" -o -name "*.tar.gz" -o -name "*.zip" \) -exec cp {} release/ \;
+          
+          # Generate checksums
+          cd release
+          sha256sum * > SHA256SUMS.txt
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: jstruct v${{ steps.version.outputs.VERSION }}
+          body: |
+            ## jstruct CLI v${{ steps.version.outputs.VERSION }}
+            
+            JSON Structure schema validation command-line tool.
+            
+            ### Installation
+            
+            #### Linux (Debian/Ubuntu)
+            ```bash
+            sudo dpkg -i jstruct_${{ steps.version.outputs.VERSION }}_amd64.deb
+            ```
+            
+            #### Linux (Fedora/RHEL)
+            ```bash
+            sudo rpm -i jstruct-${{ steps.version.outputs.VERSION }}-1.x86_64.rpm
+            ```
+            
+            #### macOS
+            ```bash
+            # Universal binary (Intel + Apple Silicon)
+            sudo installer -pkg jstruct-${{ steps.version.outputs.VERSION }}-darwin-universal.pkg -target /
+            
+            # Or via tarball
+            tar xzf jstruct-${{ steps.version.outputs.VERSION }}-darwin-universal.tar.gz
+            sudo mv jstruct /usr/local/bin/
+            ```
+            
+            #### Windows
+            Download and extract the ZIP, or install the MSIX package.
+            
+            ### Usage
+            ```bash
+            # Validate a schema
+            jstruct check schema.json
+            
+            # Validate an instance against a schema
+            jstruct validate --schema schema.json data.json
+            ```
+            
+            See `jstruct --help` for more options.
+          files: release/*
+          draft: false
+          prerelease: false
