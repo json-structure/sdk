@@ -78,7 +78,20 @@ jobs:
 
       - name: Trigger Packagist update
         run: |
-          curl -X POST \
+          response=$(curl -X POST \
+            --fail-with-body \
             -H "Content-Type: application/json" \
+            -w "\nHTTP_CODE:%{http_code}" \
             "https://packagist.org/api/update-package?username=${{ secrets.PACKAGIST_USERNAME }}&apiToken=${{ secrets.PACKAGIST_API_TOKEN }}" \
-            -d '{"repository":{"url":"https://github.com/json-structure/sdk"}}'
+            -d '{"repository":{"url":"https://github.com/json-structure/sdk"}}')
+
+          echo "$response"
+
+          http_code=$(echo "$response" | \
+            grep -o "HTTP_CODE:[0-9]*" | cut -d: -f2)
+          if [ "$http_code" != "200" ] && [ "$http_code" != "202" ]; then
+            echo "Error: Packagist API returned HTTP $http_code"
+            exit 1
+          fi
+
+          echo "Successfully triggered Packagist update (HTTP $http_code)"
