@@ -173,11 +173,11 @@ fun main() {
     """
     
     val result: ValidationResult = validator.validate(schema)
-    if (result.isValid) {
+    if (result.isValid()) {
         println("Schema is valid!")
     } else {
-        result.errors.forEach { error -> 
-            println(error.message)
+        result.getErrors().forEach { error -> 
+            println(error.getMessage())
         }
     }
 }
@@ -195,7 +195,7 @@ fun validateInstance() {
     val instance = """"Hello, World!""""
     
     val result: ValidationResult = validator.validate(instance, schema)
-    println("Valid: ${result.isValid}")
+    println("Valid: ${result.isValid()}")
 }
 ```
 
@@ -296,8 +296,8 @@ ValidationResult result = validator.validate(schema)
 if (result.isValid()) {
     println "Schema is valid!"
 } else {
-    result.errors.each { error ->
-        println error.message
+    result.getErrors().each { error ->
+        println error.getMessage()
     }
 }
 ```
