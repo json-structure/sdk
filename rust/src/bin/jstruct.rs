@@ -10,7 +10,7 @@ use std::process::ExitCode;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use serde::Serialize;
 
-use json_structure::{InstanceValidator, SchemaValidator, ValidationResult};
+use json_structure::{InstanceValidator, SchemaValidator, SchemaValidatorOptions, ValidationResult};
 
 /// Exit codes
 const EXIT_SUCCESS: u8 = 0;
@@ -58,6 +58,10 @@ struct CheckArgs {
     #[arg(required = true)]
     files: Vec<PathBuf>,
 
+    /// Bundle file(s) containing schemas for $import resolution
+    #[arg(short, long)]
+    bundle: Vec<PathBuf>,
+
     /// Output format
     #[arg(short, long, value_enum, default_value_t = OutputFormat::Text)]
     format: OutputFormat,
@@ -80,6 +84,10 @@ struct ValidateArgs {
     /// Instance file(s) to validate. Use '-' to read from stdin.
     #[arg(required = true)]
     files: Vec<PathBuf>,
+
+    /// Bundle file(s) containing schemas for $import resolution
+    #[arg(short, long)]
+    bundle: Vec<PathBuf>,
 
     /// Output format
     #[arg(short, long, value_enum, default_value_t = OutputFormat::Text)]
@@ -129,7 +137,18 @@ fn main() -> ExitCode {
 
 /// Check schema files for validity
 fn cmd_check(args: CheckArgs) -> u8 {
-    let validator = SchemaValidator::new();
+    // Load bundle schemas if provided
+    let external_schemas = match load_bundle_schemas(&args.bundle, args.quiet) {
+        Ok(schemas) => schemas,
+        Err(_) => return EXIT_ERROR,
+    };
+
+    let options = SchemaValidatorOptions {
+        allow_import: !external_schemas.is_empty(),
+        external_schemas,
+        ..SchemaValidatorOptions::default()
+    };
+    let validator = SchemaValidator::with_options(options);
     let mut results = Vec::new();
     let mut has_invalid = false;
     let mut has_error = false;
@@ -161,6 +180,19 @@ fn cmd_check(args: CheckArgs) -> u8 {
 
 /// Validate instance files against a schema
 fn cmd_validate(args: ValidateArgs) -> u8 {
+    // Load bundle schemas if provided
+    let external_schemas = match load_bundle_schemas(&args.bundle, args.quiet) {
+        Ok(schemas) => schemas,
+        Err(_) => return EXIT_ERROR,
+    };
+
+    let has_bundle = !external_schemas.is_empty();
+    let schema_options = SchemaValidatorOptions {
+        allow_import: has_bundle,
+        external_schemas,
+        ..SchemaValidatorOptions::default()
+    };
+
     // Load and validate the schema first
     let schema_content = match read_file(&args.schema) {
         Ok(content) => content,
@@ -184,7 +216,7 @@ fn cmd_validate(args: ValidateArgs) -> u8 {
     };
 
     // Validate the schema first
-    let schema_validator = SchemaValidator::new();
+    let schema_validator = SchemaValidator::with_options(schema_options);
     let schema_result = schema_validator.validate(&schema_content);
     if !schema_result.is_valid() {
         if !args.quiet {
@@ -224,6 +256,37 @@ fn cmd_validate(args: ValidateArgs) -> u8 {
     } else {
         EXIT_SUCCESS
     }
+}
+
+/// Load schemas from bundle files for $import resolution
+fn load_bundle_schemas(bundle_files: &[PathBuf], quiet: bool) -> Result<Vec<serde_json::Value>, ()> {
+    let mut schemas = Vec::new();
+    
+    for file in bundle_files {
+        let content = match read_file(file) {
+            Ok(c) => c,
+            Err(e) => {
+                if !quiet {
+                    eprintln!("jstruct: cannot read bundle file '{}': {}", file.display(), e);
+                }
+                return Err(());
+            }
+        };
+        
+        let schema: serde_json::Value = match serde_json::from_str(&content) {
+            Ok(v) => v,
+            Err(e) => {
+                if !quiet {
+                    eprintln!("jstruct: invalid JSON in bundle file '{}': {}", file.display(), e);
+                }
+                return Err(());
+            }
+        };
+        
+        schemas.push(schema);
+    }
+    
+    Ok(schemas)
 }
 
 /// Check a single schema file
