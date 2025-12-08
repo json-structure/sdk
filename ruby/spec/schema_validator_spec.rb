@@ -79,7 +79,7 @@ RSpec.describe JsonStructure::SchemaValidator do
 
         begin
           described_class.validate!(schema)
-          fail 'Expected SchemaValidationError to be raised'
+          raise 'Expected SchemaValidationError to be raised'
         rescue JsonStructure::SchemaValidationError => e
           expect(e.errors).not_to be_empty
           expect(e.result).to be_invalid

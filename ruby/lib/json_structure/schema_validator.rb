@@ -34,13 +34,13 @@ module JsonStructure
     #
     # @param schema_json [String] JSON string containing the schema
     # @return [ValidationResult] validation result (only if valid)
-    # @raise [ValidationError] if validation fails
+    # @raise [SchemaValidationError] if validation fails
     #
     # @example
     #   begin
     #     JsonStructure::SchemaValidator.validate!(schema)
     #     puts "Schema is valid!"
-    #   rescue JsonStructure::ValidationError => e
+    #   rescue JsonStructure::SchemaValidationError => e
     #     puts "Validation failed: #{e.message}"
     #   end
     def self.validate!(schema_json)

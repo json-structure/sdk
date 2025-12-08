@@ -113,7 +113,7 @@ RSpec.describe JsonStructure::InstanceValidator do
 
         begin
           described_class.validate!(instance, schema)
-          fail 'Expected InstanceValidationError to be raised'
+          raise 'Expected InstanceValidationError to be raised'
         rescue JsonStructure::InstanceValidationError => e
           expect(e.errors).not_to be_empty
           expect(e.result).to be_invalid
