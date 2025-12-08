@@ -218,7 +218,7 @@ jobs:
   # Requires PAUSE_USERNAME and PAUSE_PASSWORD secrets to be set
   publish-cpan:
     name: Publish to CPAN
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-4-cores
     needs: prepare-cpan
     if: startsWith(github.ref, 'refs/tags/v')
     environment: cpan  # Use a protected environment for secrets

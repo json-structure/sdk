@@ -65,12 +65,12 @@ jobs:
         run: cargo test --verbose
 
       - name: Run clippy
-        if: matrix.rust == 'stable' && matrix.os == 'ubuntu-latest'
+        if: matrix.rust == 'stable' && matrix.os == 'ubuntu-latest-4-cores'
         working-directory: rust
         run: cargo clippy -- -D warnings
 
       - name: Check formatting
-        if: matrix.rust == 'stable' && matrix.os == 'ubuntu-latest'
+        if: matrix.rust == 'stable' && matrix.os == 'ubuntu-latest-4-cores'
         working-directory: rust
         continue-on-error: true
         run: cargo fmt -- --check
