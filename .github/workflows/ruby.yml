@@ -19,6 +19,8 @@ jobs:
   test:
     name: Test Ruby ${{ matrix.ruby }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -64,6 +66,8 @@ jobs:
   lint:
     name: Lint Ruby code
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - uses: actions/checkout@v4
