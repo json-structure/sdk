@@ -10,7 +10,7 @@ RSpec.describe JsonStructure::SchemaValidator do
         result = described_class.validate(schema)
 
         expect(result).to be_valid
-        expect(result.errors).to be_empty
+        expect(result.error_messages).to be_empty # Only check errors, not warnings
       end
 
       it 'returns valid result for object schema' do
@@ -18,7 +18,7 @@ RSpec.describe JsonStructure::SchemaValidator do
         result = described_class.validate(schema)
 
         expect(result).to be_valid
-        expect(result.errors).to be_empty
+        expect(result.error_messages).to be_empty # Only check errors, not warnings
       end
 
       it 'returns valid result for array schema' do
@@ -26,7 +26,7 @@ RSpec.describe JsonStructure::SchemaValidator do
         result = described_class.validate(schema)
 
         expect(result).to be_valid
-        expect(result.errors).to be_empty
+        expect(result.error_messages).to be_empty # Only check errors, not warnings
       end
     end
 

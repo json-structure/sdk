@@ -98,11 +98,15 @@ module JsonStructure
     end
 
     class JSSchemaValidator < ::FFI::Struct
-      layout :dummy, :int # Opaque structure, actual layout doesn't matter
+      layout :allow_import, :bool,
+             :warnings_enabled, :bool,
+             :import_registry, :pointer
     end
 
     class JSInstanceValidator < ::FFI::Struct
-      layout :dummy, :int # Opaque structure, actual layout doesn't matter
+      layout :check_refs, :bool,
+             :warnings_enabled, :bool,
+             :import_registry, :pointer
     end
 
     # Library functions
@@ -122,14 +126,23 @@ module JsonStructure
     attach_function :js_instance_validator_init, [:pointer], :void
     attach_function :js_instance_validate_strings, [:pointer, :string, :string, :pointer], :bool
 
-    # Convenience functions
-    attach_function :js_validate_schema, [:string, :pointer], :bool
-    attach_function :js_validate_instance, [:string, :string, :pointer], :bool
-
     # Error message function
     attach_function :js_error_message, [:js_error_code_t], :string
 
     # Memory management
     attach_function :js_free, [:pointer], :void
+
+    # Convenience wrappers (since the C inline functions aren't exported)
+    def self.js_validate_schema(schema_json, result_ptr)
+      validator_ptr = ::FFI::MemoryPointer.new(JSSchemaValidator.size)
+      js_schema_validator_init(validator_ptr)
+      js_schema_validate_string(validator_ptr, schema_json, result_ptr)
+    end
+
+    def self.js_validate_instance(instance_json, schema_json, result_ptr)
+      validator_ptr = ::FFI::MemoryPointer.new(JSInstanceValidator.size)
+      js_instance_validator_init(validator_ptr)
+      js_instance_validate_strings(validator_ptr, instance_json, schema_json, result_ptr)
+    end
   end
 end
