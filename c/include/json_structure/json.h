@@ -13,6 +13,7 @@
 #define JSON_STRUCTURE_JSON_H
 
 #include "types.h"
+#include "export.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -82,7 +83,7 @@ typedef struct js_parser {
  * @param len Length of JSON string
  * @param alloc Allocator (NULL for default)
  */
-void js_parser_init(js_parser_t* parser, const char* json, size_t len,
+JS_API void js_parser_init(js_parser_t* parser, const char* json, size_t len,
                     const js_allocator_t* alloc);
 
 /**
@@ -91,14 +92,14 @@ void js_parser_init(js_parser_t* parser, const char* json, size_t len,
  * @param out Output value
  * @return true on success, false on parse error
  */
-bool js_parser_parse(js_parser_t* parser, js_json_t* out);
+JS_API bool js_parser_parse(js_parser_t* parser, js_json_t* out);
 
 /**
  * @brief Get current source location
  * @param parser Parser state
  * @return Current location
  */
-js_location_t js_parser_location(const js_parser_t* parser);
+JS_API js_location_t js_parser_location(const js_parser_t* parser);
 
 /* ============================================================================
  * JSON Value Access
@@ -205,7 +206,7 @@ typedef struct js_json_iter {
  * @param value JSON array or object value
  * @return true if iteration can begin
  */
-bool js_json_iter_init(js_json_iter_t* iter, const js_json_t* value);
+JS_API bool js_json_iter_init(js_json_iter_t* iter, const js_json_t* value);
 
 /**
  * @brief Get next value from iterator
@@ -214,7 +215,7 @@ bool js_json_iter_init(js_json_iter_t* iter, const js_json_t* value);
  * @param value Output value
  * @return true if value available, false if end
  */
-bool js_json_iter_next(js_json_iter_t* iter, js_str_t* key, js_json_t* value);
+JS_API bool js_json_iter_next(js_json_iter_t* iter, js_str_t* key, js_json_t* value);
 
 /* ============================================================================
  * JSON Object Property Access
@@ -227,7 +228,7 @@ bool js_json_iter_next(js_json_iter_t* iter, js_str_t* key, js_json_t* value);
  * @param out Output value
  * @return true if property found
  */
-bool js_json_get(const js_json_t* obj, js_str_t key, js_json_t* out);
+JS_API bool js_json_get(const js_json_t* obj, js_str_t key, js_json_t* out);
 
 /**
  * @brief Get property from JSON object by C string
@@ -236,7 +237,7 @@ bool js_json_get(const js_json_t* obj, js_str_t key, js_json_t* out);
  * @param out Output value
  * @return true if property found
  */
-bool js_json_get_cstr(const js_json_t* obj, const char* key, js_json_t* out);
+JS_API bool js_json_get_cstr(const js_json_t* obj, const char* key, js_json_t* out);
 
 /**
  * @brief Check if object has property
@@ -244,7 +245,7 @@ bool js_json_get_cstr(const js_json_t* obj, const char* key, js_json_t* out);
  * @param key Property name
  * @return true if property exists
  */
-bool js_json_has(const js_json_t* obj, js_str_t key);
+JS_API bool js_json_has(const js_json_t* obj, js_str_t key);
 
 /**
  * @brief Check if object has property (C string)
@@ -252,7 +253,7 @@ bool js_json_has(const js_json_t* obj, js_str_t key);
  * @param key Property name (null-terminated)
  * @return true if property exists
  */
-bool js_json_has_cstr(const js_json_t* obj, const char* key);
+JS_API bool js_json_has_cstr(const js_json_t* obj, const char* key);
 
 /* ============================================================================
  * JSON Array Element Access
@@ -265,7 +266,7 @@ bool js_json_has_cstr(const js_json_t* obj, const char* key);
  * @param out Output value
  * @return true if element found
  */
-bool js_json_get_index(const js_json_t* arr, uint32_t index, js_json_t* out);
+JS_API bool js_json_get_index(const js_json_t* arr, uint32_t index, js_json_t* out);
 
 /* ============================================================================
  * JSON String Utilities
@@ -277,7 +278,7 @@ bool js_json_get_index(const js_json_t* arr, uint32_t index, js_json_t* out);
  * @param cstr C string to compare
  * @return true if equal
  */
-bool js_json_str_eq(const js_json_t* v, const char* cstr);
+JS_API bool js_json_str_eq(const js_json_t* v, const char* cstr);
 
 /**
  * @brief Unescape JSON string into buffer
@@ -286,7 +287,7 @@ bool js_json_str_eq(const js_json_t* v, const char* cstr);
  * @param buf_size Buffer size
  * @return Length written, or required size if buf_size is 0
  */
-size_t js_json_unescape(js_str_t str, char* buf, size_t buf_size);
+JS_API size_t js_json_unescape(js_str_t str, char* buf, size_t buf_size);
 
 /* ============================================================================
  * JSON Source Location
@@ -310,13 +311,13 @@ typedef struct js_locator {
  * @param len JSON string length
  * @param alloc Allocator (NULL for default)
  */
-void js_locator_init(js_locator_t* loc, const char* json, size_t len,
+JS_API void js_locator_init(js_locator_t* loc, const char* json, size_t len,
                      const js_allocator_t* alloc);
 
 /**
  * @brief Free locator resources
  */
-void js_locator_cleanup(js_locator_t* loc);
+JS_API void js_locator_cleanup(js_locator_t* loc);
 
 /**
  * @brief Get source location for a JSON path
@@ -324,7 +325,7 @@ void js_locator_cleanup(js_locator_t* loc);
  * @param path JSON Pointer path
  * @return Source location
  */
-js_location_t js_locator_find(js_locator_t* loc, const char* path);
+JS_API js_location_t js_locator_find(js_locator_t* loc, const char* path);
 
 #ifdef __cplusplus
 }

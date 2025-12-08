@@ -19,6 +19,7 @@
 #define JSON_STRUCTURE_VERSION_STRING "0.1.0"
 
 /* Core headers */
+#include "export.h"
 #include "types.h"
 #include "error_codes.h"
 #include "schema_validator.h"
@@ -38,7 +39,7 @@ extern "C" {
  * Call this once at program startup. This function is optional if you
  * don't need custom memory allocation.
  */
-void js_init(void);
+JS_API void js_init(void);
 
 /**
  * @brief Initialize the JSON Structure library with custom allocator
@@ -46,14 +47,14 @@ void js_init(void);
  * 
  * Call this once at program startup if you need custom memory allocation.
  */
-void js_init_with_allocator(js_allocator_t alloc);
+JS_API void js_init_with_allocator(js_allocator_t alloc);
 
 /**
  * @brief Clean up the JSON Structure library
  * 
  * Call this at program shutdown to release any internal resources.
  */
-void js_cleanup(void);
+JS_API void js_cleanup(void);
 
 /* ============================================================================
  * Convenience Functions
@@ -91,7 +92,7 @@ static inline bool js_validate_instance(const char* instance_json,
  * @param code Error code
  * @return Human-readable error message
  */
-const char* js_error_message(js_error_code_t code);
+JS_API const char* js_error_message(js_error_code_t code);
 
 #ifdef __cplusplus
 }

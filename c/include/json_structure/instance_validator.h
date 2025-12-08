@@ -13,6 +13,7 @@
 
 #include "types.h"
 #include "error_codes.h"
+#include "export.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -73,14 +74,14 @@ typedef struct js_instance_validator {
  * @brief Initialize an instance validator with default options
  * @param validator Validator to initialize
  */
-void js_instance_validator_init(js_instance_validator_t* validator);
+JS_API void js_instance_validator_init(js_instance_validator_t* validator);
 
 /**
  * @brief Initialize an instance validator with custom options
  * @param validator Validator to initialize
  * @param options Validation options
  */
-void js_instance_validator_init_with_options(js_instance_validator_t* validator,
+JS_API void js_instance_validator_init_with_options(js_instance_validator_t* validator,
                                              js_instance_options_t options);
 
 /**
@@ -91,7 +92,7 @@ void js_instance_validator_init_with_options(js_instance_validator_t* validator,
  * @param result Output validation result
  * @return true if instance is valid, false otherwise
  */
-bool js_instance_validate_strings(const js_instance_validator_t* validator,
+JS_API bool js_instance_validate_strings(const js_instance_validator_t* validator,
                                   const char* instance_json,
                                   const char* schema_json,
                                   js_result_t* result);
@@ -104,7 +105,7 @@ bool js_instance_validate_strings(const js_instance_validator_t* validator,
  * @param result Output validation result
  * @return true if instance is valid, false otherwise
  */
-bool js_instance_validate(const js_instance_validator_t* validator,
+JS_API bool js_instance_validate(const js_instance_validator_t* validator,
                           const cJSON* instance,
                           const cJSON* schema,
                           js_result_t* result);

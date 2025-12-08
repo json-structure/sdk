@@ -21,6 +21,9 @@
 /* cJSON is used as the external JSON parsing library */
 #include <cjson/cJSON.h>
 
+/* Export macros for shared library support */
+#include "export.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -250,14 +253,14 @@ typedef struct js_allocator {
  *
  * @note Pass NULL functions to reset to default allocator
  */
-void js_set_allocator(js_allocator_t alloc);
+JS_API void js_set_allocator(js_allocator_t alloc);
 
 /**
  * @brief Get the current allocator
  *
  * @return Current allocator configuration
  */
-js_allocator_t js_get_allocator(void);
+JS_API js_allocator_t js_get_allocator(void);
 
 /**
  * @brief Allocate memory using the configured allocator
@@ -265,7 +268,7 @@ js_allocator_t js_get_allocator(void);
  * @param size Number of bytes to allocate
  * @return Pointer to allocated memory, or NULL on failure
  */
-void* js_malloc(size_t size);
+JS_API void* js_malloc(size_t size);
 
 /**
  * @brief Reallocate memory using the configured allocator
@@ -274,14 +277,14 @@ void* js_malloc(size_t size);
  * @param size New size in bytes
  * @return Pointer to reallocated memory, or NULL on failure
  */
-void* js_realloc(void* ptr, size_t size);
+JS_API void* js_realloc(void* ptr, size_t size);
 
 /**
  * @brief Free memory using the configured allocator
  *
  * @param ptr Pointer to memory to free (may be NULL)
  */
-void js_free(void* ptr);
+JS_API void js_free(void* ptr);
 
 /**
  * @brief Duplicate a string using the configured allocator
@@ -289,7 +292,7 @@ void js_free(void* ptr);
  * @param s String to duplicate
  * @return Newly allocated copy of the string, or NULL on failure
  */
-char* js_strdup(const char* s);
+JS_API char* js_strdup(const char* s);
 
 /* ============================================================================
  * Type Utility Functions
@@ -303,7 +306,7 @@ char* js_strdup(const char* s);
  * @param type Type to check
  * @return true if the type is primitive
  */
-bool js_type_is_primitive(js_type_t type);
+JS_API bool js_type_is_primitive(js_type_t type);
 
 /**
  * @brief Check if a type is numeric
@@ -313,7 +316,7 @@ bool js_type_is_primitive(js_type_t type);
  * @param type Type to check
  * @return true if the type is numeric
  */
-bool js_type_is_numeric(js_type_t type);
+JS_API bool js_type_is_numeric(js_type_t type);
 
 /**
  * @brief Check if a type is a string-based type
@@ -324,7 +327,7 @@ bool js_type_is_numeric(js_type_t type);
  * @param type Type to check
  * @return true if the type is string-based
  */
-bool js_type_is_string(js_type_t type);
+JS_API bool js_type_is_string(js_type_t type);
 
 /**
  * @brief Check if a type is an integer type
@@ -334,7 +337,7 @@ bool js_type_is_string(js_type_t type);
  * @param type Type to check
  * @return true if the type is an integer type
  */
-bool js_type_is_integer(js_type_t type);
+JS_API bool js_type_is_integer(js_type_t type);
 
 /**
  * @brief Get the string name of a type
@@ -342,7 +345,7 @@ bool js_type_is_integer(js_type_t type);
  * @param type Type to get name for
  * @return String name (e.g., "string", "int32", "datetime"), or "unknown"
  */
-const char* js_type_name(js_type_t type);
+JS_API const char* js_type_name(js_type_t type);
 
 /**
  * @brief Parse a type name string to its enum value
@@ -350,7 +353,7 @@ const char* js_type_name(js_type_t type);
  * @param name Type name string (case-sensitive)
  * @return Corresponding js_type_t value, or JS_TYPE_UNKNOWN if not recognized
  */
-js_type_t js_type_from_name(const char* name);
+JS_API js_type_t js_type_from_name(const char* name);
 
 /**
  * @brief Get the type of a cJSON value
@@ -361,7 +364,7 @@ js_type_t js_type_from_name(const char* name);
  * @param json cJSON value to check
  * @return Basic JSON type, or JS_TYPE_UNKNOWN if NULL
  */
-js_type_t js_type_of_json(const cJSON* json);
+JS_API js_type_t js_type_of_json(const cJSON* json);
 
 /* ============================================================================
  * Error Functions
@@ -372,14 +375,14 @@ js_type_t js_type_of_json(const cJSON* json);
  *
  * @param error Error to initialize
  */
-void js_error_init(js_error_t* error);
+JS_API void js_error_init(js_error_t* error);
 
 /**
  * @brief Clean up an error structure, freeing allocated memory
  *
  * @param error Error to clean up
  */
-void js_error_cleanup(js_error_t* error);
+JS_API void js_error_cleanup(js_error_t* error);
 
 /**
  * @brief Set error details
@@ -391,7 +394,7 @@ void js_error_cleanup(js_error_t* error);
  * @param message Error message (will be duplicated)
  * @return true on success, false on allocation failure
  */
-bool js_error_set(js_error_t* error, js_error_code_t code, js_severity_t severity,
+JS_API bool js_error_set(js_error_t* error, js_error_code_t code, js_severity_t severity,
                   const char* path, const char* message);
 
 /* ============================================================================
@@ -406,14 +409,14 @@ bool js_error_set(js_error_t* error, js_error_code_t code, js_severity_t severit
  *
  * @param result Result to initialize
  */
-void js_result_init(js_result_t* result);
+JS_API void js_result_init(js_result_t* result);
 
 /**
  * @brief Clean up a result structure, freeing all errors
  *
  * @param result Result to clean up
  */
-void js_result_cleanup(js_result_t* result);
+JS_API void js_result_cleanup(js_result_t* result);
 
 /**
  * @brief Add an error to a result
@@ -427,7 +430,7 @@ void js_result_cleanup(js_result_t* result);
  * @param path JSON Pointer path to error location (may be NULL)
  * @return true on success, false if max errors reached or allocation failed
  */
-bool js_result_add_error(js_result_t* result, js_error_code_t code,
+JS_API bool js_result_add_error(js_result_t* result, js_error_code_t code,
                          const char* message, const char* path);
 
 /**
@@ -442,7 +445,7 @@ bool js_result_add_error(js_result_t* result, js_error_code_t code,
  * @param path JSON Pointer path to warning location (may be NULL)
  * @return true on success, false if max errors reached or allocation failed
  */
-bool js_result_add_warning(js_result_t* result, js_error_code_t code,
+JS_API bool js_result_add_warning(js_result_t* result, js_error_code_t code,
                            const char* message, const char* path);
 
 /**
@@ -455,7 +458,7 @@ bool js_result_add_warning(js_result_t* result, js_error_code_t code,
  * @param location Source location information
  * @return true on success, false if max errors reached or allocation failed
  */
-bool js_result_add_error_with_location(js_result_t* result, js_error_code_t code,
+JS_API bool js_result_add_error_with_location(js_result_t* result, js_error_code_t code,
                                        const char* message, const char* path,
                                        js_location_t location);
 
@@ -466,7 +469,7 @@ bool js_result_add_error_with_location(js_result_t* result, js_error_code_t code
  * @param src Source result (errors are copied, not moved)
  * @return true on success, false if allocation failed
  */
-bool js_result_merge(js_result_t* dest, const js_result_t* src);
+JS_API bool js_result_merge(js_result_t* dest, const js_result_t* src);
 
 /**
  * @brief Get a formatted string with all errors
@@ -475,7 +478,7 @@ bool js_result_merge(js_result_t* dest, const js_result_t* src);
  * @return Newly allocated string with all errors, or NULL on failure.
  *         Caller must free with js_free().
  */
-char* js_result_to_string(const js_result_t* result);
+JS_API char* js_result_to_string(const js_result_t* result);
 
 /* ============================================================================
  * Location Functions
@@ -489,7 +492,7 @@ char* js_result_to_string(const js_result_t* result);
  * @param offset Byte offset (0-based)
  * @return Initialized location structure
  */
-js_location_t js_location_make(int line, int column, size_t offset);
+JS_API js_location_t js_location_make(int line, int column, size_t offset);
 
 /**
  * @brief Check if a location is valid (has non-zero line)
@@ -497,7 +500,7 @@ js_location_t js_location_make(int line, int column, size_t offset);
  * @param location Location to check
  * @return true if location has valid line/column information
  */
-bool js_location_is_valid(js_location_t location);
+JS_API bool js_location_is_valid(js_location_t location);
 
 #ifdef __cplusplus
 }
