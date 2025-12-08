@@ -20,9 +20,11 @@ Add to your `pom.xml`:
 <dependency>
     <groupId>org.json-structure</groupId>
     <artifactId>json-structure</artifactId>
-    <version>1.0.0</version>
+    <version>${version}</version>
 </dependency>
 ```
+
+Replace `${version}` with the desired version number.
 
 ## Usage
 
@@ -149,7 +151,7 @@ Kotlin has 100% Java interoperability and is widely used for Android and backend
 
 ```kotlin
 dependencies {
-    implementation("org.json-structure:json-structure:1.0.0")
+    implementation("org.json-structure:json-structure:${version}")
 }
 ```
 
@@ -212,7 +214,7 @@ Scala provides full JVM interoperability and is popular in data engineering and 
 #### Dependency (sbt)
 
 ```scala
-libraryDependencies += "org.json-structure" % "json-structure" % "1.0.0"
+libraryDependencies += "org.json-structure" % "json-structure" % "${version}"
 ```
 
 #### Schema Validation Example
@@ -270,7 +272,7 @@ Groovy is a dynamic JVM language used extensively in Gradle and scripting.
 
 ```groovy
 dependencies {
-    implementation 'org.json-structure:json-structure:1.0.0'
+    implementation 'org.json-structure:json-structure:${version}'
 }
 ```
 
@@ -329,7 +331,7 @@ Clojure is a functional Lisp dialect on the JVM with direct Java interoperabilit
 #### Dependency (Leiningen)
 
 ```clojure
-:dependencies [[org.json-structure/json-structure "1.0.0"]]
+:dependencies [[org.json-structure/json-structure "${version}"]]
 ```
 
 #### Schema Validation Example
