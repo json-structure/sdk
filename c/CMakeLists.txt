@@ -18,7 +18,9 @@ option(JS_BUILD_TESTS "Build tests" ON)
 option(JS_BUILD_EXAMPLES "Build examples" ON)
 option(JS_ENABLE_REGEX "Enable regex validation (requires PCRE2)" OFF)
 option(JS_FETCH_DEPENDENCIES "Fetch dependencies automatically" ON)
-option(JS_BUILD_SHARED "Build shared library (for FFI bindings)" ON)
+# Note: Shared library requires proper symbol export on Windows. 
+# Currently only tested on Unix-like systems for FFI bindings.
+option(JS_BUILD_SHARED "Build shared library (for FFI bindings)" OFF)
 
 # Compiler warnings
 if(MSVC)
