@@ -1,19 +1,15 @@
 cmake_minimum_required(VERSION 3.14)
 
 # Use version from JSON_STRUCTURE_VERSION if provided, otherwise default to 0.1.0
-if(DEFINED JSON_STRUCTURE_VERSION)
-    project(json_structure 
-        VERSION ${JSON_STRUCTURE_VERSION} 
-        LANGUAGES C CXX
-        DESCRIPTION "JSON Structure Schema Validator for C/C++"
-    )
-else()
-    project(json_structure 
-        VERSION 0.1.0 
-        LANGUAGES C CXX
-        DESCRIPTION "JSON Structure Schema Validator for C/C++"
-    )
+if(NOT DEFINED JSON_STRUCTURE_VERSION)
+    set(JSON_STRUCTURE_VERSION "0.1.0")
 endif()
+
+project(json_structure 
+    VERSION ${JSON_STRUCTURE_VERSION} 
+    LANGUAGES C CXX
+    DESCRIPTION "JSON Structure Schema Validator for C/C++"
+)
 
 # C99 standard for C code
 set(CMAKE_C_STANDARD 99)
