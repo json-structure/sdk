@@ -9,6 +9,7 @@
  * SPDX-License-Identifier: MIT
  */
 
+#include "json_structure/json_structure.h"
 #include "json_structure/types.h"
 #include <string.h>
 #include <stdlib.h>

@@ -18,6 +18,7 @@ option(JS_BUILD_TESTS "Build tests" ON)
 option(JS_BUILD_EXAMPLES "Build examples" ON)
 option(JS_ENABLE_REGEX "Enable regex validation (requires PCRE2)" OFF)
 option(JS_FETCH_DEPENDENCIES "Fetch dependencies automatically" ON)
+option(JS_BUILD_SHARED "Build shared library (for FFI bindings)" ON)
 
 # Compiler warnings
 if(MSVC)
@@ -57,14 +58,33 @@ else()
 endif()
 
 # Main library
-add_library(json_structure
-    src/types.c
-    src/error_codes.c
-    src/schema_validator.c
-    src/instance_validator.c
-    src/json_source_locator.c
-    src/regex_utils.cpp
-)
+if(JS_BUILD_SHARED)
+    add_library(json_structure SHARED
+        src/types.c
+        src/error_codes.c
+        src/schema_validator.c
+        src/instance_validator.c
+        src/json_source_locator.c
+        src/regex_utils.cpp
+    )
+    # Define JS_BUILDING_SHARED for proper symbol export on Windows
+    target_compile_definitions(json_structure PRIVATE JS_BUILDING_SHARED)
+    # Set visibility to hidden by default on Unix (exports use JS_API)
+    if(NOT WIN32)
+        set_target_properties(json_structure PROPERTIES C_VISIBILITY_PRESET hidden)
+        set_target_properties(json_structure PROPERTIES CXX_VISIBILITY_PRESET hidden)
+        set_target_properties(json_structure PROPERTIES VISIBILITY_INLINES_HIDDEN ON)
+    endif()
+else()
+    add_library(json_structure
+        src/types.c
+        src/error_codes.c
+        src/schema_validator.c
+        src/instance_validator.c
+        src/json_source_locator.c
+        src/regex_utils.cpp
+    )
+endif()
 
 target_include_directories(json_structure
     PUBLIC

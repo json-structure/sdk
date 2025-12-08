@@ -13,6 +13,7 @@
 
 #include "types.h"
 #include "error_codes.h"
+#include "export.h"
 #include "instance_validator.h"  /* For js_import_registry_t */
 
 #ifdef __cplusplus
@@ -50,14 +51,14 @@ typedef struct js_schema_validator {
  * @brief Initialize a schema validator with default options
  * @param validator Validator to initialize
  */
-void js_schema_validator_init(js_schema_validator_t* validator);
+JS_API void js_schema_validator_init(js_schema_validator_t* validator);
 
 /**
  * @brief Initialize a schema validator with custom options
  * @param validator Validator to initialize
  * @param options Validation options
  */
-void js_schema_validator_init_with_options(js_schema_validator_t* validator,
+JS_API void js_schema_validator_init_with_options(js_schema_validator_t* validator,
                                            js_schema_options_t options);
 
 /**
@@ -67,7 +68,7 @@ void js_schema_validator_init_with_options(js_schema_validator_t* validator,
  * @param result Output validation result
  * @return true if schema is valid (no errors), false otherwise
  */
-bool js_schema_validate_string(const js_schema_validator_t* validator,
+JS_API bool js_schema_validate_string(const js_schema_validator_t* validator,
                                const char* json_str,
                                js_result_t* result);
 
@@ -78,7 +79,7 @@ bool js_schema_validate_string(const js_schema_validator_t* validator,
  * @param result Output validation result
  * @return true if schema is valid (no errors), false otherwise
  */
-bool js_schema_validate(const js_schema_validator_t* validator,
+JS_API bool js_schema_validate(const js_schema_validator_t* validator,
                         const cJSON* schema,
                         js_result_t* result);
 
@@ -87,14 +88,14 @@ bool js_schema_validate(const js_schema_validator_t* validator,
  * @param type_name Type name string
  * @return true if valid primitive type
  */
-bool js_schema_is_valid_primitive_type(const char* type_name);
+JS_API bool js_schema_is_valid_primitive_type(const char* type_name);
 
 /**
  * @brief Check if a type name is a valid compound type
  * @param type_name Type name string
  * @return true if valid compound type
  */
-bool js_schema_is_valid_compound_type(const char* type_name);
+JS_API bool js_schema_is_valid_compound_type(const char* type_name);
 
 /**
  * @brief Alias for js_schema_validate_string (for C++ bindings compatibility)
@@ -103,7 +104,7 @@ bool js_schema_is_valid_compound_type(const char* type_name);
  * @param result Output validation result
  * @return true if schema is valid (no errors), false otherwise
  */
-bool js_schema_validator_validate_string(const js_schema_validator_t* validator,
+JS_API bool js_schema_validator_validate_string(const js_schema_validator_t* validator,
                                          const char* json_str,
                                          js_result_t* result);
 

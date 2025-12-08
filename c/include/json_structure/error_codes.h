@@ -11,6 +11,8 @@
 #ifndef JSON_STRUCTURE_ERROR_CODES_H
 #define JSON_STRUCTURE_ERROR_CODES_H
 
+#include "export.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -246,14 +248,14 @@ typedef enum {
  * @param code The error code
  * @return Constant string (do not free)
  */
-const char* js_schema_error_str(js_schema_error_t code);
+JS_API const char* js_schema_error_str(js_schema_error_t code);
 
 /**
  * @brief Get the string representation of an instance error code
  * @param code The error code
  * @return Constant string (do not free)
  */
-const char* js_instance_error_str(js_instance_error_t code);
+JS_API const char* js_instance_error_str(js_instance_error_t code);
 
 #ifdef __cplusplus
 }
