@@ -7,6 +7,8 @@ on:
       - 'c/**'
       - 'test-assets/**'
       - '.github/workflows/c.yml'
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
   pull_request:
     branches: [master, main]
     paths:
@@ -28,6 +30,20 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Extract version from tag
+        id: get_version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/v}
+            # Extract only numeric version (strip any suffix like -alpha, -beta, -dev)
+            VERSION=$(echo "$VERSION" | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+          else
+            VERSION="0.1.0"
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Extracted version: $VERSION"
+
       - name: Install CMake (Ubuntu)
         if: runner.os == 'Linux'
         run: |
@@ -41,7 +57,7 @@ jobs:
 
       - name: Configure CMake
         working-directory: c
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DJSON_STRUCTURE_VERSION=${{ steps.get_version.outputs.VERSION }}
 
       - name: Build
         working-directory: c
@@ -69,6 +85,20 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Extract version from tag
+        id: get_version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/v}
+            # Extract only numeric version (strip any suffix like -alpha, -beta, -dev)
+            VERSION=$(echo "$VERSION" | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+          else
+            VERSION="0.1.0"
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Extracted version: $VERSION"
+
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -76,7 +106,7 @@ jobs:
 
       - name: Configure CMake (Debug)
         working-directory: c
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DJSON_STRUCTURE_VERSION=${{ steps.get_version.outputs.VERSION }}
 
       - name: Build
         working-directory: c
@@ -88,3 +118,93 @@ jobs:
           valgrind --leak-check=full --error-exitcode=1 \
             --suppressions=/dev/null \
             ./build/tests/json_structure_tests
+
+  release:
+    name: Create Release Artifacts
+    runs-on: ${{ matrix.os }}
+    needs: [build-and-test, memory-check]
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            artifact_name: json_structure-linux-x64
+          - os: macos-latest
+            artifact_name: json_structure-macos-x64
+          - os: windows-latest
+            artifact_name: json_structure-windows-x64
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Extract version from tag
+        id: get_version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/v}
+            # Extract only numeric version (strip any suffix like -alpha, -beta, -dev)
+            VERSION=$(echo "$VERSION" | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+          else
+            VERSION="0.1.0"
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Extracted version: $VERSION"
+        shell: bash
+
+      - name: Install CMake (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential
+
+      - name: Install CMake (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install cmake
+
+      - name: Configure CMake
+        working-directory: c
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DJSON_STRUCTURE_VERSION=${{ steps.get_version.outputs.VERSION }}
+
+      - name: Build
+        working-directory: c
+        run: cmake --build build --config Release
+
+      - name: Install to staging directory
+        working-directory: c
+        run: cmake --install build --prefix staging --config Release
+
+      - name: Create archive (Unix)
+        if: runner.os != 'Windows'
+        working-directory: c
+        run: |
+          cd staging
+          tar czf ../${{ matrix.artifact_name }}-${{ steps.get_version.outputs.VERSION }}.tar.gz *
+
+      - name: Create archive (Windows)
+        if: runner.os == 'Windows'
+        working-directory: c
+        shell: pwsh
+        run: |
+          cd staging
+          Compress-Archive -Path * -DestinationPath ../${{ matrix.artifact_name }}-${{ steps.get_version.outputs.VERSION }}.zip
+
+      - name: Upload release artifact (Unix)
+        if: runner.os != 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}-${{ steps.get_version.outputs.VERSION }}
+          path: c/${{ matrix.artifact_name }}-${{ steps.get_version.outputs.VERSION }}.tar.gz
+
+      - name: Upload release artifact (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}-${{ steps.get_version.outputs.VERSION }}
+          path: c/${{ matrix.artifact_name }}-${{ steps.get_version.outputs.VERSION }}.zip
