@@ -1,0 +1,27 @@
+# frozen_string_literal: true
+
+require 'bundler/gem_tasks'
+require 'rspec/core/rake_task'
+
+RSpec::Core::RakeTask.new(:spec)
+
+desc 'Build the C library (shared library for FFI)'
+task :build_c_lib do
+  puts 'Building C library...'
+  c_dir = File.expand_path('../c', __dir__)
+  build_dir = File.join(c_dir, 'build')
+
+  Dir.mkdir(build_dir) unless Dir.exist?(build_dir)
+
+  Dir.chdir(build_dir) do
+    system('cmake', '..', '-DCMAKE_BUILD_TYPE=Release', '-DJS_BUILD_SHARED=ON', '-DJS_BUILD_TESTS=OFF', '-DJS_BUILD_EXAMPLES=OFF') || raise('CMake configuration failed')
+    system('cmake', '--build', '.') || raise('Build failed')
+  end
+
+  puts 'C library built successfully!'
+end
+
+desc 'Run tests (builds C library first if needed)'
+task test: [:build_c_lib, :spec]
+
+task default: :test
