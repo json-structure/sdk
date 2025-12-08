@@ -188,7 +188,8 @@ jobs:
       - name: Test validate invalid instance (expect exit 1)
         shell: bash
         run: |
-          if echo '-5' | bin/${{ matrix.artifact }} validate -s test-assets/schemas/validation/numeric-minimum-with-uses.struct.json -; then
+          # Use a string where int32 is expected - type mismatch should fail
+          if echo '"not-a-number"' | bin/${{ matrix.artifact }} validate -s test-assets/schemas/validation/numeric-minimum-with-uses.struct.json -; then
             echo "Expected exit code 1 but got 0"
             exit 1
           fi
