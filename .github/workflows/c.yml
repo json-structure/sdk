@@ -55,7 +55,10 @@ jobs:
       - name: Run Tests (Windows)
         if: runner.os == 'Windows'
         working-directory: c
-        run: .\build\tests\Release\json_structure_tests.exe
+        run: |
+          # Copy DLL to test directory for shared library build
+          Copy-Item build\Release\json_structure.dll build\tests\Release\
+          .\build\tests\Release\json_structure_tests.exe
 
   memory-check:
     name: Memory Check (Valgrind)
