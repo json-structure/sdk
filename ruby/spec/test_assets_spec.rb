@@ -96,12 +96,20 @@ RSpec.describe 'Test Assets Conformance' do
     let(:validation_instances_path) { File.join(test_assets_path, 'instances', 'validation') }
     let(:validation_schemas_path) { File.join(test_assets_path, 'schemas', 'validation') }
 
-    # Known C SDK limitations - these validation keywords are not yet implemented
-    # TODO: Remove from skip list as C SDK adds support
-    let(:skip_schemas) do
-      %w[
-        object-minproperties-with-uses
-      ]
+    # Helper to extract the actual value from a test instance
+    # Test instances may have metadata fields like _description, _expectedError, _comment
+    # These need to be stripped before validation, or use the "value" field if present
+    def extract_instance_value(instance_json)
+      instance = JSON.parse(instance_json)
+      
+      # If there's a "value" field, use that
+      return JSON.generate(instance['value']) if instance.key?('value')
+      
+      # Otherwise, remove metadata fields and use the rest
+      instance.delete('_description')
+      instance.delete('_expectedError')
+      instance.delete('_comment')
+      JSON.generate(instance)
     end
 
     it 'rejects invalid instances against their schemas' do
@@ -112,17 +120,10 @@ RSpec.describe 'Test Assets Conformance' do
       skip 'no instance directories found' if schema_dirs.empty?
 
       passed = 0
-      skipped = 0
       failed = []
 
       schema_dirs.each do |instance_dir|
         schema_name = File.basename(instance_dir)
-        
-        if skip_schemas.include?(schema_name)
-          skipped += 1
-          next
-        end
-        
         schema_file = File.join(validation_schemas_path, "#{schema_name}.struct.json")
         
         next unless File.exist?(schema_file)
@@ -133,7 +134,9 @@ RSpec.describe 'Test Assets Conformance' do
         instance_files = Dir.glob(File.join(instance_dir, '*.json'))
         instance_files.each do |instance_file|
           instance_content = File.read(instance_file)
-          result = JsonStructure::InstanceValidator.validate(instance_content, schema_content)
+          # Extract the actual value, stripping metadata fields
+          instance_value = extract_instance_value(instance_content)
+          result = JsonStructure::InstanceValidator.validate(instance_value, schema_content)
 
           if result.invalid?
             passed += 1
@@ -146,7 +149,7 @@ RSpec.describe 'Test Assets Conformance' do
       expect(failed).to be_empty,
         "Expected these instances to be invalid but they were valid:\n  #{failed.join("\n  ")}"
       
-      puts "  Tested #{passed} invalid instances - all correctly rejected (#{skipped} schemas skipped due to C SDK limitations)"
+      puts "  Tested #{passed} invalid instances - all correctly rejected"
     end
   end
 
