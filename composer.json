@@ -1,7 +1,7 @@
 {
     "name": "json-structure/sdk",
     "type": "library",
-    "description": "JSON Structure schema and instance validation for PHP",
+    "description": "Validators for JSON Structure schemas and instances",
     "license": "MIT",
     "keywords": [
         "json",
