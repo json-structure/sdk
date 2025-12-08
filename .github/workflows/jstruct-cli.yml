@@ -170,23 +170,25 @@ jobs:
         run: bin/${{ matrix.artifact }} validate --help
 
       - name: Test check valid schema
-        run: bin/${{ matrix.artifact }} check test-assets/schemas/valid/01-simple-types/person.struct.json
+        run: bin/${{ matrix.artifact }} check test-assets/schemas/validation/numeric-minimum-with-uses.struct.json
 
       - name: Test check invalid schema (expect exit 1)
         shell: bash
         run: |
-          if bin/${{ matrix.artifact }} check test-assets/schemas/invalid/01-missing-id/missing-id.struct.json; then
+          if bin/${{ matrix.artifact }} check test-assets/schemas/invalid/missing-type.struct.json; then
             echo "Expected exit code 1 but got 0"
             exit 1
           fi
 
       - name: Test validate valid instance
-        run: bin/${{ matrix.artifact }} validate -s test-assets/schemas/valid/01-simple-types/person.struct.json test-assets/instances/valid/01-simple-types/person.json
+        shell: bash
+        run: |
+          echo '10' | bin/${{ matrix.artifact }} validate -s test-assets/schemas/validation/numeric-minimum-with-uses.struct.json -
 
       - name: Test validate invalid instance (expect exit 1)
         shell: bash
         run: |
-          if bin/${{ matrix.artifact }} validate -s test-assets/schemas/valid/01-simple-types/person.struct.json test-assets/instances/invalid/01-simple-types/wrong-type-age.json; then
+          if echo '-5' | bin/${{ matrix.artifact }} validate -s test-assets/schemas/validation/numeric-minimum-with-uses.struct.json -; then
             echo "Expected exit code 1 but got 0"
             exit 1
           fi
@@ -194,20 +196,20 @@ jobs:
       - name: Test JSON output format
         shell: bash
         run: |
-          OUTPUT=$(bin/${{ matrix.artifact }} check --format json test-assets/schemas/valid/01-simple-types/person.struct.json)
+          OUTPUT=$(bin/${{ matrix.artifact }} check --format json test-assets/schemas/validation/numeric-minimum-with-uses.struct.json)
           echo "$OUTPUT" | grep -q '"valid": true' || (echo "JSON output missing valid field"; exit 1)
 
       - name: Test TAP output format
         shell: bash
         run: |
-          OUTPUT=$(bin/${{ matrix.artifact }} check --format tap test-assets/schemas/valid/01-simple-types/person.struct.json)
+          OUTPUT=$(bin/${{ matrix.artifact }} check --format tap test-assets/schemas/validation/numeric-minimum-with-uses.struct.json)
           echo "$OUTPUT" | grep -q '^ok 1' || (echo "TAP output missing ok line"; exit 1)
 
       - name: Test multiple files
-        run: bin/${{ matrix.artifact }} check test-assets/schemas/valid/01-simple-types/person.struct.json test-assets/schemas/valid/02-arrays/string-array.struct.json
+        run: bin/${{ matrix.artifact }} check test-assets/schemas/validation/numeric-minimum-with-uses.struct.json test-assets/schemas/validation/string-pattern-with-uses.struct.json
 
       - name: Test quiet mode
-        run: bin/${{ matrix.artifact }} check -q test-assets/schemas/valid/01-simple-types/person.struct.json
+        run: bin/${{ matrix.artifact }} check -q test-assets/schemas/validation/numeric-minimum-with-uses.struct.json
 
   # Create DEB package for Debian/Ubuntu
   package-deb:
