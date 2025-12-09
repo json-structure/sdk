@@ -422,6 +422,64 @@ go test ./...
 go test -cover ./...
 ```
 
+### Running Tests with Race Detector
+
+```bash
+go test -race ./...
+```
+
+## Thread Safety
+
+The Go SDK follows idiomatic Go patterns for concurrency safety.
+
+### Package-Level State
+
+All package-level state (type maps, regex patterns, constants) is **read-only** and safe for concurrent access.
+
+### Validator Instances
+
+**Validator instances are NOT safe for concurrent use.** Each validator stores mutable state (errors, schema references, source locator) that is modified during validation.
+
+#### ❌ Unsafe Pattern
+
+```go
+// WRONG: Sharing a validator across goroutines
+validator := jsonstructure.NewInstanceValidator(nil)
+
+var wg sync.WaitGroup
+for i := 0; i < 10; i++ {
+    wg.Add(1)
+    go func(instance interface{}) {
+        defer wg.Done()
+        validator.Validate(instance, schema) // RACE CONDITION!
+    }(instances[i])
+}
+wg.Wait()
+```
+
+#### ✅ Safe Pattern
+
+```go
+// CORRECT: Create a new validator per goroutine
+var wg sync.WaitGroup
+for i := 0; i < 10; i++ {
+    wg.Add(1)
+    go func(instance interface{}) {
+        defer wg.Done()
+        validator := jsonstructure.NewInstanceValidator(nil) // New instance
+        validator.Validate(instance, schema) // Safe!
+    }(instances[i])
+}
+wg.Wait()
+```
+
+### Guidelines
+
+1. **Create a new validator for each goroutine** or each validation operation
+2. **Validators are lightweight** - there's minimal overhead in creating new instances
+3. **Options can be shared** - `SchemaValidatorOptions` and `InstanceValidatorOptions` are safe to share (read-only after construction)
+4. **Results are safe to return** - `ValidationResult` and `ValidationError` are value types
+
 ## License
 
 MIT License - see [LICENSE](../LICENSE) for details.
