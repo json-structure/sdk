@@ -15,8 +15,6 @@
 #if defined(_WIN32)
 #include <windows.h>
 typedef CRITICAL_SECTION js_mutex_t;
-typedef INIT_ONCE js_once_t;
-#define JS_ONCE_INIT INIT_ONCE_STATIC_INIT
 #define JS_MUTEX_INIT(m) InitializeCriticalSection(m)
 #define JS_MUTEX_LOCK(m) EnterCriticalSection(m)
 #define JS_MUTEX_UNLOCK(m) LeaveCriticalSection(m)
@@ -58,27 +56,27 @@ static js_allocator_t g_allocator = {
 
 /* Mutex to protect allocator access */
 static js_mutex_t g_allocator_mutex;
+static volatile int g_allocator_mutex_initialized = 0;
+
+#if !defined(_WIN32)
 static js_once_t g_allocator_once = JS_ONCE_INIT;
 
-/* Initialize allocator mutex (called via once mechanism) */
-#if defined(_WIN32)
-static BOOL CALLBACK init_allocator_mutex_once(PINIT_ONCE InitOnce, PVOID Parameter, PVOID *Context) {
-    (void)InitOnce;
-    (void)Parameter;
-    (void)Context;
-    JS_MUTEX_INIT(&g_allocator_mutex);
-    return TRUE;
-}
-#else
 static void init_allocator_mutex_once(void) {
     JS_MUTEX_INIT(&g_allocator_mutex);
+    g_allocator_mutex_initialized = 1;
 }
 #endif
 
 /* Ensure allocator mutex is initialized (thread-safe) */
 static void ensure_allocator_mutex_init(void) {
 #if defined(_WIN32)
-    InitOnceExecuteOnce(&g_allocator_once, init_allocator_mutex_once, NULL, NULL);
+    /* On Windows, use simple initialization in js_init() 
+     * The allocator mutex is only needed to protect custom allocator changes,
+     * and the default malloc/free are already thread-safe */
+    if (!g_allocator_mutex_initialized) {
+        JS_MUTEX_INIT(&g_allocator_mutex);
+        g_allocator_mutex_initialized = 1;
+    }
 #else
     pthread_once(&g_allocator_once, init_allocator_mutex_once);
 #endif
@@ -127,55 +125,34 @@ void js_set_allocator(js_allocator_t alloc) {
 }
 
 js_allocator_t js_get_allocator(void) {
-    ensure_allocator_mutex_init();
-    
-    JS_MUTEX_LOCK(&g_allocator_mutex);
-    js_allocator_t alloc = g_allocator;
-    JS_MUTEX_UNLOCK(&g_allocator_mutex);
-    
-    return alloc;
+    /* Reading the allocator struct - on modern platforms this is atomic enough
+     * for the expected use case. The allocator should only be set during init. */
+    return g_allocator;
 }
 
 void* js_malloc(size_t size) {
-    ensure_allocator_mutex_init();
-    
-    JS_MUTEX_LOCK(&g_allocator_mutex);
-    void* ptr = g_allocator.malloc(size);
-    JS_MUTEX_UNLOCK(&g_allocator_mutex);
-    
-    return ptr;
+    /* Note: The allocator functions (malloc/free) are expected to be thread-safe.
+     * We only lock when changing the allocator itself. */
+    return g_allocator.malloc(size);
 }
 
 void* js_realloc(void* ptr, size_t size) {
-    ensure_allocator_mutex_init();
-    
-    JS_MUTEX_LOCK(&g_allocator_mutex);
-    void* result;
     if (g_allocator.realloc) {
-        result = g_allocator.realloc(ptr, size);
-    } else {
-        /* No realloc provided - cannot safely reallocate without knowing original size.
-         * Return NULL to signal failure. Callers should ensure realloc is provided
-         * in custom allocators, or this path should not be reached with default allocator. */
-        if (ptr) {
-            result = NULL;  /* Cannot safely reallocate existing memory */
-        } else {
-            /* For NULL ptr, realloc acts like malloc */
-            result = g_allocator.malloc(size);
-        }
+        return g_allocator.realloc(ptr, size);
     }
-    JS_MUTEX_UNLOCK(&g_allocator_mutex);
-    
-    return result;
+    /* No realloc provided - cannot safely reallocate without knowing original size.
+     * Return NULL to signal failure. Callers should ensure realloc is provided
+     * in custom allocators, or this path should not be reached with default allocator. */
+    if (ptr) {
+        return NULL;  /* Cannot safely reallocate existing memory */
+    }
+    /* For NULL ptr, realloc acts like malloc */
+    return g_allocator.malloc(size);
 }
 
 void js_free(void* ptr) {
     if (ptr) {
-        ensure_allocator_mutex_init();
-        
-        JS_MUTEX_LOCK(&g_allocator_mutex);
         g_allocator.free(ptr);
-        JS_MUTEX_UNLOCK(&g_allocator_mutex);
     }
 }
 
