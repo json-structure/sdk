@@ -153,11 +153,16 @@ class ThreadSafetyTests {
                 
                 // Verify errors are specific to this validation
                 if (index % 3 == 0) {
+                    assertThat(result.isValid()).isFalse();
+                    assertThat(result.getErrors()).isNotEmpty();
                     assertThat(result.getErrors())
-                            .anyMatch(e -> e.getMessage().contains("required"));
+                            .anyMatch(e -> e.getCode().contains("REQUIRED") || e.getMessage().toLowerCase().contains("required"));
                 } else if (index % 3 == 1) {
+                    assertThat(result.isValid()).isFalse();
+                    assertThat(result.getErrors()).isNotEmpty();
                     assertThat(result.getErrors())
-                            .anyMatch(e -> e.getMessage().contains("int32") || e.getMessage().contains("number"));
+                            .anyMatch(e -> e.getCode().contains("INT") || e.getCode().contains("NUMBER") || 
+                                          e.getMessage().toLowerCase().contains("int32") || e.getMessage().toLowerCase().contains("number"));
                 } else {
                     assertThat(result.getErrors()).isEmpty();
                 }
@@ -197,7 +202,7 @@ class ThreadSafetyTests {
                 "name": "TestSchema",
                 "type": "object",
                 "properties": {
-                    "name": { "type": "invalid-type" }
+                    "name": { "type": "not_a_valid_type_name" }
                 }
             }
             """;

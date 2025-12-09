@@ -317,7 +317,7 @@ InstanceValidator validator = InstanceValidator.builder()
 
 ## References
 
-- Issue: [Java SDK: Make validators thread-safe](link-to-issue)
+- Original Issue: Make validators thread-safe for concurrent use and Spring singleton beans
 - Thread Safety Tests: `ThreadSafetyTests.java`
 - ValidationOptions: `ValidationOptions.java`
 - README: Thread Safety section
