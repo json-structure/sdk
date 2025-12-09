@@ -72,15 +72,27 @@ if(JS_FETCH_DEPENDENCIES)
         )
     endif()
     
-    # Configure cJSON options
+    # Configure cJSON options before populating
     set(ENABLE_CJSON_TEST OFF CACHE BOOL "" FORCE)
-    set(ENABLE_CJSON_INSTALL OFF CACHE BOOL "" FORCE)
     set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
     set(BUILD_SHARED_AND_STATIC_LIBS OFF CACHE BOOL "" FORCE)
     set(CJSON_OVERRIDE_BUILD_SHARED_LIBS ON CACHE BOOL "" FORCE)
     set(CJSON_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+    # Disable cJSON's target export to prevent install conflicts
+    set(ENABLE_TARGET_EXPORT OFF CACHE BOOL "" FORCE)
+    set(ENABLE_CJSON_UNINSTALL OFF CACHE BOOL "" FORCE)
+    # Disable cJSON's custom compiler flags to avoid conflicts with our project flags
+    set(ENABLE_CUSTOM_COMPILER_FLAGS OFF CACHE BOOL "" FORCE)
     
-    FetchContent_MakeAvailable(cjson)
+    # Use FetchContent_Populate + add_subdirectory with EXCLUDE_FROM_ALL
+    # This prevents cJSON's install() commands from running at install time
+    # The cjson target is still available for linking
+    FetchContent_GetProperties(cjson)
+    if(NOT cjson_POPULATED)
+        FetchContent_Populate(cjson)
+        # EXCLUDE_FROM_ALL prevents cJSON install targets from being part of the default install
+        add_subdirectory(${cjson_SOURCE_DIR} ${cjson_BINARY_DIR} EXCLUDE_FROM_ALL)
+    endif()
     
     # Create wrapper include directory for <cjson/cJSON.h> compatibility
     file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/include/cjson")
@@ -129,8 +141,10 @@ target_include_directories(json_structure
         $<INSTALL_INTERFACE:include>
 )
 
+# cJSON is statically linked into the shared library, so it's PRIVATE
+# This prevents cjson from being part of the install export set
 target_link_libraries(json_structure
-    PUBLIC cjson
+    PRIVATE cjson
 )
 
 # Link pthread on Unix systems for thread synchronization
