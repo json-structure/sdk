@@ -135,11 +135,11 @@ ValidationResult instanceResult = instanceValidator.validate(instance, schema);
 ### TypeScript/JavaScript
 
 ```bash
-npm install json-structure
+npm install @json-structure/sdk
 ```
 
 ```typescript
-import { SchemaValidator, InstanceValidator } from 'json-structure';
+import { SchemaValidator, InstanceValidator } from '@json-structure/sdk';
 
 // Validate a schema
 const schema = {

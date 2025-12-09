@@ -5,7 +5,7 @@ TypeScript/JavaScript library for validating JSON documents against [JSON Struct
 ## Installation
 
 ```bash
-npm install json-structure
+npm install @json-structure/sdk
 ```
 
 ## Usage
@@ -15,7 +15,7 @@ The package works with both TypeScript and plain JavaScript, and supports both E
 ### JavaScript (CommonJS)
 
 ```javascript
-const { SchemaValidator, InstanceValidator } = require('json-structure');
+const { SchemaValidator, InstanceValidator } = require('@json-structure/sdk');
 
 const schema = {
   type: 'object',
@@ -38,7 +38,7 @@ console.log(instanceValidator.validate({ name: 'Alice', age: 30 }, schema));
 ### JavaScript (ES Modules)
 
 ```javascript
-import { SchemaValidator, InstanceValidator } from 'json-structure';
+import { SchemaValidator, InstanceValidator } from '@json-structure/sdk';
 
 // Same usage as above
 ```
@@ -50,7 +50,7 @@ import { SchemaValidator, InstanceValidator } from 'json-structure';
 Validate that a schema document follows the JSON Structure specification:
 
 ```typescript
-import { SchemaValidator } from 'json-structure';
+import { SchemaValidator } from '@json-structure/sdk';
 
 const schema = {
   $schema: 'https://json-structure.org/meta/core/v0/#',
@@ -77,7 +77,7 @@ if (result.isValid) {
 Validate JSON data against a JSON Structure schema:
 
 ```typescript
-import { InstanceValidator } from 'json-structure';
+import { InstanceValidator } from '@json-structure/sdk';
 
 const schema = {
   type: 'object',
@@ -109,7 +109,7 @@ When using `$import` to reference external schemas, you can provide those schema
 directly instead of fetching them from URIs:
 
 ```typescript
-import { SchemaValidator } from 'json-structure';
+import { SchemaValidator } from '@json-structure/sdk';
 
 // External schema that would normally be fetched
 const addressSchema = {
@@ -151,7 +151,7 @@ const result = validator.validate(mainSchema);
 To enable extended validation features (minLength, maxLength, pattern, minimum, maximum, allOf, anyOf, oneOf, not, if/then/else):
 
 ```typescript
-import { InstanceValidator } from 'json-structure';
+import { InstanceValidator } from '@json-structure/sdk';
 
 const schema = {
   type: 'string',
@@ -272,7 +272,7 @@ The SDK provides wrapper types for JSON Structure types that need special serial
 ### Large Integers
 
 ```typescript
-import { Int64, UInt64, Int128, UInt128 } from 'json-structure';
+import { Int64, UInt64, Int128, UInt128 } from '@json-structure/sdk';
 
 // Int64/UInt64 - serializes to/from string to preserve precision
 const id = new Int64('9223372036854775807');
@@ -289,7 +289,7 @@ const bigVal = new Int128('170141183460469231731687303715884105727');
 ### Decimal Numbers
 
 ```typescript
-import { Decimal } from 'json-structure';
+import { Decimal } from '@json-structure/sdk';
 
 // Preserve arbitrary precision
 const price = new Decimal('123.456789012345678901234567890');
@@ -299,7 +299,7 @@ console.log(JSON.stringify({ price })); // {"price":"123.45678901234567890123456
 ### Duration (ISO 8601)
 
 ```typescript
-import { Duration } from 'json-structure';
+import { Duration } from '@json-structure/sdk';
 
 // Create from hours, minutes, seconds
 const duration = Duration.fromHMS(2, 30, 45);
@@ -319,7 +319,7 @@ const dur = Duration.fromComponents({
 ### Date and Time
 
 ```typescript
-import { DateOnly, TimeOnly } from 'json-structure';
+import { DateOnly, TimeOnly } from '@json-structure/sdk';
 
 // Date without time (RFC 3339)
 const date = new DateOnly(2024, 6, 15);
@@ -340,7 +340,7 @@ console.log(time.toString()); // "14:30:45.123"
 ### Binary Data
 
 ```typescript
-import { Binary } from 'json-structure';
+import { Binary } from '@json-structure/sdk';
 
 // Create from bytes
 const binary = new Binary(new Uint8Array([72, 101, 108, 108, 111]));
@@ -360,7 +360,7 @@ console.log(JSON.stringify({ data: binary })); // {"data":"SGVsbG8="}
 ### UUID
 
 ```typescript
-import { UUID } from 'json-structure';
+import { UUID } from '@json-structure/sdk';
 
 // Create from string (validates format)
 const uuid = new UUID('550e8400-e29b-41d4-a716-446655440000');
@@ -375,7 +375,7 @@ console.log(uuid.equals(random)); // false
 ### JSON Pointer (RFC 6901)
 
 ```typescript
-import { JSONPointer } from 'json-structure';
+import { JSONPointer } from '@json-structure/sdk';
 
 // Create from string
 const ptr = new JSONPointer('/foo/bar/0');
@@ -393,7 +393,7 @@ console.log(escaped.toString()); // "/a~1b/c~0d"
 ### JSON Reviver and Replacer
 
 ```typescript
-import { jsonStructureReviver, jsonStructureReplacer } from 'json-structure';
+import { jsonStructureReviver, jsonStructureReplacer } from '@json-structure/sdk';
 
 // Parse JSON with automatic type conversion
 const parsed = JSON.parse(jsonString, jsonStructureReviver);
