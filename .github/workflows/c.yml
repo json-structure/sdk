@@ -178,7 +178,7 @@ jobs:
 
       - name: Install to staging directory
         working-directory: c
-        run: cmake --install build --prefix staging --config Release
+        run: cmake --install build --prefix staging --config Release --component json_structure
 
       - name: Create archive (Unix)
         if: runner.os != 'Windows'

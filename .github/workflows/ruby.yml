@@ -125,6 +125,13 @@ jobs:
         id: version
         run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
 
+      - name: Update version.rb from tag
+        working-directory: ruby
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          sed -i "s/VERSION = '.*'/VERSION = '$VERSION'/" lib/jsonstructure/version.rb
+          cat lib/jsonstructure/version.rb
+
       - name: Verify version matches gemspec
         working-directory: ruby
         run: |
