@@ -4,8 +4,62 @@
 import Foundation
 
 /// Validates JSON Structure schema documents.
-public class SchemaValidator {
-    private var options: SchemaValidatorOptions
+///
+/// This validator is a value type (struct) and is thread-safe and Sendable.
+/// Each validation operation creates a fresh internal engine, ensuring no shared
+/// mutable state between concurrent validations.
+///
+/// ## Thread Safety
+///
+/// The validator is a struct containing only immutable configuration. Each call to
+/// `validate()` creates an isolated validation engine with its own mutable state,
+/// making concurrent validations on the same validator instance completely safe.
+///
+/// ## Usage with Swift Concurrency
+///
+/// ```swift
+/// let validator = SchemaValidator()
+///
+/// // Safe to use concurrently - each call gets its own engine
+/// await withTaskGroup(of: ValidationResult.self) { group in
+///     for schema in schemas {
+///         group.addTask {
+///             validator.validate(schema)
+///         }
+///     }
+/// }
+/// ```
+public struct SchemaValidator: Sendable {
+    private let options: SchemaValidatorOptions
+    
+    /// Creates a new SchemaValidator with the given options.
+    public init(options: SchemaValidatorOptions = SchemaValidatorOptions()) {
+        self.options = options
+    }
+    
+    /// Validates a JSON Structure schema document.
+    public func validate(_ schema: Any) -> ValidationResult {
+        let engine = ValidationEngine(options: options)
+        return engine.validate(schema)
+    }
+    
+    /// Validates a JSON Structure schema from JSON data.
+    public func validateJSON(_ jsonData: Data) throws -> ValidationResult {
+        let engine = ValidationEngine(options: options)
+        return try engine.validateJSON(jsonData)
+    }
+    
+    /// Validates a JSON Structure schema from a JSON string.
+    public func validateJSONString(_ jsonString: String) throws -> ValidationResult {
+        let engine = ValidationEngine(options: options)
+        return try engine.validateJSONString(jsonString)
+    }
+}
+
+/// Internal validation engine - created fresh for each validation operation.
+/// This class contains all the mutable state and validation logic.
+private final class ValidationEngine {
+    private let options: SchemaValidatorOptions
     private var errors: [ValidationError] = []
     private var warnings: [ValidationError] = []
     private var schema: [String: Any] = [:]
@@ -24,8 +78,7 @@ public class SchemaValidator {
         "has", "default"
     ]
     
-    /// Creates a new SchemaValidator with the given options.
-    public init(options: SchemaValidatorOptions = SchemaValidatorOptions()) {
+    init(options: SchemaValidatorOptions) {
         self.options = options
     }
     
@@ -168,7 +221,7 @@ public class SchemaValidator {
         guard let objMap = obj as? [String: Any] else { return }
         
         for (key, value) in objMap {
-            if SchemaValidator.validationExtensionKeywords.contains(key) {
+            if ValidationEngine.validationExtensionKeywords.contains(key) {
                 let keyPath = path.isEmpty ? key : "\(path)/\(key)"
                 addWarning(
                     keyPath,
