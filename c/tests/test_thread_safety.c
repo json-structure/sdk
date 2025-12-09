@@ -16,7 +16,13 @@
 #include <process.h>
 typedef HANDLE thread_t;
 typedef unsigned (__stdcall *thread_func_t)(void*);
-#define thread_create(t, f, a) (*(t) = (HANDLE)_beginthreadex(NULL, 0, f, a, 0, NULL))
+/* _beginthreadex returns handle on success (non-zero), 0 on failure.
+ * We want to return 0 on success, non-zero on failure for consistency with pthread. */
+static inline int win_thread_create(thread_t* t, thread_func_t f, void* a) {
+    *t = (HANDLE)_beginthreadex(NULL, 0, f, a, 0, NULL);
+    return (*t == NULL) ? 1 : 0;
+}
+#define thread_create(t, f, a) win_thread_create(t, (thread_func_t)(f), a)
 #define thread_join(t) (WaitForSingleObject(t, INFINITE), CloseHandle(t))
 #define thread_return_t unsigned
 #define THREAD_RETURN(x) return (x)
