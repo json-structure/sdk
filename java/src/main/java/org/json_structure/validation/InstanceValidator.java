@@ -20,13 +20,27 @@ import java.util.regex.PatternSyntaxException;
 
 /**
  * Validates JSON instances against JSON Structure schemas.
+ * This class is thread-safe - multiple threads can call validate concurrently.
  */
 public final class InstanceValidator {
 
+    /**
+     * Internal context for a single validation operation.
+     * This isolates mutable state per validation call, enabling thread safety.
+     */
+    private static final class ValidationContext {
+        final Map<String, JsonNode> resolvedRefs = new HashMap<>();
+        JsonSourceLocator sourceLocator;
+    }
+
+    /**
+     * ThreadLocal storage for the current validation context.
+     * This allows thread-safe access to context without passing it through every method.
+     */
+    private static final ThreadLocal<ValidationContext> currentContext = new ThreadLocal<>();
+
     private final ValidationOptions options;
     private final ObjectMapper objectMapper;
-    private final Map<String, JsonNode> resolvedRefs = new HashMap<>();
-    private JsonSourceLocator sourceLocator;
 
     /**
      * Creates a new InstanceValidator with default options.
@@ -53,33 +67,37 @@ public final class InstanceValidator {
      * @return the validation result
      */
     public ValidationResult validate(JsonNode instance, JsonNode schema) {
-        sourceLocator = null;
-        ValidationResult result = new ValidationResult();
+        ValidationContext ctx = new ValidationContext();
+        currentContext.set(ctx);
+        
+        try {
+            ValidationResult result = new ValidationResult();
 
-        if (schema == null) {
-            addError(result, ErrorCodes.SCHEMA_NULL, "Schema cannot be null", "");
-            return result;
-        }
+            if (schema == null) {
+                addError(result, ErrorCodes.SCHEMA_NULL, "Schema cannot be null", "");
+                return result;
+            }
 
-        resolvedRefs.clear();
-
-        // Handle $root - if the schema has a $root property, resolve it and use that as the validation target
-        JsonNode effectiveSchema = schema;
-        if (schema.isObject() && schema.has("$root")) {
-            String rootRef = schema.get("$root").asText();
-            if (rootRef != null && !rootRef.isEmpty()) {
-                JsonNode resolved = resolveRef(rootRef, schema);
-                if (resolved != null) {
-                    effectiveSchema = resolved;
-                } else {
-                    addError(result, ErrorCodes.INSTANCE_ROOT_UNRESOLVED, "Unable to resolve $root reference: " + rootRef, "");
-                    return result;
+            // Handle $root - if the schema has a $root property, resolve it and use that as the validation target
+            JsonNode effectiveSchema = schema;
+            if (schema.isObject() && schema.has("$root")) {
+                String rootRef = schema.get("$root").asText();
+                if (rootRef != null && !rootRef.isEmpty()) {
+                    JsonNode resolved = resolveRef(rootRef, schema);
+                    if (resolved != null) {
+                        effectiveSchema = resolved;
+                    } else {
+                        addError(result, ErrorCodes.INSTANCE_ROOT_UNRESOLVED, "Unable to resolve $root reference: " + rootRef, "");
+                        return result;
+                    }
                 }
             }
-        }
 
-        validateInstance(instance, effectiveSchema, schema, result, "", 0);
-        return result;
+            validateInstance(instance, effectiveSchema, schema, result, "", 0);
+            return result;
+        } finally {
+            currentContext.remove();
+        }
     }
 
     /**
@@ -90,8 +108,11 @@ public final class InstanceValidator {
      * @return the validation result
      */
     public ValidationResult validate(String instanceJson, String schemaJson) {
+        ValidationContext ctx = new ValidationContext();
+        ctx.sourceLocator = new JsonSourceLocator(instanceJson);
+        currentContext.set(ctx);
+        
         try {
-            sourceLocator = new JsonSourceLocator(instanceJson);
             JsonNode instance = objectMapper.readTree(instanceJson);
             JsonNode schema = objectMapper.readTree(schemaJson);
             ValidationResult result = new ValidationResult();
@@ -100,8 +121,6 @@ public final class InstanceValidator {
                 addError(result, ErrorCodes.SCHEMA_NULL, "Schema cannot be null", "");
                 return result;
             }
-
-            resolvedRefs.clear();
 
             // Handle $root - if the schema has a $root property, resolve it and use that as the validation target
             JsonNode effectiveSchema = schema;
@@ -122,6 +141,8 @@ public final class InstanceValidator {
             return result;
         } catch (JsonProcessingException e) {
             return ValidationResult.failure("Failed to parse JSON: " + e.getMessage());
+        } finally {
+            currentContext.remove();
         }
     }
 
@@ -1282,8 +1303,9 @@ public final class InstanceValidator {
     }
 
     private JsonNode resolveRef(String reference, JsonNode rootSchema) {
-        if (resolvedRefs.containsKey(reference)) {
-            return resolvedRefs.get(reference);
+        ValidationContext ctx = currentContext.get();
+        if (ctx.resolvedRefs.containsKey(reference)) {
+            return ctx.resolvedRefs.get(reference);
         }
 
         JsonNode resolved = null;
@@ -1297,7 +1319,7 @@ public final class InstanceValidator {
         }
 
         if (resolved != null) {
-            resolvedRefs.put(reference, resolved);
+            ctx.resolvedRefs.put(reference, resolved);
         }
 
         return resolved;
@@ -1352,10 +1374,11 @@ public final class InstanceValidator {
     }
 
     private JsonLocation getLocation(String path) {
-        if (sourceLocator == null) {
+        ValidationContext ctx = currentContext.get();
+        if (ctx == null || ctx.sourceLocator == null) {
             return new JsonLocation(0, 0);
         }
-        return sourceLocator.getLocation(path);
+        return ctx.sourceLocator.getLocation(path);
     }
 
     private void addError(ValidationResult result, String code, String message, String path) {
