@@ -192,28 +192,6 @@ jobs:
           name: cpan-distribution
           path: perl/JSON-Structure-*.tar.gz
 
-      - name: Create release notes
-        run: |
-          echo "## Perl SDK v${{ steps.version.outputs.version }}" > release-notes.md
-          echo "" >> release-notes.md
-          echo "### Installation" >> release-notes.md
-          echo "" >> release-notes.md
-          echo "From CPAN (when available):" >> release-notes.md
-          echo '```bash' >> release-notes.md
-          echo "cpanm JSON::Structure" >> release-notes.md
-          echo '```' >> release-notes.md
-          echo "" >> release-notes.md
-          echo "From this release:" >> release-notes.md
-          echo '```bash' >> release-notes.md
-          echo "cpanm JSON-Structure-${{ steps.version.outputs.version }}.tar.gz" >> release-notes.md
-          echo '```' >> release-notes.md
-
-      - name: Upload release notes
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-notes
-          path: release-notes.md
-
   # Publish to CPAN via PAUSE
   # Requires PAUSE_USERNAME and PAUSE_PASSWORD secrets to be set
   publish-cpan:
