@@ -167,6 +167,57 @@ const result = validator.validate('Hello', schema);
 console.log(result.isValid); // true
 ```
 
+## Thread Safety and Reentrancy
+
+Both `SchemaValidator` and `InstanceValidator` are **stateless after construction** and safe for reuse across multiple validations. Each validation creates its own internal context, ensuring no state is shared between validations.
+
+### Safe for Async/Concurrent Use
+
+The validators can be safely reused in async contexts without risk of state interference:
+
+```typescript
+const validator = new SchemaValidator();
+
+// Safe: Multiple concurrent validations with the same validator
+const results = await Promise.all([
+  validator.validate(schema1),
+  validator.validate(schema2),
+  validator.validate(schema3)
+]);
+```
+
+### Safe for Web Workers
+
+When using validators in Web Workers, each worker gets its own validator instance, and the stateless design ensures no issues with shared module state:
+
+```typescript
+// In main thread
+const worker = new Worker('./validator-worker.js');
+
+// In worker
+const validator = new SchemaValidator();
+
+self.onmessage = (e) => {
+  const result = validator.validate(e.data.schema);
+  self.postMessage(result);
+};
+```
+
+### Sequential Reuse
+
+A single validator instance can be safely reused for sequential validations without any state leakage:
+
+```typescript
+const validator = new InstanceValidator();
+
+// Safe: No state leakage between validations
+const result1 = validator.validate(data1, schema1);
+const result2 = validator.validate(data2, schema2);
+const result3 = validator.validate(data3, schema3);
+```
+
+Each call to `validate()` operates independently with its own validation context, so errors and state from one validation never affect another.
+
 ## API
 
 ### SchemaValidator
