@@ -37,11 +37,40 @@ endif()
 if(JS_FETCH_DEPENDENCIES)
     include(FetchContent)
     
-    FetchContent_Declare(
-        cjson
-        GIT_REPOSITORY https://github.com/DaveGamble/cJSON.git
-        GIT_TAG v1.7.18
-    )
+    # CMake 4.x removed support for cmake_minimum_required < 3.5
+    # cJSON uses VERSION 3.0, so we need to patch it for CMake 4.x compatibility
+    if(CMAKE_VERSION VERSION_GREATER_EQUAL "4.0")
+        if(WIN32)
+            FetchContent_Declare(
+                cjson
+                GIT_REPOSITORY https://github.com/DaveGamble/cJSON.git
+                GIT_TAG v1.7.18
+                PATCH_COMMAND powershell -Command "(Get-Content CMakeLists.txt) -replace 'cmake_minimum_required\\(VERSION 3\\.0\\)', 'cmake_minimum_required(VERSION 3.5)' | Set-Content CMakeLists.txt"
+            )
+        elseif(APPLE)
+            # macOS BSD sed requires -i '' (with space)
+            FetchContent_Declare(
+                cjson
+                GIT_REPOSITORY https://github.com/DaveGamble/cJSON.git
+                GIT_TAG v1.7.18
+                PATCH_COMMAND sed -i "" "s/cmake_minimum_required(VERSION 3.0)/cmake_minimum_required(VERSION 3.5)/" CMakeLists.txt
+            )
+        else()
+            # Linux GNU sed requires -i without argument or -i.bak
+            FetchContent_Declare(
+                cjson
+                GIT_REPOSITORY https://github.com/DaveGamble/cJSON.git
+                GIT_TAG v1.7.18
+                PATCH_COMMAND sed -i "s/cmake_minimum_required(VERSION 3.0)/cmake_minimum_required(VERSION 3.5)/" CMakeLists.txt
+            )
+        endif()
+    else()
+        FetchContent_Declare(
+            cjson
+            GIT_REPOSITORY https://github.com/DaveGamble/cJSON.git
+            GIT_TAG v1.7.18
+        )
+    endif()
     
     # Configure cJSON options
     set(ENABLE_CJSON_TEST OFF CACHE BOOL "" FORCE)
