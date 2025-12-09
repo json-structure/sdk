@@ -31,9 +31,6 @@ func TestInstanceValidatorConcurrency(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(numGoroutines)
 
-	// Track errors from goroutines
-	errorChan := make(chan error, numGoroutines)
-
 	for i := 0; i < numGoroutines; i++ {
 		go func(id int) {
 			defer wg.Done()
@@ -65,7 +62,6 @@ func TestInstanceValidatorConcurrency(t *testing.T) {
 	}
 
 	wg.Wait()
-	close(errorChan)
 }
 
 // TestInstanceValidatorConcurrencyNoErrorLeakage tests that validation errors don't leak between concurrent validations.
