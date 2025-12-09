@@ -129,15 +129,28 @@ public final class SchemaValidator {
             "has", "default"
     );
 
+    /**
+     * Internal context for a single validation operation.
+     * This isolates mutable state per validation call, enabling thread safety.
+     */
+    private static final class SchemaValidationContext {
+        Set<String> definedRefs = new HashSet<>();
+        Set<String> importNamespaces = new HashSet<>();
+        Set<String> visitedExtends = new HashSet<>();
+        JsonSourceLocator sourceLocator;
+        JsonNode rootSchema;
+        boolean validationExtensionEnabled;
+    }
+
+    /**
+     * ThreadLocal storage for the current validation context.
+     * This allows thread-safe access to context without passing it through every method.
+     */
+    private static final ThreadLocal<SchemaValidationContext> currentContext = new ThreadLocal<>();
+
     private final ValidationOptions options;
     private final ObjectMapper objectMapper;
-    private Map<String, JsonNode> externalSchemaMap; // Map of import URI to schema for import processing
-    private Set<String> definedRefs; // Track defined definitions for $ref validation
-    private Set<String> importNamespaces; // Track namespaces with $import/$importdefs
-    private Set<String> visitedExtends; // Track visited $extends references for cycle detection
-    private JsonSourceLocator sourceLocator; // For source location tracking
-    private JsonNode rootSchema; // Store root schema for resolving local refs
-    private boolean validationExtensionEnabled; // Whether validation extension is enabled via $schema or $uses
+    private Map<String, JsonNode> externalSchemaMap; // Map of import URI to schema for import processing (set at construction)
 
     static {
         Set<String> allTypes = new HashSet<>(PRIMITIVE_TYPES);
@@ -189,8 +202,14 @@ public final class SchemaValidator {
      * @return the validation result
      */
     public ValidationResult validate(JsonNode schema) {
-        sourceLocator = null; // No source text available
-        return validateCore(schema);
+        SchemaValidationContext ctx = new SchemaValidationContext();
+        currentContext.set(ctx);
+        
+        try {
+            return validateCore(schema);
+        } finally {
+            currentContext.remove();
+        }
     }
 
     /**
@@ -203,12 +222,18 @@ public final class SchemaValidator {
         if (json == null) {
             return ValidationResult.failure("Schema cannot be null");
         }
+        
+        SchemaValidationContext ctx = new SchemaValidationContext();
+        currentContext.set(ctx);
+        
         try {
             JsonNode schema = objectMapper.readTree(json);
-            sourceLocator = new JsonSourceLocator(json);
+            ctx.sourceLocator = new JsonSourceLocator(json);
             return validateCore(schema);
         } catch (JsonProcessingException e) {
             return ValidationResult.failure("Failed to parse JSON: " + e.getMessage());
+        } finally {
+            currentContext.remove();
         }
     }
 
@@ -220,14 +245,13 @@ public final class SchemaValidator {
             return result;
         }
 
-        // Store root schema for resolving local refs
-        this.rootSchema = schema;
+        SchemaValidationContext ctx = currentContext.get();
         
-        // Reset visited extends for cycle detection
-        this.visitedExtends = new HashSet<>();
+        // Store root schema for resolving local refs
+        ctx.rootSchema = schema;
         
         // Detect if validation extensions are enabled
-        this.validationExtensionEnabled = isValidationExtensionEnabled(schema);
+        ctx.validationExtensionEnabled = isValidationExtensionEnabled(schema);
         
         // Process imports if allowed (merge definitions from external schemas)
         if (options.isAllowImport() && schema.isObject()) {
@@ -235,10 +259,10 @@ public final class SchemaValidator {
         }
 
         // Collect all defined references first for $ref validation
-        definedRefs = collectDefinedRefs(schema);
+        ctx.definedRefs.addAll(collectDefinedRefs(schema));
         
         // Collect namespaces with $import/$importdefs for lenient $ref validation
-        importNamespaces = collectImportNamespaces(schema);
+        ctx.importNamespaces.addAll(collectImportNamespaces(schema));
         
         validateSchemaCore(schema, result, "", 0, new HashSet<>());
         return result;
@@ -248,7 +272,8 @@ public final class SchemaValidator {
      * Adds an error to the result with source location.
      */
     private void addError(ValidationResult result, String code, String message, String path) {
-        JsonLocation location = sourceLocator != null ? sourceLocator.getLocation(path) : JsonLocation.UNKNOWN;
+        SchemaValidationContext ctx = currentContext.get();
+        JsonLocation location = (ctx != null && ctx.sourceLocator != null) ? ctx.sourceLocator.getLocation(path) : JsonLocation.UNKNOWN;
         result.addError(new ValidationError(code, message, path, ValidationSeverity.ERROR, location, null));
     }
 
@@ -291,7 +316,8 @@ public final class SchemaValidator {
             return;
         }
 
-        if (validationExtensionEnabled) {
+        SchemaValidationContext ctx = currentContext.get();
+        if (ctx.validationExtensionEnabled) {
             return;
         }
 
@@ -300,7 +326,7 @@ public final class SchemaValidator {
         }
 
         String fullPath = path.isEmpty() ? keyword : path + "/" + keyword;
-        JsonLocation location = sourceLocator != null ? sourceLocator.getLocation(fullPath) : JsonLocation.UNKNOWN;
+        JsonLocation location = ctx.sourceLocator != null ? ctx.sourceLocator.getLocation(fullPath) : JsonLocation.UNKNOWN;
         result.addWarning(
                 ErrorCodes.SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED,
                 "Validation extension keyword '" + keyword + "' is used but validation extensions are not enabled. " +
@@ -315,13 +341,14 @@ public final class SchemaValidator {
      * @return The target JsonNode, or null if not found
      */
     private JsonNode resolveLocalRef(String refStr) {
-        if (rootSchema == null || !refStr.startsWith("#/")) {
+        SchemaValidationContext ctx = currentContext.get();
+        if (ctx.rootSchema == null || !refStr.startsWith("#/")) {
             return null;
         }
         
         String path = refStr.substring(2); // Remove "#/"
         String[] segments = path.split("/");
-        JsonNode current = rootSchema;
+        JsonNode current = ctx.rootSchema;
         
         for (String segment : segments) {
             if (current == null || !current.isObject()) {
@@ -712,15 +739,17 @@ public final class SchemaValidator {
      * Validates a single $extends reference for circular references.
      */
     private void validateExtendsRef(String refStr, String path, ValidationResult result) {
+        SchemaValidationContext ctx = currentContext.get();
+        
         // Check for circular reference
-        if (visitedExtends.contains(refStr)) {
+        if (ctx.visitedExtends.contains(refStr)) {
             addError(result, ErrorCodes.SCHEMA_EXTENDS_CIRCULAR, 
                 "Circular $extends reference detected: " + refStr, appendPath(path, "$extends"));
             return;
         }
 
         // Mark as visited
-        visitedExtends.add(refStr);
+        ctx.visitedExtends.add(refStr);
 
         // Resolve and validate the base schema
         JsonNode baseSchema = resolveLocalRef(refStr);
@@ -729,7 +758,7 @@ public final class SchemaValidator {
         }
 
         // Unmark after processing
-        visitedExtends.remove(refStr);
+        ctx.visitedExtends.remove(refStr);
     }
 
     private void validateImport(JsonNode value, String keyword, String path, ValidationResult result) {
@@ -893,8 +922,9 @@ public final class SchemaValidator {
             JsonNode resolved = resolveLocalRef(refStr);
             if (resolved == null) {
                 // Check if this ref points into an import namespace
+                SchemaValidationContext ctx = currentContext.get();
                 boolean isImportedRef = false;
-                for (String importNs : importNamespaces) {
+                for (String importNs : ctx.importNamespaces) {
                     if (refStr.startsWith(importNs + "/")) {
                         isImportedRef = true;
                         break;
