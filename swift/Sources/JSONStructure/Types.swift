@@ -97,7 +97,9 @@ public struct ValidationResult: Sendable {
 }
 
 /// Options for schema validation.
-public struct SchemaValidatorOptions {
+/// Note: externalSchemas contains [String: Any] which is not Sendable in strict sense,
+/// but in practice these are JSON values that are safe to pass between threads.
+public struct SchemaValidatorOptions: @unchecked Sendable {
     /// Enables extended validation features.
     public var extended: Bool
     /// Allows $ in property names (required for validating metaschemas).
@@ -129,7 +131,9 @@ public struct SchemaValidatorOptions {
 }
 
 /// Options for instance validation.
-public struct InstanceValidatorOptions {
+/// Note: externalSchemas contains [String: Any] which is not Sendable in strict sense,
+/// but in practice these are JSON values that are safe to pass between threads.
+public struct InstanceValidatorOptions: @unchecked Sendable {
     /// Enables extended validation features (minLength, pattern, etc.).
     public var extended: Bool
     /// Enables processing of $import/$importdefs.
@@ -138,18 +142,18 @@ public struct InstanceValidatorOptions {
     public var maxValidationDepth: Int
     /// Maps URIs to schema objects for import resolution.
     public var externalSchemas: [String: Any]?
-    /// Optional function to resolve external schema references.
-    public var referenceResolver: ((String) -> [String: Any]?)?
-    /// Optional function to load imported schemas.
-    public var importLoader: ((String) -> [String: Any]?)?
+    /// Optional reference resolver for external schema references.
+    public var referenceResolver: (any ReferenceResolver)?
+    /// Optional import loader for imported schemas.
+    public var importLoader: (any ImportLoader)?
 
     public init(
         extended: Bool = false,
         allowImport: Bool = false,
         maxValidationDepth: Int = 64,
         externalSchemas: [String: Any]? = nil,
-        referenceResolver: ((String) -> [String: Any]?)? = nil,
-        importLoader: ((String) -> [String: Any]?)? = nil
+        referenceResolver: (any ReferenceResolver)? = nil,
+        importLoader: (any ImportLoader)? = nil
     ) {
         self.extended = extended
         self.allowImport = allowImport
@@ -157,6 +161,51 @@ public struct InstanceValidatorOptions {
         self.externalSchemas = externalSchemas
         self.referenceResolver = referenceResolver
         self.importLoader = importLoader
+    }
+    
+    /// Creates options with closure-based resolvers (backward compatibility).
+    @available(*, deprecated, message: "Use protocol-based resolvers instead")
+    public static func withClosures(
+        extended: Bool = false,
+        allowImport: Bool = false,
+        maxValidationDepth: Int = 64,
+        externalSchemas: [String: Any]? = nil,
+        referenceResolver: ((String) -> [String: Any]?)? = nil,
+        importLoader: ((String) -> [String: Any]?)? = nil
+    ) -> InstanceValidatorOptions {
+        var options = InstanceValidatorOptions(
+            extended: extended,
+            allowImport: allowImport,
+            maxValidationDepth: maxValidationDepth,
+            externalSchemas: externalSchemas
+        )
+        
+        if let resolver = referenceResolver {
+            options.referenceResolver = ClosureReferenceResolver(closure: resolver)
+        }
+        if let loader = importLoader {
+            options.importLoader = ClosureImportLoader(closure: loader)
+        }
+        
+        return options
+    }
+}
+
+// MARK: - Closure-based resolver wrappers for backward compatibility
+
+private struct ClosureReferenceResolver: ReferenceResolver {
+    let closure: @Sendable (String) -> [String: Any]?
+    
+    func resolve(_ uri: String) -> [String: Any]? {
+        return closure(uri)
+    }
+}
+
+private struct ClosureImportLoader: ImportLoader {
+    let closure: @Sendable (String) -> [String: Any]?
+    
+    func load(_ uri: String) -> [String: Any]? {
+        return closure(uri)
     }
 }
 
@@ -196,4 +245,48 @@ public func isValidType(_ typeName: String) -> Bool {
 /// Checks if a type is numeric.
 public func isNumericType(_ typeName: String) -> Bool {
     return numericTypes.contains(typeName)
+}
+
+// MARK: - Sendable Resolvers
+
+/// Protocol for resolving external schema references in a thread-safe manner.
+public protocol ReferenceResolver: Sendable {
+    /// Resolves a reference URI to a schema object.
+    func resolve(_ uri: String) -> [String: Any]?
+}
+
+/// Protocol for loading imported schemas in a thread-safe manner.
+public protocol ImportLoader: Sendable {
+    /// Loads a schema from the given URI.
+    func load(_ uri: String) -> [String: Any]?
+}
+
+/// A simple dictionary-based reference resolver.
+/// Note: Uses @unchecked Sendable since [String: Any] is not strictly Sendable,
+/// but JSON dictionaries are safe to share across threads in practice.
+public struct DictionaryReferenceResolver: @unchecked Sendable, ReferenceResolver {
+    private let schemas: [String: [String: Any]]
+    
+    public init(schemas: [String: [String: Any]]) {
+        self.schemas = schemas
+    }
+    
+    public func resolve(_ uri: String) -> [String: Any]? {
+        return schemas[uri]
+    }
+}
+
+/// A simple dictionary-based import loader.
+/// Note: Uses @unchecked Sendable since [String: Any] is not strictly Sendable,
+/// but JSON dictionaries are safe to share across threads in practice.
+public struct DictionaryImportLoader: @unchecked Sendable, ImportLoader {
+    private let schemas: [String: [String: Any]]
+    
+    public init(schemas: [String: [String: Any]]) {
+        self.schemas = schemas
+    }
+    
+    public func load(_ uri: String) -> [String: Any]? {
+        return schemas[uri]
+    }
 }

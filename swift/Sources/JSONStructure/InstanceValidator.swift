@@ -4,8 +4,62 @@
 import Foundation
 
 /// Validates JSON instances against JSON Structure schemas.
-public class InstanceValidator {
-    private var options: InstanceValidatorOptions
+///
+/// This validator is a value type (struct) and is thread-safe and Sendable.
+/// Each validation operation creates a fresh internal engine, ensuring no shared
+/// mutable state between concurrent validations.
+///
+/// ## Thread Safety
+///
+/// The validator is a struct containing only immutable configuration. Each call to
+/// `validate()` creates an isolated validation engine with its own mutable state,
+/// making concurrent validations on the same validator instance completely safe.
+///
+/// ## Usage with Swift Concurrency
+///
+/// ```swift
+/// let validator = InstanceValidator()
+///
+/// // Safe to use concurrently - each call gets its own engine
+/// await withTaskGroup(of: ValidationResult.self) { group in
+///     for (instance, schema) in validationPairs {
+///         group.addTask {
+///             validator.validate(instance, schema: schema)
+///         }
+///     }
+/// }
+/// ```
+public struct InstanceValidator: Sendable {
+    private let options: InstanceValidatorOptions
+    
+    /// Creates a new InstanceValidator with the given options.
+    public init(options: InstanceValidatorOptions = InstanceValidatorOptions()) {
+        self.options = options
+    }
+    
+    /// Validates a JSON instance against a JSON Structure schema.
+    public func validate(_ instance: Any, schema: Any) -> ValidationResult {
+        let engine = ValidationEngine(options: options)
+        return engine.validate(instance, schema: schema)
+    }
+    
+    /// Validates a JSON instance from JSON data against a schema.
+    public func validateJSON(_ instanceData: Data, schemaData: Data) throws -> ValidationResult {
+        let engine = ValidationEngine(options: options)
+        return try engine.validateJSON(instanceData, schemaData: schemaData)
+    }
+    
+    /// Validates a JSON instance from JSON strings against a schema.
+    public func validateJSONStrings(_ instanceString: String, schemaString: String) throws -> ValidationResult {
+        let engine = ValidationEngine(options: options)
+        return try engine.validateJSONStrings(instanceString, schemaString: schemaString)
+    }
+}
+
+/// Internal validation engine - created fresh for each validation operation.
+/// This class contains all the mutable state and validation logic.
+private final class ValidationEngine {
+    private let options: InstanceValidatorOptions
     private var errors: [ValidationError] = []
     private var rootSchema: [String: Any] = [:]
     private var enabledExtensions: Set<String> = []
@@ -20,8 +74,7 @@ public class InstanceValidator {
     private static let uuidRegex = try! NSRegularExpression(pattern: #"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"#)
     private static let jsonPtrRegex = try! NSRegularExpression(pattern: #"^(?:|(?:/(?:[^~/]|~[01])*)*)$"#)
     
-    /// Creates a new InstanceValidator with the given options.
-    public init(options: InstanceValidatorOptions = InstanceValidatorOptions()) {
+    init(options: InstanceValidatorOptions) {
         self.options = options
     }
     
@@ -218,7 +271,7 @@ public class InstanceValidator {
         if let typeArr = schema["type"] as? [Any] {
             var valid = false
             for t in typeArr {
-                let tempValidator = InstanceValidator(options: options)
+                let tempValidator = ValidationEngine(options: options)
                 tempValidator.rootSchema = rootSchema
                 tempValidator.enabledExtensions = enabledExtensions
                 var unionSchema = schema
@@ -403,7 +456,7 @@ public class InstanceValidator {
                 addError(path, "Expected date in YYYY-MM-DD format", instanceDateFormatInvalid)
                 return
             }
-            if !matchesRegex(str, InstanceValidator.dateRegex) {
+            if !matchesRegex(str, ValidationEngine.dateRegex) {
                 addError(path, "Expected date in YYYY-MM-DD format", instanceDateFormatInvalid)
             }
             
@@ -412,7 +465,7 @@ public class InstanceValidator {
                 addError(path, "Expected datetime in RFC3339 format", instanceDatetimeFormatInvalid)
                 return
             }
-            if !matchesRegex(str, InstanceValidator.datetimeRegex) {
+            if !matchesRegex(str, ValidationEngine.datetimeRegex) {
                 addError(path, "Expected datetime in RFC3339 format", instanceDatetimeFormatInvalid)
             }
             
@@ -421,7 +474,7 @@ public class InstanceValidator {
                 addError(path, "Expected time in HH:MM:SS format", instanceTimeFormatInvalid)
                 return
             }
-            if !matchesRegex(str, InstanceValidator.timeRegex) {
+            if !matchesRegex(str, ValidationEngine.timeRegex) {
                 addError(path, "Expected time in HH:MM:SS format", instanceTimeFormatInvalid)
             }
             
@@ -430,7 +483,7 @@ public class InstanceValidator {
                 addError(path, "Expected duration as string", instanceDurationExpected)
                 return
             }
-            if !matchesRegex(str, InstanceValidator.durationRegex) {
+            if !matchesRegex(str, ValidationEngine.durationRegex) {
                 addError(path, "Expected duration in ISO 8601 format", instanceDurationFormatInvalid)
             }
             
@@ -439,7 +492,7 @@ public class InstanceValidator {
                 addError(path, "Expected uuid as string", instanceUUIDExpected)
                 return
             }
-            if !matchesRegex(str, InstanceValidator.uuidRegex) {
+            if !matchesRegex(str, ValidationEngine.uuidRegex) {
                 addError(path, "Invalid uuid format", instanceUUIDFormatInvalid)
             }
             
@@ -466,7 +519,7 @@ public class InstanceValidator {
                 addError(path, "Expected JSON pointer format", instanceJSONPointerFormatInvalid)
                 return
             }
-            if !matchesRegex(str, InstanceValidator.jsonPtrRegex) {
+            if !matchesRegex(str, ValidationEngine.jsonPtrRegex) {
                 addError(path, "Expected JSON pointer format", instanceJSONPointerFormatInvalid)
             }
             
@@ -599,7 +652,7 @@ public class InstanceValidator {
         if let hasSchema = schema["has"] as? [String: Any] {
             var hasMatch = false
             for (_, val) in obj {
-                let tempValidator = InstanceValidator(options: options)
+                let tempValidator = ValidationEngine(options: options)
                 let tempResult = tempValidator.validate(val, schema: hasSchema)
                 if tempResult.isValid {
                     hasMatch = true
@@ -677,7 +730,7 @@ public class InstanceValidator {
         if let hasSchema = schema["has"] as? [String: Any] {
             var hasMatch = false
             for (_, val) in obj {
-                let tempValidator = InstanceValidator(options: options)
+                let tempValidator = ValidationEngine(options: options)
                 let tempResult = tempValidator.validate(val, schema: hasSchema)
                 if tempResult.isValid {
                     hasMatch = true
@@ -942,7 +995,7 @@ public class InstanceValidator {
             var valid = false
             for (i, subSchema) in anyOf.enumerated() {
                 if let subSchemaMap = subSchema as? [String: Any] {
-                    let tempValidator = InstanceValidator(options: options)
+                    let tempValidator = ValidationEngine(options: options)
                     tempValidator.rootSchema = rootSchema
                     tempValidator.enabledExtensions = enabledExtensions
                     tempValidator.validateInstance(instance, subSchemaMap, "\(path)/anyOf[\(i)]", depth + 1)
@@ -962,7 +1015,7 @@ public class InstanceValidator {
             var validCount = 0
             for (i, subSchema) in oneOf.enumerated() {
                 if let subSchemaMap = subSchema as? [String: Any] {
-                    let tempValidator = InstanceValidator(options: options)
+                    let tempValidator = ValidationEngine(options: options)
                     tempValidator.rootSchema = rootSchema
                     tempValidator.enabledExtensions = enabledExtensions
                     tempValidator.validateInstance(instance, subSchemaMap, "\(path)/oneOf[\(i)]", depth + 1)
@@ -978,7 +1031,7 @@ public class InstanceValidator {
         
         // not
         if let not = schema["not"] as? [String: Any] {
-            let tempValidator = InstanceValidator(options: options)
+            let tempValidator = ValidationEngine(options: options)
             tempValidator.rootSchema = rootSchema
             tempValidator.enabledExtensions = enabledExtensions
             tempValidator.validateInstance(instance, not, "\(path)/not", depth + 1)
@@ -989,7 +1042,7 @@ public class InstanceValidator {
         
         // if/then/else
         if let ifSchema = schema["if"] as? [String: Any] {
-            let tempValidator = InstanceValidator(options: options)
+            let tempValidator = ValidationEngine(options: options)
             tempValidator.rootSchema = rootSchema
             tempValidator.enabledExtensions = enabledExtensions
             tempValidator.validateInstance(instance, ifSchema, "\(path)/if", depth + 1)
@@ -1034,23 +1087,23 @@ public class InstanceValidator {
                 if let format = schema["format"] as? String {
                     switch format {
                     case "date":
-                        if !matchesRegex(str, InstanceValidator.dateRegex) {
+                        if !matchesRegex(str, ValidationEngine.dateRegex) {
                             addError(path, "Invalid date format", instanceFormatDateInvalid)
                         }
                     case "time":
-                        if !matchesRegex(str, InstanceValidator.timeRegex) {
+                        if !matchesRegex(str, ValidationEngine.timeRegex) {
                             addError(path, "Invalid time format", instanceFormatTimeInvalid)
                         }
                     case "datetime":
-                        if !matchesRegex(str, InstanceValidator.datetimeRegex) {
+                        if !matchesRegex(str, ValidationEngine.datetimeRegex) {
                             addError(path, "Invalid datetime format", instanceFormatDatetimeInvalid)
                         }
                     case "duration":
-                        if !matchesRegex(str, InstanceValidator.durationRegex) {
+                        if !matchesRegex(str, ValidationEngine.durationRegex) {
                             addError(path, "Invalid duration format", instanceDurationFormatInvalid)
                         }
                     case "uuid":
-                        if !matchesRegex(str, InstanceValidator.uuidRegex) {
+                        if !matchesRegex(str, ValidationEngine.uuidRegex) {
                             addError(path, "Invalid UUID format", instanceFormatUUIDInvalid)
                         }
                     case "uri":
@@ -1058,7 +1111,7 @@ public class InstanceValidator {
                             addError(path, "Invalid URI format", instanceFormatURIInvalid)
                         }
                     case "jsonpointer":
-                        if !matchesRegex(str, InstanceValidator.jsonPtrRegex) {
+                        if !matchesRegex(str, ValidationEngine.jsonPtrRegex) {
                             addError(path, "Invalid JSON Pointer format", instanceJSONPointerFormatInvalid)
                         }
                     default:
@@ -1215,7 +1268,7 @@ public class InstanceValidator {
         }
         // External ref via referenceResolver
         if let resolver = options.referenceResolver {
-            return resolver(ref)
+            return resolver.resolve(ref)
         }
         return nil
     }
@@ -1268,7 +1321,7 @@ public class InstanceValidator {
         }
         var loaded: [String: Any]? = nil
         if let loader = options.importLoader {
-            loaded = loader(uri)
+            loaded = loader.load(uri)
         } else if let ext = options.externalSchemas, let schema = ext[uri] as? [String: Any] {
             loaded = schema
         }
