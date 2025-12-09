@@ -1,9 +1,9 @@
 # frozen_string_literal: true
 
-require_relative 'lib/json_structure/version'
+require_relative 'lib/jsonstructure/version'
 
 Gem::Specification.new do |spec|
-  spec.name = 'json_structure'
+  spec.name = 'jsonstructure'
   spec.version = JsonStructure::VERSION
   spec.authors = ['JSON Structure Contributors']
   spec.email = ['']
@@ -22,7 +22,7 @@ Gem::Specification.new do |spec|
 
   # Post-install message
   spec.post_install_message = <<~MSG
-    Thank you for installing json_structure!
+    Thank you for installing jsonstructure!
     
     This gem uses pre-built C library binaries downloaded from GitHub releases.
     If you encounter issues, please ensure you have an internet connection during installation,

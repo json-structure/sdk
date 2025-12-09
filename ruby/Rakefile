@@ -16,7 +16,7 @@ end
 
 desc 'Download pre-built C library binary from GitHub releases'
 task :download_binary do
-  require_relative 'lib/json_structure/binary_installer'
+  require_relative 'lib/jsonstructure/binary_installer'
   installer = JsonStructure::BinaryInstaller.new
   installer.install
 end

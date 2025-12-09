@@ -3,12 +3,12 @@
 require 'rbconfig'
 require 'ffi'
 
-require_relative 'json_structure/version'
-require_relative 'json_structure/binary_installer'
-require_relative 'json_structure/ffi'
-require_relative 'json_structure/validation_result'
-require_relative 'json_structure/schema_validator'
-require_relative 'json_structure/instance_validator'
+require_relative 'jsonstructure/version'
+require_relative 'jsonstructure/binary_installer'
+require_relative 'jsonstructure/ffi'
+require_relative 'jsonstructure/validation_result'
+require_relative 'jsonstructure/schema_validator'
+require_relative 'jsonstructure/instance_validator'
 
 # JSON Structure SDK for Ruby
 #

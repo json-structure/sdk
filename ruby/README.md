@@ -15,7 +15,7 @@ Ruby SDK for JSON Structure schema validation using FFI bindings to the C librar
 Add this line to your application's Gemfile:
 
 ```ruby
-gem 'json_structure'
+gem 'jsonstructure'
 ```
 
 And then execute:
@@ -27,7 +27,7 @@ bundle install
 Or install it yourself as:
 
 ```bash
-gem install json_structure
+gem install jsonstructure
 ```
 
 ### Binary Distribution
@@ -46,7 +46,7 @@ If you're developing the gem itself or contributing, see the Development section
 ### Schema Validation
 
 ```ruby
-require 'json_structure'
+require 'jsonstructure'
 
 schema = '{"type": "string", "minLength": 1}'
 result = JsonStructure::SchemaValidator.validate(schema)
@@ -63,7 +63,7 @@ end
 ### Instance Validation
 
 ```ruby
-require 'json_structure'
+require 'jsonstructure'
 
 schema = '{"type": "string", "minLength": 1}'
 instance = '"hello"'
@@ -85,7 +85,7 @@ end
 Both validators provide a `validate!` method that raises an exception on validation failure:
 
 ```ruby
-require 'json_structure'
+require 'jsonstructure'
 
 begin
   schema = '{"type": "string"}'
@@ -188,7 +188,7 @@ Production installations automatically download pre-built binaries from GitHub r
 
 ```bash
 # Just install and use
-gem install json_structure
+gem install jsonstructure
 # The binary will be downloaded automatically on first require
 ```
 
@@ -197,8 +197,8 @@ gem install json_structure
 This Ruby SDK treats the JSON Structure C library as an external dependency, downloading pre-built binaries from GitHub releases. The architecture consists of:
 
 1. **C Library Binaries** - Pre-built shared libraries (`.so`, `.dylib`, `.dll`) distributed via GitHub releases
-2. **Binary Installer** (`lib/json_structure/binary_installer.rb`) - Downloads and installs platform-specific binaries
-3. **FFI Bindings** (`lib/json_structure/ffi.rb`) - Low-level FFI mappings to C functions
+2. **Binary Installer** (`lib/jsonstructure/binary_installer.rb`) - Downloads and installs platform-specific binaries
+3. **FFI Bindings** (`lib/jsonstructure/ffi.rb`) - Low-level FFI mappings to C functions
 4. **Ruby Wrappers** - Idiomatic Ruby classes that wrap the FFI calls
    - `SchemaValidator` - Schema validation
    - `InstanceValidator` - Instance validation

@@ -12,14 +12,14 @@ that can be validated and mapped to programming language types.
 | [Python](./python/) | [`json-structure`](https://pypi.org/project/json-structure/) | ✅ Available |
 | [.NET](./dotnet/) | [`JsonStructure`](https://www.nuget.org/packages/JsonStructure) | ✅ Available |
 | [Java](./java/) | [`json-structure`](https://central.sonatype.com/artifact/org.json-structure/json-structure) | ✅ Available |
-| [TypeScript/JavaScript](./typescript/) | [`json-structure`](https://www.npmjs.com/package/json-structure) | ✅ Available |
+| [TypeScript/JavaScript](./typescript/) | [`@json-structure/sdk`](https://www.npmjs.com/package/@json-structure/sdk) | ✅ Available |
 | [Go](./go/) | [`github.com/json-structure/sdk/go`](https://pkg.go.dev/github.com/json-structure/sdk/go) | ✅ Available |
 | [Rust](./rust/) | [`json-structure`](https://crates.io/crates/json-structure) | ✅ Available |
-| [Perl](./perl/) | [`JSON::Structure`](https://metacpan.org/pod/JSON::Structure) | ✅ Available |
+| [Perl](./perl/) | `JSON::Structure` | ✅ Available |
 | [Swift](./swift/) | `JSONStructure` | ✅ Available |
 | [C](./c/) | `json-structure` | ✅ Available |
 | [PHP](./php/) | [`json-structure/sdk`](https://packagist.org/packages/json-structure/sdk) | ✅ Available |
-| [Ruby](./ruby/) | [`json_structure`](https://rubygems.org/gems/json_structure) | ✅ Available |
+| [Ruby](./ruby/) | `jsonstructure` | ✅ Available |
 
 ## Features
 
