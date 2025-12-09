@@ -30,6 +30,24 @@ All SDKs provide:
 - **Full Type Support**: All 34 primitive and compound types from JSON Structure Core v0
 - **Extensions**: Support for validation addins, conditional composition, and imports
 
+## Rust CLI (`jstruct`)
+
+Fast path for schema/instance checks without wiring an SDK into your app. Install the Rust-based CLI with:
+
+```bash
+cargo install json-structure --features cli
+```
+
+Examples:
+
+```bash
+# Validate schema files
+jstruct check schema.struct.json another.struct.json
+
+# Validate instances against a schema (quiet exit codes only)
+jstruct validate -q -s schema.struct.json data/*.json
+```
+
 ## Quick Start
 
 ### Python
