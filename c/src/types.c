@@ -15,6 +15,8 @@
 #if defined(_WIN32)
 #include <windows.h>
 typedef CRITICAL_SECTION js_mutex_t;
+typedef INIT_ONCE js_once_t;
+#define JS_ONCE_INIT INIT_ONCE_STATIC_INIT
 #define JS_MUTEX_INIT(m) InitializeCriticalSection(m)
 #define JS_MUTEX_LOCK(m) EnterCriticalSection(m)
 #define JS_MUTEX_UNLOCK(m) LeaveCriticalSection(m)
@@ -22,6 +24,8 @@ typedef CRITICAL_SECTION js_mutex_t;
 #else
 #include <pthread.h>
 typedef pthread_mutex_t js_mutex_t;
+typedef pthread_once_t js_once_t;
+#define JS_ONCE_INIT PTHREAD_ONCE_INIT
 #define JS_MUTEX_INIT(m) pthread_mutex_init(m, NULL)
 #define JS_MUTEX_LOCK(m) pthread_mutex_lock(m)
 #define JS_MUTEX_UNLOCK(m) pthread_mutex_unlock(m)
@@ -54,17 +58,30 @@ static js_allocator_t g_allocator = {
 
 /* Mutex to protect allocator access */
 static js_mutex_t g_allocator_mutex;
-static bool g_allocator_mutex_initialized = false;
+static js_once_t g_allocator_once = JS_ONCE_INIT;
 
-/* Initialize allocator mutex if needed */
+/* Initialize allocator mutex (called via once mechanism) */
+#if defined(_WIN32)
+static BOOL CALLBACK init_allocator_mutex_once(PINIT_ONCE InitOnce, PVOID Parameter, PVOID *Context) {
+    (void)InitOnce;
+    (void)Parameter;
+    (void)Context;
+    JS_MUTEX_INIT(&g_allocator_mutex);
+    return TRUE;
+}
+#else
+static void init_allocator_mutex_once(void) {
+    JS_MUTEX_INIT(&g_allocator_mutex);
+}
+#endif
+
+/* Ensure allocator mutex is initialized (thread-safe) */
 static void ensure_allocator_mutex_init(void) {
-    /* Note: This is not thread-safe itself, but it's called from
-     * js_init() which should be called once before any other library usage.
-     * For concurrent first-time initialization, use js_init() explicitly. */
-    if (!g_allocator_mutex_initialized) {
-        JS_MUTEX_INIT(&g_allocator_mutex);
-        g_allocator_mutex_initialized = true;
-    }
+#if defined(_WIN32)
+    InitOnceExecuteOnce(&g_allocator_once, init_allocator_mutex_once, NULL, NULL);
+#else
+    pthread_once(&g_allocator_once, init_allocator_mutex_once);
+#endif
 }
 
 /* Public functions for mutex lifecycle management */
@@ -73,10 +90,11 @@ void js_init_allocator_mutex(void) {
 }
 
 void js_destroy_allocator_mutex(void) {
-    if (g_allocator_mutex_initialized) {
-        JS_MUTEX_DESTROY(&g_allocator_mutex);
-        g_allocator_mutex_initialized = false;
-    }
+    /* Note: We cannot safely reset g_allocator_once after destruction
+     * because pthread_once_t/INIT_ONCE are designed for one-time initialization.
+     * After js_cleanup() is called, the library should not be used again
+     * without a program restart. */
+    JS_MUTEX_DESTROY(&g_allocator_mutex);
 }
 
 /* ============================================================================
