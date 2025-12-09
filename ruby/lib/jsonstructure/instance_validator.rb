@@ -2,8 +2,12 @@
 
 module JsonStructure
   # Validates JSON instances against JSON Structure schemas
+  #
+  # This class is thread-safe. Multiple threads can call validate concurrently.
   class InstanceValidator
     # Validate an instance against a schema
+    #
+    # This method is thread-safe and can be called from multiple threads concurrently.
     #
     # @param instance_json [String] JSON string containing the instance to validate
     # @param schema_json [String] JSON string containing the schema
@@ -22,14 +26,15 @@ module JsonStructure
       raise ArgumentError, 'instance_json must be a String' unless instance_json.is_a?(String)
       raise ArgumentError, 'schema_json must be a String' unless schema_json.is_a?(String)
 
-      result_ptr = ::FFI::MemoryPointer.new(FFI::JSResult.size)
-      FFI.js_result_init(result_ptr)
-
+      JsonStructure.validation_started
       begin
+        result_ptr = ::FFI::MemoryPointer.new(FFI::JSResult.size)
+        FFI.js_result_init(result_ptr)
+
         FFI.js_validate_instance(instance_json, schema_json, result_ptr)
         ValidationResult.from_ffi(result_ptr)
       ensure
-        # from_ffi already cleans up, but ensure it happens
+        JsonStructure.validation_completed
       end
     end
 
