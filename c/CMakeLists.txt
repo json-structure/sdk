@@ -103,6 +103,12 @@ target_link_libraries(json_structure
     PUBLIC cjson
 )
 
+# Link pthread on Unix systems for thread synchronization
+if(NOT WIN32)
+    find_package(Threads REQUIRED)
+    target_link_libraries(json_structure PRIVATE Threads::Threads)
+endif()
+
 # Optional PCRE2 for regex
 if(JS_ENABLE_REGEX)
     find_package(PkgConfig)

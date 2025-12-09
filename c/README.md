@@ -166,6 +166,67 @@ int main(void) {
 }
 ```
 
+## Thread Safety
+
+The JSON Structure C SDK is designed to be thread-safe for concurrent validation operations when used correctly:
+
+### Thread-Safe Operations
+
+- **Concurrent validation calls**: Multiple threads can safely call `js_validate_schema()`, `js_validate_instance()`, and related validation functions simultaneously.
+- **Memory allocation**: All memory allocation operations (`js_malloc()`, `js_realloc()`, `js_free()`) are protected by internal synchronization primitives.
+- **Regex compilation cache**: The internal regex cache uses mutexes to ensure thread-safe access.
+
+### Usage Requirements
+
+For thread-safe operation, follow these guidelines:
+
+1. **Initialize once before threading**:
+   ```c
+   int main(void) {
+       // Call js_init() once at program startup, before creating threads
+       js_init();
+       
+       // Now safe to create threads that perform validation
+       // ...
+       
+       return 0;
+   }
+   ```
+
+2. **Do not change allocator during validation**:
+   ```c
+   // Set custom allocator BEFORE any validation operations
+   js_init_with_allocator(my_allocator);
+   
+   // Do NOT call js_set_allocator() while validation is in progress
+   ```
+
+3. **Clean up after all threads complete**:
+   ```c
+   // Ensure all validation threads have finished
+   // join_all_threads();
+   
+   // Then call cleanup once
+   js_cleanup();
+   ```
+
+### Thread-Safety Guarantees
+
+- ✅ **Safe**: Concurrent calls to validation functions from multiple threads
+- ✅ **Safe**: Reading the allocator configuration during validation
+- ⚠️ **Unsafe**: Calling `js_set_allocator()` or `js_init_with_allocator()` while validation is in progress
+- ⚠️ **Unsafe**: Calling `js_cleanup()` while validation is in progress
+
+### Testing with ThreadSanitizer
+
+To verify thread safety in your application, compile with ThreadSanitizer:
+
+```bash
+cmake .. -DCMAKE_C_FLAGS="-fsanitize=thread -g" -DCMAKE_CXX_FLAGS="-fsanitize=thread -g"
+cmake --build .
+ctest
+```
+
 ## API Reference
 
 ### Core Types

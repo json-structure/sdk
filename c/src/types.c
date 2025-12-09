@@ -11,6 +11,23 @@
 #include <string.h>
 #include <stdio.h>
 
+/* Thread synchronization for allocator */
+#if defined(_WIN32)
+#include <windows.h>
+typedef CRITICAL_SECTION js_mutex_t;
+#define JS_MUTEX_INIT(m) InitializeCriticalSection(m)
+#define JS_MUTEX_LOCK(m) EnterCriticalSection(m)
+#define JS_MUTEX_UNLOCK(m) LeaveCriticalSection(m)
+#define JS_MUTEX_DESTROY(m) DeleteCriticalSection(m)
+#else
+#include <pthread.h>
+typedef pthread_mutex_t js_mutex_t;
+#define JS_MUTEX_INIT(m) pthread_mutex_init(m, NULL)
+#define JS_MUTEX_LOCK(m) pthread_mutex_lock(m)
+#define JS_MUTEX_UNLOCK(m) pthread_mutex_unlock(m)
+#define JS_MUTEX_DESTROY(m) pthread_mutex_destroy(m)
+#endif
+
 /* ============================================================================
  * Default Allocator
  * ============================================================================ */
@@ -35,11 +52,42 @@ static js_allocator_t g_allocator = {
     NULL
 };
 
+/* Mutex to protect allocator access */
+static js_mutex_t g_allocator_mutex;
+static bool g_allocator_mutex_initialized = false;
+
+/* Initialize allocator mutex if needed */
+static void ensure_allocator_mutex_init(void) {
+    /* Note: This is not thread-safe itself, but it's called from
+     * js_init() which should be called once before any other library usage.
+     * For concurrent first-time initialization, use js_init() explicitly. */
+    if (!g_allocator_mutex_initialized) {
+        JS_MUTEX_INIT(&g_allocator_mutex);
+        g_allocator_mutex_initialized = true;
+    }
+}
+
+/* Public functions for mutex lifecycle management */
+void js_init_allocator_mutex(void) {
+    ensure_allocator_mutex_init();
+}
+
+void js_destroy_allocator_mutex(void) {
+    if (g_allocator_mutex_initialized) {
+        JS_MUTEX_DESTROY(&g_allocator_mutex);
+        g_allocator_mutex_initialized = false;
+    }
+}
+
 /* ============================================================================
  * Allocator Functions
  * ============================================================================ */
 
 void js_set_allocator(js_allocator_t alloc) {
+    ensure_allocator_mutex_init();
+    
+    JS_MUTEX_LOCK(&g_allocator_mutex);
+    
     if (alloc.malloc && alloc.free) {
         g_allocator = alloc;
         /* Configure cJSON to use our allocator */
@@ -56,33 +104,60 @@ void js_set_allocator(js_allocator_t alloc) {
         g_allocator.user_data = NULL;
         cJSON_InitHooks(NULL);
     }
+    
+    JS_MUTEX_UNLOCK(&g_allocator_mutex);
 }
 
 js_allocator_t js_get_allocator(void) {
-    return g_allocator;
+    ensure_allocator_mutex_init();
+    
+    JS_MUTEX_LOCK(&g_allocator_mutex);
+    js_allocator_t alloc = g_allocator;
+    JS_MUTEX_UNLOCK(&g_allocator_mutex);
+    
+    return alloc;
 }
 
 void* js_malloc(size_t size) {
-    return g_allocator.malloc(size);
+    ensure_allocator_mutex_init();
+    
+    JS_MUTEX_LOCK(&g_allocator_mutex);
+    void* ptr = g_allocator.malloc(size);
+    JS_MUTEX_UNLOCK(&g_allocator_mutex);
+    
+    return ptr;
 }
 
 void* js_realloc(void* ptr, size_t size) {
+    ensure_allocator_mutex_init();
+    
+    JS_MUTEX_LOCK(&g_allocator_mutex);
+    void* result;
     if (g_allocator.realloc) {
-        return g_allocator.realloc(ptr, size);
+        result = g_allocator.realloc(ptr, size);
+    } else {
+        /* No realloc provided - cannot safely reallocate without knowing original size.
+         * Return NULL to signal failure. Callers should ensure realloc is provided
+         * in custom allocators, or this path should not be reached with default allocator. */
+        if (ptr) {
+            result = NULL;  /* Cannot safely reallocate existing memory */
+        } else {
+            /* For NULL ptr, realloc acts like malloc */
+            result = g_allocator.malloc(size);
+        }
     }
-    /* No realloc provided - cannot safely reallocate without knowing original size.
-     * Return NULL to signal failure. Callers should ensure realloc is provided
-     * in custom allocators, or this path should not be reached with default allocator. */
-    if (ptr) {
-        return NULL;  /* Cannot safely reallocate existing memory */
-    }
-    /* For NULL ptr, realloc acts like malloc */
-    return g_allocator.malloc(size);
+    JS_MUTEX_UNLOCK(&g_allocator_mutex);
+    
+    return result;
 }
 
 void js_free(void* ptr) {
     if (ptr) {
+        ensure_allocator_mutex_init();
+        
+        JS_MUTEX_LOCK(&g_allocator_mutex);
         g_allocator.free(ptr);
+        JS_MUTEX_UNLOCK(&g_allocator_mutex);
     }
 }
 
