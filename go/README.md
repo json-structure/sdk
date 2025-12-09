@@ -8,6 +8,31 @@ A Go implementation of validators for [JSON Structure](https://json-structure.or
 go get github.com/json-structure/sdk/go
 ```
 
+## Thread Safety
+
+Both `SchemaValidator` and `InstanceValidator` are **safe for concurrent use** from multiple goroutines after construction. A single validator instance can be shared across goroutines to validate multiple schemas or instances simultaneously without risk of data races or error leakage between validations.
+
+```go
+// Create a single validator instance
+validator := jsonstructure.NewInstanceValidator(&jsonstructure.InstanceValidatorOptions{
+    Extended: true,
+})
+
+// Safe to use from multiple goroutines concurrently
+var wg sync.WaitGroup
+for i := 0; i < 100; i++ {
+    wg.Add(1)
+    go func() {
+        defer wg.Done()
+        result := validator.Validate(instance, schema)
+        // Process result...
+    }()
+}
+wg.Wait()
+```
+
+This design follows idiomatic Go patterns where validators maintain only immutable configuration state after construction, while all mutable validation state is managed internally within each validation operation.
+
 ## Usage
 
 ### Schema Validation
