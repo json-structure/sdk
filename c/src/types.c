@@ -11,14 +11,25 @@
 #include <string.h>
 #include <stdio.h>
 
-/* Thread synchronization for allocator */
+/* Thread synchronization for allocator
+ * 
+ * On Windows, we use SRWLOCK (Slim Reader/Writer Lock) which has these benefits:
+ * - No initialization required (zero-initialized by default)
+ * - No cleanup/destruction needed
+ * - Very lightweight and fast
+ * - Available on Windows Vista and later
+ * 
+ * On Unix, we use pthread_mutex with pthread_once for thread-safe initialization.
+ */
 #if defined(_WIN32)
 #include <windows.h>
-typedef CRITICAL_SECTION js_mutex_t;
-#define JS_MUTEX_INIT(m) InitializeCriticalSection(m)
-#define JS_MUTEX_LOCK(m) EnterCriticalSection(m)
-#define JS_MUTEX_UNLOCK(m) LeaveCriticalSection(m)
-#define JS_MUTEX_DESTROY(m) DeleteCriticalSection(m)
+typedef SRWLOCK js_mutex_t;
+#define JS_MUTEX_STATIC_INIT SRWLOCK_INIT
+#define JS_MUTEX_LOCK(m) AcquireSRWLockExclusive(m)
+#define JS_MUTEX_UNLOCK(m) ReleaseSRWLockExclusive(m)
+/* SRWLOCK needs no init or destroy */
+#define JS_MUTEX_INIT(m) ((void)0)
+#define JS_MUTEX_DESTROY(m) ((void)0)
 #else
 #include <pthread.h>
 typedef pthread_mutex_t js_mutex_t;
@@ -54,29 +65,28 @@ static js_allocator_t g_allocator = {
     NULL
 };
 
-/* Mutex to protect allocator access */
+/* Mutex to protect allocator access 
+ * On Windows, SRWLOCK is zero-initialized by default which equals SRWLOCK_INIT,
+ * so no explicit initialization needed.
+ * On Unix, we use pthread_once for thread-safe initialization.
+ */
+#if defined(_WIN32)
+/* SRWLOCK is statically initialized to zero (SRWLOCK_INIT) automatically */
+static js_mutex_t g_allocator_mutex = SRWLOCK_INIT;
+#else
 static js_mutex_t g_allocator_mutex;
-static volatile int g_allocator_mutex_initialized = 0;
-
-#if !defined(_WIN32)
 static js_once_t g_allocator_once = JS_ONCE_INIT;
 
 static void init_allocator_mutex_once(void) {
     JS_MUTEX_INIT(&g_allocator_mutex);
-    g_allocator_mutex_initialized = 1;
 }
 #endif
 
 /* Ensure allocator mutex is initialized (thread-safe) */
 static void ensure_allocator_mutex_init(void) {
 #if defined(_WIN32)
-    /* On Windows, use simple initialization in js_init() 
-     * The allocator mutex is only needed to protect custom allocator changes,
-     * and the default malloc/free are already thread-safe */
-    if (!g_allocator_mutex_initialized) {
-        JS_MUTEX_INIT(&g_allocator_mutex);
-        g_allocator_mutex_initialized = 1;
-    }
+    /* SRWLOCK is already initialized statically - nothing to do */
+    (void)0;
 #else
     pthread_once(&g_allocator_once, init_allocator_mutex_once);
 #endif
@@ -88,11 +98,16 @@ void js_init_allocator_mutex(void) {
 }
 
 void js_destroy_allocator_mutex(void) {
+#if defined(_WIN32)
+    /* SRWLOCK does not need destruction */
+    (void)0;
+#else
     /* Note: We cannot safely reset g_allocator_once after destruction
-     * because pthread_once_t/INIT_ONCE are designed for one-time initialization.
+     * because pthread_once_t is designed for one-time initialization.
      * After js_cleanup() is called, the library should not be used again
      * without a program restart. */
     JS_MUTEX_DESTROY(&g_allocator_mutex);
+#endif
 }
 
 /* ============================================================================
