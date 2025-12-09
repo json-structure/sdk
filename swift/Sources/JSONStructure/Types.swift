@@ -97,8 +97,13 @@ public struct ValidationResult: Sendable {
 }
 
 /// Options for schema validation.
-/// Note: externalSchemas contains [String: Any] which is not Sendable in strict sense,
-/// but in practice these are JSON values that are safe to pass between threads.
+///
+/// ## Thread Safety
+///
+/// This struct uses @unchecked Sendable because:
+/// - externalSchemas contains [String: Any] (JSON values) which aren't Sendable by Swift's type system
+/// - However, these are immutable JSON dictionaries that are read-only after initialization
+/// - No mutations occur after construction, making it safe to share across threads
 public struct SchemaValidatorOptions: @unchecked Sendable {
     /// Enables extended validation features.
     public var extended: Bool
@@ -131,8 +136,14 @@ public struct SchemaValidatorOptions: @unchecked Sendable {
 }
 
 /// Options for instance validation.
-/// Note: externalSchemas contains [String: Any] which is not Sendable in strict sense,
-/// but in practice these are JSON values that are safe to pass between threads.
+///
+/// ## Thread Safety
+///
+/// This struct uses @unchecked Sendable because:
+/// - externalSchemas contains [String: Any] (JSON values) which aren't Sendable by Swift's type system
+/// - However, these are immutable JSON dictionaries that are read-only after initialization
+/// - No mutations occur after construction, making it safe to share across threads
+/// - The protocol-based resolvers (ReferenceResolver, ImportLoader) are properly Sendable
 public struct InstanceValidatorOptions: @unchecked Sendable {
     /// Enables extended validation features (minLength, pattern, etc.).
     public var extended: Bool
@@ -164,14 +175,19 @@ public struct InstanceValidatorOptions: @unchecked Sendable {
     }
     
     /// Creates options with closure-based resolvers (backward compatibility).
-    @available(*, deprecated, message: "Use protocol-based resolvers instead")
+    /// 
+    /// **Warning**: This method is deprecated and should only be used for backward compatibility.
+    /// The closures MUST be @Sendable (capture no mutable state) for thread safety.
+    /// Prefer using protocol-based resolvers (DictionaryReferenceResolver, DictionaryImportLoader)
+    /// which enforce Sendable at compile time.
+    @available(*, deprecated, message: "Use protocol-based resolvers instead. Closures must be @Sendable for thread safety.")
     public static func withClosures(
         extended: Bool = false,
         allowImport: Bool = false,
         maxValidationDepth: Int = 64,
         externalSchemas: [String: Any]? = nil,
-        referenceResolver: ((String) -> [String: Any]?)? = nil,
-        importLoader: ((String) -> [String: Any]?)? = nil
+        referenceResolver: (@Sendable (String) -> [String: Any]?)? = nil,
+        importLoader: (@Sendable (String) -> [String: Any]?)? = nil
     ) -> InstanceValidatorOptions {
         var options = InstanceValidatorOptions(
             extended: extended,
