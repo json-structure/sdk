@@ -9,10 +9,21 @@ import java.util.function.Function;
 
 /**
  * Options for controlling validation behavior.
+ * <p>
+ * <strong>Thread Safety:</strong> ValidationOptions instances should be configured once during
+ * initialization and then treated as immutable. While setter methods are provided for convenience,
+ * they should not be called after an instance is passed to a validator that may be used
+ * concurrently. For thread-safe usage, configure all options before passing to validators,
+ * or use the builder pattern (coming soon).
+ * </p>
+ * <p>
+ * The {@link #DEFAULT} instance is safe for concurrent use as it is never modified after creation.
+ * </p>
  */
 public final class ValidationOptions {
     /**
      * Default validation options.
+     * This instance is safe for concurrent use.
      */
     public static final ValidationOptions DEFAULT = new ValidationOptions();
 
@@ -42,6 +53,11 @@ public final class ValidationOptions {
 
     /**
      * Sets the maximum depth for validation recursion.
+     * <p>
+     * <strong>Note:</strong> This method should only be called during initialization,
+     * before the options instance is passed to a validator. Modifying options after
+     * passing to a validator that is used concurrently may lead to unpredictable behavior.
+     * </p>
      *
      * @param maxValidationDepth the maximum depth
      * @return this options instance for chaining
@@ -62,6 +78,11 @@ public final class ValidationOptions {
 
     /**
      * Sets whether validation should stop after the first error.
+     * <p>
+     * <strong>Note:</strong> This method should only be called during initialization,
+     * before the options instance is passed to a validator. Modifying options after
+     * passing to a validator that is used concurrently may lead to unpredictable behavior.
+     * </p>
      *
      * @param stopOnFirstError true to stop on first error
      * @return this options instance for chaining
@@ -82,6 +103,11 @@ public final class ValidationOptions {
 
     /**
      * Sets whether to strictly validate string formats.
+     * <p>
+     * <strong>Note:</strong> This method should only be called during initialization,
+     * before the options instance is passed to a validator. Modifying options after
+     * passing to a validator that is used concurrently may lead to unpredictable behavior.
+     * </p>
      *
      * @param strictFormatValidation true to enable strict format validation
      * @return this options instance for chaining
@@ -102,6 +128,11 @@ public final class ValidationOptions {
 
     /**
      * Sets a function to resolve external references.
+     * <p>
+     * <strong>Note:</strong> This method should only be called during initialization,
+     * before the options instance is passed to a validator. Modifying options after
+     * passing to a validator that is used concurrently may lead to unpredictable behavior.
+     * </p>
      *
      * @param referenceResolver the resolver function
      * @return this options instance for chaining
@@ -122,6 +153,11 @@ public final class ValidationOptions {
 
     /**
      * Sets whether $ is allowed in property names (required for validating metaschemas).
+     * <p>
+     * <strong>Note:</strong> This method should only be called during initialization,
+     * before the options instance is passed to a validator. Modifying options after
+     * passing to a validator that is used concurrently may lead to unpredictable behavior.
+     * </p>
      *
      * @param allowDollar true to allow $ in property names
      * @return this options instance for chaining
@@ -142,6 +178,11 @@ public final class ValidationOptions {
 
     /**
      * Sets whether $import/$importdefs processing is enabled.
+     * <p>
+     * <strong>Note:</strong> This method should only be called during initialization,
+     * before the options instance is passed to a validator. Modifying options after
+     * passing to a validator that is used concurrently may lead to unpredictable behavior.
+     * </p>
      *
      * @param allowImport true to enable import processing
      * @return this options instance for chaining
@@ -170,6 +211,11 @@ public final class ValidationOptions {
      * extension keywords (like minimum, maximum, minLength, maxLength, pattern, format, minItems,
      * maxItems, etc.) that are present in a schema but won't be enforced because the validation
      * extension is not enabled. Set to false to suppress these warnings.
+     * <p>
+     * <strong>Note:</strong> This method should only be called during initialization,
+     * before the options instance is passed to a validator. Modifying options after
+     * passing to a validator that is used concurrently may lead to unpredictable behavior.
+     * </p>
      *
      * <p>Extension keywords are optional features defined in JSON Structure Validation extension.
      * They require either the validation meta-schema or a $uses clause with "JSONStructureValidation"
@@ -196,6 +242,11 @@ public final class ValidationOptions {
 
     /**
      * Sets the external schemas for import resolution.
+     * <p>
+     * <strong>Note:</strong> This method should only be called during initialization,
+     * before the options instance is passed to a validator. Modifying options after
+     * passing to a validator that is used concurrently may lead to unpredictable behavior.
+     * </p>
      *
      * @param externalSchemas the map of URI to schema
      * @return this options instance for chaining

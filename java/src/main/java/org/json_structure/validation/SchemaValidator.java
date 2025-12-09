@@ -21,6 +21,23 @@ import java.util.regex.PatternSyntaxException;
 
 /**
  * Validates JSON Structure schema documents.
+ * <p>
+ * <strong>Thread Safety:</strong> While this validator's current implementation passes
+ * basic thread-safety tests, it uses multiple mutable instance fields ({@code rootSchema},
+ * {@code sourceLocator}, {@code definedRefs}, {@code importNamespaces}, {@code visitedExtends},
+ * and {@code validationExtensionEnabled}) that are modified during validation. For guaranteed
+ * thread-safe operation suitable for use as a Spring singleton bean or in concurrent environments,
+ * these fields should be refactored to use a per-validation context pattern.
+ * </p>
+ * <p>
+ * <strong>Recommended Usage:</strong>
+ * <ul>
+ * <li>For single-threaded use: Current implementation is safe and efficient</li>
+ * <li>For concurrent use: Create separate instances per thread or await refactoring</li>
+ * <li>For Spring applications: Can be used as singleton with caution; concurrent
+ * validations may experience race conditions under heavy load</li>
+ * </ul>
+ * </p>
  */
 public final class SchemaValidator {
 

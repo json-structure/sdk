@@ -488,6 +488,97 @@ ValidationResult result = validator.validate(mainSchema);
 System.out.println("Valid: " + result.isValid());
 ```
 
+## Thread Safety and Concurrent Usage
+
+### Current Status
+
+The validators (`InstanceValidator` and `SchemaValidator`) have been designed with thread safety in mind and pass basic concurrent usage tests. However, they currently use mutable instance fields that are modified during validation, which could lead to race conditions under heavy concurrent load.
+
+### Recommended Usage Patterns
+
+#### Single-Threaded Applications
+The validators work perfectly in single-threaded scenarios:
+
+```java
+// Safe for single-threaded use
+InstanceValidator validator = new InstanceValidator();
+ValidationResult result1 = validator.validate(instance1, schema);
+ValidationResult result2 = validator.validate(instance2, schema);
+```
+
+#### Multi-Threaded Applications
+For concurrent usage, consider one of these approaches:
+
+**Option 1: Per-Thread Instances**
+```java
+public class ValidationService {
+    private final ThreadLocal<InstanceValidator> validator = 
+        ThreadLocal.withInitial(InstanceValidator::new);
+    
+    public ValidationResult validate(JsonNode instance, JsonNode schema) {
+        return validator.get().validate(instance, schema);
+    }
+}
+```
+
+**Option 2: Spring Prototype Scope**
+```java
+@Configuration
+public class ValidationConfig {
+    @Bean
+    @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
+    public InstanceValidator instanceValidator() {
+        return new InstanceValidator();
+    }
+}
+```
+
+**Option 3: Synchronized Access (if performance allows)**
+```java
+@Service
+public class ValidationService {
+    private final InstanceValidator validator = new InstanceValidator();
+    
+    public synchronized ValidationResult validate(JsonNode instance, JsonNode schema) {
+        return validator.validate(instance, schema);
+    }
+}
+```
+
+### Spring Framework Integration
+
+While validators can be used as Spring singleton beans, exercise caution in high-concurrency scenarios:
+
+```java
+@Configuration
+public class ValidationConfig {
+    @Bean
+    public ValidationOptions validationOptions() {
+        // Configure once during initialization
+        return new ValidationOptions()
+            .setStrictFormatValidation(true)
+            .setMaxValidationDepth(100);
+    }
+    
+    @Bean
+    public InstanceValidator instanceValidator(ValidationOptions options) {
+        // Caution: Use as singleton only in low-concurrency scenarios
+        // or with synchronized access
+        return new InstanceValidator(options);
+    }
+}
+```
+
+### Future Improvements
+
+A refactoring is planned to use a per-validation context pattern, which will make validators fully thread-safe without any restrictions:
+
+1. Create internal `ValidationContext` classes to hold per-validation mutable state
+2. Pass context through validation methods instead of using instance fields
+3. Make `ValidationOptions` truly immutable with a builder pattern
+
+Until this refactoring is complete, use the recommended patterns above for concurrent scenarios.
+
 ## Building
 
 ```bash
