@@ -30,23 +30,49 @@ All SDKs provide:
 - **Full Type Support**: All 34 primitive and compound types from JSON Structure Core v0
 - **Extensions**: Support for validation addins, conditional composition, and imports
 
-## Rust CLI (`jstruct`)
+## CLI Tool (`jstruct`)
 
-Fast path for schema/instance checks without wiring an SDK into your app. Install the Rust-based CLI with:
+A standalone command-line validator for quick schema and instance checks—no SDK wiring required.
+
+### Pre-built Binaries
+
+Download from [GitHub Releases](https://github.com/json-structure/sdk/releases):
+
+| Platform | Architecture | File |
+|----------|--------------|------|
+| Linux | x86_64 | `jstruct-x86_64-unknown-linux-gnu.tar.gz` |
+| Linux | ARM64 | `jstruct-aarch64-unknown-linux-gnu.tar.gz` |
+| macOS | Intel | `jstruct-x86_64-apple-darwin.tar.gz` |
+| macOS | Apple Silicon | `jstruct-aarch64-apple-darwin.tar.gz` |
+| Windows | x86_64 | `jstruct-x86_64-pc-windows-msvc.zip` |
+| Windows | ARM64 | `jstruct-aarch64-pc-windows-msvc.zip` |
+
+> **Note:** The binaries are **not code-signed**. On Windows you may need to click *"Run anyway"* in SmartScreen; on macOS run `xattr -d com.apple.quarantine jstruct` after extracting.
+
+### Package Managers
 
 ```bash
+# Homebrew (macOS/Linux)
+brew tap json-structure/tap && brew install jstruct
+
+# Chocolatey (Windows)
+choco install jstruct
+
+# Cargo (if you have Rust)
 cargo install json-structure --features cli
 ```
 
-Examples:
+### Usage
 
 ```bash
 # Validate schema files
 jstruct check schema.struct.json another.struct.json
 
-# Validate instances against a schema (quiet exit codes only)
+# Validate instances against a schema (quiet—exit code only)
 jstruct validate -q -s schema.struct.json data/*.json
 ```
+
+See [rust/CLI.md](./rust/CLI.md) for the full command reference.
 
 ## Quick Start
 
