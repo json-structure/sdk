@@ -164,6 +164,42 @@ warning_msgs = result.warning_messages # Array of warning messages
 - `location` - Hash with `:line`, `:column`, `:offset` keys
 - `error?`, `warning?`, `info?` - Check severity level
 
+## Thread Safety
+
+This library is **thread-safe**. Multiple threads can perform validations concurrently without any external synchronization.
+
+### Concurrent Validation
+
+```ruby
+require 'jsonstructure'
+
+schema = '{"type": "object", "properties": {"name": {"type": "string"}}}'
+
+# Safe to validate from multiple threads simultaneously
+threads = 10.times.map do |i|
+  Thread.new do
+    instance = %Q({"name": "Thread #{i}"})
+    result = JsonStructure::InstanceValidator.validate(instance, schema)
+    puts "Thread #{i}: #{result.valid? ? 'valid' : 'invalid'}"
+  end
+end
+threads.each(&:join)
+```
+
+### Implementation Details
+
+- The underlying C library uses proper synchronization primitives (SRWLOCK on Windows, pthread_mutex on Unix) to protect shared state
+- Each validation call is independent and does not share mutable state with other calls
+- The `at_exit` cleanup hook coordinates with active validations to avoid races during process shutdown
+
+### Best Practices
+
+1. **Prefer stateless validation**: Each `validate` call is independent. There's no need to create validator instances or manage state.
+
+2. **Thread-local results**: ValidationResult objects returned by `validate` are thread-local and can be safely used without synchronization.
+
+3. **Exception safety**: If a validation raises an exception (e.g., ArgumentError for invalid input), the library state remains consistent.
+
 ## Development
 
 After checking out the repo, run `bundle install` to install dependencies.
