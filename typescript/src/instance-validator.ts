@@ -77,12 +77,7 @@ export class InstanceValidator {
     }
 
     // Create validation context
-    const context: InstanceValidationContext = {
-      errors: [],
-      rootSchema: schema,
-      enabledExtensions: new Set(),
-      sourceLocator
-    };
+    const context = this.createContext(schema, sourceLocator);
     
     this.detectEnabledExtensions(context);
 
@@ -110,6 +105,18 @@ export class InstanceValidator {
       isValid: context.errors.length === 0,
       errors: [...context.errors],
       warnings: []
+    };
+  }
+
+  /**
+   * Creates a new validation context for an instance validation operation.
+   */
+  private createContext(schema: JsonObject, sourceLocator: JsonSourceLocator | null): InstanceValidationContext {
+    return {
+      errors: [],
+      rootSchema: schema,
+      enabledExtensions: new Set(),
+      sourceLocator
     };
   }
 

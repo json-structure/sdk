@@ -118,14 +118,7 @@ export class SchemaValidator {
     }
 
     // Create validation context
-    const context: SchemaValidationContext = {
-      errors: [],
-      warnings: [],
-      schema: schema,
-      seenRefs: new Set(),
-      seenExtends: new Set(),
-      sourceLocator
-    };
+    const context = this.createContext(schema, sourceLocator);
     
     // Process imports if enabled
     if (this.allowImport) {
@@ -138,6 +131,20 @@ export class SchemaValidator {
       isValid: context.errors.length === 0,
       errors: [...context.errors],
       warnings: [...context.warnings]
+    };
+  }
+
+  /**
+   * Creates a new validation context for a schema validation operation.
+   */
+  private createContext(schema: JsonObject, sourceLocator: JsonSourceLocator | null): SchemaValidationContext {
+    return {
+      errors: [],
+      warnings: [],
+      schema: schema,
+      seenRefs: new Set(),
+      seenExtends: new Set(),
+      sourceLocator
     };
   }
 

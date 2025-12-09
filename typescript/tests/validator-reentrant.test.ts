@@ -38,10 +38,11 @@ describe('Validator Reentrancy and Thread Safety', () => {
       const result3 = validator.validate(invalidSchema2);
       expect(result3.isValid).toBe(false);
       // Should only have errors from this validation, not from previous ones
-      const hasOldError = result3.errors.some(e => 
-        e.message.includes('$id') || e.message.includes('string')
+      // The error should be about the unknown type, not about missing $id
+      const hasOnlyTypeError = result3.errors.every(e => 
+        e.code === 'SCHEMA_TYPE_INVALID' || e.path.includes('/type')
       );
-      expect(hasOldError).toBe(false);
+      expect(hasOnlyTypeError).toBe(true);
     });
 
     it('should handle multiple validations with the same validator instance', () => {
@@ -153,8 +154,10 @@ describe('Validator Reentrancy and Thread Safety', () => {
       // Third validation - different invalid instance
       const result3 = validator.validate({ name: 'Bob', age: 'not a number' }, schema);
       expect(result3.isValid).toBe(false);
-      // Should only have type error, not the missing field error from first validation
-      expect(result3.errors.every(e => e.path.includes('age'))).toBe(true);
+      // Should only have type error for age, not the missing field error from first validation
+      expect(result3.errors.length).toBe(1);
+      expect(result3.errors[0].code).toBe('INSTANCE_TYPE_MISMATCH');
+      expect(result3.errors[0].path).toBe('#/age');
     });
 
     it('should handle multiple validations with the same validator instance', () => {
