@@ -65,9 +65,17 @@ JS_API void js_init_with_allocator(js_allocator_t alloc);
  * Call this at program shutdown to release any internal resources,
  * including the regex compilation cache and synchronization primitives.
  * 
+ * After calling js_cleanup(), you can call js_init() or
+ * js_init_with_allocator() again to reinitialize the library if needed.
+ * 
  * @note Thread-safety: This function must only be called when no
  *       validation operations are in progress. Calling this while
  *       validations are running leads to undefined behavior.
+ * 
+ * @note The internal mutex is initialized once using pthread_once (Unix)
+ *       or InitOnceExecuteOnce (Windows) for thread safety. While the
+ *       library can be reinitialized after cleanup, the one-time
+ *       initialization mechanism persists for the process lifetime.
  */
 JS_API void js_cleanup(void);
 
