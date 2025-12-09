@@ -49,16 +49,11 @@ Download from [GitHub Releases](https://github.com/json-structure/sdk/releases):
 
 > **Note:** The binaries are **not code-signed**. On Windows you may need to click *"Run anyway"* in SmartScreen; on macOS run `xattr -d com.apple.quarantine jstruct` after extracting.
 
-### Package Managers
+### Build from Source (Cargo)
+
+If you have Rust installed:
 
 ```bash
-# Homebrew (macOS/Linux)
-brew tap json-structure/tap && brew install jstruct
-
-# Chocolatey (Windows)
-choco install jstruct
-
-# Cargo (if you have Rust)
 cargo install json-structure --features cli
 ```
 
