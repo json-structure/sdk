@@ -225,6 +225,63 @@ c/
 
 MIT License. See [LICENSE](LICENSE) for details.
 
+## Thread Safety
+
+The C SDK is **partially thread-safe** with the following requirements:
+
+### Safe Usage Pattern
+
+1. **Call `js_init()` once** before spawning any threads that use the library
+2. **Never call `js_set_allocator()`** while any thread is performing validation
+3. **Each thread must use its own `js_result_t`** - do not share result structs across threads
+4. **Call `js_cleanup()` once** after all threads have finished
+
+### What Is Thread-Safe
+
+- Concurrent calls to `js_validate_schema()` and `js_validate_instance()` from multiple threads (with separate result buffers)
+- The compiled regex cache is protected by a mutex
+- All read-only lookup tables (type names, error messages)
+
+### What Is NOT Thread-Safe
+
+- Calling `js_set_allocator()` or `js_cleanup()` while validations are in progress
+- Sharing `js_result_t` structs between threads
+- Calling `js_init_with_allocator()` from multiple threads
+
+### Example Multi-threaded Usage
+
+```c
+#include <pthread.h>
+#include <json_structure/json_structure.h>
+
+void* validate_thread(void* arg) {
+    const char* schema = (const char*)arg;
+    js_result_t result;  // Thread-local result
+    
+    js_validate_schema(schema, &result);
+    // Process result...
+    js_result_cleanup(&result);
+    
+    return NULL;
+}
+
+int main(void) {
+    js_init();  // Initialize once before threads
+    
+    pthread_t threads[4];
+    for (int i = 0; i < 4; i++) {
+        pthread_create(&threads[i], NULL, validate_thread, schema);
+    }
+    
+    for (int i = 0; i < 4; i++) {
+        pthread_join(threads[i], NULL);
+    }
+    
+    js_cleanup();  // Cleanup once after all threads complete
+    return 0;
+}
+```
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.

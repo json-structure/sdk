@@ -11,6 +11,7 @@
 
 #include "json_structure/json_structure.h"
 #include "json_structure/types.h"
+#include "regex_utils.h"
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>
@@ -395,6 +396,9 @@ void js_init_with_allocator(js_allocator_t alloc) {
 }
 
 void js_cleanup(void) {
+    /* Clear the regex cache before resetting allocator */
+    js_regex_cache_clear();
+    
     /* Reset to default allocator */
     js_allocator_t default_alloc = {NULL, NULL, NULL, NULL};
     js_set_allocator(default_alloc);
