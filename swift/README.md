@@ -8,8 +8,58 @@ A Swift SDK for JSON Structure schema and instance validation. JSON Structure is
 - **Instance Validation**: Validate JSON instances against JSON Structure schemas
 - **Error Reporting**: Line/column information for validation errors
 - **Full Type Support**: All 34 primitive and compound types from JSON Structure Core v0
+- **Thread-Safe & Sendable**: Safe for concurrent use with Swift concurrency (async/await, Task)
 - **Cross-platform**: macOS, iOS, tvOS, watchOS, and Linux support
 - **Pure Swift**: No Apple-only framework dependencies
+
+## Thread Safety
+
+The validators (`InstanceValidator` and `SchemaValidator`) are **thread-safe** and conform to `Sendable`, making them safe for concurrent use with Swift concurrency and multiple threads.
+
+### How It Works
+
+Both validators are value types (structs) containing only immutable configuration. Each validation operation creates a fresh internal engine with its own mutable state, ensuring complete isolation between concurrent validations.
+
+```swift
+let validator = InstanceValidator()
+
+// Safe to use from multiple threads
+DispatchQueue.concurrentPerform(iterations: 100) { i in
+    let result = validator.validate(instances[i], schema: schema)
+    // Each validation gets its own isolated state
+}
+```
+
+### Swift Concurrency Support
+
+The validators work seamlessly with Swift's structured concurrency:
+
+```swift
+let validator = InstanceValidator()
+
+// Safe concurrent validation with Task groups
+await withTaskGroup(of: ValidationResult.self) { group in
+    for (instance, schema) in validationPairs {
+        group.addTask {
+            validator.validate(instance, schema: schema)
+        }
+    }
+    
+    for await result in group {
+        // Process results as they complete
+        if !result.isValid {
+            print("Validation failed: \(result.errors)")
+        }
+    }
+}
+```
+
+### Thread-Safety Guarantees
+
+- ✅ **No shared mutable state**: Each validation creates isolated state
+- ✅ **Sendable conformance**: Can be safely passed across concurrency boundaries
+- ✅ **No data races**: Tested with Thread Sanitizer
+- ✅ **Correct results**: Concurrent validations don't interfere with each other
 
 ## Requirements
 
