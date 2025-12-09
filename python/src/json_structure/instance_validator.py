@@ -32,6 +32,7 @@ The code sections are annotated with references to the metaschema constructs.
 import sys
 import json
 import re
+import copy
 import datetime
 import uuid
 from urllib.parse import urlparse
@@ -605,9 +606,12 @@ class JSONStructureInstanceValidator:
         # - self.extended is set (CLI override)
         # - validation metaschema (enables both addins by default)
         # - $uses in schema explicitly enables the addin
+        # - enabled_extensions includes the addin (detected from root schema)
         enable_conditional = (
             self.extended or
             is_validation or
+            ("JSONStructureConditionalComposition" in self.enabled_extensions) or
+            ("JSONStructureValidation" in self.enabled_extensions) or
             (isinstance(schema, dict) and "$uses" in schema and (
                 "JSONStructureConditionalComposition" in schema["$uses"] or "JSONStructureValidation" in schema["$uses"]
             ))
@@ -640,14 +644,27 @@ class JSONStructureInstanceValidator:
         return self.errors
 
     def validate(self, instance, schema=None):
+        """
+        Validates an instance against a schema.
+        
+        This method is thread-safe - each call uses isolated state.
+        
+        :param instance: The JSON instance to validate.
+        :param schema: Optional schema override (defaults to root_schema).
+        :return: List of error messages, empty if valid.
+        """
         if schema is None:
             schema = self.root_schema
         
+        # Create isolated state for this validation to ensure thread-safety
+        # and reentrancy (nested validate() calls don't interfere)
+        validator = copy.copy(self)
+        validator.errors = []
+        
         # First, run the core validation (handles $root, types, required, etc.)
         # Pass None for schema to trigger $root handling if this is the root schema
-        self.errors = []
-        self.validate_instance(instance, None if schema is self.root_schema else schema, "#")
-        errors = list(self.errors)
+        validator.validate_instance(instance, None if schema is self.root_schema else schema, "#")
+        errors = list(validator.errors)
         
         # Extended: conditional composition
         if self.extended and "JSONStructureConditionalComposition" in self.enabled_extensions:
@@ -656,24 +673,24 @@ class JSONStructureInstanceValidator:
                     subschemas = schema[key]
                     if key == "allOf":
                         for idx, subschema in enumerate(subschemas):
-                            errors += self.validate(instance, subschema)
+                            errors += validator.validate(instance, subschema)
                     elif key == "anyOf":
-                        if not any(not self.validate(instance, subschema) for subschema in subschemas):
+                        if not any(not validator.validate(instance, subschema) for subschema in subschemas):
                             errors.append(f"Instance does not match anyOf at {key}")
                     elif key == "oneOf":
-                        matches = sum(1 for subschema in subschemas if not self.validate(instance, subschema))
+                        matches = sum(1 for subschema in subschemas if not validator.validate(instance, subschema))
                         if matches != 1:
                             errors.append(f"Instance does not match exactly one subschema in oneOf at {key}")
             if "not" in schema:
-                if not self.validate(instance, schema["not"]):
+                if not validator.validate(instance, schema["not"]):
                     errors.append("Instance must not match 'not' subschema")
             if "if" in schema:
-                if not self.validate(instance, schema["if"]):
+                if not validator.validate(instance, schema["if"]):
                     if "else" in schema:
-                        errors += self.validate(instance, schema["else"])
+                        errors += validator.validate(instance, schema["else"])
                 else:
                     if "then" in schema:
-                        errors += self.validate(instance, schema["then"])
+                        errors += validator.validate(instance, schema["then"])
         # Extended: validation keywords
         if self.extended and "JSONStructureValidation" in self.enabled_extensions:
             t = schema.get("type")
