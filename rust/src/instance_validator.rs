@@ -301,9 +301,10 @@ impl InstanceValidator {
             "uint32" => self.validate_uint32(instance, schema_obj, result, path, locator),
             "uint64" => self.validate_uint64(instance, schema_obj, result, path, locator),
             "uint128" => self.validate_uint128(instance, schema_obj, result, path, locator),
-            "float" | "float8" | "double" | "decimal" => {
+            "float" | "float8" | "double" => {
                 self.validate_number(instance, schema_obj, result, path, locator)
             }
+            "decimal" => self.validate_decimal(instance, schema_obj, result, path, locator),
             "date" => self.validate_date(instance, result, path, locator),
             "time" => self.validate_time(instance, result, path, locator),
             "datetime" => self.validate_datetime(instance, result, path, locator),
@@ -501,6 +502,128 @@ impl InstanceValidator {
             // exclusiveMaximum
             if let Some(Value::Number(n)) = schema_obj.get("exclusiveMaximum") {
                 if let Some(max) = n.as_f64() {
+                    if value >= max {
+                        result.add_error(ValidationError::instance_error(
+                            InstanceErrorCode::InstanceNumberTooLarge,
+                            format!("Value {} is not less than exclusive maximum {}", value, max),
+                            path,
+                            locator.get_location(path),
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    /// Validates a decimal value.
+    /// Per the JSON Structure spec, decimal values are represented as strings
+    /// to preserve arbitrary precision. Numbers are also accepted for convenience.
+    fn validate_decimal(
+        &self,
+        instance: &Value,
+        schema_obj: &serde_json::Map<String, Value>,
+        result: &mut ValidationResult,
+        path: &str,
+        locator: &JsonSourceLocator,
+    ) {
+        let value: f64 = match instance {
+            Value::String(s) => {
+                // Decimal values should be strings per spec
+                match s.parse::<f64>() {
+                    Ok(v) => v,
+                    Err(_) => {
+                        result.add_error(ValidationError::instance_error(
+                            InstanceErrorCode::InstanceDecimalExpected,
+                            format!("Invalid decimal format: {}", s),
+                            path,
+                            locator.get_location(path),
+                        ));
+                        return;
+                    }
+                }
+            }
+            Value::Number(n) => {
+                // Also accept numbers for convenience (though strings preferred)
+                n.as_f64().unwrap_or(0.0)
+            }
+            _ => {
+                result.add_error(ValidationError::instance_error(
+                    InstanceErrorCode::InstanceDecimalExpected,
+                    "Expected decimal (as string or number)",
+                    path,
+                    locator.get_location(path),
+                ));
+                return;
+            }
+        };
+
+        // Apply numeric constraints if extended validation is enabled
+        if self.options.extended {
+            // minimum
+            if let Some(min_val) = schema_obj.get("minimum") {
+                let min = match min_val {
+                    Value::Number(n) => n.as_f64(),
+                    Value::String(s) => s.parse::<f64>().ok(),
+                    _ => None,
+                };
+                if let Some(min) = min {
+                    if value < min {
+                        result.add_error(ValidationError::instance_error(
+                            InstanceErrorCode::InstanceNumberTooSmall,
+                            format!("Value {} is less than minimum {}", value, min),
+                            path,
+                            locator.get_location(path),
+                        ));
+                    }
+                }
+            }
+
+            // maximum
+            if let Some(max_val) = schema_obj.get("maximum") {
+                let max = match max_val {
+                    Value::Number(n) => n.as_f64(),
+                    Value::String(s) => s.parse::<f64>().ok(),
+                    _ => None,
+                };
+                if let Some(max) = max {
+                    if value > max {
+                        result.add_error(ValidationError::instance_error(
+                            InstanceErrorCode::InstanceNumberTooLarge,
+                            format!("Value {} is greater than maximum {}", value, max),
+                            path,
+                            locator.get_location(path),
+                        ));
+                    }
+                }
+            }
+
+            // exclusiveMinimum
+            if let Some(min_val) = schema_obj.get("exclusiveMinimum") {
+                let min = match min_val {
+                    Value::Number(n) => n.as_f64(),
+                    Value::String(s) => s.parse::<f64>().ok(),
+                    _ => None,
+                };
+                if let Some(min) = min {
+                    if value <= min {
+                        result.add_error(ValidationError::instance_error(
+                            InstanceErrorCode::InstanceNumberTooSmall,
+                            format!("Value {} is not greater than exclusive minimum {}", value, min),
+                            path,
+                            locator.get_location(path),
+                        ));
+                    }
+                }
+            }
+
+            // exclusiveMaximum
+            if let Some(max_val) = schema_obj.get("exclusiveMaximum") {
+                let max = match max_val {
+                    Value::Number(n) => n.as_f64(),
+                    Value::String(s) => s.parse::<f64>().ok(),
+                    _ => None,
+                };
+                if let Some(max) = max {
                     if value >= max {
                         result.add_error(ValidationError::instance_error(
                             InstanceErrorCode::InstanceNumberTooLarge,
@@ -1674,7 +1797,33 @@ impl InstanceValidator {
                 ));
             }
         } else {
-            // Untagged choice - try to match one
+            // Tagged choice (no selector) - instance should be an object with one property
+            // matching a choice name, e.g., {"creditCard": {...}}
+            let obj = match instance {
+                Value::Object(o) => o,
+                _ => {
+                    result.add_error(ValidationError::instance_error(
+                        InstanceErrorCode::InstanceChoiceNoMatch,
+                        "Value does not match any choice option",
+                        path,
+                        locator.get_location(path),
+                    ));
+                    return;
+                }
+            };
+
+            // Check if it's a tagged union (object with exactly one property matching a choice)
+            if obj.len() == 1 {
+                let (tag, value) = obj.iter().next().unwrap();
+                if let Some(choice_schema) = choices.get(tag) {
+                    // Validate the wrapped value against the choice schema
+                    let value_path = format!("{}/{}", path, tag);
+                    self.validate_instance(value, choice_schema, root_schema, result, &value_path, locator, depth + 1);
+                    return;
+                }
+            }
+
+            // If not a tagged union, try untagged choice - try to match one
             let mut match_count = 0;
 
             for (_choice_name, choice_schema) in choices {

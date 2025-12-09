@@ -215,6 +215,7 @@ pub enum InstanceErrorCode {
     InstanceNumberNotMultiple,
     InstanceIntegerExpected,
     InstanceIntegerOutOfRange,
+    InstanceDecimalExpected,
     
     // Boolean/Null errors
     InstanceBooleanExpected,
@@ -326,6 +327,7 @@ impl InstanceErrorCode {
             Self::InstanceNumberNotMultiple => "INSTANCE_NUMBER_NOT_MULTIPLE",
             Self::InstanceIntegerExpected => "INSTANCE_INTEGER_EXPECTED",
             Self::InstanceIntegerOutOfRange => "INSTANCE_INTEGER_OUT_OF_RANGE",
+            Self::InstanceDecimalExpected => "INSTANCE_DECIMAL_EXPECTED",
             Self::InstanceBooleanExpected => "INSTANCE_BOOLEAN_EXPECTED",
             Self::InstanceNullExpected => "INSTANCE_NULL_EXPECTED",
             Self::InstanceObjectExpected => "INSTANCE_OBJECT_EXPECTED",

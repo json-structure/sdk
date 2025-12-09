@@ -347,6 +347,8 @@ fn prepare_instance_for_validation(instance: &Value, schema: &Value) -> Value {
         obj.remove("_description");
         obj.remove("_expectedError");
         obj.remove("_expectedValid");
+        // $schema is a meta-annotation, not instance data
+        obj.remove("$schema");
     }
 
     // Check if schema expects a primitive/array type and instance has { value: ... } wrapper
@@ -555,4 +557,100 @@ fn test_sample_schemas_are_valid() {
     println!("Sample Schema Tests: {} passed, {} failed", passed, failed);
     // Note: Some tests fail due to union types (type as array) not being supported yet
     // assert_eq!(failed, 0, "Some sample schemas failed validation");
+}
+
+/// Test that sample instance files from primer-and-samples validate against their schemas
+#[test]
+fn test_sample_instances_are_valid() {
+    let samples_dir = match find_samples_dir() {
+        Some(dir) => dir,
+        None => {
+            eprintln!("samples directory not found, skipping test");
+            return;
+        }
+    };
+
+    let mut passed = 0;
+    let mut failed = 0;
+    let mut skipped = 0;
+
+    // Get all sample directories
+    let sample_dirs = get_subdirs(&samples_dir);
+
+    for sample_dir in &sample_dirs {
+        let schema_file = sample_dir.join("schema.struct.json");
+        if !schema_file.exists() {
+            continue;
+        }
+
+        let category_name = get_test_name(sample_dir);
+        
+        // Load the schema
+        let schema = match load_json(&schema_file) {
+            Some(s) => s,
+            None => {
+                eprintln!("  ✗ {} - failed to load schema", category_name);
+                failed += 1;
+                continue;
+            }
+        };
+
+        // Find example*.json files in this directory
+        let instance_files: Vec<PathBuf> = fs::read_dir(sample_dir)
+            .map(|entries| {
+                entries
+                    .filter_map(|e| e.ok())
+                    .map(|e| e.path())
+                    .filter(|p| {
+                        let name = p.file_name().unwrap_or_default().to_string_lossy();
+                        name.starts_with("example") && name.ends_with(".json")
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        if instance_files.is_empty() {
+            skipped += 1;
+            continue;
+        }
+
+        let mut validator = InstanceValidator::new();
+        validator.set_extended(true);
+
+        for instance_file in &instance_files {
+            let instance_name = instance_file.file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "unknown".to_string());
+
+            let instance_data = match load_json(instance_file) {
+                Some(d) => d,
+                None => {
+                    eprintln!("  ✗ {}/{} - failed to load instance", category_name, instance_name);
+                    failed += 1;
+                    continue;
+                }
+            };
+
+            // Prepare instance (remove $schema and other meta fields)
+            let instance = prepare_instance_for_validation(&instance_data, &schema);
+            let instance_json = serde_json::to_string(&instance).unwrap();
+
+            let result = validator.validate(&instance_json, &schema);
+
+            if result.is_valid() {
+                passed += 1;
+            } else {
+                eprintln!(
+                    "  ✗ {}/{} - should be valid: {:?}",
+                    category_name,
+                    instance_name,
+                    result.errors().next()
+                );
+                failed += 1;
+            }
+        }
+    }
+
+    println!("Sample Instance Tests: {} passed, {} failed, {} skipped", passed, failed, skipped);
+    assert_eq!(failed, 0, "Some sample instances failed validation");
 }

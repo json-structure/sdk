@@ -226,17 +226,72 @@ fn test_double_valid() {
 }
 
 #[test]
-fn test_decimal_valid() {
+fn test_decimal_string_valid() {
+    // Per the JSON Structure spec, decimal types are represented as strings
+    // to preserve arbitrary precision
+    let schema = json!({
+        "type": "decimal"
+    });
+    let validator = InstanceValidator::new();
+    
+    // String format is the spec-compliant way
+    let result = validator.validate(r#""123.456""#, &schema);
+    assert!(result.is_valid(), "String '123.456' should be valid decimal");
+    
+    let result = validator.validate(r#""0.0875""#, &schema);
+    assert!(result.is_valid(), "String '0.0875' should be valid decimal");
+    
+    let result = validator.validate(r#""-999.99""#, &schema);
+    assert!(result.is_valid(), "Negative string decimal should be valid");
+    
+    let result = validator.validate(r#""12345678901234567890.123456789""#, &schema);
+    assert!(result.is_valid(), "High-precision string decimal should be valid");
+}
+
+#[test]
+fn test_decimal_number_also_valid() {
+    // Numbers are also accepted for convenience, though strings are preferred
     let schema = json!({
         "type": "decimal"
     });
     let validator = InstanceValidator::new();
     
     let result = validator.validate("123.456", &schema);
-    assert!(result.is_valid(), "123.456 should be valid decimal");
+    assert!(result.is_valid(), "JSON number 123.456 should be valid decimal");
     
-    // Note: String decimals may or may not be supported depending on implementation
-    // The primary format is JSON number
+    let result = validator.validate("-99.5", &schema);
+    assert!(result.is_valid(), "Negative JSON number should be valid decimal");
+}
+
+#[test]
+fn test_decimal_invalid_string_format() {
+    let schema = json!({
+        "type": "decimal"
+    });
+    let validator = InstanceValidator::new();
+    
+    let result = validator.validate(r#""not-a-number""#, &schema);
+    assert!(!result.is_valid(), "Non-numeric string should fail decimal validation");
+    
+    let result = validator.validate(r#""12.34.56""#, &schema);
+    assert!(!result.is_valid(), "Malformed decimal string should fail");
+}
+
+#[test]
+fn test_decimal_wrong_type() {
+    let schema = json!({
+        "type": "decimal"
+    });
+    let validator = InstanceValidator::new();
+    
+    let result = validator.validate("true", &schema);
+    assert!(!result.is_valid(), "Boolean should fail decimal validation");
+    
+    let result = validator.validate("null", &schema);
+    assert!(!result.is_valid(), "Null should fail decimal validation");
+    
+    let result = validator.validate(r#"["123.45"]"#, &schema);
+    assert!(!result.is_valid(), "Array should fail decimal validation");
 }
 
 // =============================================================================
