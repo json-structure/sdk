@@ -10,13 +10,34 @@ namespace JsonStructure.Validation;
 
 /// <summary>
 /// Validates JSON instances against JSON Structure schemas.
+/// This class is thread-safe - multiple threads can call Validate concurrently.
 /// </summary>
 public sealed class InstanceValidator
 {
     private readonly ValidationOptions _options;
-    private readonly Dictionary<string, JsonNode> _resolvedRefs = new();
-    private readonly Dictionary<string, JsonNode?> _loadedImports = new();
-    private JsonSourceLocator? _instanceLocator;
+
+    /// <summary>
+    /// Internal context for a single validation operation.
+    /// This isolates mutable state per validation call, enabling thread safety.
+    /// </summary>
+    private sealed class ValidationContext
+    {
+        public Dictionary<string, JsonNode> ResolvedRefs { get; } = new();
+        public Dictionary<string, JsonNode?> LoadedImports { get; } = new();
+        public JsonSourceLocator? InstanceLocator { get; set; }
+    }
+
+    /// <summary>
+    /// AsyncLocal storage for the current validation context.
+    /// This allows thread-safe access to context without passing it through every method.
+    /// </summary>
+    private static readonly AsyncLocal<ValidationContext?> _currentContext = new();
+
+    /// <summary>
+    /// Gets the current validation context, throwing if not in a validation call.
+    /// </summary>
+    private static ValidationContext CurrentContext => 
+        _currentContext.Value ?? throw new InvalidOperationException("No validation context available");
 
     /// <summary>
     /// Initializes a new instance of <see cref="InstanceValidator"/>.
@@ -35,8 +56,16 @@ public sealed class InstanceValidator
     /// <returns>The validation result.</returns>
     public ValidationResult Validate(JsonNode? instance, JsonNode? schema)
     {
-        _instanceLocator = null; // No source tracking for JsonNode overload
-        return ValidateCore(instance, schema);
+        var ctx = new ValidationContext { InstanceLocator = null };
+        _currentContext.Value = ctx;
+        try
+        {
+            return ValidateCore(instance, schema);
+        }
+        finally
+        {
+            _currentContext.Value = null;
+        }
     }
 
     /// <summary>
@@ -51,8 +80,16 @@ public sealed class InstanceValidator
         {
             var instance = JsonNode.Parse(instanceJson);
             var schema = JsonNode.Parse(schemaJson);
-            _instanceLocator = new JsonSourceLocator(instanceJson);
-            return ValidateCore(instance, schema);
+            var ctx = new ValidationContext { InstanceLocator = new JsonSourceLocator(instanceJson) };
+            _currentContext.Value = ctx;
+            try
+            {
+                return ValidateCore(instance, schema);
+            }
+            finally
+            {
+                _currentContext.Value = null;
+            }
         }
         catch (Exception ex)
         {
@@ -70,9 +107,6 @@ public sealed class InstanceValidator
             return result;
         }
 
-        _resolvedRefs.Clear();
-        _loadedImports.Clear();
-        
         // Handle $root - if the schema has a $root property, resolve it and use that as the validation target
         var effectiveSchema = schema;
         if (schema is JsonObject schemaObj && schemaObj.TryGetPropertyValue("$root", out var rootRef))
@@ -1659,7 +1693,8 @@ public sealed class InstanceValidator
 
     private JsonNode? ResolveRef(string reference, JsonNode rootSchema)
     {
-        if (_resolvedRefs.TryGetValue(reference, out var cached))
+        var ctx = CurrentContext;
+        if (ctx.ResolvedRefs.TryGetValue(reference, out var cached))
         {
             return cached;
         }
@@ -1679,7 +1714,7 @@ public sealed class InstanceValidator
 
         if (resolved is not null)
         {
-            _resolvedRefs[reference] = resolved;
+            ctx.ResolvedRefs[reference] = resolved;
         }
 
         return resolved;
@@ -1776,7 +1811,8 @@ public sealed class InstanceValidator
     /// </summary>
     private JsonNode? LoadImport(string uri)
     {
-        if (_loadedImports.TryGetValue(uri, out var cached))
+        var ctx = CurrentContext;
+        if (ctx.LoadedImports.TryGetValue(uri, out var cached))
         {
             return cached;
         }
@@ -1787,7 +1823,7 @@ public sealed class InstanceValidator
             loaded = _options.ImportLoader(uri);
         }
 
-        _loadedImports[uri] = loaded;
+        ctx.LoadedImports[uri] = loaded;
         return loaded;
     }
 
@@ -1813,7 +1849,8 @@ public sealed class InstanceValidator
     /// </summary>
     private void AddError(ValidationResult result, string code, string message, string path, string? schemaPath = null)
     {
-        var location = _instanceLocator?.GetLocation(path) ?? JsonLocation.Unknown;
+        var ctx = _currentContext.Value;
+        var location = ctx?.InstanceLocator?.GetLocation(path) ?? JsonLocation.Unknown;
         result.AddError(code, message, path, location, schemaPath);
     }
 }

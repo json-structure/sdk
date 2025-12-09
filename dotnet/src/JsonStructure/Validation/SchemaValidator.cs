@@ -9,6 +9,7 @@ namespace JsonStructure.Validation;
 
 /// <summary>
 /// Validates JSON Structure schema documents.
+/// This class is thread-safe - multiple threads can call Validate concurrently.
 /// </summary>
 public sealed class SchemaValidator
 {
@@ -93,14 +94,37 @@ public sealed class SchemaValidator
         @"^[a-zA-Z_][a-zA-Z0-9_]*$",
         RegexOptions.Compiled);
 
+    /// <summary>
+    /// Internal context for a single validation operation.
+    /// This isolates mutable state per validation call, enabling thread safety.
+    /// </summary>
+    private sealed class SchemaValidationContext
+    {
+        public HashSet<string> DefinedRefs { get; } = new();
+        public HashSet<string> ImportNamespaces { get; } = new();
+        public HashSet<string> VisitedExtends { get; } = new();
+        public JsonNode? RootSchema { get; set; }
+        public JsonSourceLocator? SourceLocator { get; set; }
+        public Dictionary<string, JsonNode> ExternalSchemas { get; } = new();
+        public bool ValidationExtensionEnabled { get; set; }
+    }
+
+    /// <summary>
+    /// AsyncLocal storage for the current validation context.
+    /// This allows thread-safe access to context without passing it through every method.
+    /// </summary>
+    private static readonly AsyncLocal<SchemaValidationContext?> _currentContext = new();
+
+    /// <summary>
+    /// Gets the current validation context, throwing if not in a validation call.
+    /// </summary>
+    private static SchemaValidationContext CurrentContext =>
+        _currentContext.Value ?? throw new InvalidOperationException("No validation context available");
+
     private readonly ValidationOptions _options;
-    private HashSet<string> _definedRefs = new();
-    private HashSet<string> _importNamespaces = new();
-    private HashSet<string> _visitedExtends = new();
-    private JsonNode? _rootSchema;
-    private JsonSourceLocator? _sourceLocator;
-    private Dictionary<string, JsonNode> _externalSchemas = new();
-    private bool _validationExtensionEnabled;
+    
+    // External schemas are populated at construction and read-only during validation
+    private readonly Dictionary<string, JsonNode> _externalSchemas = new();
 
     /// <summary>
     /// Validation extension keywords that require the JSONStructureValidation feature.
@@ -179,30 +203,41 @@ public sealed class SchemaValidator
     /// <returns>The validation result.</returns>
     public ValidationResult Validate(JsonNode? schema)
     {
-        if (schema is null)
-        {
-            var result = new ValidationResult();
-            AddError(result, ErrorCodes.SchemaNull, "Schema cannot be null", "");
-            return result;
-        }
+        // Create fresh context for this validation
+        var ctx = new SchemaValidationContext();
+        _currentContext.Value = ctx;
 
-        // Serialize to string for source location tracking
         try
         {
-            var serialized = schema.ToJsonString(new System.Text.Json.JsonSerializerOptions 
-            { 
-                WriteIndented = true,
-                TypeInfoResolver = new System.Text.Json.Serialization.Metadata.DefaultJsonTypeInfoResolver()
-            });
-            _sourceLocator = new JsonSourceLocator(serialized);
-        }
-        catch
-        {
-            // If serialization fails, continue without source location
-            _sourceLocator = null;
-        }
+            if (schema is null)
+            {
+                var result = new ValidationResult();
+                AddError(result, ErrorCodes.SchemaNull, "Schema cannot be null", "");
+                return result;
+            }
 
-        return ValidateCore(schema);
+            // Serialize to string for source location tracking
+            try
+            {
+                var serialized = schema.ToJsonString(new System.Text.Json.JsonSerializerOptions 
+                { 
+                    WriteIndented = true,
+                    TypeInfoResolver = new System.Text.Json.Serialization.Metadata.DefaultJsonTypeInfoResolver()
+                });
+                ctx.SourceLocator = new JsonSourceLocator(serialized);
+            }
+            catch
+            {
+                // If serialization fails, continue without source location
+                ctx.SourceLocator = null;
+            }
+
+            return ValidateCore(schema);
+        }
+        finally
+        {
+            _currentContext.Value = null;
+        }
     }
     
     /// <summary>
@@ -210,13 +245,14 @@ public sealed class SchemaValidator
     /// </summary>
     private JsonNode? ResolveLocalRef(string refPath)
     {
-        if (_rootSchema is null || !refPath.StartsWith("#/"))
+        var rootSchema = CurrentContext.RootSchema;
+        if (rootSchema is null || !refPath.StartsWith("#/"))
             return null;
             
         var path = refPath[2..]; // Remove "#/"
         var segments = path.Split('/');
         
-        JsonNode? current = _rootSchema;
+        JsonNode? current = rootSchema;
         foreach (var segment in segments)
         {
             if (current is null) return null;
@@ -251,15 +287,23 @@ public sealed class SchemaValidator
     /// <returns>The validation result.</returns>
     public ValidationResult Validate(string json)
     {
+        // Create fresh context for this validation
+        var ctx = new SchemaValidationContext();
+        _currentContext.Value = ctx;
+
         try
         {
             var schema = JsonNode.Parse(json);
-            _sourceLocator = new JsonSourceLocator(json);
+            ctx.SourceLocator = new JsonSourceLocator(json);
             return ValidateCore(schema);
         }
         catch (Exception ex)
         {
             return ValidationResult.Failure($"Failed to parse JSON: {ex.Message}");
+        }
+        finally
+        {
+            _currentContext.Value = null;
         }
     }
 
@@ -273,14 +317,13 @@ public sealed class SchemaValidator
             return result;
         }
 
+        var ctx = CurrentContext;
+
         // Store root schema for ref resolution
-        _rootSchema = schema;
-        
-        // Reset visited extends for cycle detection
-        _visitedExtends = new HashSet<string>();
+        ctx.RootSchema = schema;
         
         // Detect if validation extensions are enabled
-        _validationExtensionEnabled = IsValidationExtensionEnabled(schema);
+        ctx.ValidationExtensionEnabled = IsValidationExtensionEnabled(schema);
         
         // Process imports if enabled
         if (_options.AllowImport && schema is JsonObject schemaObj)
@@ -289,10 +332,10 @@ public sealed class SchemaValidator
         }
         
         // Collect all defined references for $ref validation
-        _definedRefs = CollectDefinedRefs(schema);
+        ctx.DefinedRefs.UnionWith(CollectDefinedRefs(schema));
         
         // Collect namespaces with $import/$importdefs for lenient $ref validation
-        _importNamespaces = CollectImportNamespaces(schema);
+        ctx.ImportNamespaces.UnionWith(CollectImportNamespaces(schema));
 
         ValidateSchemaCore(schema, result, "", 0, new HashSet<string>());
         return result;
@@ -339,7 +382,7 @@ public sealed class SchemaValidator
         if (!_options.WarnOnUnusedExtensionKeywords)
             return;
 
-        if (_validationExtensionEnabled)
+        if (CurrentContext.ValidationExtensionEnabled)
             return;
 
         if (!ValidationExtensionKeywords.Contains(keyword))
@@ -358,7 +401,7 @@ public sealed class SchemaValidator
     /// </summary>
     private JsonLocation GetLocation(string path)
     {
-        return _sourceLocator?.GetLocation(path) ?? default;
+        return CurrentContext.SourceLocator?.GetLocation(path) ?? default;
     }
 
     /// <summary>
@@ -752,6 +795,8 @@ public sealed class SchemaValidator
             return;
         }
         
+        var ctx = CurrentContext;
+        
         // Check each reference for circular $extends
         foreach (var (refStr, refPath) in refs)
         {
@@ -759,13 +804,13 @@ public sealed class SchemaValidator
                 continue; // External references handled elsewhere
             
             // Check for circular $extends
-            if (_visitedExtends.Contains(refStr))
+            if (ctx.VisitedExtends.Contains(refStr))
             {
                 AddError(result, ErrorCodes.SchemaExtendsCircular, $"Circular $extends reference detected: {refStr}", refPath);
                 continue;
             }
             
-            _visitedExtends.Add(refStr);
+            ctx.VisitedExtends.Add(refStr);
             
             var resolved = ResolveLocalRef(refStr);
             if (resolved is null)
@@ -778,7 +823,7 @@ public sealed class SchemaValidator
                 ValidateExtendsKeyword(nestedExtends, refPath, result);
             }
             
-            _visitedExtends.Remove(refStr);
+            ctx.VisitedExtends.Remove(refStr);
         }
     }
 
@@ -983,10 +1028,12 @@ public sealed class SchemaValidator
     {
         if (refValue is JsonValue rv && rv.TryGetValue<string>(out var refStr) && refStr.StartsWith("#/"))
         {
+            var ctx = CurrentContext;
+            
             // Check if ref resolves
-            if (!_definedRefs.Contains(refStr))
+            if (!ctx.DefinedRefs.Contains(refStr))
             {
-                var isImportedRef = _importNamespaces.Any(ns => refStr.StartsWith(ns + "/"));
+                var isImportedRef = ctx.ImportNamespaces.Any(ns => refStr.StartsWith(ns + "/"));
                 if (!isImportedRef)
                 {
                     AddError(result, ErrorCodes.SchemaRefNotFound, $"$ref target does not exist: {refStr}", AppendPath(typePath, "$ref"));

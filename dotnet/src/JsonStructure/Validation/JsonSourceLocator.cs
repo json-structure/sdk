@@ -1,17 +1,19 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+using System.Collections.Concurrent;
 using System.Text.Json;
 
 namespace JsonStructure.Validation;
 
 /// <summary>
 /// Locates the source position (line and column) of a JSON Pointer path within JSON text.
+/// This class is thread-safe - multiple threads can call GetLocation concurrently.
 /// </summary>
 internal sealed class JsonSourceLocator
 {
     private readonly string _json;
-    private readonly Dictionary<string, JsonLocation> _locationCache = new();
+    private readonly ConcurrentDictionary<string, JsonLocation> _locationCache = new();
 
     /// <summary>
     /// Initializes a new instance of <see cref="JsonSourceLocator"/>.
@@ -35,14 +37,7 @@ internal sealed class JsonSourceLocator
             return GetRootLocation();
         }
 
-        if (_locationCache.TryGetValue(path, out var cached))
-        {
-            return cached;
-        }
-
-        var location = FindLocationForPath(path);
-        _locationCache[path] = location;
-        return location;
+        return _locationCache.GetOrAdd(path, FindLocationForPath);
     }
 
     private JsonLocation GetRootLocation()
