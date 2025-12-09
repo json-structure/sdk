@@ -14,6 +14,7 @@ extern int test_schema_validator(void);
 extern int test_instance_validator(void);
 extern int test_conformance(void);
 extern int test_assets(void);
+extern int test_thread_safety(void);
 
 int main(int argc, char* argv[]) {
     (void)argc;
@@ -53,6 +54,12 @@ int main(int argc, char* argv[]) {
     failed += assets_failed;
     total++;
     printf("Test Assets: %s\n\n", assets_failed == 0 ? "PASSED" : "FAILED");
+    
+    printf("Running thread safety tests...\n");
+    int thread_failed = test_thread_safety();
+    failed += thread_failed;
+    total++;
+    printf("Thread Safety: %s\n\n", thread_failed == 0 ? "PASSED" : "FAILED");
     
     printf("=== Summary ===\n");
     printf("Total: %d, Passed: %d, Failed: %d\n", 

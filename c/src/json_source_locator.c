@@ -387,17 +387,32 @@ js_location_t js_get_path_location(const char* source, const char* path) {
  * ============================================================================ */
 
 void js_init(void) {
-    /* No initialization needed for now */
+    /* Initialize allocator mutex */
+    extern void js_init_allocator_mutex(void);
+    js_init_allocator_mutex();
 }
 
 void js_init_with_allocator(js_allocator_t alloc) {
+    /* Initialize allocator mutex first */
+    extern void js_init_allocator_mutex(void);
+    js_init_allocator_mutex();
+    
+    /* Then set the custom allocator */
     js_set_allocator(alloc);
 }
 
 void js_cleanup(void) {
+    /* Clear regex cache to free all compiled patterns */
+    extern void js_regex_cache_clear(void);
+    js_regex_cache_clear();
+    
     /* Reset to default allocator */
     js_allocator_t default_alloc = {NULL, NULL, NULL, NULL};
     js_set_allocator(default_alloc);
+    
+    /* Destroy allocator mutex */
+    extern void js_destroy_allocator_mutex(void);
+    js_destroy_allocator_mutex();
 }
 
 /* ============================================================================

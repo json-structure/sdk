@@ -252,6 +252,10 @@ typedef struct js_allocator {
  * @param alloc Custom allocator with malloc, realloc, and free functions
  *
  * @note Pass NULL functions to reset to default allocator
+ * @note Thread-safety: This function is thread-safe but should only be called
+ *       during initialization (from js_init_with_allocator() or before any
+ *       validation calls). Changing the allocator while validation is in
+ *       progress may lead to undefined behavior.
  */
 JS_API void js_set_allocator(js_allocator_t alloc);
 

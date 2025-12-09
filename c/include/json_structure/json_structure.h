@@ -37,7 +37,12 @@ extern "C" {
  * @brief Initialize the JSON Structure library
  * 
  * Call this once at program startup. This function is optional if you
- * don't need custom memory allocation.
+ * don't need custom memory allocation, but it's recommended for explicit
+ * initialization of internal resources.
+ * 
+ * @note Thread-safety: This function should be called once before any
+ *       validation operations. It initializes internal synchronization
+ *       primitives used for thread-safe operation.
  */
 JS_API void js_init(void);
 
@@ -46,13 +51,31 @@ JS_API void js_init(void);
  * @param alloc Custom allocator functions
  * 
  * Call this once at program startup if you need custom memory allocation.
+ * This function initializes the library and sets the custom allocator.
+ * 
+ * @note Thread-safety: This function should be called once before any
+ *       validation operations. Do not call this concurrently from multiple
+ *       threads or while validation is in progress.
  */
 JS_API void js_init_with_allocator(js_allocator_t alloc);
 
 /**
  * @brief Clean up the JSON Structure library
  * 
- * Call this at program shutdown to release any internal resources.
+ * Call this at program shutdown to release any internal resources,
+ * including the regex compilation cache and synchronization primitives.
+ * 
+ * After calling js_cleanup(), you can call js_init() or
+ * js_init_with_allocator() again to reinitialize the library if needed.
+ * 
+ * @note Thread-safety: This function must only be called when no
+ *       validation operations are in progress. Calling this while
+ *       validations are running leads to undefined behavior.
+ * 
+ * @note The internal mutex is initialized once using pthread_once (Unix)
+ *       or InitOnceExecuteOnce (Windows) for thread safety. While the
+ *       library can be reinitialized after cleanup, the one-time
+ *       initialization mechanism persists for the process lifetime.
  */
 JS_API void js_cleanup(void);
 
