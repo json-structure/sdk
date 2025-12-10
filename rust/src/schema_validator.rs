@@ -1574,15 +1574,13 @@ impl SchemaValidator {
             }
 
             // Resolve reference
-            if ref_str.starts_with("#/definitions/") {
-                if self.resolve_ref(&ref_str, root_schema).is_none() {
-                    result.add_error(ValidationError::schema_error(
-                        SchemaErrorCode::SchemaExtendsNotFound,
-                        format!("$extends reference not found: {}", ref_str),
-                        &ref_path,
-                        locator.get_location(&ref_path),
-                    ));
-                }
+            if ref_str.starts_with("#/definitions/") && self.resolve_ref(&ref_str, root_schema).is_none() {
+                result.add_error(ValidationError::schema_error(
+                    SchemaErrorCode::SchemaExtendsNotFound,
+                    format!("$extends reference not found: {}", ref_str),
+                    &ref_path,
+                    locator.get_location(&ref_path),
+                ));
             }
             // External references would be validated here if import is enabled
         }

@@ -606,7 +606,7 @@ impl InstanceValidator {
         }
         
         // Basic structural validation
-        colon_count >= 2 && colon_count <= 7
+        (2..=7).contains(&colon_count)
     }
 
     /// Validates hostname format.
