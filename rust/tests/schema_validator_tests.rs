@@ -780,3 +780,46 @@ fn test_valid_nested_definitions() {
     let result = validator.validate(schema);
     assert!(result.is_valid(), "Nested definitions should be valid");
 }
+
+// =============================================================================
+// Empty Composition Array Tests
+// =============================================================================
+
+#[test]
+fn test_invalid_empty_allof() {
+    let schema = r##"{
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/schema/empty-allof",
+        "name": "EmptyAllOfSchema",
+        "allOf": []
+    }"##;
+    let validator = SchemaValidator::new();
+    let result = validator.validate(schema);
+    assert!(!result.is_valid(), "Empty allOf should be invalid");
+}
+
+#[test]
+fn test_invalid_empty_anyof() {
+    let schema = r##"{
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/schema/empty-anyof",
+        "name": "EmptyAnyOfSchema",
+        "anyOf": []
+    }"##;
+    let validator = SchemaValidator::new();
+    let result = validator.validate(schema);
+    assert!(!result.is_valid(), "Empty anyOf should be invalid");
+}
+
+#[test]
+fn test_invalid_empty_oneof() {
+    let schema = r##"{
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/schema/empty-oneof",
+        "name": "EmptyOneOfSchema",
+        "oneOf": []
+    }"##;
+    let validator = SchemaValidator::new();
+    let result = validator.validate(schema);
+    assert!(!result.is_valid(), "Empty oneOf should be invalid");
+}

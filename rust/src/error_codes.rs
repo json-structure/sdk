@@ -98,6 +98,16 @@ pub enum SchemaErrorCode {
     SchemaImportFailed,
     SchemaImportCircular,
     
+    // Extends errors
+    SchemaExtendsNotString,
+    SchemaExtendsEmpty,
+    SchemaExtendsNotFound,
+    SchemaExtendsCircular,
+    
+    // Altnames errors
+    SchemaAltnamesNotObject,
+    SchemaAltnamesValueNotString,
+    
     // Composition errors
     SchemaAllOfNotArray,
     SchemaAnyOfNotArray,
@@ -173,6 +183,12 @@ impl SchemaErrorCode {
             Self::SchemaImportNotAllowed => "SCHEMA_IMPORT_NOT_ALLOWED",
             Self::SchemaImportFailed => "SCHEMA_IMPORT_FAILED",
             Self::SchemaImportCircular => "SCHEMA_IMPORT_CIRCULAR",
+            Self::SchemaExtendsNotString => "SCHEMA_EXTENDS_NOT_STRING",
+            Self::SchemaExtendsEmpty => "SCHEMA_EXTENDS_EMPTY",
+            Self::SchemaExtendsNotFound => "SCHEMA_EXTENDS_NOT_FOUND",
+            Self::SchemaExtendsCircular => "SCHEMA_EXTENDS_CIRCULAR",
+            Self::SchemaAltnamesNotObject => "SCHEMA_ALTNAMES_NOT_OBJECT",
+            Self::SchemaAltnamesValueNotString => "SCHEMA_ALTNAMES_VALUE_NOT_STRING",
             Self::SchemaAllOfNotArray => "SCHEMA_ALLOF_NOT_ARRAY",
             Self::SchemaAnyOfNotArray => "SCHEMA_ANYOF_NOT_ARRAY",
             Self::SchemaOneOfNotArray => "SCHEMA_ONEOF_NOT_ARRAY",
@@ -229,6 +245,8 @@ pub enum InstanceErrorCode {
     InstanceTooFewProperties,
     InstanceTooManyProperties,
     InstanceDependentRequiredMissing,
+    InstancePatternPropertyMismatch,
+    InstancePropertyNameInvalid,
     
     // Array errors
     InstanceArrayExpected,
@@ -337,6 +355,8 @@ impl InstanceErrorCode {
             Self::InstanceTooFewProperties => "INSTANCE_TOO_FEW_PROPERTIES",
             Self::InstanceTooManyProperties => "INSTANCE_TOO_MANY_PROPERTIES",
             Self::InstanceDependentRequiredMissing => "INSTANCE_DEPENDENT_REQUIRED_MISSING",
+            Self::InstancePatternPropertyMismatch => "INSTANCE_PATTERN_PROPERTY_MISMATCH",
+            Self::InstancePropertyNameInvalid => "INSTANCE_PROPERTY_NAME_INVALID",
             Self::InstanceArrayExpected => "INSTANCE_ARRAY_EXPECTED",
             Self::InstanceArrayTooShort => "INSTANCE_ARRAY_TOO_SHORT",
             Self::InstanceArrayTooLong => "INSTANCE_ARRAY_TOO_LONG",

@@ -140,8 +140,21 @@ impl InstanceValidator {
 
         let schema_obj = schema.as_object().unwrap();
 
+        // Handle $extends - merge base types into schema
+        let merged_schema;
+        let effective_schema_obj = if schema_obj.contains_key("$extends") {
+            if let Some(merged) = self.merge_extends(schema_obj, root_schema) {
+                merged_schema = merged;
+                &merged_schema
+            } else {
+                schema_obj
+            }
+        } else {
+            schema_obj
+        };
+
         // Handle $ref
-        if let Some(ref_val) = schema_obj.get("$ref") {
+        if let Some(ref_val) = effective_schema_obj.get("$ref") {
             if let Value::String(ref_str) = ref_val {
                 if let Some(resolved) = self.resolve_ref(ref_str, root_schema) {
                     self.validate_instance(instance, resolved, root_schema, result, path, locator, depth + 1);
@@ -159,7 +172,7 @@ impl InstanceValidator {
         }
 
         // Validate enum
-        if let Some(enum_val) = schema_obj.get("enum") {
+        if let Some(enum_val) = effective_schema_obj.get("enum") {
             if !self.validate_enum(instance, enum_val) {
                 result.add_error(ValidationError::instance_error(
                     InstanceErrorCode::InstanceEnumMismatch,
@@ -172,7 +185,7 @@ impl InstanceValidator {
         }
 
         // Validate const
-        if let Some(const_val) = schema_obj.get("const") {
+        if let Some(const_val) = effective_schema_obj.get("const") {
             if instance != const_val {
                 result.add_error(ValidationError::instance_error(
                     InstanceErrorCode::InstanceConstMismatch,
@@ -185,10 +198,10 @@ impl InstanceValidator {
         }
 
         // Get type and validate
-        if let Some(type_val) = schema_obj.get("type") {
+        if let Some(type_val) = effective_schema_obj.get("type") {
             match type_val {
                 Value::String(type_name) => {
-                    self.validate_type(instance, type_name, schema_obj, root_schema, result, path, locator, depth);
+                    self.validate_type(instance, type_name, effective_schema_obj, root_schema, result, path, locator, depth);
                 }
                 Value::Array(types) => {
                     // Union type: try each type until one validates
@@ -197,7 +210,7 @@ impl InstanceValidator {
                         match t {
                             Value::String(type_name) => {
                                 let mut temp_result = ValidationResult::new();
-                                self.validate_type(instance, type_name, schema_obj, root_schema, &mut temp_result, path, locator, depth);
+                                self.validate_type(instance, type_name, effective_schema_obj, root_schema, &mut temp_result, path, locator, depth);
                                 if temp_result.is_valid() {
                                     union_valid = true;
                                     break;
@@ -250,19 +263,107 @@ impl InstanceValidator {
 
         // Validate composition (if extended)
         if self.options.extended {
-            self.validate_composition(instance, schema_obj, root_schema, result, path, locator, depth);
+            self.validate_composition(instance, effective_schema_obj, root_schema, result, path, locator, depth);
         }
     }
 
-    /// Resolves a $ref reference.
+    /// Resolves a $ref reference with support for nested namespaces.
     fn resolve_ref<'a>(&self, ref_str: &str, root_schema: &'a Value) -> Option<&'a Value> {
-        if let Some(def_name) = ref_str.strip_prefix("#/definitions/") {
-            root_schema
-                .get("definitions")
-                .and_then(|defs| defs.get(def_name))
+        if let Some(def_path) = ref_str.strip_prefix("#/definitions/") {
+            // Handle nested namespace paths like "Namespace/TypeName"
+            let parts: Vec<&str> = def_path.split('/').collect();
+            let mut current = root_schema.get("definitions")?;
+            
+            for part in parts {
+                // First try to get it directly as a definition
+                if let Some(next) = current.get(part) {
+                    current = next;
+                } else if let Some(defs) = current.get("definitions") {
+                    // Try to get it from nested definitions (for namespaces)
+                    current = defs.get(part)?;
+                } else {
+                    return None;
+                }
+            }
+            Some(current)
         } else {
             None
         }
+    }
+
+    /// Merges $extends base types into the schema and returns a new merged schema.
+    fn merge_extends(&self, schema_obj: &serde_json::Map<String, Value>, root_schema: &Value) -> Option<serde_json::Map<String, Value>> {
+        let extends_val = schema_obj.get("$extends")?;
+        
+        // Collect all extend references
+        let refs: Vec<&str> = match extends_val {
+            Value::String(s) => vec![s.as_str()],
+            Value::Array(arr) => arr.iter()
+                .filter_map(|v| v.as_str())
+                .collect(),
+            _ => return None,
+        };
+        
+        if refs.is_empty() {
+            return None;
+        }
+        
+        // Merge properties from all base types
+        let mut merged_properties = serde_json::Map::new();
+        let mut merged_required: Vec<Value> = Vec::new();
+        
+        for ref_str in refs {
+            if let Some(base_schema) = self.resolve_ref(ref_str, root_schema) {
+                if let Some(base_obj) = base_schema.as_object() {
+                    // Merge properties (first-wins for conflicts)
+                    if let Some(Value::Object(base_props)) = base_obj.get("properties") {
+                        for (key, value) in base_props {
+                            if !merged_properties.contains_key(key) {
+                                merged_properties.insert(key.clone(), value.clone());
+                            }
+                        }
+                    }
+                    // Merge required
+                    if let Some(Value::Array(base_req)) = base_obj.get("required") {
+                        for r in base_req {
+                            if let Value::String(s) = r {
+                                if !merged_required.iter().any(|x| x.as_str() == Some(s.as_str())) {
+                                    merged_required.push(r.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Merge current schema's properties on top (current schema wins)
+        if let Some(Value::Object(props)) = schema_obj.get("properties") {
+            for (key, value) in props {
+                merged_properties.insert(key.clone(), value.clone());
+            }
+        }
+        if let Some(Value::Array(req)) = schema_obj.get("required") {
+            for r in req {
+                if let Value::String(s) = r {
+                    if !merged_required.iter().any(|x| x.as_str() == Some(s.as_str())) {
+                        merged_required.push(r.clone());
+                    }
+                }
+            }
+        }
+        
+        // Build merged schema
+        let mut merged = schema_obj.clone();
+        merged.remove("$extends");
+        if !merged_properties.is_empty() {
+            merged.insert("properties".to_string(), Value::Object(merged_properties));
+        }
+        if !merged_required.is_empty() {
+            merged.insert("required".to_string(), Value::Array(merged_required));
+        }
+        
+        Some(merged)
     }
 
     /// Validates enum constraint.
@@ -396,7 +497,173 @@ impl InstanceValidator {
                     }
                 }
             }
+
+            // format
+            if let Some(Value::String(fmt)) = schema_obj.get("format") {
+                self.validate_string_format(s, fmt, result, path, locator);
+            }
         }
+    }
+
+    /// Validates a string value against a format constraint.
+    fn validate_string_format(
+        &self,
+        s: &str,
+        fmt: &str,
+        result: &mut ValidationResult,
+        path: &str,
+        locator: &JsonSourceLocator,
+    ) {
+        let valid = match fmt {
+            "email" => self.validate_email_format(s),
+            "ipv4" => self.validate_ipv4_format(s),
+            "ipv6" => self.validate_ipv6_format(s),
+            "hostname" => self.validate_hostname_format(s),
+            "uri" => self.validate_uri_format(s),
+            "uri-reference" => self.validate_uri_reference_format(s),
+            "idn-email" => self.validate_idn_email_format(s),
+            "idn-hostname" => self.validate_idn_hostname_format(s),
+            "iri" | "iri-reference" => true, // Accept as valid, not strictly validated
+            "uri-template" | "regex" | "relative-json-pointer" => true, // Accept without validation
+            _ => true, // Unknown formats are accepted
+        };
+
+        if !valid {
+            result.add_error(ValidationError::instance_error(
+                InstanceErrorCode::InstanceStringFormatInvalid,
+                format!("String does not match format: {}", fmt),
+                path,
+                locator.get_location(path),
+            ));
+        }
+    }
+
+    /// Validates email format (simplified validation).
+    fn validate_email_format(&self, s: &str) -> bool {
+        // Simple email validation: contains @ and has at least one character before and after
+        if let Some(at_pos) = s.find('@') {
+            let local = &s[..at_pos];
+            let domain = &s[at_pos + 1..];
+            // Local part and domain must be non-empty, domain must contain a dot
+            !local.is_empty() && !domain.is_empty() && domain.contains('.') && 
+            !domain.starts_with('.') && !domain.ends_with('.')
+        } else {
+            false
+        }
+    }
+
+    /// Validates IPv4 address format.
+    fn validate_ipv4_format(&self, s: &str) -> bool {
+        let parts: Vec<&str> = s.split('.').collect();
+        if parts.len() != 4 {
+            return false;
+        }
+        for part in parts {
+            if part.is_empty() || part.len() > 3 {
+                return false;
+            }
+            // Check for leading zeros (not allowed except for "0")
+            if part.len() > 1 && part.starts_with('0') {
+                return false;
+            }
+            match part.parse::<u32>() {
+                Ok(n) if n <= 255 => continue,
+                _ => return false,
+            }
+        }
+        true
+    }
+
+    /// Validates IPv6 address format (basic validation).
+    fn validate_ipv6_format(&self, s: &str) -> bool {
+        // Handle IPv4-mapped IPv6 addresses
+        if s.contains('.') {
+            // Check if it's a valid IPv4-mapped format like ::ffff:192.168.1.1
+            if let Some(last_colon) = s.rfind(':') {
+                let ipv4_part = &s[last_colon + 1..];
+                if !self.validate_ipv4_format(ipv4_part) {
+                    return false;
+                }
+            }
+        }
+        
+        // Count colons and check for valid characters
+        let mut colon_count = 0;
+        let mut has_double_colon = false;
+        
+        for (i, c) in s.chars().enumerate() {
+            if c == ':' {
+                colon_count += 1;
+                if i > 0 && s.chars().nth(i - 1) == Some(':') {
+                    if has_double_colon {
+                        return false; // Only one :: allowed
+                    }
+                    has_double_colon = true;
+                }
+            } else if !c.is_ascii_hexdigit() && c != '.' {
+                return false;
+            }
+        }
+        
+        // Basic structural validation
+        colon_count >= 2 && colon_count <= 7
+    }
+
+    /// Validates hostname format.
+    fn validate_hostname_format(&self, s: &str) -> bool {
+        if s.is_empty() || s.len() > 253 {
+            return false;
+        }
+        
+        for label in s.split('.') {
+            if label.is_empty() || label.len() > 63 {
+                return false;
+            }
+            // Labels must start with alphanumeric
+            if !label.chars().next().map(|c| c.is_ascii_alphanumeric()).unwrap_or(false) {
+                return false;
+            }
+            // Labels must end with alphanumeric
+            if !label.chars().last().map(|c| c.is_ascii_alphanumeric()).unwrap_or(false) {
+                return false;
+            }
+            // Labels can contain alphanumerics and hyphens
+            for c in label.chars() {
+                if !c.is_ascii_alphanumeric() && c != '-' {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    /// Validates URI format.
+    fn validate_uri_format(&self, s: &str) -> bool {
+        // URI must have a scheme
+        url::Url::parse(s).is_ok()
+    }
+
+    /// Validates URI-reference format (can be relative).
+    fn validate_uri_reference_format(&self, s: &str) -> bool {
+        // URI-reference allows relative URIs
+        // Try parsing as absolute URI first
+        if url::Url::parse(s).is_ok() {
+            return true;
+        }
+        // For relative URIs, just check basic structure
+        !s.contains(' ') && !s.contains('\n') && !s.contains('\r')
+    }
+
+    /// Validates IDN email format (simplified).
+    fn validate_idn_email_format(&self, s: &str) -> bool {
+        // For IDN email, we accept the basic structure with @ 
+        s.contains('@') && !s.starts_with('@') && !s.ends_with('@')
+    }
+
+    /// Validates IDN hostname format (simplified).
+    fn validate_idn_hostname_format(&self, s: &str) -> bool {
+        // For IDN hostnames, we're more permissive with characters
+        !s.is_empty() && s.len() <= 253 && !s.contains(' ')
     }
 
     fn validate_boolean(
@@ -1448,6 +1715,70 @@ impl InstanceValidator {
                     }
                 }
             }
+
+            // patternProperties - validate properties matching regex patterns
+            if let Some(Value::Object(pattern_props)) = schema_obj.get("patternProperties") {
+                for (prop_name, prop_value) in obj {
+                    for (pattern_str, pattern_schema) in pattern_props {
+                        if let Ok(regex) = Regex::new(pattern_str) {
+                            if regex.is_match(prop_name) {
+                                let prop_path = format!("{}/{}", path, prop_name);
+                                self.validate_instance(prop_value, pattern_schema, root_schema, result, &prop_path, locator, depth + 1);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // propertyNames - validate all property names against a schema
+            if let Some(prop_names_schema) = schema_obj.get("propertyNames") {
+                if let Some(prop_names_obj) = prop_names_schema.as_object() {
+                    // propertyNames schema must be of type string with optional pattern
+                    if let Some(Value::String(pattern)) = prop_names_obj.get("pattern") {
+                        if let Ok(regex) = Regex::new(pattern) {
+                            for prop_name in obj.keys() {
+                                if !regex.is_match(prop_name) {
+                                    result.add_error(ValidationError::instance_error(
+                                        InstanceErrorCode::InstancePropertyNameInvalid,
+                                        format!("Property name '{}' does not match pattern '{}'", prop_name, pattern),
+                                        &format!("{}/{}", path, prop_name),
+                                        locator.get_location(&format!("{}/{}", path, prop_name)),
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                    // Also check minLength/maxLength on property names
+                    if let Some(Value::Number(n)) = prop_names_obj.get("minLength") {
+                        if let Some(min) = n.as_u64() {
+                            for prop_name in obj.keys() {
+                                if prop_name.len() < min as usize {
+                                    result.add_error(ValidationError::instance_error(
+                                        InstanceErrorCode::InstancePropertyNameInvalid,
+                                        format!("Property name '{}' is shorter than minimum length {}", prop_name, min),
+                                        &format!("{}/{}", path, prop_name),
+                                        locator.get_location(&format!("{}/{}", path, prop_name)),
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                    if let Some(Value::Number(n)) = prop_names_obj.get("maxLength") {
+                        if let Some(max) = n.as_u64() {
+                            for prop_name in obj.keys() {
+                                if prop_name.len() > max as usize {
+                                    result.add_error(ValidationError::instance_error(
+                                        InstanceErrorCode::InstancePropertyNameInvalid,
+                                        format!("Property name '{}' is longer than maximum length {}", prop_name, max),
+                                        &format!("{}/{}", path, prop_name),
+                                        locator.get_location(&format!("{}/{}", path, prop_name)),
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -1546,6 +1877,24 @@ impl InstanceValidator {
                             locator.get_location(path),
                         ));
                     }
+                }
+            }
+
+            // uniqueItems
+            if let Some(Value::Bool(true)) = schema_obj.get("uniqueItems") {
+                let mut seen = Vec::new();
+                for (i, item) in arr.iter().enumerate() {
+                    let item_str = item.to_string();
+                    if seen.contains(&item_str) {
+                        result.add_error(ValidationError::instance_error(
+                            InstanceErrorCode::InstanceArrayNotUnique,
+                            format!("Array items are not unique (duplicate at index {})", i),
+                            path,
+                            locator.get_location(path),
+                        ));
+                        break;
+                    }
+                    seen.push(item_str);
                 }
             }
         }
@@ -1674,6 +2023,49 @@ impl InstanceValidator {
                                         locator.get_location(path),
                                     ));
                                 }
+                            }
+                        }
+                    }
+                    // Also check minLength/maxLength on key names
+                    if let Some(Value::Number(n)) = keynames_obj.get("minLength") {
+                        if let Some(min) = n.as_u64() {
+                            for key in obj.keys() {
+                                if key.len() < min as usize {
+                                    result.add_error(ValidationError::instance_error(
+                                        InstanceErrorCode::InstanceMapKeyPatternMismatch,
+                                        format!("Map key '{}' is shorter than minimum length {}", key, min),
+                                        path,
+                                        locator.get_location(path),
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                    if let Some(Value::Number(n)) = keynames_obj.get("maxLength") {
+                        if let Some(max) = n.as_u64() {
+                            for key in obj.keys() {
+                                if key.len() > max as usize {
+                                    result.add_error(ValidationError::instance_error(
+                                        InstanceErrorCode::InstanceMapKeyPatternMismatch,
+                                        format!("Map key '{}' is longer than maximum length {}", key, max),
+                                        path,
+                                        locator.get_location(path),
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // patternKeys - validate values for keys matching regex patterns
+            if let Some(Value::Object(pattern_keys)) = schema_obj.get("patternKeys") {
+                for (key, value) in obj {
+                    for (pattern_str, pattern_schema) in pattern_keys {
+                        if let Ok(regex) = Regex::new(pattern_str) {
+                            if regex.is_match(key) {
+                                let value_path = format!("{}/{}", path, key);
+                                self.validate_instance(value, pattern_schema, root_schema, result, &value_path, locator, depth + 1);
                             }
                         }
                     }

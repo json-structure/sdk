@@ -654,3 +654,146 @@ fn test_sample_instances_are_valid() {
     println!("Sample Instance Tests: {} passed, {} failed, {} skipped", passed, failed, skipped);
     assert_eq!(failed, 0, "Some sample instances failed validation");
 }
+
+// =============================================================================
+// Detailed Error and Warning Message Tests
+// =============================================================================
+
+/// Test that invalid schemas produce accurate and meaningful error codes/messages
+#[test]
+fn test_invalid_schema_error_accuracy() {
+    let test_assets = match find_test_assets_dir() {
+        Some(dir) => dir,
+        None => {
+            eprintln!("test-assets directory not found, skipping test");
+            return;
+        }
+    };
+
+    let invalid_schemas_dir = test_assets.join("schemas").join("invalid");
+    let validator = SchemaValidator::new();
+    
+    // Map of filename (without .struct.json) to expected error code substring
+    let expected_errors: std::collections::HashMap<&str, &str> = [
+        ("unknown-type", "SCHEMA_TYPE_INVALID"),
+        ("enum-empty", "SCHEMA_ENUM_EMPTY"),
+        ("enum-duplicates", "SCHEMA_ENUM_DUPLICATE"),
+        ("circular-ref-direct", "SCHEMA_REF_CIRCULAR"),
+        ("ref-undefined", "SCHEMA_REF_NOT_FOUND"),
+        ("array-missing-items", "SCHEMA_ARRAY_MISSING_ITEMS"),
+        ("map-missing-values", "SCHEMA_MAP_MISSING_VALUES"),
+        ("missing-type", "SCHEMA_ROOT_MISSING_TYPE"),
+        ("required-missing-property", "SCHEMA_REQUIRED_PROPERTY_NOT_DEFINED"),
+        ("required-not-array", "SCHEMA_REQUIRED_MUST_BE_ARRAY"),
+        ("properties-not-object", "SCHEMA_PROPERTIES_MUST_BE_OBJECT"),
+        ("defs-not-object", "SCHEMA_DEFINITIONS_MUST_BE_OBJECT"),
+        ("allof-not-array", "SCHEMA_ALLOF_NOT_ARRAY"),
+        ("tuple-missing-definition", "SCHEMA_TUPLE"),
+        ("tuple-missing-prefixitems", "SCHEMA_TUPLE"),
+    ].iter().cloned().collect();
+    
+    let mut tested = 0;
+    let mut accurate = 0;
+    
+    for (filename, expected_code) in &expected_errors {
+        let schema_file = invalid_schemas_dir.join(format!("{}.struct.json", filename));
+        if !schema_file.exists() {
+            continue;
+        }
+        
+        tested += 1;
+        let schema_json = fs::read_to_string(&schema_file).unwrap();
+        let result = validator.validate(&schema_json);
+        
+        if !result.is_valid() {
+            let has_expected = result.errors().any(|e| e.code().contains(expected_code));
+            if has_expected {
+                accurate += 1;
+            } else {
+                let codes: Vec<_> = result.errors().map(|e| e.code().to_string()).collect();
+                eprintln!("  ✗ {} - expected error containing '{}', got: {:?}", 
+                         filename, expected_code, codes);
+            }
+        } else {
+            eprintln!("  ✗ {} - should be invalid but passed", filename);
+        }
+    }
+    
+    println!("Error Accuracy Tests: {} tested, {} accurate", tested, accurate);
+    assert_eq!(tested, accurate, "Some error codes were not as expected");
+}
+
+/// Test that warning schemas produce accurate warning messages
+#[test]
+fn test_warning_schema_message_accuracy() {
+    let test_assets = match find_test_assets_dir() {
+        Some(dir) => dir,
+        None => {
+            eprintln!("test-assets directory not found, skipping test");
+            return;
+        }
+    };
+
+    let warning_schemas_dir = test_assets.join("schemas").join("warnings");
+    
+    let mut validator = SchemaValidator::new();
+    validator.set_extended(true);
+    validator.set_warn_on_extension_keywords(true);
+    
+    // Map of filename pattern to expected warning keyword mention
+    let expected_warnings: std::collections::HashMap<&str, &str> = [
+        ("string-pattern-without-uses", "pattern"),
+        ("string-minlength-without-uses", "minLength"),
+        ("numeric-minimum-without-uses", "minimum"),
+        ("numeric-maximum-without-uses", "maximum"),
+        ("numeric-exclusive-minimum-without-uses", "exclusiveMinimum"),
+        ("numeric-exclusive-maximum-without-uses", "exclusiveMaximum"),
+        ("numeric-multiple-of-without-uses", "multipleOf"),
+        ("array-minitems-without-uses", "minItems"),
+        ("array-maxitems-without-uses", "maxItems"),
+        ("array-uniqueitems-without-uses", "uniqueItems"),
+        ("array-contains-without-uses", "contains"),
+        ("object-minproperties-without-uses", "minProperties"),
+        ("object-maxproperties-without-uses", "maxProperties"),
+        ("object-dependentrequired-without-uses", "dependentRequired"),
+        ("object-patternproperties-without-uses", "patternProperties"),
+        ("object-propertynames-without-uses", "propertyNames"),
+    ].iter().cloned().collect();
+    
+    let mut tested = 0;
+    let mut accurate = 0;
+    
+    for (filename, expected_keyword) in &expected_warnings {
+        let schema_file = warning_schemas_dir.join(format!("{}.struct.json", filename));
+        if !schema_file.exists() {
+            continue;
+        }
+        
+        tested += 1;
+        let schema_json = fs::read_to_string(&schema_file).unwrap();
+        let result = validator.validate(&schema_json);
+        
+        if result.is_valid() && result.warning_count() > 0 {
+            // Check that warnings mention the expected keyword
+            let has_expected = result.warnings().any(|w| {
+                w.message().contains(expected_keyword) || w.path().contains(expected_keyword)
+            });
+            if has_expected {
+                accurate += 1;
+            } else {
+                let warnings: Vec<_> = result.warnings()
+                    .map(|w| format!("{}: {}", w.path(), w.message()))
+                    .collect();
+                eprintln!("  ✗ {} - expected warning about '{}', got: {:?}", 
+                         filename, expected_keyword, warnings);
+            }
+        } else if !result.is_valid() {
+            eprintln!("  ✗ {} - should be valid with warnings but got errors", filename);
+        } else {
+            eprintln!("  ✗ {} - expected warnings but got none", filename);
+        }
+    }
+    
+    println!("Warning Accuracy Tests: {} tested, {} accurate", tested, accurate);
+    assert_eq!(tested, accurate, "Some warning messages were not as expected");
+}

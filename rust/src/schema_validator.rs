@@ -206,6 +206,16 @@ impl SchemaValidator {
             self.validate_type(type_val, obj, root_schema, locator, result, path, &enabled_extensions, visited_refs, depth);
         }
 
+        // Validate $extends if present
+        if let Some(extends_val) = obj.get("$extends") {
+            self.validate_extends(extends_val, root_schema, locator, result, path, visited_refs, depth);
+        }
+
+        // Validate altnames if present
+        if let Some(altnames_val) = obj.get("altnames") {
+            self.validate_altnames(altnames_val, locator, result, path);
+        }
+
         // Validate definitions
         if let Some(defs) = obj.get("definitions") {
             self.validate_definitions(defs, root_schema, locator, result, path, visited_refs, depth);
@@ -1444,6 +1454,17 @@ impl SchemaValidator {
 
         match value {
             Value::Array(arr) => {
+                // Check for empty array
+                if arr.is_empty() {
+                    result.add_error(ValidationError::schema_error(
+                        SchemaErrorCode::SchemaKeywordInvalidType,
+                        format!("{} array cannot be empty", keyword),
+                        &keyword_path,
+                        locator.get_location(&keyword_path),
+                    ));
+                    return;
+                }
+                
                 for (i, item) in arr.iter().enumerate() {
                     let item_path = format!("{}/{}", keyword_path, i);
                     self.validate_schema_internal(item, root_schema, locator, result, &item_path, false, visited_refs, depth + 1);
@@ -1461,6 +1482,141 @@ impl SchemaValidator {
                     format!("{} must be an array", keyword),
                     &keyword_path,
                     locator.get_location(&keyword_path),
+                ));
+            }
+        }
+    }
+
+    /// Validates $extends keyword.
+    fn validate_extends(
+        &self,
+        extends_val: &Value,
+        root_schema: &Value,
+        locator: &JsonSourceLocator,
+        result: &mut ValidationResult,
+        path: &str,
+        visited_refs: &mut HashSet<String>,
+        _depth: usize,
+    ) {
+        let extends_path = format!("{}/$extends", path);
+        
+        // $extends can be a string or an array of strings
+        let refs: Vec<(String, String)> = match extends_val {
+            Value::String(s) => {
+                if s.is_empty() {
+                    result.add_error(ValidationError::schema_error(
+                        SchemaErrorCode::SchemaExtendsEmpty,
+                        "$extends cannot be empty",
+                        &extends_path,
+                        locator.get_location(&extends_path),
+                    ));
+                    return;
+                }
+                vec![(s.clone(), extends_path.clone())]
+            }
+            Value::Array(arr) => {
+                if arr.is_empty() {
+                    result.add_error(ValidationError::schema_error(
+                        SchemaErrorCode::SchemaExtendsEmpty,
+                        "$extends array cannot be empty",
+                        &extends_path,
+                        locator.get_location(&extends_path),
+                    ));
+                    return;
+                }
+                let mut refs = Vec::new();
+                for (i, item) in arr.iter().enumerate() {
+                    let item_path = format!("{}/{}", extends_path, i);
+                    if let Value::String(s) = item {
+                        if s.is_empty() {
+                            result.add_error(ValidationError::schema_error(
+                                SchemaErrorCode::SchemaExtendsEmpty,
+                                "$extends array items cannot be empty",
+                                &item_path,
+                                locator.get_location(&item_path),
+                            ));
+                        } else {
+                            refs.push((s.clone(), item_path));
+                        }
+                    } else {
+                        result.add_error(ValidationError::schema_error(
+                            SchemaErrorCode::SchemaExtendsNotString,
+                            "$extends array items must be strings",
+                            &item_path,
+                            locator.get_location(&item_path),
+                        ));
+                    }
+                }
+                refs
+            }
+            _ => {
+                result.add_error(ValidationError::schema_error(
+                    SchemaErrorCode::SchemaExtendsNotString,
+                    "$extends must be a string or array of strings",
+                    &extends_path,
+                    locator.get_location(&extends_path),
+                ));
+                return;
+            }
+        };
+
+        // Validate each reference
+        for (ref_str, ref_path) in refs {
+            // Check for circular reference
+            if visited_refs.contains(&ref_str) {
+                result.add_error(ValidationError::schema_error(
+                    SchemaErrorCode::SchemaExtendsCircular,
+                    format!("Circular $extends reference: {}", ref_str),
+                    &ref_path,
+                    locator.get_location(&ref_path),
+                ));
+                continue;
+            }
+
+            // Resolve reference
+            if ref_str.starts_with("#/definitions/") {
+                if self.resolve_ref(&ref_str, root_schema).is_none() {
+                    result.add_error(ValidationError::schema_error(
+                        SchemaErrorCode::SchemaExtendsNotFound,
+                        format!("$extends reference not found: {}", ref_str),
+                        &ref_path,
+                        locator.get_location(&ref_path),
+                    ));
+                }
+            }
+            // External references would be validated here if import is enabled
+        }
+    }
+
+    /// Validates altnames keyword.
+    fn validate_altnames(
+        &self,
+        altnames_val: &Value,
+        locator: &JsonSourceLocator,
+        result: &mut ValidationResult,
+        path: &str,
+    ) {
+        let altnames_path = format!("{}/altnames", path);
+        
+        match altnames_val {
+            Value::Object(obj) => {
+                for (key, value) in obj {
+                    if !value.is_string() {
+                        result.add_error(ValidationError::schema_error(
+                            SchemaErrorCode::SchemaAltnamesValueNotString,
+                            format!("altnames value for '{}' must be a string", key),
+                            &format!("{}/{}", altnames_path, key),
+                            locator.get_location(&format!("{}/{}", altnames_path, key)),
+                        ));
+                    }
+                }
+            }
+            _ => {
+                result.add_error(ValidationError::schema_error(
+                    SchemaErrorCode::SchemaAltnamesNotObject,
+                    "altnames must be an object",
+                    &altnames_path,
+                    locator.get_location(&altnames_path),
                 ));
             }
         }

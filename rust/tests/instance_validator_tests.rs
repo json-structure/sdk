@@ -821,3 +821,540 @@ fn test_any_accepts_all() {
     assert!(validator.validate(r#"{"key": "value"}"#, &schema).is_valid());
     assert!(validator.validate("[1, 2, 3]", &schema).is_valid());
 }
+
+// =============================================================================
+// Format Validation (Extended Mode)
+// =============================================================================
+
+#[test]
+fn test_format_email_valid() {
+    let schema = json!({
+        "$uses": ["JSONStructureValidation"],
+        "type": "string",
+        "format": "email"
+    });
+    let mut validator = InstanceValidator::new();
+    validator.set_extended(true);
+    
+    assert!(validator.validate(r#""user@example.com""#, &schema).is_valid());
+    assert!(validator.validate(r#""test.user@sub.domain.org""#, &schema).is_valid());
+    assert!(validator.validate(r#""a@b.co""#, &schema).is_valid());
+}
+
+#[test]
+fn test_format_email_invalid() {
+    let schema = json!({
+        "$uses": ["JSONStructureValidation"],
+        "type": "string",
+        "format": "email"
+    });
+    let mut validator = InstanceValidator::new();
+    validator.set_extended(true);
+    
+    assert!(!validator.validate(r#""not-an-email""#, &schema).is_valid());
+    assert!(!validator.validate(r#""missing@domain""#, &schema).is_valid());
+    assert!(!validator.validate(r#""@example.com""#, &schema).is_valid());
+    assert!(!validator.validate(r#""user@""#, &schema).is_valid());
+}
+
+#[test]
+fn test_format_ipv4_valid() {
+    let schema = json!({
+        "$uses": ["JSONStructureValidation"],
+        "type": "string",
+        "format": "ipv4"
+    });
+    let mut validator = InstanceValidator::new();
+    validator.set_extended(true);
+    
+    assert!(validator.validate(r#""192.168.1.1""#, &schema).is_valid());
+    assert!(validator.validate(r#""0.0.0.0""#, &schema).is_valid());
+    assert!(validator.validate(r#""255.255.255.255""#, &schema).is_valid());
+    assert!(validator.validate(r#""10.0.0.1""#, &schema).is_valid());
+}
+
+#[test]
+fn test_format_ipv4_invalid() {
+    let schema = json!({
+        "$uses": ["JSONStructureValidation"],
+        "type": "string",
+        "format": "ipv4"
+    });
+    let mut validator = InstanceValidator::new();
+    validator.set_extended(true);
+    
+    assert!(!validator.validate(r#""256.1.1.1""#, &schema).is_valid());
+    assert!(!validator.validate(r#""1.2.3""#, &schema).is_valid());
+    assert!(!validator.validate(r#""1.2.3.4.5""#, &schema).is_valid());
+    assert!(!validator.validate(r#""abc.def.ghi.jkl""#, &schema).is_valid());
+    assert!(!validator.validate(r#""01.02.03.04""#, &schema).is_valid()); // Leading zeros
+}
+
+#[test]
+fn test_format_ipv6_valid() {
+    let schema = json!({
+        "$uses": ["JSONStructureValidation"],
+        "type": "string",
+        "format": "ipv6"
+    });
+    let mut validator = InstanceValidator::new();
+    validator.set_extended(true);
+    
+    assert!(validator.validate(r#""::1""#, &schema).is_valid());
+    assert!(validator.validate(r#""2001:db8::1""#, &schema).is_valid());
+    assert!(validator.validate(r#""fe80::1""#, &schema).is_valid());
+}
+
+#[test]
+fn test_format_ipv6_invalid() {
+    let schema = json!({
+        "$uses": ["JSONStructureValidation"],
+        "type": "string",
+        "format": "ipv6"
+    });
+    let mut validator = InstanceValidator::new();
+    validator.set_extended(true);
+    
+    assert!(!validator.validate(r#""not-ipv6""#, &schema).is_valid());
+    assert!(!validator.validate(r#"":::1""#, &schema).is_valid()); // Multiple ::
+}
+
+#[test]
+fn test_format_hostname_valid() {
+    let schema = json!({
+        "$uses": ["JSONStructureValidation"],
+        "type": "string",
+        "format": "hostname"
+    });
+    let mut validator = InstanceValidator::new();
+    validator.set_extended(true);
+    
+    assert!(validator.validate(r#""example.com""#, &schema).is_valid());
+    assert!(validator.validate(r#""sub.domain.example.com""#, &schema).is_valid());
+    assert!(validator.validate(r#""localhost""#, &schema).is_valid());
+    assert!(validator.validate(r#""my-server""#, &schema).is_valid());
+}
+
+#[test]
+fn test_format_hostname_invalid() {
+    let schema = json!({
+        "$uses": ["JSONStructureValidation"],
+        "type": "string",
+        "format": "hostname"
+    });
+    let mut validator = InstanceValidator::new();
+    validator.set_extended(true);
+    
+    assert!(!validator.validate(r#""-invalid.com""#, &schema).is_valid()); // Starts with hyphen
+    assert!(!validator.validate(r#""invalid-.com""#, &schema).is_valid()); // Label ends with hyphen
+    assert!(!validator.validate(r#""inva lid.com""#, &schema).is_valid()); // Contains space
+}
+
+#[test]
+fn test_format_uri_valid() {
+    let schema = json!({
+        "$uses": ["JSONStructureValidation"],
+        "type": "string",
+        "format": "uri"
+    });
+    let mut validator = InstanceValidator::new();
+    validator.set_extended(true);
+    
+    assert!(validator.validate(r#""https://example.com""#, &schema).is_valid());
+    assert!(validator.validate(r#""http://localhost:8080/path""#, &schema).is_valid());
+    assert!(validator.validate(r#""ftp://files.example.com/file.txt""#, &schema).is_valid());
+}
+
+#[test]
+fn test_format_uri_invalid() {
+    let schema = json!({
+        "$uses": ["JSONStructureValidation"],
+        "type": "string",
+        "format": "uri"
+    });
+    let mut validator = InstanceValidator::new();
+    validator.set_extended(true);
+    
+    assert!(!validator.validate(r#""not-a-uri""#, &schema).is_valid());
+    assert!(!validator.validate(r#""//missing-scheme.com""#, &schema).is_valid());
+}
+
+#[test]
+fn test_format_uri_reference_valid() {
+    let schema = json!({
+        "$uses": ["JSONStructureValidation"],
+        "type": "string",
+        "format": "uri-reference"
+    });
+    let mut validator = InstanceValidator::new();
+    validator.set_extended(true);
+    
+    assert!(validator.validate(r#""https://example.com""#, &schema).is_valid());
+    assert!(validator.validate(r#""/path/to/resource""#, &schema).is_valid());
+    assert!(validator.validate(r#""relative/path""#, &schema).is_valid());
+    assert!(validator.validate("\"#fragment\"", &schema).is_valid());
+}
+
+#[test]
+fn test_format_not_applied_without_extended() {
+    let schema = json!({
+        "type": "string",
+        "format": "email"
+    });
+    let validator = InstanceValidator::new(); // extended=false by default
+    
+    // Without extended mode, format is not validated
+    assert!(validator.validate(r#""not-an-email""#, &schema).is_valid());
+}
+
+// =============================================================================
+// $extends Validation
+// =============================================================================
+
+#[test]
+fn test_extends_simple() {
+    let schema = json!({
+        "definitions": {
+            "Base": {
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string" }
+                },
+                "required": ["name"]
+            },
+            "Extended": {
+                "type": "object",
+                "$extends": "#/definitions/Base",
+                "properties": {
+                    "age": { "type": "int32" }
+                }
+            }
+        },
+        "$ref": "#/definitions/Extended"
+    });
+    let validator = InstanceValidator::new();
+    
+    // Valid: has both name (from Base) and age (from Extended)
+    let result = validator.validate(r#"{"name": "John", "age": 30}"#, &schema);
+    assert!(result.is_valid(), "Should validate with inherited properties");
+}
+
+#[test]
+fn test_extends_missing_required_from_base() {
+    let schema = json!({
+        "definitions": {
+            "Base": {
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string" }
+                },
+                "required": ["name"]
+            },
+            "Extended": {
+                "type": "object",
+                "$extends": "#/definitions/Base",
+                "properties": {
+                    "age": { "type": "int32" }
+                }
+            }
+        },
+        "$ref": "#/definitions/Extended"
+    });
+    let validator = InstanceValidator::new();
+    
+    // Invalid: missing name which is required from Base
+    let result = validator.validate(r#"{"age": 30}"#, &schema);
+    assert!(!result.is_valid(), "Should fail when missing required property from base");
+}
+
+#[test]
+fn test_extends_array() {
+    let schema = json!({
+        "definitions": {
+            "HasName": {
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string" }
+                },
+                "required": ["name"]
+            },
+            "HasAge": {
+                "type": "object",
+                "properties": {
+                    "age": { "type": "int32" }
+                },
+                "required": ["age"]
+            },
+            "Person": {
+                "type": "object",
+                "$extends": ["#/definitions/HasName", "#/definitions/HasAge"],
+                "properties": {
+                    "email": { "type": "string" }
+                }
+            }
+        },
+        "$ref": "#/definitions/Person"
+    });
+    let validator = InstanceValidator::new();
+    
+    // Valid: has all required properties from both base types
+    let result = validator.validate(r#"{"name": "John", "age": 30, "email": "john@example.com"}"#, &schema);
+    assert!(result.is_valid(), "Should validate with properties from multiple bases");
+    
+    // Invalid: missing age from HasAge
+    let result = validator.validate(r#"{"name": "John", "email": "john@example.com"}"#, &schema);
+    assert!(!result.is_valid(), "Should fail when missing required from one base");
+}
+
+// =============================================================================
+// uniqueItems Validation
+// =============================================================================
+
+#[test]
+fn test_unique_items_valid() {
+    let schema = json!({
+        "$uses": ["JSONStructureValidation"],
+        "type": "array",
+        "items": { "type": "int32" },
+        "uniqueItems": true
+    });
+    let mut validator = InstanceValidator::new();
+    validator.set_extended(true);
+    
+    let result = validator.validate("[1, 2, 3, 4, 5]", &schema);
+    assert!(result.is_valid(), "Array with unique items should be valid");
+}
+
+#[test]
+fn test_unique_items_duplicates() {
+    let schema = json!({
+        "$uses": ["JSONStructureValidation"],
+        "type": "array",
+        "items": { "type": "int32" },
+        "uniqueItems": true
+    });
+    let mut validator = InstanceValidator::new();
+    validator.set_extended(true);
+    
+    let result = validator.validate("[1, 2, 3, 2, 5]", &schema);
+    assert!(!result.is_valid(), "Array with duplicate items should be invalid");
+}
+
+#[test]
+fn test_unique_items_objects() {
+    let schema = json!({
+        "$uses": ["JSONStructureValidation"],
+        "type": "array",
+        "items": {
+            "type": "object",
+            "properties": {
+                "id": { "type": "int32" }
+            }
+        },
+        "uniqueItems": true
+    });
+    let mut validator = InstanceValidator::new();
+    validator.set_extended(true);
+    
+    // Valid: unique objects
+    let result = validator.validate(r#"[{"id": 1}, {"id": 2}]"#, &schema);
+    assert!(result.is_valid(), "Array with unique objects should be valid");
+    
+    // Invalid: duplicate objects
+    let result = validator.validate(r#"[{"id": 1}, {"id": 1}]"#, &schema);
+    assert!(!result.is_valid(), "Array with duplicate objects should be invalid");
+}
+
+#[test]
+fn test_unique_items_false() {
+    let schema = json!({
+        "$uses": ["JSONStructureValidation"],
+        "type": "array",
+        "items": { "type": "int32" },
+        "uniqueItems": false
+    });
+    let mut validator = InstanceValidator::new();
+    validator.set_extended(true);
+    
+    // Duplicates allowed when uniqueItems is false
+    let result = validator.validate("[1, 2, 2, 3]", &schema);
+    assert!(result.is_valid(), "Duplicates allowed when uniqueItems is false");
+}
+
+// =============================================================================
+// patternProperties Validation
+// =============================================================================
+
+#[test]
+fn test_pattern_properties_valid() {
+    let schema = json!({
+        "$uses": ["JSONStructureValidation"],
+        "type": "object",
+        "patternProperties": {
+            "^str_": { "type": "string" },
+            "^num_": { "type": "int32" }
+        }
+    });
+    let mut validator = InstanceValidator::new();
+    validator.set_extended(true);
+    
+    let result = validator.validate(r#"{"str_name": "John", "num_age": 30}"#, &schema);
+    assert!(result.is_valid(), "Properties matching patterns should be valid");
+}
+
+#[test]
+fn test_pattern_properties_invalid_type() {
+    let schema = json!({
+        "$uses": ["JSONStructureValidation"],
+        "type": "object",
+        "patternProperties": {
+            "^str_": { "type": "string" }
+        }
+    });
+    let mut validator = InstanceValidator::new();
+    validator.set_extended(true);
+    
+    // str_value should be a string but is a number
+    let result = validator.validate(r#"{"str_value": 123}"#, &schema);
+    assert!(!result.is_valid(), "Wrong type for pattern property should be invalid");
+}
+
+#[test]
+fn test_pattern_properties_with_properties() {
+    let schema = json!({
+        "$uses": ["JSONStructureValidation"],
+        "type": "object",
+        "properties": {
+            "id": { "type": "int32" }
+        },
+        "patternProperties": {
+            "^x_": { "type": "string" }
+        }
+    });
+    let mut validator = InstanceValidator::new();
+    validator.set_extended(true);
+    
+    // Both explicit property and pattern property
+    let result = validator.validate(r#"{"id": 1, "x_custom": "value"}"#, &schema);
+    assert!(result.is_valid(), "Mixed properties and patternProperties should work");
+}
+
+// =============================================================================
+// propertyNames Validation
+// =============================================================================
+
+#[test]
+fn test_property_names_pattern_valid() {
+    let schema = json!({
+        "$uses": ["JSONStructureValidation"],
+        "type": "object",
+        "propertyNames": {
+            "pattern": "^[a-z][a-zA-Z0-9]*$"
+        }
+    });
+    let mut validator = InstanceValidator::new();
+    validator.set_extended(true);
+    
+    let result = validator.validate(r#"{"camelCase": 1, "simple": 2}"#, &schema);
+    assert!(result.is_valid(), "Property names matching pattern should be valid");
+}
+
+#[test]
+fn test_property_names_pattern_invalid() {
+    let schema = json!({
+        "$uses": ["JSONStructureValidation"],
+        "type": "object",
+        "propertyNames": {
+            "pattern": "^[a-z][a-zA-Z0-9]*$"
+        }
+    });
+    let mut validator = InstanceValidator::new();
+    validator.set_extended(true);
+    
+    // Property starting with uppercase is invalid
+    let result = validator.validate(r#"{"Invalid": 1}"#, &schema);
+    assert!(!result.is_valid(), "Property names not matching pattern should be invalid");
+}
+
+#[test]
+fn test_property_names_min_max_length() {
+    let schema = json!({
+        "$uses": ["JSONStructureValidation"],
+        "type": "object",
+        "propertyNames": {
+            "minLength": 2,
+            "maxLength": 10
+        }
+    });
+    let mut validator = InstanceValidator::new();
+    validator.set_extended(true);
+    
+    // Valid lengths
+    let result = validator.validate(r#"{"ab": 1, "abcdefghij": 2}"#, &schema);
+    assert!(result.is_valid(), "Property names within length bounds should be valid");
+    
+    // Too short
+    let result = validator.validate(r#"{"a": 1}"#, &schema);
+    assert!(!result.is_valid(), "Property name too short should be invalid");
+    
+    // Too long
+    let result = validator.validate(r#"{"abcdefghijk": 1}"#, &schema);
+    assert!(!result.is_valid(), "Property name too long should be invalid");
+}
+
+// =============================================================================
+// Nested Namespace Reference Resolution
+// =============================================================================
+
+#[test]
+fn test_nested_namespace_resolution() {
+    let schema = json!({
+        "definitions": {
+            "Outer": {
+                "type": "namespace",
+                "definitions": {
+                    "Inner": {
+                        "type": "object",
+                        "properties": {
+                            "value": { "type": "string" }
+                        }
+                    }
+                }
+            }
+        },
+        "$ref": "#/definitions/Outer/Inner"
+    });
+    let validator = InstanceValidator::new();
+    
+    let result = validator.validate(r#"{"value": "test"}"#, &schema);
+    assert!(result.is_valid(), "Nested namespace reference should resolve");
+}
+
+#[test]
+fn test_deeply_nested_namespace() {
+    let schema = json!({
+        "definitions": {
+            "Level1": {
+                "type": "namespace",
+                "definitions": {
+                    "Level2": {
+                        "type": "namespace",
+                        "definitions": {
+                            "Level3": {
+                                "type": "object",
+                                "properties": {
+                                    "deep": { "type": "boolean" }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "$ref": "#/definitions/Level1/Level2/Level3"
+    });
+    let validator = InstanceValidator::new();
+    
+    let result = validator.validate(r#"{"deep": true}"#, &schema);
+    assert!(result.is_valid(), "Deeply nested namespace reference should resolve");
+}

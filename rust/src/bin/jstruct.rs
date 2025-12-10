@@ -110,6 +110,9 @@ struct FileResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
     errors: Vec<ErrorInfo>,
+    /// Source content for displaying excerpts (not serialized)
+    #[serde(skip)]
+    source_content: Option<String>,
 }
 
 /// Error information for JSON output
@@ -118,6 +121,7 @@ struct ErrorInfo {
     path: String,
     message: String,
     code: String,
+    severity: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     line: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -305,12 +309,13 @@ fn check_schema(validator: &SchemaValidator, file: &PathBuf) -> FileResult {
                 valid: false,
                 error: Some(e.to_string()),
                 errors: vec![],
+                source_content: None,
             };
         }
     };
 
     let result = validator.validate(&content);
-    validation_result_to_file_result(&file_name, result)
+    validation_result_to_file_result(&file_name, result, Some(content))
 }
 
 /// Validate a single instance file
@@ -333,22 +338,25 @@ fn validate_instance(
                 valid: false,
                 error: Some(e.to_string()),
                 errors: vec![],
+                source_content: None,
             };
         }
     };
 
     let result = validator.validate(&content, schema);
-    validation_result_to_file_result(&file_name, result)
+    validation_result_to_file_result(&file_name, result, Some(content))
 }
 
 /// Convert ValidationResult to FileResult
-fn validation_result_to_file_result(file: &str, result: ValidationResult) -> FileResult {
+fn validation_result_to_file_result(file: &str, result: ValidationResult, source_content: Option<String>) -> FileResult {
     let errors: Vec<ErrorInfo> = result
-        .errors()
+        .all_errors()
+        .iter()
         .map(|e| ErrorInfo {
             path: e.path.clone(),
             message: e.message.clone(),
             code: e.code.clone(),
+            severity: e.severity.to_string(),
             line: if e.location.is_unknown() {
                 None
             } else {
@@ -367,6 +375,7 @@ fn validation_result_to_file_result(file: &str, result: ValidationResult) -> Fil
         valid: result.is_valid(),
         error: None,
         errors,
+        source_content,
     }
 }
 
@@ -392,23 +401,45 @@ fn output_results(results: &[FileResult], format: OutputFormat, verbose: bool) {
 
 /// Output results as human-readable text
 fn output_text(results: &[FileResult], verbose: bool) {
-    for result in results {
+    // Pre-compute source lines for all results that have source content
+    let source_lines: Vec<Option<Vec<&str>>> = results
+        .iter()
+        .map(|r| r.source_content.as_ref().map(|s| s.lines().collect()))
+        .collect();
+
+    for (idx, result) in results.iter().enumerate() {
         if let Some(ref error) = result.error {
             println!("\u{2717} {}: {}", result.file, error);
         } else if result.valid {
             println!("\u{2713} {}: valid", result.file);
         } else {
             println!("\u{2717} {}: invalid", result.file);
+            let lines = source_lines[idx].as_ref();
             for error in &result.errors {
                 let path = if error.path.is_empty() { "/" } else { &error.path };
-                let loc = if verbose {
-                    error.line.map(|l| {
-                        format!(" (line {}, col {})", l, error.column.unwrap_or(0))
-                    }).unwrap_or_default()
-                } else {
-                    String::new()
-                };
-                println!("  - {}: {}{}", path, error.message, loc);
+                let severity_icon = if error.severity == "warning" { "\u{26A0}" } else { "\u{2717}" };
+                
+                // Always show line/column when available
+                let loc = error.line.map(|l| {
+                    format!(" (line {}, col {})", l, error.column.unwrap_or(0))
+                }).unwrap_or_default();
+                
+                println!("  {} [{}] {}: {}{}", severity_icon, error.code, path, error.message, loc);
+                
+                // In verbose mode, show source excerpt with caret marker
+                if verbose {
+                    if let (Some(line_num), Some(col), Some(src_lines)) = (error.line, error.column, lines) {
+                        if line_num > 0 && line_num <= src_lines.len() {
+                            let source_line = src_lines[line_num - 1];
+                            println!("    |");
+                            println!("  {} | {}", line_num, source_line);
+                            // Create caret marker at the column position
+                            let line_num_width = line_num.to_string().len();
+                            let padding = " ".repeat(line_num_width + col);
+                            println!("    |{}^", padding);
+                        }
+                    }
+                }
             }
         }
     }
@@ -428,6 +459,12 @@ fn output_json(results: &[FileResult]) {
 fn output_tap(results: &[FileResult], verbose: bool) {
     println!("1..{}", results.len());
     
+    // Pre-compute source lines for all results that have source content
+    let source_lines: Vec<Option<Vec<&str>>> = results
+        .iter()
+        .map(|r| r.source_content.as_ref().map(|s| s.lines().collect()))
+        .collect();
+    
     for (i, result) in results.iter().enumerate() {
         let n = i + 1;
         
@@ -438,16 +475,31 @@ fn output_tap(results: &[FileResult], verbose: bool) {
             println!("ok {} - {}", n, result.file);
         } else {
             println!("not ok {} - {}", n, result.file);
+            let lines = source_lines[i].as_ref();
             for error in &result.errors {
                 let path = if error.path.is_empty() { "/" } else { &error.path };
-                let loc = if verbose {
-                    error.line.map(|l| {
-                        format!(" (line {}, col {})", l, error.column.unwrap_or(0))
-                    }).unwrap_or_default()
-                } else {
-                    String::new()
-                };
-                println!("  # {}: {}{}", path, error.message, loc);
+                let severity = if error.severity == "warning" { "warning" } else { "error" };
+                
+                // Always show line/column when available
+                let loc = error.line.map(|l| {
+                    format!(" (line {}, col {})", l, error.column.unwrap_or(0))
+                }).unwrap_or_default();
+                
+                println!("  # [{}] {} {}: {}{}", error.code, severity, path, error.message, loc);
+                
+                // In verbose mode, show source excerpt
+                if verbose {
+                    if let (Some(line_num), Some(src_lines)) = (error.line, lines) {
+                        if line_num > 0 && line_num <= src_lines.len() {
+                            let source_line = src_lines[line_num - 1];
+                            println!("  #   > {}", source_line);
+                            if let Some(col) = error.column {
+                                let padding = " ".repeat(col.saturating_sub(1));
+                                println!("  #   > {}^", padding);
+                            }
+                        }
+                    }
+                }
             }
         }
     }
