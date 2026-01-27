@@ -138,7 +138,7 @@ jobs:
           fi
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: perl-distribution
           path: perl/JSON-Structure-*.tar.gz
@@ -187,7 +187,7 @@ jobs:
           make dist
 
       - name: Upload CPAN-ready distribution
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: cpan-distribution
           path: perl/JSON-Structure-*.tar.gz
