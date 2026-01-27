@@ -44,7 +44,7 @@
   },
   "homepage": "https://json-structure.org",
   "devDependencies": {
-    "@types/node": "^20.10.0",
+    "@types/node": "^25.0.10",
     "@typescript-eslint/eslint-plugin": "^6.13.0",
     "@typescript-eslint/parser": "^6.13.0",
     "@vitest/coverage-v8": "^1.6.1",
