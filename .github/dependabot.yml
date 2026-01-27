@@ -1,0 +1,151 @@
+# Dependabot configuration for json-structure SDK
+# https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+
+version: 2
+updates:
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "ci"
+    labels:
+      - "dependencies"
+      - "github-actions"
+
+  # .NET SDK (NuGet)
+  - package-ecosystem: "nuget"
+    directory: "/dotnet"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "deps(dotnet)"
+    labels:
+      - "dependencies"
+      - "dotnet"
+
+  # Go SDK
+  - package-ecosystem: "gomod"
+    directory: "/go"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "deps(go)"
+    labels:
+      - "dependencies"
+      - "go"
+
+  # Java SDK (Maven)
+  - package-ecosystem: "maven"
+    directory: "/java"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "deps(java)"
+    labels:
+      - "dependencies"
+      - "java"
+
+  # Perl SDK - Note: Dependabot doesn't support cpanfile natively
+  # Perl dependencies must be updated manually or via custom tooling
+
+  # PHP SDK (Composer)
+  - package-ecosystem: "composer"
+    directory: "/php"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "deps(php)"
+    labels:
+      - "dependencies"
+      - "php"
+
+  # Root Composer (for Packagist indexing)
+  - package-ecosystem: "composer"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "deps(composer)"
+    labels:
+      - "dependencies"
+      - "php"
+
+  # Python SDK
+  - package-ecosystem: "pip"
+    directory: "/python"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "deps(python)"
+    labels:
+      - "dependencies"
+      - "python"
+
+  # Ruby SDK
+  - package-ecosystem: "bundler"
+    directory: "/ruby"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "deps(ruby)"
+    labels:
+      - "dependencies"
+      - "ruby"
+
+  # Rust SDK (Cargo)
+  - package-ecosystem: "cargo"
+    directory: "/rust"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "deps(rust)"
+    labels:
+      - "dependencies"
+      - "rust"
+
+  # Swift SDK
+  - package-ecosystem: "swift"
+    directory: "/swift"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "deps(swift)"
+    labels:
+      - "dependencies"
+      - "swift"
+
+  # TypeScript SDK (npm)
+  - package-ecosystem: "npm"
+    directory: "/typescript"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "deps(typescript)"
+    labels:
+      - "dependencies"
+      - "typescript"
+
+  # VS Code Extension (npm)
+  - package-ecosystem: "npm"
+    directory: "/vscode"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "deps(vscode)"
+    labels:
+      - "dependencies"
+      - "vscode"
