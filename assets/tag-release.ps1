@@ -127,7 +127,7 @@ if ($Push) {
     Write-Host "`n✓ All tags pushed successfully!" -ForegroundColor Green
     Write-Host "`nWorkflows triggered:" -ForegroundColor Cyan
     if (-not $CliOnly) {
-        Write-Host "  - SDK workflows (Python, .NET, Java, TypeScript, Go, Rust, etc.)" -ForegroundColor White
+        Write-Host "  - SDK workflows (Python, .NET, Java, TypeScript, Go, Rust)" -ForegroundColor White
     }
     Write-Host "  - CLI release workflow (builds binaries and creates GitHub Release)" -ForegroundColor White
     Write-Host "`nMonitor at: https://github.com/json-structure/sdk/actions" -ForegroundColor Blue
