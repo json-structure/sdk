@@ -966,7 +966,7 @@ public class InstanceValidatorTests
 
         result.IsValid.Should().BeFalse();
         // With StopOnFirstError, it stops after the first validation step that produces an error
-        result.Errors.Should().HaveCountLessThanOrEqualTo(1, "should stop after first error step");
+        result.Errors.Should().HaveCountLessOrEqualTo(1, "should stop after first error step");
     }
 
     [Fact]
@@ -1055,7 +1055,7 @@ public class InstanceValidatorTests
         var result = _validator.Validate(instance, schema);
 
         result.IsValid.Should().BeFalse();
-        result.Errors.Should().HaveCountGreaterThanOrEqualTo(2, "at least type error and missing property should be reported");
+        result.Errors.Should().HaveCountGreaterOrEqualTo(2, "at least type error and missing property should be reported");
         result.Errors.Select(e => e.Code).Should().Contain(ErrorCodes.InstanceRequiredPropertyMissing);
     }
 

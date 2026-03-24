@@ -977,7 +977,7 @@ public class TestAssetsTests
         var schemaFiles = Directory.GetFiles(adversarialDir, "*.struct.json");
         _output.WriteLine($"Found {schemaFiles.Length} adversarial schema files");
         
-        schemaFiles.Length.Should().BeGreaterThanOrEqualTo(10, "Should have at least 10 adversarial schema files");
+        schemaFiles.Length.Should().BeGreaterOrEqualTo(10, "Should have at least 10 adversarial schema files");
     }
 
     #endregion
