@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 using System.Text.Json;
-using FluentAssertions;
+using Shouldly;
 using JsonStructure.Converters;
 using Xunit;
 
@@ -26,7 +26,7 @@ public class BigIntegerConvertersTests
     {
         Int128 value = Int128.MaxValue;
         var json = JsonSerializer.Serialize(value, _options);
-        json.Should().Be($"\"{Int128.MaxValue}\"");
+        json.ShouldBe($"\"{Int128.MaxValue}\"");
     }
 
     [Fact]
@@ -34,7 +34,7 @@ public class BigIntegerConvertersTests
     {
         var json = $"\"{Int128.MaxValue}\"";
         var value = JsonSerializer.Deserialize<Int128>(json, _options);
-        value.Should().Be(Int128.MaxValue);
+        value.ShouldBe(Int128.MaxValue);
     }
 
     [Fact]
@@ -43,7 +43,7 @@ public class BigIntegerConvertersTests
         Int128 value = Int128.MinValue;
         var json = JsonSerializer.Serialize(value, _options);
         var deserialized = JsonSerializer.Deserialize<Int128>(json, _options);
-        deserialized.Should().Be(value);
+        deserialized.ShouldBe(value);
     }
 
     [Fact]
@@ -51,10 +51,10 @@ public class BigIntegerConvertersTests
     {
         Int128? value = null;
         var json = JsonSerializer.Serialize(value, _options);
-        json.Should().Be("null");
+        json.ShouldBe("null");
 
         var deserialized = JsonSerializer.Deserialize<Int128?>(json, _options);
-        deserialized.Should().BeNull();
+        deserialized.ShouldBeNull();
     }
 
     [Fact]
@@ -62,7 +62,7 @@ public class BigIntegerConvertersTests
     {
         UInt128 value = UInt128.MaxValue;
         var json = JsonSerializer.Serialize(value, _options);
-        json.Should().Be($"\"{UInt128.MaxValue}\"");
+        json.ShouldBe($"\"{UInt128.MaxValue}\"");
     }
 
     [Fact]
@@ -70,7 +70,7 @@ public class BigIntegerConvertersTests
     {
         var json = $"\"{UInt128.MaxValue}\"";
         var value = JsonSerializer.Deserialize<UInt128>(json, _options);
-        value.Should().Be(UInt128.MaxValue);
+        value.ShouldBe(UInt128.MaxValue);
     }
 
     [Fact]
@@ -78,17 +78,17 @@ public class BigIntegerConvertersTests
     {
         UInt128? value = null;
         var json = JsonSerializer.Serialize(value, _options);
-        json.Should().Be("null");
+        json.ShouldBe("null");
 
         var deserialized = JsonSerializer.Deserialize<UInt128?>(json, _options);
-        deserialized.Should().BeNull();
+        deserialized.ShouldBeNull();
     }
 
     [Fact]
     public void Int128StringConverter_ThrowsOnInvalidString()
     {
         var json = "\"not-a-number\"";
-        var act = () => JsonSerializer.Deserialize<Int128>(json, _options);
-        act.Should().Throw<JsonException>();
+        Action act = () => JsonSerializer.Deserialize<Int128>(json, _options);
+        Should.Throw<JsonException>(act);
     }
 }

@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 using System.Text.Json.Nodes;
-using FluentAssertions;
+using Shouldly;
 using JsonStructure.Validation;
 using Xunit;
 
@@ -86,7 +86,7 @@ public class ThreadSafetyTests
         // Assert: Each result should match its expected validity
         foreach (var (isValidExpected, result) in results)
         {
-            result.IsValid.Should().Be(isValidExpected,
+            result.IsValid.ShouldBe(isValidExpected,
                 $"Expected IsValid={isValidExpected} but got IsValid={result.IsValid}. Errors: {string.Join(", ", result.Errors.Select(e => e.Message))}");
         }
     }
@@ -123,13 +123,13 @@ public class ThreadSafetyTests
         {
             if (i % 2 == 0)
             {
-                results[i].IsValid.Should().BeTrue($"Iteration {i} should be valid");
-                results[i].Errors.Should().BeEmpty($"Iteration {i} should have no errors");
+                results[i].IsValid.ShouldBeTrue($"Iteration {i} should be valid");
+                results[i].Errors.ShouldBeEmpty($"Iteration {i} should have no errors");
             }
             else
             {
-                results[i].IsValid.Should().BeFalse($"Iteration {i} should be invalid");
-                results[i].Errors.Should().ContainSingle($"Iteration {i} should have exactly one error");
+                results[i].IsValid.ShouldBeFalse($"Iteration {i} should be invalid");
+                results[i].Errors.ShouldHaveSingleItem($"Iteration {i} should have exactly one error");
             }
         }
     }
@@ -185,11 +185,11 @@ public class ThreadSafetyTests
         {
             if (i % 2 == 0)
             {
-                results[i].IsValid.Should().BeTrue($"Iteration {i} should be valid");
+                results[i].IsValid.ShouldBeTrue($"Iteration {i} should be valid");
             }
             else
             {
-                results[i].IsValid.Should().BeFalse($"Iteration {i} should be invalid");
+                results[i].IsValid.ShouldBeFalse($"Iteration {i} should be invalid");
             }
         }
     }
@@ -236,7 +236,7 @@ public class ThreadSafetyTests
         // Assert
         for (int i = 0; i < 1000; i++)
         {
-            results[i].IsValid.Should().Be(expectedValidity[i], $"Iteration {i}");
+            results[i].IsValid.ShouldBe(expectedValidity[i], $"Iteration {i}");
         }
     }
 
@@ -271,11 +271,11 @@ public class ThreadSafetyTests
         {
             if (i % 2 == 0)
             {
-                results[i].IsValid.Should().BeTrue($"Iteration {i} should be valid");
+                results[i].IsValid.ShouldBeTrue($"Iteration {i} should be valid");
             }
             else
             {
-                results[i].IsValid.Should().BeFalse($"Iteration {i} should be invalid");
+                results[i].IsValid.ShouldBeFalse($"Iteration {i} should be invalid");
             }
         }
     }
@@ -349,7 +349,7 @@ public class ThreadSafetyTests
         {
             var expected = i % 3 != 2; // iterations 2, 5, 8, etc. should be invalid
             var errors = string.Join("; ", results[i].Errors.Select(e => $"{e.Code}: {e.Message}"));
-            results[i].IsValid.Should().Be(expected, $"Iteration {i}, errors: {errors}");
+            results[i].IsValid.ShouldBe(expected, $"Iteration {i}, errors: {errors}");
         }
     }
 }

@@ -3,7 +3,7 @@
 
 using System.Numerics;
 using System.Text.Json;
-using FluentAssertions;
+using Shouldly;
 using JsonStructure.Converters;
 using Xunit;
 
@@ -19,7 +19,7 @@ public class AdditionalConvertersTests
         
         var value = BigInteger.Parse("123456789012345678901234567890");
         var json = JsonSerializer.Serialize(value, options);
-        json.Should().Be("\"123456789012345678901234567890\"");
+        json.ShouldBe("\"123456789012345678901234567890\"");
     }
 
     [Fact]
@@ -30,7 +30,7 @@ public class AdditionalConvertersTests
         
         var json = "\"123456789012345678901234567890\"";
         var value = JsonSerializer.Deserialize<BigInteger>(json, options);
-        value.Should().Be(BigInteger.Parse("123456789012345678901234567890"));
+        value.ShouldBe(BigInteger.Parse("123456789012345678901234567890"));
     }
 
     [Fact]
@@ -42,7 +42,7 @@ public class AdditionalConvertersTests
         var value = BigInteger.Parse("-123456789012345678901234567890");
         var json = JsonSerializer.Serialize(value, options);
         var deserialized = JsonSerializer.Deserialize<BigInteger>(json, options);
-        deserialized.Should().Be(value);
+        deserialized.ShouldBe(value);
     }
 
     [Fact]
@@ -52,8 +52,8 @@ public class AdditionalConvertersTests
         options.Converters.Add(new BigIntegerStringConverter());
         
         var json = "\"not-a-number\"";
-        var act = () => JsonSerializer.Deserialize<BigInteger>(json, options);
-        act.Should().Throw<JsonException>();
+        Action act = () => JsonSerializer.Deserialize<BigInteger>(json, options);
+        Should.Throw<JsonException>(act);
     }
 
     [Fact]
@@ -63,8 +63,8 @@ public class AdditionalConvertersTests
         options.Converters.Add(new BigIntegerStringConverter());
         
         var json = "true";
-        var act = () => JsonSerializer.Deserialize<BigInteger>(json, options);
-        act.Should().Throw<JsonException>();
+        Action act = () => JsonSerializer.Deserialize<BigInteger>(json, options);
+        Should.Throw<JsonException>(act);
     }
 
     [Fact]
@@ -75,10 +75,10 @@ public class AdditionalConvertersTests
         
         BigInteger? value = null;
         var json = JsonSerializer.Serialize(value, options);
-        json.Should().Be("null");
+        json.ShouldBe("null");
 
         var deserialized = JsonSerializer.Deserialize<BigInteger?>(json, options);
-        deserialized.Should().BeNull();
+        deserialized.ShouldBeNull();
     }
 
     [Fact]
@@ -90,7 +90,7 @@ public class AdditionalConvertersTests
         BigInteger? value = BigInteger.Parse("12345");
         var json = JsonSerializer.Serialize(value, options);
         var deserialized = JsonSerializer.Deserialize<BigInteger?>(json, options);
-        deserialized.Should().Be(value);
+        deserialized.ShouldBe(value);
     }
 
     [Fact]
@@ -101,7 +101,7 @@ public class AdditionalConvertersTests
         
         var value = Guid.Parse("12345678-1234-1234-1234-123456789abc");
         var json = JsonSerializer.Serialize(value, options);
-        json.Should().Be("\"12345678-1234-1234-1234-123456789abc\"");
+        json.ShouldBe("\"12345678-1234-1234-1234-123456789abc\"");
     }
 
     [Fact]
@@ -112,7 +112,7 @@ public class AdditionalConvertersTests
         
         var json = "\"12345678-1234-1234-1234-123456789abc\"";
         var value = JsonSerializer.Deserialize<Guid>(json, options);
-        value.Should().Be(Guid.Parse("12345678-1234-1234-1234-123456789abc"));
+        value.ShouldBe(Guid.Parse("12345678-1234-1234-1234-123456789abc"));
     }
 
     [Fact]
@@ -122,8 +122,8 @@ public class AdditionalConvertersTests
         options.Converters.Add(new UuidStringConverter());
         
         var json = "\"not-a-uuid\"";
-        var act = () => JsonSerializer.Deserialize<Guid>(json, options);
-        act.Should().Throw<JsonException>();
+        Action act = () => JsonSerializer.Deserialize<Guid>(json, options);
+        Should.Throw<JsonException>(act);
     }
 
     [Fact]
@@ -133,8 +133,8 @@ public class AdditionalConvertersTests
         options.Converters.Add(new UuidStringConverter());
         
         var json = "123";
-        var act = () => JsonSerializer.Deserialize<Guid>(json, options);
-        act.Should().Throw<JsonException>();
+        Action act = () => JsonSerializer.Deserialize<Guid>(json, options);
+        Should.Throw<JsonException>(act);
     }
 
     [Fact]
@@ -145,10 +145,10 @@ public class AdditionalConvertersTests
         
         Guid? value = null;
         var json = JsonSerializer.Serialize(value, options);
-        json.Should().Be("null");
+        json.ShouldBe("null");
 
         var deserialized = JsonSerializer.Deserialize<Guid?>(json, options);
-        deserialized.Should().BeNull();
+        deserialized.ShouldBeNull();
     }
 
     [Fact]
@@ -160,7 +160,7 @@ public class AdditionalConvertersTests
         Guid? value = Guid.Parse("12345678-1234-1234-1234-123456789abc");
         var json = JsonSerializer.Serialize(value, options);
         var deserialized = JsonSerializer.Deserialize<Guid?>(json, options);
-        deserialized.Should().Be(value);
+        deserialized.ShouldBe(value);
     }
 
     [Fact]
@@ -171,7 +171,7 @@ public class AdditionalConvertersTests
         
         var value = new Uri("https://example.com/path");
         var json = JsonSerializer.Serialize(value, options);
-        json.Should().Be("\"https://example.com/path\"");
+        json.ShouldBe("\"https://example.com/path\"");
     }
 
     [Fact]
@@ -182,7 +182,7 @@ public class AdditionalConvertersTests
         
         var json = "\"https://example.com/path\"";
         var value = JsonSerializer.Deserialize<Uri>(json, options);
-        value.Should().Be(new Uri("https://example.com/path"));
+        value.ShouldBe(new Uri("https://example.com/path"));
     }
 
     [Fact]
@@ -193,10 +193,10 @@ public class AdditionalConvertersTests
         
         Uri? value = null;
         var json = JsonSerializer.Serialize(value, options);
-        json.Should().Be("null");
+        json.ShouldBe("null");
 
         var deserialized = JsonSerializer.Deserialize<Uri?>(json, options);
-        deserialized.Should().BeNull();
+        deserialized.ShouldBeNull();
     }
 
     [Fact]
@@ -206,8 +206,8 @@ public class AdditionalConvertersTests
         options.Converters.Add(new UriStringConverter());
         
         var json = "123";
-        var act = () => JsonSerializer.Deserialize<Uri>(json, options);
-        act.Should().Throw<JsonException>();
+        Action act = () => JsonSerializer.Deserialize<Uri>(json, options);
+        Should.Throw<JsonException>(act);
     }
 
     [Fact]
@@ -218,7 +218,7 @@ public class AdditionalConvertersTests
         
         var value = new byte[] { 1, 2, 3, 4 };
         var json = JsonSerializer.Serialize(value, options);
-        json.Should().Be("\"AQIDBA==\"");
+        json.ShouldBe("\"AQIDBA==\"");
     }
 
     [Fact]
@@ -229,7 +229,7 @@ public class AdditionalConvertersTests
         
         var json = "\"AQIDBA==\"";
         var value = JsonSerializer.Deserialize<byte[]>(json, options);
-        value.Should().BeEquivalentTo(new byte[] { 1, 2, 3, 4 });
+        value.ShouldBe(new byte[] { 1, 2, 3, 4 });
     }
 
     [Fact]
@@ -240,10 +240,10 @@ public class AdditionalConvertersTests
         
         byte[]? value = null;
         var json = JsonSerializer.Serialize(value, options);
-        json.Should().Be("null");
+        json.ShouldBe("null");
 
         var deserialized = JsonSerializer.Deserialize<byte[]?>(json, options);
-        deserialized.Should().BeNull();
+        deserialized.ShouldBeNull();
     }
 
     [Fact]
@@ -253,8 +253,8 @@ public class AdditionalConvertersTests
         options.Converters.Add(new Base64BinaryConverter());
         
         var json = "123";
-        var act = () => JsonSerializer.Deserialize<byte[]>(json, options);
-        act.Should().Throw<JsonException>();
+        Action act = () => JsonSerializer.Deserialize<byte[]>(json, options);
+        Should.Throw<JsonException>(act);
     }
 
     [Fact]
@@ -265,7 +265,7 @@ public class AdditionalConvertersTests
         
         Memory<byte> value = new byte[] { 1, 2, 3, 4 };
         var json = JsonSerializer.Serialize(value, options);
-        json.Should().Be("\"AQIDBA==\"");
+        json.ShouldBe("\"AQIDBA==\"");
     }
 
     [Fact]
@@ -276,7 +276,7 @@ public class AdditionalConvertersTests
         
         var json = "\"AQIDBA==\"";
         var value = JsonSerializer.Deserialize<Memory<byte>>(json, options);
-        value.ToArray().Should().BeEquivalentTo(new byte[] { 1, 2, 3, 4 });
+        value.ToArray().ShouldBe(new byte[] { 1, 2, 3, 4 });
     }
 
     [Fact]
@@ -286,8 +286,8 @@ public class AdditionalConvertersTests
         options.Converters.Add(new Base64MemoryConverter());
         
         var json = "123";
-        var act = () => JsonSerializer.Deserialize<Memory<byte>>(json, options);
-        act.Should().Throw<JsonException>();
+        Action act = () => JsonSerializer.Deserialize<Memory<byte>>(json, options);
+        Should.Throw<JsonException>(act);
     }
 
     [Fact]
@@ -298,7 +298,7 @@ public class AdditionalConvertersTests
         
         var value = 123.456m;
         var json = JsonSerializer.Serialize(value, options);
-        json.Should().Be("\"123.456\"");
+        json.ShouldBe("\"123.456\"");
     }
 
     [Fact]
@@ -309,7 +309,7 @@ public class AdditionalConvertersTests
         
         var json = "\"123.456\"";
         var value = JsonSerializer.Deserialize<decimal>(json, options);
-        value.Should().Be(123.456m);
+        value.ShouldBe(123.456m);
     }
 
     [Fact]
@@ -319,8 +319,8 @@ public class AdditionalConvertersTests
         options.Converters.Add(new DecimalStringConverter());
         
         var json = "\"not-a-number\"";
-        var act = () => JsonSerializer.Deserialize<decimal>(json, options);
-        act.Should().Throw<JsonException>();
+        Action act = () => JsonSerializer.Deserialize<decimal>(json, options);
+        Should.Throw<JsonException>(act);
     }
 
     [Fact]
@@ -330,8 +330,8 @@ public class AdditionalConvertersTests
         options.Converters.Add(new DecimalStringConverter());
         
         var json = "true";
-        var act = () => JsonSerializer.Deserialize<decimal>(json, options);
-        act.Should().Throw<JsonException>();
+        Action act = () => JsonSerializer.Deserialize<decimal>(json, options);
+        Should.Throw<JsonException>(act);
     }
 
     [Fact]
@@ -342,10 +342,10 @@ public class AdditionalConvertersTests
         
         decimal? value = null;
         var json = JsonSerializer.Serialize(value, options);
-        json.Should().Be("null");
+        json.ShouldBe("null");
 
         var deserialized = JsonSerializer.Deserialize<decimal?>(json, options);
-        deserialized.Should().BeNull();
+        deserialized.ShouldBeNull();
     }
 
     [Fact]
@@ -357,7 +357,7 @@ public class AdditionalConvertersTests
         decimal? value = 123.456m;
         var json = JsonSerializer.Serialize(value, options);
         var deserialized = JsonSerializer.Deserialize<decimal?>(json, options);
-        deserialized.Should().Be(value);
+        deserialized.ShouldBe(value);
     }
 
     [Fact]
@@ -368,10 +368,10 @@ public class AdditionalConvertersTests
         
         ulong? value = null;
         var json = JsonSerializer.Serialize(value, options);
-        json.Should().Be("null");
+        json.ShouldBe("null");
 
         var deserialized = JsonSerializer.Deserialize<ulong?>(json, options);
-        deserialized.Should().BeNull();
+        deserialized.ShouldBeNull();
     }
 
     [Fact]
@@ -383,7 +383,7 @@ public class AdditionalConvertersTests
         ulong? value = ulong.MaxValue;
         var json = JsonSerializer.Serialize(value, options);
         var deserialized = JsonSerializer.Deserialize<ulong?>(json, options);
-        deserialized.Should().Be(value);
+        deserialized.ShouldBe(value);
     }
 
     [Fact]
@@ -394,10 +394,10 @@ public class AdditionalConvertersTests
         
         TimeSpan? value = null;
         var json = JsonSerializer.Serialize(value, options);
-        json.Should().Be("null");
+        json.ShouldBe("null");
 
         var deserialized = JsonSerializer.Deserialize<TimeSpan?>(json, options);
-        deserialized.Should().BeNull();
+        deserialized.ShouldBeNull();
     }
 
     [Fact]
@@ -409,7 +409,7 @@ public class AdditionalConvertersTests
         TimeSpan? value = TimeSpan.FromHours(1.5);
         var json = JsonSerializer.Serialize(value, options);
         var deserialized = JsonSerializer.Deserialize<TimeSpan?>(json, options);
-        deserialized.Should().Be(value);
+        deserialized.ShouldBe(value);
     }
 
     [Fact]
@@ -420,10 +420,10 @@ public class AdditionalConvertersTests
         
         DateOnly? value = null;
         var json = JsonSerializer.Serialize(value, options);
-        json.Should().Be("null");
+        json.ShouldBe("null");
 
         var deserialized = JsonSerializer.Deserialize<DateOnly?>(json, options);
-        deserialized.Should().BeNull();
+        deserialized.ShouldBeNull();
     }
 
     [Fact]
@@ -435,7 +435,7 @@ public class AdditionalConvertersTests
         DateOnly? value = new DateOnly(2023, 12, 25);
         var json = JsonSerializer.Serialize(value, options);
         var deserialized = JsonSerializer.Deserialize<DateOnly?>(json, options);
-        deserialized.Should().Be(value);
+        deserialized.ShouldBe(value);
     }
 
     [Fact]
@@ -446,10 +446,10 @@ public class AdditionalConvertersTests
         
         TimeOnly? value = null;
         var json = JsonSerializer.Serialize(value, options);
-        json.Should().Be("null");
+        json.ShouldBe("null");
 
         var deserialized = JsonSerializer.Deserialize<TimeOnly?>(json, options);
-        deserialized.Should().BeNull();
+        deserialized.ShouldBeNull();
     }
 
     [Fact]
@@ -461,7 +461,7 @@ public class AdditionalConvertersTests
         TimeOnly? value = new TimeOnly(10, 30, 0);
         var json = JsonSerializer.Serialize(value, options);
         var deserialized = JsonSerializer.Deserialize<TimeOnly?>(json, options);
-        deserialized.Should().Be(value);
+        deserialized.ShouldBe(value);
     }
 
     [Fact]
@@ -472,10 +472,10 @@ public class AdditionalConvertersTests
         
         UInt128? value = null;
         var json = JsonSerializer.Serialize(value, options);
-        json.Should().Be("null");
+        json.ShouldBe("null");
 
         var deserialized = JsonSerializer.Deserialize<UInt128?>(json, options);
-        deserialized.Should().BeNull();
+        deserialized.ShouldBeNull();
     }
 
     [Fact]
@@ -487,7 +487,7 @@ public class AdditionalConvertersTests
         UInt128? value = UInt128.MaxValue;
         var json = JsonSerializer.Serialize(value, options);
         var deserialized = JsonSerializer.Deserialize<UInt128?>(json, options);
-        deserialized.Should().Be(value);
+        deserialized.ShouldBe(value);
     }
 
     [Fact]
@@ -499,17 +499,17 @@ public class AdditionalConvertersTests
         Int128? value = Int128.MaxValue;
         var json = JsonSerializer.Serialize(value, options);
         var deserialized = JsonSerializer.Deserialize<Int128?>(json, options);
-        deserialized.Should().Be(value);
+        deserialized.ShouldBe(value);
     }
 
     [Fact]
     public void JsonStructureConverters_All_ReturnsConverters()
     {
         var converters = JsonStructureConverters.All;
-        converters.Should().NotBeEmpty();
-        converters.Should().Contain(c => c is UuidStringConverter);
-        converters.Should().Contain(c => c is UriStringConverter);
-        converters.Should().Contain(c => c is Base64BinaryConverter);
+        converters.ShouldNotBeEmpty();
+        converters.ShouldContain(c => c is UuidStringConverter);
+        converters.ShouldContain(c => c is UriStringConverter);
+        converters.ShouldContain(c => c is Base64BinaryConverter);
     }
 
     [Fact]
@@ -518,7 +518,7 @@ public class AdditionalConvertersTests
         var options = new JsonSerializerOptions();
         JsonStructureConverters.ConfigureOptions(options);
         
-        options.Converters.Should().NotBeEmpty();
+        options.Converters.ShouldNotBeEmpty();
     }
 
     [Fact]
@@ -526,7 +526,7 @@ public class AdditionalConvertersTests
     {
         var options = JsonStructureConverters.CreateOptions();
         
-        options.Converters.Should().NotBeEmpty();
+        options.Converters.ShouldNotBeEmpty();
     }
 
     [Fact]
@@ -535,8 +535,8 @@ public class AdditionalConvertersTests
         var source = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
         var options = JsonStructureConverters.CreateOptions(source);
         
-        options.Converters.Should().NotBeEmpty();
-        options.PropertyNameCaseInsensitive.Should().BeTrue();
+        options.Converters.ShouldNotBeEmpty();
+        options.PropertyNameCaseInsensitive.ShouldBeTrue();
     }
 
     #region Base64MemoryConverter Tests
@@ -551,7 +551,7 @@ public class AdditionalConvertersTests
         var memory = new Memory<byte>(data);
         
         var json = JsonSerializer.Serialize(memory, options);
-        json.Should().Be("\"AQIDBAU=\"");
+        json.ShouldBe("\"AQIDBAU=\"");
     }
 
     [Fact]
@@ -563,7 +563,7 @@ public class AdditionalConvertersTests
         var json = "\"AQIDBAU=\"";
         var result = JsonSerializer.Deserialize<Memory<byte>>(json, options);
         
-        result.ToArray().Should().BeEquivalentTo(new byte[] { 1, 2, 3, 4, 5 });
+        result.ToArray().ShouldBe(new byte[] { 1, 2, 3, 4, 5 });
     }
 
     [Fact]
@@ -576,7 +576,7 @@ public class AdditionalConvertersTests
         var json = JsonSerializer.Serialize(memory, options);
         var result = JsonSerializer.Deserialize<Memory<byte>>(json, options);
         
-        result.Length.Should().Be(0);
+        result.Length.ShouldBe(0);
     }
 
     #endregion
@@ -591,7 +591,7 @@ public class AdditionalConvertersTests
         
         ulong? value = null;
         var json = JsonSerializer.Serialize(value, options);
-        json.Should().Be("null");
+        json.ShouldBe("null");
     }
 
     [Fact]
@@ -602,7 +602,7 @@ public class AdditionalConvertersTests
         
         var json = "null";
         var result = JsonSerializer.Deserialize<ulong?>(json, options);
-        result.Should().BeNull();
+        result.ShouldBeNull();
     }
 
     [Fact]
@@ -613,7 +613,7 @@ public class AdditionalConvertersTests
         
         TimeSpan? value = null;
         var json = JsonSerializer.Serialize(value, options);
-        json.Should().Be("null");
+        json.ShouldBe("null");
     }
 
     [Fact]
@@ -624,7 +624,7 @@ public class AdditionalConvertersTests
         
         var json = "null";
         var result = JsonSerializer.Deserialize<TimeSpan?>(json, options);
-        result.Should().BeNull();
+        result.ShouldBeNull();
     }
 
     [Fact]
@@ -635,7 +635,7 @@ public class AdditionalConvertersTests
         
         DateOnly? value = null;
         var json = JsonSerializer.Serialize(value, options);
-        json.Should().Be("null");
+        json.ShouldBe("null");
     }
 
     [Fact]
@@ -646,7 +646,7 @@ public class AdditionalConvertersTests
         
         var json = "null";
         var result = JsonSerializer.Deserialize<DateOnly?>(json, options);
-        result.Should().BeNull();
+        result.ShouldBeNull();
     }
 
     [Fact]
@@ -657,7 +657,7 @@ public class AdditionalConvertersTests
         
         TimeOnly? value = null;
         var json = JsonSerializer.Serialize(value, options);
-        json.Should().Be("null");
+        json.ShouldBe("null");
     }
 
     [Fact]
@@ -668,7 +668,7 @@ public class AdditionalConvertersTests
         
         var json = "null";
         var result = JsonSerializer.Deserialize<TimeOnly?>(json, options);
-        result.Should().BeNull();
+        result.ShouldBeNull();
     }
 
     [Fact]
@@ -679,7 +679,7 @@ public class AdditionalConvertersTests
         
         Guid? value = null;
         var json = JsonSerializer.Serialize(value, options);
-        json.Should().Be("null");
+        json.ShouldBe("null");
     }
 
     [Fact]
@@ -690,7 +690,7 @@ public class AdditionalConvertersTests
         
         var json = "null";
         var result = JsonSerializer.Deserialize<Guid?>(json, options);
-        result.Should().BeNull();
+        result.ShouldBeNull();
     }
 
     [Fact]
@@ -701,7 +701,7 @@ public class AdditionalConvertersTests
         
         BigInteger? value = null;
         var json = JsonSerializer.Serialize(value, options);
-        json.Should().Be("null");
+        json.ShouldBe("null");
     }
 
     [Fact]
@@ -712,7 +712,7 @@ public class AdditionalConvertersTests
         
         var json = "null";
         var result = JsonSerializer.Deserialize<BigInteger?>(json, options);
-        result.Should().BeNull();
+        result.ShouldBeNull();
     }
 
     [Fact]
@@ -723,7 +723,7 @@ public class AdditionalConvertersTests
         
         long? value = null;
         var json = JsonSerializer.Serialize(value, options);
-        json.Should().Be("null");
+        json.ShouldBe("null");
     }
 
     [Fact]
@@ -734,7 +734,7 @@ public class AdditionalConvertersTests
         
         var json = "null";
         var result = JsonSerializer.Deserialize<long?>(json, options);
-        result.Should().BeNull();
+        result.ShouldBeNull();
     }
 
     [Fact]
@@ -745,7 +745,7 @@ public class AdditionalConvertersTests
         
         decimal? value = null;
         var json = JsonSerializer.Serialize(value, options);
-        json.Should().Be("null");
+        json.ShouldBe("null");
     }
 
     [Fact]
@@ -756,7 +756,7 @@ public class AdditionalConvertersTests
         
         var json = "null";
         var result = JsonSerializer.Deserialize<decimal?>(json, options);
-        result.Should().BeNull();
+        result.ShouldBeNull();
     }
 
     [Fact]
@@ -767,7 +767,7 @@ public class AdditionalConvertersTests
         
         Int128? value = null;
         var json = JsonSerializer.Serialize(value, options);
-        json.Should().Be("null");
+        json.ShouldBe("null");
     }
 
     [Fact]
@@ -778,7 +778,7 @@ public class AdditionalConvertersTests
         
         var json = "null";
         var result = JsonSerializer.Deserialize<Int128?>(json, options);
-        result.Should().BeNull();
+        result.ShouldBeNull();
     }
 
     [Fact]
@@ -789,7 +789,7 @@ public class AdditionalConvertersTests
         
         UInt128? value = null;
         var json = JsonSerializer.Serialize(value, options);
-        json.Should().Be("null");
+        json.ShouldBe("null");
     }
 
     [Fact]
@@ -800,7 +800,7 @@ public class AdditionalConvertersTests
         
         var json = "null";
         var result = JsonSerializer.Deserialize<UInt128?>(json, options);
-        result.Should().BeNull();
+        result.ShouldBeNull();
     }
 
     #endregion
@@ -815,7 +815,7 @@ public class AdditionalConvertersTests
         
         var value = new Uri("https://example.com/path?query=value");
         var json = JsonSerializer.Serialize(value, options);
-        json.Should().Be("\"https://example.com/path?query=value\"");
+        json.ShouldBe("\"https://example.com/path?query=value\"");
     }
 
     [Fact]
@@ -826,8 +826,8 @@ public class AdditionalConvertersTests
         
         var json = "\"https://example.com/page#section\"";
         var result = JsonSerializer.Deserialize<Uri>(json, options);
-        result.Should().NotBeNull();
-        result!.Fragment.Should().Be("#section");
+        result.ShouldNotBeNull();
+        result!.Fragment.ShouldBe("#section");
     }
 
     [Fact]
@@ -844,7 +844,7 @@ public class AdditionalConvertersTests
         
         var json = JsonSerializer.Serialize(data, options);
         var result = JsonSerializer.Deserialize<byte[]>(json, options);
-        result.Should().BeEquivalentTo(data);
+        result.ShouldBe(data);
     }
 
     [Fact]
@@ -856,7 +856,7 @@ public class AdditionalConvertersTests
         var value = TimeSpan.FromDays(5);
         var json = JsonSerializer.Serialize(value, options);
         var result = JsonSerializer.Deserialize<TimeSpan>(json, options);
-        result.Should().Be(value);
+        result.ShouldBe(value);
     }
 
     [Fact]
@@ -867,7 +867,7 @@ public class AdditionalConvertersTests
         
         var value = TimeSpan.FromHours(-3);
         var json = JsonSerializer.Serialize(value, options);
-        json.Should().Contain("-");
+        json.ShouldContain("-");
     }
 
     #endregion
@@ -883,7 +883,7 @@ public class AdditionalConvertersTests
         byte[] data = "Hello World"u8.ToArray();
         var memory = new ReadOnlyMemory<byte>(data);
         var json = JsonSerializer.Serialize(memory, options);
-        json.Should().Be("\"SGVsbG8gV29ybGQ=\"");
+        json.ShouldBe("\"SGVsbG8gV29ybGQ=\"");
     }
     
     [Fact]
@@ -895,7 +895,7 @@ public class AdditionalConvertersTests
         var json = "\"SGVsbG8gV29ybGQ=\"";
         var result = JsonSerializer.Deserialize<ReadOnlyMemory<byte>>(json, options);
         var str = System.Text.Encoding.UTF8.GetString(result.Span);
-        str.Should().Be("Hello World");
+        str.ShouldBe("Hello World");
     }
     
     [Fact]
@@ -906,7 +906,7 @@ public class AdditionalConvertersTests
         
         var json = "\"\"";
         var result = JsonSerializer.Deserialize<ReadOnlyMemory<byte>>(json, options);
-        result.Length.Should().Be(0);
+        result.Length.ShouldBe(0);
     }
     
     [Fact]
@@ -916,8 +916,8 @@ public class AdditionalConvertersTests
         options.Converters.Add(new Base64MemoryConverter());
         
         var json = "\"not-valid-base64!!\"";
-        var act = () => JsonSerializer.Deserialize<ReadOnlyMemory<byte>>(json, options);
-        act.Should().Throw<JsonException>();
+        Action act = () => JsonSerializer.Deserialize<ReadOnlyMemory<byte>>(json, options);
+        Should.Throw<JsonException>(act);
     }
     
     [Fact]
@@ -927,8 +927,8 @@ public class AdditionalConvertersTests
         options.Converters.Add(new Base64MemoryConverter());
         
         var json = "123";
-        var act = () => JsonSerializer.Deserialize<ReadOnlyMemory<byte>>(json, options);
-        act.Should().Throw<JsonException>();
+        Action act = () => JsonSerializer.Deserialize<ReadOnlyMemory<byte>>(json, options);
+        Should.Throw<JsonException>(act);
     }
     
     #endregion
@@ -944,7 +944,7 @@ public class AdditionalConvertersTests
         Int128? value = Int128.Parse("170141183460469231731687303715884105727");
         var json = JsonSerializer.Serialize(value, options);
         var result = JsonSerializer.Deserialize<Int128?>(json, options);
-        result.Should().Be(value);
+        result.ShouldBe(value);
     }
     
     [Fact]
@@ -956,7 +956,7 @@ public class AdditionalConvertersTests
         UInt128? value = UInt128.Parse("340282366920938463463374607431768211455");
         var json = JsonSerializer.Serialize(value, options);
         var result = JsonSerializer.Deserialize<UInt128?>(json, options);
-        result.Should().Be(value);
+        result.ShouldBe(value);
     }
     
     [Fact]
@@ -968,7 +968,7 @@ public class AdditionalConvertersTests
         decimal? value = 12345.6789m;
         var json = JsonSerializer.Serialize(value, options);
         var result = JsonSerializer.Deserialize<decimal?>(json, options);
-        result.Should().Be(value);
+        result.ShouldBe(value);
     }
     
     [Fact]
@@ -980,7 +980,7 @@ public class AdditionalConvertersTests
         long? value = 9223372036854775807;
         var json = JsonSerializer.Serialize(value, options);
         var result = JsonSerializer.Deserialize<long?>(json, options);
-        result.Should().Be(value);
+        result.ShouldBe(value);
     }
     
     [Fact]
@@ -992,7 +992,7 @@ public class AdditionalConvertersTests
         ulong? value = 18446744073709551615;
         var json = JsonSerializer.Serialize(value, options);
         var result = JsonSerializer.Deserialize<ulong?>(json, options);
-        result.Should().Be(value);
+        result.ShouldBe(value);
     }
     
     [Fact]
@@ -1004,7 +1004,7 @@ public class AdditionalConvertersTests
         TimeSpan? value = TimeSpan.FromHours(2);
         var json = JsonSerializer.Serialize(value, options);
         var result = JsonSerializer.Deserialize<TimeSpan?>(json, options);
-        result.Should().Be(value);
+        result.ShouldBe(value);
     }
     
     [Fact]
@@ -1016,7 +1016,7 @@ public class AdditionalConvertersTests
         DateOnly? value = new DateOnly(2025, 1, 15);
         var json = JsonSerializer.Serialize(value, options);
         var result = JsonSerializer.Deserialize<DateOnly?>(json, options);
-        result.Should().Be(value);
+        result.ShouldBe(value);
     }
     
     [Fact]
@@ -1028,7 +1028,7 @@ public class AdditionalConvertersTests
         TimeOnly? value = new TimeOnly(14, 30, 0);
         var json = JsonSerializer.Serialize(value, options);
         var result = JsonSerializer.Deserialize<TimeOnly?>(json, options);
-        result.Should().Be(value);
+        result.ShouldBe(value);
     }
     
     [Fact]
@@ -1040,7 +1040,7 @@ public class AdditionalConvertersTests
         Guid? value = Guid.Parse("550e8400-e29b-41d4-a716-446655440000");
         var json = JsonSerializer.Serialize(value, options);
         var result = JsonSerializer.Deserialize<Guid?>(json, options);
-        result.Should().Be(value);
+        result.ShouldBe(value);
     }
     
     #endregion
@@ -1055,7 +1055,7 @@ public class AdditionalConvertersTests
         
         ulong value = 18446744073709551615;
         var json = JsonSerializer.Serialize(value, options);
-        json.Should().Be("\"18446744073709551615\"");
+        json.ShouldBe("\"18446744073709551615\"");
     }
     
     [Fact]
@@ -1066,7 +1066,7 @@ public class AdditionalConvertersTests
         
         var json = "\"18446744073709551615\"";
         var result = JsonSerializer.Deserialize<ulong>(json, options);
-        result.Should().Be(18446744073709551615UL);
+        result.ShouldBe(18446744073709551615UL);
     }
     
     [Fact]
@@ -1076,8 +1076,8 @@ public class AdditionalConvertersTests
         options.Converters.Add(new UInt64StringConverter());
         
         var json = "\"not-a-number\"";
-        var act = () => JsonSerializer.Deserialize<ulong>(json, options);
-        act.Should().Throw<JsonException>();
+        Action act = () => JsonSerializer.Deserialize<ulong>(json, options);
+        Should.Throw<JsonException>(act);
     }
     
     [Fact]
@@ -1087,8 +1087,8 @@ public class AdditionalConvertersTests
         options.Converters.Add(new UInt64StringConverter());
         
         var json = "true";
-        var act = () => JsonSerializer.Deserialize<ulong>(json, options);
-        act.Should().Throw<JsonException>();
+        Action act = () => JsonSerializer.Deserialize<ulong>(json, options);
+        Should.Throw<JsonException>(act);
     }
     
     #endregion
@@ -1103,7 +1103,7 @@ public class AdditionalConvertersTests
         
         long value = -9223372036854775808;
         var json = JsonSerializer.Serialize(value, options);
-        json.Should().Be("\"-9223372036854775808\"");
+        json.ShouldBe("\"-9223372036854775808\"");
     }
     
     [Fact]
@@ -1114,7 +1114,7 @@ public class AdditionalConvertersTests
         
         var json = "\"-9223372036854775808\"";
         var result = JsonSerializer.Deserialize<long>(json, options);
-        result.Should().Be(-9223372036854775808L);
+        result.ShouldBe(-9223372036854775808L);
     }
     
     [Fact]
@@ -1124,8 +1124,8 @@ public class AdditionalConvertersTests
         options.Converters.Add(new Int64StringConverter());
         
         var json = "\"not-a-number\"";
-        var act = () => JsonSerializer.Deserialize<long>(json, options);
-        act.Should().Throw<JsonException>();
+        Action act = () => JsonSerializer.Deserialize<long>(json, options);
+        Should.Throw<JsonException>(act);
     }
     
     [Fact]
@@ -1135,8 +1135,8 @@ public class AdditionalConvertersTests
         options.Converters.Add(new Int64StringConverter());
         
         var json = "true";
-        var act = () => JsonSerializer.Deserialize<long>(json, options);
-        act.Should().Throw<JsonException>();
+        Action act = () => JsonSerializer.Deserialize<long>(json, options);
+        Should.Throw<JsonException>(act);
     }
     
     #endregion
@@ -1151,9 +1151,9 @@ public class AdditionalConvertersTests
         
         var json = "\"PT2H30M15S\"";
         var result = JsonSerializer.Deserialize<TimeSpan>(json, options);
-        result.Hours.Should().Be(2);
-        result.Minutes.Should().Be(30);
-        result.Seconds.Should().Be(15);
+        result.Hours.ShouldBe(2);
+        result.Minutes.ShouldBe(30);
+        result.Seconds.ShouldBe(15);
     }
     
     [Fact]
@@ -1163,8 +1163,8 @@ public class AdditionalConvertersTests
         options.Converters.Add(new DurationStringConverter());
         
         var json = "\"not-a-duration\"";
-        var act = () => JsonSerializer.Deserialize<TimeSpan>(json, options);
-        act.Should().Throw<JsonException>();
+        Action act = () => JsonSerializer.Deserialize<TimeSpan>(json, options);
+        Should.Throw<JsonException>(act);
     }
     
     [Fact]
@@ -1174,8 +1174,8 @@ public class AdditionalConvertersTests
         options.Converters.Add(new DurationStringConverter());
         
         var json = "123";
-        var act = () => JsonSerializer.Deserialize<TimeSpan>(json, options);
-        act.Should().Throw<JsonException>();
+        Action act = () => JsonSerializer.Deserialize<TimeSpan>(json, options);
+        Should.Throw<JsonException>(act);
     }
     
     #endregion
@@ -1189,8 +1189,8 @@ public class AdditionalConvertersTests
         options.Converters.Add(new Base64BinaryConverter());
         
         var json = "\"invalid-base64!!!\"";
-        var act = () => JsonSerializer.Deserialize<byte[]>(json, options);
-        act.Should().Throw<JsonException>();
+        Action act = () => JsonSerializer.Deserialize<byte[]>(json, options);
+        Should.Throw<JsonException>(act);
     }
     
     [Fact]
@@ -1201,7 +1201,7 @@ public class AdditionalConvertersTests
         
         byte[]? value = null;
         var json = JsonSerializer.Serialize(value, options);
-        json.Should().Be("null");
+        json.ShouldBe("null");
     }
     
     [Fact]
@@ -1212,8 +1212,8 @@ public class AdditionalConvertersTests
         
         var json = "\"\"";
         var result = JsonSerializer.Deserialize<byte[]>(json, options);
-        result.Should().NotBeNull();
-        result!.Length.Should().Be(0);
+        result.ShouldNotBeNull();
+        result!.Length.ShouldBe(0);
     }
     
     #endregion
@@ -1228,8 +1228,8 @@ public class AdditionalConvertersTests
         
         var json = "\"/relative/path\"";
         var result = JsonSerializer.Deserialize<Uri>(json, options);
-        result.Should().NotBeNull();
-        result!.OriginalString.Should().Be("/relative/path");
+        result.ShouldNotBeNull();
+        result!.OriginalString.ShouldBe("/relative/path");
     }
     
     [Fact]
@@ -1239,8 +1239,8 @@ public class AdditionalConvertersTests
         options.Converters.Add(new UriStringConverter());
         
         var json = "\"\"";
-        var act = () => JsonSerializer.Deserialize<Uri>(json, options);
-        act.Should().Throw<JsonException>();
+        Action act = () => JsonSerializer.Deserialize<Uri>(json, options);
+        Should.Throw<JsonException>(act);
     }
     
     [Fact]
@@ -1251,7 +1251,7 @@ public class AdditionalConvertersTests
         
         // A string with null bytes is definitely invalid
         var json = "\"ht tp://invalid uri\"";
-        var act = () => JsonSerializer.Deserialize<Uri>(json, options);
+        Action act = () => JsonSerializer.Deserialize<Uri>(json, options);
         // The Uri class is quite permissive, so this might not throw but still be invalid
     }
     
@@ -1262,8 +1262,8 @@ public class AdditionalConvertersTests
         options.Converters.Add(new UriStringConverter());
         
         var json = "123";
-        var act = () => JsonSerializer.Deserialize<Uri>(json, options);
-        act.Should().Throw<JsonException>();
+        Action act = () => JsonSerializer.Deserialize<Uri>(json, options);
+        Should.Throw<JsonException>(act);
     }
     
     #endregion
@@ -1277,8 +1277,8 @@ public class AdditionalConvertersTests
         options.Converters.Add(new NullableInt128StringConverter());
         
         var json = "\"not-a-number\"";
-        var act = () => JsonSerializer.Deserialize<Int128?>(json, options);
-        act.Should().Throw<JsonException>();
+        Action act = () => JsonSerializer.Deserialize<Int128?>(json, options);
+        Should.Throw<JsonException>(act);
     }
     
     [Fact]
@@ -1288,8 +1288,8 @@ public class AdditionalConvertersTests
         options.Converters.Add(new NullableInt128StringConverter());
         
         var json = "true";
-        var act = () => JsonSerializer.Deserialize<Int128?>(json, options);
-        act.Should().Throw<JsonException>();
+        Action act = () => JsonSerializer.Deserialize<Int128?>(json, options);
+        Should.Throw<JsonException>(act);
     }
     
     [Fact]
@@ -1299,8 +1299,8 @@ public class AdditionalConvertersTests
         options.Converters.Add(new NullableUInt128StringConverter());
         
         var json = "\"not-a-number\"";
-        var act = () => JsonSerializer.Deserialize<UInt128?>(json, options);
-        act.Should().Throw<JsonException>();
+        Action act = () => JsonSerializer.Deserialize<UInt128?>(json, options);
+        Should.Throw<JsonException>(act);
     }
     
     [Fact]
@@ -1310,8 +1310,8 @@ public class AdditionalConvertersTests
         options.Converters.Add(new NullableUInt128StringConverter());
         
         var json = "true";
-        var act = () => JsonSerializer.Deserialize<UInt128?>(json, options);
-        act.Should().Throw<JsonException>();
+        Action act = () => JsonSerializer.Deserialize<UInt128?>(json, options);
+        Should.Throw<JsonException>(act);
     }
     
     [Fact]
@@ -1321,8 +1321,8 @@ public class AdditionalConvertersTests
         options.Converters.Add(new NullableBigIntegerStringConverter());
         
         var json = "\"not-a-number\"";
-        var act = () => JsonSerializer.Deserialize<BigInteger?>(json, options);
-        act.Should().Throw<JsonException>();
+        Action act = () => JsonSerializer.Deserialize<BigInteger?>(json, options);
+        Should.Throw<JsonException>(act);
     }
     
     [Fact]
@@ -1332,8 +1332,8 @@ public class AdditionalConvertersTests
         options.Converters.Add(new NullableBigIntegerStringConverter());
         
         var json = "true";
-        var act = () => JsonSerializer.Deserialize<BigInteger?>(json, options);
-        act.Should().Throw<JsonException>();
+        Action act = () => JsonSerializer.Deserialize<BigInteger?>(json, options);
+        Should.Throw<JsonException>(act);
     }
     
     [Fact]
@@ -1343,8 +1343,8 @@ public class AdditionalConvertersTests
         options.Converters.Add(new NullableDecimalStringConverter());
         
         var json = "\"not-a-number\"";
-        var act = () => JsonSerializer.Deserialize<decimal?>(json, options);
-        act.Should().Throw<JsonException>();
+        Action act = () => JsonSerializer.Deserialize<decimal?>(json, options);
+        Should.Throw<JsonException>(act);
     }
     
     [Fact]
@@ -1354,8 +1354,8 @@ public class AdditionalConvertersTests
         options.Converters.Add(new NullableDecimalStringConverter());
         
         var json = "true";
-        var act = () => JsonSerializer.Deserialize<decimal?>(json, options);
-        act.Should().Throw<JsonException>();
+        Action act = () => JsonSerializer.Deserialize<decimal?>(json, options);
+        Should.Throw<JsonException>(act);
     }
     
     [Fact]
@@ -1365,8 +1365,8 @@ public class AdditionalConvertersTests
         options.Converters.Add(new NullableInt64StringConverter());
         
         var json = "\"not-a-number\"";
-        var act = () => JsonSerializer.Deserialize<long?>(json, options);
-        act.Should().Throw<JsonException>();
+        Action act = () => JsonSerializer.Deserialize<long?>(json, options);
+        Should.Throw<JsonException>(act);
     }
     
     [Fact]
@@ -1376,8 +1376,8 @@ public class AdditionalConvertersTests
         options.Converters.Add(new NullableInt64StringConverter());
         
         var json = "true";
-        var act = () => JsonSerializer.Deserialize<long?>(json, options);
-        act.Should().Throw<JsonException>();
+        Action act = () => JsonSerializer.Deserialize<long?>(json, options);
+        Should.Throw<JsonException>(act);
     }
     
     [Fact]
@@ -1387,8 +1387,8 @@ public class AdditionalConvertersTests
         options.Converters.Add(new NullableUInt64StringConverter());
         
         var json = "\"not-a-number\"";
-        var act = () => JsonSerializer.Deserialize<ulong?>(json, options);
-        act.Should().Throw<JsonException>();
+        Action act = () => JsonSerializer.Deserialize<ulong?>(json, options);
+        Should.Throw<JsonException>(act);
     }
     
     [Fact]
@@ -1398,8 +1398,8 @@ public class AdditionalConvertersTests
         options.Converters.Add(new NullableUInt64StringConverter());
         
         var json = "true";
-        var act = () => JsonSerializer.Deserialize<ulong?>(json, options);
-        act.Should().Throw<JsonException>();
+        Action act = () => JsonSerializer.Deserialize<ulong?>(json, options);
+        Should.Throw<JsonException>(act);
     }
     
     [Fact]
@@ -1409,8 +1409,8 @@ public class AdditionalConvertersTests
         options.Converters.Add(new NullableDurationStringConverter());
         
         var json = "\"not-a-duration\"";
-        var act = () => JsonSerializer.Deserialize<TimeSpan?>(json, options);
-        act.Should().Throw<JsonException>();
+        Action act = () => JsonSerializer.Deserialize<TimeSpan?>(json, options);
+        Should.Throw<JsonException>(act);
     }
     
     [Fact]
@@ -1420,8 +1420,8 @@ public class AdditionalConvertersTests
         options.Converters.Add(new NullableDurationStringConverter());
         
         var json = "123";
-        var act = () => JsonSerializer.Deserialize<TimeSpan?>(json, options);
-        act.Should().Throw<JsonException>();
+        Action act = () => JsonSerializer.Deserialize<TimeSpan?>(json, options);
+        Should.Throw<JsonException>(act);
     }
     
     [Fact]
@@ -1431,8 +1431,8 @@ public class AdditionalConvertersTests
         options.Converters.Add(new NullableDateOnlyConverter());
         
         var json = "\"not-a-date\"";
-        var act = () => JsonSerializer.Deserialize<DateOnly?>(json, options);
-        act.Should().Throw<JsonException>();
+        Action act = () => JsonSerializer.Deserialize<DateOnly?>(json, options);
+        Should.Throw<JsonException>(act);
     }
     
     [Fact]
@@ -1442,8 +1442,8 @@ public class AdditionalConvertersTests
         options.Converters.Add(new NullableDateOnlyConverter());
         
         var json = "123";
-        var act = () => JsonSerializer.Deserialize<DateOnly?>(json, options);
-        act.Should().Throw<JsonException>();
+        Action act = () => JsonSerializer.Deserialize<DateOnly?>(json, options);
+        Should.Throw<JsonException>(act);
     }
     
     [Fact]
@@ -1453,8 +1453,8 @@ public class AdditionalConvertersTests
         options.Converters.Add(new NullableTimeOnlyConverter());
         
         var json = "\"not-a-time\"";
-        var act = () => JsonSerializer.Deserialize<TimeOnly?>(json, options);
-        act.Should().Throw<JsonException>();
+        Action act = () => JsonSerializer.Deserialize<TimeOnly?>(json, options);
+        Should.Throw<JsonException>(act);
     }
     
     [Fact]
@@ -1464,8 +1464,8 @@ public class AdditionalConvertersTests
         options.Converters.Add(new NullableTimeOnlyConverter());
         
         var json = "123";
-        var act = () => JsonSerializer.Deserialize<TimeOnly?>(json, options);
-        act.Should().Throw<JsonException>();
+        Action act = () => JsonSerializer.Deserialize<TimeOnly?>(json, options);
+        Should.Throw<JsonException>(act);
     }
     
     [Fact]
@@ -1475,8 +1475,8 @@ public class AdditionalConvertersTests
         options.Converters.Add(new NullableUuidStringConverter());
         
         var json = "\"not-a-uuid\"";
-        var act = () => JsonSerializer.Deserialize<Guid?>(json, options);
-        act.Should().Throw<JsonException>();
+        Action act = () => JsonSerializer.Deserialize<Guid?>(json, options);
+        Should.Throw<JsonException>(act);
     }
     
     [Fact]
@@ -1486,8 +1486,8 @@ public class AdditionalConvertersTests
         options.Converters.Add(new NullableUuidStringConverter());
         
         var json = "123";
-        var act = () => JsonSerializer.Deserialize<Guid?>(json, options);
-        act.Should().Throw<JsonException>();
+        Action act = () => JsonSerializer.Deserialize<Guid?>(json, options);
+        Should.Throw<JsonException>(act);
     }
     
     #endregion

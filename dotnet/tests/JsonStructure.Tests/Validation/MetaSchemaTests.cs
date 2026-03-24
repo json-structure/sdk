@@ -3,7 +3,7 @@
 
 using System.IO;
 using System.Text.Json.Nodes;
-using FluentAssertions;
+using Shouldly;
 using JsonStructure.Validation;
 using Xunit;
 
@@ -53,8 +53,8 @@ public class MetaSchemaTests
             }
         }
 
-        result.IsValid.Should().BeTrue();
-        result.Errors.Should().BeEmpty();
+        result.IsValid.ShouldBeTrue();
+        result.Errors.ShouldBeEmpty();
     }
 
     [Fact]
@@ -90,8 +90,8 @@ public class MetaSchemaTests
             }
         }
 
-        result.IsValid.Should().BeTrue();
-        result.Errors.Should().BeEmpty();
+        result.IsValid.ShouldBeTrue();
+        result.Errors.ShouldBeEmpty();
     }
 
     [Fact]
@@ -127,8 +127,8 @@ public class MetaSchemaTests
             }
         }
 
-        result.IsValid.Should().BeTrue();
-        result.Errors.Should().BeEmpty();
+        result.IsValid.ShouldBeTrue();
+        result.Errors.ShouldBeEmpty();
     }
 
     [Fact]
@@ -136,12 +136,12 @@ public class MetaSchemaTests
     {
         var schema = LoadSchema(Path.Combine(MetaDir, "core", "v0", "index.json"));
 
-        schema["definitions"].Should().NotBeNull();
+        schema["definitions"].ShouldNotBeNull();
         var defs = schema["definitions"] as JsonObject;
         
-        defs!["SchemaDocument"].Should().NotBeNull();
-        defs["ObjectType"].Should().NotBeNull();
-        defs["Property"].Should().NotBeNull();
+        defs!["SchemaDocument"].ShouldNotBeNull();
+        defs["ObjectType"].ShouldNotBeNull();
+        defs["Property"].ShouldNotBeNull();
     }
 
     [Fact]
@@ -149,7 +149,7 @@ public class MetaSchemaTests
     {
         var schema = LoadSchema(Path.Combine(MetaDir, "extended", "v0", "index.json"));
 
-        schema["$import"]!.GetValue<string>().Should().Be("https://json-structure.org/meta/core/v0/#");
+        schema["$import"]!.GetValue<string>().ShouldBe("https://json-structure.org/meta/core/v0/#");
     }
 
     [Fact]
@@ -157,6 +157,6 @@ public class MetaSchemaTests
     {
         var schema = LoadSchema(Path.Combine(MetaDir, "validation", "v0", "index.json"));
 
-        schema["$import"]!.GetValue<string>().Should().Be("https://json-structure.org/meta/extended/v0/#");
+        schema["$import"]!.GetValue<string>().ShouldBe("https://json-structure.org/meta/extended/v0/#");
     }
 }

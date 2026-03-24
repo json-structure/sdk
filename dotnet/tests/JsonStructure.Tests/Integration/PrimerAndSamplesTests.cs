@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 using System.Text.Json.Nodes;
-using FluentAssertions;
+using Shouldly;
 using JsonStructure.Validation;
 using Xunit;
 using Xunit.Abstractions;
@@ -80,7 +80,7 @@ public class PrimerAndSamplesTests
             }
         }
         
-        result.IsValid.Should().BeTrue($"Schema {relativePath} should be valid");
+        result.IsValid.ShouldBeTrue($"Schema {relativePath} should be valid");
     }
 
     #endregion
@@ -181,7 +181,7 @@ public class PrimerAndSamplesTests
             }
         }
         
-        result.IsValid.Should().BeTrue($"Instance {instancePath} should be valid against {schemaPath}");
+        result.IsValid.ShouldBeTrue($"Instance {instancePath} should be valid against {schemaPath}");
     }
 
     #endregion
@@ -215,7 +215,7 @@ public class PrimerAndSamplesTests
             }
         }
         
-        result.IsValid.Should().BeTrue($"Schema {relativePath} should be valid");
+        result.IsValid.ShouldBeTrue($"Schema {relativePath} should be valid");
     }
 
     #endregion
@@ -284,7 +284,7 @@ public class PrimerAndSamplesTests
             }
         }
         
-        result.IsValid.Should().BeTrue($"Instance {instancePath} should be valid against {schemaPath}");
+        result.IsValid.ShouldBeTrue($"Instance {instancePath} should be valid against {schemaPath}");
     }
 
     /// <summary>
@@ -371,7 +371,7 @@ public class PrimerAndSamplesTests
         
         // Skip rather than fail if samples not available (e.g., in CI without full repo)
         Skip.If(!exists, $"Samples directory not found at {_samplesBasePath}");
-        exists.Should().BeTrue();
+        exists.ShouldBeTrue();
     }
 
     #endregion

@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 using System.Text.Json.Nodes;
-using FluentAssertions;
+using Shouldly;
 using JsonStructure.Validation;
 using Xunit;
 using Xunit.Abstractions;
@@ -228,13 +228,13 @@ public class TestAssetsTests
             foreach (var error in result.Errors)
             {
                 _output.WriteLine($"  [{error.Code}] {error.Path}: {error.Message}");
-                error.Code.Should().NotBeNullOrEmpty($"Error code should be set for error at {error.Path}");
+                error.Code.ShouldNotBeNullOrEmpty($"Error code should be set for error at {error.Path}");
             }
         }
         
-        result.IsValid.Should().BeFalse($"Schema {schemaFileName} should be invalid. Description: {description}");
-        result.Errors.Should().NotBeEmpty("At least one error should be reported");
-        result.Errors.Should().AllSatisfy(e => e.Code.Should().NotBeNullOrEmpty("All errors should have an error code"));
+        result.IsValid.ShouldBeFalse($"Schema {schemaFileName} should be invalid. Description: {description}");
+        result.Errors.ShouldNotBeEmpty("At least one error should be reported");
+        foreach (var e in result.Errors) { e.Code.ShouldNotBeNullOrEmpty("All errors should have an error code"); }
         
         // Verify the expected error code is present
         if (ExpectedSchemaErrors.TryGetValue(schemaFileName, out var expectedCodes))
@@ -242,7 +242,7 @@ public class TestAssetsTests
             var actualCodes = result.Errors.Select(e => e.Code).ToHashSet();
             foreach (var expectedCode in expectedCodes)
             {
-                actualCodes.Should().Contain(expectedCode, 
+                actualCodes.ShouldContain(expectedCode, 
                     $"Schema {schemaFileName} should produce error code {expectedCode}. " +
                     $"Actual codes: [{string.Join(", ", actualCodes)}]");
             }
@@ -374,14 +374,14 @@ public class TestAssetsTests
             foreach (var error in result.Errors)
             {
                 _output.WriteLine($"  [{error.Code}] {error.Path}: {error.Message}");
-                error.Code.Should().NotBeNullOrEmpty($"Error code should be set for error at {error.Path}");
+                error.Code.ShouldNotBeNullOrEmpty($"Error code should be set for error at {error.Path}");
             }
         }
         
-        result.IsValid.Should().BeFalse(
+        result.IsValid.ShouldBeFalse(
             $"Instance {sampleName}/{instanceFileName} should be invalid. Description: {description}");
-        result.Errors.Should().NotBeEmpty("At least one error should be reported");
-        result.Errors.Should().AllSatisfy(e => e.Code.Should().NotBeNullOrEmpty("All errors should have an error code"));
+        result.Errors.ShouldNotBeEmpty("At least one error should be reported");
+        foreach (var e in result.Errors) { e.Code.ShouldNotBeNullOrEmpty("All errors should have an error code"); }
         
         // Verify the expected error code is present
         if (ExpectedInstanceErrors.TryGetValue(testKey, out var expectedCodes))
@@ -389,7 +389,7 @@ public class TestAssetsTests
             var actualCodes = result.Errors.Select(e => e.Code).ToHashSet();
             foreach (var expectedCode in expectedCodes)
             {
-                actualCodes.Should().Contain(expectedCode, 
+                actualCodes.ShouldContain(expectedCode, 
                     $"Instance {testKey} should produce error code {expectedCode}. " +
                     $"Actual codes: [{string.Join(", ", actualCodes)}]");
             }
@@ -418,7 +418,7 @@ public class TestAssetsTests
         var schemaFiles = Directory.GetFiles(invalidSchemasDir, "*.struct.json");
         _output.WriteLine($"Found {schemaFiles.Length} invalid schema files");
         
-        schemaFiles.Should().NotBeEmpty("Invalid schemas directory should contain test files");
+        schemaFiles.ShouldNotBeEmpty("Invalid schemas directory should contain test files");
     }
 
     [SkippableFact]
@@ -439,7 +439,7 @@ public class TestAssetsTests
         
         _output.WriteLine($"Found {instanceCount} invalid instance files");
         
-        instanceCount.Should().BeGreaterThan(0, "Invalid instances directory should contain test files");
+        instanceCount.ShouldBeGreaterThan(0, "Invalid instances directory should contain test files");
     }
 
     #endregion
@@ -560,7 +560,7 @@ public class TestAssetsTests
         _output.WriteLine($"Description: {description}");
         
         // The schema should be valid (no errors)
-        result.IsValid.Should().BeTrue(
+        result.IsValid.ShouldBeTrue(
             $"Schema {schemaFileName} should be valid. Description: {description}. " +
             $"Errors: {string.Join(", ", result.Errors.Select(e => $"[{e.Code}] {e.Message}"))}");
         
@@ -569,7 +569,7 @@ public class TestAssetsTests
         if (shouldHaveNoWarnings)
         {
             // This schema has $uses declared, so should produce no warnings
-            result.Warnings.Should().BeEmpty(
+            result.Warnings.ShouldBeEmpty(
                 $"Schema {schemaFileName} should produce NO warnings (has proper $uses declaration). " +
                 $"Description: {description}");
             _output.WriteLine("✓ No warnings (as expected - has $uses declaration)");
@@ -577,7 +577,7 @@ public class TestAssetsTests
         else
         {
             // This schema should produce warnings for extension keywords
-            result.Warnings.Should().NotBeEmpty(
+            result.Warnings.ShouldNotBeEmpty(
                 $"Schema {schemaFileName} should produce warnings for extension keywords without $uses. " +
                 $"Description: {description}");
             
@@ -587,7 +587,7 @@ public class TestAssetsTests
                 _output.WriteLine($"  [{warning.Code}] {warning.Path}: {warning.Message}");
                 
                 // Verify all warnings have the correct error code
-                warning.Code.Should().Be(ErrorCodes.SchemaExtensionKeywordNotEnabled,
+                warning.Code.ShouldBe(ErrorCodes.SchemaExtensionKeywordNotEnabled,
                     $"Warning should have code {ErrorCodes.SchemaExtensionKeywordNotEnabled}");
             }
         }
@@ -606,7 +606,7 @@ public class TestAssetsTests
         var schemaFiles = Directory.GetFiles(warningsDir, "*.struct.json");
         _output.WriteLine($"Found {schemaFiles.Length} warning schema files");
         
-        schemaFiles.Should().NotBeEmpty("Warning schemas directory should contain test files");
+        schemaFiles.ShouldNotBeEmpty("Warning schemas directory should contain test files");
     }
 
     #endregion
@@ -715,16 +715,16 @@ public class TestAssetsTests
             }
         }
         
-        result.IsValid.Should().BeFalse(
+        result.IsValid.ShouldBeFalse(
             $"Instance {testKey} should be INVALID (validation extension keywords should be enforced). " +
             $"Description: {description}");
-        result.Errors.Should().NotBeEmpty("At least one error should be reported");
+        result.Errors.ShouldNotBeEmpty("At least one error should be reported");
         
         // Verify the expected error code is present if specified
         if (!string.IsNullOrEmpty(expectedError))
         {
             var actualCodes = result.Errors.Select(e => e.Code).ToHashSet();
-            actualCodes.Should().Contain(expectedError, 
+            actualCodes.ShouldContain(expectedError, 
                 $"Instance {testKey} should produce error code {expectedError}. " +
                 $"Actual codes: [{string.Join(", ", actualCodes)}]");
             _output.WriteLine($"✓ Expected error code verified: {expectedError}");
@@ -744,7 +744,7 @@ public class TestAssetsTests
         var schemaFiles = Directory.GetFiles(validationDir, "*.struct.json");
         _output.WriteLine($"Found {schemaFiles.Length} validation schema files");
         
-        schemaFiles.Should().NotBeEmpty("Validation schemas directory should contain test files");
+        schemaFiles.ShouldNotBeEmpty("Validation schemas directory should contain test files");
     }
 
     [SkippableFact]
@@ -765,7 +765,7 @@ public class TestAssetsTests
         
         _output.WriteLine($"Found {instanceCount} validation instance files");
         
-        instanceCount.Should().BeGreaterThan(0, "Validation instances directory should contain test files");
+        instanceCount.ShouldBeGreaterThan(0, "Validation instances directory should contain test files");
     }
 
     #endregion
@@ -909,7 +909,7 @@ public class TestAssetsTests
         
         if (InvalidAdversarialSchemas.Contains(schemaFileName))
         {
-            result.IsValid.Should().BeFalse($"Adversarial schema {schemaFileName} should be invalid");
+            result.IsValid.ShouldBeFalse($"Adversarial schema {schemaFileName} should be invalid");
             _output.WriteLine($"Schema correctly identified as invalid with {result.Errors.Count} error(s)");
         }
         else
@@ -977,7 +977,7 @@ public class TestAssetsTests
         var schemaFiles = Directory.GetFiles(adversarialDir, "*.struct.json");
         _output.WriteLine($"Found {schemaFiles.Length} adversarial schema files");
         
-        schemaFiles.Length.Should().BeGreaterOrEqualTo(10, "Should have at least 10 adversarial schema files");
+        schemaFiles.Length.ShouldBeGreaterThanOrEqualTo(10, "Should have at least 10 adversarial schema files");
     }
 
     #endregion

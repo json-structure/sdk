@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 using System.Text.Json;
-using FluentAssertions;
+using Shouldly;
 using JsonStructure.Converters;
 using Xunit;
 
@@ -26,7 +26,7 @@ public class Int64ConvertersTests
     {
         var value = 9007199254740993L; // Beyond JavaScript safe integer
         var json = JsonSerializer.Serialize(value, _options);
-        json.Should().Be("\"9007199254740993\"");
+        json.ShouldBe("\"9007199254740993\"");
     }
 
     [Fact]
@@ -34,7 +34,7 @@ public class Int64ConvertersTests
     {
         var json = "\"9007199254740993\"";
         var value = JsonSerializer.Deserialize<long>(json, _options);
-        value.Should().Be(9007199254740993L);
+        value.ShouldBe(9007199254740993L);
     }
 
     [Fact]
@@ -42,10 +42,10 @@ public class Int64ConvertersTests
     {
         var value = -9007199254740993L;
         var json = JsonSerializer.Serialize(value, _options);
-        json.Should().Be("\"-9007199254740993\"");
+        json.ShouldBe("\"-9007199254740993\"");
 
         var deserialized = JsonSerializer.Deserialize<long>(json, _options);
-        deserialized.Should().Be(value);
+        deserialized.ShouldBe(value);
     }
 
     [Fact]
@@ -54,8 +54,8 @@ public class Int64ConvertersTests
         var minJson = JsonSerializer.Serialize(long.MinValue, _options);
         var maxJson = JsonSerializer.Serialize(long.MaxValue, _options);
 
-        JsonSerializer.Deserialize<long>(minJson, _options).Should().Be(long.MinValue);
-        JsonSerializer.Deserialize<long>(maxJson, _options).Should().Be(long.MaxValue);
+        JsonSerializer.Deserialize<long>(minJson, _options).ShouldBe(long.MinValue);
+        JsonSerializer.Deserialize<long>(maxJson, _options).ShouldBe(long.MaxValue);
     }
 
     [Fact]
@@ -63,10 +63,10 @@ public class Int64ConvertersTests
     {
         long? value = null;
         var json = JsonSerializer.Serialize(value, _options);
-        json.Should().Be("null");
+        json.ShouldBe("null");
 
         var deserialized = JsonSerializer.Deserialize<long?>(json, _options);
-        deserialized.Should().BeNull();
+        deserialized.ShouldBeNull();
     }
 
     [Fact]
@@ -74,10 +74,10 @@ public class Int64ConvertersTests
     {
         long? value = 12345L;
         var json = JsonSerializer.Serialize(value, _options);
-        json.Should().Be("\"12345\"");
+        json.ShouldBe("\"12345\"");
 
         var deserialized = JsonSerializer.Deserialize<long?>(json, _options);
-        deserialized.Should().Be(12345L);
+        deserialized.ShouldBe(12345L);
     }
 
     [Fact]
@@ -85,7 +85,7 @@ public class Int64ConvertersTests
     {
         var value = 18446744073709551615UL; // Max UInt64
         var json = JsonSerializer.Serialize(value, _options);
-        json.Should().Be("\"18446744073709551615\"");
+        json.ShouldBe("\"18446744073709551615\"");
     }
 
     [Fact]
@@ -93,7 +93,7 @@ public class Int64ConvertersTests
     {
         var json = "\"18446744073709551615\"";
         var value = JsonSerializer.Deserialize<ulong>(json, _options);
-        value.Should().Be(18446744073709551615UL);
+        value.ShouldBe(18446744073709551615UL);
     }
 
     [Fact]
@@ -101,17 +101,17 @@ public class Int64ConvertersTests
     {
         ulong? value = null;
         var json = JsonSerializer.Serialize(value, _options);
-        json.Should().Be("null");
+        json.ShouldBe("null");
 
         var deserialized = JsonSerializer.Deserialize<ulong?>(json, _options);
-        deserialized.Should().BeNull();
+        deserialized.ShouldBeNull();
     }
 
     [Fact]
     public void Int64StringConverter_ThrowsOnInvalidString()
     {
         var json = "\"not-a-number\"";
-        var act = () => JsonSerializer.Deserialize<long>(json, _options);
-        act.Should().Throw<JsonException>();
+        Action act = () => JsonSerializer.Deserialize<long>(json, _options);
+        Should.Throw<JsonException>(act);
     }
 }

@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 using System.Text.Json.Nodes;
-using FluentAssertions;
+using Shouldly;
 using JsonStructure.Validation;
 using Xunit;
 
@@ -16,24 +16,24 @@ public class AdditionalValidationTests
     public void ValidationResult_Success_ReturnsValidResult()
     {
         var result = ValidationResult.Success;
-        result.IsValid.Should().BeTrue();
-        result.Errors.Should().BeEmpty();
+        result.IsValid.ShouldBeTrue();
+        result.Errors.ShouldBeEmpty();
     }
     
     [Fact]
     public void ValidationResult_Failure_ReturnsInvalidResult()
     {
         var result = ValidationResult.Failure("Test error");
-        result.IsValid.Should().BeFalse();
-        result.Errors.Should().ContainSingle();
+        result.IsValid.ShouldBeFalse();
+        result.Errors.ShouldHaveSingleItem();
     }
     
     [Fact]
     public void ValidationResult_FailureWithPath_ReturnsErrorWithPath()
     {
         var result = ValidationResult.Failure("Test error", "#/path");
-        result.IsValid.Should().BeFalse();
-        result.Errors.Single().Path.Should().Be("#/path");
+        result.IsValid.ShouldBeFalse();
+        result.Errors.Single().Path.ShouldBe("#/path");
     }
     
     [Fact]
@@ -42,11 +42,11 @@ public class AdditionalValidationTests
         var result = new ValidationResult();
         result.AddError("ERR001", "Test message", "#/test");
         
-        result.IsValid.Should().BeFalse();
-        result.Errors.Should().ContainSingle();
-        result.Errors[0].Code.Should().Be("ERR001");
-        result.Errors[0].Message.Should().Be("Test message");
-        result.Errors[0].Path.Should().Be("#/test");
+        result.IsValid.ShouldBeFalse();
+        result.Errors.ShouldHaveSingleItem();
+        result.Errors[0].Code.ShouldBe("ERR001");
+        result.Errors[0].Message.ShouldBe("Test message");
+        result.Errors[0].Path.ShouldBe("#/test");
     }
     
     [Fact]
@@ -55,9 +55,9 @@ public class AdditionalValidationTests
         var result = new ValidationResult();
         result.AddWarning("WARN001", "Test warning", "#/test");
         
-        result.IsValid.Should().BeTrue(); // Warnings don't invalidate
-        result.Warnings.Should().ContainSingle();
-        result.Warnings[0].Code.Should().Be("WARN001");
+        result.IsValid.ShouldBeTrue(); // Warnings don't invalidate
+        result.Warnings.ShouldHaveSingleItem();
+        result.Warnings[0].Code.ShouldBe("WARN001");
     }
     
     [Fact]
@@ -67,7 +67,7 @@ public class AdditionalValidationTests
         var location = new JsonLocation(10, 5);
         result.AddError(new ValidationError("ERR001", "Test", "#/path", ValidationSeverity.Error, location, null));
         
-        result.Errors[0].Location.Should().Be(location);
+        result.Errors[0].Location.ShouldBe(location);
     }
     
     [Fact]
@@ -78,8 +78,8 @@ public class AdditionalValidationTests
         result.AddError("ERR002", "Error 2", "#/b");
         
         var str = result.ToString();
-        str.Should().Contain("Error 1");
-        str.Should().Contain("Error 2");
+        str.ShouldContain("Error 1");
+        str.ShouldContain("Error 2");
     }
     
     [Fact]
@@ -90,7 +90,7 @@ public class AdditionalValidationTests
         result.AddWarning("WARN001", "Warning 1", "#/b");
         
         var allMessages = result.AllMessages.ToList();
-        allMessages.Should().HaveCount(2);
+        allMessages.Count.ShouldBe(2);
     }
     
     [Fact]
@@ -104,7 +104,7 @@ public class AdditionalValidationTests
         };
         result.AddErrors(errors);
         
-        result.Errors.Should().HaveCount(2);
+        result.Errors.Count.ShouldBe(2);
     }
     
     [Fact]
@@ -117,15 +117,15 @@ public class AdditionalValidationTests
         };
         var result = new ValidationResult(errors);
         
-        result.Errors.Should().ContainSingle();
-        result.Warnings.Should().ContainSingle();
+        result.Errors.ShouldHaveSingleItem();
+        result.Warnings.ShouldHaveSingleItem();
     }
     
     [Fact]
     public void ValidationResult_ToString_Success_ReturnsSuccessMessage()
     {
         var result = new ValidationResult();
-        result.ToString().Should().Contain("succeeded");
+        result.ToString().ShouldContain("succeeded");
     }
 
     [Fact]
@@ -134,8 +134,8 @@ public class AdditionalValidationTests
         var result = new ValidationResult();
         result.AddError("Test error", "#/test");
         
-        result.Errors.Should().ContainSingle();
-        result.Errors[0].Code.Should().Be("UNKNOWN");
+        result.Errors.ShouldHaveSingleItem();
+        result.Errors[0].Code.ShouldBe("UNKNOWN");
     }
     
     #endregion
@@ -147,10 +147,10 @@ public class AdditionalValidationTests
     {
         var error = new ValidationError("Test message", "#/path");
         
-        error.Code.Should().Be("UNKNOWN");
-        error.Message.Should().Be("Test message");
-        error.Path.Should().Be("#/path");
-        error.Severity.Should().Be(ValidationSeverity.Error);
+        error.Code.ShouldBe("UNKNOWN");
+        error.Message.ShouldBe("Test message");
+        error.Path.ShouldBe("#/path");
+        error.Severity.ShouldBe(ValidationSeverity.Error);
     }
     
     [Fact]
@@ -159,11 +159,11 @@ public class AdditionalValidationTests
         var error = new ValidationError("ERR001", "Test message", "#/path", ValidationSeverity.Error, new JsonLocation(10, 5), "#/schema/type");
         
         var str = error.ToString();
-        str.Should().Contain("#/path");
-        str.Should().Contain("(10:5)");
-        str.Should().Contain("[ERR001]");
-        str.Should().Contain("Test message");
-        str.Should().Contain("schema: #/schema/type");
+        str.ShouldContain("#/path");
+        str.ShouldContain("(10:5)");
+        str.ShouldContain("[ERR001]");
+        str.ShouldContain("Test message");
+        str.ShouldContain("schema: #/schema/type");
     }
     
     [Fact]
@@ -172,8 +172,8 @@ public class AdditionalValidationTests
         var error = new ValidationError("ERR001", "Test message", "#/path");
         
         var str = error.ToString();
-        str.Should().Contain("#/path");
-        str.Should().NotContain("(0:0)");
+        str.ShouldContain("#/path");
+        str.ShouldNotContain("(0:0)");
     }
     
     [Fact]
@@ -182,7 +182,7 @@ public class AdditionalValidationTests
         var error1 = new ValidationError("ERR001", "Test", "#/path");
         var error2 = new ValidationError("ERR001", "Test", "#/path");
         
-        error1.Should().Be(error2);
+        error1.ShouldBe(error2);
     }
     
     [Fact]
@@ -191,7 +191,7 @@ public class AdditionalValidationTests
         var error = new ValidationError("ERR001", "Test", "#/path", ValidationSeverity.Error, default, "#/schema");
         
         var str = error.ToString();
-        str.Should().Contain("#/schema");
+        str.ShouldContain("#/schema");
     }
     
     [Fact]
@@ -199,7 +199,7 @@ public class AdditionalValidationTests
     {
         var error = new ValidationError("WARN001", "Warning message", "#/path", ValidationSeverity.Warning);
         
-        error.Severity.Should().Be(ValidationSeverity.Warning);
+        error.Severity.ShouldBe(ValidationSeverity.Warning);
     }
     
     #endregion
@@ -210,32 +210,32 @@ public class AdditionalValidationTests
     public void JsonLocation_Unknown_HasZeroValues()
     {
         var unknown = JsonLocation.Unknown;
-        unknown.Line.Should().Be(0);
-        unknown.Column.Should().Be(0);
-        unknown.IsKnown.Should().BeFalse();
+        unknown.Line.ShouldBe(0);
+        unknown.Column.ShouldBe(0);
+        unknown.IsKnown.ShouldBeFalse();
     }
     
     [Fact]
     public void JsonLocation_Known_HasNonZeroValues()
     {
         var location = new JsonLocation(10, 5);
-        location.Line.Should().Be(10);
-        location.Column.Should().Be(5);
-        location.IsKnown.Should().BeTrue();
+        location.Line.ShouldBe(10);
+        location.Column.ShouldBe(5);
+        location.IsKnown.ShouldBeTrue();
     }
     
     [Fact]
     public void JsonLocation_ToString_FormatsCorrectly()
     {
         var location = new JsonLocation(10, 5);
-        location.ToString().Should().Be("(10:5)");
+        location.ToString().ShouldBe("(10:5)");
     }
     
     [Fact]
     public void JsonLocation_ToString_Unknown_ReturnsEmpty()
     {
         var unknown = JsonLocation.Unknown;
-        unknown.ToString().Should().BeEmpty();
+        unknown.ToString().ShouldBeEmpty();
     }
     
     [Fact]
@@ -244,21 +244,21 @@ public class AdditionalValidationTests
         var loc1 = new JsonLocation(10, 5);
         var loc2 = new JsonLocation(10, 5);
         
-        loc1.Should().Be(loc2);
+        loc1.ShouldBe(loc2);
     }
     
     [Fact]
     public void JsonLocation_PartiallyUnknown_Line_IsNotKnown()
     {
         var location = new JsonLocation(0, 5);
-        location.IsKnown.Should().BeFalse();
+        location.IsKnown.ShouldBeFalse();
     }
     
     [Fact]
     public void JsonLocation_PartiallyUnknown_Column_IsNotKnown()
     {
         var location = new JsonLocation(10, 0);
-        location.IsKnown.Should().BeFalse();
+        location.IsKnown.ShouldBeFalse();
     }
     
     #endregion
@@ -269,50 +269,50 @@ public class AdditionalValidationTests
     public void ValidationOptions_Default_HasExpectedValues()
     {
         var options = ValidationOptions.Default;
-        options.MaxValidationDepth.Should().BeGreaterThan(0);
-        options.StopOnFirstError.Should().BeFalse();
+        options.MaxValidationDepth.ShouldBeGreaterThan(0);
+        options.StopOnFirstError.ShouldBeFalse();
     }
     
     [Fact]
     public void ValidationOptions_SetMaxDepth_Works()
     {
         var options = new ValidationOptions { MaxValidationDepth = 50 };
-        options.MaxValidationDepth.Should().Be(50);
+        options.MaxValidationDepth.ShouldBe(50);
     }
     
     [Fact]
     public void ValidationOptions_SetStopOnFirstError_Works()
     {
         var options = new ValidationOptions { StopOnFirstError = true };
-        options.StopOnFirstError.Should().BeTrue();
+        options.StopOnFirstError.ShouldBeTrue();
     }
     
     [Fact]
     public void ValidationOptions_SetStrictFormatValidation_Works()
     {
         var options = new ValidationOptions { StrictFormatValidation = true };
-        options.StrictFormatValidation.Should().BeTrue();
+        options.StrictFormatValidation.ShouldBeTrue();
     }
     
     [Fact]
     public void ValidationOptions_SetAllowImport_Works()
     {
         var options = new ValidationOptions { AllowImport = true };
-        options.AllowImport.Should().BeTrue();
+        options.AllowImport.ShouldBeTrue();
     }
     
     [Fact]
     public void ValidationOptions_SetAllowDollar_Works()
     {
         var options = new ValidationOptions { AllowDollar = true };
-        options.AllowDollar.Should().BeTrue();
+        options.AllowDollar.ShouldBeTrue();
     }
     
     [Fact]
     public void ValidationOptions_SetWarnOnUnusedExtensionKeywords_Works()
     {
         var options = new ValidationOptions { WarnOnUnusedExtensionKeywords = false };
-        options.WarnOnUnusedExtensionKeywords.Should().BeFalse();
+        options.WarnOnUnusedExtensionKeywords.ShouldBeFalse();
     }
     
     [Fact]
@@ -323,7 +323,7 @@ public class AdditionalValidationTests
             ["test"] = new JsonObject { ["type"] = "string" }
         };
         var options = new ValidationOptions { ExternalSchemas = schemas };
-        options.ExternalSchemas.Should().ContainKey("test");
+        options.ExternalSchemas.ShouldContainKey("test");
     }
     
     [Fact]
@@ -331,7 +331,7 @@ public class AdditionalValidationTests
     {
         Func<string, JsonNode?> resolver = _ => null;
         var options = new ValidationOptions { ReferenceResolver = resolver };
-        options.ReferenceResolver.Should().Be(resolver);
+        options.ReferenceResolver.ShouldBe(resolver);
     }
     
     [Fact]
@@ -339,7 +339,7 @@ public class AdditionalValidationTests
     {
         Func<string, JsonNode?> loader = _ => null;
         var options = new ValidationOptions { ImportLoader = loader };
-        options.ImportLoader.Should().Be(loader);
+        options.ImportLoader.ShouldBe(loader);
     }
     
     #endregion
@@ -354,8 +354,8 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("test");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
-        result.Errors.Should().Contain(e => e.Message.Contains("null"));
+        result.IsValid.ShouldBeFalse();
+        result.Errors.ShouldContain(e => e.Message.Contains("null"));
     }
     
     [Fact]
@@ -369,7 +369,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("test");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -387,7 +387,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("test");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -398,7 +398,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("test");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -409,7 +409,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("test");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -451,8 +451,8 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
-        result.Errors.Should().Contain(e => e.Message.Contains("depth"));
+        result.IsValid.ShouldBeFalse();
+        result.Errors.ShouldContain(e => e.Message.Contains("depth"));
     }
     
     [Fact]
@@ -464,7 +464,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("test");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -478,7 +478,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("test");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -489,7 +489,7 @@ public class AdditionalValidationTests
         JsonNode? instance = null;
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -500,7 +500,7 @@ public class AdditionalValidationTests
         JsonNode? instance = null;
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -514,7 +514,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("green");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -528,7 +528,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("yellow");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -539,7 +539,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("fixed");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -550,7 +550,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("other");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -565,7 +565,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("hello");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -580,7 +580,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("hi");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -595,7 +595,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("hello");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -610,7 +610,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("hello");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -625,7 +625,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("hello");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -640,7 +640,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("HELLO");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -655,7 +655,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create(5);
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -670,7 +670,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create(5);
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -685,7 +685,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create(50);
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -700,7 +700,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create(50);
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -715,7 +715,7 @@ public class AdditionalValidationTests
         var instance = new JsonArray { 1, 2, 3 };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -730,7 +730,7 @@ public class AdditionalValidationTests
         var instance = new JsonArray { 1, 2, 3 };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -745,7 +745,7 @@ public class AdditionalValidationTests
         var instance = new JsonArray { 1, 2, 3 };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -760,7 +760,7 @@ public class AdditionalValidationTests
         var instance = new JsonArray { 1, 2, 3 };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -778,7 +778,7 @@ public class AdditionalValidationTests
         var instance = new JsonObject { ["name"] = "test" };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -796,7 +796,7 @@ public class AdditionalValidationTests
         var instance = new JsonObject { ["name"] = "test" };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -814,7 +814,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("hello");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -832,7 +832,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create(true);
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -850,7 +850,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("hello");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -864,7 +864,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create(42);
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -878,7 +878,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("hello");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -894,7 +894,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("test");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -909,7 +909,7 @@ public class AdditionalValidationTests
         var instance = new JsonArray { 1, 2, 3 };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -924,7 +924,7 @@ public class AdditionalValidationTests
         var instance = new JsonArray { 1, 2, 2 };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -947,7 +947,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -970,7 +970,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -992,7 +992,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -1014,7 +1014,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -1035,7 +1035,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -1057,7 +1057,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -1077,7 +1077,7 @@ public class AdditionalValidationTests
         var instance = new JsonArray { "hello", 42 };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -1093,7 +1093,7 @@ public class AdditionalValidationTests
         var instance = new JsonArray { 123, 456 }; // numbers instead of strings
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -1108,7 +1108,7 @@ public class AdditionalValidationTests
         var instance = new JsonArray { 1, 2, 3 };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -1123,7 +1123,7 @@ public class AdditionalValidationTests
         var instance = new JsonArray { 1, "two", 3 };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -1138,7 +1138,7 @@ public class AdditionalValidationTests
         var instance = new JsonObject { ["name"] = "value" };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -1157,7 +1157,7 @@ public class AdditionalValidationTests
         var instance = new JsonObject { ["name"] = "test", ["extra"] = "not-a-number" };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -1172,7 +1172,7 @@ public class AdditionalValidationTests
         var instance = new JsonArray { 1, 2, "hello", 4 };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -1187,7 +1187,7 @@ public class AdditionalValidationTests
         var instance = new JsonArray { 1, 2, 3, 4 };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -1203,7 +1203,7 @@ public class AdditionalValidationTests
         var instance = new JsonArray { 1, "hello", "world", 4 };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -1219,7 +1219,7 @@ public class AdditionalValidationTests
         var instance = new JsonArray { 1, "hello", "world", 4 };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -1234,7 +1234,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create(15);
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -1249,7 +1249,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create(13);
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -1264,7 +1264,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create(6);
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -1279,7 +1279,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create(5);
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -1294,7 +1294,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create(9);
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -1309,7 +1309,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create(10);
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -1324,7 +1324,7 @@ public class AdditionalValidationTests
         var instance = new JsonObject { ["a"] = 1, ["b"] = 2 };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -1339,7 +1339,7 @@ public class AdditionalValidationTests
         var instance = new JsonObject { ["a"] = 1, ["b"] = 2 };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -1354,7 +1354,7 @@ public class AdditionalValidationTests
         var instance = new JsonObject { ["a"] = 1, ["b"] = 2 };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -1369,7 +1369,7 @@ public class AdditionalValidationTests
         var instance = new JsonObject { ["a"] = 1, ["b"] = 2 };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -1401,7 +1401,7 @@ public class AdditionalValidationTests
         
         var result = validator.Validate(instance, schema);
         // Should still validate despite nesting
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -1436,8 +1436,8 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
-        result.Errors.Should().HaveCountGreaterThanOrEqualTo(1);
+        result.IsValid.ShouldBeFalse();
+        result.Errors.Count.ShouldBeGreaterThanOrEqualTo(1);
     }
     
     [Fact]
@@ -1459,7 +1459,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create(5);
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -1481,7 +1481,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create(-5);
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -1492,7 +1492,7 @@ public class AdditionalValidationTests
         var instanceJson = "\"hello\"";
         
         var result = validator.Validate(instanceJson, schemaJson);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -1503,7 +1503,7 @@ public class AdditionalValidationTests
         var instanceJson = "not valid json {";
         
         var result = validator.Validate(instanceJson, schemaJson);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     #endregion
@@ -1527,7 +1527,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -1540,7 +1540,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -1548,7 +1548,7 @@ public class AdditionalValidationTests
     {
         var validator = new SchemaValidator();
         var result = validator.Validate(null!);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -1558,7 +1558,7 @@ public class AdditionalValidationTests
         var schema = JsonValue.Create(true);
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -1568,7 +1568,7 @@ public class AdditionalValidationTests
         var schemaJson = """{"$id": "urn:example:test", "$schema": "https://json-structure.org/meta/core/v0/#", "name": "TestType", "type": "string"}""";
         
         var result = validator.Validate(schemaJson);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -1578,7 +1578,7 @@ public class AdditionalValidationTests
         var schemaJson = "not valid json {";
         
         var result = validator.Validate(schemaJson);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -1599,7 +1599,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -1612,7 +1612,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -1628,7 +1628,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -1641,7 +1641,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -1654,7 +1654,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -1668,7 +1668,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -1682,7 +1682,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -1696,7 +1696,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -1710,7 +1710,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -1724,7 +1724,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -1737,7 +1737,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -1750,7 +1750,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -1763,7 +1763,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -1776,7 +1776,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -1789,7 +1789,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -1802,7 +1802,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -1825,7 +1825,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -1852,7 +1852,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -1866,7 +1866,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -1880,7 +1880,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     #endregion
@@ -1892,13 +1892,13 @@ public class AdditionalValidationTests
     {
         var error = ValidationErrors.Create("ERR001", "Test message", "/path", ValidationSeverity.Error, new JsonLocation(10, 5), "/schema");
         
-        error.Code.Should().Be("ERR001");
-        error.Message.Should().Be("Test message");
-        error.Path.Should().Be("/path");
-        error.Severity.Should().Be(ValidationSeverity.Error);
-        error.Location.Line.Should().Be(10);
-        error.Location.Column.Should().Be(5);
-        error.SchemaPath.Should().Be("/schema");
+        error.Code.ShouldBe("ERR001");
+        error.Message.ShouldBe("Test message");
+        error.Path.ShouldBe("/path");
+        error.Severity.ShouldBe(ValidationSeverity.Error);
+        error.Location.Line.ShouldBe(10);
+        error.Location.Column.ShouldBe(5);
+        error.SchemaPath.ShouldBe("/schema");
     }
     
     [Fact]
@@ -1906,11 +1906,11 @@ public class AdditionalValidationTests
     {
         var error = ValidationErrors.Schema("SCHEMA001", "Schema error", "/path", new JsonLocation(1, 1));
         
-        error.Code.Should().Be("SCHEMA001");
-        error.Message.Should().Be("Schema error");
-        error.Path.Should().Be("/path");
-        error.Severity.Should().Be(ValidationSeverity.Error);
-        error.SchemaPath.Should().BeNull();
+        error.Code.ShouldBe("SCHEMA001");
+        error.Message.ShouldBe("Schema error");
+        error.Path.ShouldBe("/path");
+        error.Severity.ShouldBe(ValidationSeverity.Error);
+        error.SchemaPath.ShouldBeNull();
     }
     
     [Fact]
@@ -1918,11 +1918,11 @@ public class AdditionalValidationTests
     {
         var error = ValidationErrors.Instance("INST001", "Instance error", "/data", new JsonLocation(5, 10), "/schema/type");
         
-        error.Code.Should().Be("INST001");
-        error.Message.Should().Be("Instance error");
-        error.Path.Should().Be("/data");
-        error.Severity.Should().Be(ValidationSeverity.Error);
-        error.SchemaPath.Should().Be("/schema/type");
+        error.Code.ShouldBe("INST001");
+        error.Message.ShouldBe("Instance error");
+        error.Path.ShouldBe("/data");
+        error.Severity.ShouldBe(ValidationSeverity.Error);
+        error.SchemaPath.ShouldBe("/schema/type");
     }
     
     [Fact]
@@ -1930,11 +1930,11 @@ public class AdditionalValidationTests
     {
         var error = ValidationErrors.Warning("WARN001", "Warning message", "/path", new JsonLocation(1, 1), "/schema");
         
-        error.Code.Should().Be("WARN001");
-        error.Message.Should().Be("Warning message");
-        error.Path.Should().Be("/path");
-        error.Severity.Should().Be(ValidationSeverity.Warning);
-        error.SchemaPath.Should().Be("/schema");
+        error.Code.ShouldBe("WARN001");
+        error.Message.ShouldBe("Warning message");
+        error.Path.ShouldBe("/path");
+        error.Severity.ShouldBe(ValidationSeverity.Warning);
+        error.SchemaPath.ShouldBe("/schema");
     }
     
     [Fact]
@@ -1942,12 +1942,12 @@ public class AdditionalValidationTests
     {
         var error = ValidationErrors.Create("ERR001", "Test");
         
-        error.Code.Should().Be("ERR001");
-        error.Message.Should().Be("Test");
-        error.Path.Should().BeEmpty();
-        error.Severity.Should().Be(ValidationSeverity.Error);
-        error.Location.IsKnown.Should().BeFalse();
-        error.SchemaPath.Should().BeNull();
+        error.Code.ShouldBe("ERR001");
+        error.Message.ShouldBe("Test");
+        error.Path.ShouldBeEmpty();
+        error.Severity.ShouldBe(ValidationSeverity.Error);
+        error.Location.IsKnown.ShouldBeFalse();
+        error.SchemaPath.ShouldBeNull();
     }
     
     #endregion
@@ -1962,7 +1962,7 @@ public class AdditionalValidationTests
         var instance = new JsonObject { ["anything"] = "goes" };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -1973,7 +1973,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("anything");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -2008,7 +2008,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -2034,7 +2034,7 @@ public class AdditionalValidationTests
         var instance = new JsonObject { ["name"] = "Alice" };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -2048,7 +2048,7 @@ public class AdditionalValidationTests
         var instance = new JsonObject { ["name"] = "test" };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -2063,7 +2063,7 @@ public class AdditionalValidationTests
         var instance = new JsonArray { "a", "b", "c" };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -2078,7 +2078,7 @@ public class AdditionalValidationTests
         var instance = new JsonArray { "a", "b", "a" };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -2097,7 +2097,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -2116,7 +2116,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -2136,7 +2136,7 @@ public class AdditionalValidationTests
         var instance = new JsonArray { "Alice", 30 };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -2156,7 +2156,7 @@ public class AdditionalValidationTests
         var instance = new JsonArray { "Alice" }; // Missing age
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -2175,7 +2175,7 @@ public class AdditionalValidationTests
         var instance = new JsonObject { ["text"] = "hello" };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -2198,7 +2198,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -2207,10 +2207,10 @@ public class AdditionalValidationTests
         var validator = new InstanceValidator();
         var schema = new JsonObject { ["type"] = "any" };
         
-        validator.Validate(JsonValue.Create("string"), schema).IsValid.Should().BeTrue();
-        validator.Validate(JsonValue.Create(42), schema).IsValid.Should().BeTrue();
-        validator.Validate(new JsonArray { 1, 2, 3 }, schema).IsValid.Should().BeTrue();
-        validator.Validate(new JsonObject { ["a"] = 1 }, schema).IsValid.Should().BeTrue();
+        validator.Validate(JsonValue.Create("string"), schema).IsValid.ShouldBeTrue();
+        validator.Validate(JsonValue.Create(42), schema).IsValid.ShouldBeTrue();
+        validator.Validate(new JsonArray { 1, 2, 3 }, schema).IsValid.ShouldBeTrue();
+        validator.Validate(new JsonObject { ["a"] = 1 }, schema).IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -2221,7 +2221,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create(127);
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -2232,7 +2232,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create(200);
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -2243,7 +2243,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create(255);
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -2254,7 +2254,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create(32000);
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -2265,7 +2265,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create(65000);
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -2276,7 +2276,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create(1000000); // Use a value that fits in int32 range
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -2287,7 +2287,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create(3.14); // JSON numbers are doubles
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -2298,7 +2298,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create(3.14159265358979);
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -2309,7 +2309,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("9223372036854775807");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -2320,7 +2320,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("170141183460469231731687303715884105727");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -2331,7 +2331,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("12345.67890");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -2342,7 +2342,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("2025-01-15");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -2353,7 +2353,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("2025-01-15T10:30:00Z");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -2364,7 +2364,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("10:30:00");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -2375,7 +2375,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("PT1H30M");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -2386,7 +2386,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("550e8400-e29b-41d4-a716-446655440000");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -2397,7 +2397,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("https://example.com/path");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -2408,7 +2408,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("SGVsbG8gV29ybGQ="); // "Hello World" in base64
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -2419,7 +2419,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("/definitions/Type");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -2430,7 +2430,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("invalid-pointer"); // Doesn't start with /
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -2441,7 +2441,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     #endregion
@@ -2461,7 +2461,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("test@example.com");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -2477,7 +2477,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("not-an-email");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -2493,7 +2493,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("https://example.com");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -2509,7 +2509,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("not a uri");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -2525,7 +2525,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("/relative/path");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -2541,7 +2541,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("2025-01-15");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -2557,7 +2557,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("not-a-date");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -2573,7 +2573,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("14:30:00");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -2589,7 +2589,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("not-a-time");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -2605,7 +2605,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("2025-01-15T14:30:00Z");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -2621,7 +2621,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("not-a-datetime");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -2637,7 +2637,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("550e8400-e29b-41d4-a716-446655440000");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -2653,7 +2653,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("not-a-uuid");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -2669,7 +2669,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("192.168.1.1");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -2685,7 +2685,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("not-an-ip");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -2701,7 +2701,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("::1");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -2717,7 +2717,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("not-an-ipv6");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -2733,7 +2733,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("example.com");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -2749,7 +2749,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("not a valid hostname!");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     #endregion
@@ -2788,7 +2788,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -2822,7 +2822,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -2861,7 +2861,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     #endregion
@@ -2888,7 +2888,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -2911,7 +2911,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -2932,7 +2932,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -2951,7 +2951,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -2971,7 +2971,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -2995,7 +2995,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -3018,7 +3018,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     #endregion
@@ -3042,7 +3042,7 @@ public class AdditionalValidationTests
         var instance = new JsonArray { 10, 20 };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -3062,7 +3062,7 @@ public class AdditionalValidationTests
         var instance = new JsonArray { 10 };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -3082,7 +3082,7 @@ public class AdditionalValidationTests
         var instance = new JsonArray { "a", 1 };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -3103,7 +3103,7 @@ public class AdditionalValidationTests
         var instance = new JsonArray { "a", 1, true };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     #endregion
@@ -3147,7 +3147,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -3169,7 +3169,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -3192,7 +3192,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -3228,7 +3228,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -3252,7 +3252,7 @@ public class AdditionalValidationTests
         // Current implementation throws when selector value is non-string
         // This tests that we don't crash silently
         var action = () => validator.Validate(instance, schema);
-        action.Should().Throw<InvalidOperationException>();
+        Should.Throw<InvalidOperationException>(action);
     }
     
     [Fact]
@@ -3274,7 +3274,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -3293,7 +3293,7 @@ public class AdditionalValidationTests
         var instance = new JsonObject { ["x"] = 1 };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     #endregion
@@ -3326,7 +3326,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -3340,7 +3340,7 @@ public class AdditionalValidationTests
         var instance = new JsonObject { ["x"] = 1 };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     #endregion
@@ -3366,7 +3366,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create(5);
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -3388,7 +3388,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create(0);
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     #endregion
@@ -3406,8 +3406,8 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("test");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
-        result.Errors.Should().Contain(e => e.Message.Contains("Custom type"));
+        result.IsValid.ShouldBeFalse();
+        result.Errors.ShouldContain(e => e.Message.Contains("Custom type"));
     }
     
     [Fact]
@@ -3421,8 +3421,8 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("test");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
-        result.Errors.Should().Contain(e => e.Message.Contains("Unknown type"));
+        result.IsValid.ShouldBeFalse();
+        result.Errors.ShouldContain(e => e.Message.Contains("Unknown type"));
     }
     
     #endregion
@@ -3437,7 +3437,7 @@ public class AdditionalValidationTests
         var instanceJson = @"{}";
         
         var result = validator.Validate(instanceJson, schemaJson);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
         // Source location tracking should be enabled
     }
     
@@ -3449,8 +3449,8 @@ public class AdditionalValidationTests
         var instanceJson = @"{invalid json";
         
         var result = validator.Validate(instanceJson, schemaJson);
-        result.IsValid.Should().BeFalse();
-        result.Errors.Should().Contain(e => e.Message.Contains("parse"));
+        result.IsValid.ShouldBeFalse();
+        result.Errors.ShouldContain(e => e.Message.Contains("parse"));
     }
     
     #endregion
@@ -3469,7 +3469,7 @@ public class AdditionalValidationTests
         var instance = new JsonArray { 1, 2, 1 };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     #endregion
@@ -3490,7 +3490,7 @@ public class AdditionalValidationTests
         var instance = new JsonArray { 1, 5, 6 };  // Two items >= 5
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -3507,7 +3507,7 @@ public class AdditionalValidationTests
         var instance = new JsonArray { 1, 2, 15 };  // Only one item >= 10
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     #endregion
@@ -3540,7 +3540,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -3567,7 +3567,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     #endregion
@@ -3582,7 +3582,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("170141183460469231731687303715884105727");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -3593,7 +3593,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("340282366920938463463374607431768211455");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -3604,7 +3604,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("12345.6789");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -3615,7 +3615,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("3.14");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     #endregion
@@ -3634,7 +3634,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create(50);
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -3649,7 +3649,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("hello");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -3663,7 +3663,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("ABC");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -3677,7 +3677,7 @@ public class AdditionalValidationTests
         var instance = JsonValue.Create("abc");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     #endregion
@@ -3692,7 +3692,7 @@ public class AdditionalValidationTests
         JsonNode? instance = null;
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -3703,7 +3703,7 @@ public class AdditionalValidationTests
         JsonNode? instance = null;
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue(); // false schema only rejects non-null
+        result.IsValid.ShouldBeTrue(); // false schema only rejects non-null
     }
     
     [Fact]
@@ -3714,7 +3714,7 @@ public class AdditionalValidationTests
         JsonNode instance = JsonValue.Create("anything");
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     #endregion
@@ -3742,7 +3742,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -3765,7 +3765,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(instance, schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     #endregion
@@ -3779,7 +3779,7 @@ public class AdditionalValidationTests
         var schemaJson = @"{""$id"": ""https://example.com/test"", ""$schema"": ""https://json-structure.org/meta/core/v0/schema"", ""type"": ""string"", ""name"": ""TestString""}";
         
         var result = validator.Validate(schemaJson);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -3789,8 +3789,8 @@ public class AdditionalValidationTests
         var schemaJson = @"{invalid json";
         
         var result = validator.Validate(schemaJson);
-        result.IsValid.Should().BeFalse();
-        result.Errors.Should().Contain(e => e.Message.Contains("parse"));
+        result.IsValid.ShouldBeFalse();
+        result.Errors.ShouldContain(e => e.Message.Contains("parse"));
     }
     
     [Fact]
@@ -3805,7 +3805,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -3820,7 +3820,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -3843,7 +3843,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -3858,7 +3858,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -3878,7 +3878,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -3899,7 +3899,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -3915,7 +3915,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -3931,7 +3931,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -3947,7 +3947,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -3963,7 +3963,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -3979,7 +3979,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -3999,7 +3999,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -4015,7 +4015,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -4031,7 +4031,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -4048,7 +4048,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -4065,7 +4065,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -4083,7 +4083,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -4099,7 +4099,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -4115,7 +4115,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -4131,7 +4131,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -4147,7 +4147,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -4163,7 +4163,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -4173,7 +4173,7 @@ public class AdditionalValidationTests
         JsonNode schema = JsonValue.Create(true);
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -4183,7 +4183,7 @@ public class AdditionalValidationTests
         JsonNode schema = JsonValue.Create(false);
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -4193,7 +4193,7 @@ public class AdditionalValidationTests
         JsonNode schema = JsonValue.Create(123);
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -4202,7 +4202,7 @@ public class AdditionalValidationTests
         var validator = new SchemaValidator();
         
         var result = validator.Validate((JsonNode?)null);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -4236,7 +4236,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -4252,9 +4252,9 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
         // Just verify it found some errors (StopOnFirstError may still find a few related errors)
-        result.Errors.Should().NotBeEmpty();
+        result.Errors.ShouldNotBeEmpty();
     }
     
     [Fact]
@@ -4269,7 +4269,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -4284,7 +4284,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -4303,7 +4303,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -4322,7 +4322,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -4341,7 +4341,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -4356,7 +4356,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -4373,7 +4373,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -4389,7 +4389,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -4406,7 +4406,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -4421,7 +4421,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -4436,7 +4436,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -4452,7 +4452,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -4468,7 +4468,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -4484,7 +4484,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -4506,7 +4506,7 @@ public class AdditionalValidationTests
         if (!result.IsValid)
         {
             var errorMessages = string.Join("; ", result.Errors.Select(e => $"{e.Path}: {e.Message}"));
-            result.IsValid.Should().BeTrue($"Errors: {errorMessages}");
+            result.IsValid.ShouldBeTrue($"Errors: {errorMessages}");
         }
     }
     
@@ -4527,7 +4527,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -4543,7 +4543,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -4559,7 +4559,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -4575,7 +4575,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -4591,7 +4591,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -4607,7 +4607,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -4623,7 +4623,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -4650,7 +4650,7 @@ public class AdditionalValidationTests
         };
         
         var result = validator.Validate(schema);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     #endregion
@@ -4675,13 +4675,13 @@ public class AdditionalValidationTests
         }";
         
         var result = validator.Validate(instanceJson, schemaJson);
-        result.IsValid.Should().BeFalse();
-        result.Errors.Should().NotBeEmpty();
+        result.IsValid.ShouldBeFalse();
+        result.Errors.ShouldNotBeEmpty();
         // Check that location info is populated when using string overload
         // Line 2, after whitespace
         var error = result.Errors.FirstOrDefault(e => e.Path?.Contains("age") == true);
-        error.Should().NotBeNull();
-        error!.Location.Line.Should().BeGreaterThan(0);
+        error.ShouldNotBeNull();
+        error!.Location.Line.ShouldBeGreaterThan(0);
     }
     
     [Fact]
@@ -4705,7 +4705,7 @@ public class AdditionalValidationTests
         }";
         
         var result = validator.Validate(instanceJson, schemaJson);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
         // The error should point to items/2 which is "bad"
     }
     
@@ -4741,9 +4741,9 @@ public class AdditionalValidationTests
         }";
         
         var result = validator.Validate(instanceJson, schemaJson);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
         var error = result.Errors.FirstOrDefault(e => e.Path?.Contains("level3") == true);
-        error.Should().NotBeNull();
+        error.ShouldNotBeNull();
     }
     
     [Fact]
@@ -4763,8 +4763,8 @@ public class AdditionalValidationTests
         }";
         
         var result = validator.Validate(schemaJson);
-        result.IsValid.Should().BeFalse();
-        result.Errors.Should().NotBeEmpty();
+        result.IsValid.ShouldBeFalse();
+        result.Errors.ShouldNotBeEmpty();
     }
     
     [Fact]
@@ -4781,7 +4781,7 @@ public class AdditionalValidationTests
         var instanceJson = @"[1, 2, ""invalid""]";
         
         var result = validator.Validate(instanceJson, schemaJson);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -4797,7 +4797,7 @@ public class AdditionalValidationTests
         var instanceJson = @"""hello""";
         
         var result = validator.Validate(instanceJson, schemaJson);
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
     
     [Fact]
@@ -4818,8 +4818,8 @@ public class AdditionalValidationTests
         }";
         
         var result = validator.Validate(instanceJson, schemaJson);
-        result.IsValid.Should().BeFalse();
-        result.Errors.Should().ContainSingle();
+        result.IsValid.ShouldBeFalse();
+        result.Errors.ShouldHaveSingleItem();
     }
     
     [Fact]
@@ -4840,7 +4840,7 @@ public class AdditionalValidationTests
         var instanceJson = @"[123, ""wrong-order""]";
         
         var result = validator.Validate(instanceJson, schemaJson);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
     }
     
     [Fact]
@@ -4856,9 +4856,9 @@ public class AdditionalValidationTests
         var instanceJson = @"[1, 2, 3]";
         
         var result = validator.Validate(instanceJson, schemaJson);
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
         // The error is at root level
-        result.Errors.First().Location.Should().NotBe(JsonLocation.Unknown);
+        result.Errors.First().Location.ShouldNotBe(JsonLocation.Unknown);
     }
     
     #endregion

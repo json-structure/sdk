@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 using System.Text.Json.Nodes;
-using FluentAssertions;
+using Shouldly;
 using JsonStructure.Validation;
 using Xunit;
 
@@ -25,7 +25,7 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
 
     [Fact]
@@ -36,11 +36,11 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeFalse();
-        var error = result.Errors.Should().ContainSingle().Subject;
-        error.Code.Should().Be(ErrorCodes.InstanceStringExpected);
-        error.Path.Should().BeEmpty();
-        error.Message.Should().Contain("string");
+        result.IsValid.ShouldBeFalse();
+        var error = result.Errors.ShouldHaveSingleItem();
+        error.Code.ShouldBe(ErrorCodes.InstanceStringExpected);
+        error.Path.ShouldBeEmpty();
+        error.Message.ShouldContain("string");
     }
 
     [Fact]
@@ -51,7 +51,7 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
 
     [Fact]
@@ -62,7 +62,7 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
 
     [Fact]
@@ -86,7 +86,7 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
 
     [Fact]
@@ -106,11 +106,11 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeFalse();
-        var error = result.Errors.Should().ContainSingle().Subject;
-        error.Code.Should().Be(ErrorCodes.InstanceRequiredPropertyMissing);
-        error.Path.Should().BeEmpty();
-        error.Message.Should().Contain("required");
+        result.IsValid.ShouldBeFalse();
+        var error = result.Errors.ShouldHaveSingleItem();
+        error.Code.ShouldBe(ErrorCodes.InstanceRequiredPropertyMissing);
+        error.Path.ShouldBeEmpty();
+        error.Message.ShouldContain("required");
     }
 
     [Fact]
@@ -126,7 +126,7 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
 
     [Fact]
@@ -142,10 +142,10 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeFalse();
-        var error = result.Errors.Should().ContainSingle().Subject;
-        error.Code.Should().Be(ErrorCodes.InstanceStringNotExpected);
-        error.Path.Should().Be("/1");
+        result.IsValid.ShouldBeFalse();
+        var error = result.Errors.ShouldHaveSingleItem();
+        error.Code.ShouldBe(ErrorCodes.InstanceStringNotExpected);
+        error.Path.ShouldBe("/1");
     }
 
     [Fact]
@@ -161,11 +161,11 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeFalse();
-        var error = result.Errors.Should().ContainSingle().Subject;
-        error.Code.Should().Be(ErrorCodes.InstanceMinItems);
-        error.Path.Should().BeEmpty();
-        error.Message.Should().Contain("minimum");
+        result.IsValid.ShouldBeFalse();
+        var error = result.Errors.ShouldHaveSingleItem();
+        error.Code.ShouldBe(ErrorCodes.InstanceMinItems);
+        error.Path.ShouldBeEmpty();
+        error.Message.ShouldContain("minimum");
     }
 
     [Fact]
@@ -181,11 +181,11 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeFalse();
-        var error = result.Errors.Should().ContainSingle().Subject;
-        error.Code.Should().Be(ErrorCodes.InstanceStringMinLength);
-        error.Path.Should().BeEmpty();
-        error.Message.Should().Contain("minimum");
+        result.IsValid.ShouldBeFalse();
+        var error = result.Errors.ShouldHaveSingleItem();
+        error.Code.ShouldBe(ErrorCodes.InstanceStringMinLength);
+        error.Path.ShouldBeEmpty();
+        error.Message.ShouldContain("minimum");
     }
 
     [Fact]
@@ -201,7 +201,7 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
 
     [Fact]
@@ -217,11 +217,11 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeFalse();
-        var error = result.Errors.Should().ContainSingle().Subject;
-        error.Code.Should().Be(ErrorCodes.InstanceStringPatternMismatch);
-        error.Path.Should().BeEmpty();
-        error.Message.Should().Contain("pattern");
+        result.IsValid.ShouldBeFalse();
+        var error = result.Errors.ShouldHaveSingleItem();
+        error.Code.ShouldBe(ErrorCodes.InstanceStringPatternMismatch);
+        error.Path.ShouldBeEmpty();
+        error.Message.ShouldContain("pattern");
     }
 
     [Fact]
@@ -237,11 +237,11 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeFalse();
-        var error = result.Errors.Should().ContainSingle().Subject;
-        error.Code.Should().Be(ErrorCodes.InstanceNumberMinimum);
-        error.Path.Should().BeEmpty();
-        error.Message.Should().Contain("minimum");
+        result.IsValid.ShouldBeFalse();
+        var error = result.Errors.ShouldHaveSingleItem();
+        error.Code.ShouldBe(ErrorCodes.InstanceNumberMinimum);
+        error.Path.ShouldBeEmpty();
+        error.Message.ShouldContain("minimum");
     }
 
     [Fact]
@@ -256,7 +256,7 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
 
     [Fact]
@@ -271,11 +271,11 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeFalse();
-        var error = result.Errors.Should().ContainSingle().Subject;
-        error.Code.Should().Be(ErrorCodes.InstanceEnumMismatch);
-        error.Path.Should().BeEmpty();
-        error.Message.Should().Contain("enum");
+        result.IsValid.ShouldBeFalse();
+        var error = result.Errors.ShouldHaveSingleItem();
+        error.Code.ShouldBe(ErrorCodes.InstanceEnumMismatch);
+        error.Path.ShouldBeEmpty();
+        error.Message.ShouldContain("enum");
     }
 
     [Fact]
@@ -290,7 +290,7 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
 
     [Fact]
@@ -305,10 +305,10 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeFalse();
-        var error = result.Errors.Should().ContainSingle().Subject;
-        error.Code.Should().Be(ErrorCodes.InstanceConstMismatch);
-        error.Path.Should().BeEmpty();
+        result.IsValid.ShouldBeFalse();
+        var error = result.Errors.ShouldHaveSingleItem();
+        error.Code.ShouldBe(ErrorCodes.InstanceConstMismatch);
+        error.Path.ShouldBeEmpty();
     }
 
     [Fact]
@@ -327,7 +327,7 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
 
     [Fact]
@@ -352,7 +352,7 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
 
     [Fact]
@@ -371,7 +371,7 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
 
     [Fact]
@@ -390,11 +390,11 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeFalse();
-        var error = result.Errors.Should().ContainSingle().Subject;
-        error.Code.Should().Be(ErrorCodes.InstanceAnyOfNoneMatched);
-        error.Path.Should().BeEmpty();
-        error.Message.Should().Contain("anyOf");
+        result.IsValid.ShouldBeFalse();
+        var error = result.Errors.ShouldHaveSingleItem();
+        error.Code.ShouldBe(ErrorCodes.InstanceAnyOfNoneMatched);
+        error.Path.ShouldBeEmpty();
+        error.Message.ShouldContain("anyOf");
     }
 
     [Fact]
@@ -426,10 +426,10 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeFalse();
-        var error = result.Errors.Should().ContainSingle().Subject;
-        error.Code.Should().Be(ErrorCodes.InstanceStringExpected);
-        error.Path.Should().Be("/address/city");
+        result.IsValid.ShouldBeFalse();
+        var error = result.Errors.ShouldHaveSingleItem();
+        error.Code.ShouldBe(ErrorCodes.InstanceStringExpected);
+        error.Path.ShouldBe("/address/city");
     }
 
     [Fact]
@@ -445,10 +445,10 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeFalse();
-        var error = result.Errors.Should().ContainSingle().Subject;
-        error.Code.Should().Be(ErrorCodes.InstanceStringNotExpected);
-        error.Path.Should().Be("/2"); // Third item (0-indexed)
+        result.IsValid.ShouldBeFalse();
+        var error = result.Errors.ShouldHaveSingleItem();
+        error.Code.ShouldBe(ErrorCodes.InstanceStringNotExpected);
+        error.Path.ShouldBe("/2"); // Third item (0-indexed)
     }
 
     [Fact]
@@ -467,7 +467,7 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
 
     [Fact]
@@ -482,7 +482,7 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
 
     [Fact]
@@ -497,10 +497,10 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeFalse();
-        var error = result.Errors.Should().ContainSingle().Subject;
-        error.Code.Should().Be(ErrorCodes.InstanceNotMatched);
-        error.Path.Should().BeEmpty();
+        result.IsValid.ShouldBeFalse();
+        var error = result.Errors.ShouldHaveSingleItem();
+        error.Code.ShouldBe(ErrorCodes.InstanceNotMatched);
+        error.Path.ShouldBeEmpty();
     }
 
     [Fact]
@@ -534,10 +534,10 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeFalse();
-        var error = result.Errors.Should().ContainSingle().Subject;
-        error.Code.Should().Be(ErrorCodes.InstanceNumberMinimum);
-        error.Path.Should().Be("/discount");
+        result.IsValid.ShouldBeFalse();
+        var error = result.Errors.ShouldHaveSingleItem();
+        error.Code.ShouldBe(ErrorCodes.InstanceNumberMinimum);
+        error.Path.ShouldBe("/discount");
     }
 
     [Fact]
@@ -548,7 +548,7 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
 
     [Fact]
@@ -559,10 +559,10 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeFalse();
-        var error = result.Errors.Should().ContainSingle().Subject;
-        error.Code.Should().Be(ErrorCodes.InstanceDateFormatInvalid);
-        error.Path.Should().BeEmpty();
+        result.IsValid.ShouldBeFalse();
+        var error = result.Errors.ShouldHaveSingleItem();
+        error.Code.ShouldBe(ErrorCodes.InstanceDateFormatInvalid);
+        error.Path.ShouldBeEmpty();
     }
 
     [Fact]
@@ -573,7 +573,7 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
 
     [Fact]
@@ -584,7 +584,7 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
 
     [Fact]
@@ -595,10 +595,10 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeFalse();
-        var error = result.Errors.Should().ContainSingle().Subject;
-        error.Code.Should().Be(ErrorCodes.InstanceBinaryEncodingInvalid);
-        error.Path.Should().BeEmpty();
+        result.IsValid.ShouldBeFalse();
+        var error = result.Errors.ShouldHaveSingleItem();
+        error.Code.ShouldBe(ErrorCodes.InstanceBinaryEncodingInvalid);
+        error.Path.ShouldBeEmpty();
     }
 
     [Fact]
@@ -609,7 +609,7 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
 
     [Fact]
@@ -620,10 +620,10 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeFalse();
-        var error = result.Errors.Should().ContainSingle().Subject;
-        error.Code.Should().Be(ErrorCodes.InstanceSchemaFalse);
-        error.Path.Should().BeEmpty();
+        result.IsValid.ShouldBeFalse();
+        var error = result.Errors.ShouldHaveSingleItem();
+        error.Code.ShouldBe(ErrorCodes.InstanceSchemaFalse);
+        error.Path.ShouldBeEmpty();
     }
 
     [Fact]
@@ -639,7 +639,7 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
 
     [Fact]
@@ -655,11 +655,11 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeFalse();
-        var error = result.Errors.Should().ContainSingle().Subject;
-        error.Code.Should().Be(ErrorCodes.InstanceSetDuplicate);
-        error.Path.Should().BeEmpty();
-        error.Message.Should().Contain("duplicate");
+        result.IsValid.ShouldBeFalse();
+        var error = result.Errors.ShouldHaveSingleItem();
+        error.Code.ShouldBe(ErrorCodes.InstanceSetDuplicate);
+        error.Path.ShouldBeEmpty();
+        error.Message.ShouldContain("duplicate");
     }
 
     [Fact]
@@ -680,7 +680,7 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
 
     [Fact]
@@ -701,7 +701,7 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
 
     [Fact]
@@ -725,11 +725,11 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeFalse();
-        var error = result.Errors.Should().ContainSingle().Subject;
-        error.Code.Should().Be(ErrorCodes.InstanceAdditionalPropertyNotAllowed);
-        error.Path.Should().BeEmpty();
-        error.Message.Should().Contain("Additional property");
+        result.IsValid.ShouldBeFalse();
+        var error = result.Errors.ShouldHaveSingleItem();
+        error.Code.ShouldBe(ErrorCodes.InstanceAdditionalPropertyNotAllowed);
+        error.Path.ShouldBeEmpty();
+        error.Message.ShouldContain("Additional property");
     }
 
     [Fact]
@@ -745,7 +745,7 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
 
     [Fact]
@@ -761,11 +761,11 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeFalse();
-        var error = result.Errors.Should().ContainSingle().Subject;
-        error.Code.Should().Be(ErrorCodes.InstanceNumberMultipleOf);
-        error.Path.Should().BeEmpty();
-        error.Message.Should().Contain("multiple");
+        result.IsValid.ShouldBeFalse();
+        var error = result.Errors.ShouldHaveSingleItem();
+        error.Code.ShouldBe(ErrorCodes.InstanceNumberMultipleOf);
+        error.Path.ShouldBeEmpty();
+        error.Message.ShouldContain("multiple");
     }
 
     [Fact]
@@ -776,7 +776,7 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
 
     [Fact]
@@ -787,7 +787,7 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
 
     [Fact]
@@ -798,7 +798,7 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
 
     [Fact]
@@ -809,10 +809,10 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeFalse();
-        var error = result.Errors.Should().ContainSingle().Subject;
-        error.Code.Should().Be(ErrorCodes.InstanceJsonpointerFormatInvalid);
-        error.Path.Should().BeEmpty();
+        result.IsValid.ShouldBeFalse();
+        var error = result.Errors.ShouldHaveSingleItem();
+        error.Code.ShouldBe(ErrorCodes.InstanceJsonpointerFormatInvalid);
+        error.Path.ShouldBeEmpty();
     }
 
     [Fact]
@@ -823,7 +823,7 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
 
     [Fact]
@@ -834,11 +834,11 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeFalse();
-        var error = result.Errors.Should().ContainSingle().Subject;
-        error.Code.Should().Be(ErrorCodes.InstanceTimeFormatInvalid);
-        error.Path.Should().BeEmpty();
-        error.Message.Should().Contain("time");
+        result.IsValid.ShouldBeFalse();
+        var error = result.Errors.ShouldHaveSingleItem();
+        error.Code.ShouldBe(ErrorCodes.InstanceTimeFormatInvalid);
+        error.Path.ShouldBeEmpty();
+        error.Message.ShouldContain("time");
     }
 
     [Fact]
@@ -867,10 +867,10 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeFalse();
-        var error = result.Errors.Should().ContainSingle().Subject;
-        error.Code.Should().Be(ErrorCodes.InstanceTimeFormatInvalid);
-        error.Path.Should().Be("/monday/open");
+        result.IsValid.ShouldBeFalse();
+        var error = result.Errors.ShouldHaveSingleItem();
+        error.Code.ShouldBe(ErrorCodes.InstanceTimeFormatInvalid);
+        error.Path.ShouldBe("/monday/open");
     }
 
     [Fact]
@@ -885,12 +885,12 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeFalse();
-        var error = result.Errors.Should().ContainSingle().Subject;
-        error.Path.Should().Be("/name");
-        error.Location.IsKnown.Should().BeTrue();
-        error.Location.Line.Should().BeGreaterThan(0); // Line tracking is working
-        error.Location.Column.Should().BeGreaterThan(0);
+        result.IsValid.ShouldBeFalse();
+        var error = result.Errors.ShouldHaveSingleItem();
+        error.Path.ShouldBe("/name");
+        error.Location.IsKnown.ShouldBeTrue();
+        error.Location.Line.ShouldBeGreaterThan(0); // Line tracking is working
+        error.Location.Column.ShouldBeGreaterThan(0);
     }
 
     [Fact]
@@ -901,9 +901,9 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeFalse();
-        var error = result.Errors.Should().ContainSingle().Subject;
-        error.Location.IsKnown.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
+        var error = result.Errors.ShouldHaveSingleItem();
+        error.Location.IsKnown.ShouldBeFalse();
     }
 
     #region Multiple Errors Collection Tests
@@ -929,9 +929,9 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeFalse();
-        result.Errors.Should().HaveCount(3, "all three missing properties should be reported");
-        result.Errors.Should().AllSatisfy(e => e.Code.Should().Be(ErrorCodes.InstanceRequiredPropertyMissing));
+        result.IsValid.ShouldBeFalse();
+        result.Errors.Count.ShouldBe(3, "all three missing properties should be reported");
+        foreach (var e in result.Errors) { e.Code.ShouldBe(ErrorCodes.InstanceRequiredPropertyMissing); }
     }
 
     [Fact]
@@ -964,9 +964,9 @@ public class InstanceValidatorTests
 
         var result = validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
         // With StopOnFirstError, it stops after the first validation step that produces an error
-        result.Errors.Should().HaveCountLessOrEqualTo(1, "should stop after first error step");
+        result.Errors.Count.ShouldBeLessThanOrEqualTo(1, "should stop after first error step");
     }
 
     [Fact]
@@ -983,9 +983,9 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeFalse();
-        result.Errors.Should().HaveCount(3, "all three invalid items should be reported");
-        result.Errors.Select(e => e.Path).Should().BeEquivalentTo(new[] { "/0", "/1", "/2" });
+        result.IsValid.ShouldBeFalse();
+        result.Errors.Count.ShouldBe(3, "all three invalid items should be reported");
+        result.Errors.Select(e => e.Path).ShouldBe(new[] { "/0", "/1", "/2" });
     }
 
     [Fact]
@@ -1018,9 +1018,9 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeFalse();
-        result.Errors.Should().HaveCount(2, "both missing nested properties should be reported");
-        result.Errors.Should().AllSatisfy(e => e.Path.Should().StartWith("/person"));
+        result.IsValid.ShouldBeFalse();
+        result.Errors.Count.ShouldBe(2, "both missing nested properties should be reported");
+        foreach (var e in result.Errors) { e.Path.ShouldStartWith("/person"); }
     }
 
     [Fact]
@@ -1054,9 +1054,9 @@ public class InstanceValidatorTests
 
         var result = _validator.Validate(instance, schema);
 
-        result.IsValid.Should().BeFalse();
-        result.Errors.Should().HaveCountGreaterOrEqualTo(2, "at least type error and missing property should be reported");
-        result.Errors.Select(e => e.Code).Should().Contain(ErrorCodes.InstanceRequiredPropertyMissing);
+        result.IsValid.ShouldBeFalse();
+        result.Errors.Count.ShouldBeGreaterThanOrEqualTo(2, "at least type error and missing property should be reported");
+        result.Errors.Select(e => e.Code).ShouldContain(ErrorCodes.InstanceRequiredPropertyMissing);
     }
 
     #endregion

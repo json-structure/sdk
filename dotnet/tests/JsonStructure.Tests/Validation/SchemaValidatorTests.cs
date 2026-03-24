@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 using System.Text.Json.Nodes;
-using FluentAssertions;
+using Shouldly;
 using JsonStructure.Validation;
 using Xunit;
 
@@ -35,8 +35,8 @@ public class SchemaValidatorTests
 
         var result = _validator.Validate(schema);
 
-        result.IsValid.Should().BeTrue();
-        result.Errors.Should().BeEmpty();
+        result.IsValid.ShouldBeTrue();
+        result.Errors.ShouldBeEmpty();
     }
 
     [Fact]
@@ -51,11 +51,11 @@ public class SchemaValidatorTests
 
         var result = _validator.Validate(schema);
 
-        result.IsValid.Should().BeFalse();
-        var error = result.Errors.Should().ContainSingle().Subject;
-        error.Code.Should().Be(ErrorCodes.SchemaTypeInvalid);
-        error.Path.Should().Be("/type");
-        error.Message.Should().Contain("Invalid type");
+        result.IsValid.ShouldBeFalse();
+        var error = result.Errors.ShouldHaveSingleItem();
+        error.Code.ShouldBe(ErrorCodes.SchemaTypeInvalid);
+        error.Path.ShouldBe("/type");
+        error.Message.ShouldContain("Invalid type");
     }
 
     [Fact]
@@ -64,8 +64,8 @@ public class SchemaValidatorTests
         var trueSchema = JsonValue.Create(true);
         var falseSchema = JsonValue.Create(false);
 
-        _validator.Validate(trueSchema).IsValid.Should().BeTrue();
-        _validator.Validate(falseSchema).IsValid.Should().BeTrue();
+        _validator.Validate(trueSchema).IsValid.ShouldBeTrue();
+        _validator.Validate(falseSchema).IsValid.ShouldBeTrue();
     }
 
     [Fact]
@@ -73,10 +73,10 @@ public class SchemaValidatorTests
     {
         var result = _validator.Validate((JsonNode?)null);
 
-        result.IsValid.Should().BeFalse();
-        var error = result.Errors.Should().ContainSingle().Subject;
-        error.Code.Should().Be(ErrorCodes.SchemaNull);
-        error.Message.Should().Contain("cannot be null");
+        result.IsValid.ShouldBeFalse();
+        var error = result.Errors.ShouldHaveSingleItem();
+        error.Code.ShouldBe(ErrorCodes.SchemaNull);
+        error.Message.ShouldContain("cannot be null");
     }
 
     [Fact]
@@ -94,7 +94,7 @@ public class SchemaValidatorTests
 
         var result = _validator.Validate(schema);
 
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
 
     [Fact]
@@ -111,11 +111,11 @@ public class SchemaValidatorTests
 
         var result = _validator.Validate(schema);
 
-        result.IsValid.Should().BeFalse();
-        var error = result.Errors.Should().ContainSingle().Subject;
-        error.Code.Should().Be(ErrorCodes.SchemaIntegerConstraintInvalid);
-        error.Path.Should().Be("/minItems");
-        error.Message.Should().Contain("non-negative");
+        result.IsValid.ShouldBeFalse();
+        var error = result.Errors.ShouldHaveSingleItem();
+        error.Code.ShouldBe(ErrorCodes.SchemaIntegerConstraintInvalid);
+        error.Path.ShouldBe("/minItems");
+        error.Message.ShouldContain("non-negative");
     }
 
     [Fact]
@@ -131,11 +131,11 @@ public class SchemaValidatorTests
 
         var result = _validator.Validate(schema);
 
-        result.IsValid.Should().BeFalse();
-        var error = result.Errors.Should().ContainSingle().Subject;
-        error.Code.Should().Be(ErrorCodes.SchemaPatternInvalid);
-        error.Path.Should().Be("/pattern");
-        error.Message.Should().Contain("regular expression");
+        result.IsValid.ShouldBeFalse();
+        var error = result.Errors.ShouldHaveSingleItem();
+        error.Code.ShouldBe(ErrorCodes.SchemaPatternInvalid);
+        error.Path.ShouldBe("/pattern");
+        error.Message.ShouldContain("regular expression");
     }
 
     [Fact]
@@ -161,7 +161,7 @@ public class SchemaValidatorTests
 
         var result = _validator.Validate(schema);
 
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
 
     [Fact]
@@ -171,7 +171,7 @@ public class SchemaValidatorTests
         {
             var schema = new JsonObject { ["$id"] = "urn:example:test-schema", ["name"] = "TestType", ["type"] = type };
             var result = _validator.Validate(schema);
-            result.IsValid.Should().BeTrue($"Type '{type}' should be valid");
+            result.IsValid.ShouldBeTrue($"Type '{type}' should be valid");
         }
     }
 
@@ -208,7 +208,7 @@ public class SchemaValidatorTests
             }
             
             var result = _validator.Validate(schema);
-            result.IsValid.Should().BeTrue($"Type '{type}' should be valid");
+            result.IsValid.ShouldBeTrue($"Type '{type}' should be valid");
         }
     }
 
@@ -227,7 +227,7 @@ public class SchemaValidatorTests
 
         var result = _validator.Validate(schema);
 
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
 
     [Fact]
@@ -241,11 +241,11 @@ public class SchemaValidatorTests
 
         var result = _validator.Validate(schema);
 
-        result.IsValid.Should().BeFalse();
-        var error = result.Errors.Should().ContainSingle().Subject;
-        error.Code.Should().Be(ErrorCodes.SchemaCompositionEmpty);
-        error.Path.Should().Be("/allOf");
-        error.Message.Should().Contain("cannot be empty");
+        result.IsValid.ShouldBeFalse();
+        var error = result.Errors.ShouldHaveSingleItem();
+        error.Code.ShouldBe(ErrorCodes.SchemaCompositionEmpty);
+        error.Path.ShouldBe("/allOf");
+        error.Message.ShouldContain("cannot be empty");
     }
 
     [Fact]
@@ -266,7 +266,7 @@ public class SchemaValidatorTests
 
         var result = _validator.Validate(schema);
 
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
 
     [Fact]
@@ -282,7 +282,7 @@ public class SchemaValidatorTests
 
         var result = _validator.Validate(schema);
 
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
 
     [Fact]
@@ -305,7 +305,7 @@ public class SchemaValidatorTests
 
         var result = _validator.Validate(schema);
 
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
 
     [Fact]
@@ -321,7 +321,7 @@ public class SchemaValidatorTests
 
         var result = _validator.Validate(schema);
 
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
 
     [Fact]
@@ -337,11 +337,11 @@ public class SchemaValidatorTests
 
         var result = _validator.Validate(schema);
 
-        result.IsValid.Should().BeFalse();
-        var error = result.Errors.Should().ContainSingle().Subject;
-        error.Code.Should().Be(ErrorCodes.SchemaEnumEmpty);
-        error.Path.Should().Be("/enum");
-        error.Message.Should().Contain("cannot be empty");
+        result.IsValid.ShouldBeFalse();
+        var error = result.Errors.ShouldHaveSingleItem();
+        error.Code.ShouldBe(ErrorCodes.SchemaEnumEmpty);
+        error.Path.ShouldBe("/enum");
+        error.Message.ShouldContain("cannot be empty");
     }
 
     [Fact]
@@ -359,7 +359,7 @@ public class SchemaValidatorTests
 
         var result = _validator.Validate(schema);
 
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
 
     [Fact]
@@ -375,11 +375,11 @@ public class SchemaValidatorTests
 
         var result = _validator.Validate(schema);
 
-        result.IsValid.Should().BeFalse();
-        var error = result.Errors.Should().ContainSingle().Subject;
-        error.Code.Should().Be(ErrorCodes.SchemaPositiveNumberConstraintInvalid);
-        error.Path.Should().Be("/multipleOf");
-        error.Message.Should().Contain("positive");
+        result.IsValid.ShouldBeFalse();
+        var error = result.Errors.ShouldHaveSingleItem();
+        error.Code.ShouldBe(ErrorCodes.SchemaPositiveNumberConstraintInvalid);
+        error.Path.ShouldBe("/multipleOf");
+        error.Message.ShouldContain("positive");
     }
 
     #region Multiple Errors Collection Tests
@@ -400,8 +400,8 @@ public class SchemaValidatorTests
 
         var result = _validator.Validate(schema);
 
-        result.IsValid.Should().BeFalse();
-        result.Errors.Should().HaveCountGreaterOrEqualTo(2, "multiple schema errors should be collected");
+        result.IsValid.ShouldBeFalse();
+        result.Errors.Count.ShouldBeGreaterThanOrEqualTo(2, "multiple schema errors should be collected");
     }
 
     [Fact]
@@ -440,9 +440,9 @@ public class SchemaValidatorTests
 
         var result = validator.Validate(schema);
 
-        result.IsValid.Should().BeFalse();
+        result.IsValid.ShouldBeFalse();
         // With StopOnFirstError, it should stop after the first definition with an error
-        result.Errors.Should().HaveCountLessOrEqualTo(1, "should stop after first error step");
+        result.Errors.Count.ShouldBeLessThanOrEqualTo(1, "should stop after first error step");
     }
 
     [Fact]
@@ -476,8 +476,8 @@ public class SchemaValidatorTests
 
         var result = _validator.Validate(schema);
 
-        result.IsValid.Should().BeFalse();
-        result.Errors.Should().HaveCountGreaterOrEqualTo(3, "errors in all three properties should be collected");
+        result.IsValid.ShouldBeFalse();
+        result.Errors.Count.ShouldBeGreaterThanOrEqualTo(3, "errors in all three properties should be collected");
     }
 
     [Fact]
@@ -505,10 +505,10 @@ public class SchemaValidatorTests
 
         var result = _validator.Validate(schema);
 
-        result.IsValid.Should().BeFalse();
-        result.Errors.Should().HaveCountGreaterOrEqualTo(2, "errors in both definitions should be collected");
-        result.Errors.Select(e => e.Code).Should().Contain(ErrorCodes.SchemaArrayMissingItems);
-        result.Errors.Select(e => e.Code).Should().Contain(ErrorCodes.SchemaMapMissingValues);
+        result.IsValid.ShouldBeFalse();
+        result.Errors.Count.ShouldBeGreaterThanOrEqualTo(2, "errors in both definitions should be collected");
+        result.Errors.Select(e => e.Code).ShouldContain(ErrorCodes.SchemaArrayMissingItems);
+        result.Errors.Select(e => e.Code).ShouldContain(ErrorCodes.SchemaMapMissingValues);
     }
 
     #endregion
@@ -545,15 +545,15 @@ public class SchemaValidatorTests
         var result = _validator.Validate(schema);
 
         // Schema should still be valid (warnings don't fail validation)
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
         
         // But we should have warnings for the validation extension keywords
-        result.Warnings.Should().HaveCountGreaterOrEqualTo(4);
-        result.Warnings.Should().Contain(w => w.Code == ErrorCodes.SchemaExtensionKeywordNotEnabled);
-        result.Warnings.Should().Contain(w => w.Message.Contains("minLength"));
-        result.Warnings.Should().Contain(w => w.Message.Contains("pattern"));
-        result.Warnings.Should().Contain(w => w.Message.Contains("minimum"));
-        result.Warnings.Should().Contain(w => w.Message.Contains("maximum"));
+        result.Warnings.Count.ShouldBeGreaterThanOrEqualTo(4);
+        result.Warnings.ShouldContain(w => w.Code == ErrorCodes.SchemaExtensionKeywordNotEnabled);
+        result.Warnings.ShouldContain(w => w.Message.Contains("minLength"));
+        result.Warnings.ShouldContain(w => w.Message.Contains("pattern"));
+        result.Warnings.ShouldContain(w => w.Message.Contains("minimum"));
+        result.Warnings.ShouldContain(w => w.Message.Contains("maximum"));
     }
 
     [Fact]
@@ -586,8 +586,8 @@ public class SchemaValidatorTests
 
         var result = _validator.Validate(schema);
 
-        result.IsValid.Should().BeTrue();
-        result.Warnings.Should().BeEmpty();
+        result.IsValid.ShouldBeTrue();
+        result.Warnings.ShouldBeEmpty();
     }
 
     [Fact]
@@ -606,8 +606,8 @@ public class SchemaValidatorTests
 
         var result = _validator.Validate(schema);
 
-        result.IsValid.Should().BeTrue();
-        result.Warnings.Should().BeEmpty();
+        result.IsValid.ShouldBeTrue();
+        result.Warnings.ShouldBeEmpty();
     }
 
     [Fact]
@@ -631,8 +631,8 @@ public class SchemaValidatorTests
 
         var result = validator.Validate(schema);
 
-        result.IsValid.Should().BeTrue();
-        result.Warnings.Should().BeEmpty(); // Warnings disabled
+        result.IsValid.ShouldBeTrue();
+        result.Warnings.ShouldBeEmpty(); // Warnings disabled
     }
 
     [Fact]
@@ -651,11 +651,11 @@ public class SchemaValidatorTests
 
         var result = _validator.Validate(schema);
 
-        result.IsValid.Should().BeTrue();
-        result.Warnings.Should().HaveCountGreaterOrEqualTo(3);
-        result.Warnings.Should().Contain(w => w.Message.Contains("minItems"));
-        result.Warnings.Should().Contain(w => w.Message.Contains("maxItems"));
-        result.Warnings.Should().Contain(w => w.Message.Contains("uniqueItems"));
+        result.IsValid.ShouldBeTrue();
+        result.Warnings.Count.ShouldBeGreaterThanOrEqualTo(3);
+        result.Warnings.ShouldContain(w => w.Message.Contains("minItems"));
+        result.Warnings.ShouldContain(w => w.Message.Contains("maxItems"));
+        result.Warnings.ShouldContain(w => w.Message.Contains("uniqueItems"));
     }
 
     [Fact]
@@ -672,10 +672,10 @@ public class SchemaValidatorTests
 
         var result = _validator.Validate(schema);
 
-        result.IsValid.Should().BeTrue();
-        result.Warnings.Should().HaveCountGreaterOrEqualTo(2);
-        result.Warnings.Should().Contain(w => w.Message.Contains("minProperties"));
-        result.Warnings.Should().Contain(w => w.Message.Contains("maxProperties"));
+        result.IsValid.ShouldBeTrue();
+        result.Warnings.Count.ShouldBeGreaterThanOrEqualTo(2);
+        result.Warnings.ShouldContain(w => w.Message.Contains("minProperties"));
+        result.Warnings.ShouldContain(w => w.Message.Contains("maxProperties"));
     }
 
     [Fact]
@@ -691,9 +691,9 @@ public class SchemaValidatorTests
 
         var result = _validator.Validate(schema);
 
-        result.IsValid.Should().BeTrue();
-        result.Warnings.Should().ContainSingle();
-        result.Warnings[0].Message.Should().Contain("default");
+        result.IsValid.ShouldBeTrue();
+        result.Warnings.ShouldHaveSingleItem();
+        result.Warnings[0].Message.ShouldContain("default");
     }
 
     #endregion

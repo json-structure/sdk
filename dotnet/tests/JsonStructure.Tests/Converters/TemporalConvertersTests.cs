@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 using System.Text.Json;
-using FluentAssertions;
+using Shouldly;
 using JsonStructure.Converters;
 using Xunit;
 
@@ -29,7 +29,7 @@ public class TemporalConvertersTests
         var duration = TimeSpan.FromHours(1) + TimeSpan.FromMinutes(30) + TimeSpan.FromSeconds(45);
         var json = JsonSerializer.Serialize(duration, _options);
         // XmlConvert.ToString produces ISO 8601 format
-        json.Should().Contain("PT1H30M45S");
+        json.ShouldContain("PT1H30M45S");
     }
 
     [Fact]
@@ -37,7 +37,7 @@ public class TemporalConvertersTests
     {
         var json = "\"PT1H30M45S\"";
         var duration = JsonSerializer.Deserialize<TimeSpan>(json, _options);
-        duration.Should().Be(TimeSpan.FromHours(1) + TimeSpan.FromMinutes(30) + TimeSpan.FromSeconds(45));
+        duration.ShouldBe(TimeSpan.FromHours(1) + TimeSpan.FromMinutes(30) + TimeSpan.FromSeconds(45));
     }
 
     [Fact]
@@ -46,7 +46,7 @@ public class TemporalConvertersTests
         var duration = TimeSpan.FromDays(2) + TimeSpan.FromHours(5);
         var json = JsonSerializer.Serialize(duration, _options);
         var deserialized = JsonSerializer.Deserialize<TimeSpan>(json, _options);
-        deserialized.Should().Be(duration);
+        deserialized.ShouldBe(duration);
     }
 
     [Fact]
@@ -54,10 +54,10 @@ public class TemporalConvertersTests
     {
         TimeSpan? value = null;
         var json = JsonSerializer.Serialize(value, _options);
-        json.Should().Be("null");
+        json.ShouldBe("null");
 
         var deserialized = JsonSerializer.Deserialize<TimeSpan?>(json, _options);
-        deserialized.Should().BeNull();
+        deserialized.ShouldBeNull();
     }
 
     [Fact]
@@ -65,7 +65,7 @@ public class TemporalConvertersTests
     {
         var date = new DateOnly(2024, 6, 15);
         var json = JsonSerializer.Serialize(date, _options);
-        json.Should().Be("\"2024-06-15\"");
+        json.ShouldBe("\"2024-06-15\"");
     }
 
     [Fact]
@@ -73,7 +73,7 @@ public class TemporalConvertersTests
     {
         var json = "\"2024-06-15\"";
         var date = JsonSerializer.Deserialize<DateOnly>(json, _options);
-        date.Should().Be(new DateOnly(2024, 6, 15));
+        date.ShouldBe(new DateOnly(2024, 6, 15));
     }
 
     [Fact]
@@ -81,10 +81,10 @@ public class TemporalConvertersTests
     {
         DateOnly? value = null;
         var json = JsonSerializer.Serialize(value, _options);
-        json.Should().Be("null");
+        json.ShouldBe("null");
 
         var deserialized = JsonSerializer.Deserialize<DateOnly?>(json, _options);
-        deserialized.Should().BeNull();
+        deserialized.ShouldBeNull();
     }
 
     [Fact]
@@ -92,7 +92,7 @@ public class TemporalConvertersTests
     {
         var time = new TimeOnly(14, 30, 45, 123);
         var json = JsonSerializer.Serialize(time, _options);
-        json.Should().Contain("14:30:45");
+        json.ShouldContain("14:30:45");
     }
 
     [Fact]
@@ -100,9 +100,9 @@ public class TemporalConvertersTests
     {
         var json = "\"14:30:45\"";
         var time = JsonSerializer.Deserialize<TimeOnly>(json, _options);
-        time.Hour.Should().Be(14);
-        time.Minute.Should().Be(30);
-        time.Second.Should().Be(45);
+        time.Hour.ShouldBe(14);
+        time.Minute.ShouldBe(30);
+        time.Second.ShouldBe(45);
     }
 
     [Fact]
@@ -110,25 +110,25 @@ public class TemporalConvertersTests
     {
         TimeOnly? value = null;
         var json = JsonSerializer.Serialize(value, _options);
-        json.Should().Be("null");
+        json.ShouldBe("null");
 
         var deserialized = JsonSerializer.Deserialize<TimeOnly?>(json, _options);
-        deserialized.Should().BeNull();
+        deserialized.ShouldBeNull();
     }
 
     [Fact]
     public void DateOnlyConverter_ThrowsOnInvalidDate()
     {
         var json = "\"not-a-date\"";
-        var act = () => JsonSerializer.Deserialize<DateOnly>(json, _options);
-        act.Should().Throw<JsonException>();
+        Action act = () => JsonSerializer.Deserialize<DateOnly>(json, _options);
+        Should.Throw<JsonException>(act);
     }
 
     [Fact]
     public void DurationStringConverter_ThrowsOnEmptyString()
     {
         var json = "\"\"";
-        var act = () => JsonSerializer.Deserialize<TimeSpan>(json, _options);
-        act.Should().Throw<JsonException>();
+        Action act = () => JsonSerializer.Deserialize<TimeSpan>(json, _options);
+        Should.Throw<JsonException>(act);
     }
 }
