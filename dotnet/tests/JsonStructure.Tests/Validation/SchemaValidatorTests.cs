@@ -401,7 +401,7 @@ public class SchemaValidatorTests
         var result = _validator.Validate(schema);
 
         result.IsValid.Should().BeFalse();
-        result.Errors.Should().HaveCountGreaterOrEqualTo(2, "multiple schema errors should be collected");
+        result.Errors.Should().HaveCountGreaterThanOrEqualTo(2, "multiple schema errors should be collected");
     }
 
     [Fact]
@@ -442,7 +442,7 @@ public class SchemaValidatorTests
 
         result.IsValid.Should().BeFalse();
         // With StopOnFirstError, it should stop after the first definition with an error
-        result.Errors.Should().HaveCountLessOrEqualTo(1, "should stop after first error step");
+        result.Errors.Should().HaveCountLessThanOrEqualTo(1, "should stop after first error step");
     }
 
     [Fact]
@@ -477,7 +477,7 @@ public class SchemaValidatorTests
         var result = _validator.Validate(schema);
 
         result.IsValid.Should().BeFalse();
-        result.Errors.Should().HaveCountGreaterOrEqualTo(3, "errors in all three properties should be collected");
+        result.Errors.Should().HaveCountGreaterThanOrEqualTo(3, "errors in all three properties should be collected");
     }
 
     [Fact]
@@ -506,7 +506,7 @@ public class SchemaValidatorTests
         var result = _validator.Validate(schema);
 
         result.IsValid.Should().BeFalse();
-        result.Errors.Should().HaveCountGreaterOrEqualTo(2, "errors in both definitions should be collected");
+        result.Errors.Should().HaveCountGreaterThanOrEqualTo(2, "errors in both definitions should be collected");
         result.Errors.Select(e => e.Code).Should().Contain(ErrorCodes.SchemaArrayMissingItems);
         result.Errors.Select(e => e.Code).Should().Contain(ErrorCodes.SchemaMapMissingValues);
     }
@@ -548,7 +548,7 @@ public class SchemaValidatorTests
         result.IsValid.Should().BeTrue();
         
         // But we should have warnings for the validation extension keywords
-        result.Warnings.Should().HaveCountGreaterOrEqualTo(4);
+        result.Warnings.Should().HaveCountGreaterThanOrEqualTo(4);
         result.Warnings.Should().Contain(w => w.Code == ErrorCodes.SchemaExtensionKeywordNotEnabled);
         result.Warnings.Should().Contain(w => w.Message.Contains("minLength"));
         result.Warnings.Should().Contain(w => w.Message.Contains("pattern"));
@@ -652,7 +652,7 @@ public class SchemaValidatorTests
         var result = _validator.Validate(schema);
 
         result.IsValid.Should().BeTrue();
-        result.Warnings.Should().HaveCountGreaterOrEqualTo(3);
+        result.Warnings.Should().HaveCountGreaterThanOrEqualTo(3);
         result.Warnings.Should().Contain(w => w.Message.Contains("minItems"));
         result.Warnings.Should().Contain(w => w.Message.Contains("maxItems"));
         result.Warnings.Should().Contain(w => w.Message.Contains("uniqueItems"));
@@ -673,7 +673,7 @@ public class SchemaValidatorTests
         var result = _validator.Validate(schema);
 
         result.IsValid.Should().BeTrue();
-        result.Warnings.Should().HaveCountGreaterOrEqualTo(2);
+        result.Warnings.Should().HaveCountGreaterThanOrEqualTo(2);
         result.Warnings.Should().Contain(w => w.Message.Contains("minProperties"));
         result.Warnings.Should().Contain(w => w.Message.Contains("maxProperties"));
     }
