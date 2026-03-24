@@ -19,7 +19,7 @@ regex = "1.10"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1.6", features = ["v4", "serde"] }
 url = { version = "2.5", features = ["serde"] }
-base64 = "0.21"
+base64 = "0.22"
 indexmap = { version = "2.13", features = ["serde"] }
 clap = { version = "4.4", features = ["derive"], optional = true }
 
