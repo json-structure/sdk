@@ -97,7 +97,7 @@ jobs:
         run: cargo package --allow-dirty
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: rust-package
           path: rust/target/package/*.crate
