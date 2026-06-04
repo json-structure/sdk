@@ -247,12 +247,13 @@ class JSONStructureInstanceValidator:
                 backup = list(self.errors)
                 self.errors = []
                 self.validate_instance(instance, {"type": t}, path)
-                if not self.errors:
+                branch_errors = self.errors
+                self.errors = backup
+                if not branch_errors:
                     union_valid = True
                     break
                 else:
-                    union_errors.extend(self.errors)
-                self.errors = backup
+                    union_errors.extend(branch_errors)
             if not union_valid:
                 self.errors.append(f"Instance at {path} does not match any type in union: {union_errors}")
             return self.errors

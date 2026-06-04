@@ -185,14 +185,15 @@ class InstanceValidator
                 $backup = $this->errors;
                 $this->errors = [];
                 $this->validateInstance($instance, ['type' => $t], $path, $depth + 1);
-                if (count($this->errors) === 0) {
+                $branchErrors = $this->errors;
+                $this->errors = $backup;
+                if (count($branchErrors) === 0) {
                     $unionValid = true;
                     break;
                 }
-                foreach ($this->errors as $e) {
+                foreach ($branchErrors as $e) {
                     $unionErrors[] = (string) $e;
                 }
-                $this->errors = $backup;
             }
             if (!$unionValid) {
                 $this->addError("Instance at {$path} does not match any type in union: " . implode(', ', $unionErrors), $path);
