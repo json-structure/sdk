@@ -765,6 +765,35 @@ class InstanceValidatorTest extends TestCase
         $this->assertGreaterThan(0, count($errors));
     }
 
+    public function testUnionSuccessDoesNotWipeSiblingErrors(): void
+    {
+        $schema = [
+            '$id' => 'https://example.com/union-sibling.struct.json',
+            'name' => 'UnionSiblingErrorSchema',
+            'type' => 'object',
+            'properties' => [
+                'a' => ['type' => 'int64'],
+                'b' => ['type' => 'int64'],
+                'lat' => ['type' => ['double', 'null']],
+            ],
+            'required' => ['a', 'b'],
+        ];
+
+        $validator = new InstanceValidator($schema, extended: true);
+        $errors = $validator->validate(['a' => 1, 'b' => 2, 'lat' => 59.9]);
+        // a and b are numbers but int64 requires string representation
+        $this->assertGreaterThanOrEqual(2, count($errors));
+        $errorMessages = array_map(fn($e) => (string)$e, $errors);
+        $hasA = false;
+        $hasB = false;
+        foreach ($errorMessages as $msg) {
+            if (str_contains($msg, '#/a')) $hasA = true;
+            if (str_contains($msg, '#/b')) $hasB = true;
+        }
+        $this->assertTrue($hasA, 'Expected error for property a');
+        $this->assertTrue($hasB, 'Expected error for property b');
+    }
+
     public function testRefInType(): void
     {
         $schema = [

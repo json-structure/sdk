@@ -901,6 +901,28 @@ def test_union_invalid():
     errors = validator.validate_instance(True)
     assert any("does not match any type in union" in err for err in errors)
 
+
+def test_union_success_does_not_wipe_sibling_errors():
+    """Regression: a successful union branch must not discard errors from sibling properties."""
+    schema = {
+        "$schema": "https://json-structure.org/meta/extended/v0/#",
+        "$id": "https://test.example.com/schema/unionSiblingErrors",
+        "name": "unionSiblingErrorSchema",
+        "type": "object",
+        "properties": {
+            "a": {"type": "int64"},
+            "b": {"type": "int64"},
+            "lat": {"type": ["double", "null"]}
+        },
+        "required": ["a", "b"]
+    }
+    validator = JSONStructureInstanceValidator(schema, extended=True)
+    errors = validator.validate_instance({"a": 1, "b": 2, "lat": 59.9})
+    # a and b are numbers but int64 requires string representation
+    assert len(errors) >= 2
+    assert any("#/a" in err for err in errors)
+    assert any("#/b" in err for err in errors)
+
 # -------------------------------------------------------------------
 # const and enum Tests
 # -------------------------------------------------------------------
