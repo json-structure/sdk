@@ -26,7 +26,7 @@ WriteMakefile(
             repository => {
                 type => 'git',
                 url  => 'https://github.com/json-structure/sdk.git',
-                web  => 'https://github.com/json-structure/sdk/tree/main/perl',
+                web  => 'https://github.com/json-structure/sdk/tree/master/perl',
             },
             bugtracker => {
                 web => 'https://github.com/json-structure/sdk/issues',

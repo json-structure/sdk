@@ -104,7 +104,7 @@ Remote schemas are cached for improved performance:
 ## Related
 
 - [JSON Structure Specification](https://json-structure.org)
-- [JSON Structure SDK (TypeScript)](https://github.com/json-structure/sdk/tree/main/typescript)
+- [JSON Structure SDK (TypeScript)](https://github.com/json-structure/sdk/tree/master/typescript)
 
 ## License
 
