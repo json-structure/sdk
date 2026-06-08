@@ -1936,11 +1936,11 @@ impl SchemaValidator {
             if ref_str.starts_with("#/definitions/") {
                 if let Some(resolved) = self.resolve_ref(&ref_str, root_schema) {
                     let resolved_type = resolved.get("type").and_then(Value::as_str);
-                    if resolved_type.is_some() && !matches!(resolved_type, Some("object" | "tuple")) {
+                    if resolved_type.is_some() && !matches!(resolved_type, Some("object" | "tuple" | "map" | "array" | "set" | "choice")) {
                         result.add_error(ValidationError::schema_error(
                             SchemaErrorCode::SchemaConstraintTypeMismatch,
                             format!(
-                                "$extends target '{}' must resolve to an object or tuple type",
+                                "$extends target '{}' must not resolve to a primitive type",
                                 ref_str
                             ),
                             &ref_path,
@@ -2541,7 +2541,7 @@ mod tests {
         assert!(result.all_errors().iter().any(|err| {
             err.code == SchemaErrorCode::SchemaConstraintTypeMismatch.as_str()
                 && err.message
-                    == "$extends target '#/definitions/Base' must resolve to an object or tuple type"
+                    == "$extends target '#/definitions/Base' must not resolve to a primitive type"
         }));
     }
 

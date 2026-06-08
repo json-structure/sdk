@@ -1425,12 +1425,16 @@ sub _validate_extends {
         || (   defined $target->{type}
             && !ref( $target->{type} )
             && $target->{type} ne 'object'
-            && $target->{type} ne 'tuple' )
+            && $target->{type} ne 'tuple'
+            && $target->{type} ne 'map'
+            && $target->{type} ne 'array'
+            && $target->{type} ne 'set'
+            && $target->{type} ne 'choice' )
       )
     {
         $self->_add_error(
             SCHEMA_CONSTRAINT_TYPE_MISMATCH,
-            "\$extends target '$extends' must resolve to an object or tuple type",
+            "\$extends target '$extends' must not resolve to a primitive type",
             "$path/\$extends"
         );
     }

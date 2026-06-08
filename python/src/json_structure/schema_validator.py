@@ -1369,9 +1369,9 @@ class JSONStructureSchemaCoreValidator:
             resolved = self._resolve_json_pointer(ref)
             if resolved is None:
                 self._err(f"$extends reference '{ref}' not found.", ref_path, ErrorCodes.SCHEMA_EXTENDS_NOT_FOUND)
-            elif not isinstance(resolved, dict) or ("type" in resolved and resolved.get("type") not in {"object", "tuple"}):
+            elif not isinstance(resolved, dict) or ("type" in resolved and resolved.get("type") not in {"object", "tuple", "map", "array", "set", "choice"}):
                 self._err(
-                    f"$extends target '{ref}' must resolve to an object or tuple type",
+                    f"$extends target '{ref}' must not resolve to a primitive type",
                     ref_path,
                     ErrorCodes.SCHEMA_CONSTRAINT_TYPE_MISMATCH
                 )

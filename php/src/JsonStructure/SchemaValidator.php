@@ -1217,8 +1217,8 @@ class SchemaValidator
             $resolved = $this->resolveJsonPointer($ref);
             if ($resolved === null) {
                 $this->addError("\$extends reference '{$ref}' not found.", $refPath, ErrorCodes::SCHEMA_EXTENDS_NOT_FOUND);
-            } elseif (!is_array($resolved) || (isset($resolved['type']) && is_string($resolved['type']) && !in_array($resolved['type'], ['object', 'tuple'], true))) {
-                $this->addError("\$extends target '{$ref}' must resolve to an object or tuple type", $refPath, ErrorCodes::SCHEMA_CONSTRAINT_TYPE_MISMATCH);
+            } elseif (!is_array($resolved) || (isset($resolved['type']) && is_string($resolved['type']) && !in_array($resolved['type'], ['object', 'tuple', 'map', 'array', 'set', 'choice'], true))) {
+                $this->addError("\$extends target '{$ref}' must not resolve to a primitive type", $refPath, ErrorCodes::SCHEMA_CONSTRAINT_TYPE_MISMATCH);
             } elseif (isset($resolved['$extends'])) {
                 // Recursively validate the extended schema's $extends
                 $this->validateExtendsKeyword($resolved['$extends'], $refPath);

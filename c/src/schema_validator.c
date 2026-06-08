@@ -1551,9 +1551,11 @@ static bool validate_extends_keyword(validate_context_t* ctx, const cJSON* exten
 
         const cJSON* type = cJSON_GetObjectItemCaseSensitive(target, "type");
         if (cJSON_IsString(type) &&
-            strcmp(type->valuestring, "object") != 0 && strcmp(type->valuestring, "tuple") != 0) {
+            strcmp(type->valuestring, "object") != 0 && strcmp(type->valuestring, "tuple") != 0 &&
+            strcmp(type->valuestring, "map") != 0 && strcmp(type->valuestring, "array") != 0 &&
+            strcmp(type->valuestring, "set") != 0 && strcmp(type->valuestring, "choice") != 0) {
             char msg[256];
-            snprintf(msg, sizeof(msg), "$extends target '%s' must resolve to an object or tuple type", extends_node->valuestring);
+            snprintf(msg, sizeof(msg), "$extends target '%s' must not resolve to a primitive type", extends_node->valuestring);
             add_error(ctx, JS_SCHEMA_CONSTRAINT_TYPE_MISMATCH, msg);
             valid = false;
         }

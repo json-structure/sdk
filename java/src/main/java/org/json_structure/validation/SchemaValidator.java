@@ -799,9 +799,9 @@ public final class SchemaValidator {
         } else {
             JsonNode baseType = baseSchema.get("type");
             String baseTypeStr = baseType != null && baseType.isTextual() ? baseType.asText() : null;
-            if (baseTypeStr != null && !"object".equals(baseTypeStr) && !"tuple".equals(baseTypeStr)) {
+            if (baseTypeStr != null && !"object".equals(baseTypeStr) && !"tuple".equals(baseTypeStr) && !"map".equals(baseTypeStr) && !"array".equals(baseTypeStr) && !"set".equals(baseTypeStr) && !"choice".equals(baseTypeStr)) {
                 addError(result, ErrorCodes.SCHEMA_CONSTRAINT_TYPE_MISMATCH,
-                        "$extends target '" + refStr + "' must resolve to an object or tuple type", refPath);
+                        "$extends target '" + refStr + "' must not resolve to a primitive type", refPath);
             } else if (baseSchema.isObject() && baseSchema.has("$extends")) {
                 validateExtendsKeyword(baseSchema.get("$extends"), refStr, result);
             }

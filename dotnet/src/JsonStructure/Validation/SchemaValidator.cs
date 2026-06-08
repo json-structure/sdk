@@ -878,7 +878,7 @@ public sealed class SchemaValidator
             }
             else if (resolved is not JsonObject resolvedObj)
             {
-                AddError(result, ErrorCodes.SchemaConstraintTypeMismatch, $"$extends target '{refStr}' must resolve to an object or tuple type", refPath);
+                AddError(result, ErrorCodes.SchemaConstraintTypeMismatch, $"$extends target '{refStr}' must not resolve to a primitive type", refPath);
             }
             else
             {
@@ -886,9 +886,9 @@ public sealed class SchemaValidator
                     ? GetTypeString(resolvedTypeValue)
                     : null;
 
-                if (resolvedType is not null and not ("object" or "tuple"))
+                if (resolvedType is not null and not ("object" or "tuple" or "map" or "array" or "set" or "choice"))
                 {
-                    AddError(result, ErrorCodes.SchemaConstraintTypeMismatch, $"$extends target '{refStr}' must resolve to an object or tuple type", refPath);
+                    AddError(result, ErrorCodes.SchemaConstraintTypeMismatch, $"$extends target '{refStr}' must not resolve to a primitive type", refPath);
                 }
                 else if (resolvedObj.TryGetPropertyValue("$extends", out var nestedExtends))
                 {

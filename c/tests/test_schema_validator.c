@@ -386,7 +386,7 @@ TEST(invalid_extends_target_type) {
     js_result_init(&result);
 
     bool valid = js_validate_schema(schema, &result);
-    int ok = !valid && result_has_message(&result, "$extends target '#/definitions/Base' must resolve to an object or tuple type");
+    int ok = !valid && result_has_message(&result, "$extends target '#/definitions/Base' must not resolve to a primitive type");
 
     js_result_cleanup(&result);
     return ok ? 0 : 1;

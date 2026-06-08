@@ -657,7 +657,7 @@ class SchemaValidatorTests {
         assertThat(result.isValid()).isFalse();
         assertThat(result.getErrors()).anyMatch(e ->
             ErrorCodes.SCHEMA_CONSTRAINT_TYPE_MISMATCH.equals(e.getCode()) &&
-                e.getMessage().equals("$extends target '#/definitions/Base' must resolve to an object or tuple type"));
+                e.getMessage().equals("$extends target '#/definitions/Base' must not resolve to a primitive type"));
     }
 
     @Test

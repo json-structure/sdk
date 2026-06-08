@@ -276,7 +276,7 @@ RSpec.describe JsonStructure::SchemaValidator do
       expect(result.errors).to include(
         have_attributes(
           code: 'SCHEMA_CONSTRAINT_TYPE_MISMATCH',
-          message: "$extends target '#/definitions/Base' must resolve to an object or tuple type"
+          message: "$extends target '#/definitions/Base' must not resolve to a primitive type"
         )
       )
     end

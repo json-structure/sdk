@@ -1645,7 +1645,7 @@ def test_extends_target_must_be_object_or_tuple():
     }
     errors = validate_json_structure_schema_core(schema, json.dumps(schema))
     assert any(err.code == error_codes.SCHEMA_CONSTRAINT_TYPE_MISMATCH for err in errors)
-    assert any("$extends target '#/definitions/Base' must resolve to an object or tuple type" == err.message for err in errors)
+    assert any("$extends target '#/definitions/Base' must not resolve to a primitive type" == err.message for err in errors)
 
 
 def test_tuple_ref_target_not_found():

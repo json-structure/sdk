@@ -983,8 +983,9 @@ private final class ValidationEngine {
             
             if let resolved = resolveRef(ref) {
                 let resolvedType = resolved["type"] as? String
-                if resolvedType != nil && resolvedType != "object" && resolvedType != "tuple" {
-                    addError(refPath, "$extends target '\(ref)' must resolve to an object or tuple type", schemaConstraintTypeMismatch)
+                let allowedExtendTypes: Set<String> = ["object", "tuple", "map", "array", "set", "choice"]
+                if resolvedType != nil && !allowedExtendTypes.contains(resolvedType!) {
+                    addError(refPath, "$extends target '\(ref)' must not resolve to a primitive type", schemaConstraintTypeMismatch)
                 } else if let extendsVal = resolved["$extends"] {
                     validateExtends(extendsVal, refPath)
                 }

@@ -992,8 +992,9 @@ export class SchemaValidator {
       if (resolved === null) {
         this.addError(context, refPath, `$extends reference '${ref}' not found`, ErrorCodes.SCHEMA_EXTENDS_NOT_FOUND);
       } else {
-        if ('type' in resolved && resolved.type !== 'object' && resolved.type !== 'tuple') {
-          this.addError(context, refPath, `$extends target '${ref}' must resolve to an object or tuple type`, ErrorCodes.SCHEMA_CONSTRAINT_TYPE_MISMATCH);
+        const PRIMITIVE_TYPES_FOR_EXTENDS = new Set(['string', 'boolean', 'null', 'integer', 'int8', 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32', 'uint64', 'float', 'double', 'decimal', 'binary', 'uri', 'uri-template', 'datetime', 'date', 'time', 'duration', 'uuid', 'ipv4', 'ipv6']);
+        if ('type' in resolved && typeof resolved.type === 'string' && PRIMITIVE_TYPES_FOR_EXTENDS.has(resolved.type)) {
+          this.addError(context, refPath, `$extends target '${ref}' must not resolve to a primitive type`, ErrorCodes.SCHEMA_CONSTRAINT_TYPE_MISMATCH);
         }
 
         // Recursively validate the extended schema (which may have its own $extends)
