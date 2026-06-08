@@ -90,7 +90,16 @@ impl SchemaValidator {
 
         match serde_json::from_str::<Value>(schema_json) {
             Ok(schema) => {
-                self.validate_schema_internal(&schema, &schema, &locator, &mut result, "", true, &mut HashSet::new(), 0);
+                self.validate_schema_internal(
+                    &schema,
+                    &schema,
+                    &locator,
+                    &mut result,
+                    "",
+                    true,
+                    &mut HashSet::new(),
+                    0,
+                );
             }
             Err(e) => {
                 result.add_error(ValidationError::schema_error(
@@ -112,7 +121,16 @@ impl SchemaValidator {
     pub fn validate_value(&self, schema: &Value, schema_json: &str) -> ValidationResult {
         let mut result = ValidationResult::new();
         let locator = JsonSourceLocator::new(schema_json);
-        self.validate_schema_internal(schema, schema, &locator, &mut result, "", true, &mut HashSet::new(), 0);
+        self.validate_schema_internal(
+            schema,
+            schema,
+            &locator,
+            &mut result,
+            "",
+            true,
+            &mut HashSet::new(),
+            0,
+        );
         result
     }
 
@@ -129,7 +147,16 @@ impl SchemaValidator {
         depth: usize,
     ) {
         // Pass through to internal method with proper root_schema
-        self.validate_schema_internal(schema, root_schema, locator, result, path, is_root, visited_refs, depth);
+        self.validate_schema_internal(
+            schema,
+            root_schema,
+            locator,
+            result,
+            path,
+            is_root,
+            visited_refs,
+            depth,
+        );
     }
 
     /// Internal schema validation with root schema reference.
@@ -198,17 +225,44 @@ impl SchemaValidator {
 
         // Validate $ref if present
         if let Some(ref_val) = obj.get("$ref") {
-            self.validate_ref(ref_val, schema, root_schema, locator, result, path, visited_refs, depth);
+            self.validate_ref(
+                ref_val,
+                schema,
+                root_schema,
+                locator,
+                result,
+                path,
+                visited_refs,
+                depth,
+            );
         }
 
         // Validate type if present
         if let Some(type_val) = obj.get("type") {
-            self.validate_type(type_val, obj, root_schema, locator, result, path, &enabled_extensions, visited_refs, depth);
+            self.validate_type(
+                type_val,
+                obj,
+                root_schema,
+                locator,
+                result,
+                path,
+                &enabled_extensions,
+                visited_refs,
+                depth,
+            );
         }
 
         // Validate $extends if present
         if let Some(extends_val) = obj.get("$extends") {
-            self.validate_extends(extends_val, root_schema, locator, result, path, visited_refs, depth);
+            self.validate_extends(
+                extends_val,
+                root_schema,
+                locator,
+                result,
+                path,
+                visited_refs,
+                depth,
+            );
         }
 
         // Validate altnames if present
@@ -216,9 +270,31 @@ impl SchemaValidator {
             self.validate_altnames(altnames_val, locator, result, path);
         }
 
+        let type_name = obj.get("type").and_then(Value::as_str);
+        self.validate_ucum_unit_keyword(obj, locator, result, path, type_name, &enabled_extensions);
+        self.validate_relations_keywords(
+            obj,
+            root_schema,
+            locator,
+            result,
+            path,
+            type_name,
+            &enabled_extensions,
+            visited_refs,
+            depth,
+        );
+
         // Validate definitions
         if let Some(defs) = obj.get("definitions") {
-            self.validate_definitions(defs, root_schema, locator, result, path, visited_refs, depth);
+            self.validate_definitions(
+                defs,
+                root_schema,
+                locator,
+                result,
+                path,
+                visited_refs,
+                depth,
+            );
         }
 
         // Validate enum
@@ -227,7 +303,16 @@ impl SchemaValidator {
         }
 
         // Validate composition keywords
-        self.validate_composition(obj, root_schema, locator, result, path, &enabled_extensions, visited_refs, depth);
+        self.validate_composition(
+            obj,
+            root_schema,
+            locator,
+            result,
+            path,
+            &enabled_extensions,
+            visited_refs,
+            depth,
+        );
 
         // Validate extension keywords without $uses
         if self.options.warn_on_unused_extension_keywords {
@@ -276,16 +361,16 @@ impl SchemaValidator {
         let has_type = obj.contains_key("type");
         let has_root = obj.contains_key("$root");
         let has_definitions = obj.contains_key("definitions");
-        let has_composition = obj.keys().any(|k| 
-            ["allOf", "anyOf", "oneOf", "not", "if"].contains(&k.as_str())
-        );
-        
+        let has_composition = obj
+            .keys()
+            .any(|k| ["allOf", "anyOf", "oneOf", "not", "if"].contains(&k.as_str()));
+
         if !has_type && !has_root && !has_composition {
             // Check if it has only meta keywords + definitions
             let has_only_meta = obj.keys().all(|k| {
                 k.starts_with('$') || k == "definitions" || k == "name" || k == "description"
             });
-            
+
             if !has_only_meta || !has_definitions {
                 result.add_error(ValidationError::schema_error(
                     SchemaErrorCode::SchemaRootMissingType,
@@ -424,20 +509,21 @@ impl SchemaValidator {
                                     false
                                 }
                             };
-                            
+
                             if is_bare_ref || is_type_ref_only {
                                 // Check if it references itself
                                 let inner_ref = if is_bare_ref {
                                     def_obj.get("$ref").and_then(|v| v.as_str())
                                 } else if is_type_ref_only {
-                                    def_obj.get("type")
+                                    def_obj
+                                        .get("type")
                                         .and_then(|t| t.as_object())
                                         .and_then(|o| o.get("$ref"))
                                         .and_then(|v| v.as_str())
                                 } else {
                                     None
                                 };
-                                
+
                                 if inner_ref == Some(ref_str) {
                                     result.add_error(ValidationError::schema_error(
                                         SchemaErrorCode::SchemaRefCircular,
@@ -475,16 +561,16 @@ impl SchemaValidator {
         if !ref_str.starts_with("#/") {
             return None;
         }
-        
+
         let path_parts: Vec<&str> = ref_str[2..].split('/').collect();
         let mut current = root_schema;
-        
+
         for part in path_parts {
             // Handle JSON Pointer escaping
             let unescaped = part.replace("~1", "/").replace("~0", "~");
             current = current.get(&unescaped)?;
         }
-        
+
         Some(current)
     }
 
@@ -505,7 +591,16 @@ impl SchemaValidator {
 
         match type_val {
             Value::String(type_name) => {
-                self.validate_single_type(type_name, obj, root_schema, locator, result, path, enabled_extensions, depth);
+                self.validate_single_type(
+                    type_name,
+                    obj,
+                    root_schema,
+                    locator,
+                    result,
+                    path,
+                    enabled_extensions,
+                    depth,
+                );
             }
             Value::Array(types) => {
                 // Union type: ["string", "null"] or [{"$ref": "..."}, "null"]
@@ -535,7 +630,14 @@ impl SchemaValidator {
                             if let Some(ref_val) = ref_obj.get("$ref") {
                                 if let Value::String(ref_str) = ref_val {
                                     // Validate the ref exists
-                                    self.validate_type_ref(ref_str, root_schema, locator, result, &elem_path, visited_refs);
+                                    self.validate_type_ref(
+                                        ref_str,
+                                        root_schema,
+                                        locator,
+                                        result,
+                                        &elem_path,
+                                        visited_refs,
+                                    );
                                 } else {
                                     result.add_error(ValidationError::schema_error(
                                         SchemaErrorCode::SchemaRefNotString,
@@ -569,7 +671,14 @@ impl SchemaValidator {
                 if let Some(ref_val) = ref_obj.get("$ref") {
                     if let Value::String(ref_str) = ref_val {
                         // Validate the ref exists
-                        self.validate_type_ref(ref_str, root_schema, locator, result, path, visited_refs);
+                        self.validate_type_ref(
+                            ref_str,
+                            root_schema,
+                            locator,
+                            result,
+                            path,
+                            visited_refs,
+                        );
                     } else {
                         result.add_error(ValidationError::schema_error(
                             SchemaErrorCode::SchemaRefNotString,
@@ -609,7 +718,7 @@ impl SchemaValidator {
         visited_refs: &mut HashSet<String>,
     ) {
         let ref_path = format!("{}/type/$ref", path);
-        
+
         if ref_str.starts_with("#/definitions/") {
             // Check for circular reference
             if visited_refs.contains(ref_str) {
@@ -624,7 +733,7 @@ impl SchemaValidator {
                                 false
                             }
                         };
-                        
+
                         if is_type_ref_only {
                             result.add_error(ValidationError::schema_error(
                                 SchemaErrorCode::SchemaRefCircular,
@@ -640,7 +749,7 @@ impl SchemaValidator {
 
             // Track this ref
             visited_refs.insert(ref_str.to_string());
-            
+
             // Resolve and validate
             if let Some(resolved) = self.resolve_ref(ref_str, root_schema) {
                 // Check if the resolved schema itself has a type with $ref (for circular detection)
@@ -648,7 +757,14 @@ impl SchemaValidator {
                     if let Some(type_val) = def_obj.get("type") {
                         if let Value::Object(type_obj) = type_val {
                             if let Some(Value::String(inner_ref)) = type_obj.get("$ref") {
-                                self.validate_type_ref(inner_ref, root_schema, locator, result, path, visited_refs);
+                                self.validate_type_ref(
+                                    inner_ref,
+                                    root_schema,
+                                    locator,
+                                    result,
+                                    path,
+                                    visited_refs,
+                                );
                             }
                         }
                     }
@@ -661,7 +777,7 @@ impl SchemaValidator {
                     locator.get_location(&ref_path),
                 ));
             }
-            
+
             visited_refs.remove(ref_str);
         }
     }
@@ -679,7 +795,7 @@ impl SchemaValidator {
         depth: usize,
     ) {
         let type_path = format!("{}/type", path);
-        
+
         // Validate type name
         if !is_valid_type(type_name) {
             result.add_error(ValidationError::schema_error(
@@ -693,8 +809,18 @@ impl SchemaValidator {
 
         // Type-specific validation
         match type_name {
-            "object" => self.validate_object_type(obj, root_schema, locator, result, path, enabled_extensions, depth),
-            "array" | "set" => self.validate_array_type(obj, root_schema, locator, result, path, type_name),
+            "object" => self.validate_object_type(
+                obj,
+                root_schema,
+                locator,
+                result,
+                path,
+                enabled_extensions,
+                depth,
+            ),
+            "array" | "set" => {
+                self.validate_array_type(obj, root_schema, locator, result, path, type_name)
+            }
             "map" => self.validate_map_type(obj, root_schema, locator, result, path),
             "tuple" => self.validate_tuple_type(obj, root_schema, locator, result, path),
             "choice" => self.validate_choice_type(obj, root_schema, locator, result, path),
@@ -724,7 +850,10 @@ impl SchemaValidator {
         if obj.contains_key("minimum") && !is_numeric {
             result.add_error(ValidationError::schema_error(
                 SchemaErrorCode::SchemaConstraintTypeMismatch,
-                format!("minimum constraint cannot be used with type '{}'", type_name),
+                format!(
+                    "minimum constraint cannot be used with type '{}'",
+                    type_name
+                ),
                 &format!("{}/minimum", path),
                 locator.get_location(&format!("{}/minimum", path)),
             ));
@@ -732,7 +861,10 @@ impl SchemaValidator {
         if obj.contains_key("maximum") && !is_numeric {
             result.add_error(ValidationError::schema_error(
                 SchemaErrorCode::SchemaConstraintTypeMismatch,
-                format!("maximum constraint cannot be used with type '{}'", type_name),
+                format!(
+                    "maximum constraint cannot be used with type '{}'",
+                    type_name
+                ),
                 &format!("{}/maximum", path),
                 locator.get_location(&format!("{}/maximum", path)),
             ));
@@ -742,7 +874,10 @@ impl SchemaValidator {
         if obj.contains_key("minLength") && !is_string {
             result.add_error(ValidationError::schema_error(
                 SchemaErrorCode::SchemaConstraintTypeMismatch,
-                format!("minLength constraint cannot be used with type '{}'", type_name),
+                format!(
+                    "minLength constraint cannot be used with type '{}'",
+                    type_name
+                ),
                 &format!("{}/minLength", path),
                 locator.get_location(&format!("{}/minLength", path)),
             ));
@@ -750,7 +885,10 @@ impl SchemaValidator {
         if obj.contains_key("maxLength") && !is_string {
             result.add_error(ValidationError::schema_error(
                 SchemaErrorCode::SchemaConstraintTypeMismatch,
-                format!("maxLength constraint cannot be used with type '{}'", type_name),
+                format!(
+                    "maxLength constraint cannot be used with type '{}'",
+                    type_name
+                ),
                 &format!("{}/maxLength", path),
                 locator.get_location(&format!("{}/maxLength", path)),
             ));
@@ -771,7 +909,10 @@ impl SchemaValidator {
             if !is_numeric {
                 result.add_error(ValidationError::schema_error(
                     SchemaErrorCode::SchemaConstraintTypeMismatch,
-                    format!("multipleOf constraint cannot be used with type '{}'", type_name),
+                    format!(
+                        "multipleOf constraint cannot be used with type '{}'",
+                        type_name
+                    ),
                     &format!("{}/multipleOf", path),
                     locator.get_location(&format!("{}/multipleOf", path)),
                 ));
@@ -810,7 +951,7 @@ impl SchemaValidator {
     ) {
         let minimum = obj.get("minimum").and_then(Value::as_f64);
         let maximum = obj.get("maximum").and_then(Value::as_f64);
-        
+
         if let (Some(min), Some(max)) = (minimum, maximum) {
             if min > max {
                 result.add_error(ValidationError::schema_error(
@@ -1024,7 +1165,16 @@ impl SchemaValidator {
             ));
         } else if let Some(items) = obj.get("items") {
             let items_path = format!("{}/items", path);
-            self.validate_schema(items, root_schema, locator, result, &items_path, false, &mut HashSet::new(), 0);
+            self.validate_schema(
+                items,
+                root_schema,
+                locator,
+                result,
+                &items_path,
+                false,
+                &mut HashSet::new(),
+                0,
+            );
         }
 
         // Validate minItems/maxItems constraints
@@ -1073,7 +1223,16 @@ impl SchemaValidator {
             ));
         } else if let Some(values) = obj.get("values") {
             let values_path = format!("{}/values", path);
-            self.validate_schema(values, root_schema, locator, result, &values_path, false, &mut HashSet::new(), 0);
+            self.validate_schema(
+                values,
+                root_schema,
+                locator,
+                result,
+                &values_path,
+                false,
+                &mut HashSet::new(),
+                0,
+            );
         }
     }
 
@@ -1106,7 +1265,7 @@ impl SchemaValidator {
             match tuple {
                 Value::Array(arr) => {
                     let properties = obj.get("properties").and_then(Value::as_object);
-                    
+
                     for (i, item) in arr.iter().enumerate() {
                         match item {
                             Value::String(s) => {
@@ -1115,7 +1274,10 @@ impl SchemaValidator {
                                     if !props.contains_key(s) {
                                         result.add_error(ValidationError::schema_error(
                                             SchemaErrorCode::SchemaTuplePropertyNotDefined,
-                                            format!("Tuple element references undefined property: {}", s),
+                                            format!(
+                                                "Tuple element references undefined property: {}",
+                                                s
+                                            ),
                                             &format!("{}/{}", tuple_path, i),
                                             locator.get_location(&format!("{}/{}", tuple_path, i)),
                                         ));
@@ -1226,7 +1388,15 @@ impl SchemaValidator {
             Value::Object(defs_obj) => {
                 for (def_name, def_schema) in defs_obj {
                     let def_path = format!("{}/{}", defs_path, def_name);
-                    self.validate_definition_or_namespace(def_schema, root_schema, locator, result, &def_path, visited_refs, depth);
+                    self.validate_definition_or_namespace(
+                        def_schema,
+                        root_schema,
+                        locator,
+                        result,
+                        &def_path,
+                        visited_refs,
+                        depth,
+                    );
                 }
             }
             _ => {
@@ -1266,10 +1436,10 @@ impl SchemaValidator {
             let has_type = def_obj.contains_key("type");
             let has_ref = def_obj.contains_key("$ref");
             let has_definitions = def_obj.contains_key("definitions");
-            let has_composition = def_obj.keys().any(|k| 
-                ["allOf", "anyOf", "oneOf", "not", "if"].contains(&k.as_str())
-            );
-            
+            let has_composition = def_obj
+                .keys()
+                .any(|k| ["allOf", "anyOf", "oneOf", "not", "if"].contains(&k.as_str()));
+
             if has_type || has_ref || has_definitions || has_composition {
                 // This is a type definition - validate it
                 self.validate_schema_internal(
@@ -1287,21 +1457,31 @@ impl SchemaValidator {
                 // (objects with type, $ref, etc.)
                 let is_namespace = def_obj.values().all(|v| {
                     if let Value::Object(child) = v {
-                        child.contains_key("type") 
-                            || child.contains_key("$ref") 
+                        child.contains_key("type")
+                            || child.contains_key("$ref")
                             || child.contains_key("definitions")
-                            || child.keys().any(|k| ["allOf", "anyOf", "oneOf"].contains(&k.as_str()))
-                            || child.values().all(|cv| cv.is_object())  // nested namespace
+                            || child
+                                .keys()
+                                .any(|k| ["allOf", "anyOf", "oneOf"].contains(&k.as_str()))
+                            || child.values().all(|cv| cv.is_object()) // nested namespace
                     } else {
                         false
                     }
                 });
-                
+
                 if is_namespace {
                     // Recursively validate as namespace
                     for (child_name, child_schema) in def_obj {
                         let child_path = format!("{}/{}", path, child_name);
-                        self.validate_definition_or_namespace(child_schema, root_schema, locator, result, &child_path, visited_refs, depth + 1);
+                        self.validate_definition_or_namespace(
+                            child_schema,
+                            root_schema,
+                            locator,
+                            result,
+                            &child_path,
+                            visited_refs,
+                            depth + 1,
+                        );
                     }
                 } else {
                     // Not a namespace and no type - error
@@ -1386,29 +1566,74 @@ impl SchemaValidator {
     ) {
         // allOf
         if let Some(all_of) = obj.get("allOf") {
-            self.validate_composition_array(all_of, "allOf", root_schema, locator, result, path, visited_refs, depth);
+            self.validate_composition_array(
+                all_of,
+                "allOf",
+                root_schema,
+                locator,
+                result,
+                path,
+                visited_refs,
+                depth,
+            );
         }
 
         // anyOf
         if let Some(any_of) = obj.get("anyOf") {
-            self.validate_composition_array(any_of, "anyOf", root_schema, locator, result, path, visited_refs, depth);
+            self.validate_composition_array(
+                any_of,
+                "anyOf",
+                root_schema,
+                locator,
+                result,
+                path,
+                visited_refs,
+                depth,
+            );
         }
 
         // oneOf
         if let Some(one_of) = obj.get("oneOf") {
-            self.validate_composition_array(one_of, "oneOf", root_schema, locator, result, path, visited_refs, depth);
+            self.validate_composition_array(
+                one_of,
+                "oneOf",
+                root_schema,
+                locator,
+                result,
+                path,
+                visited_refs,
+                depth,
+            );
         }
 
         // not
         if let Some(not) = obj.get("not") {
             let not_path = format!("{}/not", path);
-            self.validate_schema_internal(not, root_schema, locator, result, &not_path, false, visited_refs, depth + 1);
+            self.validate_schema_internal(
+                not,
+                root_schema,
+                locator,
+                result,
+                &not_path,
+                false,
+                visited_refs,
+                depth + 1,
+            );
         }
 
         // if/then/else
         if let Some(if_schema) = obj.get("if") {
             let if_path = format!("{}/if", path);
-            self.validate_schema_internal(if_schema, root_schema, locator, result, &if_path, false, visited_refs, depth + 1);
+            self.validate_schema_internal(
+                if_schema,
+                root_schema,
+                locator,
+                result,
+                &if_path,
+                false,
+                visited_refs,
+                depth + 1,
+            );
         }
 
         if let Some(then_schema) = obj.get("then") {
@@ -1421,7 +1646,16 @@ impl SchemaValidator {
                 ));
             }
             let then_path = format!("{}/then", path);
-            self.validate_schema_internal(then_schema, root_schema, locator, result, &then_path, false, visited_refs, depth + 1);
+            self.validate_schema_internal(
+                then_schema,
+                root_schema,
+                locator,
+                result,
+                &then_path,
+                false,
+                visited_refs,
+                depth + 1,
+            );
         }
 
         if let Some(else_schema) = obj.get("else") {
@@ -1434,7 +1668,16 @@ impl SchemaValidator {
                 ));
             }
             let else_path = format!("{}/else", path);
-            self.validate_schema_internal(else_schema, root_schema, locator, result, &else_path, false, visited_refs, depth + 1);
+            self.validate_schema_internal(
+                else_schema,
+                root_schema,
+                locator,
+                result,
+                &else_path,
+                false,
+                visited_refs,
+                depth + 1,
+            );
         }
     }
 
@@ -1464,10 +1707,19 @@ impl SchemaValidator {
                     ));
                     return;
                 }
-                
+
                 for (i, item) in arr.iter().enumerate() {
                     let item_path = format!("{}/{}", keyword_path, i);
-                    self.validate_schema_internal(item, root_schema, locator, result, &item_path, false, visited_refs, depth + 1);
+                    self.validate_schema_internal(
+                        item,
+                        root_schema,
+                        locator,
+                        result,
+                        &item_path,
+                        false,
+                        visited_refs,
+                        depth + 1,
+                    );
                 }
             }
             _ => {
@@ -1499,7 +1751,7 @@ impl SchemaValidator {
         _depth: usize,
     ) {
         let extends_path = format!("{}/$extends", path);
-        
+
         // $extends can be a string or an array of strings
         let refs: Vec<(String, String)> = match extends_val {
             Value::String(s) => {
@@ -1574,7 +1826,9 @@ impl SchemaValidator {
             }
 
             // Resolve reference
-            if ref_str.starts_with("#/definitions/") && self.resolve_ref(&ref_str, root_schema).is_none() {
+            if ref_str.starts_with("#/definitions/")
+                && self.resolve_ref(&ref_str, root_schema).is_none()
+            {
                 result.add_error(ValidationError::schema_error(
                     SchemaErrorCode::SchemaExtendsNotFound,
                     format!("$extends reference not found: {}", ref_str),
@@ -1595,7 +1849,7 @@ impl SchemaValidator {
         path: &str,
     ) {
         let altnames_path = format!("{}/altnames", path);
-        
+
         match altnames_val {
             Value::Object(obj) => {
                 for (key, value) in obj {
@@ -1620,6 +1874,297 @@ impl SchemaValidator {
         }
     }
 
+    fn validate_ucum_unit_keyword(
+        &self,
+        obj: &serde_json::Map<String, Value>,
+        locator: &JsonSourceLocator,
+        result: &mut ValidationResult,
+        path: &str,
+        type_name: Option<&str>,
+        enabled_extensions: &HashSet<&str>,
+    ) {
+        let Some(ucum_unit) = obj.get("ucumUnit") else {
+            return;
+        };
+
+        if !enabled_extensions.contains("JSONStructureUnits") {
+            let ucum_path = format!("{}/ucumUnit", path);
+            result.add_error(ValidationError::schema_error(
+                SchemaErrorCode::SchemaExtensionKeywordWithoutUses,
+                "ucumUnit requires 'JSONStructureUnits' in $uses",
+                &ucum_path,
+                locator.get_location(&ucum_path),
+            ));
+        }
+
+        if !ucum_unit.is_string() {
+            let ucum_path = format!("{}/ucumUnit", path);
+            result.add_error(ValidationError::schema_error(
+                SchemaErrorCode::SchemaKeywordInvalidType,
+                "ucumUnit must be a string",
+                &ucum_path,
+                locator.get_location(&ucum_path),
+            ));
+        }
+
+        if type_name.is_none_or(|name| !crate::types::is_numeric_type(name)) {
+            let ucum_path = format!("{}/ucumUnit", path);
+            result.add_error(ValidationError::schema_error(
+                SchemaErrorCode::SchemaConstraintTypeMismatch,
+                "ucumUnit is only valid for numeric types",
+                &ucum_path,
+                locator.get_location(&ucum_path),
+            ));
+        }
+    }
+
+    fn validate_relations_keywords(
+        &self,
+        obj: &serde_json::Map<String, Value>,
+        root_schema: &Value,
+        locator: &JsonSourceLocator,
+        result: &mut ValidationResult,
+        path: &str,
+        type_name: Option<&str>,
+        enabled_extensions: &HashSet<&str>,
+        visited_refs: &mut HashSet<String>,
+        depth: usize,
+    ) {
+        let has_identity = obj.contains_key("identity");
+        let has_relations = obj.contains_key("relations");
+        if !has_identity && !has_relations {
+            return;
+        }
+
+        let relations_enabled = enabled_extensions.contains("JSONStructureRelations");
+        if has_identity && !relations_enabled {
+            let identity_path = format!("{}/identity", path);
+            result.add_error(ValidationError::schema_error(
+                SchemaErrorCode::SchemaExtensionKeywordWithoutUses,
+                "identity requires 'JSONStructureRelations' in $uses",
+                &identity_path,
+                locator.get_location(&identity_path),
+            ));
+        }
+        if has_relations && !relations_enabled {
+            let relations_path = format!("{}/relations", path);
+            result.add_error(ValidationError::schema_error(
+                SchemaErrorCode::SchemaExtensionKeywordWithoutUses,
+                "relations requires 'JSONStructureRelations' in $uses",
+                &relations_path,
+                locator.get_location(&relations_path),
+            ));
+        }
+
+        let supports_relations = matches!(type_name, Some("object" | "tuple"));
+
+        if let Some(identity) = obj.get("identity") {
+            let identity_path = format!("{}/identity", path);
+            if !supports_relations {
+                result.add_error(ValidationError::schema_error(
+                    SchemaErrorCode::SchemaConstraintTypeMismatch,
+                    "identity is only valid for object or tuple types",
+                    &identity_path,
+                    locator.get_location(&identity_path),
+                ));
+            }
+
+            match identity {
+                Value::Array(items) => {
+                    let properties = obj.get("properties").and_then(Value::as_object);
+                    for (index, item) in items.iter().enumerate() {
+                        let item_path = format!("{}/{}", identity_path, index);
+                        match item {
+                            Value::String(name) => {
+                                if properties.is_none_or(|props| !props.contains_key(name)) {
+                                    result.add_error(ValidationError::schema_error(
+                                        SchemaErrorCode::SchemaRequiredPropertyNotDefined,
+                                        format!(
+                                            "Identity property '{}' not found in properties",
+                                            name
+                                        ),
+                                        &item_path,
+                                        locator.get_location(&item_path),
+                                    ));
+                                }
+                            }
+                            _ => result.add_error(ValidationError::schema_error(
+                                SchemaErrorCode::SchemaKeywordInvalidType,
+                                "identity items must be strings",
+                                &item_path,
+                                locator.get_location(&item_path),
+                            )),
+                        }
+                    }
+                }
+                _ => result.add_error(ValidationError::schema_error(
+                    SchemaErrorCode::SchemaKeywordInvalidType,
+                    "identity must be an array of strings",
+                    &identity_path,
+                    locator.get_location(&identity_path),
+                )),
+            }
+        }
+
+        let Some(relations) = obj.get("relations") else {
+            return;
+        };
+
+        let relations_path = format!("{}/relations", path);
+        if !supports_relations {
+            result.add_error(ValidationError::schema_error(
+                SchemaErrorCode::SchemaConstraintTypeMismatch,
+                "relations is only valid for object or tuple types",
+                &relations_path,
+                locator.get_location(&relations_path),
+            ));
+        }
+
+        let Value::Object(relations_obj) = relations else {
+            result.add_error(ValidationError::schema_error(
+                SchemaErrorCode::SchemaKeywordInvalidType,
+                "relations must be an object",
+                &relations_path,
+                locator.get_location(&relations_path),
+            ));
+            return;
+        };
+
+        for (relation_name, relation_decl) in relations_obj {
+            let relation_path = format!("{}/{}", relations_path, relation_name);
+            let Value::Object(relation_obj) = relation_decl else {
+                result.add_error(ValidationError::schema_error(
+                    SchemaErrorCode::SchemaKeywordInvalidType,
+                    "relation declarations must be objects",
+                    &relation_path,
+                    locator.get_location(&relation_path),
+                ));
+                continue;
+            };
+
+            self.validate_relation_ref_object(
+                relation_obj,
+                "targettype",
+                relation_path.as_str(),
+                root_schema,
+                locator,
+                result,
+                visited_refs,
+                depth,
+            );
+
+            let cardinality_path = format!("{}/cardinality", relation_path);
+            match relation_obj.get("cardinality") {
+                Some(Value::String(value)) if value == "single" || value == "multiple" => {}
+                Some(_) => result.add_error(ValidationError::schema_error(
+                    SchemaErrorCode::SchemaKeywordInvalidType,
+                    "cardinality must be 'single' or 'multiple'",
+                    &cardinality_path,
+                    locator.get_location(&cardinality_path),
+                )),
+                None => result.add_error(ValidationError::schema_error(
+                    SchemaErrorCode::SchemaKeywordInvalidType,
+                    "cardinality is required",
+                    &cardinality_path,
+                    locator.get_location(&cardinality_path),
+                )),
+            }
+
+            if let Some(scope) = relation_obj.get("scope") {
+                let scope_path = format!("{}/scope", relation_path);
+                match scope {
+                    Value::String(_) => {}
+                    Value::Array(items) => {
+                        for (index, item) in items.iter().enumerate() {
+                            if !item.is_string() {
+                                let item_path = format!("{}/{}", scope_path, index);
+                                result.add_error(ValidationError::schema_error(
+                                    SchemaErrorCode::SchemaKeywordInvalidType,
+                                    "scope array items must be strings",
+                                    &item_path,
+                                    locator.get_location(&item_path),
+                                ));
+                            }
+                        }
+                    }
+                    _ => result.add_error(ValidationError::schema_error(
+                        SchemaErrorCode::SchemaKeywordInvalidType,
+                        "scope must be a string or array of strings",
+                        &scope_path,
+                        locator.get_location(&scope_path),
+                    )),
+                }
+            }
+
+            if relation_obj.contains_key("qualifiertype") {
+                self.validate_relation_ref_object(
+                    relation_obj,
+                    "qualifiertype",
+                    relation_path.as_str(),
+                    root_schema,
+                    locator,
+                    result,
+                    visited_refs,
+                    depth,
+                );
+            }
+        }
+    }
+
+    fn validate_relation_ref_object(
+        &self,
+        relation_obj: &serde_json::Map<String, Value>,
+        keyword: &str,
+        relation_path: &str,
+        root_schema: &Value,
+        locator: &JsonSourceLocator,
+        result: &mut ValidationResult,
+        visited_refs: &mut HashSet<String>,
+        depth: usize,
+    ) {
+        let keyword_path = format!("{}/{}", relation_path, keyword);
+        let Some(ref_value) = relation_obj.get(keyword) else {
+            result.add_error(ValidationError::schema_error(
+                SchemaErrorCode::SchemaKeywordInvalidType,
+                format!("{} is required", keyword),
+                &keyword_path,
+                locator.get_location(&keyword_path),
+            ));
+            return;
+        };
+
+        let Value::Object(ref_object) = ref_value else {
+            result.add_error(ValidationError::schema_error(
+                SchemaErrorCode::SchemaKeywordInvalidType,
+                format!("{} must be an object with a $ref string", keyword),
+                &keyword_path,
+                locator.get_location(&keyword_path),
+            ));
+            return;
+        };
+
+        let Some(ref_target) = ref_object.get("$ref") else {
+            result.add_error(ValidationError::schema_error(
+                SchemaErrorCode::SchemaKeywordInvalidType,
+                format!("{} must be an object with a $ref string", keyword),
+                &keyword_path,
+                locator.get_location(&keyword_path),
+            ));
+            return;
+        };
+
+        self.validate_ref(
+            ref_target,
+            ref_value,
+            root_schema,
+            locator,
+            result,
+            &keyword_path,
+            visited_refs,
+            depth + 1,
+        );
+    }
+
     /// Checks for extension keywords used without enabling the extension.
     fn check_extension_keywords(
         &self,
@@ -1630,7 +2175,8 @@ impl SchemaValidator {
         enabled_extensions: &HashSet<&str>,
     ) {
         let validation_enabled = enabled_extensions.contains("JSONStructureValidation");
-        let composition_enabled = enabled_extensions.contains("JSONStructureConditionalComposition");
+        let composition_enabled =
+            enabled_extensions.contains("JSONStructureConditionalComposition");
 
         for (key, _) in obj {
             // Check validation keywords
@@ -1675,7 +2221,7 @@ mod tests {
             "name": "TestSchema",
             "type": "string"
         }"#;
-        
+
         let validator = SchemaValidator::new();
         let result = validator.validate(schema);
         assert!(result.is_valid());
@@ -1687,7 +2233,7 @@ mod tests {
             "name": "TestSchema",
             "type": "string"
         }"#;
-        
+
         let validator = SchemaValidator::new();
         let result = validator.validate(schema);
         assert!(!result.is_valid());
@@ -1699,7 +2245,7 @@ mod tests {
             "$id": "https://example.com/schema",
             "type": "string"
         }"#;
-        
+
         let validator = SchemaValidator::new();
         let result = validator.validate(schema);
         assert!(!result.is_valid());
@@ -1712,7 +2258,7 @@ mod tests {
             "name": "TestSchema",
             "type": "invalid_type"
         }"#;
-        
+
         let validator = SchemaValidator::new();
         let result = validator.validate(schema);
         assert!(!result.is_valid());
@@ -1725,7 +2271,7 @@ mod tests {
             "name": "TestSchema",
             "type": "array"
         }"#;
-        
+
         let validator = SchemaValidator::new();
         let result = validator.validate(schema);
         assert!(!result.is_valid());
@@ -1738,7 +2284,7 @@ mod tests {
             "name": "TestSchema",
             "type": "map"
         }"#;
-        
+
         let validator = SchemaValidator::new();
         let result = validator.validate(schema);
         assert!(!result.is_valid());
@@ -1756,7 +2302,7 @@ mod tests {
             },
             "tuple": ["first", "second"]
         }"#;
-        
+
         let validator = SchemaValidator::new();
         let result = validator.validate(schema);
         assert!(result.is_valid());
@@ -1774,7 +2320,7 @@ mod tests {
                 "number": { "type": "int32" }
             }
         }"#;
-        
+
         let validator = SchemaValidator::new();
         let result = validator.validate(schema);
         assert!(result.is_valid());
@@ -1788,7 +2334,7 @@ mod tests {
             "type": "string",
             "enum": []
         }"#;
-        
+
         let validator = SchemaValidator::new();
         let result = validator.validate(schema);
         assert!(!result.is_valid());
@@ -1809,7 +2355,7 @@ mod tests {
                 "value": { "type": { "$ref": "#/definitions/Inner" } }
             }
         }"##;
-        
+
         let validator = SchemaValidator::new();
         let result = validator.validate(schema);
         for err in result.all_errors() {
@@ -1828,7 +2374,7 @@ mod tests {
                 "value": { "type": { "$ref": "#/definitions/Undefined" } }
             }
         }"##;
-        
+
         let validator = SchemaValidator::new();
         let result = validator.validate(schema);
         assert!(!result.is_valid(), "Schema with undefined ref should fail");
@@ -1844,7 +2390,7 @@ mod tests {
                 "value": { "type": ["string", "null"] }
             }
         }"##;
-        
+
         let validator = SchemaValidator::new();
         let result = validator.validate(schema);
         for err in result.all_errors() {

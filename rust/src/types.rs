@@ -187,7 +187,11 @@ impl std::error::Error for ValidationError {}
 impl fmt::Display for ValidationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.location.is_unknown() {
-            write!(f, "[{}] {}: {} at {}", self.severity, self.code, self.message, self.path)
+            write!(
+                f,
+                "[{}] {}: {} at {}",
+                self.severity, self.code, self.message, self.path
+            )
         } else {
             write!(
                 f,
@@ -284,90 +288,170 @@ impl ValidationResult {
 
 /// Primitive types in JSON Structure.
 pub const PRIMITIVE_TYPES: &[&str] = &[
-    "string", "boolean", "null", "number",
-    "int8", "int16", "int32", "int64", "int128",
-    "uint8", "uint16", "uint32", "uint64", "uint128",
-    "float", "float8", "double", "decimal",
-    "date", "time", "datetime", "duration",
-    "uuid", "uri", "binary", "jsonpointer",
+    "string",
+    "boolean",
+    "null",
+    "number",
+    "int8",
+    "int16",
+    "int32",
+    "int64",
+    "int128",
+    "uint8",
+    "uint16",
+    "uint32",
+    "uint64",
+    "uint128",
+    "float",
+    "float8",
+    "double",
+    "decimal",
+    "date",
+    "time",
+    "datetime",
+    "duration",
+    "uuid",
+    "uri",
+    "binary",
+    "jsonpointer",
     "integer", // alias for int32
 ];
 
 /// Compound types in JSON Structure.
-pub const COMPOUND_TYPES: &[&str] = &[
-    "object", "array", "set", "map", "tuple", "choice", "any",
-];
+pub const COMPOUND_TYPES: &[&str] = &["object", "array", "set", "map", "tuple", "choice", "any"];
 
 /// Numeric types in JSON Structure.
 pub const NUMERIC_TYPES: &[&str] = &[
-    "number", "integer",
-    "int8", "int16", "int32", "int64", "int128",
-    "uint8", "uint16", "uint32", "uint64", "uint128",
-    "float", "float8", "double", "decimal",
+    "number", "integer", "int8", "int16", "int32", "int64", "int128", "uint8", "uint16", "uint32",
+    "uint64", "uint128", "float", "float8", "double", "decimal",
 ];
 
 /// Integer types in JSON Structure.
 pub const INTEGER_TYPES: &[&str] = &[
-    "integer",
-    "int8", "int16", "int32", "int64", "int128",
-    "uint8", "uint16", "uint32", "uint64", "uint128",
+    "integer", "int8", "int16", "int32", "int64", "int128", "uint8", "uint16", "uint32", "uint64",
+    "uint128",
 ];
 
 /// Core schema keywords.
 pub const SCHEMA_KEYWORDS: &[&str] = &[
-    "$schema", "$id", "$ref", "definitions", "$import", "$importdefs",
-    "$comment", "$extends", "$abstract", "$root", "$uses", "$offers",
-    "name", "abstract",
-    "type", "enum", "const", "default",
-    "title", "description", "examples",
+    "$schema",
+    "$id",
+    "$ref",
+    "definitions",
+    "$import",
+    "$importdefs",
+    "$comment",
+    "$extends",
+    "$abstract",
+    "$root",
+    "$uses",
+    "$offers",
+    "name",
+    "abstract",
+    "type",
+    "enum",
+    "const",
+    "default",
+    "title",
+    "description",
+    "examples",
     // Object keywords
-    "properties", "additionalProperties", "required", "propertyNames",
-    "minProperties", "maxProperties", "dependentRequired",
+    "properties",
+    "additionalProperties",
+    "required",
+    "propertyNames",
+    "minProperties",
+    "maxProperties",
+    "dependentRequired",
     // Array/Set/Tuple keywords
-    "items", "minItems", "maxItems", "uniqueItems", "contains",
-    "minContains", "maxContains",
+    "items",
+    "minItems",
+    "maxItems",
+    "uniqueItems",
+    "contains",
+    "minContains",
+    "maxContains",
     // String keywords
-    "minLength", "maxLength", "pattern", "format", "contentEncoding", "contentMediaType",
+    "minLength",
+    "maxLength",
+    "pattern",
+    "format",
+    "contentEncoding",
+    "contentMediaType",
     "contentCompression",
     // Number keywords
-    "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf",
-    "precision", "scale",
+    "minimum",
+    "maximum",
+    "exclusiveMinimum",
+    "exclusiveMaximum",
+    "multipleOf",
+    "precision",
+    "scale",
     // Map keywords
     "values",
     // Choice keywords
-    "choices", "selector",
+    "choices",
+    "selector",
     // Tuple keywords
     "tuple",
     // Conditional composition
-    "allOf", "anyOf", "oneOf", "not", "if", "then", "else",
+    "allOf",
+    "anyOf",
+    "oneOf",
+    "not",
+    "if",
+    "then",
+    "else",
     // Alternate names
     "altnames",
     // Units
     "unit",
+    "ucumUnit",
+    // Relations
+    "identity",
+    "relations",
 ];
 
 /// Validation extension keywords that require JSONStructureValidation.
 pub const VALIDATION_EXTENSION_KEYWORDS: &[&str] = &[
     // Numeric validation
-    "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf",
+    "minimum",
+    "maximum",
+    "exclusiveMinimum",
+    "exclusiveMaximum",
+    "multipleOf",
     // String validation
-    "minLength", "maxLength", "pattern", "format",
+    "minLength",
+    "maxLength",
+    "pattern",
+    "format",
     // Array/Set validation
-    "minItems", "maxItems", "uniqueItems", "contains", "minContains", "maxContains",
+    "minItems",
+    "maxItems",
+    "uniqueItems",
+    "contains",
+    "minContains",
+    "maxContains",
     // Object/Map validation
-    "minProperties", "maxProperties", "dependentRequired", "propertyNames", "patternProperties",
+    "minProperties",
+    "maxProperties",
+    "dependentRequired",
+    "propertyNames",
+    "patternProperties",
     // Map-specific validation
-    "minEntries", "maxEntries", "keyNames",
+    "minEntries",
+    "maxEntries",
+    "keyNames",
     // Content validation
-    "contentEncoding", "contentMediaType", "contentCompression",
+    "contentEncoding",
+    "contentMediaType",
+    "contentCompression",
     // Default value
     "default",
 ];
 
 /// Conditional composition keywords that require JSONStructureConditionalComposition.
-pub const COMPOSITION_KEYWORDS: &[&str] = &[
-    "allOf", "anyOf", "oneOf", "not", "if", "then", "else",
-];
+pub const COMPOSITION_KEYWORDS: &[&str] = &["allOf", "anyOf", "oneOf", "not", "if", "then", "else"];
 
 /// Known extension names.
 pub const KNOWN_EXTENSIONS: &[&str] = &[
@@ -376,13 +460,23 @@ pub const KNOWN_EXTENSIONS: &[&str] = &[
     "JSONStructureUnits",
     "JSONStructureConditionalComposition",
     "JSONStructureValidation",
+    "JSONStructureRelations",
 ];
 
 /// Valid format values for the "format" keyword.
 #[allow(dead_code)]
 pub const VALID_FORMATS: &[&str] = &[
-    "ipv4", "ipv6", "email", "idn-email", "hostname", "idn-hostname",
-    "iri", "iri-reference", "uri-template", "relative-json-pointer", "regex",
+    "ipv4",
+    "ipv6",
+    "email",
+    "idn-email",
+    "hostname",
+    "idn-hostname",
+    "iri",
+    "iri-reference",
+    "uri-template",
+    "relative-json-pointer",
+    "regex",
 ];
 
 /// Returns true if the given type name is a valid JSON Structure type.
