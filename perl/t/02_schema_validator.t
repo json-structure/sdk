@@ -377,12 +377,213 @@ subtest 'ucumUnit validation' => sub {
     }
 };
 
-subtest 'ucumUnit invalid cases (pending)' => sub {
-    plan skip_all => 'Pending ucumUnit keyword enforcement in the Perl schema validator';
+subtest 'ucumUnit invalid cases' => sub {
+    my $validator = JSON::Structure::SchemaValidator->new(extended => 1);
+
+    my @schemas = (
+        {
+            '$schema' => 'https://json-structure.org/meta/extended/v0/#',
+            '$id' => 'https://example.com/schema/ucum_string',
+            name => 'TextWithUnit',
+            '$uses' => ['JSONStructureUnits'],
+            type => 'string',
+            ucumUnit => 'm',
+        },
+        {
+            '$schema' => 'https://json-structure.org/meta/extended/v0/#',
+            '$id' => 'https://example.com/schema/ucum_number_value',
+            name => 'NumericUcumUnit',
+            '$uses' => ['JSONStructureUnits'],
+            type => 'number',
+            ucumUnit => 42,
+        },
+        {
+            '$schema' => 'https://json-structure.org/meta/extended/v0/#',
+            '$id' => 'https://example.com/schema/ucum_array_value',
+            name => 'ArrayUcumUnit',
+            '$uses' => ['JSONStructureUnits'],
+            type => 'number',
+            ucumUnit => ['m'],
+        },
+        {
+            '$schema' => 'https://json-structure.org/meta/extended/v0/#',
+            '$id' => 'https://example.com/schema/ucum_object_value',
+            name => 'ObjectUcumUnit',
+            '$uses' => ['JSONStructureUnits'],
+            type => 'number',
+            ucumUnit => { code => 'm' },
+        },
+    );
+
+    for my $schema (@schemas) {
+        my $result = $validator->validate($schema);
+        ok(!$result->is_valid, 'invalid ucumUnit schema fails') or diag(join("\n", map { $_->to_string } @{$result->errors}));
+    }
 };
 
-subtest 'Relations extension (pending)' => sub {
-    plan skip_all => 'Pending JSONStructureRelations extension support in the Perl schema validator';
+subtest 'Relations extension' => sub {
+    my $validator = JSON::Structure::SchemaValidator->new(extended => 1);
+
+    my @valid_schemas = (
+        {
+            '$schema' => 'https://json-structure.org/meta/extended/v0/#',
+            '$id' => 'https://example.com/schema/relations_identity',
+            name => 'OrderIdentity',
+            '$uses' => ['JSONStructureRelations'],
+            type => 'object',
+            properties => {
+                id => { type => 'string' },
+                tenantId => { type => 'string' },
+            },
+            identity => ['id', 'tenantId'],
+        },
+        {
+            '$schema' => 'https://json-structure.org/meta/extended/v0/#',
+            '$id' => 'https://example.com/schema/relations_declarations',
+            name => 'OrderRelations',
+            '$uses' => ['JSONStructureRelations'],
+            type => 'object',
+            properties => {
+                id => { type => 'string' },
+                customerId => { type => 'string' },
+                itemIds => { type => 'array', items => { type => 'string' } },
+                qualifier => { type => 'string' },
+            },
+            relations => {
+                customer => {
+                    cardinality => 'single',
+                    targettype => { '$ref' => '#/definitions/Customer' },
+                },
+                items => {
+                    cardinality => 'multiple',
+                    targettype => { '$ref' => '#/definitions/Item' },
+                    scope => 'line-items',
+                },
+                qualifiedCustomer => {
+                    cardinality => 'single',
+                    targettype => { '$ref' => '#/definitions/Customer' },
+                    qualifiertype => { '$ref' => '#/definitions/RelationQualifier' },
+                },
+            },
+            definitions => {
+                Customer => {
+                    name => 'Customer',
+                    type => 'object',
+                    properties => { id => { type => 'string' } },
+                },
+                Item => {
+                    name => 'Item',
+                    type => 'object',
+                    properties => { id => { type => 'string' } },
+                },
+                RelationQualifier => {
+                    name => 'RelationQualifier',
+                    type => 'string',
+                },
+            },
+        },
+    );
+
+    for my $schema (@valid_schemas) {
+        my $result = $validator->validate($schema);
+        ok($result->is_valid, 'valid Relations schema passes') or diag(join("\n", map { $_->to_string } @{$result->errors}));
+    }
+
+    my @invalid_schemas = (
+        {
+            '$schema' => 'https://json-structure.org/meta/extended/v0/#',
+            '$id' => 'https://example.com/schema/relations_identity_non_object',
+            name => 'IdentityOnString',
+            '$uses' => ['JSONStructureRelations'],
+            type => 'string',
+            identity => ['id'],
+        },
+        {
+            '$schema' => 'https://json-structure.org/meta/extended/v0/#',
+            '$id' => 'https://example.com/schema/relations_identity_not_array',
+            name => 'IdentityNotArray',
+            '$uses' => ['JSONStructureRelations'],
+            type => 'object',
+            properties => { id => { type => 'string' } },
+            identity => 'id',
+        },
+        {
+            '$schema' => 'https://json-structure.org/meta/extended/v0/#',
+            '$id' => 'https://example.com/schema/relations_identity_missing_property',
+            name => 'IdentityMissingProperty',
+            '$uses' => ['JSONStructureRelations'],
+            type => 'object',
+            properties => { id => { type => 'string' } },
+            identity => ['missing'],
+        },
+        {
+            '$schema' => 'https://json-structure.org/meta/extended/v0/#',
+            '$id' => 'https://example.com/schema/relations_non_object',
+            name => 'RelationsOnString',
+            '$uses' => ['JSONStructureRelations'],
+            type => 'string',
+            relations => {},
+        },
+        {
+            '$schema' => 'https://json-structure.org/meta/extended/v0/#',
+            '$id' => 'https://example.com/schema/relations_invalid_cardinality',
+            name => 'InvalidCardinality',
+            '$uses' => ['JSONStructureRelations'],
+            type => 'object',
+            properties => { id => { type => 'string' } },
+            relations => {
+                customer => {
+                    cardinality => 'many',
+                    targettype => { '$ref' => '#/definitions/Customer' },
+                },
+            },
+            definitions => {
+                Customer => {
+                    name => 'Customer',
+                    type => 'object',
+                    properties => { id => { type => 'string' } },
+                },
+            },
+        },
+        {
+            '$schema' => 'https://json-structure.org/meta/extended/v0/#',
+            '$id' => 'https://example.com/schema/relations_missing_targettype',
+            name => 'MissingTargettype',
+            '$uses' => ['JSONStructureRelations'],
+            type => 'object',
+            properties => { id => { type => 'string' } },
+            relations => {
+                customer => {
+                    cardinality => 'single',
+                },
+            },
+        },
+        {
+            '$schema' => 'https://json-structure.org/meta/extended/v0/#',
+            '$id' => 'https://example.com/schema/relations_missing_cardinality',
+            name => 'MissingCardinality',
+            '$uses' => ['JSONStructureRelations'],
+            type => 'object',
+            properties => { id => { type => 'string' } },
+            relations => {
+                customer => {
+                    targettype => { '$ref' => '#/definitions/Customer' },
+                },
+            },
+            definitions => {
+                Customer => {
+                    name => 'Customer',
+                    type => 'object',
+                    properties => { id => { type => 'string' } },
+                },
+            },
+        },
+    );
+
+    for my $schema (@invalid_schemas) {
+        my $result = $validator->validate($schema);
+        ok(!$result->is_valid, 'invalid Relations schema fails') or diag(join("\n", map { $_->to_string } @{$result->errors}));
+    }
 };
 
 done_testing();

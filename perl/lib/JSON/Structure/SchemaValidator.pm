@@ -65,6 +65,7 @@ my %RESERVED_KEYWORDS = map { $_ => 1 } qw(
   description enum examples format items maxLength
   name precision properties required scale type
   values choices selector tuple
+  unit ucumUnit identity relations
 );
 
 # Extended keywords for conditional composition
@@ -113,6 +114,7 @@ my %VALID_FORMATS = map { $_ => 1 } qw(
 my %KNOWN_EXTENSIONS = map { $_ => 1 } qw(
   JSONStructureImport JSONStructureAlternateNames JSONStructureUnits
   JSONStructureConditionalComposition JSONStructureValidation
+  JSONStructureRelations
 );
 
 sub new {
@@ -1364,6 +1366,224 @@ sub _validate_extends {
     }
 }
 
+sub _has_enabled_extension {
+    my ( $self, $extension ) = @_;
+    return !!$self->{enabled_extensions}{$extension};
+}
+
+sub _validate_ucum_unit_keyword {
+    my ( $self, $schema, $type, $path ) = @_;
+
+    return if !exists $schema->{ucumUnit};
+
+    if ( !$self->_has_enabled_extension('JSONStructureUnits') ) {
+        $self->_add_error(
+            SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED,
+            "'ucumUnit' requires JSONStructureUnits extension.",
+            "$path/ucumUnit"
+        );
+    }
+
+    if ( !defined $schema->{ucumUnit} || ref( $schema->{ucumUnit} ) ) {
+        $self->_add_error(
+            SCHEMA_KEYWORD_INVALID_TYPE,
+            "'ucumUnit' must be a string.",
+            "$path/ucumUnit"
+        );
+    }
+
+    my %numeric_types = map { $_ => 1 }
+      qw(number integer float double decimal int32 uint32 int64 uint64 int128 uint128);
+    if ( !defined $type || ref($type) || !$numeric_types{$type} ) {
+        $self->_add_error(
+            SCHEMA_CONSTRAINT_TYPE_MISMATCH,
+            "'ucumUnit' can only appear in numeric schemas.",
+            "$path/ucumUnit"
+        );
+    }
+}
+
+sub _validate_relations_keywords {
+    my ( $self, $schema, $type, $path ) = @_;
+
+    my $has_identity  = exists $schema->{identity};
+    my $has_relations = exists $schema->{relations};
+    return if !$has_identity && !$has_relations;
+
+    if ( !$self->_has_enabled_extension('JSONStructureRelations') ) {
+        if ($has_identity) {
+            $self->_add_error(
+                SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED,
+                "'identity' requires JSONStructureRelations extension.",
+                "$path/identity"
+            );
+        }
+        if ($has_relations) {
+            $self->_add_error(
+                SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED,
+                "'relations' requires JSONStructureRelations extension.",
+                "$path/relations"
+            );
+        }
+    }
+
+    my $supports_relations = defined $type && !ref($type) && ( $type eq 'object' || $type eq 'tuple' );
+
+    if ($has_identity) {
+        my $identity = $schema->{identity};
+        if ( !$supports_relations ) {
+            $self->_add_error(
+                SCHEMA_CONSTRAINT_TYPE_MISMATCH,
+                "'identity' can only appear in object or tuple schemas.",
+                "$path/identity"
+            );
+        }
+
+        if ( ref($identity) ne 'ARRAY' ) {
+            $self->_add_error(
+                SCHEMA_KEYWORD_INVALID_TYPE,
+                "'identity' must be an array of strings.",
+                "$path/identity"
+            );
+        }
+        else {
+            my $properties = ref( $schema->{properties} ) eq 'HASH' ? $schema->{properties} : {};
+            for my $i ( 0 .. $#$identity ) {
+                my $item      = $identity->[$i];
+                my $item_path = "$path/identity[$i]";
+                if ( !defined $item || ref($item) ) {
+                    $self->_add_error(
+                        SCHEMA_KEYWORD_INVALID_TYPE,
+                        "'identity[$i]' must be a string.",
+                        $item_path
+                    );
+                    next;
+                }
+
+                if ( !exists $properties->{$item} ) {
+                    $self->_add_error(
+                        SCHEMA_REQUIRED_PROPERTY_NOT_DEFINED,
+                        "'identity' references property '$item' that is not in 'properties'.",
+                        $item_path
+                    );
+                }
+            }
+        }
+    }
+
+    return if !$has_relations;
+
+    if ( !$supports_relations ) {
+        $self->_add_error(
+            SCHEMA_CONSTRAINT_TYPE_MISMATCH,
+            "'relations' can only appear in object or tuple schemas.",
+            "$path/relations"
+        );
+    }
+
+    my $relations = $schema->{relations};
+    if ( ref($relations) ne 'HASH' ) {
+        $self->_add_error(
+            SCHEMA_KEYWORD_INVALID_TYPE,
+            "'relations' must be an object.",
+            "$path/relations"
+        );
+        return;
+    }
+
+    for my $relation_name ( keys %$relations ) {
+        my $relation     = $relations->{$relation_name};
+        my $relation_path = "$path/relations/$relation_name";
+
+        if ( ref($relation) ne 'HASH' ) {
+            $self->_add_error(
+                SCHEMA_KEYWORD_INVALID_TYPE,
+                'Relation declaration must be an object.',
+                $relation_path
+            );
+            next;
+        }
+
+        if ( !exists $relation->{targettype} ) {
+            $self->_add_error(
+                SCHEMA_KEYWORD_INVALID_TYPE,
+                "Relation declaration must have 'targettype'.",
+                "$relation_path/targettype"
+            );
+        }
+        else {
+            my $targettype = $relation->{targettype};
+            if ( ref($targettype) ne 'HASH' || !exists $targettype->{'$ref'} ) {
+                $self->_add_error(
+                    SCHEMA_KEYWORD_INVALID_TYPE,
+                    "'targettype' must be an object with '\$ref'.",
+                    "$relation_path/targettype"
+                );
+            }
+            else {
+                $self->_validate_ref( $targettype->{'$ref'}, "$relation_path/targettype/\$ref" );
+            }
+        }
+
+        if ( !exists $relation->{cardinality} ) {
+            $self->_add_error(
+                SCHEMA_KEYWORD_INVALID_TYPE,
+                "Relation declaration must have 'cardinality'.",
+                "$relation_path/cardinality"
+            );
+        }
+        else {
+            my $cardinality = $relation->{cardinality};
+            if ( !defined $cardinality || ref($cardinality) || ( $cardinality ne 'single' && $cardinality ne 'multiple' ) ) {
+                $self->_add_error(
+                    SCHEMA_KEYWORD_INVALID_TYPE,
+                    "'cardinality' must be 'single' or 'multiple'.",
+                    "$relation_path/cardinality"
+                );
+            }
+        }
+
+        if ( exists $relation->{scope} ) {
+            my $scope = $relation->{scope};
+            if ( !ref($scope) ) {
+                # Valid string scope
+            }
+            elsif ( ref($scope) eq 'ARRAY' ) {
+                for my $i ( 0 .. $#$scope ) {
+                    if ( !defined $scope->[$i] || ref( $scope->[$i] ) ) {
+                        $self->_add_error(
+                            SCHEMA_KEYWORD_INVALID_TYPE,
+                            "'scope' array items must be strings.",
+                            "$relation_path/scope[$i]"
+                        );
+                    }
+                }
+            }
+            else {
+                $self->_add_error(
+                    SCHEMA_KEYWORD_INVALID_TYPE,
+                    "'scope' must be a string or an array of strings.",
+                    "$relation_path/scope"
+                );
+            }
+        }
+
+        if ( exists $relation->{qualifiertype} ) {
+            my $qualifiertype = $relation->{qualifiertype};
+            if ( ref($qualifiertype) ne 'HASH' || !exists $qualifiertype->{'$ref'} ) {
+                $self->_add_error(
+                    SCHEMA_KEYWORD_INVALID_TYPE,
+                    "'qualifiertype' must be an object with '\$ref'.",
+                    "$relation_path/qualifiertype"
+                );
+            }
+            else {
+                $self->_validate_ref( $qualifiertype->{'$ref'}, "$relation_path/qualifiertype/\$ref" );
+            }
+        }
+    }
+}
+
 sub _check_constraint_type_mismatch {
     my ( $self, $schema, $type, $path ) = @_;
 
@@ -1406,6 +1626,9 @@ sub _validate_extended_keywords {
     my ( $self, $schema, $type, $path ) = @_;
 
     $type //= '';
+
+    $self->_validate_ucum_unit_keyword( $schema, $type, $path );
+    $self->_validate_relations_keywords( $schema, $type, $path );
 
     # Check constraint-type mismatches
     $self->_check_constraint_type_mismatch( $schema, $type, $path );
