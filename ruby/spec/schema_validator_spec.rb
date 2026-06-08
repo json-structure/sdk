@@ -147,11 +147,39 @@ RSpec.describe JsonStructure::SchemaValidator do
     end
 
     it 'rejects ucumUnit on non-numeric types' do
-      skip 'Pending ucumUnit keyword enforcement in the Ruby schema validator'
+      schema = <<~JSON
+        {
+          "$schema": "https://json-structure.org/meta/extended/v0/#",
+          "$id": "urn:example:ucum-string",
+          "name": "BadUcumType",
+          "$uses": ["JSONStructureUnits"],
+          "type": "string",
+          "ucumUnit": "m"
+        }
+      JSON
+
+      result = described_class.validate(schema)
+
+      expect(result).to be_invalid
+      expect(result.error_messages).to include("'ucumUnit' can only appear in numeric schemas.")
     end
 
     it 'rejects non-string ucumUnit values' do
-      skip 'Pending ucumUnit keyword enforcement in the Ruby schema validator'
+      schema = <<~JSON
+        {
+          "$schema": "https://json-structure.org/meta/extended/v0/#",
+          "$id": "urn:example:ucum-non-string",
+          "name": "BadUcumValue",
+          "$uses": ["JSONStructureUnits"],
+          "type": "number",
+          "ucumUnit": 5
+        }
+      JSON
+
+      result = described_class.validate(schema)
+
+      expect(result).to be_invalid
+      expect(result.error_messages).to include("'ucumUnit' must be a string.")
     end
   end
 
@@ -234,7 +262,35 @@ RSpec.describe JsonStructure::SchemaValidator do
     end
 
     it 'rejects invalid Relations schemas' do
-      skip 'Pending Relations keyword enforcement in the Ruby schema validator'
+      schema = <<~JSON
+        {
+          "$schema": "https://json-structure.org/meta/extended/v0/#",
+          "$id": "urn:example:relations-invalid",
+          "name": "BadRelations",
+          "$uses": ["JSONStructureRelations"],
+          "type": "string",
+          "identity": ["id"],
+          "relations": {
+            "customer": {
+              "cardinality": "many",
+              "targettype": { "type": "object" },
+              "scope": ["ok", 3],
+              "qualifiertype": { "type": "string" }
+            }
+          }
+        }
+      JSON
+
+      result = described_class.validate(schema)
+
+      expect(result).to be_invalid
+      expect(result.error_messages).to include("'identity' can only appear in object or tuple schemas.")
+      expect(result.error_messages).to include("'identity' references property 'id' that is not in 'properties'.")
+      expect(result.error_messages).to include("'relations' can only appear in object or tuple schemas.")
+      expect(result.error_messages).to include("'targettype' must be an object with '$ref'.")
+      expect(result.error_messages).to include("'cardinality' must be 'single' or 'multiple'.")
+      expect(result.error_messages).to include("'scope' array items must be strings.")
+      expect(result.error_messages).to include("'qualifiertype' must be an object with '$ref'.")
     end
   end
 end
