@@ -9,6 +9,14 @@ module JsonStructure
   class SchemaValidator
     UCUM_NUMERIC_TYPES = %w[number integer float double decimal int32 uint32 int64 uint64 int128 uint128].freeze
     RELATION_CONTAINER_TYPES = %w[object tuple].freeze
+    VALIDATION_KEYWORDS = %w[
+      pattern format minLength maxLength minimum maximum exclusiveMinimum exclusiveMaximum multipleOf
+      minItems maxItems uniqueItems contains minContains maxContains
+      minProperties maxProperties propertyNames patternProperties dependentRequired
+      minEntries maxEntries patternKeys keyNames
+      contentEncoding contentMediaType has default
+    ].freeze
+    UNITS_KEYWORDS = %w[unit currency symbols].freeze
 
     class << self
       # Validate a schema string
@@ -81,7 +89,9 @@ module JsonStructure
         return unless node.is_a?(Hash)
 
         type = node['type']
+        validate_validation_extension_gating(root_schema, node, path, errors)
         validate_ucum_unit_keyword(root_schema, node, type, path, errors)
+        validate_units_keywords(root_schema, node, type, path, errors)
         validate_relations_keywords(root_schema, node, type, path, errors)
 
         node.each do |key, value|
@@ -97,6 +107,16 @@ module JsonStructure
         end
       end
 
+      def validate_validation_extension_gating(root_schema, node, path, errors)
+        return if extension_enabled?(root_schema, 'JSONStructureValidation')
+
+        VALIDATION_KEYWORDS.each do |keyword|
+          next unless node.key?(keyword)
+
+          add_manual_warning(errors, "'#{keyword}' requires JSONStructureValidation extension.", "#{path}/#{escape_json_pointer(keyword)}")
+        end
+      end
+
       def validate_ucum_unit_keyword(root_schema, node, type, path, errors)
         return unless node.key?('ucumUnit')
 
@@ -107,6 +127,22 @@ module JsonStructure
         return if type.is_a?(String) && UCUM_NUMERIC_TYPES.include?(type)
 
         add_manual_error(errors, "'ucumUnit' can only appear in numeric schemas.", "#{path}/ucumUnit")
+      end
+
+      def validate_units_keywords(root_schema, node, type, path, errors)
+        UNITS_KEYWORDS.each do |keyword|
+          next unless node.key?(keyword)
+
+          add_manual_error(errors, "'#{keyword}' requires JSONStructureUnits extension.", "#{path}/#{escape_json_pointer(keyword)}") unless extension_enabled?(root_schema, 'JSONStructureUnits')
+        end
+
+        return unless node.key?('unit')
+
+        add_manual_error(errors, "'unit' must be a string.", "#{path}/unit") unless node['unit'].is_a?(String)
+
+        return if type.is_a?(String) && UCUM_NUMERIC_TYPES.include?(type)
+
+        add_manual_error(errors, "'unit' can only appear in numeric schemas.", "#{path}/unit")
       end
 
       def validate_relations_keywords(root_schema, node, type, path, errors)
@@ -242,6 +278,16 @@ module JsonStructure
         errors << ValidationError.new(
           code: 0,
           severity: FFI::JS_SEVERITY_ERROR,
+          path: path,
+          message: message,
+          location: { line: 0, column: 0, offset: 0 }
+        )
+      end
+
+      def add_manual_warning(errors, message, path)
+        errors << ValidationError.new(
+          code: 0,
+          severity: FFI::JS_SEVERITY_WARNING,
           path: path,
           message: message,
           location: { line: 0, column: 0, offset: 0 }

@@ -74,6 +74,8 @@ const (
 	SchemaNameInvalid = "SCHEMA_NAME_INVALID"
 	// SchemaConstraintInvalidForType indicates constraint is not valid for this type.
 	SchemaConstraintInvalidForType = "SCHEMA_CONSTRAINT_INVALID_FOR_TYPE"
+	// SchemaConstraintTypeMismatch indicates a keyword is used with an incompatible schema type.
+	SchemaConstraintTypeMismatch = "SCHEMA_CONSTRAINT_TYPE_MISMATCH"
 	// SchemaMinGreaterThanMax indicates minimum cannot be greater than maximum.
 	SchemaMinGreaterThanMax = "SCHEMA_MIN_GREATER_THAN_MAX"
 	// SchemaPropertiesNotObject indicates properties must be an object.

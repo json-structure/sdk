@@ -593,6 +593,7 @@ class JSONStructureSchemaCoreValidator:
             if "type" in schema_obj:
                 self._check_extended_validation_keywords(schema_obj, path)
                 self._check_ucum_unit_keyword(schema_obj, path)
+                self._check_units_keywords(schema_obj, path)
             self._check_relations_keywords(schema_obj, path)
                             
         if "required" in schema_obj:
@@ -753,11 +754,11 @@ class JSONStructureSchemaCoreValidator:
             return
 
         if "JSONStructureUnits" not in self.enabled_extensions:
-            self._err("'ucumUnit' requires JSONStructureUnits extension.", f"{path}/ucumUnit")
+            self._err("'ucumUnit' requires JSONStructureUnits extension.", f"{path}/ucumUnit", ErrorCodes.SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED)
 
         ucum_unit = obj["ucumUnit"]
         if not isinstance(ucum_unit, str):
-            self._err("'ucumUnit' must be a string.", f"{path}/ucumUnit")
+            self._err("'ucumUnit' must be a string.", f"{path}/ucumUnit", ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE)
 
         numeric_types = {
             "number", "integer", "float", "double", "decimal",
@@ -765,7 +766,37 @@ class JSONStructureSchemaCoreValidator:
         }
         type_name = obj.get("type")
         if not isinstance(type_name, str) or type_name not in numeric_types:
-            self._err("'ucumUnit' can only appear in numeric schemas.", f"{path}/ucumUnit")
+            self._err("'ucumUnit' can only appear in numeric schemas.", f"{path}/ucumUnit", ErrorCodes.SCHEMA_CONSTRAINT_TYPE_MISMATCH)
+
+    def _check_units_keywords(self, obj, path):
+        """
+        Check the unit, currency, and symbols keywords from the JSONStructureUnits extension.
+        """
+        numeric_types = {
+            "number", "integer", "float", "double", "decimal",
+            "int32", "uint32", "int64", "uint64", "int128", "uint128"
+        }
+        units_enabled = "JSONStructureUnits" in self.enabled_extensions
+
+        for keyword in ("unit", "currency", "symbols"):
+            if keyword not in obj:
+                continue
+            if not units_enabled:
+                self._err(
+                    f"'{keyword}' requires JSONStructureUnits extension.",
+                    f"{path}/{keyword}",
+                    ErrorCodes.SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED,
+                )
+
+        if "unit" not in obj:
+            return
+
+        if not isinstance(obj["unit"], str):
+            self._err("'unit' must be a string.", f"{path}/unit", ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE)
+
+        type_name = obj.get("type")
+        if not isinstance(type_name, str) or type_name not in numeric_types:
+            self._err("'unit' can only appear in numeric schemas.", f"{path}/unit", ErrorCodes.SCHEMA_CONSTRAINT_TYPE_MISMATCH)
 
     def _check_relations_keywords(self, obj, path):
         """

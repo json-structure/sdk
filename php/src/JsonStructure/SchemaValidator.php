@@ -360,6 +360,7 @@ class SchemaValidator
         }
 
         $typeName = is_string($schemaObj['type'] ?? null) ? $schemaObj['type'] : null;
+        $this->checkUnitsKeywords($schemaObj, $typeName, $path);
         $this->checkUcumUnitKeyword($schemaObj, $typeName, $path);
         $this->checkRelationsKeywords($schemaObj, $typeName, $path);
 
@@ -500,6 +501,32 @@ class SchemaValidator
     private function hasEnabledExtension(string $extension): bool
     {
         return in_array($extension, $this->enabledExtensions, true);
+    }
+
+    private function checkUnitsKeywords(array $obj, ?string $typeName, string $path): void
+    {
+        foreach (['unit', 'currency', 'symbols'] as $keyword) {
+            if (!array_key_exists($keyword, $obj)) {
+                continue;
+            }
+
+            if (!$this->hasEnabledExtension('JSONStructureUnits')) {
+                $this->addError("'{$keyword}' requires JSONStructureUnits extension.", "{$path}/{$keyword}", ErrorCodes::SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED);
+            }
+        }
+
+        if (!array_key_exists('unit', $obj)) {
+            return;
+        }
+
+        if (!is_string($obj['unit'])) {
+            $this->addError("'unit' must be a string.", "{$path}/unit", ErrorCodes::SCHEMA_KEYWORD_INVALID_TYPE);
+        }
+
+        $allowedTypes = ['number', 'integer', 'float', 'double', 'decimal', 'int32', 'uint32', 'int64', 'uint64', 'int128', 'uint128'];
+        if ($typeName === null || !in_array($typeName, $allowedTypes, true)) {
+            $this->addError("'unit' can only appear in numeric schemas.", "{$path}/unit", ErrorCodes::SCHEMA_CONSTRAINT_TYPE_MISMATCH);
+        }
     }
 
     private function checkUcumUnitKeyword(array $obj, ?string $typeName, string $path): void

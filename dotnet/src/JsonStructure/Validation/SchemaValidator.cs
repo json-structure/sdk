@@ -83,7 +83,7 @@ public sealed class SchemaValidator
         // Alternate names
         "altnames",
         // Units
-        "unit", "ucumUnit",
+        "unit", "ucumUnit", "currency", "symbols",
         // Relations
         "identity", "relations"
     };
@@ -1138,12 +1138,28 @@ public sealed class SchemaValidator
 
     private void ValidateUnitsAndRelationsKeywords(JsonObject schema, string? typeStr, string path, ValidationResult result)
     {
+        foreach (var keyword in new[] { "unit", "ucumUnit", "currency", "symbols" })
+        {
+            RequireExtension(schema, keyword, "JSONStructureUnits", path, result);
+        }
+
+        if (schema.TryGetPropertyValue("unit", out var unitKeywordValue))
+        {
+            if (unitKeywordValue is not JsonValue unitValue || !unitValue.TryGetValue<string>(out _))
+            {
+                AddError(result, ErrorCodes.SchemaKeywordInvalidType, "unit must be a string", AppendPath(path, "unit"));
+            }
+
+            if (typeStr is not null && !IsNumericType(typeStr))
+            {
+                AddError(result, ErrorCodes.SchemaConstraintInvalidForType, $"'unit' constraint is only valid for numeric types, not '{typeStr}'", AppendPath(path, "unit"));
+            }
+        }
+
         if (!schema.TryGetPropertyValue("ucumUnit", out var ucumUnitValue))
             return;
 
-        RequireExtension(schema, "ucumUnit", "JSONStructureUnits", path, result);
-
-        if (ucumUnitValue is not JsonValue unitValue || !unitValue.TryGetValue<string>(out _))
+        if (ucumUnitValue is not JsonValue unitValue2 || !unitValue2.TryGetValue<string>(out _))
         {
             AddError(result, ErrorCodes.SchemaKeywordInvalidType, "ucumUnit must be a string", AppendPath(path, "ucumUnit"));
         }

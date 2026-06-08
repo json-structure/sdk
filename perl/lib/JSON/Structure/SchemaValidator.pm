@@ -65,7 +65,7 @@ my %RESERVED_KEYWORDS = map { $_ => 1 } qw(
   description enum examples format items maxLength
   name precision properties required scale type
   values choices selector tuple
-  unit ucumUnit identity relations
+  unit ucumUnit currency symbols identity relations
 );
 
 # Extended keywords for conditional composition
@@ -1371,6 +1371,42 @@ sub _has_enabled_extension {
     return !!$self->{enabled_extensions}{$extension};
 }
 
+sub _validate_units_keywords {
+    my ( $self, $schema, $type, $path ) = @_;
+
+    for my $keyword (qw(unit currency symbols)) {
+        next if !exists $schema->{$keyword};
+
+        if ( !$self->_has_enabled_extension('JSONStructureUnits') ) {
+            $self->_add_error(
+                SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED,
+                "'$keyword' requires JSONStructureUnits extension.",
+                "$path/$keyword"
+            );
+        }
+    }
+
+    return if !exists $schema->{unit};
+
+    if ( !defined $schema->{unit} || ref( $schema->{unit} ) || looks_like_number( $schema->{unit} ) ) {
+        $self->_add_error(
+            SCHEMA_KEYWORD_INVALID_TYPE,
+            "'unit' must be a string.",
+            "$path/unit"
+        );
+    }
+
+    my %numeric_types = map { $_ => 1 }
+      qw(number integer float double decimal int32 uint32 int64 uint64 int128 uint128);
+    if ( !defined $type || ref($type) || !$numeric_types{$type} ) {
+        $self->_add_error(
+            SCHEMA_CONSTRAINT_TYPE_MISMATCH,
+            "'unit' can only appear in numeric schemas.",
+            "$path/unit"
+        );
+    }
+}
+
 sub _validate_ucum_unit_keyword {
     my ( $self, $schema, $type, $path ) = @_;
 
@@ -1627,6 +1663,7 @@ sub _validate_extended_keywords {
 
     $type //= '';
 
+    $self->_validate_units_keywords( $schema, $type, $path );
     $self->_validate_ucum_unit_keyword( $schema, $type, $path );
     $self->_validate_relations_keywords( $schema, $type, $path );
 

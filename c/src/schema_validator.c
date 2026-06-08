@@ -12,6 +12,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#ifndef JS_SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED
+#define JS_SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED JS_SCHEMA_EXTENSION_KEYWORD_WITHOUT_USES
+#endif
+
 /* ============================================================================
  * Internal Constants
  * ============================================================================ */
@@ -75,9 +79,12 @@ static bool validate_map_values(validate_context_t* ctx, const cJSON* schema);
 static bool validate_choice_schema(validate_context_t* ctx, const cJSON* schema);
 static bool validate_constraints(validate_context_t* ctx, const cJSON* schema, const char* type_name);
 static bool validate_ucum_unit_keyword(validate_context_t* ctx, const cJSON* schema, const char* type_name);
+static bool validate_units_extension_keywords(validate_context_t* ctx, const cJSON* schema, const char* type_name);
 static bool validate_relations_keywords(validate_context_t* ctx, const cJSON* schema, const char* type_name);
 static const cJSON* resolve_ref(validate_context_t* ctx, const char* ref);
 static bool process_imports(import_context_t* ctx, cJSON* obj, const char* path);
+static bool is_validation_extension_keyword(const char* keyword);
+static void collect_validation_keyword_warnings(validate_context_t* ctx, const cJSON* node);
 
 /* ============================================================================
  * Helper Functions
@@ -146,6 +153,56 @@ static bool is_ucum_numeric_type(const char* type_name) {
     };
 
     return is_string_in_list(type_name, ucum_numeric_types);
+}
+
+static bool is_validation_extension_keyword(const char* keyword) {
+    static const char* validation_extension_keywords[] = {
+        "pattern", "format", "minLength", "maxLength", "minimum", "maximum",
+        "exclusiveMinimum", "exclusiveMaximum", "multipleOf",
+        "minItems", "maxItems", "uniqueItems", "contains", "minContains", "maxContains",
+        "minProperties", "maxProperties", "propertyNames", "patternProperties", "dependentRequired",
+        "minEntries", "maxEntries", "patternKeys", "keyNames",
+        "contentEncoding", "contentMediaType", "has", "default",
+        NULL
+    };
+
+    return is_string_in_list(keyword, validation_extension_keywords);
+}
+
+static void collect_validation_keyword_warnings(validate_context_t* ctx, const cJSON* node) {
+    if (!ctx || !node) return;
+
+    if (cJSON_IsObject(node)) {
+        cJSON* child = NULL;
+        cJSON_ArrayForEach(child, node) {
+            size_t prev_len = strlen(ctx->path);
+            if (child->string) {
+                push_path(ctx, child->string);
+
+                if (is_validation_extension_keyword(child->string)) {
+                    char msg[256];
+                    snprintf(msg, sizeof(msg),
+                             "Validation extension keyword '%s' is used but validation extensions are not enabled. Add '\"$uses\": [\"JSONStructureValidation\"]' to enable validation, or this keyword will be ignored.",
+                             child->string);
+                    add_warning(ctx, JS_SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED, msg);
+                }
+            }
+
+            collect_validation_keyword_warnings(ctx, child);
+            pop_path(ctx, prev_len);
+        }
+    } else if (cJSON_IsArray(node)) {
+        cJSON* child = NULL;
+        int index = 0;
+        cJSON_ArrayForEach(child, node) {
+            size_t prev_len = strlen(ctx->path);
+            char segment[32];
+            snprintf(segment, sizeof(segment), "[%d]", index++);
+            push_path(ctx, segment);
+            collect_validation_keyword_warnings(ctx, child);
+            pop_path(ctx, prev_len);
+        }
+    }
 }
 
 static bool validate_relation_ref_object(validate_context_t* ctx, const cJSON* value, const char* keyword) {
@@ -810,6 +867,60 @@ static bool validate_ucum_unit_keyword(validate_context_t* ctx, const cJSON* sch
     }
 
     pop_path(ctx, prev_len);
+    return valid;
+}
+
+static bool validate_units_extension_keywords(validate_context_t* ctx, const cJSON* schema, const char* type_name) {
+    const cJSON* unit = cJSON_GetObjectItemCaseSensitive(schema, "unit");
+    const cJSON* currency = cJSON_GetObjectItemCaseSensitive(schema, "currency");
+    const cJSON* symbols = cJSON_GetObjectItemCaseSensitive(schema, "symbols");
+    bool units_enabled = has_enabled_extension(ctx, "JSONStructureUnits");
+    bool valid = true;
+
+    if (unit) {
+        size_t prev_len = strlen(ctx->path);
+        push_path(ctx, "unit");
+
+        if (!units_enabled) {
+            add_error(ctx, JS_SCHEMA_EXTENSION_KEYWORD_WITHOUT_USES,
+                     "'unit' requires JSONStructureUnits extension.");
+            valid = false;
+        }
+        if (!cJSON_IsString(unit)) {
+            add_error(ctx, JS_SCHEMA_KEYWORD_INVALID_TYPE, "'unit' must be a string.");
+            valid = false;
+        }
+        if (!is_ucum_numeric_type(type_name)) {
+            add_error(ctx, JS_SCHEMA_CONSTRAINT_TYPE_MISMATCH,
+                     "'unit' can only appear in numeric schemas.");
+            valid = false;
+        }
+
+        pop_path(ctx, prev_len);
+    }
+
+    if (currency) {
+        size_t prev_len = strlen(ctx->path);
+        push_path(ctx, "currency");
+        if (!units_enabled) {
+            add_error(ctx, JS_SCHEMA_EXTENSION_KEYWORD_WITHOUT_USES,
+                     "'currency' requires JSONStructureUnits extension.");
+            valid = false;
+        }
+        pop_path(ctx, prev_len);
+    }
+
+    if (symbols) {
+        size_t prev_len = strlen(ctx->path);
+        push_path(ctx, "symbols");
+        if (!units_enabled) {
+            add_error(ctx, JS_SCHEMA_EXTENSION_KEYWORD_WITHOUT_USES,
+                     "'symbols' requires JSONStructureUnits extension.");
+            valid = false;
+        }
+        pop_path(ctx, prev_len);
+    }
+
     return valid;
 }
 
@@ -1508,6 +1619,9 @@ static bool validate_schema_node(validate_context_t* ctx, const cJSON* schema) {
         if (!validate_ucum_unit_keyword(ctx, schema, type_str)) {
             valid = false;
         }
+        if (!validate_units_extension_keywords(ctx, schema, type_str)) {
+            valid = false;
+        }
         if (!validate_relations_keywords(ctx, schema, type_str)) {
             valid = false;
         }
@@ -1602,6 +1716,10 @@ static bool validate_root_schema(validate_context_t* ctx, const cJSON* schema) {
         ctx->definitions = cJSON_GetObjectItemCaseSensitive(schema, "$definitions");
     }
     
+    if (!has_enabled_extension(ctx, "JSONStructureValidation")) {
+        collect_validation_keyword_warnings(ctx, schema);
+    }
+
     /* Validate the schema tree */
     if (!validate_schema_node(ctx, schema)) {
         valid = false;

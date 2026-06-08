@@ -100,7 +100,7 @@ public final class SchemaValidator {
             // Alternate names
             "altnames",
             // Units
-            "unit", "ucumUnit",
+            "unit", "ucumUnit", "currency", "symbols",
             // Relations
             "identity", "relations"
     );
@@ -592,7 +592,7 @@ public final class SchemaValidator {
             validateAltnames(schema.get("altnames"), path, result);
         }
 
-        validateUcumUnit(schema, typeStr, path, result);
+        validateUnitsKeywords(schema, typeStr, path, result);
         validateRelationsKeywords(schema, typeStr, path, result);
         
         // A schema must have at least one schema-defining keyword (type, allOf, anyOf, oneOf, $extends)
@@ -1383,25 +1383,33 @@ public final class SchemaValidator {
         return false;
     }
 
-    private void validateUcumUnit(ObjectNode schema, String typeStr, String path, ValidationResult result) {
-        if (!schema.has("ucumUnit")) {
-            return;
-        }
+    private void validateUnitsKeywords(ObjectNode schema, String typeStr, String path, ValidationResult result) {
+        boolean unitsEnabled = hasExtension(schema, "JSONStructureUnits");
 
-        if (!hasExtension(schema, "JSONStructureUnits")) {
-            addError(result, ErrorCodes.SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED,
-                    "ucumUnit requires 'JSONStructureUnits' in $uses", appendPath(path, "ucumUnit"));
-        }
+        for (String keyword : List.of("unit", "ucumUnit", "currency", "symbols")) {
+            if (!schema.has(keyword)) {
+                continue;
+            }
 
-        JsonNode ucumUnit = schema.get("ucumUnit");
-        if (!ucumUnit.isTextual()) {
-            addError(result, ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE,
-                    "ucumUnit must be a string", appendPath(path, "ucumUnit"));
-        }
+            if (!unitsEnabled) {
+                addError(result, ErrorCodes.SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED,
+                        keyword + " requires 'JSONStructureUnits' in $uses", appendPath(path, keyword));
+            }
 
-        if (!NUMERIC_UNIT_TYPES.contains(typeStr)) {
-            addError(result, ErrorCodes.SCHEMA_CONSTRAINT_INVALID_FOR_TYPE,
-                    "ucumUnit is only valid for numeric types", appendPath(path, "ucumUnit"));
+            if (!"unit".equals(keyword) && !"ucumUnit".equals(keyword)) {
+                continue;
+            }
+
+            JsonNode value = schema.get(keyword);
+            if (!value.isTextual()) {
+                addError(result, ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE,
+                        keyword + " must be a string", appendPath(path, keyword));
+            }
+
+            if (!NUMERIC_UNIT_TYPES.contains(typeStr)) {
+                addError(result, ErrorCodes.SCHEMA_CONSTRAINT_TYPE_MISMATCH,
+                        keyword + " is only valid for numeric types", appendPath(path, keyword));
+            }
         }
     }
 

@@ -154,23 +154,30 @@ func hasExtension(schema map[string]interface{}, extension string) bool {
 	return false
 }
 
-func (ctx *schemaValidationContext) validateUcumUnitKeyword(schema map[string]interface{}, path string) {
-	ucumUnit, ok := schema["ucumUnit"]
-	if !ok {
-		return
-	}
+func (ctx *schemaValidationContext) validateUnitsKeywords(schema map[string]interface{}, path string) {
+	unitsEnabled := hasExtension(schema, "JSONStructureUnits")
+	for _, keyword := range []string{"unit", "ucumUnit", "currency", "symbols"} {
+		value, ok := schema[keyword]
+		if !ok {
+			continue
+		}
 
-	if !hasExtension(schema, "JSONStructureUnits") {
-		ctx.addError(path+"/ucumUnit", "ucumUnit requires JSONStructureUnits in $uses", SchemaExtensionKeywordNotEnabled)
-	}
+		if !unitsEnabled {
+			ctx.addError(path+"/"+keyword, fmt.Sprintf("%s requires JSONStructureUnits in $uses", keyword), SchemaExtensionKeywordNotEnabled)
+		}
 
-	if _, ok := ucumUnit.(string); !ok {
-		ctx.addError(path+"/ucumUnit", "ucumUnit must be a string", SchemaKeywordInvalidType)
-	}
+		if keyword != "unit" && keyword != "ucumUnit" {
+			continue
+		}
 
-	typeStr, ok := schema["type"].(string)
-	if !ok || !isNumericType(typeStr) {
-		ctx.addError(path+"/ucumUnit", "ucumUnit is only valid for numeric types", SchemaConstraintInvalidForType)
+		if _, ok := value.(string); !ok {
+			ctx.addError(path+"/"+keyword, fmt.Sprintf("%s must be a string", keyword), SchemaKeywordInvalidType)
+		}
+
+		typeStr, ok := schema["type"].(string)
+		if !ok || !isNumericType(typeStr) {
+			ctx.addError(path+"/"+keyword, fmt.Sprintf("%s is only valid for numeric types", keyword), SchemaConstraintTypeMismatch)
+		}
 	}
 }
 
@@ -484,7 +491,7 @@ func (ctx *schemaValidationContext) validateTypeDefinition(schema map[string]int
 	}
 
 	typeVal, hasType := schema["type"]
-	ctx.validateUcumUnitKeyword(schema, path)
+	ctx.validateUnitsKeywords(schema, path)
 	ctx.validateRelationsKeywords(schema, path)
 
 	// Type is required unless it's a conditional-only schema

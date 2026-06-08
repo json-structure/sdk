@@ -338,6 +338,7 @@ private final class ValidationEngine {
         }
 
         let typeName = schema["type"] as? String
+        validateUnitsKeywords(schema, typeName, path)
         validateUcumUnitKeyword(schema, typeName, path)
         validateRelationsKeywords(schema, typeName, path)
     }
@@ -753,6 +754,33 @@ private final class ValidationEngine {
                 addError("\(path)/\(constraint)", "\(constraint) constraint is only valid for numeric types, not \(typeStr)", schemaConstraintInvalidForType)
             }
         }
+    }
+
+    private func validateUnitsKeywords(_ schema: [String: Any], _ typeName: String?, _ path: String) {
+        for keyword in ["unit", "currency", "symbols"] {
+            guard schema[keyword] != nil else {
+                continue
+            }
+
+            if !enabledExtensions.contains("JSONStructureUnits") {
+                addError("\(path)/\(keyword)", "'\(keyword)' requires JSONStructureUnits extension.", schemaExtensionKeywordNotEnabled)
+            }
+        }
+
+        guard schema["unit"] != nil else {
+            return
+        }
+
+        if !(schema["unit"] is String) {
+            addError("\(path)/unit", "'unit' must be a string.", schemaKeywordInvalidType)
+        }
+
+        let allowedTypes: Set<String> = ["number", "integer", "float", "double", "decimal", "int32", "uint32", "int64", "uint64", "int128", "uint128"]
+        if let typeName, allowedTypes.contains(typeName) {
+            return
+        }
+
+        addError("\(path)/unit", "'unit' can only appear in numeric schemas.", schemaConstraintInvalidForType)
     }
 
     private func validateUcumUnitKeyword(_ schema: [String: Any], _ typeName: String?, _ path: String) {

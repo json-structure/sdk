@@ -271,7 +271,7 @@ impl SchemaValidator {
         }
 
         let type_name = obj.get("type").and_then(Value::as_str);
-        self.validate_ucum_unit_keyword(obj, locator, result, path, type_name, &enabled_extensions);
+        self.validate_units_keywords(obj, locator, result, path, type_name, &enabled_extensions);
         self.validate_relations_keywords(
             obj,
             root_schema,
@@ -1874,7 +1874,7 @@ impl SchemaValidator {
         }
     }
 
-    fn validate_ucum_unit_keyword(
+    fn validate_units_keywords(
         &self,
         obj: &serde_json::Map<String, Value>,
         locator: &JsonSourceLocator,
@@ -1883,38 +1883,42 @@ impl SchemaValidator {
         type_name: Option<&str>,
         enabled_extensions: &HashSet<&str>,
     ) {
-        let Some(ucum_unit) = obj.get("ucumUnit") else {
-            return;
-        };
+        for keyword in ["unit", "ucumUnit", "currency", "symbols"] {
+            let Some(value) = obj.get(keyword) else {
+                continue;
+            };
 
-        if !enabled_extensions.contains("JSONStructureUnits") {
-            let ucum_path = format!("{}/ucumUnit", path);
-            result.add_error(ValidationError::schema_error(
-                SchemaErrorCode::SchemaExtensionKeywordWithoutUses,
-                "ucumUnit requires 'JSONStructureUnits' in $uses",
-                &ucum_path,
-                locator.get_location(&ucum_path),
-            ));
-        }
+            let keyword_path = format!("{}/{}", path, keyword);
+            if !enabled_extensions.contains("JSONStructureUnits") {
+                result.add_error(ValidationError::schema_error(
+                    SchemaErrorCode::SchemaExtensionKeywordWithoutUses,
+                    &format!("{} requires 'JSONStructureUnits' in $uses", keyword),
+                    &keyword_path,
+                    locator.get_location(&keyword_path),
+                ));
+            }
 
-        if !ucum_unit.is_string() {
-            let ucum_path = format!("{}/ucumUnit", path);
-            result.add_error(ValidationError::schema_error(
-                SchemaErrorCode::SchemaKeywordInvalidType,
-                "ucumUnit must be a string",
-                &ucum_path,
-                locator.get_location(&ucum_path),
-            ));
-        }
+            if keyword != "unit" && keyword != "ucumUnit" {
+                continue;
+            }
 
-        if type_name.is_none_or(|name| !crate::types::is_numeric_type(name)) {
-            let ucum_path = format!("{}/ucumUnit", path);
-            result.add_error(ValidationError::schema_error(
-                SchemaErrorCode::SchemaConstraintTypeMismatch,
-                "ucumUnit is only valid for numeric types",
-                &ucum_path,
-                locator.get_location(&ucum_path),
-            ));
+            if !value.is_string() {
+                result.add_error(ValidationError::schema_error(
+                    SchemaErrorCode::SchemaKeywordInvalidType,
+                    &format!("{} must be a string", keyword),
+                    &keyword_path,
+                    locator.get_location(&keyword_path),
+                ));
+            }
+
+            if type_name.is_none_or(|name| !crate::types::is_numeric_type(name)) {
+                result.add_error(ValidationError::schema_error(
+                    SchemaErrorCode::SchemaConstraintTypeMismatch,
+                    &format!("{} is only valid for numeric types", keyword),
+                    &keyword_path,
+                    locator.get_location(&keyword_path),
+                ));
+            }
         }
     }
 
