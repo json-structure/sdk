@@ -359,6 +359,10 @@ class SchemaValidator
             }
         }
 
+        $typeName = is_string($schemaObj['type'] ?? null) ? $schemaObj['type'] : null;
+        $this->checkUcumUnitKeyword($schemaObj, $typeName, $path);
+        $this->checkRelationsKeywords($schemaObj, $typeName, $path);
+
         // Extended validation checks
         if ($this->extended && isset($schemaObj['type'])) {
             $this->checkExtendedValidationKeywords($schemaObj, $path);
@@ -491,6 +495,142 @@ class SchemaValidator
                 }
             }
         }
+    }
+
+    private function hasEnabledExtension(string $extension): bool
+    {
+        return in_array($extension, $this->enabledExtensions, true);
+    }
+
+    private function checkUcumUnitKeyword(array $obj, ?string $typeName, string $path): void
+    {
+        if (!array_key_exists('ucumUnit', $obj)) {
+            return;
+        }
+
+        if (!$this->hasEnabledExtension('JSONStructureUnits')) {
+            $this->addError("'ucumUnit' requires JSONStructureUnits extension.", "{$path}/ucumUnit", ErrorCodes::SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED);
+        }
+
+        if (!is_string($obj['ucumUnit'])) {
+            $this->addError("'ucumUnit' must be a string.", "{$path}/ucumUnit", ErrorCodes::SCHEMA_KEYWORD_INVALID_TYPE);
+        }
+
+        $allowedTypes = ['number', 'integer', 'float', 'double', 'decimal', 'int32', 'uint32', 'int64', 'uint64', 'int128', 'uint128'];
+        if ($typeName === null || !in_array($typeName, $allowedTypes, true)) {
+            $this->addError("'ucumUnit' can only appear in numeric schemas.", "{$path}/ucumUnit", ErrorCodes::SCHEMA_CONSTRAINT_TYPE_MISMATCH);
+        }
+    }
+
+    private function checkRelationsKeywords(array $obj, ?string $typeName, string $path): void
+    {
+        $hasIdentity = array_key_exists('identity', $obj);
+        $hasRelations = array_key_exists('relations', $obj);
+        if (!$hasIdentity && !$hasRelations) {
+            return;
+        }
+
+        if (!$this->hasEnabledExtension('JSONStructureRelations')) {
+            if ($hasIdentity) {
+                $this->addError("'identity' requires JSONStructureRelations extension.", "{$path}/identity", ErrorCodes::SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED);
+            }
+            if ($hasRelations) {
+                $this->addError("'relations' requires JSONStructureRelations extension.", "{$path}/relations", ErrorCodes::SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED);
+            }
+        }
+
+        $supportsRelations = in_array($typeName, ['object', 'tuple'], true);
+
+        if ($hasIdentity) {
+            $identity = $obj['identity'];
+            if (!$supportsRelations) {
+                $this->addError("'identity' can only appear in object or tuple schemas.", "{$path}/identity", ErrorCodes::SCHEMA_CONSTRAINT_TYPE_MISMATCH);
+            }
+
+            if (!is_array($identity)) {
+                $this->addError("'identity' must be an array of strings.", "{$path}/identity", ErrorCodes::SCHEMA_KEYWORD_INVALID_TYPE);
+            } else {
+                $properties = isset($obj['properties']) && is_array($obj['properties']) ? $obj['properties'] : [];
+                foreach ($identity as $idx => $item) {
+                    $itemPath = "{$path}/identity[{$idx}]";
+                    if (!is_string($item)) {
+                        $this->addError("'identity[{$idx}]' must be a string.", $itemPath, ErrorCodes::SCHEMA_KEYWORD_INVALID_TYPE);
+                        continue;
+                    }
+
+                    if (!array_key_exists($item, $properties)) {
+                        $this->addError("'identity' references property '{$item}' that is not in 'properties'.", $itemPath, ErrorCodes::SCHEMA_REQUIRED_PROPERTY_NOT_DEFINED);
+                    }
+                }
+            }
+        }
+
+        if (!$hasRelations) {
+            return;
+        }
+
+        $relations = $obj['relations'];
+        if (!$supportsRelations) {
+            $this->addError("'relations' can only appear in object or tuple schemas.", "{$path}/relations", ErrorCodes::SCHEMA_CONSTRAINT_TYPE_MISMATCH);
+        }
+
+        if (!is_array($relations) || array_is_list($relations)) {
+            $this->addError("'relations' must be an object.", "{$path}/relations", ErrorCodes::SCHEMA_KEYWORD_INVALID_TYPE);
+            return;
+        }
+
+        foreach ($relations as $relationName => $relation) {
+            $relationPath = "{$path}/relations/{$relationName}";
+            if (!is_array($relation) || array_is_list($relation)) {
+                $this->addError('Relation declaration must be an object.', $relationPath, ErrorCodes::SCHEMA_KEYWORD_INVALID_TYPE);
+                continue;
+            }
+
+            if (!array_key_exists('targettype', $relation)) {
+                $this->addError("Relation declaration must have 'targettype'.", "{$relationPath}/targettype", ErrorCodes::SCHEMA_KEYWORD_INVALID_TYPE);
+            } else {
+                $this->checkRelationRefObject($relation['targettype'], 'targettype', $relationPath);
+            }
+
+            if (!array_key_exists('cardinality', $relation)) {
+                $this->addError("Relation declaration must have 'cardinality'.", "{$relationPath}/cardinality", ErrorCodes::SCHEMA_KEYWORD_INVALID_TYPE);
+            } else {
+                $cardinality = $relation['cardinality'];
+                if (!is_string($cardinality) || !in_array($cardinality, ['single', 'multiple'], true)) {
+                    $this->addError("'cardinality' must be 'single' or 'multiple'.", "{$relationPath}/cardinality", ErrorCodes::SCHEMA_KEYWORD_INVALID_TYPE);
+                }
+            }
+
+            if (array_key_exists('scope', $relation)) {
+                $scope = $relation['scope'];
+                if (is_string($scope)) {
+                    // Valid.
+                } elseif (is_array($scope) && array_is_list($scope)) {
+                    foreach ($scope as $idx => $item) {
+                        if (!is_string($item)) {
+                            $this->addError("'scope' array items must be strings.", "{$relationPath}/scope[{$idx}]", ErrorCodes::SCHEMA_KEYWORD_INVALID_TYPE);
+                        }
+                    }
+                } else {
+                    $this->addError("'scope' must be a string or an array of strings.", "{$relationPath}/scope", ErrorCodes::SCHEMA_KEYWORD_INVALID_TYPE);
+                }
+            }
+
+            if (array_key_exists('qualifiertype', $relation)) {
+                $this->checkRelationRefObject($relation['qualifiertype'], 'qualifiertype', $relationPath);
+            }
+        }
+    }
+
+    private function checkRelationRefObject(mixed $value, string $keyword, string $relationPath): void
+    {
+        $keywordPath = "{$relationPath}/{$keyword}";
+        if (!is_array($value) || array_is_list($value) || !array_key_exists('$ref', $value)) {
+            $this->addError("'{$keyword}' must be an object with '\$ref'.", $keywordPath, ErrorCodes::SCHEMA_KEYWORD_INVALID_TYPE);
+            return;
+        }
+
+        $this->checkJsonPointer($value['$ref'], $this->doc, "{$keywordPath}/$ref");
     }
 
     private function checkExtendedValidationKeywords(array $obj, string $path): void
