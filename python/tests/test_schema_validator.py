@@ -1820,7 +1820,6 @@ INVALID_UCUM_UNIT_SCHEMAS = [
 ]
 
 
-@pytest.mark.skip(reason="Pending ucumUnit keyword enforcement in the Python schema validator")
 @pytest.mark.parametrize("schema", INVALID_UCUM_UNIT_SCHEMAS)
 def test_invalid_ucum_unit_schemas(schema):
     errors = _validate_extended_schema(schema)
@@ -1888,7 +1887,6 @@ RELATIONS_VALID_SCHEMAS = [
 ]
 
 
-@pytest.mark.skip(reason="Pending JSONStructureRelations extension support in the Python schema validator")
 @pytest.mark.parametrize("schema", RELATIONS_VALID_SCHEMAS)
 def test_valid_relations_schemas(schema):
     errors = _validate_extended_schema(schema)
@@ -1987,7 +1985,6 @@ RELATIONS_INVALID_SCHEMAS = [
 ]
 
 
-@pytest.mark.skip(reason="Pending JSONStructureRelations extension support in the Python schema validator")
 @pytest.mark.parametrize("schema", RELATIONS_INVALID_SCHEMAS)
 def test_invalid_relations_schemas(schema):
     errors = _validate_extended_schema(schema)

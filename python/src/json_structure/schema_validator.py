@@ -77,7 +77,8 @@ class JSONStructureSchemaCoreValidator:
     # Extension names
     KNOWN_EXTENSIONS = {
         "JSONStructureImport", "JSONStructureAlternateNames", "JSONStructureUnits",
-        "JSONStructureConditionalComposition", "JSONStructureValidation"
+        "JSONStructureConditionalComposition", "JSONStructureValidation",
+        "JSONStructureRelations"
     }
 
     def __init__(self, allow_dollar=False, allow_import=False, import_map=None, extended=False, external_schemas=None, warn_on_unused_extension_keywords=True, max_validation_depth=64):
@@ -588,8 +589,11 @@ class JSONStructureSchemaCoreValidator:
                             self._check_primitive_schema(schema_obj, path)
                             
         # Extended validation checks
-        if self.extended and "type" in schema_obj:
-            self._check_extended_validation_keywords(schema_obj, path)
+        if self.extended:
+            if "type" in schema_obj:
+                self._check_extended_validation_keywords(schema_obj, path)
+                self._check_ucum_unit_keyword(schema_obj, path)
+            self._check_relations_keywords(schema_obj, path)
                             
         if "required" in schema_obj:
             req_val = schema_obj["required"]
@@ -740,7 +744,109 @@ class JSONStructureSchemaCoreValidator:
         if "default" in obj:
             if not validation_enabled:
                 self._add_extension_keyword_warning("default", path)
+ 
+    def _check_ucum_unit_keyword(self, obj, path):
+        """
+        Check the ucumUnit keyword from the JSONStructureUnits extension.
+        """
+        if "ucumUnit" not in obj:
+            return
 
+        if "JSONStructureUnits" not in self.enabled_extensions:
+            self._err("'ucumUnit' requires JSONStructureUnits extension.", f"{path}/ucumUnit")
+
+        ucum_unit = obj["ucumUnit"]
+        if not isinstance(ucum_unit, str):
+            self._err("'ucumUnit' must be a string.", f"{path}/ucumUnit")
+
+        numeric_types = {
+            "number", "integer", "float", "double", "decimal",
+            "int32", "uint32", "int64", "uint64", "int128", "uint128"
+        }
+        type_name = obj.get("type")
+        if not isinstance(type_name, str) or type_name not in numeric_types:
+            self._err("'ucumUnit' can only appear in numeric schemas.", f"{path}/ucumUnit")
+
+    def _check_relations_keywords(self, obj, path):
+        """
+        Check identity and relations keywords from the JSONStructureRelations extension.
+        """
+        relation_keywords_used = "identity" in obj or "relations" in obj
+        if not relation_keywords_used:
+            return
+
+        relations_enabled = "JSONStructureRelations" in self.enabled_extensions
+        if not relations_enabled:
+            if "identity" in obj:
+                self._err("'identity' requires JSONStructureRelations extension.", f"{path}/identity")
+            if "relations" in obj:
+                self._err("'relations' requires JSONStructureRelations extension.", f"{path}/relations")
+
+        type_name = obj.get("type")
+        supports_relations = isinstance(type_name, str) and type_name in {"object", "tuple"}
+
+        if "identity" in obj:
+            identity = obj["identity"]
+            if not supports_relations:
+                self._err("'identity' can only appear in object or tuple schemas.", f"{path}/identity")
+            if not isinstance(identity, list):
+                self._err("'identity' must be an array.", f"{path}/identity")
+            else:
+                properties = obj.get("properties") if isinstance(obj.get("properties"), dict) else None
+                for idx, item in enumerate(identity):
+                    item_path = f"{path}/identity[{idx}]"
+                    if not isinstance(item, str):
+                        self._err(f"'identity[{idx}]' must be a string.", item_path)
+                    elif properties is not None and item not in properties:
+                        self._err(f"'identity' references property '{item}' that is not in 'properties'.", item_path)
+
+        if "relations" in obj:
+            relations = obj["relations"]
+            if not supports_relations:
+                self._err("'relations' can only appear in object or tuple schemas.", f"{path}/relations")
+            if not isinstance(relations, dict):
+                self._err("'relations' must be an object.", f"{path}/relations")
+            else:
+                for relation_name, declaration in relations.items():
+                    relation_path = f"{path}/relations/{relation_name}"
+                    if not isinstance(declaration, dict):
+                        self._err("Relation declaration must be an object.", relation_path)
+                        continue
+
+                    if "targettype" not in declaration:
+                        self._err("Relation declaration must have 'targettype'.", f"{relation_path}/targettype")
+                    else:
+                        targettype = declaration["targettype"]
+                        if not isinstance(targettype, dict) or "$ref" not in targettype:
+                            self._err("'targettype' must be an object with '$ref'.", f"{relation_path}/targettype")
+                        else:
+                            self._check_json_pointer(targettype["$ref"], self.doc, f"{relation_path}/targettype/$ref")
+
+                    if "cardinality" not in declaration:
+                        self._err("Relation declaration must have 'cardinality'.", f"{relation_path}/cardinality")
+                    else:
+                        cardinality = declaration["cardinality"]
+                        if cardinality not in {"single", "multiple"}:
+                            self._err("'cardinality' must be 'single' or 'multiple'.", f"{relation_path}/cardinality")
+
+                    if "scope" in declaration:
+                        scope = declaration["scope"]
+                        if isinstance(scope, str):
+                            pass
+                        elif isinstance(scope, list):
+                            for idx, item in enumerate(scope):
+                                if not isinstance(item, str):
+                                    self._err("'scope' array items must be strings.", f"{relation_path}/scope[{idx}]")
+                        else:
+                            self._err("'scope' must be a string or an array of strings.", f"{relation_path}/scope")
+
+                    if "qualifiertype" in declaration:
+                        qualifiertype = declaration["qualifiertype"]
+                        if not isinstance(qualifiertype, dict) or "$ref" not in qualifiertype:
+                            self._err("'qualifiertype' must be an object with '$ref'.", f"{relation_path}/qualifiertype")
+                        else:
+                            self._check_json_pointer(qualifiertype["$ref"], self.doc, f"{relation_path}/qualifiertype/$ref")
+ 
     def _check_numeric_validation(self, obj, path, type_name, validation_enabled=True):
         """
         Check numeric validation keywords.
