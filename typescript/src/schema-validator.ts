@@ -992,7 +992,7 @@ export class SchemaValidator {
       if (resolved === null) {
         this.addError(context, refPath, `$extends reference '${ref}' not found`, ErrorCodes.SCHEMA_EXTENDS_NOT_FOUND);
       } else {
-        if (resolved.type !== 'object' && resolved.type !== 'tuple') {
+        if ('type' in resolved && resolved.type !== 'object' && resolved.type !== 'tuple') {
           this.addError(context, refPath, `$extends target '${ref}' must resolve to an object or tuple type`, ErrorCodes.SCHEMA_CONSTRAINT_TYPE_MISMATCH);
         }
 

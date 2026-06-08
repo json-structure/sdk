@@ -983,7 +983,7 @@ private final class ValidationEngine {
             
             if let resolved = resolveRef(ref) {
                 let resolvedType = resolved["type"] as? String
-                if resolvedType != "object" && resolvedType != "tuple" {
+                if resolvedType != nil && resolvedType != "object" && resolvedType != "tuple" {
                     addError(refPath, "$extends target '\(ref)' must resolve to an object or tuple type", schemaConstraintTypeMismatch)
                 } else if let extendsVal = resolved["$extends"] {
                     validateExtends(extendsVal, refPath)

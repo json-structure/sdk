@@ -1936,7 +1936,7 @@ impl SchemaValidator {
             if ref_str.starts_with("#/definitions/") {
                 if let Some(resolved) = self.resolve_ref(&ref_str, root_schema) {
                     let resolved_type = resolved.get("type").and_then(Value::as_str);
-                    if !matches!(resolved_type, Some("object" | "tuple")) {
+                    if resolved_type.is_some() && !matches!(resolved_type, Some("object" | "tuple")) {
                         result.add_error(ValidationError::schema_error(
                             SchemaErrorCode::SchemaConstraintTypeMismatch,
                             format!(

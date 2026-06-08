@@ -886,7 +886,7 @@ public sealed class SchemaValidator
                     ? GetTypeString(resolvedTypeValue)
                     : null;
 
-                if (resolvedType is not ("object" or "tuple"))
+                if (resolvedType is not null and not ("object" or "tuple"))
                 {
                     AddError(result, ErrorCodes.SchemaConstraintTypeMismatch, $"$extends target '{refStr}' must resolve to an object or tuple type", refPath);
                 }

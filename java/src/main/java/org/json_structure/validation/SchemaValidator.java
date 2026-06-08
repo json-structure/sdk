@@ -799,8 +799,7 @@ public final class SchemaValidator {
         } else {
             JsonNode baseType = baseSchema.get("type");
             String baseTypeStr = baseType != null && baseType.isTextual() ? baseType.asText() : null;
-            boolean isNamespaceMap = "map".equals(baseTypeStr) && refStr.endsWith("/Namespace");
-            if (!"object".equals(baseTypeStr) && !"tuple".equals(baseTypeStr) && !isNamespaceMap) {
+            if (baseTypeStr != null && !"object".equals(baseTypeStr) && !"tuple".equals(baseTypeStr)) {
                 addError(result, ErrorCodes.SCHEMA_CONSTRAINT_TYPE_MISMATCH,
                         "$extends target '" + refStr + "' must resolve to an object or tuple type", refPath);
             } else if (baseSchema.isObject() && baseSchema.has("$extends")) {

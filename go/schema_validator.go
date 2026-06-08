@@ -1048,8 +1048,8 @@ func (ctx *schemaValidationContext) validateExtends(extendsVal interface{}, path
 		if resolved == nil {
 			ctx.addError(refPath, fmt.Sprintf("$extends reference '%s' not found", ref), SchemaExtendsNotFound)
 		} else {
-			resolvedType, _ := resolved["type"].(string)
-			if resolvedType != "object" && resolvedType != "tuple" {
+			resolvedType, hasType := resolved["type"].(string)
+			if hasType && resolvedType != "object" && resolvedType != "tuple" {
 				ctx.addError(refPath, fmt.Sprintf("$extends target '%s' must resolve to an object or tuple type", ref), SchemaConstraintTypeMismatch)
 			} else if extendsVal, hasExtends := resolved["$extends"]; hasExtends {
 				// Recursively validate the extended schema's $extends

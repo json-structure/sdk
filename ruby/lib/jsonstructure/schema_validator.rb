@@ -279,7 +279,7 @@ module JsonStructure
 
           resolved = resolve_ref(root_schema, ref)
           next unless resolved
-          next if resolved.is_a?(Hash) && RELATION_CONTAINER_TYPES.include?(resolved['type'])
+          next if resolved.is_a?(Hash) && (!resolved.key?('type') || RELATION_CONTAINER_TYPES.include?(resolved['type']))
 
           add_manual_error(errors,
                            "$extends target '#{ref}' must resolve to an object or tuple type",

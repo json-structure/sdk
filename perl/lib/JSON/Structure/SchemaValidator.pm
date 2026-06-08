@@ -1422,9 +1422,9 @@ sub _validate_extends {
     }
     elsif (
         ref($target) ne 'HASH'
-        || !defined $target->{type}
-        || ref( $target->{type} )
-        || (   $target->{type} ne 'object'
+        || (   defined $target->{type}
+            && !ref( $target->{type} )
+            && $target->{type} ne 'object'
             && $target->{type} ne 'tuple' )
       )
     {
