@@ -580,6 +580,7 @@ func (ctx *schemaValidationContext) validatePrimitiveConstraints(typeStr string,
 	// Validate numeric constraints
 	if isNumericType(typeStr) {
 		ctx.validateNumericConstraints(schema, path)
+		ctx.validateUnitsKeywords(schema, path)
 	}
 }
 
@@ -655,6 +656,16 @@ func (ctx *schemaValidationContext) validateNumericConstraints(schema map[string
 			ctx.addError(path+"/multipleOf", "multipleOf must be a number", SchemaNumberConstraintInvalid)
 		} else if multipleOfNum <= 0 {
 			ctx.addError(path+"/multipleOf", "multipleOf must be greater than 0", SchemaPositiveNumberConstraintInvalid)
+		}
+	}
+}
+
+func (ctx *schemaValidationContext) validateUnitsKeywords(schema map[string]interface{}, path string) {
+	for _, key := range []string{"unit", "ucumUnit"} {
+		if value, ok := schema[key]; ok {
+			if _, isString := value.(string); !isString {
+				ctx.addError(path+"/"+key, key+" must be a string", SchemaKeywordInvalidType)
+			}
 		}
 	}
 }
@@ -773,6 +784,7 @@ func (ctx *schemaValidationContext) validateConditionalKeywords(schema map[strin
 func (ctx *schemaValidationContext) validateConstraintTypeMatch(typeStr string, schema map[string]interface{}, path string) {
 	stringOnlyConstraints := []string{"minLength", "maxLength", "pattern"}
 	numericOnlyConstraints := []string{"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf"}
+	numericAnnotationKeywords := []string{"unit", "ucumUnit"}
 
 	// Check string constraints on non-string types
 	for _, constraint := range stringOnlyConstraints {
@@ -785,6 +797,12 @@ func (ctx *schemaValidationContext) validateConstraintTypeMatch(typeStr string, 
 	for _, constraint := range numericOnlyConstraints {
 		if _, ok := schema[constraint]; ok && !isNumericType(typeStr) {
 			ctx.addError(path+"/"+constraint, fmt.Sprintf("%s constraint is only valid for numeric types, not %s", constraint, typeStr), SchemaConstraintInvalidForType)
+		}
+	}
+
+	for _, keyword := range numericAnnotationKeywords {
+		if _, ok := schema[keyword]; ok && !isNumericType(typeStr) {
+			ctx.addError(path+"/"+keyword, fmt.Sprintf("%s keyword is only valid for numeric types, not %s", keyword, typeStr), SchemaConstraintInvalidForType)
 		}
 	}
 }

@@ -756,6 +756,44 @@ func TestSchemaValidatorUnionMissingRef(t *testing.T) {
 	}
 }
 
+func TestSchemaValidatorUcumUnitKeyword(t *testing.T) {
+	validator := NewSchemaValidator(&SchemaValidatorOptions{Extended: true})
+
+	validSchema := map[string]interface{}{
+		"$id":      "urn:example:measurement",
+		"name":     "Measurement",
+		"type":     "number",
+		"unit":     "meters",
+		"ucumUnit": "m",
+	}
+
+	if result := validator.Validate(validSchema); !result.IsValid {
+		t.Fatalf("Expected valid numeric schema with unit and ucumUnit, got errors: %v", result.Errors)
+	}
+
+	invalidTypeSchema := map[string]interface{}{
+		"$id":      "urn:example:measurement-text",
+		"name":     "MeasurementText",
+		"type":     "string",
+		"ucumUnit": "m",
+	}
+
+	if result := validator.Validate(invalidTypeSchema); result.IsValid {
+		t.Fatalf("Expected non-numeric ucumUnit schema to be invalid")
+	}
+
+	invalidValueSchema := map[string]interface{}{
+		"$id":      "urn:example:measurement-value",
+		"name":     "MeasurementValue",
+		"type":     "number",
+		"ucumUnit": float64(1),
+	}
+
+	if result := validator.Validate(invalidValueSchema); result.IsValid {
+		t.Fatalf("Expected non-string ucumUnit schema to be invalid")
+	}
+}
+
 // TestWarnOnUnusedExtensionKeywordsDefault tests that warnings are emitted by default for extension keywords without $uses.
 func TestWarnOnUnusedExtensionKeywordsDefault(t *testing.T) {
 	validator := NewSchemaValidator(&SchemaValidatorOptions{})

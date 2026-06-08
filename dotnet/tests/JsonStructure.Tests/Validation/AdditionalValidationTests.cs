@@ -4652,6 +4652,34 @@ public class AdditionalValidationTests
         var result = validator.Validate(schema);
         result.IsValid.ShouldBeTrue();
     }
+
+    [Fact]
+    public void SchemaValidator_UcumUnit_ValidatesNumericAnnotations()
+    {
+        var validator = new SchemaValidator();
+        var validSchema = new JsonObject
+        {
+            ["$id"] = "https://example.com/measurement",
+            ["type"] = "number",
+            ["name"] = "Measurement",
+            ["unit"] = "meters",
+            ["ucumUnit"] = "m"
+        };
+
+        validator.Validate(validSchema).IsValid.ShouldBeTrue();
+
+        var invalidSchema = new JsonObject
+        {
+            ["$id"] = "https://example.com/measurement-text",
+            ["type"] = "string",
+            ["name"] = "MeasurementText",
+            ["ucumUnit"] = "m"
+        };
+
+        var invalidResult = validator.Validate(invalidSchema);
+        invalidResult.IsValid.ShouldBeFalse();
+        invalidResult.Errors.ShouldContain(error => error.Path != null && error.Path.Contains("ucumUnit"));
+    }
     
     #endregion
     

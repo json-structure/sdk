@@ -656,4 +656,33 @@ JSON;
         $location = $errors[0]->location;
         $this->assertNotNull($location);
     }
+
+    public function testUcumUnitKeyword(): void
+    {
+        $validSchema = [
+            '$id' => 'https://example.com/measurement.struct.json',
+            'name' => 'Measurement',
+            'type' => 'number',
+            'unit' => 'meters',
+            'ucumUnit' => 'm',
+        ];
+
+        $this->assertCount(0, $this->validator->validate($validSchema));
+
+        $invalidTypeSchema = [
+            '$id' => 'https://example.com/not-numeric.struct.json',
+            'name' => 'NotNumeric',
+            'type' => 'string',
+            'ucumUnit' => 'm',
+        ];
+        $this->assertGreaterThan(0, count($this->validator->validate($invalidTypeSchema)));
+
+        $invalidValueSchema = [
+            '$id' => 'https://example.com/bad-ucum.struct.json',
+            'name' => 'BadUcum',
+            'type' => 'number',
+            'ucumUnit' => 123,
+        ];
+        $this->assertGreaterThan(0, count($this->validator->validate($invalidValueSchema)));
+    }
 }

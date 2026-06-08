@@ -737,6 +737,22 @@ impl SchemaValidator {
                 locator.get_location(&format!("{}/maximum", path)),
             ));
         }
+        if obj.contains_key("unit") && !is_numeric {
+            result.add_error(ValidationError::schema_error(
+                SchemaErrorCode::SchemaConstraintTypeMismatch,
+                format!("unit keyword cannot be used with type '{}'", type_name),
+                &format!("{}/unit", path),
+                locator.get_location(&format!("{}/unit", path)),
+            ));
+        }
+        if obj.contains_key("ucumUnit") && !is_numeric {
+            result.add_error(ValidationError::schema_error(
+                SchemaErrorCode::SchemaConstraintTypeMismatch,
+                format!("ucumUnit keyword cannot be used with type '{}'", type_name),
+                &format!("{}/ucumUnit", path),
+                locator.get_location(&format!("{}/ucumUnit", path)),
+            ));
+        }
 
         // minLength/maxLength only apply to string
         if obj.contains_key("minLength") && !is_string {
@@ -759,6 +775,7 @@ impl SchemaValidator {
         // Validate numeric constraint values
         if is_numeric {
             self.validate_numeric_constraints(obj, locator, result, path);
+            self.validate_units_keywords(obj, locator, result, path);
         }
 
         // Validate string constraint values
@@ -819,6 +836,27 @@ impl SchemaValidator {
                     &format!("{}/minimum", path),
                     locator.get_location(&format!("{}/minimum", path)),
                 ));
+            }
+        }
+    }
+
+    fn validate_units_keywords(
+        &self,
+        obj: &serde_json::Map<String, Value>,
+        locator: &JsonSourceLocator,
+        result: &mut ValidationResult,
+        path: &str,
+    ) {
+        for keyword in ["unit", "ucumUnit"] {
+            if let Some(value) = obj.get(keyword) {
+                if !value.is_string() {
+                    result.add_error(ValidationError::schema_error(
+                        SchemaErrorCode::SchemaKeywordInvalidType,
+                        format!("{} must be a string", keyword),
+                        &format!("{}/{}", path, keyword),
+                        locator.get_location(&format!("{}/{}", path, keyword)),
+                    ));
+                }
             }
         }
     }

@@ -715,6 +715,39 @@ fn test_valid_offers_extension() {
     assert!(result.is_valid(), "$offers extension should be valid");
 }
 
+#[test]
+fn test_ucum_unit_keyword_support() {
+    let validator = SchemaValidator::new();
+
+    let valid_schema = r##"{
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/schema/measurement",
+        "name": "Measurement",
+        "type": "number",
+        "unit": "meters",
+        "ucumUnit": "m"
+    }"##;
+    assert!(validator.validate(valid_schema).is_valid(), "numeric schema should allow unit and ucumUnit");
+
+    let invalid_type_schema = r##"{
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/schema/not-numeric",
+        "name": "NotNumeric",
+        "type": "string",
+        "ucumUnit": "m"
+    }"##;
+    assert!(!validator.validate(invalid_type_schema).is_valid(), "ucumUnit should be rejected on non-numeric schemas");
+
+    let invalid_value_schema = r##"{
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/schema/bad-ucum",
+        "name": "BadUcum",
+        "type": "number",
+        "ucumUnit": 1
+    }"##;
+    assert!(!validator.validate(invalid_value_schema).is_valid(), "ucumUnit should require a string value");
+}
+
 // =============================================================================
 // Valid: Altnames
 // =============================================================================

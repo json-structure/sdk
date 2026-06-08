@@ -337,5 +337,36 @@ subtest 'Source location tracking' => sub {
     ok($error->location->is_known, 'error has location') or diag("Location: " . $error->location->to_string);
 };
 
+subtest 'ucumUnit keyword validation' => sub {
+    my $validator = JSON::Structure::SchemaValidator->new( extended => 1 );
+
+    my $valid_schema = basic_schema(
+        type     => 'number',
+        unit     => 'meters',
+        ucumUnit => 'm',
+    );
+    delete $valid_schema->{properties};
+    my $result = $validator->validate($valid_schema);
+    ok($result->is_valid, 'numeric schema may use unit and ucumUnit') or diag(join("\n", map { $_->to_string } @{$result->errors}));
+
+    my $invalid_type_schema = basic_schema(
+        type     => 'string',
+        ucumUnit => 'm',
+    );
+    delete $invalid_type_schema->{properties};
+    $result = $validator->validate($invalid_type_schema);
+    ok(!$result->is_valid, 'ucumUnit on non-numeric schema is invalid');
+    ok(has_error_code($result, SCHEMA_CONSTRAINT_TYPE_MISMATCH), 'reports numeric type mismatch for ucumUnit');
+
+    my $invalid_value_schema = basic_schema(
+        type     => 'number',
+        ucumUnit => [],
+    );
+    delete $invalid_value_schema->{properties};
+    $result = $validator->validate($invalid_value_schema);
+    ok(!$result->is_valid, 'ucumUnit must be a string');
+    ok(has_error_code($result, SCHEMA_KEYWORD_INVALID_TYPE), 'reports invalid ucumUnit type');
+};
+
 done_testing();
 

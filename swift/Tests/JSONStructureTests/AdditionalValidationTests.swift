@@ -872,16 +872,31 @@ final class AdditionalValidationTests: XCTestCase {
             "properties": [
                 "velocity": [
                     "type": "number",
-                    "unit": "m/s"
+                    "unit": "m/s",
+                    "ucumUnit": "m/s"
                 ],
                 "acceleration": [
                     "type": "number",
-                    "unit": "m/s^2"
+                    "unit": "m/s^2",
+                    "ucumUnit": "m/s2"
                 ]
             ]
         ]
         
         // Unit keyword should be accepted without error
         XCTAssertTrue(validator.validate(schema).isValid)
+    }
+
+    func testUcumUnitKeywordOnNonNumericSchema() throws {
+        let validator = SchemaValidator(options: SchemaValidatorOptions(extended: true))
+
+        let schema: [String: Any] = [
+            "$id": "urn:test:ucum-invalid",
+            "name": "NotNumeric",
+            "type": "string",
+            "ucumUnit": "m"
+        ]
+
+        XCTAssertFalse(validator.validate(schema).isValid)
     }
 }

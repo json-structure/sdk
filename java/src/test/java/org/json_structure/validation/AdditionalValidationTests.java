@@ -2121,6 +2121,39 @@ class AdditionalValidationTests {
             ValidationResult result = validator.validate(schema);
             assertThat(result.isValid()).isTrue();
         }
+
+        @Test
+        @DisplayName("Should validate schema with ucumUnit alongside unit")
+        void shouldValidateSchemaWithUcumUnit() {
+            String schema = """
+                {
+                    "$id": "https://test.example.com/schema/ucum-unit",
+                    "name": "UcumUnitSchema",
+                    "type": "number",
+                    "unit": "meters",
+                    "ucumUnit": "m"
+                }
+                """;
+
+            ValidationResult result = validator.validate(schema);
+            assertThat(result.isValid()).isTrue();
+        }
+
+        @Test
+        @DisplayName("Should reject ucumUnit on non-numeric schema")
+        void shouldRejectUcumUnitOnNonNumericSchema() {
+            String schema = """
+                {
+                    "$id": "https://test.example.com/schema/ucum-unit-invalid",
+                    "name": "InvalidUcumUnitSchema",
+                    "type": "string",
+                    "ucumUnit": "m"
+                }
+                """;
+
+            ValidationResult result = validator.validate(schema);
+            assertThat(result.isValid()).isFalse();
+        }
         
         // Note: Unknown keywords like "deprecated" are ignored per JSON Structure spec
         // (no SCHEMA_UNKNOWN_KEYWORD error code exists - validators should not reject unknown keywords)

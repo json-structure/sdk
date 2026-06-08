@@ -180,7 +180,7 @@ Enable extensions using `$uses` in your schema:
 - **JSONStructureConditionalComposition**: Composition keywords (`allOf`, `anyOf`, `oneOf`, `not`, `if/then/else`)
 - **JSONStructureImport**: Schema imports (`$import`, `$importdefs`)
 - **JSONStructureAlternateNames**: Alternate property names (`altnames`)
-- **JSONStructureUnits**: Unit annotations (`unit`)
+- **JSONStructureUnits**: Unit annotations (`unit`, `ucumUnit`)
 
 ## Error Handling
 

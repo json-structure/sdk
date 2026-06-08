@@ -1731,6 +1731,38 @@ def test_schema_not_dict():
     assert len(errors) > 0
 
 
+def test_ucum_unit_keyword_support():
+    valid_schema = {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/measurement",
+        "name": "Measurement",
+        "type": "number",
+        "unit": "meters",
+        "ucumUnit": "m"
+    }
+    assert validate_json_structure_schema_core(valid_schema, json.dumps(valid_schema), extended=True) == []
+
+    invalid_type_schema = {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/not-numeric",
+        "name": "NotNumeric",
+        "type": "string",
+        "ucumUnit": "m"
+    }
+    invalid_type_errors = validate_json_structure_schema_core(invalid_type_schema, json.dumps(invalid_type_schema), extended=True)
+    assert any("ucumUnit" in err for err in invalid_type_errors)
+
+    invalid_value_schema = {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/bad-ucum",
+        "name": "BadUcum",
+        "type": "number",
+        "ucumUnit": 123
+    }
+    invalid_value_errors = validate_json_structure_schema_core(invalid_value_schema, json.dumps(invalid_value_schema), extended=True)
+    assert any("ucumUnit" in err for err in invalid_value_errors)
+
+
 def test_source_locator_for_errors():
     """Test that source locator provides line/column info."""
     from json_structure.schema_validator import JSONStructureSchemaCoreValidator

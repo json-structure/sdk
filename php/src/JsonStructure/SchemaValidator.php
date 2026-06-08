@@ -505,6 +505,7 @@ class SchemaValidator
         // Check for constraint type mismatches
         $stringConstraints = ['minLength', 'maxLength', 'pattern'];
         $numericConstraints = ['minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf'];
+        $numericAnnotationKeywords = ['unit', 'ucumUnit'];
         $arrayConstraints = ['minItems', 'maxItems', 'uniqueItems', 'contains', 'minContains', 'maxContains'];
 
         // Check string constraints on non-string types
@@ -521,6 +522,11 @@ class SchemaValidator
             foreach ($numericConstraints as $key) {
                 if (isset($obj[$key])) {
                     $this->addError("'{$key}' constraint is only valid for numeric types, not '{$tval}'.", "{$path}/{$key}");
+                }
+            }
+            foreach ($numericAnnotationKeywords as $key) {
+                if (isset($obj[$key])) {
+                    $this->addError("'{$key}' keyword is only valid for numeric types, not '{$tval}'.", "{$path}/{$key}");
                 }
             }
         }
@@ -572,6 +578,12 @@ class SchemaValidator
                         $this->addError("'multipleOf' must be a positive number.", "{$path}/{$key}");
                     }
                 }
+            }
+        }
+
+        foreach (['unit', 'ucumUnit'] as $key) {
+            if (isset($obj[$key]) && !is_string($obj[$key])) {
+                $this->addError("'{$key}' must be a string.", "{$path}/{$key}");
             }
         }
 

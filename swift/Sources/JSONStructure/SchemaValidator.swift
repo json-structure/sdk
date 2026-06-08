@@ -541,6 +541,7 @@ private final class ValidationEngine {
         // Validate numeric constraints
         if isNumericType(typeStr) {
             validateNumericConstraints(schema, path)
+            validateUnitsKeywords(schema, path)
         }
     }
     
@@ -616,6 +617,14 @@ private final class ValidationEngine {
                 }
             } else {
                 addError("\(path)/multipleOf", "multipleOf must be a number", schemaNumberConstraintInvalid)
+            }
+        }
+    }
+    
+    private func validateUnitsKeywords(_ schema: [String: Any], _ path: String) {
+        for key in ["unit", "ucumUnit"] {
+            if let value = schema[key], !(value is String) {
+                addError("\(path)/\(key)", "\(key) must be a string", schemaKeywordInvalidType)
             }
         }
     }
@@ -731,6 +740,7 @@ private final class ValidationEngine {
     private func validateConstraintTypeMatch(_ typeStr: String, _ schema: [String: Any], _ path: String) {
         let stringOnlyConstraints = ["minLength", "maxLength", "pattern"]
         let numericOnlyConstraints = ["minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf"]
+        let numericAnnotationKeywords = ["unit", "ucumUnit"]
         
         // Check string constraints on non-string types
         for constraint in stringOnlyConstraints {
@@ -743,6 +753,12 @@ private final class ValidationEngine {
         for constraint in numericOnlyConstraints {
             if schema[constraint] != nil && !isNumericType(typeStr) {
                 addError("\(path)/\(constraint)", "\(constraint) constraint is only valid for numeric types, not \(typeStr)", schemaConstraintInvalidForType)
+            }
+        }
+
+        for keyword in numericAnnotationKeywords {
+            if schema[keyword] != nil && !isNumericType(typeStr) {
+                addError("\(path)/\(keyword)", "\(keyword) keyword is only valid for numeric types, not \(typeStr)", schemaConstraintInvalidForType)
             }
         }
     }
