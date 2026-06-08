@@ -864,9 +864,10 @@ final class AdditionalValidationTests: XCTestCase {
     func testUnitKeywordInSchema() throws {
         let validator = SchemaValidator(options: SchemaValidatorOptions(extended: true))
         
-        // Schema with 'unit' annotation keyword
+        // Schema with 'unit' annotation keyword (requires JSONStructureUnits extension)
         let schema: [String: Any] = [
             "$id": "urn:test",
+            "$uses": ["JSONStructureUnits"],
             "name": "Speed",
             "type": "object",
             "properties": [
