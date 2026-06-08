@@ -113,7 +113,7 @@ func (v *SchemaValidator) ValidateJSON(jsonData []byte) (ValidationResult, error
 		sourceLocator:   NewJsonSourceLocator(string(jsonData)),
 		externalSchemas: v.externalSchemas,
 	}
-	
+
 	schemaMap, ok := schema.(map[string]interface{})
 	if !ok {
 		ctx.addError("#", "Schema must be an object", SchemaInvalidType)
@@ -141,6 +141,152 @@ var validationExtensionKeywords = map[string]bool{
 	"minEntries": true, "maxEntries": true, "patternKeys": true, "keyNames": true,
 	"contentEncoding": true, "contentMediaType": true,
 	"has": true, "default": true,
+}
+
+func hasExtension(schema map[string]interface{}, extension string) bool {
+	if uses, ok := schema["$uses"].([]interface{}); ok {
+		for _, use := range uses {
+			if useStr, ok := use.(string); ok && useStr == extension {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (ctx *schemaValidationContext) validateUcumUnitKeyword(schema map[string]interface{}, path string) {
+	ucumUnit, ok := schema["ucumUnit"]
+	if !ok {
+		return
+	}
+
+	if !hasExtension(schema, "JSONStructureUnits") {
+		ctx.addError(path+"/ucumUnit", "ucumUnit requires JSONStructureUnits in $uses", SchemaExtensionKeywordNotEnabled)
+	}
+
+	if _, ok := ucumUnit.(string); !ok {
+		ctx.addError(path+"/ucumUnit", "ucumUnit must be a string", SchemaKeywordInvalidType)
+	}
+
+	typeStr, ok := schema["type"].(string)
+	if !ok || !isNumericType(typeStr) {
+		ctx.addError(path+"/ucumUnit", "ucumUnit is only valid for numeric types", SchemaConstraintInvalidForType)
+	}
+}
+
+func (ctx *schemaValidationContext) validateRelationsKeywords(schema map[string]interface{}, path string) {
+	_, hasIdentity := schema["identity"]
+	relations, hasRelations := schema["relations"]
+	if !hasIdentity && !hasRelations {
+		return
+	}
+
+	if !hasExtension(schema, "JSONStructureRelations") {
+		if hasIdentity {
+			ctx.addError(path+"/identity", "identity requires JSONStructureRelations in $uses", SchemaExtensionKeywordNotEnabled)
+		}
+		if hasRelations {
+			ctx.addError(path+"/relations", "relations requires JSONStructureRelations in $uses", SchemaExtensionKeywordNotEnabled)
+		}
+	}
+
+	typeStr, hasType := schema["type"].(string)
+	supportsRelations := hasType && (typeStr == "object" || typeStr == "tuple")
+
+	if identity, ok := schema["identity"]; ok {
+		if !supportsRelations {
+			ctx.addError(path+"/identity", "identity is only valid for object or tuple types", SchemaConstraintInvalidForType)
+		}
+
+		identityArr, ok := identity.([]interface{})
+		if !ok {
+			ctx.addError(path+"/identity", "identity must be an array of strings", SchemaKeywordInvalidType)
+		} else {
+			properties, _ := schema["properties"].(map[string]interface{})
+			for i, item := range identityArr {
+				identityPath := fmt.Sprintf("%s/identity[%d]", path, i)
+				propertyName, ok := item.(string)
+				if !ok {
+					ctx.addError(identityPath, "identity items must be strings", SchemaKeywordInvalidType)
+					continue
+				}
+				if properties == nil {
+					ctx.addError(identityPath, fmt.Sprintf("Identity property '%s' not found in properties", propertyName), SchemaRequiredPropertyNotDefined)
+					continue
+				}
+				if _, exists := properties[propertyName]; !exists {
+					ctx.addError(identityPath, fmt.Sprintf("Identity property '%s' not found in properties", propertyName), SchemaRequiredPropertyNotDefined)
+				}
+			}
+		}
+	}
+
+	if !hasRelations {
+		return
+	}
+
+	if !supportsRelations {
+		ctx.addError(path+"/relations", "relations is only valid for object or tuple types", SchemaConstraintInvalidForType)
+	}
+
+	relationsMap, ok := relations.(map[string]interface{})
+	if !ok {
+		ctx.addError(path+"/relations", "relations must be an object", SchemaKeywordInvalidType)
+		return
+	}
+
+	for relationName, relationValue := range relationsMap {
+		relationPath := path + "/relations/" + relationName
+		relationObj, ok := relationValue.(map[string]interface{})
+		if !ok {
+			ctx.addError(relationPath, "relation declarations must be objects", SchemaKeywordInvalidType)
+			continue
+		}
+
+		targetType, ok := relationObj["targettype"]
+		if !ok {
+			ctx.addError(relationPath+"/targettype", "targettype is required", SchemaKeywordInvalidType)
+		} else {
+			targetTypeObj, ok := targetType.(map[string]interface{})
+			refValue, hasRef := targetTypeObj["$ref"]
+			if !ok || !hasRef {
+				ctx.addError(relationPath+"/targettype", "targettype must be an object with a $ref string", SchemaKeywordInvalidType)
+			} else {
+				ctx.validateRef(refValue, relationPath+"/targettype/$ref")
+			}
+		}
+
+		cardinalityValue, ok := relationObj["cardinality"]
+		if !ok {
+			ctx.addError(relationPath+"/cardinality", "cardinality is required", SchemaKeywordInvalidType)
+		} else if cardinality, ok := cardinalityValue.(string); !ok || (cardinality != "single" && cardinality != "multiple") {
+			ctx.addError(relationPath+"/cardinality", "cardinality must be 'single' or 'multiple'", SchemaKeywordInvalidType)
+		}
+
+		if scopeValue, ok := relationObj["scope"]; ok {
+			switch scope := scopeValue.(type) {
+			case string:
+			case []interface{}:
+				for i, item := range scope {
+					if _, ok := item.(string); !ok {
+						ctx.addError(fmt.Sprintf("%s/scope[%d]", relationPath, i), "scope array items must be strings", SchemaKeywordInvalidType)
+					}
+				}
+			default:
+				ctx.addError(relationPath+"/scope", "scope must be a string or array of strings", SchemaKeywordInvalidType)
+			}
+		}
+
+		if qualifierType, ok := relationObj["qualifiertype"]; ok {
+			qualifierTypeObj, ok := qualifierType.(map[string]interface{})
+			refValue, hasRef := qualifierTypeObj["$ref"]
+			if !ok || !hasRef {
+				ctx.addError(relationPath+"/qualifiertype", "qualifiertype must be an object with a $ref string", SchemaKeywordInvalidType)
+			} else {
+				ctx.validateRef(refValue, relationPath+"/qualifiertype/$ref")
+			}
+		}
+	}
 }
 
 func (ctx *schemaValidationContext) validateSchemaDocument(schema map[string]interface{}, path string, options SchemaValidatorOptions) {
@@ -338,6 +484,8 @@ func (ctx *schemaValidationContext) validateTypeDefinition(schema map[string]int
 	}
 
 	typeVal, hasType := schema["type"]
+	ctx.validateUcumUnitKeyword(schema, path)
+	ctx.validateRelationsKeywords(schema, path)
 
 	// Type is required unless it's a conditional-only schema
 	if !hasType {
@@ -916,13 +1064,13 @@ func (ctx *schemaValidationContext) addError(path, message string, codes ...stri
 	if len(codes) > 0 {
 		code = codes[0]
 	}
-	
+
 	// Get source location if locator is available
 	var location JsonLocation
 	if ctx.sourceLocator != nil {
 		location = ctx.sourceLocator.GetLocation(path)
 	}
-	
+
 	ctx.errors = append(ctx.errors, ValidationError{
 		Code:     code,
 		Path:     path,
@@ -1128,7 +1276,7 @@ func (ctx *schemaValidationContext) processImports(obj map[string]interface{}, p
 // rewriteRefs rewrites $ref pointers in imported content to point to their new location.
 func rewriteRefs(obj map[string]interface{}, targetPath string) {
 	for key, value := range obj {
-		if (key == "$ref" || key == "$extends") {
+		if key == "$ref" || key == "$extends" {
 			if refStr, ok := value.(string); ok && strings.HasPrefix(refStr, "#") {
 				// Rewrite the reference
 				refParts := strings.Split(strings.TrimPrefix(strings.TrimPrefix(refStr, "#"), "/"), "/")

@@ -84,19 +84,31 @@ func TestUcumUnitValidationScenarios(t *testing.T) {
 	}
 
 	t.Run("invalid non-numeric type with ucumUnit", func(t *testing.T) {
-		t.Skip("Pending ucumUnit keyword enforcement in the Go schema validator")
+		result := validator.Validate(createUcumUnitSchema("string", "m", nil))
+		if result.IsValid {
+			t.Fatalf("expected invalid schema")
+		}
 	})
 
 	t.Run("invalid numeric ucumUnit value", func(t *testing.T) {
-		t.Skip("Pending ucumUnit keyword enforcement in the Go schema validator")
+		result := validator.Validate(createUcumUnitSchema("number", 42, nil))
+		if result.IsValid {
+			t.Fatalf("expected invalid schema")
+		}
 	})
 
 	t.Run("invalid array ucumUnit value", func(t *testing.T) {
-		t.Skip("Pending ucumUnit keyword enforcement in the Go schema validator")
+		result := validator.Validate(createUcumUnitSchema("number", []interface{}{"m"}, nil))
+		if result.IsValid {
+			t.Fatalf("expected invalid schema")
+		}
 	})
 
 	t.Run("invalid object ucumUnit value", func(t *testing.T) {
-		t.Skip("Pending ucumUnit keyword enforcement in the Go schema validator")
+		result := validator.Validate(createUcumUnitSchema("number", map[string]interface{}{"code": "m"}, nil))
+		if result.IsValid {
+			t.Fatalf("expected invalid schema")
+		}
 	})
 }
 
@@ -176,30 +188,87 @@ func TestRelationsValidationScenarios(t *testing.T) {
 	})
 
 	t.Run("invalid identity on non-object type", func(t *testing.T) {
-		t.Skip("Pending Relations keyword enforcement in the Go schema validator")
+		schema := createRelationsSchema()
+		schema["type"] = "string"
+		schema["identity"] = []interface{}{"id"}
+
+		result := validator.Validate(schema)
+		if result.IsValid {
+			t.Fatalf("expected invalid schema")
+		}
 	})
 
 	t.Run("invalid identity that is not an array", func(t *testing.T) {
-		t.Skip("Pending Relations keyword enforcement in the Go schema validator")
+		schema := createRelationsSchema()
+		schema["identity"] = "id"
+
+		result := validator.Validate(schema)
+		if result.IsValid {
+			t.Fatalf("expected invalid schema")
+		}
 	})
 
 	t.Run("invalid identity with missing properties", func(t *testing.T) {
-		t.Skip("Pending Relations keyword enforcement in the Go schema validator")
+		schema := createRelationsSchema()
+		schema["identity"] = []interface{}{"missing"}
+
+		result := validator.Validate(schema)
+		if result.IsValid {
+			t.Fatalf("expected invalid schema")
+		}
 	})
 
 	t.Run("invalid relations on non-object type", func(t *testing.T) {
-		t.Skip("Pending Relations keyword enforcement in the Go schema validator")
+		schema := createRelationsSchema()
+		schema["type"] = "string"
+		schema["relations"] = map[string]interface{}{}
+
+		result := validator.Validate(schema)
+		if result.IsValid {
+			t.Fatalf("expected invalid schema")
+		}
 	})
 
 	t.Run("invalid relation cardinality", func(t *testing.T) {
-		t.Skip("Pending Relations keyword enforcement in the Go schema validator")
+		schema := createRelationsSchema()
+		schema["relations"] = map[string]interface{}{
+			"customer": map[string]interface{}{
+				"cardinality": "many",
+				"targettype":  map[string]interface{}{"$ref": "#/definitions/Customer"},
+			},
+		}
+
+		result := validator.Validate(schema)
+		if result.IsValid {
+			t.Fatalf("expected invalid schema")
+		}
 	})
 
 	t.Run("invalid relation missing targettype", func(t *testing.T) {
-		t.Skip("Pending Relations keyword enforcement in the Go schema validator")
+		schema := createRelationsSchema()
+		schema["relations"] = map[string]interface{}{
+			"customer": map[string]interface{}{
+				"cardinality": "single",
+			},
+		}
+
+		result := validator.Validate(schema)
+		if result.IsValid {
+			t.Fatalf("expected invalid schema")
+		}
 	})
 
 	t.Run("invalid relation missing cardinality", func(t *testing.T) {
-		t.Skip("Pending Relations keyword enforcement in the Go schema validator")
+		schema := createRelationsSchema()
+		schema["relations"] = map[string]interface{}{
+			"customer": map[string]interface{}{
+				"targettype": map[string]interface{}{"$ref": "#/definitions/Customer"},
+			},
+		}
+
+		result := validator.Validate(schema)
+		if result.IsValid {
+			t.Fatalf("expected invalid schema")
+		}
 	})
 }
