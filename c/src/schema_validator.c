@@ -74,6 +74,9 @@ static bool validate_array_items(validate_context_t* ctx, const cJSON* schema);
 static bool validate_map_values(validate_context_t* ctx, const cJSON* schema);
 static bool validate_choice_schema(validate_context_t* ctx, const cJSON* schema);
 static bool validate_constraints(validate_context_t* ctx, const cJSON* schema, const char* type_name);
+static bool validate_ucum_unit_keyword(validate_context_t* ctx, const cJSON* schema, const char* type_name);
+static bool validate_relations_keywords(validate_context_t* ctx, const cJSON* schema, const char* type_name);
+static const cJSON* resolve_ref(validate_context_t* ctx, const char* ref);
 static bool process_imports(import_context_t* ctx, cJSON* obj, const char* path);
 
 /* ============================================================================
@@ -117,6 +120,70 @@ static bool is_string_in_list(const char* str, const char** list) {
         if (strcmp(str, *p) == 0) return true;
     }
     return false;
+}
+
+static bool has_enabled_extension(validate_context_t* ctx, const char* extension) {
+    if (!ctx || !ctx->root_schema || !extension) return false;
+
+    const cJSON* uses = cJSON_GetObjectItemCaseSensitive(ctx->root_schema, "$uses");
+    if (!uses || !cJSON_IsArray(uses)) return false;
+
+    cJSON* item = NULL;
+    cJSON_ArrayForEach(item, uses) {
+        if (cJSON_IsString(item) && strcmp(item->valuestring, extension) == 0) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static bool is_ucum_numeric_type(const char* type_name) {
+    static const char* ucum_numeric_types[] = {
+        "number", "integer", "float", "double", "decimal",
+        "int32", "uint32", "int64", "uint64", "int128", "uint128",
+        NULL
+    };
+
+    return is_string_in_list(type_name, ucum_numeric_types);
+}
+
+static bool validate_relation_ref_object(validate_context_t* ctx, const cJSON* value, const char* keyword) {
+    bool valid = true;
+    size_t keyword_len = strlen(ctx->path);
+    push_path(ctx, keyword);
+
+    if (!value || !cJSON_IsObject(value)) {
+        char msg[128];
+        snprintf(msg, sizeof(msg), "'%s' must be an object with '$ref'.", keyword);
+        add_error(ctx, JS_SCHEMA_KEYWORD_INVALID_TYPE, msg);
+        pop_path(ctx, keyword_len);
+        return false;
+    }
+
+    const cJSON* ref = cJSON_GetObjectItemCaseSensitive(value, "$ref");
+    if (!ref || !cJSON_IsString(ref)) {
+        char msg[128];
+        snprintf(msg, sizeof(msg), "'%s' must be an object with '$ref'.", keyword);
+        add_error(ctx, JS_SCHEMA_KEYWORD_INVALID_TYPE, msg);
+        pop_path(ctx, keyword_len);
+        return false;
+    }
+
+    if (ref->valuestring && ref->valuestring[0] == '#') {
+        if (!resolve_ref(ctx, ref->valuestring)) {
+            size_t ref_len = strlen(ctx->path);
+            push_path(ctx, "$ref");
+            char msg[256];
+            snprintf(msg, sizeof(msg), "$ref '%s' not found", ref->valuestring);
+            add_error(ctx, JS_SCHEMA_REF_NOT_FOUND, msg);
+            pop_path(ctx, ref_len);
+            valid = false;
+        }
+    }
+
+    pop_path(ctx, keyword_len);
+    return valid;
 }
 
 /* ============================================================================
@@ -717,6 +784,214 @@ static bool validate_constraints(validate_context_t* ctx, const cJSON* schema, c
     return valid;
 }
 
+static bool validate_ucum_unit_keyword(validate_context_t* ctx, const cJSON* schema, const char* type_name) {
+    const cJSON* ucum_unit = cJSON_GetObjectItemCaseSensitive(schema, "ucumUnit");
+    if (!ucum_unit) return true;
+
+    bool valid = true;
+    size_t prev_len = strlen(ctx->path);
+    push_path(ctx, "ucumUnit");
+
+    if (!has_enabled_extension(ctx, "JSONStructureUnits")) {
+        add_error(ctx, JS_SCHEMA_EXTENSION_KEYWORD_WITHOUT_USES,
+                 "'ucumUnit' requires JSONStructureUnits extension.");
+        valid = false;
+    }
+
+    if (!cJSON_IsString(ucum_unit)) {
+        add_error(ctx, JS_SCHEMA_KEYWORD_INVALID_TYPE, "'ucumUnit' must be a string.");
+        valid = false;
+    }
+
+    if (!is_ucum_numeric_type(type_name)) {
+        add_error(ctx, JS_SCHEMA_CONSTRAINT_TYPE_MISMATCH,
+                 "'ucumUnit' can only appear in numeric schemas.");
+        valid = false;
+    }
+
+    pop_path(ctx, prev_len);
+    return valid;
+}
+
+static bool validate_relations_keywords(validate_context_t* ctx, const cJSON* schema, const char* type_name) {
+    const cJSON* identity = cJSON_GetObjectItemCaseSensitive(schema, "identity");
+    const cJSON* relations = cJSON_GetObjectItemCaseSensitive(schema, "relations");
+    if (!identity && !relations) return true;
+
+    bool valid = true;
+    bool supports_relations = type_name &&
+        (strcmp(type_name, "object") == 0 || strcmp(type_name, "tuple") == 0);
+
+    if (!has_enabled_extension(ctx, "JSONStructureRelations")) {
+        if (identity) {
+            size_t prev_len = strlen(ctx->path);
+            push_path(ctx, "identity");
+            add_error(ctx, JS_SCHEMA_EXTENSION_KEYWORD_WITHOUT_USES,
+                     "'identity' requires JSONStructureRelations extension.");
+            pop_path(ctx, prev_len);
+            valid = false;
+        }
+        if (relations) {
+            size_t prev_len = strlen(ctx->path);
+            push_path(ctx, "relations");
+            add_error(ctx, JS_SCHEMA_EXTENSION_KEYWORD_WITHOUT_USES,
+                     "'relations' requires JSONStructureRelations extension.");
+            pop_path(ctx, prev_len);
+            valid = false;
+        }
+    }
+
+    if (identity) {
+        size_t identity_len = strlen(ctx->path);
+        push_path(ctx, "identity");
+
+        if (!supports_relations) {
+            add_error(ctx, JS_SCHEMA_CONSTRAINT_TYPE_MISMATCH,
+                     "'identity' can only appear in object or tuple schemas.");
+            valid = false;
+        }
+
+        if (!cJSON_IsArray(identity)) {
+            add_error(ctx, JS_SCHEMA_KEYWORD_INVALID_TYPE,
+                     "'identity' must be an array of strings.");
+            valid = false;
+        } else {
+            const cJSON* properties = cJSON_GetObjectItemCaseSensitive(schema, "properties");
+            cJSON* item = NULL;
+            int index = 0;
+            cJSON_ArrayForEach(item, identity) {
+                char index_segment[32];
+                snprintf(index_segment, sizeof(index_segment), "[%d]", index);
+                size_t item_len = strlen(ctx->path);
+                push_path(ctx, index_segment);
+
+                if (!cJSON_IsString(item)) {
+                    char msg[128];
+                    snprintf(msg, sizeof(msg), "'identity[%d]' must be a string.", index);
+                    add_error(ctx, JS_SCHEMA_KEYWORD_INVALID_TYPE, msg);
+                    valid = false;
+                } else if (!properties || !cJSON_IsObject(properties) ||
+                           !cJSON_GetObjectItemCaseSensitive(properties, item->valuestring)) {
+                    char msg[256];
+                    snprintf(msg, sizeof(msg), "'identity' references property '%s' that is not in 'properties'.",
+                             item->valuestring);
+                    add_error(ctx, JS_SCHEMA_REQUIRED_PROPERTY_NOT_DEFINED, msg);
+                    valid = false;
+                }
+
+                pop_path(ctx, item_len);
+                index++;
+            }
+        }
+
+        pop_path(ctx, identity_len);
+    }
+
+    if (!relations) return valid;
+
+    size_t relations_len = strlen(ctx->path);
+    push_path(ctx, "relations");
+
+    if (!supports_relations) {
+        add_error(ctx, JS_SCHEMA_CONSTRAINT_TYPE_MISMATCH,
+                 "'relations' can only appear in object or tuple schemas.");
+        valid = false;
+    }
+
+    if (!cJSON_IsObject(relations)) {
+        add_error(ctx, JS_SCHEMA_KEYWORD_INVALID_TYPE, "'relations' must be an object.");
+        pop_path(ctx, relations_len);
+        return false;
+    }
+
+    cJSON* relation = NULL;
+    cJSON_ArrayForEach(relation, relations) {
+        size_t relation_len = strlen(ctx->path);
+        push_path(ctx, relation->string ? relation->string : "<relation>");
+
+        if (!cJSON_IsObject(relation)) {
+            add_error(ctx, JS_SCHEMA_KEYWORD_INVALID_TYPE,
+                     "Relation declaration must be an object.");
+            valid = false;
+            pop_path(ctx, relation_len);
+            continue;
+        }
+
+        const cJSON* targettype = cJSON_GetObjectItemCaseSensitive(relation, "targettype");
+        if (!targettype) {
+            size_t target_len = strlen(ctx->path);
+            push_path(ctx, "targettype");
+            add_error(ctx, JS_SCHEMA_KEYWORD_INVALID_TYPE,
+                     "Relation declaration must have 'targettype'.");
+            pop_path(ctx, target_len);
+            valid = false;
+        } else if (!validate_relation_ref_object(ctx, targettype, "targettype")) {
+            valid = false;
+        }
+
+        const cJSON* cardinality = cJSON_GetObjectItemCaseSensitive(relation, "cardinality");
+        if (!cardinality) {
+            size_t card_len = strlen(ctx->path);
+            push_path(ctx, "cardinality");
+            add_error(ctx, JS_SCHEMA_KEYWORD_INVALID_TYPE,
+                     "Relation declaration must have 'cardinality'.");
+            pop_path(ctx, card_len);
+            valid = false;
+        } else {
+            size_t card_len = strlen(ctx->path);
+            push_path(ctx, "cardinality");
+            if (!cJSON_IsString(cardinality) ||
+                (strcmp(cardinality->valuestring, "single") != 0 &&
+                 strcmp(cardinality->valuestring, "multiple") != 0)) {
+                add_error(ctx, JS_SCHEMA_KEYWORD_INVALID_TYPE,
+                         "'cardinality' must be 'single' or 'multiple'.");
+                valid = false;
+            }
+            pop_path(ctx, card_len);
+        }
+
+        const cJSON* scope = cJSON_GetObjectItemCaseSensitive(relation, "scope");
+        if (scope) {
+            size_t scope_len = strlen(ctx->path);
+            push_path(ctx, "scope");
+            if (cJSON_IsString(scope)) {
+                /* valid */
+            } else if (cJSON_IsArray(scope)) {
+                cJSON* scope_item = NULL;
+                int scope_index = 0;
+                cJSON_ArrayForEach(scope_item, scope) {
+                    if (!cJSON_IsString(scope_item)) {
+                        char index_segment[32];
+                        snprintf(index_segment, sizeof(index_segment), "[%d]", scope_index);
+                        size_t item_len = strlen(ctx->path);
+                        push_path(ctx, index_segment);
+                        add_error(ctx, JS_SCHEMA_KEYWORD_INVALID_TYPE,
+                                 "'scope' array items must be strings.");
+                        pop_path(ctx, item_len);
+                        valid = false;
+                    }
+                    scope_index++;
+                }
+            } else {
+                add_error(ctx, JS_SCHEMA_KEYWORD_INVALID_TYPE,
+                         "'scope' must be a string or an array of strings.");
+                valid = false;
+            }
+            pop_path(ctx, scope_len);
+        }
+
+        const cJSON* qualifiertype = cJSON_GetObjectItemCaseSensitive(relation, "qualifiertype");
+        if (qualifiertype && !validate_relation_ref_object(ctx, qualifiertype, "qualifiertype")) {
+            valid = false;
+        }
+
+        pop_path(ctx, relation_len);
+    }
+
+    pop_path(ctx, relations_len);
+    return valid;
+}
+
 /* ============================================================================
  * Schema Node Validation
  * ============================================================================ */
@@ -1228,6 +1503,13 @@ static bool validate_schema_node(validate_context_t* ctx, const cJSON* schema) {
             } else if (strcmp(type_str, "choice") == 0) {
                 if (!validate_choice_schema(ctx, schema)) valid = false;
             }
+        }
+
+        if (!validate_ucum_unit_keyword(ctx, schema, type_str)) {
+            valid = false;
+        }
+        if (!validate_relations_keywords(ctx, schema, type_str)) {
+            valid = false;
         }
     }
     

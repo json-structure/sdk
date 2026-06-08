@@ -18,6 +18,19 @@
     } \
 } while(0)
 
+static int result_has_message(const js_result_t* result, const char* needle) {
+    size_t i;
+    if (!result || !needle) return 0;
+
+    for (i = 0; i < result->error_count; i++) {
+        if (result->errors[i].message && strstr(result->errors[i].message, needle)) {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
 /* ============================================================================
  * Valid Schema Tests
  * ============================================================================ */
@@ -333,27 +346,136 @@ TEST(is_valid_compound_type) {
  * ============================================================================ */
 
 TEST(placeholder_ucum_unit_keyword_coverage) {
-    /*
-     * Pending dedicated schema-validation coverage for the ucumUnit keyword:
-     * - numeric type with ucumUnit string
-     * - numeric type with both unit and ucumUnit
-     * - extended numeric types (int32, float, double, decimal)
-     * - non-numeric types with ucumUnit rejected
-     * - non-string ucumUnit values rejected
-     */
+    const char* valid_schema = "{"
+        "\"$id\": \"test\"," 
+        "\"$schema\": \"https://json-structure.org/meta/extended/v0/#\"," 
+        "\"name\": \"Length\"," 
+        "\"$uses\": [\"JSONStructureUnits\"],"
+        "\"type\": \"number\"," 
+        "\"ucumUnit\": \"m\""
+    "}";
+    const char* invalid_type_schema = "{"
+        "\"$id\": \"test\"," 
+        "\"$schema\": \"https://json-structure.org/meta/extended/v0/#\"," 
+        "\"name\": \"BadUcumType\"," 
+        "\"type\": \"string\"," 
+        "\"ucumUnit\": \"m\""
+    "}";
+    const char* invalid_value_schema = "{"
+        "\"$id\": \"test\"," 
+        "\"$schema\": \"https://json-structure.org/meta/extended/v0/#\"," 
+        "\"name\": \"BadUcumValue\"," 
+        "\"$uses\": [\"JSONStructureUnits\"],"
+        "\"type\": \"number\"," 
+        "\"ucumUnit\": 5"
+    "}";
+
+    js_result_t result;
+    bool valid;
+
+    js_result_init(&result);
+    valid = js_validate_schema(valid_schema, &result);
+    if (!valid || result.error_count != 0) {
+        js_result_cleanup(&result);
+        return 1;
+    }
+    js_result_cleanup(&result);
+
+    js_result_init(&result);
+    valid = js_validate_schema(invalid_type_schema, &result);
+    if (valid || !result_has_message(&result, "JSONStructureUnits extension") ||
+        !result_has_message(&result, "numeric schemas")) {
+        js_result_cleanup(&result);
+        return 1;
+    }
+    js_result_cleanup(&result);
+
+    js_result_init(&result);
+    valid = js_validate_schema(invalid_value_schema, &result);
+    if (valid || !result_has_message(&result, "must be a string")) {
+        js_result_cleanup(&result);
+        return 1;
+    }
+    js_result_cleanup(&result);
+
     return 0;
 }
 
 TEST(placeholder_relations_extension_coverage) {
-    /*
-     * Pending dedicated schema-validation coverage for the Relations extension:
-     * - valid identity arrays on object types
-     * - valid relation declarations, targettype refs, scope, and qualifiertype
-     * - invalid identity / relations on non-object types
-     * - invalid identity shapes and missing properties
-     * - invalid cardinality values
-     * - missing targettype / cardinality
-     */
+    const char* valid_schema = "{"
+        "\"$id\": \"test\"," 
+        "\"$schema\": \"https://json-structure.org/meta/extended/v0/#\"," 
+        "\"name\": \"Order\"," 
+        "\"$uses\": [\"JSONStructureRelations\"],"
+        "\"type\": \"object\"," 
+        "\"properties\": {"
+            "\"id\": {\"type\": \"string\"},"
+            "\"customerId\": {\"type\": \"string\"}"
+        "},"
+        "\"identity\": [\"id\"],"
+        "\"relations\": {"
+            "\"customer\": {"
+                "\"cardinality\": \"single\","
+                "\"targettype\": {\"$ref\": \"#/definitions/Customer\"},"
+                "\"scope\": [\"tenant\", \"region\"],"
+                "\"qualifiertype\": {\"$ref\": \"#/definitions/RelationQualifier\"}"
+            "}"
+        "},"
+        "\"definitions\": {"
+            "\"Customer\": {"
+                "\"name\": \"Customer\","
+                "\"type\": \"object\","
+                "\"properties\": {\"id\": {\"type\": \"string\"}}"
+            "},"
+            "\"RelationQualifier\": {"
+                "\"name\": \"RelationQualifier\","
+                "\"type\": \"string\""
+            "}"
+        "}"
+    "}";
+    const char* invalid_schema = "{"
+        "\"$id\": \"test\"," 
+        "\"$schema\": \"https://json-structure.org/meta/extended/v0/#\"," 
+        "\"name\": \"BadRelations\"," 
+        "\"type\": \"string\"," 
+        "\"identity\": [\"id\"],"
+        "\"relations\": {"
+            "\"customer\": {"
+                "\"cardinality\": \"many\","
+                "\"targettype\": {\"type\": \"object\"},"
+                "\"scope\": [\"tenant\", 3],"
+                "\"qualifiertype\": {\"type\": \"string\"}"
+            "}"
+        "}"
+    "}";
+
+    js_result_t result;
+    bool valid;
+
+    js_result_init(&result);
+    valid = js_validate_schema(valid_schema, &result);
+    if (!valid || result.error_count != 0) {
+        js_result_cleanup(&result);
+        return 1;
+    }
+    js_result_cleanup(&result);
+
+    js_result_init(&result);
+    valid = js_validate_schema(invalid_schema, &result);
+    if (valid ||
+        !result_has_message(&result, "JSONStructureRelations extension") ||
+        !result_has_message(&result, "'identity' can only appear in object or tuple schemas") ||
+        !result_has_message(&result, "property 'id' that is not in 'properties'") ||
+        !result_has_message(&result, "'relations' can only appear in object or tuple schemas") ||
+        !result_has_message(&result, "'targettype' must be an object with '$ref'") ||
+        !result_has_message(&result, "'cardinality' must be 'single' or 'multiple'") ||
+        !result_has_message(&result, "'scope' array items must be strings") ||
+        !result_has_message(&result, "'qualifiertype' must be an object with '$ref'")) {
+        js_result_cleanup(&result);
+        return 1;
+    }
+    js_result_cleanup(&result);
+
     return 0;
 }
 
