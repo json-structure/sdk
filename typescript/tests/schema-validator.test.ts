@@ -883,7 +883,7 @@ describe('SchemaValidator', () => {
     });
   });
 
-  describe.skip('pending invalid ucumUnit schema checks', () => {
+  describe('invalid ucumUnit schema checks', () => {
     const createUcumUnitSchema = (type: string, ucumUnit: unknown) => ({
       $schema: 'https://json-structure.org/meta/extended/v0/#',
       $id: 'urn:example:invalid-ucum',
@@ -1036,7 +1036,7 @@ describe('SchemaValidator', () => {
     });
   });
 
-  describe.skip('pending invalid Relations schema checks', () => {
+  describe('invalid Relations schema checks', () => {
     const createRelationsSchema = () => ({
       $schema: 'https://json-structure.org/meta/extended/v0/#',
       $id: 'urn:example:invalid-relations-schema',
