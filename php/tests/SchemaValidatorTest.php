@@ -656,4 +656,92 @@ JSON;
         $location = $errors[0]->location;
         $this->assertNotNull($location);
     }
+
+    public function testValidNumericTypeWithUcumUnit(): void
+    {
+        $schema = [
+            '$schema' => 'https://json-structure.org/meta/extended/v0/#',
+            '$id' => 'https://example.com/ucum-number.struct.json',
+            'name' => 'Length',
+            '$uses' => ['JSONStructureUnits'],
+            'type' => 'number',
+            'ucumUnit' => 'm',
+        ];
+
+        $errors = $this->validator->validate($schema);
+        $this->assertCount(0, $errors);
+    }
+
+    public function testValidNumericTypeWithUnitAndUcumUnit(): void
+    {
+        $schema = [
+            '$schema' => 'https://json-structure.org/meta/extended/v0/#',
+            '$id' => 'https://example.com/ucum-both.struct.json',
+            'name' => 'Length',
+            '$uses' => ['JSONStructureUnits'],
+            'type' => 'number',
+            'unit' => 'meter',
+            'ucumUnit' => 'm',
+        ];
+
+        $errors = $this->validator->validate($schema);
+        $this->assertCount(0, $errors);
+    }
+
+    public function testValidExtendedNumericTypesWithUcumUnit(): void
+    {
+        foreach (['int32', 'float', 'double', 'decimal'] as $type) {
+            $schema = [
+                '$schema' => 'https://json-structure.org/meta/extended/v0/#',
+                '$id' => "https://example.com/{$type}-ucum.struct.json",
+                'name' => ucfirst($type) . 'WithUcumUnit',
+                '$uses' => ['JSONStructureUnits'],
+                'type' => $type,
+                'ucumUnit' => 'm',
+            ];
+
+            $errors = $this->validator->validate($schema);
+            $this->assertCount(0, $errors, "Type '{$type}' with ucumUnit should be valid");
+        }
+    }
+
+    public function testInvalidNonNumericTypeWithUcumUnitIsPending(): void
+    {
+        $this->markTestSkipped('Pending ucumUnit keyword enforcement in the PHP schema validator');
+    }
+
+    public function testInvalidNonStringUcumUnitValuesArePending(): void
+    {
+        $this->markTestSkipped('Pending ucumUnit keyword enforcement in the PHP schema validator');
+    }
+
+    public function testRelationsIdentityValidationIsPending(): void
+    {
+        $this->markTestSkipped('Pending JSONStructureRelations extension support in the PHP schema validator');
+    }
+
+    public function testRelationsDeclarationValidationIsPending(): void
+    {
+        $this->markTestSkipped('Pending JSONStructureRelations extension support in the PHP schema validator');
+    }
+
+    public function testRelationsSingleCardinalityValidationIsPending(): void
+    {
+        $this->markTestSkipped('Pending JSONStructureRelations extension support in the PHP schema validator');
+    }
+
+    public function testRelationsMultipleCardinalityValidationIsPending(): void
+    {
+        $this->markTestSkipped('Pending JSONStructureRelations extension support in the PHP schema validator');
+    }
+
+    public function testRelationsQualifierTypeValidationIsPending(): void
+    {
+        $this->markTestSkipped('Pending JSONStructureRelations extension support in the PHP schema validator');
+    }
+
+    public function testInvalidRelationsSchemasArePending(): void
+    {
+        $this->markTestSkipped('Pending JSONStructureRelations extension support in the PHP schema validator');
+    }
 }

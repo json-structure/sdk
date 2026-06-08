@@ -337,5 +337,53 @@ subtest 'Source location tracking' => sub {
     ok($error->location->is_known, 'error has location') or diag("Location: " . $error->location->to_string);
 };
 
+subtest 'ucumUnit validation' => sub {
+    my $validator = JSON::Structure::SchemaValidator->new(extended => 1);
+
+    my $schema = {
+        '$schema' => 'https://json-structure.org/meta/extended/v0/#',
+        '$id' => 'https://example.com/schema/ucum_number',
+        name => 'Length',
+        '$uses' => ['JSONStructureUnits'],
+        type => 'number',
+        ucumUnit => 'm',
+    };
+    my $result = $validator->validate($schema);
+    ok($result->is_valid, 'numeric type with ucumUnit is valid') or diag(join("\n", map { $_->to_string } @{$result->errors}));
+
+    $schema = {
+        '$schema' => 'https://json-structure.org/meta/extended/v0/#',
+        '$id' => 'https://example.com/schema/ucum_both',
+        name => 'Length',
+        '$uses' => ['JSONStructureUnits'],
+        type => 'number',
+        unit => 'meter',
+        ucumUnit => 'm',
+    };
+    $result = $validator->validate($schema);
+    ok($result->is_valid, 'numeric type with unit and ucumUnit is valid') or diag(join("\n", map { $_->to_string } @{$result->errors}));
+
+    for my $type (qw(int32 float double decimal)) {
+        my $typed_schema = {
+            '$schema' => 'https://json-structure.org/meta/extended/v0/#',
+            '$id' => "https://example.com/schema/ucum_$type",
+            name => "${type}WithUcumUnit",
+            '$uses' => ['JSONStructureUnits'],
+            type => $type,
+            ucumUnit => 'm',
+        };
+        my $typed_result = $validator->validate($typed_schema);
+        ok($typed_result->is_valid, "$type with ucumUnit is valid") or diag(join("\n", map { $_->to_string } @{$typed_result->errors}));
+    }
+};
+
+subtest 'ucumUnit invalid cases (pending)' => sub {
+    plan skip_all => 'Pending ucumUnit keyword enforcement in the Perl schema validator';
+};
+
+subtest 'Relations extension (pending)' => sub {
+    plan skip_all => 'Pending JSONStructureRelations extension support in the Perl schema validator';
+};
+
 done_testing();
 

@@ -329,6 +329,35 @@ TEST(is_valid_compound_type) {
 }
 
 /* ============================================================================
+ * Extension Coverage Placeholders
+ * ============================================================================ */
+
+TEST(placeholder_ucum_unit_keyword_coverage) {
+    /*
+     * Pending dedicated schema-validation coverage for the ucumUnit keyword:
+     * - numeric type with ucumUnit string
+     * - numeric type with both unit and ucumUnit
+     * - extended numeric types (int32, float, double, decimal)
+     * - non-numeric types with ucumUnit rejected
+     * - non-string ucumUnit values rejected
+     */
+    return 0;
+}
+
+TEST(placeholder_relations_extension_coverage) {
+    /*
+     * Pending dedicated schema-validation coverage for the Relations extension:
+     * - valid identity arrays on object types
+     * - valid relation declarations, targettype refs, scope, and qualifiertype
+     * - invalid identity / relations on non-object types
+     * - invalid identity shapes and missing properties
+     * - invalid cardinality values
+     * - missing targettype / cardinality
+     */
+    return 0;
+}
+
+/* ============================================================================
  * Test Runner
  * ============================================================================ */
 
@@ -352,6 +381,8 @@ int test_schema_validator(void) {
     RUN_TEST(invalid_minlength_exceeds_maxlength);
     RUN_TEST(invalid_minimum_exceeds_maximum);
     RUN_TEST(invalid_json_syntax);
+    RUN_TEST(placeholder_ucum_unit_keyword_coverage);
+    RUN_TEST(placeholder_relations_extension_coverage);
     
     /* Type checking */
     RUN_TEST(is_valid_primitive_type);

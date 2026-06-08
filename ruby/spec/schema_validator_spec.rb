@@ -87,4 +87,154 @@ RSpec.describe JsonStructure::SchemaValidator do
       end
     end
   end
+
+  describe '.validate with ucumUnit keyword' do
+    it 'accepts a numeric type with ucumUnit' do
+      schema = <<~JSON
+        {
+          "$schema": "https://json-structure.org/meta/extended/v0/#",
+          "$id": "urn:example:ucum-number",
+          "name": "Length",
+          "$uses": ["JSONStructureUnits"],
+          "type": "number",
+          "ucumUnit": "m"
+        }
+      JSON
+
+      result = described_class.validate(schema)
+
+      expect(result).to be_valid
+      expect(result.error_messages).to be_empty
+    end
+
+    it 'accepts a numeric type with unit and ucumUnit' do
+      schema = <<~JSON
+        {
+          "$schema": "https://json-structure.org/meta/extended/v0/#",
+          "$id": "urn:example:ucum-both",
+          "name": "Length",
+          "$uses": ["JSONStructureUnits"],
+          "type": "number",
+          "unit": "meter",
+          "ucumUnit": "m"
+        }
+      JSON
+
+      result = described_class.validate(schema)
+
+      expect(result).to be_valid
+      expect(result.error_messages).to be_empty
+    end
+
+    it 'accepts extended numeric types with ucumUnit' do
+      %w[int32 float double decimal].each do |type|
+        schema = <<~JSON
+          {
+            "$schema": "https://json-structure.org/meta/extended/v0/#",
+            "$id": "urn:example:ucum-#{type}",
+            "name": "#{type}WithUcumUnit",
+            "$uses": ["JSONStructureUnits"],
+            "type": "#{type}",
+            "ucumUnit": "m"
+          }
+        JSON
+
+        result = described_class.validate(schema)
+
+        expect(result).to be_valid
+        expect(result.error_messages).to be_empty
+      end
+    end
+
+    it 'rejects ucumUnit on non-numeric types' do
+      skip 'Pending ucumUnit keyword enforcement in the Ruby schema validator'
+    end
+
+    it 'rejects non-string ucumUnit values' do
+      skip 'Pending ucumUnit keyword enforcement in the Ruby schema validator'
+    end
+  end
+
+  describe '.validate with Relations extension' do
+    it 'accepts object identity arrays' do
+      schema = <<~JSON
+        {
+          "$schema": "https://json-structure.org/meta/extended/v0/#",
+          "$id": "urn:example:relations-identity",
+          "name": "OrderIdentity",
+          "$uses": ["JSONStructureRelations"],
+          "type": "object",
+          "properties": {
+            "id": { "type": "string" },
+            "tenantId": { "type": "string" }
+          },
+          "identity": ["id", "tenantId"]
+        }
+      JSON
+
+      result = described_class.validate(schema)
+
+      expect(result).to be_valid
+      expect(result.error_messages).to be_empty
+    end
+
+    it 'accepts valid relation declarations' do
+      schema = <<~JSON
+        {
+          "$schema": "https://json-structure.org/meta/extended/v0/#",
+          "$id": "urn:example:relations-valid",
+          "name": "OrderRelations",
+          "$uses": ["JSONStructureRelations"],
+          "type": "object",
+          "properties": {
+            "id": { "type": "string" },
+            "customerId": { "type": "string" },
+            "itemIds": { "type": "array", "items": { "type": "string" } },
+            "qualifier": { "type": "string" }
+          },
+          "relations": {
+            "customer": {
+              "cardinality": "single",
+              "targettype": { "$ref": "#/definitions/Customer" }
+            },
+            "items": {
+              "cardinality": "multiple",
+              "targettype": { "$ref": "#/definitions/Item" },
+              "scope": "line-items"
+            },
+            "qualifiedCustomer": {
+              "cardinality": "single",
+              "targettype": { "$ref": "#/definitions/Customer" },
+              "qualifiertype": { "$ref": "#/definitions/RelationQualifier" }
+            }
+          },
+          "definitions": {
+            "Customer": {
+              "name": "Customer",
+              "type": "object",
+              "properties": { "id": { "type": "string" } }
+            },
+            "Item": {
+              "name": "Item",
+              "type": "object",
+              "properties": { "id": { "type": "string" } }
+            },
+            "RelationQualifier": {
+              "name": "RelationQualifier",
+              "type": "string"
+            }
+          }
+        }
+      JSON
+
+      result = described_class.validate(schema)
+
+      expect(result).to be_valid
+      expect(result.error_messages).to be_empty
+    end
+
+    it 'rejects invalid Relations schemas' do
+      skip 'Pending Relations keyword enforcement in the Ruby schema validator'
+    end
+  end
 end

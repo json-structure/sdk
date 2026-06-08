@@ -1769,3 +1769,226 @@ def test_json_pointer_to_non_object():
     }
     errors = validate_json_structure_schema_core(schema, json.dumps(schema))
     assert len(errors) > 0
+
+
+# =============================================================================
+# ucumUnit and Relations extension schema validation coverage
+# =============================================================================
+
+
+def _validate_extended_schema(schema):
+    return validate_json_structure_schema_core(schema, json.dumps(schema), extended=True)
+
+
+def _make_ucum_unit_schema(type_name="number", ucum_unit="m", **extra):
+    schema = {
+        "$schema": "https://json-structure.org/meta/extended/v0/#",
+        "$id": f"https://example.com/schema/ucum/{type_name}",
+        "name": f"{type_name.title()}WithUcumUnit",
+        "$uses": ["JSONStructureUnits"],
+        "type": type_name,
+        "ucumUnit": ucum_unit,
+    }
+    schema.update(extra)
+    return schema
+
+
+VALID_UCUM_UNIT_SCHEMAS = [
+    _make_ucum_unit_schema(),
+    _make_ucum_unit_schema(unit="meter"),
+]
+
+
+@pytest.mark.parametrize("schema", VALID_UCUM_UNIT_SCHEMAS)
+def test_valid_ucum_unit_schemas(schema):
+    errors = _validate_extended_schema(schema)
+    assert errors == []
+
+
+@pytest.mark.parametrize("numeric_type", ["int32", "float", "double", "decimal"])
+def test_ucum_unit_accepts_extended_numeric_types(numeric_type):
+    schema = _make_ucum_unit_schema(type_name=numeric_type)
+    errors = _validate_extended_schema(schema)
+    assert errors == []
+
+
+INVALID_UCUM_UNIT_SCHEMAS = [
+    _make_ucum_unit_schema(type_name="string"),
+    _make_ucum_unit_schema(ucum_unit=42),
+    _make_ucum_unit_schema(ucum_unit=["m"]),
+    _make_ucum_unit_schema(ucum_unit={"code": "m"}),
+]
+
+
+@pytest.mark.skip(reason="Pending ucumUnit keyword enforcement in the Python schema validator")
+@pytest.mark.parametrize("schema", INVALID_UCUM_UNIT_SCHEMAS)
+def test_invalid_ucum_unit_schemas(schema):
+    errors = _validate_extended_schema(schema)
+    assert errors != []
+
+
+RELATIONS_VALID_SCHEMAS = [
+    {
+        "$schema": "https://json-structure.org/meta/extended/v0/#",
+        "$id": "https://example.com/schema/relations/identity",
+        "name": "OrderIdentity",
+        "$uses": ["JSONStructureRelations"],
+        "type": "object",
+        "properties": {
+            "id": {"type": "string"},
+            "tenantId": {"type": "string"},
+        },
+        "identity": ["id", "tenantId"],
+    },
+    {
+        "$schema": "https://json-structure.org/meta/extended/v0/#",
+        "$id": "https://example.com/schema/relations/declarations",
+        "name": "OrderRelations",
+        "$uses": ["JSONStructureRelations"],
+        "type": "object",
+        "properties": {
+            "id": {"type": "string"},
+            "customerId": {"type": "string"},
+            "itemIds": {"type": "array", "items": {"type": "string"}},
+            "qualifier": {"type": "string"},
+        },
+        "relations": {
+            "customer": {
+                "cardinality": "single",
+                "targettype": {"$ref": "#/definitions/Customer"}
+            },
+            "items": {
+                "cardinality": "multiple",
+                "targettype": {"$ref": "#/definitions/Item"},
+                "scope": "line-items"
+            },
+            "qualifiedCustomer": {
+                "cardinality": "single",
+                "targettype": {"$ref": "#/definitions/Customer"},
+                "qualifiertype": {"$ref": "#/definitions/RelationQualifier"}
+            }
+        },
+        "definitions": {
+            "Customer": {
+                "name": "Customer",
+                "type": "object",
+                "properties": {"id": {"type": "string"}}
+            },
+            "Item": {
+                "name": "Item",
+                "type": "object",
+                "properties": {"id": {"type": "string"}}
+            },
+            "RelationQualifier": {
+                "name": "RelationQualifier",
+                "type": "string"
+            }
+        }
+    },
+]
+
+
+@pytest.mark.skip(reason="Pending JSONStructureRelations extension support in the Python schema validator")
+@pytest.mark.parametrize("schema", RELATIONS_VALID_SCHEMAS)
+def test_valid_relations_schemas(schema):
+    errors = _validate_extended_schema(schema)
+    assert errors == []
+
+
+RELATIONS_INVALID_SCHEMAS = [
+    {
+        "$schema": "https://json-structure.org/meta/extended/v0/#",
+        "$id": "https://example.com/schema/relations/identity_non_object",
+        "name": "IdentityOnString",
+        "$uses": ["JSONStructureRelations"],
+        "type": "string",
+        "identity": ["id"],
+    },
+    {
+        "$schema": "https://json-structure.org/meta/extended/v0/#",
+        "$id": "https://example.com/schema/relations/identity_not_array",
+        "name": "IdentityNotArray",
+        "$uses": ["JSONStructureRelations"],
+        "type": "object",
+        "properties": {"id": {"type": "string"}},
+        "identity": "id",
+    },
+    {
+        "$schema": "https://json-structure.org/meta/extended/v0/#",
+        "$id": "https://example.com/schema/relations/identity_missing_property",
+        "name": "IdentityMissingProperty",
+        "$uses": ["JSONStructureRelations"],
+        "type": "object",
+        "properties": {"id": {"type": "string"}},
+        "identity": ["missing"],
+    },
+    {
+        "$schema": "https://json-structure.org/meta/extended/v0/#",
+        "$id": "https://example.com/schema/relations/non_object_relations",
+        "name": "RelationsOnString",
+        "$uses": ["JSONStructureRelations"],
+        "type": "string",
+        "relations": {},
+    },
+    {
+        "$schema": "https://json-structure.org/meta/extended/v0/#",
+        "$id": "https://example.com/schema/relations/invalid_cardinality",
+        "name": "InvalidCardinality",
+        "$uses": ["JSONStructureRelations"],
+        "type": "object",
+        "properties": {"id": {"type": "string"}},
+        "relations": {
+            "customer": {
+                "cardinality": "many",
+                "targettype": {"$ref": "#/definitions/Customer"}
+            }
+        },
+        "definitions": {
+            "Customer": {
+                "name": "Customer",
+                "type": "object",
+                "properties": {"id": {"type": "string"}}
+            }
+        }
+    },
+    {
+        "$schema": "https://json-structure.org/meta/extended/v0/#",
+        "$id": "https://example.com/schema/relations/missing_targettype",
+        "name": "MissingTargetType",
+        "$uses": ["JSONStructureRelations"],
+        "type": "object",
+        "properties": {"id": {"type": "string"}},
+        "relations": {
+            "customer": {
+                "cardinality": "single"
+            }
+        }
+    },
+    {
+        "$schema": "https://json-structure.org/meta/extended/v0/#",
+        "$id": "https://example.com/schema/relations/missing_cardinality",
+        "name": "MissingCardinality",
+        "$uses": ["JSONStructureRelations"],
+        "type": "object",
+        "properties": {"id": {"type": "string"}},
+        "relations": {
+            "customer": {
+                "targettype": {"$ref": "#/definitions/Customer"}
+            }
+        },
+        "definitions": {
+            "Customer": {
+                "name": "Customer",
+                "type": "object",
+                "properties": {"id": {"type": "string"}}
+            }
+        }
+    },
+]
+
+
+@pytest.mark.skip(reason="Pending JSONStructureRelations extension support in the Python schema validator")
+@pytest.mark.parametrize("schema", RELATIONS_INVALID_SCHEMAS)
+def test_invalid_relations_schemas(schema):
+    errors = _validate_extended_schema(schema)
+    assert errors != []

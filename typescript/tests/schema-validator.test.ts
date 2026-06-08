@@ -846,4 +846,306 @@ describe('SchemaValidator', () => {
       expect(result.warnings.filter(w => w.code === 'SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED')).toHaveLength(0);
     });
   });
+
+  describe('ucumUnit keyword', () => {
+    const createUcumUnitSchema = (type: string, ucumUnit: unknown, extra: Record<string, unknown> = {}) => ({
+      $schema: 'https://json-structure.org/meta/extended/v0/#',
+      $id: `urn:example:ucum-${type}`,
+      name: `${type}WithUcumUnit`,
+      $uses: ['JSONStructureUnits'],
+      type,
+      ucumUnit,
+      ...extra,
+    });
+
+    it('should accept a numeric type with ucumUnit', () => {
+      const validator = new SchemaValidator();
+      const result = validator.validate(createUcumUnitSchema('number', 'm'));
+
+      expect(result.isValid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it('should accept unit and ucumUnit together on a numeric type', () => {
+      const validator = new SchemaValidator();
+      const result = validator.validate(createUcumUnitSchema('number', 'm', { unit: 'meter' }));
+
+      expect(result.isValid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it.each(['int32', 'float', 'double', 'decimal'])('should accept %s with ucumUnit', (type) => {
+      const validator = new SchemaValidator();
+      const result = validator.validate(createUcumUnitSchema(type, 'm'));
+
+      expect(result.isValid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+  });
+
+  describe.skip('pending invalid ucumUnit schema checks', () => {
+    const createUcumUnitSchema = (type: string, ucumUnit: unknown) => ({
+      $schema: 'https://json-structure.org/meta/extended/v0/#',
+      $id: 'urn:example:invalid-ucum',
+      name: 'InvalidUcumUnitSchema',
+      $uses: ['JSONStructureUnits'],
+      type,
+      ucumUnit,
+    });
+
+    it('should reject ucumUnit on non-numeric types', () => {
+      const validator = new SchemaValidator();
+      const result = validator.validate(createUcumUnitSchema('string', 'm'));
+
+      expect(result.isValid).toBe(false);
+    });
+
+    it('should reject numeric ucumUnit values', () => {
+      const validator = new SchemaValidator();
+      const result = validator.validate(createUcumUnitSchema('number', 42));
+
+      expect(result.isValid).toBe(false);
+    });
+
+    it('should reject array ucumUnit values', () => {
+      const validator = new SchemaValidator();
+      const result = validator.validate(createUcumUnitSchema('number', ['m']));
+
+      expect(result.isValid).toBe(false);
+    });
+
+    it('should reject object ucumUnit values', () => {
+      const validator = new SchemaValidator();
+      const result = validator.validate(createUcumUnitSchema('number', { code: 'm' }));
+
+      expect(result.isValid).toBe(false);
+    });
+  });
+
+  describe('Relations extension', () => {
+    const createRelationsSchema = () => ({
+      $schema: 'https://json-structure.org/meta/extended/v0/#',
+      $id: 'urn:example:relations-schema',
+      name: 'Order',
+      $uses: ['JSONStructureRelations'],
+      type: 'object',
+      properties: {
+        id: { type: 'string' },
+        tenantId: { type: 'string' },
+        customerId: { type: 'string' },
+        itemIds: { type: 'array', items: { type: 'string' } },
+        qualifier: { type: 'string' },
+      },
+      definitions: {
+        Customer: {
+          name: 'Customer',
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+          },
+        },
+        Item: {
+          name: 'Item',
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+          },
+        },
+        RelationQualifier: {
+          name: 'RelationQualifier',
+          type: 'string',
+        },
+      },
+    });
+
+    it('should accept identity arrays on object types', () => {
+      const schema = createRelationsSchema();
+      schema.identity = ['id', 'tenantId'];
+
+      const validator = new SchemaValidator();
+      const result = validator.validate(schema);
+
+      expect(result.isValid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it('should accept valid relation declarations', () => {
+      const schema = createRelationsSchema();
+      schema.relations = {
+        customer: {
+          cardinality: 'single',
+          targettype: { $ref: '#/definitions/Customer' },
+        },
+      };
+
+      const validator = new SchemaValidator();
+      const result = validator.validate(schema);
+
+      expect(result.isValid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it('should accept single-cardinality relations with targettype refs', () => {
+      const schema = createRelationsSchema();
+      schema.relations = {
+        customer: {
+          cardinality: 'single',
+          targettype: { $ref: '#/definitions/Customer' },
+        },
+      };
+
+      const validator = new SchemaValidator();
+      const result = validator.validate(schema);
+
+      expect(result.isValid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it('should accept multiple-cardinality relations with scope', () => {
+      const schema = createRelationsSchema();
+      schema.relations = {
+        items: {
+          cardinality: 'multiple',
+          targettype: { $ref: '#/definitions/Item' },
+          scope: 'line-items',
+        },
+      };
+
+      const validator = new SchemaValidator();
+      const result = validator.validate(schema);
+
+      expect(result.isValid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it('should accept relations with qualifiertype', () => {
+      const schema = createRelationsSchema();
+      schema.relations = {
+        qualifiedCustomer: {
+          cardinality: 'single',
+          targettype: { $ref: '#/definitions/Customer' },
+          qualifiertype: { $ref: '#/definitions/RelationQualifier' },
+        },
+      };
+
+      const validator = new SchemaValidator();
+      const result = validator.validate(schema);
+
+      expect(result.isValid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+  });
+
+  describe.skip('pending invalid Relations schema checks', () => {
+    const createRelationsSchema = () => ({
+      $schema: 'https://json-structure.org/meta/extended/v0/#',
+      $id: 'urn:example:invalid-relations-schema',
+      name: 'InvalidRelationsSchema',
+      $uses: ['JSONStructureRelations'],
+      type: 'object',
+      properties: {
+        id: { type: 'string' },
+      },
+      definitions: {
+        Customer: {
+          name: 'Customer',
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+          },
+        },
+      },
+    });
+
+    it('should reject identity on non-object types', () => {
+      const validator = new SchemaValidator();
+      const result = validator.validate({
+        $schema: 'https://json-structure.org/meta/extended/v0/#',
+        $id: 'urn:example:identity-non-object',
+        name: 'IdentityOnString',
+        $uses: ['JSONStructureRelations'],
+        type: 'string',
+        identity: ['id'],
+      });
+
+      expect(result.isValid).toBe(false);
+    });
+
+    it('should reject identity values that are not arrays', () => {
+      const schema = createRelationsSchema();
+      schema.identity = 'id';
+
+      const validator = new SchemaValidator();
+      const result = validator.validate(schema);
+
+      expect(result.isValid).toBe(false);
+    });
+
+    it('should reject identity values that reference unknown properties', () => {
+      const schema = createRelationsSchema();
+      schema.identity = ['missing'];
+
+      const validator = new SchemaValidator();
+      const result = validator.validate(schema);
+
+      expect(result.isValid).toBe(false);
+    });
+
+    it('should reject relations on non-object types', () => {
+      const validator = new SchemaValidator();
+      const result = validator.validate({
+        $schema: 'https://json-structure.org/meta/extended/v0/#',
+        $id: 'urn:example:relations-non-object',
+        name: 'StringWithRelations',
+        $uses: ['JSONStructureRelations'],
+        type: 'string',
+        relations: {},
+      });
+
+      expect(result.isValid).toBe(false);
+    });
+
+    it('should reject invalid relation cardinality values', () => {
+      const schema = createRelationsSchema();
+      schema.relations = {
+        customer: {
+          cardinality: 'many',
+          targettype: { $ref: '#/definitions/Customer' },
+        },
+      };
+
+      const validator = new SchemaValidator();
+      const result = validator.validate(schema);
+
+      expect(result.isValid).toBe(false);
+    });
+
+    it('should reject relations missing targettype', () => {
+      const schema = createRelationsSchema();
+      schema.relations = {
+        customer: {
+          cardinality: 'single',
+        },
+      };
+
+      const validator = new SchemaValidator();
+      const result = validator.validate(schema);
+
+      expect(result.isValid).toBe(false);
+    });
+
+    it('should reject relations missing cardinality', () => {
+      const schema = createRelationsSchema();
+      schema.relations = {
+        customer: {
+          targettype: { $ref: '#/definitions/Customer' },
+        },
+      };
+
+      const validator = new SchemaValidator();
+      const result = validator.validate(schema);
+
+      expect(result.isValid).toBe(false);
+    });
+  });
 });
