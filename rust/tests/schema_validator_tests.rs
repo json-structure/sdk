@@ -194,24 +194,49 @@ fn test_valid_map_schema() {
 #[test]
 fn test_all_primitive_types() {
     let types = [
-        "string", "boolean", "null", "number", "integer",
-        "int8", "int16", "int32", "int64", "int128",
-        "uint8", "uint16", "uint32", "uint64", "uint128",
-        "float", "float8", "double", "decimal",
-        "date", "time", "datetime", "duration",
-        "uuid", "uri", "binary", "jsonpointer", "any",
+        "string",
+        "boolean",
+        "null",
+        "number",
+        "integer",
+        "int8",
+        "int16",
+        "int32",
+        "int64",
+        "int128",
+        "uint8",
+        "uint16",
+        "uint32",
+        "uint64",
+        "uint128",
+        "float",
+        "float8",
+        "double",
+        "decimal",
+        "date",
+        "time",
+        "datetime",
+        "duration",
+        "uuid",
+        "uri",
+        "binary",
+        "jsonpointer",
+        "any",
     ];
 
     let validator = SchemaValidator::new();
-    
+
     for type_name in &types {
-        let schema = format!(r##"{{
+        let schema = format!(
+            r##"{{
             "$schema": "https://json-structure.org/meta/core/v0/#",
             "$id": "https://example.com/schema/{}",
             "name": "{}Schema",
             "type": "{}"
-        }}"##, type_name, type_name, type_name);
-        
+        }}"##,
+            type_name, type_name, type_name
+        );
+
         let result = validator.validate(&schema);
         assert!(result.is_valid(), "Type {} should be valid", type_name);
     }
@@ -317,7 +342,10 @@ fn test_valid_validation_keywords() {
     }"##;
     let validator = SchemaValidator::new();
     let result = validator.validate(schema);
-    assert!(result.is_valid(), "Validation keywords schema should be valid");
+    assert!(
+        result.is_valid(),
+        "Validation keywords schema should be valid"
+    );
 }
 
 // =============================================================================
@@ -346,7 +374,10 @@ fn test_invalid_missing_name_with_type() {
     }"##;
     let validator = SchemaValidator::new();
     let result = validator.validate(schema);
-    assert!(!result.is_valid(), "Schema with type but no name should be invalid");
+    assert!(
+        !result.is_valid(),
+        "Schema with type but no name should be invalid"
+    );
     assert!(result.errors().any(|e| e.message.contains("name")));
 }
 
@@ -416,7 +447,10 @@ fn test_invalid_choice_missing_choices() {
     }"##;
     let validator = SchemaValidator::new();
     let result = validator.validate(schema);
-    assert!(!result.is_valid(), "Choice without choices should be invalid");
+    assert!(
+        !result.is_valid(),
+        "Choice without choices should be invalid"
+    );
 }
 
 #[test]
@@ -429,7 +463,10 @@ fn test_invalid_tuple_missing_definition() {
     }"##;
     let validator = SchemaValidator::new();
     let result = validator.validate(schema);
-    assert!(!result.is_valid(), "Tuple without properties/tuple should be invalid");
+    assert!(
+        !result.is_valid(),
+        "Tuple without properties/tuple should be invalid"
+    );
 }
 
 // =============================================================================
@@ -446,7 +483,10 @@ fn test_invalid_ref_not_found() {
     }"##;
     let validator = SchemaValidator::new();
     let result = validator.validate(schema);
-    assert!(!result.is_valid(), "Reference to non-existent definition should be invalid");
+    assert!(
+        !result.is_valid(),
+        "Reference to non-existent definition should be invalid"
+    );
 }
 
 #[test]
@@ -464,7 +504,10 @@ fn test_invalid_circular_ref() {
     let validator = SchemaValidator::new();
     let result = validator.validate(schema);
     // Circular refs should be detected
-    assert!(!result.is_valid() || result.errors().count() > 0 || true, "Circular reference schema");
+    assert!(
+        !result.is_valid() || result.errors().count() > 0 || true,
+        "Circular reference schema"
+    );
 }
 
 // =============================================================================
@@ -496,7 +539,10 @@ fn test_invalid_duplicate_enum() {
     }"##;
     let validator = SchemaValidator::new();
     let result = validator.validate(schema);
-    assert!(!result.is_valid(), "Duplicate enum values should be invalid");
+    assert!(
+        !result.is_valid(),
+        "Duplicate enum values should be invalid"
+    );
 }
 
 // =============================================================================
@@ -538,10 +584,13 @@ fn test_tuple_uses_properties_and_tuple_not_prefixitems() {
         },
         "tuple": ["first", "second"]
     }"##;
-    
+
     let validator = SchemaValidator::new();
     let result = validator.validate(valid_schema);
-    assert!(result.is_valid(), "Tuple with properties+tuple should be valid");
+    assert!(
+        result.is_valid(),
+        "Tuple with properties+tuple should be valid"
+    );
 }
 
 // =============================================================================
@@ -563,7 +612,10 @@ fn test_choice_uses_choices_and_selector() {
     }"##;
     let validator = SchemaValidator::new();
     let result = validator.validate(schema);
-    assert!(result.is_valid(), "Choice with selector+choices should be valid");
+    assert!(
+        result.is_valid(),
+        "Choice with selector+choices should be valid"
+    );
 }
 
 // =============================================================================
@@ -639,7 +691,10 @@ fn test_valid_required_exist_in_properties() {
     }"##;
     let validator = SchemaValidator::new();
     let result = validator.validate(schema);
-    assert!(result.is_valid(), "Required properties that exist should be valid");
+    assert!(
+        result.is_valid(),
+        "Required properties that exist should be valid"
+    );
 }
 
 // =============================================================================
@@ -660,7 +715,10 @@ fn test_invalid_required_not_in_properties() {
     }"##;
     let validator = SchemaValidator::new();
     let result = validator.validate(schema);
-    assert!(!result.is_valid(), "Required property not in properties should be invalid");
+    assert!(
+        !result.is_valid(),
+        "Required property not in properties should be invalid"
+    );
 }
 
 // =============================================================================
@@ -822,4 +880,253 @@ fn test_invalid_empty_oneof() {
     let validator = SchemaValidator::new();
     let result = validator.validate(schema);
     assert!(!result.is_valid(), "Empty oneOf should be invalid");
+}
+
+// =============================================================================
+// ucumUnit and Relations extension coverage
+// =============================================================================
+
+#[test]
+fn test_valid_ucum_unit_on_number() {
+    let schema = r##"{
+        "$schema": "https://json-structure.org/meta/extended/v0/#",
+        "$id": "https://example.com/schema/ucum-number",
+        "name": "Length",
+        "$uses": ["JSONStructureUnits"],
+        "type": "number",
+        "ucumUnit": "m"
+    }"##;
+    let validator = SchemaValidator::new();
+    let result = validator.validate(schema);
+    assert!(result.is_valid(), "ucumUnit on number should be valid");
+}
+
+#[test]
+fn test_valid_ucum_unit_with_unit_annotation() {
+    let schema = r##"{
+        "$schema": "https://json-structure.org/meta/extended/v0/#",
+        "$id": "https://example.com/schema/ucum-both",
+        "name": "Length",
+        "$uses": ["JSONStructureUnits"],
+        "type": "number",
+        "unit": "meter",
+        "ucumUnit": "m"
+    }"##;
+    let validator = SchemaValidator::new();
+    let result = validator.validate(schema);
+    assert!(
+        result.is_valid(),
+        "unit and ucumUnit should be allowed together"
+    );
+}
+
+#[test]
+fn test_valid_ucum_unit_on_extended_numeric_types() {
+    let validator = SchemaValidator::new();
+    for type_name in ["int32", "float", "double", "decimal"] {
+        let schema = format!(
+            r##"{{
+            "$schema": "https://json-structure.org/meta/extended/v0/#",
+            "$id": "https://example.com/schema/ucum-{}",
+            "name": "{}WithUcumUnit",
+            "$uses": ["JSONStructureUnits"],
+            "type": "{}",
+            "ucumUnit": "m"
+        }}"##,
+            type_name, type_name, type_name
+        );
+        let result = validator.validate(&schema);
+        assert!(
+            result.is_valid(),
+            "ucumUnit should be valid for {}",
+            type_name
+        );
+    }
+}
+
+#[test]
+fn test_invalid_ucum_unit_schemas() {
+    let validator = SchemaValidator::new();
+    let schemas = [
+        r##"{
+            "$schema": "https://json-structure.org/meta/extended/v0/#",
+            "$id": "https://example.com/schema/ucum-string",
+            "name": "TextWithUnit",
+            "$uses": ["JSONStructureUnits"],
+            "type": "string",
+            "ucumUnit": "m"
+        }"##,
+        r##"{
+            "$schema": "https://json-structure.org/meta/extended/v0/#",
+            "$id": "https://example.com/schema/ucum-number-value",
+            "name": "NumberWithNumericUnit",
+            "$uses": ["JSONStructureUnits"],
+            "type": "number",
+            "ucumUnit": 42
+        }"##,
+        r##"{
+            "$schema": "https://json-structure.org/meta/extended/v0/#",
+            "$id": "https://example.com/schema/ucum-array-value",
+            "name": "NumberWithArrayUnit",
+            "$uses": ["JSONStructureUnits"],
+            "type": "number",
+            "ucumUnit": ["m"]
+        }"##,
+        r##"{
+            "$schema": "https://json-structure.org/meta/extended/v0/#",
+            "$id": "https://example.com/schema/ucum-object-value",
+            "name": "NumberWithObjectUnit",
+            "$uses": ["JSONStructureUnits"],
+            "type": "number",
+            "ucumUnit": {"code": "m"}
+        }"##,
+    ];
+
+    for schema in schemas {
+        let result = validator.validate(schema);
+        assert!(!result.is_valid(), "invalid ucumUnit schema should fail");
+    }
+}
+
+#[test]
+fn test_valid_relations_schemas() {
+    let validator = SchemaValidator::new();
+    let schemas = [
+        r##"{
+            "$schema": "https://json-structure.org/meta/extended/v0/#",
+            "$id": "https://example.com/schema/relations-identity",
+            "name": "OrderIdentity",
+            "$uses": ["JSONStructureRelations"],
+            "type": "object",
+            "properties": {
+                "id": {"type": "string"},
+                "tenantId": {"type": "string"}
+            },
+            "identity": ["id", "tenantId"]
+        }"##,
+        r##"{
+            "$schema": "https://json-structure.org/meta/extended/v0/#",
+            "$id": "https://example.com/schema/relations-declarations",
+            "name": "OrderRelations",
+            "$uses": ["JSONStructureRelations"],
+            "type": "object",
+            "properties": {
+                "id": {"type": "string"},
+                "customerId": {"type": "string"},
+                "itemIds": {"type": "array", "items": {"type": "string"}},
+                "qualifier": {"type": "string"}
+            },
+            "relations": {
+                "customer": {
+                    "cardinality": "single",
+                    "targettype": {"$ref": "#/definitions/Customer"}
+                },
+                "items": {
+                    "cardinality": "multiple",
+                    "targettype": {"$ref": "#/definitions/Item"},
+                    "scope": "line-items"
+                },
+                "qualifiedCustomer": {
+                    "cardinality": "single",
+                    "targettype": {"$ref": "#/definitions/Customer"},
+                    "qualifiertype": {"$ref": "#/definitions/RelationQualifier"}
+                }
+            },
+            "definitions": {
+                "Customer": {
+                    "name": "Customer",
+                    "type": "object",
+                    "properties": {"id": {"type": "string"}}
+                },
+                "Item": {
+                    "name": "Item",
+                    "type": "object",
+                    "properties": {"id": {"type": "string"}}
+                },
+                "RelationQualifier": {
+                    "name": "RelationQualifier",
+                    "type": "string"
+                }
+            }
+        }"##,
+    ];
+
+    for schema in schemas {
+        let result = validator.validate(schema);
+        assert!(result.is_valid(), "valid Relations schema should pass");
+    }
+}
+
+#[test]
+fn test_invalid_relations_schemas() {
+    let validator = SchemaValidator::new();
+    let schemas = [
+        r##"{
+            "$schema": "https://json-structure.org/meta/extended/v0/#",
+            "$id": "https://example.com/schema/relations-identity-non-object",
+            "name": "IdentityOnString",
+            "$uses": ["JSONStructureRelations"],
+            "type": "string",
+            "identity": ["id"]
+        }"##,
+        r##"{
+            "$schema": "https://json-structure.org/meta/extended/v0/#",
+            "$id": "https://example.com/schema/relations-invalid-cardinality",
+            "name": "InvalidCardinality",
+            "$uses": ["JSONStructureRelations"],
+            "type": "object",
+            "properties": {"id": {"type": "string"}},
+            "relations": {
+                "customer": {
+                    "cardinality": "many",
+                    "targettype": {"$ref": "#/definitions/Customer"}
+                }
+            },
+            "definitions": {
+                "Customer": {
+                    "name": "Customer",
+                    "type": "object",
+                    "properties": {"id": {"type": "string"}}
+                }
+            }
+        }"##,
+        r##"{
+            "$schema": "https://json-structure.org/meta/extended/v0/#",
+            "$id": "https://example.com/schema/relations-missing-targettype",
+            "name": "MissingTargetType",
+            "$uses": ["JSONStructureRelations"],
+            "type": "object",
+            "properties": {"id": {"type": "string"}},
+            "relations": {
+                "customer": {
+                    "cardinality": "single"
+                }
+            }
+        }"##,
+        r##"{
+            "$schema": "https://json-structure.org/meta/extended/v0/#",
+            "$id": "https://example.com/schema/relations-missing-cardinality",
+            "name": "MissingCardinality",
+            "$uses": ["JSONStructureRelations"],
+            "type": "object",
+            "properties": {"id": {"type": "string"}},
+            "relations": {
+                "customer": {
+                    "targettype": {"$ref": "#/definitions/Customer"}
+                }
+            },
+            "definitions": {
+                "Customer": {
+                    "name": "Customer",
+                    "type": "object",
+                    "properties": {"id": {"type": "string"}}
+                }
+            }
+        }"##,
+    ];
+
+    for schema in schemas {
+        let result = validator.validate(schema);
+        assert!(!result.is_valid(), "invalid Relations schema should fail");
+    }
 }

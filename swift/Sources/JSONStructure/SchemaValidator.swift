@@ -2,6 +2,7 @@
 // Schema Validator - validates JSON Structure schema documents
 
 import Foundation
+import CoreFoundation
 
 /// Validates JSON Structure schema documents.
 ///
@@ -65,6 +66,7 @@ private final class ValidationEngine {
     private var schema: [String: Any] = [:]
     private var seenRefs: Set<String> = []
     private var seenExtends: Set<String> = []
+    private var enabledExtensions: Set<String> = []
     private var sourceLocator: JsonSourceLocator?
     
     /// Validation extension keywords that require JSONStructureValidation extension.
@@ -88,6 +90,7 @@ private final class ValidationEngine {
         warnings = []
         seenRefs = []
         seenExtends = []
+        enabledExtensions = []
         
         guard let schemaMap = schema as? [String: Any] else {
             addError("#", "Schema must be an object", schemaInvalidType)
@@ -95,6 +98,9 @@ private final class ValidationEngine {
         }
         
         self.schema = schemaMap
+        if options.extended {
+            checkEnabledExtensions(schemaMap)
+        }
         validateSchemaDocument(schemaMap, "#")
         
         return result()
@@ -124,11 +130,20 @@ private final class ValidationEngine {
             // Root schema must have $id
             if schema["$id"] == nil {
                 addError("", "Missing required '$id' keyword at root", schemaRootMissingID)
+            } else if let id = schema["$id"] as? String {
+                let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed.isEmpty {
+                    addError("\(path)/$id", "$id must not be empty", schemaKeywordEmpty)
+                } else if !hasURIScheme(trimmed) {
+                    addError("\(path)/$id", "$id must be a URI with a scheme", schemaConstraintValueInvalid)
+                }
             }
             
             // Root schema with 'type' must have 'name'
             if schema["type"] != nil && schema["name"] == nil {
                 addError("", "Root schema with 'type' must have a 'name' property", schemaRootMissingName)
+            } else if schema["name"] != nil && !isValidIdentifier(schema["name"]) {
+                addError("\(path)/name", "name must be a valid identifier", schemaNameInvalid)
             }
         }
         
@@ -188,31 +203,30 @@ private final class ValidationEngine {
         }
     }
     
-    private func checkValidationExtensionKeywords(_ schema: [String: Any]) {
-        // Check if warnings are enabled (default is true)
-        if !options.warnOnUnusedExtensionKeywords {
-            return
+    private func checkEnabledExtensions(_ schema: [String: Any]) {
+        enabledExtensions = []
+
+        if let schemaURI = schema["$schema"] as? String,
+           schemaURI.contains("validation") {
+            enabledExtensions.insert("JSONStructureConditionalComposition")
+            enabledExtensions.insert("JSONStructureValidation")
         }
-        
-        // Check if validation extensions are enabled
-        var validationEnabled = false
-        
+
         if let uses = schema["$uses"] as? [Any] {
-            for u in uses {
-                if let uStr = u as? String, uStr == "JSONStructureValidation" {
-                    validationEnabled = true
-                    break
+            for use in uses {
+                if let useStr = use as? String {
+                    enabledExtensions.insert(useStr)
                 }
             }
         }
-        
-        if let schemaURI = schema["$schema"] as? String {
-            if schemaURI.contains("extended") || schemaURI.contains("validation") {
-                validationEnabled = true
-            }
+    }
+
+    private func checkValidationExtensionKeywords(_ schema: [String: Any]) {
+        if !options.warnOnUnusedExtensionKeywords {
+            return
         }
-        
-        if !validationEnabled {
+
+        if !enabledExtensions.contains("JSONStructureValidation") {
             collectValidationKeywordWarnings(schema, "")
         }
     }
@@ -332,6 +346,11 @@ private final class ValidationEngine {
         } else {
             addError("\(path)/type", "type must be a string, array, or object with $ref", schemaKeywordInvalidType)
         }
+
+        let typeName = schema["type"] as? String
+        validateUnitsKeywords(schema, typeName, path)
+        validateUcumUnitKeyword(schema, typeName, path)
+        validateRelationsKeywords(schema, typeName, path)
     }
     
     private func validateSingleType(_ typeStr: String, _ schema: [String: Any], _ path: String) {
@@ -472,16 +491,21 @@ private final class ValidationEngine {
         let propsMap = schema["properties"] as? [String: Any]
         
         for (i, elem) in tupleArr.enumerated() {
-            guard let name = elem as? String else {
-                addError("\(path)/tuple[\(i)]", "tuple elements must be strings", schemaKeywordInvalidType)
+            if let name = elem as? String {
+                if let props = propsMap {
+                    if props[name] == nil {
+                        addError("\(path)/tuple[\(i)]", "Tuple element '\(name)' not found in properties", schemaRequiredPropertyNotDefined)
+                    }
+                }
                 continue
             }
-            
-            if let props = propsMap {
-                if props[name] == nil {
-                    addError("\(path)/tuple[\(i)]", "Tuple element '\(name)' not found in properties", schemaRequiredPropertyNotDefined)
-                }
+
+            if let refObject = elem as? [String: Any], let ref = refObject["$ref"] {
+                validateRef(ref, "\(path)/tuple[\(i)]/$ref")
+                continue
             }
+
+            addError("\(path)/tuple[\(i)]", "tuple elements must be strings or $ref objects", schemaKeywordInvalidType)
         }
     }
     
@@ -525,6 +549,13 @@ private final class ValidationEngine {
                             break
                         }
                         seen.insert(str)
+                    }
+                }
+
+                for item in enumArr {
+                    if !isEnumValueValid(item, forType: typeStr) {
+                        addError("\(path)/enum", "enum value is not valid for type '\(typeStr)'", schemaConstraintTypeMismatch)
+                        break
                     }
                 }
             }
@@ -746,6 +777,173 @@ private final class ValidationEngine {
             }
         }
     }
+
+    private func validateUnitsKeywords(_ schema: [String: Any], _ typeName: String?, _ path: String) {
+        for keyword in ["unit", "currency", "symbols"] {
+            guard schema[keyword] != nil else {
+                continue
+            }
+
+            if !enabledExtensions.contains("JSONStructureUnits") {
+                addError("\(path)/\(keyword)", "'\(keyword)' requires JSONStructureUnits extension.", schemaExtensionKeywordNotEnabled)
+            }
+        }
+
+        guard schema["unit"] != nil else {
+            return
+        }
+
+        if !(schema["unit"] is String) {
+            addError("\(path)/unit", "'unit' must be a string.", schemaKeywordInvalidType)
+        }
+
+        let allowedTypes: Set<String> = ["number", "integer", "float", "double", "decimal", "int32", "uint32", "int64", "uint64", "int128", "uint128"]
+        if let typeName, allowedTypes.contains(typeName) {
+            return
+        }
+
+        addError("\(path)/unit", "'unit' can only appear in numeric schemas.", schemaConstraintInvalidForType)
+    }
+
+    private func validateUcumUnitKeyword(_ schema: [String: Any], _ typeName: String?, _ path: String) {
+        guard schema["ucumUnit"] != nil else {
+            return
+        }
+
+        if !enabledExtensions.contains("JSONStructureUnits") {
+            addError("\(path)/ucumUnit", "'ucumUnit' requires JSONStructureUnits extension.", schemaExtensionKeywordNotEnabled)
+        }
+
+        if !(schema["ucumUnit"] is String) {
+            addError("\(path)/ucumUnit", "'ucumUnit' must be a string.", schemaKeywordInvalidType)
+        }
+
+        let allowedTypes: Set<String> = ["number", "integer", "float", "double", "decimal", "int32", "uint32", "int64", "uint64", "int128", "uint128"]
+        if let typeName, allowedTypes.contains(typeName) {
+            return
+        }
+
+        addError("\(path)/ucumUnit", "'ucumUnit' can only appear in numeric schemas.", schemaConstraintInvalidForType)
+    }
+
+    private func validateRelationsKeywords(_ schema: [String: Any], _ typeName: String?, _ path: String) {
+        let hasIdentity = schema["identity"] != nil
+        let hasRelations = schema["relations"] != nil
+        guard hasIdentity || hasRelations else {
+            return
+        }
+
+        if !enabledExtensions.contains("JSONStructureRelations") {
+            if hasIdentity {
+                addError("\(path)/identity", "'identity' requires JSONStructureRelations extension.", schemaExtensionKeywordNotEnabled)
+            }
+            if hasRelations {
+                addError("\(path)/relations", "'relations' requires JSONStructureRelations extension.", schemaExtensionKeywordNotEnabled)
+            }
+        }
+
+        let supportsRelations = typeName == "object" || typeName == "tuple"
+
+        if hasIdentity {
+            validateIdentityKeyword(schema, path, supportsRelations)
+        }
+
+        if hasRelations {
+            validateRelationsObject(schema, path, supportsRelations)
+        }
+    }
+
+    private func validateIdentityKeyword(_ schema: [String: Any], _ path: String, _ supportsRelations: Bool) {
+        if !supportsRelations {
+            addError("\(path)/identity", "'identity' can only appear in object or tuple schemas.", schemaConstraintInvalidForType)
+        }
+
+        guard let identity = schema["identity"] as? [Any] else {
+            addError("\(path)/identity", "'identity' must be an array of strings.", schemaKeywordInvalidType)
+            return
+        }
+
+        let properties = schema["properties"] as? [String: Any] ?? [:]
+        for (index, item) in identity.enumerated() {
+            let itemPath = "\(path)/identity[\(index)]"
+            guard let itemName = item as? String else {
+                addError(itemPath, "'identity[\(index)]' must be a string.", schemaKeywordInvalidType)
+                continue
+            }
+
+            if properties[itemName] == nil {
+                addError(itemPath, "'identity' references property '\(itemName)' that is not in 'properties'.", schemaRequiredPropertyNotDefined)
+            }
+        }
+    }
+
+    private func validateRelationsObject(_ schema: [String: Any], _ path: String, _ supportsRelations: Bool) {
+        if !supportsRelations {
+            addError("\(path)/relations", "'relations' can only appear in object or tuple schemas.", schemaConstraintInvalidForType)
+        }
+
+        guard let relations = schema["relations"] as? [String: Any] else {
+            addError("\(path)/relations", "'relations' must be an object.", schemaKeywordInvalidType)
+            return
+        }
+
+        for (relationName, relationValue) in relations {
+            let relationPath = "\(path)/relations/\(relationName)"
+            guard let relation = relationValue as? [String: Any] else {
+                addError(relationPath, "Relation declaration must be an object.", schemaKeywordInvalidType)
+                continue
+            }
+
+            if relation["targettype"] != nil {
+                validateRelationRefObject(relation["targettype"], keyword: "targettype", relationPath: relationPath)
+            } else {
+                addError("\(relationPath)/targettype", "Relation declaration must have 'targettype'.", schemaKeywordInvalidType)
+            }
+
+            if let cardinality = relation["cardinality"] as? String {
+                if cardinality != "single" && cardinality != "multiple" {
+                    addError("\(relationPath)/cardinality", "'cardinality' must be 'single' or 'multiple'.", schemaKeywordInvalidType)
+                }
+            } else {
+                addError("\(relationPath)/cardinality", "Relation declaration must have 'cardinality'.", schemaKeywordInvalidType)
+            }
+
+            if relation["scope"] != nil {
+                validateRelationScope(relation["scope"], relationPath: relationPath)
+            }
+
+            if relation["qualifiertype"] != nil {
+                validateRelationRefObject(relation["qualifiertype"], keyword: "qualifiertype", relationPath: relationPath)
+            }
+        }
+    }
+
+    private func validateRelationScope(_ scope: Any?, relationPath: String) {
+        if scope is String {
+            return
+        }
+
+        if let scopeArray = scope as? [Any] {
+            for (index, item) in scopeArray.enumerated() {
+                if !(item is String) {
+                    addError("\(relationPath)/scope[\(index)]", "'scope' array items must be strings.", schemaKeywordInvalidType)
+                }
+            }
+            return
+        }
+
+        addError("\(relationPath)/scope", "'scope' must be a string or an array of strings.", schemaKeywordInvalidType)
+    }
+
+    private func validateRelationRefObject(_ value: Any?, keyword: String, relationPath: String) {
+        let keywordPath = "\(relationPath)/\(keyword)"
+        guard let value = value as? [String: Any], value["$ref"] != nil else {
+            addError(keywordPath, "'\(keyword)' must be an object with '$ref'.", schemaKeywordInvalidType)
+            return
+        }
+
+        validateRef(value["$ref"] as Any, "\(keywordPath)/$ref")
+    }
     
     private func validateExtends(_ extendsVal: Any, _ path: String) {
         var refs: [String] = []
@@ -784,7 +982,11 @@ private final class ValidationEngine {
             seenExtends.insert(ref)
             
             if let resolved = resolveRef(ref) {
-                if let extendsVal = resolved["$extends"] {
+                let resolvedType = resolved["type"] as? String
+                let allowedExtendTypes: Set<String> = ["object", "tuple", "map", "array", "set", "choice"]
+                if resolvedType != nil && !allowedExtendTypes.contains(resolvedType!) {
+                    addError(refPath, "$extends target '\(ref)' must not resolve to a primitive type", schemaConstraintTypeMismatch)
+                } else if let extendsVal = resolved["$extends"] {
                     validateExtends(extendsVal, refPath)
                 }
             } else {
@@ -868,6 +1070,57 @@ private final class ValidationEngine {
         }
         
         return current as? [String: Any]
+    }
+
+    private func hasURIScheme(_ value: String) -> Bool {
+        value.range(of: "^[a-zA-Z][a-zA-Z0-9+\\-.]*:", options: .regularExpression) != nil
+    }
+
+    private func isValidIdentifier(_ value: Any?) -> Bool {
+        guard let value = value as? String else {
+            return false
+        }
+
+        return value.range(of: "^[A-Za-z_$][A-Za-z0-9_$]*$", options: .regularExpression) != nil
+    }
+
+    private func isEnumValueValid(_ value: Any, forType type: String) -> Bool {
+        switch type {
+        case "string":
+            return value is String
+        case "boolean":
+            return isJSONBoolean(value)
+        case "null":
+            return value is NSNull
+        case "integer", "int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64", "float", "double", "decimal":
+            return isJSONNumber(value)
+        default:
+            return true
+        }
+    }
+
+    private func isJSONBoolean(_ value: Any) -> Bool {
+        if value is Bool {
+            return true
+        }
+
+        guard let number = value as? NSNumber else {
+            return false
+        }
+
+        return CFGetTypeID(number) == CFBooleanGetTypeID()
+    }
+
+    private func isJSONNumber(_ value: Any) -> Bool {
+        if value is Bool {
+            return false
+        }
+
+        if let number = value as? NSNumber {
+            return CFGetTypeID(number) != CFBooleanGetTypeID()
+        }
+
+        return value is Int || value is Double || value is Float || value is Decimal
     }
     
     /// Serializes any value to a comparable string for uniqueness checks.

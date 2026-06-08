@@ -100,7 +100,9 @@ public final class SchemaValidator {
             // Alternate names
             "altnames",
             // Units
-            "unit"
+            "unit", "ucumUnit", "currency", "symbols",
+            // Relations
+            "identity", "relations"
     );
 
     private static final Pattern NAMESPACE_PATTERN = Pattern.compile(
@@ -108,6 +110,12 @@ public final class SchemaValidator {
 
     private static final Pattern IDENTIFIER_PATTERN = Pattern.compile(
             "^[a-zA-Z_][a-zA-Z0-9_]*$");
+
+    private static final Pattern ID_URI_SCHEME_PATTERN = Pattern.compile(
+            "^[a-zA-Z][a-zA-Z0-9+\\-.]*:");
+
+    private static final Pattern NAME_IDENTIFIER_PATTERN = Pattern.compile(
+            "^[A-Za-z_$][A-Za-z0-9_$]*$");
 
     /**
      * Validation extension keywords that require the JSONStructureValidation feature.
@@ -127,6 +135,11 @@ public final class SchemaValidator {
             "contentEncoding", "contentMediaType",
             // Other
             "has", "default"
+    );
+
+    private static final Set<String> NUMERIC_UNIT_TYPES = Set.of(
+            "number", "integer", "float", "double", "decimal",
+            "int32", "uint32", "int64", "uint64", "int128", "uint128"
     );
 
     /**
@@ -497,7 +510,20 @@ public final class SchemaValidator {
 
         // Validate $id if present
         if (schema.has("$id")) {
-            validateStringProperty(schema.get("$id"), "$id", path, result);
+            JsonNode idValue = schema.get("$id");
+            validateStringProperty(idValue, "$id", path, result);
+            if (isRoot && idValue != null && idValue.isTextual()) {
+                String idText = idValue.asText();
+                if (idText.trim().isEmpty()) {
+                    addError(result, ErrorCodes.SCHEMA_KEYWORD_EMPTY, "$id must not be empty", appendPath(path, "$id"));
+                } else if (!ID_URI_SCHEME_PATTERN.matcher(idText).find()) {
+                    addError(result, ErrorCodes.SCHEMA_CONSTRAINT_VALUE_INVALID, "$id must be a URI with a scheme", appendPath(path, "$id"));
+                }
+            }
+        }
+
+        if (schema.has("name")) {
+            validateNameProperty(schema.get("name"), path, result);
         }
 
         // Check for bare $ref - this is NOT permitted per spec Section 3.4.1
@@ -569,7 +595,7 @@ public final class SchemaValidator {
 
         // Validate enum if present
         if (schema.has("enum")) {
-            validateEnum(schema.get("enum"), path, result);
+            validateEnum(schema.get("enum"), typeStr, path, result);
         }
 
         // Validate conditional composition keywords
@@ -584,6 +610,9 @@ public final class SchemaValidator {
         if (schema.has("altnames")) {
             validateAltnames(schema.get("altnames"), path, result);
         }
+
+        validateUnitsKeywords(schema, typeStr, path, result);
+        validateRelationsKeywords(schema, typeStr, path, result);
         
         // A schema must have at least one schema-defining keyword (type, allOf, anyOf, oneOf, $extends)
         // unless it only defines definitions (a pure definition container) or uses conditional keywords
@@ -687,6 +716,17 @@ public final class SchemaValidator {
         }
     }
 
+    private void validateNameProperty(JsonNode value, String path, ValidationResult result) {
+        if (value == null || !value.isTextual()) {
+            addError(result, ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE, "name must be a string", appendPath(path, "name"));
+            return;
+        }
+
+        if (!NAME_IDENTIFIER_PATTERN.matcher(value.asText()).matches()) {
+            addError(result, ErrorCodes.SCHEMA_NAME_INVALID, "name must be a valid identifier", appendPath(path, "name"));
+        }
+    }
+
     private void validateReference(JsonNode value, String keyword, String path, ValidationResult result) {
         if (value == null || !value.isTextual()) {
             addError(result, ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE, keyword + " must be a string", appendPath(path, keyword));
@@ -740,11 +780,12 @@ public final class SchemaValidator {
      */
     private void validateExtendsRef(String refStr, String path, ValidationResult result) {
         SchemaValidationContext ctx = currentContext.get();
-        
+        String refPath = appendPath(path, "$extends");
+
         // Check for circular reference
         if (ctx.visitedExtends.contains(refStr)) {
-            addError(result, ErrorCodes.SCHEMA_EXTENDS_CIRCULAR, 
-                "Circular $extends reference detected: " + refStr, appendPath(path, "$extends"));
+            addError(result, ErrorCodes.SCHEMA_EXTENDS_CIRCULAR,
+                "Circular $extends reference detected: " + refStr, refPath);
             return;
         }
 
@@ -752,9 +793,18 @@ public final class SchemaValidator {
         ctx.visitedExtends.add(refStr);
 
         // Resolve and validate the base schema
-        JsonNode baseSchema = resolveLocalRef(refStr);
-        if (baseSchema != null && baseSchema.isObject() && baseSchema.has("$extends")) {
-            validateExtendsKeyword(baseSchema.get("$extends"), refStr, result);
+        JsonNode baseSchema = resolveRef(refStr);
+        if (baseSchema == null) {
+            addError(result, ErrorCodes.SCHEMA_EXTENDS_NOT_FOUND, "$extends reference '" + refStr + "' not found", refPath);
+        } else {
+            JsonNode baseType = baseSchema.get("type");
+            String baseTypeStr = baseType != null && baseType.isTextual() ? baseType.asText() : null;
+            if (baseTypeStr != null && !"object".equals(baseTypeStr) && !"tuple".equals(baseTypeStr) && !"map".equals(baseTypeStr) && !"array".equals(baseTypeStr) && !"set".equals(baseTypeStr) && !"choice".equals(baseTypeStr)) {
+                addError(result, ErrorCodes.SCHEMA_CONSTRAINT_TYPE_MISMATCH,
+                        "$extends target '" + refStr + "' must not resolve to a primitive type", refPath);
+            } else if (baseSchema.isObject() && baseSchema.has("$extends")) {
+                validateExtendsKeyword(baseSchema.get("$extends"), refStr, result);
+            }
         }
 
         // Unmark after processing
@@ -910,6 +960,25 @@ public final class SchemaValidator {
         addError(result, ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE, "type must be a string, array of strings, or object with $ref", typePath);
     }
 
+    private JsonNode resolveRef(String refStr) {
+        if (refStr == null || refStr.isBlank()) {
+            return null;
+        }
+
+        if (refStr.startsWith("#/")) {
+            return resolveLocalRef(refStr);
+        }
+
+        if (options.getReferenceResolver() != null) {
+            JsonNode resolved = options.getReferenceResolver().apply(refStr);
+            if (resolved != null) {
+                return resolved;
+            }
+        }
+
+        return externalSchemaMap.get(refStr);
+    }
+
     /**
      * Validates that a $ref string actually resolves to a valid target in the schema.
      */
@@ -917,9 +986,9 @@ public final class SchemaValidator {
         if (refStr == null || refStr.isBlank()) {
             return;  // Already handled by validateReference
         }
-        
+
         if (refStr.startsWith("#/")) {
-            JsonNode resolved = resolveLocalRef(refStr);
+            JsonNode resolved = resolveRef(refStr);
             if (resolved == null) {
                 // Check if this ref points into an import namespace
                 SchemaValidationContext ctx = currentContext.get();
@@ -1078,15 +1147,27 @@ public final class SchemaValidator {
         } else {
             // Validate that all items in tuple array refer to valid properties
             ObjectNode properties = (ObjectNode) schema.get("properties");
+            int index = 0;
             for (JsonNode item : tupleNode) {
-                if (!item.isTextual()) {
-                    addError(result, ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE, "tuple array must contain strings", appendPath(path, "tuple"));
-                } else {
+                String tupleItemPath = appendPath(path, "tuple/" + index);
+                if (item.isTextual()) {
                     String propName = item.asText();
                     if (!properties.has(propName)) {
-                        addError(result, ErrorCodes.SCHEMA_REF_NOT_FOUND, "tuple references undefined property: " + propName, appendPath(path, "tuple"));
+                        addError(result, ErrorCodes.SCHEMA_REF_NOT_FOUND, "tuple references undefined property: " + propName, tupleItemPath);
                     }
+                } else if (item.isObject() && item.has("$ref")) {
+                    JsonNode refNode = item.get("$ref");
+                    validateReference(refNode, "$ref", tupleItemPath, result);
+                    if (refNode != null && refNode.isTextual()) {
+                        String refStr = refNode.asText();
+                        if (resolveRef(refStr) == null) {
+                            addError(result, ErrorCodes.SCHEMA_REF_NOT_FOUND, "$ref target does not exist: " + refStr, appendPath(tupleItemPath, "$ref"));
+                        }
+                    }
+                } else {
+                    addError(result, ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE, "tuple array must contain strings or objects with $ref", tupleItemPath);
                 }
+                index++;
             }
         }
 
@@ -1233,7 +1314,7 @@ public final class SchemaValidator {
         }
     }
 
-    private void validateEnum(JsonNode value, String path, ValidationResult result) {
+    private void validateEnum(JsonNode value, String typeStr, String path, ValidationResult result) {
         if (!value.isArray()) {
             addError(result, ErrorCodes.SCHEMA_ENUM_NOT_ARRAY, "enum must be an array", appendPath(path, "enum"));
             return;
@@ -1244,15 +1325,30 @@ public final class SchemaValidator {
             addError(result, ErrorCodes.SCHEMA_ENUM_EMPTY, "enum array cannot be empty", appendPath(path, "enum"));
             return;
         }
-        
+
         // Check for duplicates
         Set<String> seen = new HashSet<>();
+        int index = 0;
         for (JsonNode item : arr) {
             String itemStr = item.toString(); // Use JSON representation for comparison
             if (!seen.add(itemStr)) {
                 addError(result, ErrorCodes.SCHEMA_ENUM_DUPLICATES, "enum contains duplicate values", appendPath(path, "enum"));
                 break;
             }
+
+            if (typeStr != null && !COMPOUND_TYPES.contains(typeStr)) {
+                boolean isValid = switch (typeStr) {
+                    case "string" -> item.isTextual();
+                    case "boolean" -> item.isBoolean();
+                    case "null" -> item.isNull();
+                    default -> isNumericType(typeStr) && item.isNumber();
+                };
+                if (!isValid) {
+                    addError(result, ErrorCodes.SCHEMA_CONSTRAINT_TYPE_MISMATCH,
+                            "enum value is not valid for type '" + typeStr + "'", appendPath(path, "enum/" + index));
+                }
+            }
+            index++;
         }
     }
 
@@ -1359,6 +1455,198 @@ public final class SchemaValidator {
                 addError(result, ErrorCodes.SCHEMA_POSITIVE_NUMBER_CONSTRAINT_INVALID, keyword + " must be a positive number", appendPath(path, keyword));
             }
         }
+    }
+
+    private boolean hasExtension(JsonNode schema, String extensionName) {
+        JsonNode uses = schema.get("$uses");
+        if (uses != null && uses.isArray()) {
+            for (JsonNode use : uses) {
+                if (use.isTextual() && extensionName.equals(use.asText())) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private boolean hasExtensionEnabled(JsonNode schema, String extensionName) {
+        if (hasExtension(schema, extensionName)) {
+            return true;
+        }
+        SchemaValidationContext ctx = currentContext.get();
+        if (ctx != null && ctx.rootSchema != null) {
+            return hasExtension(ctx.rootSchema, extensionName);
+        }
+        return false;
+    }
+
+    private void validateUnitsKeywords(ObjectNode schema, String typeStr, String path, ValidationResult result) {
+        boolean unitsEnabled = hasExtensionEnabled(schema, "JSONStructureUnits");
+
+        for (String keyword : List.of("unit", "ucumUnit", "currency", "symbols")) {
+            if (!schema.has(keyword)) {
+                continue;
+            }
+
+            if (!unitsEnabled) {
+                addError(result, ErrorCodes.SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED,
+                        keyword + " requires 'JSONStructureUnits' in $uses", appendPath(path, keyword));
+            }
+
+            if (!"unit".equals(keyword) && !"ucumUnit".equals(keyword)) {
+                continue;
+            }
+
+            JsonNode value = schema.get(keyword);
+            if (!value.isTextual()) {
+                addError(result, ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE,
+                        keyword + " must be a string", appendPath(path, keyword));
+            }
+
+            if (!NUMERIC_UNIT_TYPES.contains(typeStr)) {
+                addError(result, ErrorCodes.SCHEMA_CONSTRAINT_TYPE_MISMATCH,
+                        keyword + " is only valid for numeric types", appendPath(path, keyword));
+            }
+        }
+    }
+
+    private void validateRelationsKeywords(ObjectNode schema, String typeStr, String path, ValidationResult result) {
+        boolean hasIdentity = schema.has("identity");
+        boolean hasRelations = schema.has("relations");
+        if (!hasIdentity && !hasRelations) {
+            return;
+        }
+
+        boolean relationsEnabled = hasExtensionEnabled(schema, "JSONStructureRelations");
+        if (hasIdentity && !relationsEnabled) {
+            addError(result, ErrorCodes.SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED,
+                    "identity requires 'JSONStructureRelations' in $uses", appendPath(path, "identity"));
+        }
+        if (hasRelations && !relationsEnabled) {
+            addError(result, ErrorCodes.SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED,
+                    "relations requires 'JSONStructureRelations' in $uses", appendPath(path, "relations"));
+        }
+
+        boolean supportsRelations = "object".equals(typeStr) || "tuple".equals(typeStr);
+
+        if (hasIdentity) {
+            JsonNode identity = schema.get("identity");
+            if (!supportsRelations) {
+                addError(result, ErrorCodes.SCHEMA_CONSTRAINT_INVALID_FOR_TYPE,
+                        "identity is only valid for object or tuple types", appendPath(path, "identity"));
+            }
+
+            if (!identity.isArray()) {
+                addError(result, ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE,
+                        "identity must be an array of strings", appendPath(path, "identity"));
+            } else {
+                Set<String> declaredProperties = new HashSet<>();
+                if (schema.has("properties") && schema.get("properties").isObject()) {
+                    Iterator<String> fieldNames = schema.get("properties").fieldNames();
+                    while (fieldNames.hasNext()) {
+                        declaredProperties.add(fieldNames.next());
+                    }
+                }
+
+                for (int i = 0; i < identity.size(); i++) {
+                    JsonNode item = identity.get(i);
+                    String identityItemPath = appendPath(appendPath(path, "identity"), String.valueOf(i));
+                    if (!item.isTextual()) {
+                        addError(result, ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE,
+                                "identity items must be strings", identityItemPath);
+                        continue;
+                    }
+
+                    String propertyName = item.asText();
+                    if (!declaredProperties.contains(propertyName)) {
+                        addError(result, ErrorCodes.SCHEMA_REQUIRED_PROPERTY_NOT_DEFINED,
+                                "Identity property '" + propertyName + "' is not defined in properties", identityItemPath);
+                    }
+                }
+            }
+        }
+
+        if (!hasRelations) {
+            return;
+        }
+
+        if (!supportsRelations) {
+            addError(result, ErrorCodes.SCHEMA_CONSTRAINT_INVALID_FOR_TYPE,
+                    "relations is only valid for object or tuple types", appendPath(path, "relations"));
+        }
+
+        JsonNode relations = schema.get("relations");
+        if (!relations.isObject()) {
+            addError(result, ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE,
+                    "relations must be an object", appendPath(path, "relations"));
+            return;
+        }
+
+        Iterator<Map.Entry<String, JsonNode>> fields = relations.fields();
+        while (fields.hasNext()) {
+            Map.Entry<String, JsonNode> relation = fields.next();
+            String relationPath = appendPath(appendPath(path, "relations"), relation.getKey());
+            JsonNode relationValue = relation.getValue();
+            if (!relationValue.isObject()) {
+                addError(result, ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE,
+                        "relation declarations must be objects", relationPath);
+                continue;
+            }
+
+            ObjectNode relationObject = (ObjectNode) relationValue;
+            validateRelationRefObject(relationObject, "targettype", relationPath, result);
+
+            if (!relationObject.has("cardinality")) {
+                addError(result, ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE,
+                        "cardinality is required", appendPath(relationPath, "cardinality"));
+            } else if (!relationObject.get("cardinality").isTextual()
+                    || (!"single".equals(relationObject.get("cardinality").asText())
+                    && !"multiple".equals(relationObject.get("cardinality").asText()))) {
+                addError(result, ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE,
+                        "cardinality must be 'single' or 'multiple'", appendPath(relationPath, "cardinality"));
+            }
+
+            if (relationObject.has("scope")) {
+                JsonNode scope = relationObject.get("scope");
+                if (scope.isTextual()) {
+                    // Valid
+                } else if (scope.isArray()) {
+                    for (int i = 0; i < scope.size(); i++) {
+                        if (!scope.get(i).isTextual()) {
+                            addError(result, ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE,
+                                    "scope array items must be strings",
+                                    appendPath(appendPath(relationPath, "scope"), String.valueOf(i)));
+                        }
+                    }
+                } else {
+                    addError(result, ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE,
+                            "scope must be a string or array of strings", appendPath(relationPath, "scope"));
+                }
+            }
+
+            if (relationObject.has("qualifiertype")) {
+                validateRelationRefObject(relationObject, "qualifiertype", relationPath, result);
+            }
+        }
+    }
+
+    private void validateRelationRefObject(ObjectNode relationObject, String keyword, String relationPath, ValidationResult result) {
+        String keywordPath = appendPath(relationPath, keyword);
+        if (!relationObject.has(keyword)) {
+            addError(result, ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE,
+                    keyword + " is required", keywordPath);
+            return;
+        }
+
+        JsonNode refNode = relationObject.get(keyword);
+        if (!refNode.isObject() || !refNode.has("$ref") || !refNode.get("$ref").isTextual()) {
+            addError(result, ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE,
+                    keyword + " must be an object with a $ref string", keywordPath);
+            return;
+        }
+
+        validateReference(refNode.get("$ref"), "$ref", keywordPath, result);
+        validateRefResolution(refNode.get("$ref").asText(), appendPath(keywordPath, "$ref"), result);
     }
 
     private static String appendPath(String basePath, String segment) {

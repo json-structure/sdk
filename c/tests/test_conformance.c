@@ -67,7 +67,7 @@ static char* read_file_content(const char* path) {
 
 TEST(invalid_allof_not_array) {
     const char* schema = "{"
-        "\"$id\": \"test\","
+        "\"$id\": \"https://example.com/test\","
         "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
         "\"name\": \"Test\","
         "\"allOf\": {}"
@@ -82,7 +82,7 @@ TEST(invalid_allof_not_array) {
 
 TEST(invalid_array_missing_items) {
     const char* schema = "{"
-        "\"$id\": \"test\","
+        "\"$id\": \"https://example.com/test\","
         "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
         "\"name\": \"TestArray\","
         "\"type\": \"array\""
@@ -97,7 +97,7 @@ TEST(invalid_array_missing_items) {
 
 TEST(invalid_circular_ref_direct) {
     const char* schema = "{"
-        "\"$id\": \"test\","
+        "\"$id\": \"https://example.com/test\","
         "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
         "\"name\": \"Circular\","
         "\"type\": \"object\","
@@ -128,7 +128,7 @@ TEST(invalid_circular_ref_direct) {
 
 TEST(invalid_defs_not_object) {
     const char* schema = "{"
-        "\"$id\": \"test\","
+        "\"$id\": \"https://example.com/test\","
         "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
         "\"name\": \"Test\","
         "\"type\": \"string\","
@@ -144,7 +144,7 @@ TEST(invalid_defs_not_object) {
 
 TEST(invalid_enum_duplicates) {
     const char* schema = "{"
-        "\"$id\": \"test\","
+        "\"$id\": \"https://example.com/test\","
         "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
         "\"name\": \"Test\","
         "\"type\": \"string\","
@@ -160,7 +160,7 @@ TEST(invalid_enum_duplicates) {
 
 TEST(invalid_enum_empty) {
     const char* schema = "{"
-        "\"$id\": \"test\","
+        "\"$id\": \"https://example.com/test\","
         "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
         "\"name\": \"Test\","
         "\"type\": \"string\","
@@ -176,7 +176,7 @@ TEST(invalid_enum_empty) {
 
 TEST(invalid_enum_not_array) {
     const char* schema = "{"
-        "\"$id\": \"test\","
+        "\"$id\": \"https://example.com/test\","
         "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
         "\"name\": \"Test\","
         "\"type\": \"string\","
@@ -192,7 +192,7 @@ TEST(invalid_enum_not_array) {
 
 TEST(invalid_map_missing_values) {
     const char* schema = "{"
-        "\"$id\": \"test\","
+        "\"$id\": \"https://example.com/test\","
         "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
         "\"name\": \"TestMap\","
         "\"type\": \"map\""
@@ -207,7 +207,7 @@ TEST(invalid_map_missing_values) {
 
 TEST(invalid_missing_type) {
     const char* schema = "{"
-        "\"$id\": \"test\","
+        "\"$id\": \"https://example.com/test\","
         "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
         "\"name\": \"NoType\""
     "}";
@@ -221,7 +221,7 @@ TEST(invalid_missing_type) {
 
 TEST(invalid_properties_not_object) {
     const char* schema = "{"
-        "\"$id\": \"test\","
+        "\"$id\": \"https://example.com/test\","
         "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
         "\"name\": \"Test\","
         "\"type\": \"object\","
@@ -237,7 +237,7 @@ TEST(invalid_properties_not_object) {
 
 TEST(invalid_ref_undefined) {
     const char* schema = "{"
-        "\"$id\": \"test\","
+        "\"$id\": \"https://example.com/test\","
         "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
         "\"name\": \"Test\","
         "\"type\": \"object\","
@@ -255,7 +255,7 @@ TEST(invalid_ref_undefined) {
 
 TEST(invalid_required_missing_property) {
     const char* schema = "{"
-        "\"$id\": \"test\","
+        "\"$id\": \"https://example.com/test\","
         "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
         "\"name\": \"Test\","
         "\"type\": \"object\","
@@ -276,7 +276,7 @@ TEST(invalid_required_missing_property) {
 
 TEST(invalid_required_not_array) {
     const char* schema = "{"
-        "\"$id\": \"test\","
+        "\"$id\": \"https://example.com/test\","
         "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
         "\"name\": \"Test\","
         "\"type\": \"object\","
@@ -295,7 +295,7 @@ TEST(invalid_required_not_array) {
 
 TEST(invalid_tuple_missing_definition) {
     const char* schema = "{"
-        "\"$id\": \"test\","
+        "\"$id\": \"https://example.com/test\","
         "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
         "\"name\": \"TestTuple\","
         "\"type\": \"tuple\""
@@ -310,7 +310,7 @@ TEST(invalid_tuple_missing_definition) {
 
 TEST(invalid_unknown_type) {
     const char* schema = "{"
-        "\"$id\": \"test\","
+        "\"$id\": \"https://example.com/test\","
         "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
         "\"name\": \"Test\","
         "\"type\": \"notavalidtype\""
@@ -330,7 +330,7 @@ TEST(invalid_unknown_type) {
 
 TEST(valid_with_uses_string_pattern) {
     const char* schema = "{"
-        "\"$id\": \"test\","
+        "\"$id\": \"https://example.com/test\","
         "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
         "\"$uses\": [\"JSONStructureValidation\"],"
         "\"name\": \"PatternString\","
@@ -347,7 +347,7 @@ TEST(valid_with_uses_string_pattern) {
 
 TEST(valid_with_uses_numeric_minimum) {
     const char* schema = "{"
-        "\"$id\": \"test\","
+        "\"$id\": \"https://example.com/test\","
         "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
         "\"$uses\": [\"JSONStructureValidation\"],"
         "\"name\": \"PositiveNumber\","
@@ -364,7 +364,7 @@ TEST(valid_with_uses_numeric_minimum) {
 
 TEST(valid_with_uses_array_contains) {
     const char* schema = "{"
-        "\"$id\": \"test\","
+        "\"$id\": \"https://example.com/test\","
         "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
         "\"$uses\": [\"JSONStructureValidation\"],"
         "\"name\": \"ArrayWithContains\","
@@ -382,7 +382,7 @@ TEST(valid_with_uses_array_contains) {
 
 TEST(valid_with_uses_dependent_required) {
     const char* schema = "{"
-        "\"$id\": \"test\","
+        "\"$id\": \"https://example.com/test\","
         "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
         "\"$uses\": [\"JSONStructureValidation\"],"
         "\"name\": \"WithDependentRequired\","
@@ -418,7 +418,7 @@ TEST(valid_all_primitive_types) {
         char schema[512];
         snprintf(schema, sizeof(schema),
             "{"
-                "\"$id\": \"test\","
+                "\"$id\": \"https://example.com/test\","
                 "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
                 "\"name\": \"Test%s\","
                 "\"type\": \"%s\""
@@ -441,7 +441,7 @@ TEST(valid_all_compound_types) {
     /* object */
     {
         const char* schema = "{"
-            "\"$id\": \"test\","
+            "\"$id\": \"https://example.com/test\","
             "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
             "\"name\": \"TestObject\","
             "\"type\": \"object\","
@@ -457,7 +457,7 @@ TEST(valid_all_compound_types) {
     /* array */
     {
         const char* schema = "{"
-            "\"$id\": \"test\","
+            "\"$id\": \"https://example.com/test\","
             "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
             "\"name\": \"TestArray\","
             "\"type\": \"array\","
@@ -473,7 +473,7 @@ TEST(valid_all_compound_types) {
     /* set */
     {
         const char* schema = "{"
-            "\"$id\": \"test\","
+            "\"$id\": \"https://example.com/test\","
             "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
             "\"name\": \"TestSet\","
             "\"type\": \"set\","
@@ -489,7 +489,7 @@ TEST(valid_all_compound_types) {
     /* map */
     {
         const char* schema = "{"
-            "\"$id\": \"test\","
+            "\"$id\": \"https://example.com/test\","
             "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
             "\"name\": \"TestMap\","
             "\"type\": \"map\","
@@ -505,7 +505,7 @@ TEST(valid_all_compound_types) {
     /* tuple */
     {
         const char* schema = "{"
-            "\"$id\": \"test\","
+            "\"$id\": \"https://example.com/test\","
             "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
             "\"name\": \"TestTuple\","
             "\"type\": \"tuple\","
@@ -525,7 +525,7 @@ TEST(valid_all_compound_types) {
     /* choice */
     {
         const char* schema = "{"
-            "\"$id\": \"test\","
+            "\"$id\": \"https://example.com/test\","
             "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
             "\"name\": \"TestChoice\","
             "\"type\": \"choice\","
@@ -545,7 +545,7 @@ TEST(valid_all_compound_types) {
     /* any */
     {
         const char* schema = "{"
-            "\"$id\": \"test\","
+            "\"$id\": \"https://example.com/test\","
             "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
             "\"name\": \"TestAny\","
             "\"type\": \"any\""
@@ -918,7 +918,7 @@ TEST(instance_uint8_range) {
 
 TEST(schema_anyof_not_array) {
     const char* schema = "{"
-        "\"$id\": \"test\","
+        "\"$id\": \"https://example.com/test\","
         "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
         "\"name\": \"Test\","
         "\"anyOf\": \"not an array\""
@@ -933,7 +933,7 @@ TEST(schema_anyof_not_array) {
 
 TEST(schema_oneof_not_array) {
     const char* schema = "{"
-        "\"$id\": \"test\","
+        "\"$id\": \"https://example.com/test\","
         "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
         "\"name\": \"Test\","
         "\"oneOf\": {}"
@@ -948,7 +948,7 @@ TEST(schema_oneof_not_array) {
 
 TEST(schema_valid_with_composition) {
     const char* schema = "{"
-        "\"$id\": \"test\","
+        "\"$id\": \"https://example.com/test\","
         "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
         "\"name\": \"Test\","
         "\"allOf\": [{\"type\": \"string\"}]"
@@ -963,7 +963,7 @@ TEST(schema_valid_with_composition) {
 
 TEST(schema_valid_if_then_else) {
     const char* schema = "{"
-        "\"$id\": \"test\","
+        "\"$id\": \"https://example.com/test\","
         "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
         "\"name\": \"Test\","
         "\"type\": \"object\","
@@ -981,7 +981,7 @@ TEST(schema_valid_if_then_else) {
 
 TEST(schema_then_without_if) {
     const char* schema = "{"
-        "\"$id\": \"test\","
+        "\"$id\": \"https://example.com/test\","
         "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
         "\"name\": \"Test\","
         "\"type\": \"string\","
@@ -997,7 +997,7 @@ TEST(schema_then_without_if) {
 
 TEST(schema_else_without_if) {
     const char* schema = "{"
-        "\"$id\": \"test\","
+        "\"$id\": \"https://example.com/test\","
         "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
         "\"name\": \"Test\","
         "\"type\": \"string\","
@@ -1013,7 +1013,7 @@ TEST(schema_else_without_if) {
 
 TEST(schema_valid_not) {
     const char* schema = "{"
-        "\"$id\": \"test\","
+        "\"$id\": \"https://example.com/test\","
         "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
         "\"name\": \"Test\","
         "\"not\": {\"type\": \"null\"}"
@@ -1418,7 +1418,7 @@ TEST(instance_choice_validation) {
 /* Test tuple instance validation */
 TEST(instance_tuple_validation) {
     const char* schema = "{"
-        "\"$id\": \"test\","
+        "\"$id\": \"https://example.com/test\","
         "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
         "\"name\": \"Point\","
         "\"type\": \"tuple\","
@@ -1453,7 +1453,7 @@ TEST(instance_tuple_validation) {
 /* Test pattern constraint validation */
 TEST(instance_pattern_validation) {
     const char* schema = "{"
-        "\"$id\": \"test\","
+        "\"$id\": \"https://example.com/test\","
         "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
         "\"name\": \"Email\","
         "\"type\": \"string\","
@@ -1475,7 +1475,7 @@ TEST(instance_pattern_validation) {
 /* Test contains constraint validation */
 TEST(instance_contains_validation) {
     const char* schema = "{"
-        "\"$id\": \"test\","
+        "\"$id\": \"https://example.com/test\","
         "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
         "\"name\": \"Numbers\","
         "\"type\": \"array\","
@@ -1498,7 +1498,7 @@ TEST(instance_contains_validation) {
 /* Test prefixItems constraint */
 TEST(instance_prefix_items) {
     const char* schema = "{"
-        "\"$id\": \"test\","
+        "\"$id\": \"https://example.com/test\","
         "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
         "\"name\": \"Mixed\","
         "\"type\": \"array\","
@@ -1523,7 +1523,7 @@ TEST(instance_prefix_items) {
 /* Test nested union type validation */
 TEST(instance_nested_union) {
     const char* schema = "{"
-        "\"$id\": \"test\","
+        "\"$id\": \"https://example.com/test\","
         "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
         "\"name\": \"Value\","
         "\"type\": [\"string\", \"number\", \"boolean\", \"null\"]"
@@ -1545,7 +1545,7 @@ TEST(instance_nested_union) {
 /* Test deep nesting validation */
 TEST(instance_deep_nesting) {
     const char* schema = "{"
-        "\"$id\": \"test\","
+        "\"$id\": \"https://example.com/test\","
         "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
         "\"name\": \"Nested\","
         "\"type\": \"object\","
@@ -1576,7 +1576,7 @@ TEST(instance_deep_nesting) {
 /* Test empty object validation */
 TEST(instance_empty_object) {
     const char* schema = "{"
-        "\"$id\": \"test\","
+        "\"$id\": \"https://example.com/test\","
         "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
         "\"name\": \"Empty\","
         "\"type\": \"object\""
@@ -1592,7 +1592,7 @@ TEST(instance_empty_object) {
 /* Test empty array validation */
 TEST(instance_empty_array) {
     const char* schema = "{"
-        "\"$id\": \"test\","
+        "\"$id\": \"https://example.com/test\","
         "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
         "\"name\": \"Empty\","
         "\"type\": \"array\","
@@ -1609,7 +1609,7 @@ TEST(instance_empty_array) {
 /* Test minProperties/maxProperties validation */
 TEST(instance_object_property_count) {
     const char* schema = "{"
-        "\"$id\": \"test\","
+        "\"$id\": \"https://example.com/test\","
         "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
         "\"name\": \"Limited\","
         "\"type\": \"object\","
@@ -1650,7 +1650,7 @@ TEST(instance_object_property_count) {
 /* Test uniqueItems constraint */
 TEST(instance_unique_items) {
     const char* schema = "{"
-        "\"$id\": \"test\","
+        "\"$id\": \"https://example.com/test\","
         "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
         "\"name\": \"UniqueList\","
         "\"type\": \"array\","
@@ -1686,7 +1686,7 @@ TEST(instance_unique_items) {
 /* Test $import not allowed when allow_import is false */
 TEST(import_not_allowed) {
     const char* schema = "{"
-        "\"$id\": \"test\","
+        "\"$id\": \"https://example.com/test\","
         "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
         "\"name\": \"Test\","
         "\"type\": \"object\","

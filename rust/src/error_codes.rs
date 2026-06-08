@@ -18,22 +18,22 @@ pub enum SchemaErrorCode {
     SchemaRootMissingName,
     SchemaRootMissingSchema,
     SchemaRootMissingType,
-    
+
     // Type errors
     SchemaTypeInvalid,
     SchemaTypeNotString,
-    
+
     // Reference errors
     SchemaRefNotFound,
     SchemaRefNotString,
     SchemaRefCircular,
     SchemaRefInvalid,
-    
+
     // Definition errors
     SchemaDefinitionsMustBeObject,
     SchemaDefinitionMissingType,
     SchemaDefinitionInvalid,
-    
+
     // Object property errors
     SchemaPropertiesMustBeObject,
     SchemaPropertyInvalid,
@@ -41,40 +41,40 @@ pub enum SchemaErrorCode {
     SchemaRequiredItemMustBeString,
     SchemaRequiredPropertyNotDefined,
     SchemaAdditionalPropertiesInvalid,
-    
+
     // Array/Set errors
     SchemaArrayMissingItems,
     SchemaItemsInvalid,
-    
+
     // Map errors
     SchemaMapMissingValues,
     SchemaValuesInvalid,
-    
+
     // Tuple errors
     SchemaTupleMissingDefinition,
     SchemaTupleMissingProperties,
     SchemaTupleInvalidFormat,
     SchemaTuplePropertyNotDefined,
-    
+
     // Choice errors
     SchemaChoiceMissingChoices,
     SchemaChoicesNotObject,
     SchemaChoiceInvalid,
     SchemaSelectorNotString,
-    
+
     // Enum/Const errors
     SchemaEnumNotArray,
     SchemaEnumEmpty,
     SchemaEnumDuplicates,
     SchemaConstInvalid,
-    
+
     // Extension errors
     SchemaUsesNotArray,
     SchemaUsesInvalidExtension,
     SchemaOffersNotArray,
     SchemaOffersInvalidExtension,
     SchemaExtensionKeywordWithoutUses,
-    
+
     // Constraint errors
     SchemaMinMaxInvalid,
     SchemaMinLengthInvalid,
@@ -82,6 +82,9 @@ pub enum SchemaErrorCode {
     SchemaPatternInvalid,
     SchemaFormatInvalid,
     SchemaConstraintTypeMismatch,
+    SchemaConstraintValueInvalid,
+    SchemaKeywordEmpty,
+    SchemaNameInvalid,
     SchemaMinimumExceedsMaximum,
     SchemaMinLengthExceedsMaxLength,
     SchemaMinLengthNegative,
@@ -92,22 +95,22 @@ pub enum SchemaErrorCode {
     SchemaKeywordInvalidType,
     SchemaTypeArrayEmpty,
     SchemaTypeObjectMissingRef,
-    
+
     // Import errors
     SchemaImportNotAllowed,
     SchemaImportFailed,
     SchemaImportCircular,
-    
+
     // Extends errors
     SchemaExtendsNotString,
     SchemaExtendsEmpty,
     SchemaExtendsNotFound,
     SchemaExtendsCircular,
-    
+
     // Altnames errors
     SchemaAltnamesNotObject,
     SchemaAltnamesValueNotString,
-    
+
     // Composition errors
     SchemaAllOfNotArray,
     SchemaAnyOfNotArray,
@@ -170,6 +173,9 @@ impl SchemaErrorCode {
             Self::SchemaPatternInvalid => "SCHEMA_PATTERN_INVALID",
             Self::SchemaFormatInvalid => "SCHEMA_FORMAT_INVALID",
             Self::SchemaConstraintTypeMismatch => "SCHEMA_CONSTRAINT_TYPE_MISMATCH",
+            Self::SchemaConstraintValueInvalid => "SCHEMA_CONSTRAINT_VALUE_INVALID",
+            Self::SchemaKeywordEmpty => "SCHEMA_KEYWORD_EMPTY",
+            Self::SchemaNameInvalid => "SCHEMA_NAME_INVALID",
             Self::SchemaMinimumExceedsMaximum => "SCHEMA_MINIMUM_EXCEEDS_MAXIMUM",
             Self::SchemaMinLengthExceedsMaxLength => "SCHEMA_MINLENGTH_EXCEEDS_MAXLENGTH",
             Self::SchemaMinLengthNegative => "SCHEMA_MINLENGTH_NEGATIVE",
@@ -216,14 +222,14 @@ pub enum InstanceErrorCode {
     // Type mismatch errors
     InstanceTypeMismatch,
     InstanceTypeUnknown,
-    
+
     // String errors
     InstanceStringExpected,
     InstanceStringTooShort,
     InstanceStringTooLong,
     InstanceStringPatternMismatch,
     InstanceStringFormatInvalid,
-    
+
     // Number errors
     InstanceNumberExpected,
     InstanceNumberTooSmall,
@@ -232,11 +238,11 @@ pub enum InstanceErrorCode {
     InstanceIntegerExpected,
     InstanceIntegerOutOfRange,
     InstanceDecimalExpected,
-    
+
     // Boolean/Null errors
     InstanceBooleanExpected,
     InstanceNullExpected,
-    
+
     // Object errors
     InstanceObjectExpected,
     InstanceRequiredMissing,
@@ -247,7 +253,7 @@ pub enum InstanceErrorCode {
     InstanceDependentRequiredMissing,
     InstancePatternPropertyMismatch,
     InstancePropertyNameInvalid,
-    
+
     // Array errors
     InstanceArrayExpected,
     InstanceArrayTooShort,
@@ -257,35 +263,35 @@ pub enum InstanceErrorCode {
     InstanceArrayContainsTooFew,
     InstanceArrayContainsTooMany,
     InstanceArrayItemInvalid,
-    
+
     // Tuple errors
     InstanceTupleExpected,
     InstanceTupleLengthMismatch,
     InstanceTupleElementInvalid,
-    
+
     // Map errors
     InstanceMapExpected,
     InstanceMapValueInvalid,
     InstanceMapTooFewEntries,
     InstanceMapTooManyEntries,
     InstanceMapKeyPatternMismatch,
-    
+
     // Set errors
     InstanceSetExpected,
     InstanceSetNotUnique,
     InstanceSetItemInvalid,
-    
+
     // Choice errors
     InstanceChoiceNoMatch,
     InstanceChoiceMultipleMatches,
     InstanceChoiceUnknown,
     InstanceChoiceSelectorMissing,
     InstanceChoiceSelectorInvalid,
-    
+
     // Enum/Const errors
     InstanceEnumMismatch,
     InstanceConstMismatch,
-    
+
     // Date/Time errors
     InstanceDateExpected,
     InstanceDateInvalid,
@@ -295,23 +301,23 @@ pub enum InstanceErrorCode {
     InstanceDateTimeInvalid,
     InstanceDurationExpected,
     InstanceDurationInvalid,
-    
+
     // UUID errors
     InstanceUuidExpected,
     InstanceUuidInvalid,
-    
+
     // URI errors
     InstanceUriExpected,
     InstanceUriInvalid,
-    
+
     // Binary errors
     InstanceBinaryExpected,
     InstanceBinaryInvalid,
-    
+
     // JSON Pointer errors
     InstanceJsonPointerExpected,
     InstanceJsonPointerInvalid,
-    
+
     // Composition errors
     InstanceAllOfFailed,
     InstanceAnyOfFailed,
@@ -320,10 +326,10 @@ pub enum InstanceErrorCode {
     InstanceNotFailed,
     InstanceIfThenFailed,
     InstanceIfElseFailed,
-    
+
     // Reference errors
     InstanceRefNotFound,
-    
+
     // Union errors
     InstanceUnionNoMatch,
 }

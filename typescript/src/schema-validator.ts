@@ -20,6 +20,11 @@ import { JsonSourceLocator } from './json-source-locator';
 import * as ErrorCodes from './error-codes';
 
 const ALL_TYPES = [...PRIMITIVE_TYPES, ...COMPOUND_TYPES] as const;
+const NUMERIC_TYPES = new Set([
+  'number', 'integer', 'float', 'double', 'decimal', 'float8',
+  'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32',
+  'int64', 'uint64', 'int128', 'uint128',
+]);
 
 /** Validation extension keywords that require JSONStructureValidation extension. */
 const VALIDATION_EXTENSION_KEYWORDS = new Set([
@@ -31,6 +36,11 @@ const VALIDATION_EXTENSION_KEYWORDS = new Set([
   'contentEncoding', 'contentMediaType',
   'has', 'default'
 ]);
+
+const UNITS_EXTENSION_KEYWORDS = new Set(['unit', 'ucumUnit', 'currency', 'symbols']);
+const RELATIONS_EXTENSION_KEYWORDS = new Set(['identity', 'relations']);
+const URI_SCHEME_PATTERN = /^[a-zA-Z][a-zA-Z0-9+\-.]*:/;
+const IDENTIFIER_PATTERN = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 
 /**
  * Context for a single schema validation operation.
@@ -155,11 +165,19 @@ export class SchemaValidator {
       // Root schema must have $id
       if (!('$id' in schema)) {
         this.addError(context, '', "Missing required '$id' keyword at root", ErrorCodes.SCHEMA_ROOT_MISSING_ID);
+      } else if (typeof schema.$id === 'string') {
+        if (schema.$id.trim() === '') {
+          this.addError(context, `${path}/$id`, "Root schema '$id' must not be empty", ErrorCodes.SCHEMA_KEYWORD_EMPTY);
+        } else if (!URI_SCHEME_PATTERN.test(schema.$id)) {
+          this.addError(context, `${path}/$id`, "Root schema '$id' must be a URI with a scheme", ErrorCodes.SCHEMA_CONSTRAINT_VALUE_INVALID);
+        }
       }
       
       // Root schema with 'type' must have 'name'
       if ('type' in schema && !('name' in schema)) {
         this.addError(context, '', "Root schema with 'type' must have a 'name' property", ErrorCodes.SCHEMA_ROOT_MISSING_NAME);
+      } else if (typeof schema.name === 'string' && !IDENTIFIER_PATTERN.test(schema.name)) {
+        this.addError(context, `${path}/name`, "Root schema 'name' must be a valid identifier", ErrorCodes.SCHEMA_NAME_INVALID);
       }
     }
 
@@ -321,17 +339,26 @@ export class SchemaValidator {
     // Type can be a string, array (union), or object with $ref
     if (typeof type === 'string') {
       this.validateSingleType(context, type, schema, path);
-    } else if (Array.isArray(type)) {
+      return;
+    }
+
+    if (Array.isArray(type)) {
       this.validateUnionType(context, type, schema, path);
-    } else if (this.isObject(type)) {
+      this.validateTypeExtensionKeywords(context, null, schema, path);
+      return;
+    }
+
+    if (this.isObject(type)) {
       if ('$ref' in type) {
         this.validateRef(context, type.$ref, `${path}/type`);
+        this.validateTypeExtensionKeywords(context, null, schema, path);
       } else {
         this.addError(context, `${path}/type`, 'type object must have $ref', ErrorCodes.SCHEMA_TYPE_OBJECT_MISSING_REF);
       }
-    } else {
-      this.addError(context, `${path}/type`, 'type must be a string, array, or object with $ref', ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE);
+      return;
     }
+
+    this.addError(context, `${path}/type`, 'type must be a string, array, or object with $ref', ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE);
   }
 
   private validateSingleType(context: SchemaValidationContext, type: string, schema: JsonObject, path: string): void {
@@ -363,6 +390,8 @@ export class SchemaValidator {
         this.validatePrimitiveConstraints(context, type, schema, path);
         break;
     }
+
+    this.validateTypeExtensionKeywords(context, type, schema, path);
   }
 
   private validateUnionType(context: SchemaValidationContext, types: JsonValue[], _schema: JsonObject, path: string): void {
@@ -474,13 +503,177 @@ export class SchemaValidator {
 
     const props = this.isObject(schema.properties) ? schema.properties : {};
     for (let i = 0; i < tuple.length; i++) {
-      const name = tuple[i];
-      if (typeof name !== 'string') {
-        this.addError(context, `${path}/tuple[${i}]`, 'tuple elements must be strings', ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE);
-      } else if (!(name in props)) {
-        this.addError(context, `${path}/tuple[${i}]`, `Tuple element '${name}' not found in properties`, ErrorCodes.SCHEMA_TUPLE_PROPERTY_NOT_DEFINED);
+      const entry = tuple[i];
+      if (typeof entry === 'string') {
+        if (!(entry in props)) {
+          this.addError(context, `${path}/tuple[${i}]`, `Tuple element '${entry}' not found in properties`, ErrorCodes.SCHEMA_TUPLE_PROPERTY_NOT_DEFINED);
+        }
+      } else if (this.isObject(entry) && '$ref' in entry) {
+        this.validateRef(context, entry.$ref, `${path}/tuple[${i}]`);
+      } else {
+        this.addError(context, `${path}/tuple[${i}]`, 'tuple elements must be strings or $ref objects', ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE);
       }
     }
+  }
+
+  private validateTypeExtensionKeywords(
+    context: SchemaValidationContext,
+    type: string | null,
+    schema: JsonObject,
+    path: string,
+  ): void {
+    this.validateUnitsKeywords(context, type, schema, path);
+    this.validateRelationsKeywords(context, type, schema, path);
+  }
+
+  private validateUnitsKeywords(context: SchemaValidationContext, type: string | null, schema: JsonObject, path: string): void {
+    for (const keyword of UNITS_EXTENSION_KEYWORDS) {
+      if (!(keyword in schema)) {
+        continue;
+      }
+
+      if (!this.hasExtensionEnabled(context, schema, 'JSONStructureUnits')) {
+        this.addError(
+          context,
+          `${path}/${keyword}`,
+          `${keyword} requires 'JSONStructureUnits' in $uses`,
+          ErrorCodes.SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED,
+        );
+      }
+    }
+
+    for (const keyword of ['unit', 'ucumUnit'] as const) {
+      if (!(keyword in schema)) {
+        continue;
+      }
+
+      if (typeof schema[keyword] !== 'string') {
+        this.addError(
+          context,
+          `${path}/${keyword}`,
+          `${keyword} must be a string`,
+          ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE,
+        );
+      }
+
+      if (type === null || !NUMERIC_TYPES.has(type)) {
+        this.addError(
+          context,
+          `${path}/${keyword}`,
+          `${keyword} is only valid for numeric types`,
+          ErrorCodes.SCHEMA_CONSTRAINT_TYPE_MISMATCH,
+        );
+      }
+    }
+  }
+
+  private validateRelationsKeywords(context: SchemaValidationContext, type: string | null, schema: JsonObject, path: string): void {
+    for (const keyword of RELATIONS_EXTENSION_KEYWORDS) {
+      if (!(keyword in schema)) {
+        continue;
+      }
+
+      if (!this.hasExtensionEnabled(context, schema, 'JSONStructureRelations')) {
+        this.addError(
+          context,
+          `${path}/${keyword}`,
+          `${keyword} requires 'JSONStructureRelations' in $uses`,
+          ErrorCodes.SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED,
+        );
+      }
+    }
+
+    if ('identity' in schema) {
+      if (type !== 'object' && type !== 'tuple') {
+        this.addError(
+          context,
+          `${path}/identity`,
+          'identity is only valid for object or tuple types',
+          ErrorCodes.SCHEMA_CONSTRAINT_TYPE_MISMATCH,
+        );
+      }
+
+      const identity = schema.identity;
+      if (!Array.isArray(identity)) {
+        this.addError(context, `${path}/identity`, 'identity must be an array of strings', ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE);
+      } else {
+        const properties = this.isObject(schema.properties) ? schema.properties : {};
+        for (let i = 0; i < identity.length; i++) {
+          const item = identity[i];
+          if (typeof item !== 'string') {
+            this.addError(context, `${path}/identity[${i}]`, 'identity items must be strings', ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE);
+            continue;
+          }
+
+          if (!(item in properties)) {
+            this.addError(context, `${path}/identity[${i}]`, `Identity property '${item}' not found in properties`, ErrorCodes.SCHEMA_REQUIRED_PROPERTY_NOT_DEFINED);
+          }
+        }
+      }
+    }
+
+    if ('relations' in schema) {
+      if (type !== 'object' && type !== 'tuple') {
+        this.addError(
+          context,
+          `${path}/relations`,
+          'relations is only valid for object or tuple types',
+          ErrorCodes.SCHEMA_CONSTRAINT_TYPE_MISMATCH,
+        );
+      }
+
+      const relations = schema.relations;
+      if (!this.isObject(relations)) {
+        this.addError(context, `${path}/relations`, 'relations must be an object', ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE);
+        return;
+      }
+
+      for (const [relationName, relationValue] of Object.entries(relations)) {
+        const relationPath = `${path}/relations/${relationName}`;
+        if (!this.isObject(relationValue)) {
+          this.addError(context, relationPath, 'relation declaration must be an object', ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE);
+          continue;
+        }
+
+        if (!('targettype' in relationValue) || !this.isObject(relationValue.targettype) || typeof relationValue.targettype.$ref !== 'string') {
+          this.addError(context, `${relationPath}/targettype`, 'targettype must be an object with a $ref string', ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE);
+        } else {
+          this.validateRef(context, relationValue.targettype.$ref, `${relationPath}/targettype/$ref`);
+        }
+
+        if (!('cardinality' in relationValue)) {
+          this.addError(context, `${relationPath}/cardinality`, 'cardinality is required', ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE);
+        } else if (relationValue.cardinality !== 'single' && relationValue.cardinality !== 'multiple') {
+          this.addError(context, `${relationPath}/cardinality`, "cardinality must be 'single' or 'multiple'", ErrorCodes.SCHEMA_CONSTRAINT_VALUE_INVALID);
+        }
+
+        if ('scope' in relationValue) {
+          const scope = relationValue.scope;
+          if (typeof scope !== 'string' && !(Array.isArray(scope) && scope.every(item => typeof item === 'string'))) {
+            this.addError(context, `${relationPath}/scope`, 'scope must be a string or array of strings', ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE);
+          }
+        }
+
+        if ('qualifiertype' in relationValue) {
+          const qualifierType = relationValue.qualifiertype;
+          if (!this.isObject(qualifierType) || typeof qualifierType.$ref !== 'string') {
+            this.addError(context, `${relationPath}/qualifiertype`, 'qualifiertype must be an object with a $ref string', ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE);
+          } else {
+            this.validateRef(context, qualifierType.$ref, `${relationPath}/qualifiertype/$ref`);
+          }
+        }
+      }
+    }
+  }
+
+  private hasExtension(schema: JsonObject, extensionName: string): boolean {
+    return Array.isArray(schema.$uses) && schema.$uses.some(value => value === extensionName);
+  }
+
+  private hasExtensionEnabled(context: SchemaValidationContext, schema: JsonObject, extensionName: string): boolean {
+    // Check current schema node first, then fall back to root document $uses
+    if (this.hasExtension(schema, extensionName)) return true;
+    return this.hasExtension(context.schema, extensionName);
   }
 
   private validateChoiceType(context: SchemaValidationContext, schema: JsonObject, path: string): void {
@@ -522,6 +715,12 @@ export class SchemaValidator {
           }
           seen.add(serialized);
         }
+
+        for (let i = 0; i < enumVal.length; i++) {
+          if (!this.isEnumValueValidForPrimitiveType(type, enumVal[i])) {
+            this.addError(context, `${path}/enum[${i}]`, `enum value is not valid for type '${type}'`, ErrorCodes.SCHEMA_CONSTRAINT_TYPE_MISMATCH);
+          }
+        }
       }
     }
 
@@ -534,14 +733,25 @@ export class SchemaValidator {
     }
 
     // Validate numeric constraints
-    const numericTypes = [
-      'number', 'integer', 'float', 'double', 'decimal', 'float8',
-      'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32',
-      'int64', 'uint64', 'int128', 'uint128',
-    ];
-    if (numericTypes.includes(type)) {
+    if (NUMERIC_TYPES.has(type)) {
       this.validateNumericConstraints(context, schema, path);
     }
+  }
+
+  private isEnumValueValidForPrimitiveType(type: string, value: JsonValue): boolean {
+    if (type === 'string') {
+      return typeof value === 'string';
+    }
+    if (NUMERIC_TYPES.has(type)) {
+      return typeof value === 'number';
+    }
+    if (type === 'boolean') {
+      return typeof value === 'boolean';
+    }
+    if (type === 'null') {
+      return value === null;
+    }
+    return true;
   }
 
   private validateStringConstraints(context: SchemaValidationContext, schema: JsonObject, path: string): void {
@@ -727,12 +937,6 @@ export class SchemaValidator {
     const stringOnlyConstraints = ['minLength', 'maxLength', 'pattern'];
     const numericOnlyConstraints = ['minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf'];
 
-    const numericTypes = [
-      'number', 'integer', 'float', 'double', 'decimal', 'float8',
-      'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32',
-      'int64', 'uint64', 'int128', 'uint128',
-    ];
-
     // Check string constraints on non-string types
     for (const constraint of stringOnlyConstraints) {
       if (constraint in schema && type !== 'string') {
@@ -742,7 +946,7 @@ export class SchemaValidator {
 
     // Check numeric constraints on non-numeric types
     for (const constraint of numericOnlyConstraints) {
-      if (constraint in schema && !numericTypes.includes(type)) {
+      if (constraint in schema && !NUMERIC_TYPES.has(type)) {
         this.addError(context, `${path}/${constraint}`, `${constraint} constraint is only valid for numeric types, not ${type}`, ErrorCodes.SCHEMA_CONSTRAINT_TYPE_MISMATCH);
       }
     }
@@ -788,6 +992,11 @@ export class SchemaValidator {
       if (resolved === null) {
         this.addError(context, refPath, `$extends reference '${ref}' not found`, ErrorCodes.SCHEMA_EXTENDS_NOT_FOUND);
       } else {
+        const PRIMITIVE_TYPES_FOR_EXTENDS = new Set(['string', 'boolean', 'null', 'integer', 'int8', 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32', 'uint64', 'float', 'double', 'decimal', 'binary', 'uri', 'uri-template', 'datetime', 'date', 'time', 'duration', 'uuid', 'ipv4', 'ipv6']);
+        if ('type' in resolved && typeof resolved.type === 'string' && PRIMITIVE_TYPES_FOR_EXTENDS.has(resolved.type)) {
+          this.addError(context, refPath, `$extends target '${ref}' must not resolve to a primitive type`, ErrorCodes.SCHEMA_CONSTRAINT_TYPE_MISMATCH);
+        }
+
         // Recursively validate the extended schema (which may have its own $extends)
         if ('$extends' in resolved) {
           this.validateExtends(context, resolved.$extends, refPath);

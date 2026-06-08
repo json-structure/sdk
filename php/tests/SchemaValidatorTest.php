@@ -656,4 +656,281 @@ JSON;
         $location = $errors[0]->location;
         $this->assertNotNull($location);
     }
+
+    public function testValidNumericTypeWithUcumUnit(): void
+    {
+        $schema = [
+            '$schema' => 'https://json-structure.org/meta/extended/v0/#',
+            '$id' => 'https://example.com/ucum-number.struct.json',
+            'name' => 'Length',
+            '$uses' => ['JSONStructureUnits'],
+            'type' => 'number',
+            'ucumUnit' => 'm',
+        ];
+
+        $errors = $this->validator->validate($schema);
+        $this->assertCount(0, $errors);
+    }
+
+    public function testValidNumericTypeWithUnitAndUcumUnit(): void
+    {
+        $schema = [
+            '$schema' => 'https://json-structure.org/meta/extended/v0/#',
+            '$id' => 'https://example.com/ucum-both.struct.json',
+            'name' => 'Length',
+            '$uses' => ['JSONStructureUnits'],
+            'type' => 'number',
+            'unit' => 'meter',
+            'ucumUnit' => 'm',
+        ];
+
+        $errors = $this->validator->validate($schema);
+        $this->assertCount(0, $errors);
+    }
+
+    public function testValidExtendedNumericTypesWithUcumUnit(): void
+    {
+        foreach (['int32', 'float', 'double', 'decimal'] as $type) {
+            $schema = [
+                '$schema' => 'https://json-structure.org/meta/extended/v0/#',
+                '$id' => "https://example.com/{$type}-ucum.struct.json",
+                'name' => ucfirst($type) . 'WithUcumUnit',
+                '$uses' => ['JSONStructureUnits'],
+                'type' => $type,
+                'ucumUnit' => 'm',
+            ];
+
+            $errors = $this->validator->validate($schema);
+            $this->assertCount(0, $errors, "Type '{$type}' with ucumUnit should be valid");
+        }
+    }
+
+    public function testInvalidNonNumericTypeWithUcumUnitIsPending(): void
+    {
+        $schema = [
+            '$schema' => 'https://json-structure.org/meta/extended/v0/#',
+            '$id' => 'https://example.com/ucum-invalid-type.struct.json',
+            'name' => 'BadUcumType',
+            'type' => 'string',
+            'ucumUnit' => 'm',
+        ];
+
+        $errors = $this->validator->validate($schema);
+        $messages = array_map(static fn ($error) => (string) $error, $errors);
+
+        $this->assertGreaterThan(0, count($errors));
+        $this->assertTrue($this->containsMessage($messages, 'JSONStructureUnits extension'));
+        $this->assertTrue($this->containsMessage($messages, 'can only appear in numeric schemas'));
+    }
+
+    public function testInvalidNonStringUcumUnitValuesArePending(): void
+    {
+        $schema = [
+            '$schema' => 'https://json-structure.org/meta/extended/v0/#',
+            '$id' => 'https://example.com/ucum-invalid-value.struct.json',
+            'name' => 'BadUcumValue',
+            '$uses' => ['JSONStructureUnits'],
+            'type' => 'number',
+            'ucumUnit' => 5,
+        ];
+
+        $errors = $this->validator->validate($schema);
+        $messages = array_map(static fn ($error) => (string) $error, $errors);
+
+        $this->assertGreaterThan(0, count($errors));
+        $this->assertTrue($this->containsMessage($messages, "'ucumUnit' must be a string."));
+    }
+
+    public function testRelationsIdentityValidationIsPending(): void
+    {
+        $schema = [
+            '$schema' => 'https://json-structure.org/meta/extended/v0/#',
+            '$id' => 'https://example.com/relations-identity.struct.json',
+            'name' => 'OrderIdentity',
+            '$uses' => ['JSONStructureRelations'],
+            'type' => 'object',
+            'properties' => [
+                'id' => ['type' => 'string'],
+                'tenantId' => ['type' => 'string'],
+            ],
+            'identity' => ['id', 'tenantId'],
+        ];
+
+        $errors = $this->validator->validate($schema);
+        $this->assertCount(0, $errors);
+    }
+
+    public function testRelationsDeclarationValidationIsPending(): void
+    {
+        $schema = [
+            '$schema' => 'https://json-structure.org/meta/extended/v0/#',
+            '$id' => 'https://example.com/relations-valid.struct.json',
+            'name' => 'OrderRelations',
+            '$uses' => ['JSONStructureRelations'],
+            'type' => 'object',
+            'properties' => [
+                'id' => ['type' => 'string'],
+                'customerId' => ['type' => 'string'],
+            ],
+            'relations' => [
+                'customer' => [
+                    'cardinality' => 'single',
+                    'targettype' => ['$ref' => '#/definitions/Customer'],
+                    'scope' => 'tenant',
+                ],
+            ],
+            'definitions' => [
+                'Customer' => [
+                    'name' => 'Customer',
+                    'type' => 'object',
+                    'properties' => ['id' => ['type' => 'string']],
+                ],
+            ],
+        ];
+
+        $errors = $this->validator->validate($schema);
+        $this->assertCount(0, $errors);
+    }
+
+    public function testRelationsSingleCardinalityValidationIsPending(): void
+    {
+        $schema = [
+            '$schema' => 'https://json-structure.org/meta/extended/v0/#',
+            '$id' => 'https://example.com/relations-single.struct.json',
+            'name' => 'SingleRelation',
+            '$uses' => ['JSONStructureRelations'],
+            'type' => 'object',
+            'properties' => [
+                'id' => ['type' => 'string'],
+            ],
+            'relations' => [
+                'parent' => [
+                    'cardinality' => 'single',
+                    'targettype' => ['$ref' => '#/definitions/Parent'],
+                ],
+            ],
+            'definitions' => [
+                'Parent' => [
+                    'name' => 'Parent',
+                    'type' => 'object',
+                    'properties' => ['id' => ['type' => 'string']],
+                ],
+            ],
+        ];
+
+        $errors = $this->validator->validate($schema);
+        $this->assertCount(0, $errors);
+    }
+
+    public function testRelationsMultipleCardinalityValidationIsPending(): void
+    {
+        $schema = [
+            '$schema' => 'https://json-structure.org/meta/extended/v0/#',
+            '$id' => 'https://example.com/relations-multiple.struct.json',
+            'name' => 'MultipleRelation',
+            '$uses' => ['JSONStructureRelations'],
+            'type' => 'object',
+            'properties' => [
+                'id' => ['type' => 'string'],
+            ],
+            'relations' => [
+                'children' => [
+                    'cardinality' => 'multiple',
+                    'targettype' => ['$ref' => '#/definitions/Child'],
+                    'scope' => ['tenant', 'region'],
+                ],
+            ],
+            'definitions' => [
+                'Child' => [
+                    'name' => 'Child',
+                    'type' => 'object',
+                    'properties' => ['id' => ['type' => 'string']],
+                ],
+            ],
+        ];
+
+        $errors = $this->validator->validate($schema);
+        $this->assertCount(0, $errors);
+    }
+
+    public function testRelationsQualifierTypeValidationIsPending(): void
+    {
+        $schema = [
+            '$schema' => 'https://json-structure.org/meta/extended/v0/#',
+            '$id' => 'https://example.com/relations-qualifier.struct.json',
+            'name' => 'QualifiedRelation',
+            '$uses' => ['JSONStructureRelations'],
+            'type' => 'object',
+            'properties' => [
+                'id' => ['type' => 'string'],
+            ],
+            'relations' => [
+                'customer' => [
+                    'cardinality' => 'single',
+                    'targettype' => ['$ref' => '#/definitions/Customer'],
+                    'qualifiertype' => ['$ref' => '#/definitions/RelationQualifier'],
+                ],
+            ],
+            'definitions' => [
+                'Customer' => [
+                    'name' => 'Customer',
+                    'type' => 'object',
+                    'properties' => ['id' => ['type' => 'string']],
+                ],
+                'RelationQualifier' => [
+                    'name' => 'RelationQualifier',
+                    'type' => 'string',
+                ],
+            ],
+        ];
+
+        $errors = $this->validator->validate($schema);
+        $this->assertCount(0, $errors);
+    }
+
+    public function testInvalidRelationsSchemasArePending(): void
+    {
+        $schema = [
+            '$schema' => 'https://json-structure.org/meta/extended/v0/#',
+            '$id' => 'https://example.com/relations-invalid.struct.json',
+            'name' => 'BadRelations',
+            'type' => 'string',
+            'identity' => ['id'],
+            'relations' => [
+                'customer' => [
+                    'cardinality' => 'many',
+                    'targettype' => ['type' => 'object'],
+                    'scope' => ['tenant', 3],
+                    'qualifiertype' => ['type' => 'string'],
+                ],
+            ],
+        ];
+
+        $errors = $this->validator->validate($schema);
+        $messages = array_map(static fn ($error) => (string) $error, $errors);
+
+        $this->assertGreaterThan(0, count($errors));
+        $this->assertTrue($this->containsMessage($messages, 'JSONStructureRelations extension'));
+        $this->assertTrue($this->containsMessage($messages, "'identity' can only appear in object or tuple schemas."));
+        $this->assertTrue($this->containsMessage($messages, "'identity' references property 'id' that is not in 'properties'."));
+        $this->assertTrue($this->containsMessage($messages, "'relations' can only appear in object or tuple schemas."));
+        $this->assertTrue($this->containsMessage($messages, "'targettype' must be an object with '\$ref'."));
+        $this->assertTrue($this->containsMessage($messages, "'cardinality' must be 'single' or 'multiple'."));
+        $this->assertTrue($this->containsMessage($messages, "'scope' array items must be strings."));
+        $this->assertTrue($this->containsMessage($messages, "'qualifiertype' must be an object with '\$ref'."));
+    }
+
+    /**
+     * @param string[] $messages
+     */
+    private function containsMessage(array $messages, string $needle): bool
+    {
+        foreach ($messages as $message) {
+            if (str_contains($message, $needle)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }

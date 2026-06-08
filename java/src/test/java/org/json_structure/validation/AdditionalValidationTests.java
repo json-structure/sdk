@@ -2112,6 +2112,7 @@ class AdditionalValidationTests {
             String schema = """
                 {
                     "$id": "https://test.example.com/schema/unit",
+                    "$uses": ["JSONStructureUnits"],
                     "name": "UnitSchema",
                     "type": "number",
                     "unit": "meters"

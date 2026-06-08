@@ -86,6 +86,8 @@ use constant SCHEMA_MULTIPLE_OF_NOT_POSITIVE =>
   'SCHEMA_MULTIPLE_OF_NOT_POSITIVE';
 use constant SCHEMA_CONSTRAINT_TYPE_MISMATCH =>
   'SCHEMA_CONSTRAINT_TYPE_MISMATCH';
+use constant SCHEMA_CONSTRAINT_VALUE_INVALID =>
+  'SCHEMA_CONSTRAINT_VALUE_INVALID';
 use constant SCHEMA_CIRCULAR_REF => 'SCHEMA_CIRCULAR_REF';
 
 # Instance Validation Errors
@@ -248,6 +250,7 @@ our @EXPORT_OK = qw(
   SCHEMA_MIN_LENGTH_NEGATIVE
   SCHEMA_MULTIPLE_OF_NOT_POSITIVE
   SCHEMA_CONSTRAINT_TYPE_MISMATCH
+  SCHEMA_CONSTRAINT_VALUE_INVALID
   SCHEMA_CIRCULAR_REF
 
   INSTANCE_ROOT_UNRESOLVED
@@ -406,6 +409,10 @@ q{$ref is only permitted inside the 'type' attribute. Use { "type": { "$ref": ".
     SCHEMA_UNIQUE_ITEMS_NOT_BOOLEAN() => 'uniqueItems must be a boolean',
     SCHEMA_ITEMS_INVALID_FOR_TUPLE()  =>
       'items must be a boolean or schema for tuple type',
+    SCHEMA_CONSTRAINT_TYPE_MISMATCH() =>
+      'Constraint type mismatch',
+    SCHEMA_CONSTRAINT_VALUE_INVALID() =>
+      'Constraint value is invalid',
 
     INSTANCE_ROOT_UNRESOLVED() =>
       'Unable to resolve $root reference: {refPath}',

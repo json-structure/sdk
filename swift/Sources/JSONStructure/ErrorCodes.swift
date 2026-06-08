@@ -45,6 +45,10 @@ public let schemaRootMissingName = "SCHEMA_ROOT_MISSING_NAME"
 public let schemaExtensionKeywordNotEnabled = "SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED"
 /// Name is not a valid identifier.
 public let schemaNameInvalid = "SCHEMA_NAME_INVALID"
+/// Constraint value has an invalid type for the schema type.
+public let schemaConstraintTypeMismatch = "SCHEMA_CONSTRAINT_TYPE_MISMATCH"
+/// Constraint value is invalid.
+public let schemaConstraintValueInvalid = "SCHEMA_CONSTRAINT_VALUE_INVALID"
 /// Constraint is not valid for this type.
 public let schemaConstraintInvalidForType = "SCHEMA_CONSTRAINT_INVALID_FOR_TYPE"
 /// Minimum cannot be greater than maximum.

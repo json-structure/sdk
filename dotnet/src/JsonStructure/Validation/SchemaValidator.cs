@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 using System.Linq;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
@@ -83,7 +84,9 @@ public sealed class SchemaValidator
         // Alternate names
         "altnames",
         // Units
-        "unit"
+        "unit", "ucumUnit", "currency", "symbols",
+        // Relations
+        "identity", "relations"
     };
 
     private static readonly Regex NamespacePattern = new(
@@ -91,8 +94,19 @@ public sealed class SchemaValidator
         RegexOptions.Compiled);
 
     private static readonly Regex IdentifierPattern = new(
-        @"^[a-zA-Z_][a-zA-Z0-9_]*$",
+        @"^[A-Za-z_$][A-Za-z0-9_$]*$",
         RegexOptions.Compiled);
+
+    private static readonly Regex UriSchemePattern = new(
+        @"^[a-zA-Z][a-zA-Z0-9+\-.]*:",
+        RegexOptions.Compiled);
+
+    private static readonly HashSet<string> EnumNumericTypes = new(StringComparer.Ordinal)
+    {
+        "integer", "int8", "int16", "int32", "int64",
+        "uint8", "uint16", "uint32", "uint64",
+        "float", "double", "decimal"
+    };
 
     /// <summary>
     /// Internal context for a single validation operation.
@@ -107,6 +121,7 @@ public sealed class SchemaValidator
         public JsonSourceLocator? SourceLocator { get; set; }
         public Dictionary<string, JsonNode> ExternalSchemas { get; } = new();
         public bool ValidationExtensionEnabled { get; set; }
+        public HashSet<string> EnabledExtensions { get; } = new(StringComparer.Ordinal);
     }
 
     /// <summary>
@@ -145,6 +160,16 @@ public sealed class SchemaValidator
         "contentEncoding", "contentMediaType",
         // Other
         "has", "default"
+    };
+
+    private static readonly HashSet<string> KnownExtensionNames = new(StringComparer.Ordinal)
+    {
+        "JSONStructureImport",
+        "JSONStructureAlternateNames",
+        "JSONStructureUnits",
+        "JSONStructureConditionalComposition",
+        "JSONStructureValidation",
+        "JSONStructureRelations"
     };
 
     static SchemaValidator()
@@ -322,8 +347,9 @@ public sealed class SchemaValidator
         // Store root schema for ref resolution
         ctx.RootSchema = schema;
         
-        // Detect if validation extensions are enabled
-        ctx.ValidationExtensionEnabled = IsValidationExtensionEnabled(schema);
+        // Detect enabled extensions
+        ctx.EnabledExtensions.UnionWith(GetEnabledExtensions(schema));
+        ctx.ValidationExtensionEnabled = ctx.EnabledExtensions.Contains("JSONStructureValidation");
         
         // Process imports if enabled
         if (_options.AllowImport && schema is JsonObject schemaObj)
@@ -345,33 +371,34 @@ public sealed class SchemaValidator
     /// Checks if the validation extension is enabled via $schema or $uses.
     /// </summary>
     private static bool IsValidationExtensionEnabled(JsonNode? schema)
-    {
-        if (schema is not JsonObject schemaObj)
-            return false;
+        => GetEnabledExtensions(schema).Contains("JSONStructureValidation");
 
-        // Check $schema - validation meta-schema enables all validation keywords
+    private static HashSet<string> GetEnabledExtensions(JsonNode? schema)
+    {
+        var enabledExtensions = new HashSet<string>(StringComparer.Ordinal);
+
+        if (schema is not JsonObject schemaObj)
+            return enabledExtensions;
+
         if (schemaObj.TryGetPropertyValue("$schema", out var schemaValue) &&
-            schemaValue is JsonValue sv && sv.TryGetValue<string>(out var schemaUri))
+            schemaValue is JsonValue sv && sv.TryGetValue<string>(out var schemaUri) &&
+            schemaUri.Contains("/meta/validation/"))
         {
-            // Check for validation meta-schema
-            if (schemaUri.Contains("/meta/validation/"))
-                return true;
+            enabledExtensions.Add("JSONStructureValidation");
         }
 
-        // Check $uses for JSONStructureValidation
         if (schemaObj.TryGetPropertyValue("$uses", out var usesValue) && usesValue is JsonArray usesArray)
         {
             foreach (var useItem in usesArray)
             {
-                if (useItem is JsonValue uv && uv.TryGetValue<string>(out var useStr))
+                if (useItem is JsonValue uv && uv.TryGetValue<string>(out var useStr) && KnownExtensionNames.Contains(useStr))
                 {
-                    if (useStr == "JSONStructureValidation")
-                        return true;
+                    enabledExtensions.Add(useStr);
                 }
             }
         }
 
-        return false;
+        return enabledExtensions;
     }
 
     /// <summary>
@@ -394,6 +421,21 @@ public sealed class SchemaValidator
             "Add '\"$uses\": [\"JSONStructureValidation\"]' to enable validation, or this keyword will be ignored.",
             AppendPath(path, keyword),
             GetLocation(AppendPath(path, keyword)));
+    }
+
+    private static bool IsExtensionEnabled(string extensionName)
+        => CurrentContext.EnabledExtensions.Contains(extensionName);
+
+    private void RequireExtension(JsonObject schema, string keyword, string extensionName, string path, ValidationResult result)
+    {
+        if (!schema.ContainsKey(keyword) || IsExtensionEnabled(extensionName))
+            return;
+
+        AddError(
+            result,
+            ErrorCodes.SchemaExtensionKeywordNotEnabled,
+            $"'{keyword}' requires the '{extensionName}' extension to be declared in '$uses'",
+            AppendPath(path, keyword));
     }
 
     /// <summary>
@@ -541,6 +583,10 @@ public sealed class SchemaValidator
             {
                 AddError(result, ErrorCodes.SchemaRootMissingName, "Root schema with 'type' must have a 'name' property", "");
             }
+            else if (schema.TryGetPropertyValue("name", out var nameValue))
+            {
+                ValidateIdentifier(nameValue, "name", path, result);
+            }
         }
 
         // Validate $schema if present
@@ -561,6 +607,17 @@ public sealed class SchemaValidator
         if (schema.TryGetPropertyValue("$id", out var idValue))
         {
             ValidateStringProperty(idValue, "$id", path, result);
+            if (idValue is JsonValue idJsonValue && idJsonValue.TryGetValue<string>(out var id))
+            {
+                if (string.IsNullOrWhiteSpace(id))
+                {
+                    AddError(result, ErrorCodes.SchemaKeywordEmpty, "$id must not be empty", AppendPath(path, "$id"));
+                }
+                else if (!UriSchemePattern.IsMatch(id))
+                {
+                    AddError(result, ErrorCodes.SchemaConstraintValueInvalid, "$id must be a URI with a scheme", AppendPath(path, "$id"));
+                }
+            }
         }
 
         // Check for bare $ref - this is NOT permitted per spec Section 3.4.1
@@ -688,7 +745,7 @@ public sealed class SchemaValidator
         // Validate enum if present
         if (schema.TryGetPropertyValue("enum", out var enumValue))
         {
-            ValidateEnum(enumValue, path, result);
+            ValidateEnum(enumValue, typeStr, path, result);
         }
 
         // Validate const if present - const value must be conformant with the type definition
@@ -711,6 +768,9 @@ public sealed class SchemaValidator
         {
             ValidateAltnames(altnamesValue, path, result);
         }
+
+        ValidateUnitsAndRelationsKeywords(schema, typeStr, path, result);
+        ValidateRelationsKeywords(schema, typeStr, path, result);
     }
 
     private void ValidateStringProperty(JsonNode? value, string keyword, string path, ValidationResult result)
@@ -731,8 +791,7 @@ public sealed class SchemaValidator
 
         if (!IdentifierPattern.IsMatch(str))
         {
-            AddError(result, ErrorCodes.SchemaNameInvalid, $"{keyword} must be a valid identifier (start with letter or underscore, contain only letters, digits, underscores)", 
-                AppendPath(path, keyword));
+            AddError(result, ErrorCodes.SchemaNameInvalid, $"{keyword} must be a valid identifier", AppendPath(path, keyword));
         }
     }
 
@@ -817,10 +876,25 @@ public sealed class SchemaValidator
             {
                 AddError(result, ErrorCodes.SchemaExtendsNotFound, $"$extends reference '{refStr}' not found", refPath);
             }
-            else if (resolved is JsonObject resolvedObj && resolvedObj.TryGetPropertyValue("$extends", out var nestedExtends))
+            else if (resolved is not JsonObject resolvedObj)
             {
-                // Recursively validate the extended schema's $extends
-                ValidateExtendsKeyword(nestedExtends, refPath, result);
+                AddError(result, ErrorCodes.SchemaConstraintTypeMismatch, $"$extends target '{refStr}' must not resolve to a primitive type", refPath);
+            }
+            else
+            {
+                var resolvedType = resolvedObj.TryGetPropertyValue("type", out var resolvedTypeValue)
+                    ? GetTypeString(resolvedTypeValue)
+                    : null;
+
+                if (resolvedType is not null and not ("object" or "tuple" or "map" or "array" or "set" or "choice"))
+                {
+                    AddError(result, ErrorCodes.SchemaConstraintTypeMismatch, $"$extends target '{refStr}' must not resolve to a primitive type", refPath);
+                }
+                else if (resolvedObj.TryGetPropertyValue("$extends", out var nestedExtends))
+                {
+                    // Recursively validate the extended schema's $extends
+                    ValidateExtendsKeyword(nestedExtends, refPath, result);
+                }
             }
             
             ctx.VisitedExtends.Remove(refStr);
@@ -1099,9 +1173,182 @@ public sealed class SchemaValidator
     }
 
     private bool IsNumericType(string? type) => type is 
-        "number" or "int8" or "int16" or "int32" or "int64" or "int128" or
+        "number" or "integer" or "int8" or "int16" or "int32" or "int64" or "int128" or
         "uint8" or "uint16" or "uint32" or "uint64" or "uint128" or
         "float8" or "float" or "double" or "decimal";
+
+    private void ValidateUnitsAndRelationsKeywords(JsonObject schema, string? typeStr, string path, ValidationResult result)
+    {
+        foreach (var keyword in new[] { "unit", "ucumUnit", "currency", "symbols" })
+        {
+            RequireExtension(schema, keyword, "JSONStructureUnits", path, result);
+        }
+
+        if (schema.TryGetPropertyValue("unit", out var unitKeywordValue))
+        {
+            if (unitKeywordValue is not JsonValue unitValue || !unitValue.TryGetValue<string>(out _))
+            {
+                AddError(result, ErrorCodes.SchemaKeywordInvalidType, "unit must be a string", AppendPath(path, "unit"));
+            }
+
+            if (typeStr is not null && !IsNumericType(typeStr))
+            {
+                AddError(result, ErrorCodes.SchemaConstraintInvalidForType, $"'unit' constraint is only valid for numeric types, not '{typeStr}'", AppendPath(path, "unit"));
+            }
+        }
+
+        if (!schema.TryGetPropertyValue("ucumUnit", out var ucumUnitValue))
+            return;
+
+        if (ucumUnitValue is not JsonValue unitValue2 || !unitValue2.TryGetValue<string>(out _))
+        {
+            AddError(result, ErrorCodes.SchemaKeywordInvalidType, "ucumUnit must be a string", AppendPath(path, "ucumUnit"));
+        }
+
+        if (typeStr is not null && !IsNumericType(typeStr))
+        {
+            AddError(result, ErrorCodes.SchemaConstraintInvalidForType, $"'ucumUnit' constraint is only valid for numeric types, not '{typeStr}'", AppendPath(path, "ucumUnit"));
+        }
+    }
+
+    private void ValidateRelationsKeywords(JsonObject schema, string? typeStr, string path, ValidationResult result)
+    {
+        if (schema.TryGetPropertyValue("identity", out var identityValue))
+        {
+            RequireExtension(schema, "identity", "JSONStructureRelations", path, result);
+
+            if (typeStr is not "object" and not "tuple")
+            {
+                AddError(result, ErrorCodes.SchemaConstraintInvalidForType, $"'identity' constraint is only valid for object or tuple types, not '{typeStr}'", AppendPath(path, "identity"));
+            }
+
+            if (identityValue is not JsonArray identityArray)
+            {
+                AddError(result, ErrorCodes.SchemaKeywordInvalidType, "identity must be an array of strings", AppendPath(path, "identity"));
+            }
+            else
+            {
+                var declaredProperties = GetDeclaredPropertyNames(schema);
+                for (int i = 0; i < identityArray.Count; i++)
+                {
+                    if (identityArray[i] is not JsonValue itemValue || !itemValue.TryGetValue<string>(out var propertyName))
+                    {
+                        AddError(result, ErrorCodes.SchemaKeywordInvalidType, "identity array items must be strings", AppendPath(path, $"identity/{i}"));
+                        continue;
+                    }
+
+                    if (!declaredProperties.Contains(propertyName))
+                    {
+                        AddError(result, ErrorCodes.SchemaRequiredPropertyNotDefined, $"Identity property '{propertyName}' is not defined in properties", AppendPath(path, $"identity/{i}"));
+                    }
+                }
+            }
+        }
+
+        if (!schema.TryGetPropertyValue("relations", out var relationsValue))
+            return;
+
+        RequireExtension(schema, "relations", "JSONStructureRelations", path, result);
+
+        if (typeStr is not "object" and not "tuple")
+        {
+            AddError(result, ErrorCodes.SchemaConstraintInvalidForType, $"'relations' constraint is only valid for object or tuple types, not '{typeStr}'", AppendPath(path, "relations"));
+        }
+
+        if (relationsValue is not JsonObject relationsObject)
+        {
+            AddError(result, ErrorCodes.SchemaKeywordInvalidType, "relations must be an object", AppendPath(path, "relations"));
+            return;
+        }
+
+        foreach (var relation in relationsObject)
+        {
+            var relationPath = AppendPath(path, $"relations/{relation.Key}");
+            if (relation.Value is not JsonObject relationObject)
+            {
+                AddError(result, ErrorCodes.SchemaKeywordInvalidType, "relation declarations must be objects", relationPath);
+                continue;
+            }
+
+            ValidateRelationRefObject(relationObject, "targettype", relationPath, result);
+
+            if (!relationObject.TryGetPropertyValue("cardinality", out var cardinalityValue))
+            {
+                AddError(result, ErrorCodes.SchemaKeywordInvalidType, "relation declarations must include cardinality", AppendPath(relationPath, "cardinality"));
+            }
+            else if (cardinalityValue is not JsonValue cardinalityJson || !cardinalityJson.TryGetValue<string>(out var cardinality) || (cardinality != "single" && cardinality != "multiple"))
+            {
+                AddError(result, ErrorCodes.SchemaKeywordInvalidType, "cardinality must be 'single' or 'multiple'", AppendPath(relationPath, "cardinality"));
+            }
+
+            if (relationObject.TryGetPropertyValue("scope", out var scopeValue))
+            {
+                if (scopeValue is JsonValue scopeJson && scopeJson.TryGetValue<string>(out _))
+                {
+                }
+                else if (scopeValue is JsonArray scopeArray)
+                {
+                    for (int i = 0; i < scopeArray.Count; i++)
+                    {
+                        if (scopeArray[i] is not JsonValue scopeItem || !scopeItem.TryGetValue<string>(out _))
+                        {
+                            AddError(result, ErrorCodes.SchemaKeywordInvalidType, "scope array items must be strings", AppendPath(relationPath, $"scope/{i}"));
+                        }
+                    }
+                }
+                else
+                {
+                    AddError(result, ErrorCodes.SchemaKeywordInvalidType, "scope must be a string or array of strings", AppendPath(relationPath, "scope"));
+                }
+            }
+
+            if (relationObject.TryGetPropertyValue("qualifiertype", out _))
+            {
+                ValidateRelationRefObject(relationObject, "qualifiertype", relationPath, result);
+            }
+        }
+    }
+
+    private static HashSet<string> GetDeclaredPropertyNames(JsonObject schema)
+    {
+        if (schema.TryGetPropertyValue("properties", out var propsValue) && propsValue is JsonObject props)
+        {
+            return new HashSet<string>(props.Select(prop => prop.Key), StringComparer.Ordinal);
+        }
+
+        return new HashSet<string>(StringComparer.Ordinal);
+    }
+
+    private void ValidateRelationRefObject(JsonObject relationObject, string keyword, string relationPath, ValidationResult result)
+    {
+        if (!relationObject.TryGetPropertyValue(keyword, out var refNode))
+        {
+            AddError(result, ErrorCodes.SchemaKeywordInvalidType, $"relation declarations must include {keyword}", AppendPath(relationPath, keyword));
+            return;
+        }
+
+        if (refNode is not JsonObject refObject || !refObject.TryGetPropertyValue("$ref", out var refValue) || refObject.Count != 1)
+        {
+            AddError(result, ErrorCodes.SchemaTypeObjectMissingRef, $"{keyword} must be an object containing only '$ref'", AppendPath(relationPath, keyword));
+            return;
+        }
+
+        ValidateReference(refValue, "$ref", AppendPath(relationPath, keyword), result);
+
+        if (refValue is JsonValue refJson && refJson.TryGetValue<string>(out var refStr) && refStr.StartsWith("#/") && !LocalRefExists(refStr))
+        {
+            AddError(result, ErrorCodes.SchemaRefNotFound, $"$ref target does not exist: {refStr}", AppendPath(AppendPath(relationPath, keyword), "$ref"));
+        }
+    }
+
+    private static bool LocalRefExists(string refStr)
+    {
+        var ctx = CurrentContext;
+        if (ctx.DefinedRefs.Contains(refStr))
+            return true;
+
+        return ctx.ImportNamespaces.Any(ns => refStr.StartsWith(ns + "/", StringComparison.Ordinal));
+    }
 
     private void ValidateCrossTypeConstraints(JsonObject schema, string? typeStr, string path, ValidationResult result)
     {
@@ -1372,12 +1619,26 @@ public sealed class SchemaValidator
             }
             else if (schema.TryGetPropertyValue("properties", out var propsValue) && propsValue is JsonObject props)
             {
-                foreach (var propName in tupleArr)
+                for (int i = 0; i < tupleArr.Count; i++)
                 {
-                    var name = propName?.GetValue<string>();
-                    if (name is not null && props.TryGetPropertyValue(name, out var propSchema))
+                    var tupleEntry = tupleArr[i];
+                    if (tupleEntry is JsonValue propNameValue && propNameValue.TryGetValue<string>(out var name))
                     {
-                        ValidateSchemaCore(propSchema!, result, AppendPath(path, $"properties/{name}"), depth + 1, visitedRefs);
+                        if (props.TryGetPropertyValue(name, out var propSchema))
+                        {
+                            ValidateSchemaCore(propSchema!, result, AppendPath(path, $"properties/{name}"), depth + 1, visitedRefs);
+                        }
+
+                        continue;
+                    }
+
+                    if (tupleEntry is JsonObject refObject && refObject.TryGetPropertyValue("$ref", out var refValue))
+                    {
+                        ValidateReference(refValue, "$ref", $"{AppendPath(path, "tuple")}[{i}]", result);
+                        if (refValue is JsonValue refJsonValue && refJsonValue.TryGetValue<string>(out var refStr) && ResolveLocalRef(refStr) is null)
+                        {
+                            AddError(result, ErrorCodes.SchemaRefNotFound, $"$ref target does not exist: {refStr}", $"{AppendPath(path, "tuple")}[{i}]/$ref");
+                        }
                     }
                 }
             }
@@ -1570,7 +1831,7 @@ public sealed class SchemaValidator
         }
     }
 
-    private void ValidateEnum(JsonNode? value, string path, ValidationResult result)
+    private void ValidateEnum(JsonNode? value, string? typeStr, string path, ValidationResult result)
     {
         if (value is not JsonArray arr)
         {
@@ -1595,6 +1856,33 @@ public sealed class SchemaValidator
                 break;
             }
         }
+
+        if (string.IsNullOrEmpty(typeStr))
+        {
+            return;
+        }
+
+        foreach (var item in arr)
+        {
+            if (!IsEnumValueValidForType(item, typeStr))
+            {
+                AddError(result, ErrorCodes.SchemaConstraintTypeMismatch, $"enum value is not valid for type '{typeStr}'", AppendPath(path, "enum"));
+                break;
+            }
+        }
+    }
+
+    private static bool IsEnumValueValidForType(JsonNode? value, string typeStr)
+    {
+        var valueKind = value?.GetValueKind() ?? JsonValueKind.Null;
+        return typeStr switch
+        {
+            "string" => valueKind == JsonValueKind.String,
+            "boolean" => valueKind is JsonValueKind.True or JsonValueKind.False,
+            "null" => valueKind == JsonValueKind.Null,
+            _ when EnumNumericTypes.Contains(typeStr) => valueKind == JsonValueKind.Number,
+            _ => true
+        };
     }
 
     private void ValidateConstValue(JsonNode? constValue, string? typeStr, string path, ValidationResult result)

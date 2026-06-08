@@ -77,7 +77,8 @@ class JSONStructureSchemaCoreValidator:
     # Extension names
     KNOWN_EXTENSIONS = {
         "JSONStructureImport", "JSONStructureAlternateNames", "JSONStructureUnits",
-        "JSONStructureConditionalComposition", "JSONStructureValidation"
+        "JSONStructureConditionalComposition", "JSONStructureValidation",
+        "JSONStructureRelations"
     }
 
     def __init__(self, allow_dollar=False, allow_import=False, import_map=None, extended=False, external_schemas=None, warn_on_unused_extension_keywords=True, max_validation_depth=64):
@@ -207,7 +208,7 @@ class JSONStructureSchemaCoreValidator:
         if "$schema" in doc:
             self._check_is_absolute_uri(doc["$schema"], "$schema", "#/$schema")
         if "$id" in doc:
-            self._check_is_absolute_uri(doc["$id"], "$id", "#/$id")
+            self._check_root_id(doc["$id"], "#/$id")
         if "$uses" in doc:
             self._check_uses(doc["$uses"], "#/$uses")
         if "type" in doc and "$root" in doc:
@@ -291,6 +292,19 @@ class JSONStructureSchemaCoreValidator:
             return
         if not self.ABSOLUTE_URI_REGEX.search(value):
             self._err(f"'{keyword_name}' must be an absolute URI.", location)
+
+    def _check_root_id(self, value, location):
+        """
+        Validates the root $id keyword.
+        """
+        if not isinstance(value, str):
+            self._err("'$id' must be a string.", location)
+            return
+        if value.strip() == "":
+            self._err("$id must not be empty", location, ErrorCodes.SCHEMA_KEYWORD_EMPTY)
+            return
+        if not re.match(r'^[a-zA-Z][a-zA-Z0-9+\-.]*:', value):
+            self._err("$id must be a URI with a scheme", location, ErrorCodes.SCHEMA_CONSTRAINT_VALUE_INVALID)
 
     def _rewrite_refs(self, obj, target_path):
         """
@@ -512,8 +526,8 @@ class JSONStructureSchemaCoreValidator:
             if not isinstance(schema_obj["name"], str):
                 self._err(f"'name' must be a string.", path + "/name")
             else:
-                if not self.identifier_regex.match(schema_obj["name"]):
-                    self._err(f"'name' must match the identifier pattern.", path + "/name")
+                if not re.match(r'^[A-Za-z_$][A-Za-z0-9_$]*$', schema_obj["name"]):
+                    self._err("name must be a valid identifier", path + "/name", ErrorCodes.SCHEMA_NAME_INVALID)
         if "abstract" in schema_obj:
             if not isinstance(schema_obj["abstract"], bool):
                 self._err(f"'abstract' keyword must be boolean.", path + "/abstract")
@@ -588,8 +602,12 @@ class JSONStructureSchemaCoreValidator:
                             self._check_primitive_schema(schema_obj, path)
                             
         # Extended validation checks
-        if self.extended and "type" in schema_obj:
-            self._check_extended_validation_keywords(schema_obj, path)
+        if self.extended:
+            if "type" in schema_obj:
+                self._check_extended_validation_keywords(schema_obj, path)
+                self._check_ucum_unit_keyword(schema_obj, path)
+                self._check_units_keywords(schema_obj, path)
+            self._check_relations_keywords(schema_obj, path)
                             
         if "required" in schema_obj:
             req_val = schema_obj["required"]
@@ -631,6 +649,28 @@ class JSONStructureSchemaCoreValidator:
                         seen.append(item_str)
                     except (TypeError, ValueError):
                         pass  # Can't serialize, skip duplicate check for this item
+
+                    type_str = schema_obj.get("type")
+                    if isinstance(type_str, str) and type_str not in self.COMPOUND_TYPES:
+                        is_valid = True
+                        if type_str == "string":
+                            is_valid = isinstance(item, str)
+                        elif type_str in {
+                            "number", "integer", "int8", "uint8", "int16", "uint16", "int32", "uint32",
+                            "int64", "uint64", "int128", "uint128", "float8", "float", "double", "decimal"
+                        }:
+                            is_valid = isinstance(item, (int, float)) and not isinstance(item, bool)
+                        elif type_str == "boolean":
+                            is_valid = isinstance(item, bool)
+                        elif type_str == "null":
+                            is_valid = item is None
+
+                        if not is_valid:
+                            self._err(
+                                f"enum value is not valid for type '{type_str}'",
+                                f"{path}/enum[{idx}]",
+                                ErrorCodes.SCHEMA_CONSTRAINT_TYPE_MISMATCH
+                            )
             if "type" in schema_obj and isinstance(schema_obj["type"], str):
                 if schema_obj["type"] in self.COMPOUND_TYPES:
                     self._err("'enum' cannot be used with compound types.", path + "/enum")
@@ -740,7 +780,139 @@ class JSONStructureSchemaCoreValidator:
         if "default" in obj:
             if not validation_enabled:
                 self._add_extension_keyword_warning("default", path)
+ 
+    def _check_ucum_unit_keyword(self, obj, path):
+        """
+        Check the ucumUnit keyword from the JSONStructureUnits extension.
+        """
+        if "ucumUnit" not in obj:
+            return
 
+        if "JSONStructureUnits" not in self.enabled_extensions:
+            self._err("'ucumUnit' requires JSONStructureUnits extension.", f"{path}/ucumUnit", ErrorCodes.SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED)
+
+        ucum_unit = obj["ucumUnit"]
+        if not isinstance(ucum_unit, str):
+            self._err("'ucumUnit' must be a string.", f"{path}/ucumUnit", ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE)
+
+        numeric_types = {
+            "number", "integer", "float", "double", "decimal",
+            "int32", "uint32", "int64", "uint64", "int128", "uint128"
+        }
+        type_name = obj.get("type")
+        if not isinstance(type_name, str) or type_name not in numeric_types:
+            self._err("'ucumUnit' can only appear in numeric schemas.", f"{path}/ucumUnit", ErrorCodes.SCHEMA_CONSTRAINT_TYPE_MISMATCH)
+
+    def _check_units_keywords(self, obj, path):
+        """
+        Check the unit, currency, and symbols keywords from the JSONStructureUnits extension.
+        """
+        numeric_types = {
+            "number", "integer", "float", "double", "decimal",
+            "int32", "uint32", "int64", "uint64", "int128", "uint128"
+        }
+        units_enabled = "JSONStructureUnits" in self.enabled_extensions
+
+        for keyword in ("unit", "currency", "symbols"):
+            if keyword not in obj:
+                continue
+            if not units_enabled:
+                self._err(
+                    f"'{keyword}' requires JSONStructureUnits extension.",
+                    f"{path}/{keyword}",
+                    ErrorCodes.SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED,
+                )
+
+        if "unit" not in obj:
+            return
+
+        if not isinstance(obj["unit"], str):
+            self._err("'unit' must be a string.", f"{path}/unit", ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE)
+
+        type_name = obj.get("type")
+        if not isinstance(type_name, str) or type_name not in numeric_types:
+            self._err("'unit' can only appear in numeric schemas.", f"{path}/unit", ErrorCodes.SCHEMA_CONSTRAINT_TYPE_MISMATCH)
+
+    def _check_relations_keywords(self, obj, path):
+        """
+        Check identity and relations keywords from the JSONStructureRelations extension.
+        """
+        relation_keywords_used = "identity" in obj or "relations" in obj
+        if not relation_keywords_used:
+            return
+
+        relations_enabled = "JSONStructureRelations" in self.enabled_extensions
+        if not relations_enabled:
+            if "identity" in obj:
+                self._err("'identity' requires JSONStructureRelations extension.", f"{path}/identity")
+            if "relations" in obj:
+                self._err("'relations' requires JSONStructureRelations extension.", f"{path}/relations")
+
+        type_name = obj.get("type")
+        supports_relations = isinstance(type_name, str) and type_name in {"object", "tuple"}
+
+        if "identity" in obj:
+            identity = obj["identity"]
+            if not supports_relations:
+                self._err("'identity' can only appear in object or tuple schemas.", f"{path}/identity")
+            if not isinstance(identity, list):
+                self._err("'identity' must be an array.", f"{path}/identity")
+            else:
+                properties = obj.get("properties") if isinstance(obj.get("properties"), dict) else None
+                for idx, item in enumerate(identity):
+                    item_path = f"{path}/identity[{idx}]"
+                    if not isinstance(item, str):
+                        self._err(f"'identity[{idx}]' must be a string.", item_path)
+                    elif properties is not None and item not in properties:
+                        self._err(f"'identity' references property '{item}' that is not in 'properties'.", item_path)
+
+        if "relations" in obj:
+            relations = obj["relations"]
+            if not supports_relations:
+                self._err("'relations' can only appear in object or tuple schemas.", f"{path}/relations")
+            if not isinstance(relations, dict):
+                self._err("'relations' must be an object.", f"{path}/relations")
+            else:
+                for relation_name, declaration in relations.items():
+                    relation_path = f"{path}/relations/{relation_name}"
+                    if not isinstance(declaration, dict):
+                        self._err("Relation declaration must be an object.", relation_path)
+                        continue
+
+                    if "targettype" not in declaration:
+                        self._err("Relation declaration must have 'targettype'.", f"{relation_path}/targettype")
+                    else:
+                        targettype = declaration["targettype"]
+                        if not isinstance(targettype, dict) or "$ref" not in targettype:
+                            self._err("'targettype' must be an object with '$ref'.", f"{relation_path}/targettype")
+                        else:
+                            self._check_json_pointer(targettype["$ref"], self.doc, f"{relation_path}/targettype/$ref")
+
+                    if "cardinality" not in declaration:
+                        self._err("Relation declaration must have 'cardinality'.", f"{relation_path}/cardinality")
+                    else:
+                        cardinality = declaration["cardinality"]
+                        if cardinality not in {"single", "multiple"}:
+                            self._err("'cardinality' must be 'single' or 'multiple'.", f"{relation_path}/cardinality")
+
+                    if "scope" in declaration:
+                        scope = declaration["scope"]
+                        if isinstance(scope, str):
+                            pass
+                        elif isinstance(scope, list):
+                            for idx, item in enumerate(scope):
+                                if not isinstance(item, str):
+                                    self._err("'scope' array items must be strings.", f"{relation_path}/scope[{idx}]")
+                        else:
+                            self._err("'scope' must be a string or an array of strings.", f"{relation_path}/scope")
+
+                    if "qualifiertype" in declaration:
+                        qualifiertype = declaration["qualifiertype"]
+                        if not isinstance(qualifiertype, dict) or "$ref" not in qualifiertype:
+                            self._err("'qualifiertype' must be an object with '$ref'.", f"{relation_path}/qualifiertype")
+                        else:
+                            self._check_json_pointer(qualifiertype["$ref"], self.doc, f"{relation_path}/qualifiertype/$ref")
+ 
     def _check_numeric_validation(self, obj, path, type_name, validation_enabled=True):
         """
         Check numeric validation keywords.
@@ -1092,10 +1264,20 @@ class JSONStructureSchemaCoreValidator:
                 self._err("'tuple' keyword must be an array of strings.", path + "/tuple")
             else:
                 for idx, element in enumerate(tuple_order):
-                    if not isinstance(element, str):
-                        self._err(f"Element at index {idx} in 'tuple' array must be a string.", path + f"/tuple[{idx}]")
-                    elif "properties" in obj and isinstance(obj["properties"], dict) and element not in obj["properties"]:
-                        self._err(f"Element '{element}' in 'tuple' does not correspond to any property in 'properties'.", path + f"/tuple[{idx}]")
+                    element_path = path + f"/tuple[{idx}]"
+                    if isinstance(element, str):
+                        if "properties" in obj and isinstance(obj["properties"], dict) and element not in obj["properties"]:
+                            self._err(f"Element '{element}' in 'tuple' does not correspond to any property in 'properties'.", element_path)
+                    elif isinstance(element, dict) and "$ref" in element:
+                        ref = element["$ref"]
+                        if not isinstance(ref, str):
+                            self._err("JSON Pointer must be a string.", element_path + "/$ref")
+                        elif not ref.startswith("#"):
+                            self._err("JSON Pointer must start with '#' when referencing the same document.", element_path + "/$ref")
+                        elif self._resolve_json_pointer(ref) is None:
+                            self._err(f"$ref target '{ref}' not found.", element_path + "/$ref", ErrorCodes.SCHEMA_REF_NOT_FOUND)
+                    else:
+                        self._err(f"Element at index {idx} in 'tuple' array must be a string or a $ref object.", element_path)
 
     def _check_choice_schema(self, obj, path):
         """
@@ -1187,7 +1369,13 @@ class JSONStructureSchemaCoreValidator:
             resolved = self._resolve_json_pointer(ref)
             if resolved is None:
                 self._err(f"$extends reference '{ref}' not found.", ref_path, ErrorCodes.SCHEMA_EXTENDS_NOT_FOUND)
-            elif isinstance(resolved, dict) and "$extends" in resolved:
+            elif not isinstance(resolved, dict) or ("type" in resolved and resolved.get("type") not in {"object", "tuple", "map", "array", "set", "choice"}):
+                self._err(
+                    f"$extends target '{ref}' must not resolve to a primitive type",
+                    ref_path,
+                    ErrorCodes.SCHEMA_CONSTRAINT_TYPE_MISMATCH
+                )
+            elif "$extends" in resolved:
                 # Recursively validate the extended schema's $extends
                 self._validate_extends_keyword(resolved["$extends"], ref_path)
             

@@ -18,6 +18,8 @@ static const char* g_schema_error_messages[] = {
     [JS_SCHEMA_ROOT_MISSING_NAME] = "Root schema missing 'name' property",
     [JS_SCHEMA_ROOT_MISSING_SCHEMA] = "Root schema missing '$schema' property",
     [JS_SCHEMA_ROOT_MISSING_TYPE] = "Root schema missing 'type' property",
+    [JS_SCHEMA_KEYWORD_EMPTY] = "Keyword value cannot be empty",
+    [JS_SCHEMA_NAME_INVALID] = "Name must be a valid identifier",
     
     [JS_SCHEMA_TYPE_INVALID] = "Invalid type value",
     [JS_SCHEMA_TYPE_NOT_STRING] = "Type must be a string",
@@ -81,6 +83,7 @@ static const char* g_schema_error_messages[] = {
     [JS_SCHEMA_MINITEMS_NEGATIVE] = "minItems cannot be negative",
     [JS_SCHEMA_MULTIPLEOF_INVALID] = "multipleOf must be positive",
     [JS_SCHEMA_KEYWORD_INVALID_TYPE] = "Keyword has invalid type",
+    [JS_SCHEMA_CONSTRAINT_VALUE_INVALID] = "Constraint value is invalid",
     
     [JS_SCHEMA_IMPORT_NOT_ALLOWED] = "$import not allowed",
     [JS_SCHEMA_IMPORT_FAILED] = "Failed to import schema",

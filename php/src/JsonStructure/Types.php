@@ -172,6 +172,7 @@ final class Types
         'JSONStructureImport',
         'JSONStructureAlternateNames',
         'JSONStructureUnits',
+        'JSONStructureRelations',
         'JSONStructureConditionalComposition',
         'JSONStructureValidation',
     ];
