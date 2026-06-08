@@ -65,6 +65,7 @@ private final class ValidationEngine {
     private var schema: [String: Any] = [:]
     private var seenRefs: Set<String> = []
     private var seenExtends: Set<String> = []
+    private var enabledExtensions: Set<String> = []
     private var sourceLocator: JsonSourceLocator?
     
     /// Validation extension keywords that require JSONStructureValidation extension.
@@ -88,6 +89,7 @@ private final class ValidationEngine {
         warnings = []
         seenRefs = []
         seenExtends = []
+        enabledExtensions = []
         
         guard let schemaMap = schema as? [String: Any] else {
             addError("#", "Schema must be an object", schemaInvalidType)
@@ -95,6 +97,9 @@ private final class ValidationEngine {
         }
         
         self.schema = schemaMap
+        if options.extended {
+            checkEnabledExtensions(schemaMap)
+        }
         validateSchemaDocument(schemaMap, "#")
         
         return result()
@@ -188,31 +193,30 @@ private final class ValidationEngine {
         }
     }
     
-    private func checkValidationExtensionKeywords(_ schema: [String: Any]) {
-        // Check if warnings are enabled (default is true)
-        if !options.warnOnUnusedExtensionKeywords {
-            return
+    private func checkEnabledExtensions(_ schema: [String: Any]) {
+        enabledExtensions = []
+
+        if let schemaURI = schema["$schema"] as? String,
+           schemaURI.contains("validation") {
+            enabledExtensions.insert("JSONStructureConditionalComposition")
+            enabledExtensions.insert("JSONStructureValidation")
         }
-        
-        // Check if validation extensions are enabled
-        var validationEnabled = false
-        
+
         if let uses = schema["$uses"] as? [Any] {
-            for u in uses {
-                if let uStr = u as? String, uStr == "JSONStructureValidation" {
-                    validationEnabled = true
-                    break
+            for use in uses {
+                if let useStr = use as? String {
+                    enabledExtensions.insert(useStr)
                 }
             }
         }
-        
-        if let schemaURI = schema["$schema"] as? String {
-            if schemaURI.contains("extended") || schemaURI.contains("validation") {
-                validationEnabled = true
-            }
+    }
+
+    private func checkValidationExtensionKeywords(_ schema: [String: Any]) {
+        if !options.warnOnUnusedExtensionKeywords {
+            return
         }
-        
-        if !validationEnabled {
+
+        if !enabledExtensions.contains("JSONStructureValidation") {
             collectValidationKeywordWarnings(schema, "")
         }
     }
@@ -332,6 +336,10 @@ private final class ValidationEngine {
         } else {
             addError("\(path)/type", "type must be a string, array, or object with $ref", schemaKeywordInvalidType)
         }
+
+        let typeName = schema["type"] as? String
+        validateUcumUnitKeyword(schema, typeName, path)
+        validateRelationsKeywords(schema, typeName, path)
     }
     
     private func validateSingleType(_ typeStr: String, _ schema: [String: Any], _ path: String) {
@@ -745,6 +753,146 @@ private final class ValidationEngine {
                 addError("\(path)/\(constraint)", "\(constraint) constraint is only valid for numeric types, not \(typeStr)", schemaConstraintInvalidForType)
             }
         }
+    }
+
+    private func validateUcumUnitKeyword(_ schema: [String: Any], _ typeName: String?, _ path: String) {
+        guard schema["ucumUnit"] != nil else {
+            return
+        }
+
+        if !enabledExtensions.contains("JSONStructureUnits") {
+            addError("\(path)/ucumUnit", "'ucumUnit' requires JSONStructureUnits extension.", schemaExtensionKeywordNotEnabled)
+        }
+
+        if !(schema["ucumUnit"] is String) {
+            addError("\(path)/ucumUnit", "'ucumUnit' must be a string.", schemaKeywordInvalidType)
+        }
+
+        let allowedTypes: Set<String> = ["number", "integer", "float", "double", "decimal", "int32", "uint32", "int64", "uint64", "int128", "uint128"]
+        if let typeName, allowedTypes.contains(typeName) {
+            return
+        }
+
+        addError("\(path)/ucumUnit", "'ucumUnit' can only appear in numeric schemas.", schemaConstraintInvalidForType)
+    }
+
+    private func validateRelationsKeywords(_ schema: [String: Any], _ typeName: String?, _ path: String) {
+        let hasIdentity = schema["identity"] != nil
+        let hasRelations = schema["relations"] != nil
+        guard hasIdentity || hasRelations else {
+            return
+        }
+
+        if !enabledExtensions.contains("JSONStructureRelations") {
+            if hasIdentity {
+                addError("\(path)/identity", "'identity' requires JSONStructureRelations extension.", schemaExtensionKeywordNotEnabled)
+            }
+            if hasRelations {
+                addError("\(path)/relations", "'relations' requires JSONStructureRelations extension.", schemaExtensionKeywordNotEnabled)
+            }
+        }
+
+        let supportsRelations = typeName == "object" || typeName == "tuple"
+
+        if hasIdentity {
+            validateIdentityKeyword(schema, path, supportsRelations)
+        }
+
+        if hasRelations {
+            validateRelationsObject(schema, path, supportsRelations)
+        }
+    }
+
+    private func validateIdentityKeyword(_ schema: [String: Any], _ path: String, _ supportsRelations: Bool) {
+        if !supportsRelations {
+            addError("\(path)/identity", "'identity' can only appear in object or tuple schemas.", schemaConstraintInvalidForType)
+        }
+
+        guard let identity = schema["identity"] as? [Any] else {
+            addError("\(path)/identity", "'identity' must be an array of strings.", schemaKeywordInvalidType)
+            return
+        }
+
+        let properties = schema["properties"] as? [String: Any] ?? [:]
+        for (index, item) in identity.enumerated() {
+            let itemPath = "\(path)/identity[\(index)]"
+            guard let itemName = item as? String else {
+                addError(itemPath, "'identity[\(index)]' must be a string.", schemaKeywordInvalidType)
+                continue
+            }
+
+            if properties[itemName] == nil {
+                addError(itemPath, "'identity' references property '\(itemName)' that is not in 'properties'.", schemaRequiredPropertyNotDefined)
+            }
+        }
+    }
+
+    private func validateRelationsObject(_ schema: [String: Any], _ path: String, _ supportsRelations: Bool) {
+        if !supportsRelations {
+            addError("\(path)/relations", "'relations' can only appear in object or tuple schemas.", schemaConstraintInvalidForType)
+        }
+
+        guard let relations = schema["relations"] as? [String: Any] else {
+            addError("\(path)/relations", "'relations' must be an object.", schemaKeywordInvalidType)
+            return
+        }
+
+        for (relationName, relationValue) in relations {
+            let relationPath = "\(path)/relations/\(relationName)"
+            guard let relation = relationValue as? [String: Any] else {
+                addError(relationPath, "Relation declaration must be an object.", schemaKeywordInvalidType)
+                continue
+            }
+
+            if relation["targettype"] != nil {
+                validateRelationRefObject(relation["targettype"], keyword: "targettype", relationPath: relationPath)
+            } else {
+                addError("\(relationPath)/targettype", "Relation declaration must have 'targettype'.", schemaKeywordInvalidType)
+            }
+
+            if let cardinality = relation["cardinality"] as? String {
+                if cardinality != "single" && cardinality != "multiple" {
+                    addError("\(relationPath)/cardinality", "'cardinality' must be 'single' or 'multiple'.", schemaKeywordInvalidType)
+                }
+            } else {
+                addError("\(relationPath)/cardinality", "Relation declaration must have 'cardinality'.", schemaKeywordInvalidType)
+            }
+
+            if relation["scope"] != nil {
+                validateRelationScope(relation["scope"], relationPath: relationPath)
+            }
+
+            if relation["qualifiertype"] != nil {
+                validateRelationRefObject(relation["qualifiertype"], keyword: "qualifiertype", relationPath: relationPath)
+            }
+        }
+    }
+
+    private func validateRelationScope(_ scope: Any?, relationPath: String) {
+        if scope is String {
+            return
+        }
+
+        if let scopeArray = scope as? [Any] {
+            for (index, item) in scopeArray.enumerated() {
+                if !(item is String) {
+                    addError("\(relationPath)/scope[\(index)]", "'scope' array items must be strings.", schemaKeywordInvalidType)
+                }
+            }
+            return
+        }
+
+        addError("\(relationPath)/scope", "'scope' must be a string or an array of strings.", schemaKeywordInvalidType)
+    }
+
+    private func validateRelationRefObject(_ value: Any?, keyword: String, relationPath: String) {
+        let keywordPath = "\(relationPath)/\(keyword)"
+        guard let value = value as? [String: Any], value["$ref"] != nil else {
+            addError(keywordPath, "'\(keyword)' must be an object with '$ref'.", schemaKeywordInvalidType)
+            return
+        }
+
+        validateRef(value["$ref"] as Any, "\(keywordPath)/$ref")
     }
     
     private func validateExtends(_ extendsVal: Any, _ path: String) {

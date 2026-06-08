@@ -52,7 +52,33 @@ final class RelationsAndUcumUnitValidationTests: XCTestCase {
     }
 
     func testInvalidUcumUnitScenariosArePending() throws {
-        throw XCTSkip("Pending ucumUnit keyword enforcement in the Swift schema validator")
+        let validator = SchemaValidator(options: SchemaValidatorOptions(extended: true))
+
+        let invalidTypeSchema: [String: Any] = [
+            "$schema": "https://json-structure.org/meta/extended/v0/#",
+            "$id": "urn:example:ucum-invalid-type",
+            "name": "BadUcumType",
+            "type": "string",
+            "ucumUnit": "m"
+        ]
+
+        let invalidValueSchema: [String: Any] = [
+            "$schema": "https://json-structure.org/meta/extended/v0/#",
+            "$id": "urn:example:ucum-invalid-value",
+            "name": "BadUcumValue",
+            "$uses": ["JSONStructureUnits"],
+            "type": "number",
+            "ucumUnit": 5
+        ]
+
+        let invalidTypeResult = validator.validate(invalidTypeSchema)
+        XCTAssertFalse(invalidTypeResult.isValid)
+        XCTAssertTrue(invalidTypeResult.errors.contains { $0.message.contains("JSONStructureUnits extension") })
+        XCTAssertTrue(invalidTypeResult.errors.contains { $0.message.contains("can only appear in numeric schemas") })
+
+        let invalidValueResult = validator.validate(invalidValueSchema)
+        XCTAssertFalse(invalidValueResult.isValid)
+        XCTAssertTrue(invalidValueResult.errors.contains { $0.message.contains("'ucumUnit' must be a string.") })
     }
 
     func testValidRelationsIdentityArray() throws {
@@ -130,6 +156,33 @@ final class RelationsAndUcumUnitValidationTests: XCTestCase {
     }
 
     func testInvalidRelationsScenariosArePending() throws {
-        throw XCTSkip("Pending Relations keyword enforcement in the Swift schema validator")
+        let validator = SchemaValidator(options: SchemaValidatorOptions(extended: true))
+
+        let schema: [String: Any] = [
+            "$schema": "https://json-structure.org/meta/extended/v0/#",
+            "$id": "urn:example:relations-invalid",
+            "name": "BadRelations",
+            "type": "string",
+            "identity": ["id"],
+            "relations": [
+                "customer": [
+                    "cardinality": "many",
+                    "targettype": ["type": "object"],
+                    "scope": ["tenant", 3],
+                    "qualifiertype": ["type": "string"]
+                ]
+            ]
+        ]
+
+        let result = validator.validate(schema)
+        XCTAssertFalse(result.isValid)
+        XCTAssertTrue(result.errors.contains { $0.message.contains("JSONStructureRelations extension") })
+        XCTAssertTrue(result.errors.contains { $0.message.contains("'identity' can only appear in object or tuple schemas.") })
+        XCTAssertTrue(result.errors.contains { $0.message.contains("'identity' references property 'id' that is not in 'properties'.") })
+        XCTAssertTrue(result.errors.contains { $0.message.contains("'relations' can only appear in object or tuple schemas.") })
+        XCTAssertTrue(result.errors.contains { $0.message.contains("'targettype' must be an object with '$ref'.") })
+        XCTAssertTrue(result.errors.contains { $0.message.contains("'cardinality' must be 'single' or 'multiple'.") })
+        XCTAssertTrue(result.errors.contains { $0.message.contains("'scope' array items must be strings.") })
+        XCTAssertTrue(result.errors.contains { $0.message.contains("'qualifiertype' must be an object with '$ref'.") })
     }
 }
