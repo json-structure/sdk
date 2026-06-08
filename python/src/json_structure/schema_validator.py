@@ -47,7 +47,8 @@ class JSONStructureSchemaCoreValidator:
         "$offers", "abstract", "additionalProperties", "const", "default",
         "description", "enum", "examples", "format", "items", "maxLength",
         "name", "precision", "properties", "required", "scale", "type",
-        "values", "choices", "selector", "tuple"
+        "values", "choices", "selector", "tuple", "unit", "ucumUnit",
+        "identity", "relations", "targettype", "cardinality", "scope", "qualifiertype"
     }
     PRIMITIVE_TYPES = {
         "string", "number", "integer", "boolean", "null", "int8", "uint8", "int16", "uint16",
@@ -77,7 +78,7 @@ class JSONStructureSchemaCoreValidator:
     # Extension names
     KNOWN_EXTENSIONS = {
         "JSONStructureImport", "JSONStructureAlternateNames", "JSONStructureUnits",
-        "JSONStructureConditionalComposition", "JSONStructureValidation"
+        "JSONStructureRelations", "JSONStructureConditionalComposition", "JSONStructureValidation"
     }
 
     def __init__(self, allow_dollar=False, allow_import=False, import_map=None, extended=False, external_schemas=None, warn_on_unused_extension_keywords=True, max_validation_depth=64):
@@ -706,19 +707,23 @@ class JSONStructureSchemaCoreValidator:
             # Check for constraint type mismatches
             string_constraints = ["minLength", "maxLength", "pattern"]
             numeric_constraints = ["minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf"]
+            numeric_annotation_keywords = ["unit", "ucumUnit"]
             array_constraints = ["minItems", "maxItems", "uniqueItems", "contains", "minContains", "maxContains"]
-            
+             
             # Check string constraints on non-string types
             if tval != "string":
                 for key in string_constraints:
                     if key in obj:
                         self._err(f"'{key}' constraint is only valid for string type, not '{tval}'.", f"{path}/{key}")
-            
+             
             # Check numeric constraints on non-numeric types
             if tval not in numeric_types:
                 for key in numeric_constraints:
                     if key in obj:
                         self._err(f"'{key}' constraint is only valid for numeric types, not '{tval}'.", f"{path}/{key}")
+                for key in numeric_annotation_keywords:
+                    if key in obj:
+                        self._err(f"'{key}' keyword is only valid for numeric types, not '{tval}'.", f"{path}/{key}")
             
             # Check array constraints on non-array types
             if tval not in array_types:
@@ -729,6 +734,7 @@ class JSONStructureSchemaCoreValidator:
             # Now validate the constraint values for matching types
             if tval in numeric_types:
                 self._check_numeric_validation(obj, path, tval, validation_enabled)
+                self._check_units_keywords(obj, path)
             elif tval == "string":
                 self._check_string_validation(obj, path, validation_enabled)
             elif tval in ["array", "set"]:
@@ -770,6 +776,11 @@ class JSONStructureSchemaCoreValidator:
             if isinstance(min_val, (int, float)) and isinstance(max_val, (int, float)):
                 if min_val > max_val:
                     self._err("'minimum' cannot be greater than 'maximum'.", f"{path}")
+
+    def _check_units_keywords(self, obj, path):
+        for key in ["unit", "ucumUnit"]:
+            if key in obj and not isinstance(obj[key], str):
+                self._err(f"'{key}' must be a string.", f"{path}/{key}")
 
     def _check_string_validation(self, obj, path, validation_enabled=True):
         """

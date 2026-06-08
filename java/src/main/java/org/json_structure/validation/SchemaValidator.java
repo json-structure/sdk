@@ -100,7 +100,9 @@ public final class SchemaValidator {
             // Alternate names
             "altnames",
             // Units
-            "unit"
+            "unit", "ucumUnit",
+            // Relations
+            "identity", "relations", "targettype", "cardinality", "scope", "qualifiertype"
     );
 
     private static final Pattern NAMESPACE_PATTERN = Pattern.compile(
@@ -636,6 +638,14 @@ public final class SchemaValidator {
             if (schema.has("multipleOf")) {
                 addError(result, ErrorCodes.SCHEMA_CONSTRAINT_INVALID_FOR_TYPE, "'multipleOf' constraint is only valid for numeric types, not '" + typeStr + "'", 
                         appendPath(path, "multipleOf"));
+            }
+            if (schema.has("unit")) {
+                addError(result, ErrorCodes.SCHEMA_CONSTRAINT_INVALID_FOR_TYPE, "'unit' keyword is only valid for numeric types, not '" + typeStr + "'",
+                        appendPath(path, "unit"));
+            }
+            if (schema.has("ucumUnit")) {
+                addError(result, ErrorCodes.SCHEMA_CONSTRAINT_INVALID_FOR_TYPE, "'ucumUnit' keyword is only valid for numeric types, not '" + typeStr + "'",
+                        appendPath(path, "ucumUnit"));
             }
         }
         
@@ -1222,6 +1232,14 @@ public final class SchemaValidator {
         validateNumber(schema, "exclusiveMinimum", path, result);
         validateNumber(schema, "exclusiveMaximum", path, result);
         validatePositiveNumber(schema, "multipleOf", path, result);
+
+        if (schema.has("unit")) {
+            validateStringProperty(schema.get("unit"), "unit", path, result);
+        }
+
+        if (schema.has("ucumUnit")) {
+            validateStringProperty(schema.get("ucumUnit"), "ucumUnit", path, result);
+        }
         
         // Check minimum <= maximum
         if (schema.has("minimum") && schema.has("maximum")) {

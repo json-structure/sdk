@@ -343,7 +343,9 @@ pub const SCHEMA_KEYWORDS: &[&str] = &[
     // Alternate names
     "altnames",
     // Units
-    "unit",
+    "unit", "ucumUnit",
+    // Relations
+    "identity", "relations", "targettype", "cardinality", "scope", "qualifiertype",
 ];
 
 /// Validation extension keywords that require JSONStructureValidation.
@@ -374,6 +376,7 @@ pub const KNOWN_EXTENSIONS: &[&str] = &[
     "JSONStructureImport",
     "JSONStructureAlternateNames",
     "JSONStructureUnits",
+    "JSONStructureRelations",
     "JSONStructureConditionalComposition",
     "JSONStructureValidation",
 ];

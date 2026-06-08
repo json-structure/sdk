@@ -64,7 +64,8 @@ my %RESERVED_KEYWORDS = map { $_ => 1 } qw(
   $offers abstract additionalProperties const default
   description enum examples format items maxLength
   name precision properties required scale type
-  values choices selector tuple
+  values choices selector tuple unit ucumUnit
+  identity relations targettype cardinality scope qualifiertype
 );
 
 # Extended keywords for conditional composition
@@ -112,7 +113,7 @@ my %VALID_FORMATS = map { $_ => 1 } qw(
 # Known extensions
 my %KNOWN_EXTENSIONS = map { $_ => 1 } qw(
   JSONStructureImport JSONStructureAlternateNames JSONStructureUnits
-  JSONStructureConditionalComposition JSONStructureValidation
+  JSONStructureRelations JSONStructureConditionalComposition JSONStructureValidation
 );
 
 sub new {
@@ -1384,6 +1385,16 @@ sub _check_constraint_type_mismatch {
         }
     }
 
+    for my $keyword (qw(unit ucumUnit)) {
+        if ( exists $schema->{$keyword} && !$is_numeric ) {
+            $self->_add_error(
+                SCHEMA_CONSTRAINT_TYPE_MISMATCH,
+                "Keyword '$keyword' is only valid for numeric types, not '$type'",
+                "$path/$keyword"
+            );
+        }
+    }
+
     # String constraints can only be on string types
     my @string_types =
       qw(string date time datetime duration uri base64 binary uuid jsonpointer name);
@@ -1421,6 +1432,19 @@ sub _validate_extended_keywords {
                 $self->_add_error(
                     SCHEMA_NUMBER_CONSTRAINT_INVALID,
                     "$keyword must be a number",
+                    "$path/$keyword"
+                );
+            }
+        }
+    }
+
+    for my $keyword (qw(unit ucumUnit)) {
+        if ( exists $schema->{$keyword} ) {
+            my $value = $schema->{$keyword};
+            if ( !defined $value || ref($value) ) {
+                $self->_add_error(
+                    SCHEMA_KEYWORD_INVALID_TYPE,
+                    "$keyword must be a string",
                     "$path/$keyword"
                 );
             }

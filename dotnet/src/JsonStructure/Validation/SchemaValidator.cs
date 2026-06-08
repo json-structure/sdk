@@ -83,7 +83,9 @@ public sealed class SchemaValidator
         // Alternate names
         "altnames",
         // Units
-        "unit"
+        "unit", "ucumUnit",
+        // Relations
+        "identity", "relations", "targettype", "cardinality", "scope", "qualifiertype"
     };
 
     private static readonly Regex NamespacePattern = new(
@@ -1131,6 +1133,10 @@ public sealed class SchemaValidator
                 AddError(result, ErrorCodes.SchemaConstraintInvalidForType, $"'exclusiveMinimum' constraint is only valid for numeric types, not '{typeStr}'", AppendPath(path, "exclusiveMinimum"));
             if (schema.ContainsKey("exclusiveMaximum"))
                 AddError(result, ErrorCodes.SchemaConstraintInvalidForType, $"'exclusiveMaximum' constraint is only valid for numeric types, not '{typeStr}'", AppendPath(path, "exclusiveMaximum"));
+            if (schema.ContainsKey("unit"))
+                AddError(result, ErrorCodes.SchemaConstraintInvalidForType, $"'unit' keyword is only valid for numeric types, not '{typeStr}'", AppendPath(path, "unit"));
+            if (schema.ContainsKey("ucumUnit"))
+                AddError(result, ErrorCodes.SchemaConstraintInvalidForType, $"'ucumUnit' keyword is only valid for numeric types, not '{typeStr}'", AppendPath(path, "ucumUnit"));
         }
 
         // Array constraints on non-array types
@@ -1567,6 +1573,16 @@ public sealed class SchemaValidator
         {
             ValidatePositiveNumber(schema, "multipleOf", path, result);
             AddExtensionKeywordWarning(result, "multipleOf", path);
+        }
+
+        if (schema.TryGetPropertyValue("unit", out var unitValue))
+        {
+            ValidateStringProperty(unitValue, "unit", path, result);
+        }
+
+        if (schema.TryGetPropertyValue("ucumUnit", out var ucumUnitValue))
+        {
+            ValidateStringProperty(ucumUnitValue, "ucumUnit", path, result);
         }
     }
 

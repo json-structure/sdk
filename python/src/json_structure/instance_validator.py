@@ -13,7 +13,7 @@ $extends, $offers, $uses, as well as the JSON Structure JSONStructureImport exte
 
 Additionally, if the instance provides a "$uses" clause containing "JSONStructureConditionalComposition" and/or "JSONStructureValidation",
 the corresponding conditional composition and validation addin constraints are enforced.
-Extensions such as "JSONStructureAlternateNames" or "JSONStructureUnits" are generally ignored for validation.
+Extensions such as "JSONStructureAlternateNames", "JSONStructureUnits", or "JSONStructureRelations" are generally ignored for validation.
 
 Furthermore, when the root schema’s "$schema" equals 
     "https://json-structure.org/meta/extended/v0/#"
@@ -135,7 +135,8 @@ class JSONStructureInstanceValidator:
                     "JSONStructureConditionalComposition",
                     "JSONStructureValidation",
                     "JSONStructureUnits",
-                    "JSONStructureAlternateNames"
+                    "JSONStructureAlternateNames",
+                    "JSONStructureRelations"
                 ]
                 schema.setdefault("$uses", [])
                 for addin in all_addins:
@@ -1227,7 +1228,7 @@ class JSONStructureInstanceValidator:
         offers = self.root_schema.get("$offers", {})
         merged = dict(schema)
         merged.setdefault("properties", {})
-        for use in [u for u in uses if not u in ["JSONStructureValidation", "JSONStructureConditionalComposition", "JSONStructureAlternateNames", "JSONStructureUnits"]]:
+        for use in [u for u in uses if not u in ["JSONStructureValidation", "JSONStructureConditionalComposition", "JSONStructureAlternateNames", "JSONStructureUnits", "JSONStructureRelations"]]:
             if use not in offers:
                 self.errors.append(f"Add-in '{use}' not offered in $offers")
                 continue
