@@ -7,7 +7,7 @@ use v5.20;
 our $VERSION = '0.01';
 
 use JSON::MaybeXS;
-use Scalar::Util qw(blessed);
+use Scalar::Util qw(blessed looks_like_number);
 use JSON::Structure::Types;
 use JSON::Structure::ErrorCodes qw(:all);
 use JSON::Structure::JsonSourceLocator;
@@ -1384,7 +1384,7 @@ sub _validate_ucum_unit_keyword {
         );
     }
 
-    if ( !defined $schema->{ucumUnit} || ref( $schema->{ucumUnit} ) ) {
+    if ( !defined $schema->{ucumUnit} || ref( $schema->{ucumUnit} ) || looks_like_number( $schema->{ucumUnit} ) ) {
         $self->_add_error(
             SCHEMA_KEYWORD_INVALID_TYPE,
             "'ucumUnit' must be a string.",

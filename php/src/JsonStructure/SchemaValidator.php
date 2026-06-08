@@ -630,7 +630,7 @@ class SchemaValidator
             return;
         }
 
-        $this->checkJsonPointer($value['$ref'], $this->doc, "{$keywordPath}/$ref");
+        $this->checkJsonPointer($value['$ref'], $this->doc, "{$keywordPath}/\$ref");
     }
 
     private function checkExtendedValidationKeywords(array $obj, string $path): void
