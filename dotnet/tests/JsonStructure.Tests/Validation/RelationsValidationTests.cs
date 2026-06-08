@@ -152,7 +152,7 @@ public class RelationsValidationTests
         result.Errors.ShouldBeEmpty();
     }
 
-    [Fact(Skip = "Pending Relations keyword enforcement in the .NET schema validator")]
+    [Fact]
     public void Validate_IdentityOnNonObjectType_ReturnsError()
     {
         var result = _validator.Validate(new JsonObject
@@ -168,7 +168,7 @@ public class RelationsValidationTests
         result.IsValid.ShouldBeFalse();
     }
 
-    [Fact(Skip = "Pending Relations keyword enforcement in the .NET schema validator")]
+    [Fact]
     public void Validate_IdentityThatIsNotArray_ReturnsError()
     {
         var schema = CreateRelationsSchema();
@@ -179,7 +179,7 @@ public class RelationsValidationTests
         result.IsValid.ShouldBeFalse();
     }
 
-    [Fact(Skip = "Pending Relations keyword enforcement in the .NET schema validator")]
+    [Fact]
     public void Validate_IdentityWithUnknownProperty_ReturnsError()
     {
         var schema = CreateRelationsSchema();
@@ -190,7 +190,7 @@ public class RelationsValidationTests
         result.IsValid.ShouldBeFalse();
     }
 
-    [Fact(Skip = "Pending Relations keyword enforcement in the .NET schema validator")]
+    [Fact]
     public void Validate_RelationsOnNonObjectType_ReturnsError()
     {
         var result = _validator.Validate(new JsonObject
@@ -206,7 +206,7 @@ public class RelationsValidationTests
         result.IsValid.ShouldBeFalse();
     }
 
-    [Fact(Skip = "Pending Relations keyword enforcement in the .NET schema validator")]
+    [Fact]
     public void Validate_InvalidRelationCardinality_ReturnsError()
     {
         var schema = CreateRelationsSchema();
@@ -224,7 +224,7 @@ public class RelationsValidationTests
         result.IsValid.ShouldBeFalse();
     }
 
-    [Fact(Skip = "Pending Relations keyword enforcement in the .NET schema validator")]
+    [Fact]
     public void Validate_RelationMissingTargettype_ReturnsError()
     {
         var schema = CreateRelationsSchema();
@@ -241,7 +241,7 @@ public class RelationsValidationTests
         result.IsValid.ShouldBeFalse();
     }
 
-    [Fact(Skip = "Pending Relations keyword enforcement in the .NET schema validator")]
+    [Fact]
     public void Validate_RelationMissingCardinality_ReturnsError()
     {
         var schema = CreateRelationsSchema();

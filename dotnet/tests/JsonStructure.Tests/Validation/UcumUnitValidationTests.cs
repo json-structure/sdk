@@ -59,7 +59,7 @@ public class UcumUnitValidationTests
         result.Errors.ShouldBeEmpty();
     }
 
-    [Fact(Skip = "Pending ucumUnit keyword enforcement in the .NET schema validator")]
+    [Fact]
     public void Validate_NonNumericTypeWithUcumUnit_ReturnsError()
     {
         var result = _validator.Validate(CreateUcumUnitSchema("string", JsonValue.Create("m")!));
@@ -67,7 +67,7 @@ public class UcumUnitValidationTests
         result.IsValid.ShouldBeFalse();
     }
 
-    [Fact(Skip = "Pending ucumUnit keyword enforcement in the .NET schema validator")]
+    [Fact]
     public void Validate_NumericUcumUnitValue_ReturnsError()
     {
         var result = _validator.Validate(CreateUcumUnitSchema("number", JsonValue.Create(42)!));
@@ -75,7 +75,7 @@ public class UcumUnitValidationTests
         result.IsValid.ShouldBeFalse();
     }
 
-    [Fact(Skip = "Pending ucumUnit keyword enforcement in the .NET schema validator")]
+    [Fact]
     public void Validate_ArrayUcumUnitValue_ReturnsError()
     {
         var result = _validator.Validate(CreateUcumUnitSchema("number", new JsonArray("m")));
@@ -83,7 +83,7 @@ public class UcumUnitValidationTests
         result.IsValid.ShouldBeFalse();
     }
 
-    [Fact(Skip = "Pending ucumUnit keyword enforcement in the .NET schema validator")]
+    [Fact]
     public void Validate_ObjectUcumUnitValue_ReturnsError()
     {
         var result = _validator.Validate(CreateUcumUnitSchema("number", new JsonObject { ["code"] = "m" }));
