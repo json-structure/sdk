@@ -1438,6 +1438,10 @@ sub _validate_extends {
             "$path/\$extends"
         );
     }
+    elsif ( ref($target) eq 'HASH' && defined $target->{'$extends'} ) {
+        # Recursively validate the extended schema's $extends
+        $self->_validate_extends( $target->{'$extends'}, "$path/\$extends" );
+    }
 
     delete $self->{seen_extends}{$extends};
 }
