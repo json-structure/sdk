@@ -4,7 +4,6 @@
 package org.json_structure.validation;
 
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -80,7 +79,6 @@ class RelationsAndUcumUnitValidationTests {
         assertThat(result.getErrors()).isEmpty();
     }
 
-    @Disabled("Pending ucumUnit keyword enforcement in the Java schema validator")
     @Test
     @DisplayName("Invalid non-numeric type with ucumUnit")
     void invalidNonNumericTypeWithUcumUnit() {
@@ -99,7 +97,6 @@ class RelationsAndUcumUnitValidationTests {
         assertThat(result.isValid()).isFalse();
     }
 
-    @Disabled("Pending ucumUnit keyword enforcement in the Java schema validator")
     @Test
     @DisplayName("Invalid non-string ucumUnit values")
     void invalidNonStringUcumUnitValues() {
@@ -316,7 +313,6 @@ class RelationsAndUcumUnitValidationTests {
         assertThat(result.isValid()).isTrue();
     }
 
-    @Disabled("Pending Relations keyword enforcement in the Java schema validator")
     @Test
     @DisplayName("Invalid Relations extension schemas")
     void invalidRelationsSchemas() {
