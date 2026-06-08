@@ -11,6 +11,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <ctype.h>
 
 #ifndef JS_SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED
 #define JS_SCHEMA_EXTENSION_KEYWORD_NOT_ENABLED JS_SCHEMA_EXTENSION_KEYWORD_WITHOUT_USES
@@ -81,6 +82,7 @@ static bool validate_constraints(validate_context_t* ctx, const cJSON* schema, c
 static bool validate_ucum_unit_keyword(validate_context_t* ctx, const cJSON* schema, const char* type_name);
 static bool validate_units_extension_keywords(validate_context_t* ctx, const cJSON* schema, const char* type_name);
 static bool validate_relations_keywords(validate_context_t* ctx, const cJSON* schema, const char* type_name);
+static bool validate_extends_keyword(validate_context_t* ctx, const cJSON* extends_node);
 static const cJSON* resolve_ref(validate_context_t* ctx, const char* ref);
 static bool process_imports(import_context_t* ctx, cJSON* obj, const char* path);
 static bool is_validation_extension_keyword(const char* keyword);
@@ -127,6 +129,89 @@ static bool is_string_in_list(const char* str, const char** list) {
         if (strcmp(str, *p) == 0) return true;
     }
     return false;
+}
+
+static bool is_blank_string(const char* str) {
+    if (!str) return true;
+
+    while (*str) {
+        if (!isspace((unsigned char)*str)) {
+            return false;
+        }
+        str++;
+    }
+
+    return true;
+}
+
+static bool has_uri_scheme(const char* str) {
+    if (!str || !isalpha((unsigned char)str[0])) {
+        return false;
+    }
+
+    for (size_t i = 1; str[i] != '\0'; ++i) {
+        unsigned char ch = (unsigned char)str[i];
+        if (ch == ':') {
+            return true;
+        }
+        if (!isalnum(ch) && ch != '+' && ch != '-' && ch != '.') {
+            return false;
+        }
+    }
+
+    return false;
+}
+
+static bool is_valid_identifier(const char* str) {
+    if (!str || str[0] == '\0') {
+        return false;
+    }
+
+    unsigned char first = (unsigned char)str[0];
+    if (!isalpha(first) && first != '_' && first != '$') {
+        return false;
+    }
+
+    for (size_t i = 1; str[i] != '\0'; ++i) {
+        unsigned char ch = (unsigned char)str[i];
+        if (!isalnum(ch) && ch != '_' && ch != '$') {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static bool is_numeric_enum_type(const char* type_name) {
+    static const char* numeric_types[] = {
+        "integer", "int8", "int16", "int32", "int64",
+        "uint8", "uint16", "uint32", "uint64",
+        "float", "double", "decimal",
+        NULL
+    };
+
+    return is_string_in_list(type_name, numeric_types);
+}
+
+static bool is_enum_value_valid_for_type(const cJSON* value, const char* type_name) {
+    if (!type_name || is_string_in_list(type_name, g_compound_types)) {
+        return true;
+    }
+
+    if (strcmp(type_name, "string") == 0) {
+        return cJSON_IsString(value);
+    }
+    if (is_numeric_enum_type(type_name)) {
+        return cJSON_IsNumber(value);
+    }
+    if (strcmp(type_name, "boolean") == 0) {
+        return cJSON_IsBool(value);
+    }
+    if (strcmp(type_name, "null") == 0) {
+        return cJSON_IsNull(value);
+    }
+
+    return true;
 }
 
 static bool has_enabled_extension(validate_context_t* ctx, const char* extension) {
@@ -1303,11 +1388,14 @@ static bool validate_tuple_schema(validate_context_t* ctx, const cJSON* schema) 
     /* If both are present and valid, validate that tuple references properties */
     if (tuple_arr && cJSON_IsArray(tuple_arr) && properties && cJSON_IsObject(properties)) {
         cJSON* tuple_item;
+        int tuple_index = 0;
         cJSON_ArrayForEach(tuple_item, tuple_arr) {
-            if (!cJSON_IsString(tuple_item)) {
-                add_error(ctx, JS_SCHEMA_TUPLE_INVALID_FORMAT, "tuple array items must be strings");
-                valid = false;
-            } else {
+            size_t item_prev_len = strlen(ctx->path);
+            char index_segment[32];
+            snprintf(index_segment, sizeof(index_segment), "[%d]", tuple_index++);
+            push_path(ctx, index_segment);
+
+            if (cJSON_IsString(tuple_item)) {
                 if (!cJSON_GetObjectItemCaseSensitive(properties, tuple_item->valuestring)) {
                     char msg[256];
                     snprintf(msg, sizeof(msg), "tuple references undefined property '%s'",
@@ -1315,7 +1403,23 @@ static bool validate_tuple_schema(validate_context_t* ctx, const cJSON* schema) 
                     add_error(ctx, JS_SCHEMA_TUPLE_PROPERTY_NOT_DEFINED, msg);
                     valid = false;
                 }
+            } else if (cJSON_IsObject(tuple_item)) {
+                const cJSON* ref = cJSON_GetObjectItemCaseSensitive(tuple_item, "$ref");
+                if (!ref || !cJSON_IsString(ref)) {
+                    add_error(ctx, JS_SCHEMA_TUPLE_INVALID_FORMAT, "tuple $ref entries must contain a string $ref");
+                    valid = false;
+                } else if (!resolve_ref(ctx, ref->valuestring)) {
+                    char msg[256];
+                    snprintf(msg, sizeof(msg), "$ref '%s' not found", ref->valuestring);
+                    add_error(ctx, JS_SCHEMA_REF_NOT_FOUND, msg);
+                    valid = false;
+                }
+            } else {
+                add_error(ctx, JS_SCHEMA_TUPLE_INVALID_FORMAT, "tuple array items must be strings or $ref objects");
+                valid = false;
             }
+
+            pop_path(ctx, item_prev_len);
         }
         
         /* Validate the properties themselves */
@@ -1380,7 +1484,7 @@ static bool validate_choice_schema(validate_context_t* ctx, const cJSON* schema)
     return valid;
 }
 
-static bool validate_enum(validate_context_t* ctx, const cJSON* enum_node) {
+static bool validate_enum(validate_context_t* ctx, const cJSON* enum_node, const char* type_name) {
     if (!cJSON_IsArray(enum_node)) {
         add_error(ctx, JS_SCHEMA_ENUM_NOT_ARRAY, "enum must be an array");
         return false;
@@ -1392,6 +1496,8 @@ static bool validate_enum(validate_context_t* ctx, const cJSON* enum_node) {
         return false;
     }
     
+    bool valid = true;
+
     /* Check for duplicates */
     for (int i = 0; i < size; i++) {
         const cJSON* a = cJSON_GetArrayItem(enum_node, i);
@@ -1403,8 +1509,75 @@ static bool validate_enum(validate_context_t* ctx, const cJSON* enum_node) {
             }
         }
     }
+
+    if (!type_name || js_schema_is_valid_compound_type(type_name)) {
+        return true;
+    }
+
+    for (int i = 0; i < size; i++) {
+        const cJSON* value = cJSON_GetArrayItem(enum_node, i);
+        if (!is_enum_value_valid_for_type(value, type_name)) {
+            size_t prev_len = strlen(ctx->path);
+            char index_segment[32];
+            snprintf(index_segment, sizeof(index_segment), "[%d]", i);
+            push_path(ctx, index_segment);
+
+            char msg[256];
+            snprintf(msg, sizeof(msg), "enum value is not valid for type '%s'", type_name);
+            add_error(ctx, JS_SCHEMA_CONSTRAINT_TYPE_MISMATCH, msg);
+            pop_path(ctx, prev_len);
+            valid = false;
+        }
+    }
     
-    return true;
+    return valid;
+}
+
+static bool validate_extends_keyword(validate_context_t* ctx, const cJSON* extends_node) {
+    bool valid = true;
+
+    if (cJSON_IsString(extends_node)) {
+        if (!extends_node->valuestring || extends_node->valuestring[0] != '#') {
+            return true;
+        }
+
+        const cJSON* target = resolve_ref(ctx, extends_node->valuestring);
+        if (!target) {
+            char msg[256];
+            snprintf(msg, sizeof(msg), "$extends reference '%s' not found", extends_node->valuestring);
+            add_error(ctx, JS_SCHEMA_REF_NOT_FOUND, msg);
+            return false;
+        }
+
+        const cJSON* type = cJSON_GetObjectItemCaseSensitive(target, "type");
+        if (!cJSON_IsString(type) ||
+            (strcmp(type->valuestring, "object") != 0 && strcmp(type->valuestring, "tuple") != 0)) {
+            char msg[256];
+            snprintf(msg, sizeof(msg), "$extends target '%s' must resolve to an object or tuple type", extends_node->valuestring);
+            add_error(ctx, JS_SCHEMA_CONSTRAINT_TYPE_MISMATCH, msg);
+            valid = false;
+        }
+    } else if (cJSON_IsArray(extends_node)) {
+        int index = 0;
+        cJSON* item = NULL;
+        cJSON_ArrayForEach(item, extends_node) {
+            size_t prev_len = strlen(ctx->path);
+            char index_segment[32];
+            snprintf(index_segment, sizeof(index_segment), "[%d]", index++);
+            push_path(ctx, index_segment);
+
+            if (!validate_extends_keyword(ctx, item)) {
+                valid = false;
+            }
+
+            pop_path(ctx, prev_len);
+        }
+    } else {
+        add_error(ctx, JS_SCHEMA_KEYWORD_INVALID_TYPE, "$extends must be a string or array of strings");
+        valid = false;
+    }
+
+    return valid;
 }
 
 static bool validate_composition(validate_context_t* ctx, const cJSON* schema) {
@@ -1550,38 +1723,11 @@ static bool validate_schema_node(validate_context_t* ctx, const cJSON* schema) {
         if (!cJSON_IsString(ref)) {
             add_error(ctx, JS_SCHEMA_REF_NOT_STRING, "$ref must be a string");
             valid = false;
-        } else {
-            /* Validate that the reference target exists */
-            const char* ref_str = ref->valuestring;
-            if (ref_str[0] == '#') {
-                /* Internal reference - verify it exists in definitions */
-                const char* def_name = NULL;
-                if (strncmp(ref_str, "#/definitions/", 14) == 0) {
-                    def_name = ref_str + 14;
-                } else if (strncmp(ref_str, "#/$defs/", 8) == 0) {
-                    def_name = ref_str + 8;
-                } else if (strncmp(ref_str, "#/$definitions/", 15) == 0) {
-                    def_name = ref_str + 15;
-                }
-                
-                if (def_name) {
-                    if (ctx->definitions) {
-                        const cJSON* target = cJSON_GetObjectItemCaseSensitive(ctx->definitions, def_name);
-                        if (!target) {
-                            char msg[256];
-                            snprintf(msg, sizeof(msg), "Reference target '%s' not found in definitions", def_name);
-                            add_error(ctx, JS_SCHEMA_REF_NOT_FOUND, msg);
-                            valid = false;
-                        }
-                    } else {
-                        char msg[256];
-                        snprintf(msg, sizeof(msg), "Reference '%s' used but no definitions defined", ref_str);
-                        add_error(ctx, JS_SCHEMA_REF_NOT_FOUND, msg);
-                        valid = false;
-                    }
-                }
-                /* Note: Circular reference detection happens during instance validation */
-            }
+        } else if (ref->valuestring[0] == '#' && !resolve_ref(ctx, ref->valuestring)) {
+            char msg[256];
+            snprintf(msg, sizeof(msg), "$ref '%s' not found", ref->valuestring);
+            add_error(ctx, JS_SCHEMA_REF_NOT_FOUND, msg);
+            valid = false;
         }
         ctx->depth--;
         return valid;
@@ -1589,12 +1735,11 @@ static bool validate_schema_node(validate_context_t* ctx, const cJSON* schema) {
     
     /* Get type */
     const cJSON* type_node = cJSON_GetObjectItemCaseSensitive(schema, "type");
+    const char* type_str = cJSON_IsString(type_node) ? type_node->valuestring : NULL;
     if (type_node) {
         if (!validate_type_value(ctx, type_node)) {
             valid = false;
         }
-        
-        const char* type_str = cJSON_IsString(type_node) ? type_node->valuestring : NULL;
         
         if (type_str) {
             /* Validate type-specific constraints */
@@ -1626,11 +1771,24 @@ static bool validate_schema_node(validate_context_t* ctx, const cJSON* schema) {
             valid = false;
         }
     }
+
+    const cJSON* extends_node = cJSON_GetObjectItemCaseSensitive(schema, "$extends");
+    if (extends_node) {
+        size_t prev_len = strlen(ctx->path);
+        push_path(ctx, "$extends");
+        if (!validate_extends_keyword(ctx, extends_node)) {
+            valid = false;
+        }
+        pop_path(ctx, prev_len);
+    }
     
     /* Validate enum if present */
     const cJSON* enum_node = cJSON_GetObjectItemCaseSensitive(schema, "enum");
     if (enum_node) {
-        if (!validate_enum(ctx, enum_node)) valid = false;
+        size_t prev_len = strlen(ctx->path);
+        push_path(ctx, "enum");
+        if (!validate_enum(ctx, enum_node, type_str)) valid = false;
+        pop_path(ctx, prev_len);
     }
     
     /* Validate definitions */
@@ -1688,6 +1846,27 @@ static bool validate_root_schema(validate_context_t* ctx, const cJSON* schema) {
     
     if (!name) {
         add_warning(ctx, JS_SCHEMA_ROOT_MISSING_NAME, "Root schema missing name");
+    }
+
+    if (id && cJSON_IsString(id)) {
+        size_t prev_len = strlen(ctx->path);
+        push_path(ctx, "$id");
+        if (is_blank_string(id->valuestring)) {
+            add_error(ctx, JS_SCHEMA_KEYWORD_EMPTY, "$id must not be empty");
+            valid = false;
+        } else if (!has_uri_scheme(id->valuestring)) {
+            add_error(ctx, JS_SCHEMA_CONSTRAINT_VALUE_INVALID, "$id must be a URI with a scheme");
+            valid = false;
+        }
+        pop_path(ctx, prev_len);
+    }
+
+    if (name && cJSON_IsString(name) && !is_valid_identifier(name->valuestring)) {
+        size_t prev_len = strlen(ctx->path);
+        push_path(ctx, "name");
+        add_error(ctx, JS_SCHEMA_NAME_INVALID, "name must be a valid identifier");
+        pop_path(ctx, prev_len);
+        valid = false;
     }
     
     /* Check for composition keywords at root as alternative to type */

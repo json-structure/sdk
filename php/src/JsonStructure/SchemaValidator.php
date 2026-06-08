@@ -186,6 +186,13 @@ class SchemaValidator
     {
         if (!isset($obj['$id'])) {
             $this->addError("Missing required '\$id' keyword at root.", $location, ErrorCodes::SCHEMA_ROOT_MISSING_ID);
+        } elseif (is_string($obj['$id'])) {
+            $id = trim($obj['$id']);
+            if ($id === '') {
+                $this->addError('\$id must not be empty', '#/$id', ErrorCodes::SCHEMA_KEYWORD_EMPTY);
+            } elseif (!preg_match('/^[a-zA-Z][a-zA-Z0-9+\-.]*:/', $id)) {
+                $this->addError('\$id must be a URI with a scheme', '#/$id', ErrorCodes::SCHEMA_CONSTRAINT_VALUE_INVALID);
+            }
         }
 
         // Root schema with 'type' must have 'name'
@@ -255,11 +262,8 @@ class SchemaValidator
         if (isset($schemaObj['name'])) {
             if (!is_string($schemaObj['name'])) {
                 $this->addError("'name' must be a string.", $path . '/name');
-            } else {
-                $regex = $this->allowDollar ? self::IDENTIFIER_WITH_DOLLAR_REGEX : self::IDENTIFIER_REGEX;
-                if (!preg_match($regex, $schemaObj['name'])) {
-                    $this->addError("'name' must match the identifier pattern.", $path . '/name');
-                }
+            } elseif (!preg_match('/^[A-Za-z_$][A-Za-z0-9_$]*$/', $schemaObj['name'])) {
+                $this->addError('name must be a valid identifier', $path . '/name', ErrorCodes::SCHEMA_NAME_INVALID);
             }
         }
 
@@ -426,6 +430,16 @@ class SchemaValidator
             if (isset($schemaObj['type']) && is_string($schemaObj['type'])) {
                 if (Types::isCompoundType($schemaObj['type'])) {
                     $this->addError("'enum' cannot be used with compound types.", $path . '/enum');
+                } elseif (is_array($enumVal)) {
+                    foreach ($enumVal as $idx => $item) {
+                        if (!$this->enumValueMatchesType($item, $schemaObj['type'])) {
+                            $this->addError(
+                                "enum value at index {$idx} does not match declared type '{$schemaObj['type']}'.",
+                                "{$path}/enum[{$idx}]",
+                                ErrorCodes::SCHEMA_CONSTRAINT_TYPE_MISMATCH
+                            );
+                        }
+                    }
                 }
             }
         }
@@ -1079,7 +1093,13 @@ class SchemaValidator
                 $this->addError("'tuple' keyword must be an array of strings.", $path . '/tuple');
             } else {
                 foreach ($tupleOrder as $idx => $element) {
-                    if (!is_string($element)) {
+                    if (is_array($element) && array_key_exists('$ref', $element)) {
+                        $ref = $element['$ref'];
+                        if (!is_string($ref) || $this->resolveJsonPointer($ref) === null) {
+                            $refText = is_string($ref) ? $ref : '';
+                            $this->addError("\$ref reference '{$refText}' not found.", "{$path}/tuple[{$idx}]/\$ref", ErrorCodes::SCHEMA_REF_NOT_FOUND);
+                        }
+                    } elseif (!is_string($element)) {
                         $this->addError("Element at index {$idx} in 'tuple' array must be a string.", "{$path}/tuple[{$idx}]");
                     } elseif (isset($obj['properties']) && is_array($obj['properties']) && !isset($obj['properties'][$element])) {
                         $this->addError("Element '{$element}' in 'tuple' does not correspond to any property in 'properties'.", "{$path}/tuple[{$idx}]");
@@ -1197,7 +1217,9 @@ class SchemaValidator
             $resolved = $this->resolveJsonPointer($ref);
             if ($resolved === null) {
                 $this->addError("\$extends reference '{$ref}' not found.", $refPath, ErrorCodes::SCHEMA_EXTENDS_NOT_FOUND);
-            } elseif (is_array($resolved) && isset($resolved['$extends'])) {
+            } elseif (!is_array($resolved) || !isset($resolved['type']) || !is_string($resolved['type']) || !in_array($resolved['type'], ['object', 'tuple'], true)) {
+                $this->addError("\$extends target '{$ref}' must resolve to an object or tuple type", $refPath, ErrorCodes::SCHEMA_CONSTRAINT_TYPE_MISMATCH);
+            } elseif (isset($resolved['$extends'])) {
                 // Recursively validate the extended schema's $extends
                 $this->validateExtendsKeyword($resolved['$extends'], $refPath);
             }
@@ -1234,6 +1256,16 @@ class SchemaValidator
         }
 
         return $cur;
+    }
+
+    private function enumValueMatchesType(mixed $value, string $type): bool
+    {
+        return match ($type) {
+            'string' => is_string($value),
+            'boolean' => is_bool($value),
+            'null' => is_null($value),
+            default => Types::isNumericType($type) ? (is_int($value) || is_float($value)) : true,
+        };
     }
 
     private function checkOffers(mixed $offers, string $path): void

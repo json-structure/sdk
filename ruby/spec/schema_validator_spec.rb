@@ -183,6 +183,132 @@ RSpec.describe JsonStructure::SchemaValidator do
     end
   end
 
+  describe '.validate with root keyword checks' do
+    it 'rejects empty $id values' do
+      schema = <<~JSON
+        {
+          "$schema": "https://json-structure.org/meta/core/v0/#",
+          "$id": "   ",
+          "name": "BadId",
+          "type": "object"
+        }
+      JSON
+
+      result = described_class.validate(schema)
+
+      expect(result).to be_invalid
+      expect(result.errors).to include(have_attributes(code: 'SCHEMA_KEYWORD_EMPTY', message: '$id must not be empty'))
+    end
+
+    it 'rejects $id values without a URI scheme' do
+      schema = <<~JSON
+        {
+          "$schema": "https://json-structure.org/meta/core/v0/#",
+          "$id": "example.com/no-scheme",
+          "name": "BadId",
+          "type": "object"
+        }
+      JSON
+
+      result = described_class.validate(schema)
+
+      expect(result).to be_invalid
+      expect(result.errors).to include(have_attributes(code: 'SCHEMA_CONSTRAINT_VALUE_INVALID', message: '$id must be a URI with a scheme'))
+    end
+
+    it 'rejects invalid root names' do
+      schema = <<~JSON
+        {
+          "$schema": "https://json-structure.org/meta/core/v0/#",
+          "$id": "https://example.com/bad-name-id",
+          "name": "123invalid",
+          "type": "object"
+        }
+      JSON
+
+      result = described_class.validate(schema)
+
+      expect(result).to be_invalid
+      expect(result.errors).to include(have_attributes(code: 'SCHEMA_NAME_INVALID', message: 'name must be a valid identifier'))
+    end
+  end
+
+  describe '.validate with enum type checks' do
+    it 'rejects enum values that do not match the declared type' do
+      schema = <<~JSON
+        {
+          "$schema": "https://json-structure.org/meta/core/v0/#",
+          "$id": "https://example.com/enum-type-mismatch",
+          "name": "EnumTypeMismatch",
+          "type": "boolean",
+          "enum": [true, "false"]
+        }
+      JSON
+
+      result = described_class.validate(schema)
+
+      expect(result).to be_invalid
+      expect(result.errors).to include(have_attributes(code: 'SCHEMA_CONSTRAINT_TYPE_MISMATCH', message: "enum value is not valid for type 'boolean'"))
+    end
+  end
+
+  describe '.validate with $extends checks' do
+    it 'rejects $extends targets that are not object or tuple schemas' do
+      schema = <<~JSON
+        {
+          "$schema": "https://json-structure.org/meta/core/v0/#",
+          "$id": "https://example.com/bad-extends-target",
+          "name": "Derived",
+          "type": "object",
+          "$extends": "#/definitions/Base",
+          "definitions": {
+            "Base": {
+              "name": "Base",
+              "type": "string"
+            }
+          }
+        }
+      JSON
+
+      result = described_class.validate(schema)
+
+      expect(result).to be_invalid
+      expect(result.errors).to include(
+        have_attributes(
+          code: 'SCHEMA_CONSTRAINT_TYPE_MISMATCH',
+          message: "$extends target '#/definitions/Base' must resolve to an object or tuple type"
+        )
+      )
+    end
+  end
+
+  describe '.validate with tuple ref checks' do
+    it 'rejects tuple refs that cannot be resolved' do
+      schema = <<~JSON
+        {
+          "$schema": "https://json-structure.org/meta/core/v0/#",
+          "$id": "https://example.com/tuple-ref",
+          "name": "TupleRef",
+          "type": "tuple",
+          "properties": {
+            "name": { "type": "string" }
+          },
+          "tuple": [{ "$ref": "#/definitions/Missing" }]
+        }
+      JSON
+
+      result = described_class.validate(schema)
+
+      expect(result).to be_invalid
+      expect(result.errors).to include(
+        have_attributes(
+          code: 'SCHEMA_REF_NOT_FOUND',
+          message: "$ref '#/definitions/Missing' not found"
+        )
+      )
+    end
+  end
+
   describe '.validate with Relations extension' do
     it 'accepts object identity arrays' do
       schema = <<~JSON

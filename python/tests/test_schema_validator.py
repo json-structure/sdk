@@ -11,6 +11,7 @@ Also includes tests for extended validation features (conditional composition an
 
 import json
 import pytest
+from json_structure import error_codes
 from json_structure.schema_validator import validate_json_structure_schema_core
 
 # =============================================================================
@@ -1600,7 +1601,80 @@ def test_name_invalid_identifier():
         "type": "object"
     }
     errors = validate_json_structure_schema_core(schema, json.dumps(schema))
-    assert any("name" in err.lower() for err in errors)
+    assert any(err.code == error_codes.SCHEMA_NAME_INVALID for err in errors)
+    assert any("name must be a valid identifier" in err.message for err in errors)
+
+
+def test_root_id_empty_rejected():
+    schema = {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "   ",
+        "name": "BadId",
+        "type": "object"
+    }
+    errors = validate_json_structure_schema_core(schema, json.dumps(schema))
+    assert any(err.code == error_codes.SCHEMA_KEYWORD_EMPTY for err in errors)
+    assert any("$id must not be empty" == err.message for err in errors)
+
+
+def test_root_id_requires_uri_scheme():
+    schema = {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "example.com/no-scheme",
+        "name": "BadId",
+        "type": "object"
+    }
+    errors = validate_json_structure_schema_core(schema, json.dumps(schema))
+    assert any(err.code == error_codes.SCHEMA_CONSTRAINT_VALUE_INVALID for err in errors)
+    assert any("$id must be a URI with a scheme" == err.message for err in errors)
+
+
+def test_extends_target_must_be_object_or_tuple():
+    schema = {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/bad-extends-target",
+        "name": "Derived",
+        "type": "object",
+        "$extends": "#/definitions/Base",
+        "definitions": {
+            "Base": {
+                "name": "Base",
+                "type": "string"
+            }
+        }
+    }
+    errors = validate_json_structure_schema_core(schema, json.dumps(schema))
+    assert any(err.code == error_codes.SCHEMA_CONSTRAINT_TYPE_MISMATCH for err in errors)
+    assert any("$extends target '#/definitions/Base' must resolve to an object or tuple type" == err.message for err in errors)
+
+
+def test_tuple_ref_target_not_found():
+    schema = {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/tuple-ref",
+        "name": "TupleRef",
+        "type": "tuple",
+        "properties": {
+            "name": {"type": "string"}
+        },
+        "tuple": [{"$ref": "#/definitions/Missing"}]
+    }
+    errors = validate_json_structure_schema_core(schema, json.dumps(schema))
+    assert any(err.code == error_codes.SCHEMA_REF_NOT_FOUND for err in errors)
+    assert any("$ref target '#/definitions/Missing' not found." == err.message for err in errors)
+
+
+def test_enum_values_must_match_declared_type():
+    schema = {
+        "$schema": "https://json-structure.org/meta/core/v0/#",
+        "$id": "https://example.com/enum-type-mismatch",
+        "name": "EnumTypeMismatch",
+        "type": "boolean",
+        "enum": [True, "false"]
+    }
+    errors = validate_json_structure_schema_core(schema, json.dumps(schema))
+    assert any(err.code == error_codes.SCHEMA_CONSTRAINT_TYPE_MISMATCH for err in errors)
+    assert any("enum value is not valid for type 'boolean'" == err.message for err in errors)
 
 
 def test_ref_not_string():

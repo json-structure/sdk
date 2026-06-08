@@ -4,6 +4,15 @@ import (
 	"testing"
 )
 
+func hasSchemaErrorCode(result ValidationResult, code string) bool {
+	for _, err := range result.Errors {
+		if err.Code == code {
+			return true
+		}
+	}
+	return false
+}
+
 // ============================================================================
 // Schema Validator Additional Tests
 // ============================================================================
@@ -12,9 +21,9 @@ func TestSchemaValidatorRequiredArray(t *testing.T) {
 	validator := NewSchemaValidator(&SchemaValidatorOptions{Extended: true})
 
 	tests := []struct {
-		name  string
+		name   string
 		schema map[string]interface{}
-		valid bool
+		valid  bool
 	}{
 		{
 			name: "valid required array",
@@ -217,6 +226,99 @@ func TestSchemaValidatorMapValues(t *testing.T) {
 			result := validator.Validate(tc.schema)
 			if result.IsValid != tc.valid {
 				t.Errorf("Expected valid=%v, got valid=%v, errors: %v", tc.valid, result.IsValid, result.Errors)
+			}
+		})
+	}
+}
+
+func TestSchemaValidatorRemainingGaps(t *testing.T) {
+	validator := NewSchemaValidator(&SchemaValidatorOptions{Extended: true})
+
+	tests := []struct {
+		name         string
+		schema       map[string]interface{}
+		expectedCode string
+	}{
+		{
+			name: "extends target must be object or tuple",
+			schema: map[string]interface{}{
+				"$id":  "urn:example:test",
+				"name": "Test",
+				"type": "object",
+				"properties": map[string]interface{}{
+					"child": map[string]interface{}{
+						"type":     "object",
+						"$extends": "#/definitions/BaseString",
+						"properties": map[string]interface{}{
+							"value": map[string]interface{}{"type": "string"},
+						},
+					},
+				},
+				"definitions": map[string]interface{}{
+					"BaseString": map[string]interface{}{"type": "string"},
+				},
+			},
+			expectedCode: SchemaConstraintTypeMismatch,
+		},
+		{
+			name: "tuple ref must resolve",
+			schema: map[string]interface{}{
+				"$id":  "urn:example:test",
+				"name": "Test",
+				"type": "tuple",
+				"tuple": []interface{}{
+					map[string]interface{}{"$ref": "#/definitions/Missing"},
+				},
+			},
+			expectedCode: SchemaRefNotFound,
+		},
+		{
+			name: "empty id rejected",
+			schema: map[string]interface{}{
+				"$id":  "   ",
+				"name": "Test",
+				"type": "string",
+			},
+			expectedCode: SchemaKeywordEmpty,
+		},
+		{
+			name: "id must have scheme",
+			schema: map[string]interface{}{
+				"$id":  "example-without-scheme",
+				"name": "Test",
+				"type": "string",
+			},
+			expectedCode: SchemaConstraintValueInvalid,
+		},
+		{
+			name: "name must be valid identifier",
+			schema: map[string]interface{}{
+				"$id":  "urn:example:test",
+				"name": "123-invalid",
+				"type": "string",
+			},
+			expectedCode: SchemaNameInvalid,
+		},
+		{
+			name: "enum values must match type",
+			schema: map[string]interface{}{
+				"$id":  "urn:example:test",
+				"name": "Test",
+				"type": "string",
+				"enum": []interface{}{"ok", 1},
+			},
+			expectedCode: SchemaConstraintTypeMismatch,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := validator.Validate(tc.schema)
+			if result.IsValid {
+				t.Fatalf("Expected invalid schema")
+			}
+			if !hasSchemaErrorCode(result, tc.expectedCode) {
+				t.Fatalf("Expected error code %s, got errors: %v", tc.expectedCode, result.Errors)
 			}
 		})
 	}

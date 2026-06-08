@@ -580,6 +580,130 @@ class SchemaValidatorTests {
         assertThat(validator.validate(invalidSchema).isValid()).isFalse();
     }
 
+    @Test
+    @DisplayName("Invalid root $id is rejected when empty")
+    void invalidRootIdEmpty() {
+        String schema = """
+            {
+                "$id": "   ",
+                "name": "TestSchema",
+                "type": "object",
+                "properties": {}
+            }
+            """;
+
+        ValidationResult result = validator.validate(schema);
+        assertThat(result.isValid()).isFalse();
+        assertThat(result.getErrors()).anyMatch(e ->
+            ErrorCodes.SCHEMA_KEYWORD_EMPTY.equals(e.getCode()) && "$id must not be empty".equals(e.getMessage()));
+    }
+
+    @Test
+    @DisplayName("Invalid root $id without scheme is rejected")
+    void invalidRootIdWithoutScheme() {
+        String schema = """
+            {
+                "$id": "example.com/schema/no-scheme",
+                "name": "TestSchema",
+                "type": "object",
+                "properties": {}
+            }
+            """;
+
+        ValidationResult result = validator.validate(schema);
+        assertThat(result.isValid()).isFalse();
+        assertThat(result.getErrors()).anyMatch(e ->
+            ErrorCodes.SCHEMA_CONSTRAINT_VALUE_INVALID.equals(e.getCode()) && "$id must be a URI with a scheme".equals(e.getMessage()));
+    }
+
+    @Test
+    @DisplayName("Invalid name identifier is rejected")
+    void invalidNameIdentifier() {
+        String schema = """
+            {
+                "$id": "https://test.example.com/schema/invalidName",
+                "name": "1invalid-name",
+                "type": "object",
+                "properties": {}
+            }
+            """;
+
+        ValidationResult result = validator.validate(schema);
+        assertThat(result.isValid()).isFalse();
+        assertThat(result.getErrors()).anyMatch(e ->
+            ErrorCodes.SCHEMA_NAME_INVALID.equals(e.getCode()) && "name must be a valid identifier".equals(e.getMessage()));
+    }
+
+    @Test
+    @DisplayName("$extends target must be object or tuple")
+    void extendsTargetMustBeObjectOrTuple() {
+        String schema = """
+            {
+                "$id": "https://test.example.com/schema/extendsTypeMismatch",
+                "name": "TestSchema",
+                "definitions": {
+                    "Base": {
+                        "name": "Base",
+                        "type": "string"
+                    }
+                },
+                "type": "object",
+                "$extends": "#/definitions/Base",
+                "properties": {}
+            }
+            """;
+
+        ValidationResult result = validator.validate(schema);
+        assertThat(result.isValid()).isFalse();
+        assertThat(result.getErrors()).anyMatch(e ->
+            ErrorCodes.SCHEMA_CONSTRAINT_TYPE_MISMATCH.equals(e.getCode()) &&
+                e.getMessage().equals("$extends target '#/definitions/Base' must resolve to an object or tuple type"));
+    }
+
+    @Test
+    @DisplayName("Tuple $ref entries must resolve")
+    void tupleRefEntriesMustResolve() {
+        String schema = """
+            {
+                "$id": "https://test.example.com/schema/tupleRefMissing",
+                "name": "TestSchema",
+                "type": "tuple",
+                "properties": {
+                    "first": { "type": "string" }
+                },
+                "tuple": [
+                    "first",
+                    { "$ref": "#/definitions/Missing" }
+                ]
+            }
+            """;
+
+        ValidationResult result = validator.validate(schema);
+        assertThat(result.isValid()).isFalse();
+        assertThat(result.getErrors()).anyMatch(e ->
+            ErrorCodes.SCHEMA_REF_NOT_FOUND.equals(e.getCode()) &&
+                e.getMessage().equals("$ref target does not exist: #/definitions/Missing"));
+    }
+
+    @Test
+    @DisplayName("Enum values must match declared type")
+    void enumValuesMustMatchDeclaredType() {
+        String schema = """
+            {
+                "$id": "https://test.example.com/schema/enumTypeMismatch",
+                "name": "TestSchema",
+                "type": "boolean",
+                "enum": [true, "false"]
+            }
+            """;
+
+        ValidationResult result = validator.validate(schema);
+        assertThat(result.isValid()).isFalse();
+        assertThat(result.getErrors()).anyMatch(e ->
+            ErrorCodes.SCHEMA_CONSTRAINT_TYPE_MISMATCH.equals(e.getCode()) &&
+                e.getMessage().equals("enum value is not valid for type 'boolean'"));
+    }
+
     // === Extension Keyword Warning Tests ===
 
     @Test

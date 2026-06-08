@@ -8,7 +8,10 @@ module JsonStructure
   # This class is thread-safe. Multiple threads can call validate concurrently.
   class SchemaValidator
     UCUM_NUMERIC_TYPES = %w[number integer float double decimal int32 uint32 int64 uint64 int128 uint128].freeze
+    ENUM_NUMERIC_TYPES = %w[integer int8 int16 int32 int64 uint8 uint16 uint32 uint64 float double decimal].freeze
     RELATION_CONTAINER_TYPES = %w[object tuple].freeze
+    IDENTIFIER_PATTERN = /\A[A-Za-z_$][A-Za-z0-9_$]*\z/
+    URI_SCHEME_PATTERN = /\A[a-zA-Z][a-zA-Z0-9+\-.]*:/
     VALIDATION_KEYWORDS = %w[
       pattern format minLength maxLength minimum maximum exclusiveMinimum exclusiveMaximum multipleOf
       minItems maxItems uniqueItems contains minContains maxContains
@@ -89,10 +92,14 @@ module JsonStructure
         return unless node.is_a?(Hash)
 
         type = node['type']
+        validate_root_schema_keywords(node, path, errors) if path == '#'
         validate_validation_extension_gating(root_schema, node, path, errors)
         validate_ucum_unit_keyword(root_schema, node, type, path, errors)
         validate_units_keywords(root_schema, node, type, path, errors)
         validate_relations_keywords(root_schema, node, type, path, errors)
+        validate_extends_keyword(root_schema, node, path, errors)
+        validate_tuple_ref_entries(root_schema, node, type, path, errors)
+        validate_enum_values(type, node, path, errors)
 
         node.each do |key, value|
           child_path = path == '#' ? "#/#{escape_json_pointer(key)}" : "#{path}/#{escape_json_pointer(key)}"
@@ -105,6 +112,30 @@ module JsonStructure
             end
           end
         end
+      end
+
+      def validate_root_schema_keywords(node, path, errors)
+        validate_root_id_keyword(node, path, errors)
+        validate_root_name_keyword(node, path, errors)
+      end
+
+      def validate_root_id_keyword(node, path, errors)
+        return unless node.key?('$id')
+        return unless node['$id'].is_a?(String)
+
+        if node['$id'].strip.empty?
+          add_manual_error(errors, '$id must not be empty', "#{path}/$id", 'SCHEMA_KEYWORD_EMPTY')
+        elsif node['$id'] !~ URI_SCHEME_PATTERN
+          add_manual_error(errors, '$id must be a URI with a scheme', "#{path}/$id", 'SCHEMA_CONSTRAINT_VALUE_INVALID')
+        end
+      end
+
+      def validate_root_name_keyword(node, path, errors)
+        return unless node.key?('name')
+        return unless node['name'].is_a?(String)
+        return if node['name'].match?(IDENTIFIER_PATTERN)
+
+        add_manual_error(errors, 'name must be a valid identifier', "#{path}/name", 'SCHEMA_NAME_INVALID')
       end
 
       def validate_validation_extension_gating(root_schema, node, path, errors)
@@ -239,6 +270,81 @@ module JsonStructure
         add_manual_error(errors, "'scope' must be a string or an array of strings.", "#{relation_path}/scope")
       end
 
+      def validate_extends_keyword(root_schema, node, path, errors)
+        return unless node.key?('$extends')
+
+        refs = normalized_extends_refs(node['$extends'], path)
+        refs.each do |ref, ref_path|
+          next unless ref.start_with?('#/')
+
+          resolved = resolve_ref(root_schema, ref)
+          next unless resolved
+          next if resolved.is_a?(Hash) && RELATION_CONTAINER_TYPES.include?(resolved['type'])
+
+          add_manual_error(errors,
+                           "$extends target '#{ref}' must resolve to an object or tuple type",
+                           ref_path,
+                           'SCHEMA_CONSTRAINT_TYPE_MISMATCH')
+        end
+      end
+
+      def normalized_extends_refs(extends_value, path)
+        case extends_value
+        when String
+          [[extends_value, "#{path}/$extends"]]
+        when Array
+          extends_value.each_with_index.filter_map do |item, index|
+            [item, "#{path}/$extends[#{index}]"] if item.is_a?(String)
+          end
+        else
+          []
+        end
+      end
+
+      def validate_tuple_ref_entries(root_schema, node, type, path, errors)
+        return unless type == 'tuple'
+        return unless node['tuple'].is_a?(Array)
+
+        node['tuple'].each_with_index do |entry, index|
+          next unless entry.is_a?(Hash) && entry['$ref'].is_a?(String)
+
+          ref = entry['$ref']
+          next unless ref.start_with?('#/')
+          next if resolve_ref(root_schema, ref)
+
+          add_manual_error(errors, "$ref '#{ref}' not found", "#{path}/tuple[#{index}]/$ref", 'SCHEMA_REF_NOT_FOUND')
+        end
+      end
+
+      def validate_enum_values(type, node, path, errors)
+        return unless node['enum'].is_a?(Array)
+        return unless type.is_a?(String)
+
+        node['enum'].each_with_index do |value, index|
+          next if enum_value_valid_for_type?(type, value)
+
+          add_manual_error(errors,
+                           "enum value is not valid for type '#{type}'",
+                           "#{path}/enum[#{index}]",
+                           'SCHEMA_CONSTRAINT_TYPE_MISMATCH')
+        end
+      end
+
+      def enum_value_valid_for_type?(type, value)
+        case type
+        when 'string'
+          value.is_a?(String)
+        when *ENUM_NUMERIC_TYPES
+          value.is_a?(Numeric)
+        when 'boolean'
+          value == true || value == false
+        when 'null'
+          value.nil?
+        else
+          true
+        end
+      end
+
       def validate_relation_ref_object(root_schema, value, relation_path, keyword, errors)
         keyword_path = "#{relation_path}/#{keyword}"
 
@@ -274,9 +380,9 @@ module JsonStructure
         segment.to_s.gsub('~', '~0').gsub('/', '~1')
       end
 
-      def add_manual_error(errors, message, path)
+      def add_manual_error(errors, message, path, code = 0)
         errors << ValidationError.new(
-          code: 0,
+          code: code,
           severity: FFI::JS_SEVERITY_ERROR,
           path: path,
           message: message,
@@ -284,9 +390,9 @@ module JsonStructure
         )
       end
 
-      def add_manual_warning(errors, message, path)
+      def add_manual_warning(errors, message, path, code = 0)
         errors << ValidationError.new(
-          code: 0,
+          code: code,
           severity: FFI::JS_SEVERITY_WARNING,
           path: path,
           message: message,

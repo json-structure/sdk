@@ -39,6 +39,8 @@ const VALIDATION_EXTENSION_KEYWORDS = new Set([
 
 const UNITS_EXTENSION_KEYWORDS = new Set(['unit', 'ucumUnit', 'currency', 'symbols']);
 const RELATIONS_EXTENSION_KEYWORDS = new Set(['identity', 'relations']);
+const URI_SCHEME_PATTERN = /^[a-zA-Z][a-zA-Z0-9+\-.]*:/;
+const IDENTIFIER_PATTERN = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 
 /**
  * Context for a single schema validation operation.
@@ -163,11 +165,19 @@ export class SchemaValidator {
       // Root schema must have $id
       if (!('$id' in schema)) {
         this.addError(context, '', "Missing required '$id' keyword at root", ErrorCodes.SCHEMA_ROOT_MISSING_ID);
+      } else if (typeof schema.$id === 'string') {
+        if (schema.$id.trim() === '') {
+          this.addError(context, `${path}/$id`, "Root schema '$id' must not be empty", ErrorCodes.SCHEMA_KEYWORD_EMPTY);
+        } else if (!URI_SCHEME_PATTERN.test(schema.$id)) {
+          this.addError(context, `${path}/$id`, "Root schema '$id' must be a URI with a scheme", ErrorCodes.SCHEMA_CONSTRAINT_VALUE_INVALID);
+        }
       }
       
       // Root schema with 'type' must have 'name'
       if ('type' in schema && !('name' in schema)) {
         this.addError(context, '', "Root schema with 'type' must have a 'name' property", ErrorCodes.SCHEMA_ROOT_MISSING_NAME);
+      } else if (typeof schema.name === 'string' && !IDENTIFIER_PATTERN.test(schema.name)) {
+        this.addError(context, `${path}/name`, "Root schema 'name' must be a valid identifier", ErrorCodes.SCHEMA_NAME_INVALID);
       }
     }
 
@@ -493,11 +503,15 @@ export class SchemaValidator {
 
     const props = this.isObject(schema.properties) ? schema.properties : {};
     for (let i = 0; i < tuple.length; i++) {
-      const name = tuple[i];
-      if (typeof name !== 'string') {
-        this.addError(context, `${path}/tuple[${i}]`, 'tuple elements must be strings', ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE);
-      } else if (!(name in props)) {
-        this.addError(context, `${path}/tuple[${i}]`, `Tuple element '${name}' not found in properties`, ErrorCodes.SCHEMA_TUPLE_PROPERTY_NOT_DEFINED);
+      const entry = tuple[i];
+      if (typeof entry === 'string') {
+        if (!(entry in props)) {
+          this.addError(context, `${path}/tuple[${i}]`, `Tuple element '${entry}' not found in properties`, ErrorCodes.SCHEMA_TUPLE_PROPERTY_NOT_DEFINED);
+        }
+      } else if (this.isObject(entry) && '$ref' in entry) {
+        this.validateRef(context, entry.$ref, `${path}/tuple[${i}]`);
+      } else {
+        this.addError(context, `${path}/tuple[${i}]`, 'tuple elements must be strings or $ref objects', ErrorCodes.SCHEMA_KEYWORD_INVALID_TYPE);
       }
     }
   }
@@ -518,7 +532,7 @@ export class SchemaValidator {
         continue;
       }
 
-      if (!this.hasExtension(schema, 'JSONStructureUnits')) {
+      if (!this.hasExtensionEnabled(context, schema, 'JSONStructureUnits')) {
         this.addError(
           context,
           `${path}/${keyword}`,
@@ -559,7 +573,7 @@ export class SchemaValidator {
         continue;
       }
 
-      if (!this.hasExtension(schema, 'JSONStructureRelations')) {
+      if (!this.hasExtensionEnabled(context, schema, 'JSONStructureRelations')) {
         this.addError(
           context,
           `${path}/${keyword}`,
@@ -656,6 +670,12 @@ export class SchemaValidator {
     return Array.isArray(schema.$uses) && schema.$uses.some(value => value === extensionName);
   }
 
+  private hasExtensionEnabled(context: SchemaValidationContext, schema: JsonObject, extensionName: string): boolean {
+    // Check current schema node first, then fall back to root document $uses
+    if (this.hasExtension(schema, extensionName)) return true;
+    return this.hasExtension(context.schema, extensionName);
+  }
+
   private validateChoiceType(context: SchemaValidationContext, schema: JsonObject, path: string): void {
     if (!('choices' in schema)) {
       this.addError(context, path, "Choice type must have 'choices' property", ErrorCodes.SCHEMA_CHOICE_MISSING_CHOICES);
@@ -695,6 +715,12 @@ export class SchemaValidator {
           }
           seen.add(serialized);
         }
+
+        for (let i = 0; i < enumVal.length; i++) {
+          if (!this.isEnumValueValidForPrimitiveType(type, enumVal[i])) {
+            this.addError(context, `${path}/enum[${i}]`, `enum value is not valid for type '${type}'`, ErrorCodes.SCHEMA_CONSTRAINT_TYPE_MISMATCH);
+          }
+        }
       }
     }
 
@@ -710,6 +736,22 @@ export class SchemaValidator {
     if (NUMERIC_TYPES.has(type)) {
       this.validateNumericConstraints(context, schema, path);
     }
+  }
+
+  private isEnumValueValidForPrimitiveType(type: string, value: JsonValue): boolean {
+    if (type === 'string') {
+      return typeof value === 'string';
+    }
+    if (NUMERIC_TYPES.has(type)) {
+      return typeof value === 'number';
+    }
+    if (type === 'boolean') {
+      return typeof value === 'boolean';
+    }
+    if (type === 'null') {
+      return value === null;
+    }
+    return true;
   }
 
   private validateStringConstraints(context: SchemaValidationContext, schema: JsonObject, path: string): void {
@@ -950,6 +992,10 @@ export class SchemaValidator {
       if (resolved === null) {
         this.addError(context, refPath, `$extends reference '${ref}' not found`, ErrorCodes.SCHEMA_EXTENDS_NOT_FOUND);
       } else {
+        if (resolved.type !== 'object' && resolved.type !== 'tuple') {
+          this.addError(context, refPath, `$extends target '${ref}' must resolve to an object or tuple type`, ErrorCodes.SCHEMA_CONSTRAINT_TYPE_MISMATCH);
+        }
+
         // Recursively validate the extended schema (which may have its own $extends)
         if ('$extends' in resolved) {
           this.validateExtends(context, resolved.$extends, refPath);

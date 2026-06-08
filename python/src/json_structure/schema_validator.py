@@ -208,7 +208,7 @@ class JSONStructureSchemaCoreValidator:
         if "$schema" in doc:
             self._check_is_absolute_uri(doc["$schema"], "$schema", "#/$schema")
         if "$id" in doc:
-            self._check_is_absolute_uri(doc["$id"], "$id", "#/$id")
+            self._check_root_id(doc["$id"], "#/$id")
         if "$uses" in doc:
             self._check_uses(doc["$uses"], "#/$uses")
         if "type" in doc and "$root" in doc:
@@ -292,6 +292,19 @@ class JSONStructureSchemaCoreValidator:
             return
         if not self.ABSOLUTE_URI_REGEX.search(value):
             self._err(f"'{keyword_name}' must be an absolute URI.", location)
+
+    def _check_root_id(self, value, location):
+        """
+        Validates the root $id keyword.
+        """
+        if not isinstance(value, str):
+            self._err("'$id' must be a string.", location)
+            return
+        if value.strip() == "":
+            self._err("$id must not be empty", location, ErrorCodes.SCHEMA_KEYWORD_EMPTY)
+            return
+        if not re.match(r'^[a-zA-Z][a-zA-Z0-9+\-.]*:', value):
+            self._err("$id must be a URI with a scheme", location, ErrorCodes.SCHEMA_CONSTRAINT_VALUE_INVALID)
 
     def _rewrite_refs(self, obj, target_path):
         """
@@ -513,8 +526,8 @@ class JSONStructureSchemaCoreValidator:
             if not isinstance(schema_obj["name"], str):
                 self._err(f"'name' must be a string.", path + "/name")
             else:
-                if not self.identifier_regex.match(schema_obj["name"]):
-                    self._err(f"'name' must match the identifier pattern.", path + "/name")
+                if not re.match(r'^[A-Za-z_$][A-Za-z0-9_$]*$', schema_obj["name"]):
+                    self._err("name must be a valid identifier", path + "/name", ErrorCodes.SCHEMA_NAME_INVALID)
         if "abstract" in schema_obj:
             if not isinstance(schema_obj["abstract"], bool):
                 self._err(f"'abstract' keyword must be boolean.", path + "/abstract")
@@ -636,6 +649,28 @@ class JSONStructureSchemaCoreValidator:
                         seen.append(item_str)
                     except (TypeError, ValueError):
                         pass  # Can't serialize, skip duplicate check for this item
+
+                    type_str = schema_obj.get("type")
+                    if isinstance(type_str, str) and type_str not in self.COMPOUND_TYPES:
+                        is_valid = True
+                        if type_str == "string":
+                            is_valid = isinstance(item, str)
+                        elif type_str in {
+                            "number", "integer", "int8", "uint8", "int16", "uint16", "int32", "uint32",
+                            "int64", "uint64", "int128", "uint128", "float8", "float", "double", "decimal"
+                        }:
+                            is_valid = isinstance(item, (int, float)) and not isinstance(item, bool)
+                        elif type_str == "boolean":
+                            is_valid = isinstance(item, bool)
+                        elif type_str == "null":
+                            is_valid = item is None
+
+                        if not is_valid:
+                            self._err(
+                                f"enum value is not valid for type '{type_str}'",
+                                f"{path}/enum[{idx}]",
+                                ErrorCodes.SCHEMA_CONSTRAINT_TYPE_MISMATCH
+                            )
             if "type" in schema_obj and isinstance(schema_obj["type"], str):
                 if schema_obj["type"] in self.COMPOUND_TYPES:
                     self._err("'enum' cannot be used with compound types.", path + "/enum")
@@ -1229,10 +1264,20 @@ class JSONStructureSchemaCoreValidator:
                 self._err("'tuple' keyword must be an array of strings.", path + "/tuple")
             else:
                 for idx, element in enumerate(tuple_order):
-                    if not isinstance(element, str):
-                        self._err(f"Element at index {idx} in 'tuple' array must be a string.", path + f"/tuple[{idx}]")
-                    elif "properties" in obj and isinstance(obj["properties"], dict) and element not in obj["properties"]:
-                        self._err(f"Element '{element}' in 'tuple' does not correspond to any property in 'properties'.", path + f"/tuple[{idx}]")
+                    element_path = path + f"/tuple[{idx}]"
+                    if isinstance(element, str):
+                        if "properties" in obj and isinstance(obj["properties"], dict) and element not in obj["properties"]:
+                            self._err(f"Element '{element}' in 'tuple' does not correspond to any property in 'properties'.", element_path)
+                    elif isinstance(element, dict) and "$ref" in element:
+                        ref = element["$ref"]
+                        if not isinstance(ref, str):
+                            self._err("JSON Pointer must be a string.", element_path + "/$ref")
+                        elif not ref.startswith("#"):
+                            self._err("JSON Pointer must start with '#' when referencing the same document.", element_path + "/$ref")
+                        elif self._resolve_json_pointer(ref) is None:
+                            self._err(f"$ref target '{ref}' not found.", element_path + "/$ref", ErrorCodes.SCHEMA_REF_NOT_FOUND)
+                    else:
+                        self._err(f"Element at index {idx} in 'tuple' array must be a string or a $ref object.", element_path)
 
     def _check_choice_schema(self, obj, path):
         """
@@ -1324,7 +1369,13 @@ class JSONStructureSchemaCoreValidator:
             resolved = self._resolve_json_pointer(ref)
             if resolved is None:
                 self._err(f"$extends reference '{ref}' not found.", ref_path, ErrorCodes.SCHEMA_EXTENDS_NOT_FOUND)
-            elif isinstance(resolved, dict) and "$extends" in resolved:
+            elif not isinstance(resolved, dict) or resolved.get("type") not in {"object", "tuple"}:
+                self._err(
+                    f"$extends target '{ref}' must resolve to an object or tuple type",
+                    ref_path,
+                    ErrorCodes.SCHEMA_CONSTRAINT_TYPE_MISMATCH
+                )
+            elif "$extends" in resolved:
                 # Recursively validate the extended schema's $extends
                 self._validate_extends_keyword(resolved["$extends"], ref_path)
             

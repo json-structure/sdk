@@ -65,6 +65,12 @@ public static class ErrorCodes
     /// <summary>Name is not a valid identifier.</summary>
     public const string SchemaNameInvalid = "SCHEMA_NAME_INVALID";
     
+    /// <summary>Constraint value has an invalid type for the schema type.</summary>
+    public const string SchemaConstraintTypeMismatch = "SCHEMA_CONSTRAINT_TYPE_MISMATCH";
+    
+    /// <summary>Constraint value is invalid.</summary>
+    public const string SchemaConstraintValueInvalid = "SCHEMA_CONSTRAINT_VALUE_INVALID";
+    
     /// <summary>Constraint is not valid for this type.</summary>
     public const string SchemaConstraintInvalidForType = "SCHEMA_CONSTRAINT_INVALID_FOR_TYPE";
     

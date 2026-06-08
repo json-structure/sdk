@@ -1195,8 +1195,7 @@ describe('SchemaValidator', () => {
         expect(result.errors.some(e => e.message.includes('$extends reference') && e.message.includes('not found'))).toBe(true);
       });
 
-      it.skip('should reject $extends referencing a non-object definition', () => {
-        // TODO: validator does not yet enforce object-only $extends targets.
+      it('should reject $extends referencing a non-object definition', () => {
         const schema = {
           $id: 'urn:example:extends-primitive',
           name: 'Employee',
@@ -1395,8 +1394,7 @@ describe('SchemaValidator', () => {
         expect(result.errors.some(e => e.path === '#/definitions/Broken/type' && e.message.includes('type must be a string, array, or object with $ref'))).toBe(true);
       });
 
-      it.skip('should reject tuple entries that reference a type that does not exist', () => {
-        // TODO: validator does not yet model tuple entries as type references.
+      it('should reject tuple entries that reference a type that does not exist', () => {
         const schema = {
           $id: 'urn:example:tuple-missing-ref',
           name: 'TupleMissingRef',
@@ -1443,8 +1441,7 @@ describe('SchemaValidator', () => {
     });
 
     describe('extension keywords nested under root $uses', () => {
-      it.skip('should accept nested ucumUnit when the root enables JSONStructureUnits', () => {
-        // TODO: validator does not yet inherit root-level $uses into nested schemas.
+      it('should accept nested ucumUnit when the root enables JSONStructureUnits', () => {
         const schema = {
           $id: 'urn:example:nested-ucum-with-root-uses',
           name: 'MeasurementEnvelope',
@@ -1468,8 +1465,7 @@ describe('SchemaValidator', () => {
         expect(result.isValid).toBe(true);
       });
 
-      it.skip('should accept nested relations when the root enables JSONStructureRelations', () => {
-        // TODO: validator does not yet inherit root-level $uses into nested schemas.
+      it('should accept nested relations when the root enables JSONStructureRelations', () => {
         const schema = {
           $id: 'urn:example:nested-relations-with-root-uses',
           name: 'OrderEnvelope',
@@ -1636,8 +1632,7 @@ describe('SchemaValidator', () => {
         expect(result.errors.some(e => e.message.includes("Missing required '$id' keyword at root"))).toBe(true);
       });
 
-      it.skip('should reject empty $id', () => {
-        // TODO: validator does not yet enforce non-empty $id values.
+      it('should reject empty $id', () => {
         const schema = {
           $id: '',
           name: 'EmptyId',
@@ -1649,8 +1644,7 @@ describe('SchemaValidator', () => {
         expect(result.isValid).toBe(false);
       });
 
-      it.skip('should reject relative $id values without a scheme', () => {
-        // TODO: validator does not yet validate $id URI syntax.
+      it('should reject relative $id values without a scheme', () => {
         const schema = {
           $id: 'relative/path',
           name: 'RelativeId',
@@ -1687,8 +1681,7 @@ describe('SchemaValidator', () => {
         expect(result.errors.some(e => e.message.includes("must have a 'name' property"))).toBe(true);
       });
 
-      it.skip('should reject names starting with a digit', () => {
-        // TODO: validator does not yet enforce identifier syntax for name.
+      it('should reject names starting with a digit', () => {
         const schema = {
           $id: 'urn:example:digit-name',
           name: '1InvalidName',
@@ -1700,8 +1693,7 @@ describe('SchemaValidator', () => {
         expect(result.isValid).toBe(false);
       });
 
-      it.skip('should reject names containing spaces', () => {
-        // TODO: validator does not yet enforce identifier syntax for name.
+      it('should reject names containing spaces', () => {
         const schema = {
           $id: 'urn:example:space-name',
           name: 'Invalid Name',
@@ -1742,8 +1734,7 @@ describe('SchemaValidator', () => {
         expect(result.errors).toHaveLength(0);
       });
 
-      it.skip('should reject mixed enum types when the schema type is string', () => {
-        // TODO: validator does not yet enforce enum element types against the declared type.
+      it('should reject mixed enum types when the schema type is string', () => {
         const schema = {
           $id: 'urn:example:enum-mixed-string',
           name: 'MixedStringEnum',
@@ -1915,3 +1906,4 @@ describe('SchemaValidator', () => {
     });
   });
 });
+

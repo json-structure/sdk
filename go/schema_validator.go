@@ -143,6 +143,11 @@ var validationExtensionKeywords = map[string]bool{
 	"has": true, "default": true,
 }
 
+var (
+	uriSchemePattern  = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9+\-.]*:`)
+	identifierPattern = regexp.MustCompile(`^[A-Za-z_$][A-Za-z0-9_$]*$`)
+)
+
 func hasExtension(schema map[string]interface{}, extension string) bool {
 	if uses, ok := schema["$uses"].([]interface{}); ok {
 		for _, use := range uses {
@@ -154,8 +159,18 @@ func hasExtension(schema map[string]interface{}, extension string) bool {
 	return false
 }
 
+func (ctx *schemaValidationContext) hasExtensionEnabled(schema map[string]interface{}, extension string) bool {
+	if hasExtension(schema, extension) {
+		return true
+	}
+	if ctx.schema != nil {
+		return hasExtension(ctx.schema, extension)
+	}
+	return false
+}
+
 func (ctx *schemaValidationContext) validateUnitsKeywords(schema map[string]interface{}, path string) {
-	unitsEnabled := hasExtension(schema, "JSONStructureUnits")
+	unitsEnabled := ctx.hasExtensionEnabled(schema, "JSONStructureUnits")
 	for _, keyword := range []string{"unit", "ucumUnit", "currency", "symbols"} {
 		value, ok := schema[keyword]
 		if !ok {
@@ -188,7 +203,7 @@ func (ctx *schemaValidationContext) validateRelationsKeywords(schema map[string]
 		return
 	}
 
-	if !hasExtension(schema, "JSONStructureRelations") {
+	if !ctx.hasExtensionEnabled(schema, "JSONStructureRelations") {
 		if hasIdentity {
 			ctx.addError(path+"/identity", "identity requires JSONStructureRelations in $uses", SchemaExtensionKeywordNotEnabled)
 		}
@@ -301,15 +316,27 @@ func (ctx *schemaValidationContext) validateSchemaDocument(schema map[string]int
 	isRoot := path == "#"
 	if isRoot {
 		// Root schema must have $id
-		if _, hasID := schema["$id"]; !hasID {
+		if idVal, hasID := schema["$id"]; !hasID {
 			ctx.addError("", "Missing required '$id' keyword at root", SchemaRootMissingID)
+		} else if idStr, ok := idVal.(string); ok {
+			trimmedID := strings.TrimSpace(idStr)
+			if trimmedID == "" {
+				ctx.addError(path+"/$id", "$id must not be empty", SchemaKeywordEmpty)
+			} else if !uriSchemePattern.MatchString(trimmedID) {
+				ctx.addError(path+"/$id", "$id must be a URI with a scheme", SchemaConstraintValueInvalid)
+			}
 		}
 
 		// Root schema with 'type' must have 'name'
 		_, hasType := schema["type"]
-		_, hasName := schema["name"]
+		nameVal, hasName := schema["name"]
 		if hasType && !hasName {
 			ctx.addError("", "Root schema with 'type' must have a 'name' property", SchemaRootMissingName)
+		} else if hasType {
+			nameStr, ok := nameVal.(string)
+			if !ok || !identifierPattern.MatchString(nameStr) {
+				ctx.addError(path+"/name", "name must be a valid identifier", SchemaNameInvalid)
+			}
 		}
 	}
 
@@ -669,13 +696,30 @@ func (ctx *schemaValidationContext) validateTupleType(schema map[string]interfac
 
 	propsMap, _ := schema["properties"].(map[string]interface{})
 	for i, elem := range tupleArr {
-		name, isStr := elem.(string)
-		if !isStr {
-			ctx.addError(fmt.Sprintf("%s/tuple[%d]", path, i), "tuple elements must be strings", SchemaKeywordInvalidType)
-		} else if propsMap != nil {
-			if _, exists := propsMap[name]; !exists {
-				ctx.addError(fmt.Sprintf("%s/tuple[%d]", path, i), fmt.Sprintf("Tuple element '%s' not found in properties", name), SchemaRequiredPropertyNotDefined)
+		elemPath := fmt.Sprintf("%s/tuple[%d]", path, i)
+		switch tupleElem := elem.(type) {
+		case string:
+			if propsMap != nil {
+				if _, exists := propsMap[tupleElem]; !exists {
+					ctx.addError(elemPath, fmt.Sprintf("Tuple element '%s' not found in properties", tupleElem), SchemaRequiredPropertyNotDefined)
+				}
 			}
+		case map[string]interface{}:
+			refVal, hasRef := tupleElem["$ref"]
+			if !hasRef {
+				ctx.addError(elemPath, "tuple elements must be strings or $ref objects", SchemaKeywordInvalidType)
+				continue
+			}
+			refStr, ok := refVal.(string)
+			if !ok {
+				ctx.addError(elemPath+"/$ref", "$ref must be a string", SchemaKeywordInvalidType)
+				continue
+			}
+			if ctx.resolveRef(refStr) == nil {
+				ctx.addError(elemPath+"/$ref", fmt.Sprintf("$ref '%s' not found", refStr), SchemaRefNotFound)
+			}
+		default:
+			ctx.addError(elemPath, "tuple elements must be strings or $ref objects", SchemaKeywordInvalidType)
 		}
 	}
 }
@@ -702,6 +746,23 @@ func (ctx *schemaValidationContext) validateChoiceType(schema map[string]interfa
 	}
 }
 
+func isEnumValueValidForType(typeStr string, value interface{}) bool {
+	switch {
+	case typeStr == "string":
+		_, ok := value.(string)
+		return ok
+	case isNumericType(typeStr):
+		return isNumber(value)
+	case typeStr == "boolean":
+		_, ok := value.(bool)
+		return ok
+	case typeStr == "null":
+		return value == nil
+	default:
+		return true
+	}
+}
+
 func (ctx *schemaValidationContext) validatePrimitiveConstraints(typeStr string, schema map[string]interface{}, path string) {
 	// Validate enum
 	if enumVal, ok := schema["enum"]; ok {
@@ -720,6 +781,9 @@ func (ctx *schemaValidationContext) validatePrimitiveConstraints(typeStr string,
 					break
 				}
 				seen[string(serialized)] = true
+				if !isEnumValueValidForType(typeStr, enumArr[i]) {
+					ctx.addError(fmt.Sprintf("%s/enum[%d]", path, i), fmt.Sprintf("enum value is not valid for type '%s'", typeStr), SchemaConstraintTypeMismatch)
+				}
 			}
 		}
 	}
@@ -983,9 +1047,14 @@ func (ctx *schemaValidationContext) validateExtends(extendsVal interface{}, path
 		resolved := ctx.resolveRef(ref)
 		if resolved == nil {
 			ctx.addError(refPath, fmt.Sprintf("$extends reference '%s' not found", ref), SchemaExtendsNotFound)
-		} else if extendsVal, hasExtends := resolved["$extends"]; hasExtends {
-			// Recursively validate the extended schema's $extends
-			ctx.validateExtends(extendsVal, refPath)
+		} else {
+			resolvedType, _ := resolved["type"].(string)
+			if resolvedType != "object" && resolvedType != "tuple" {
+				ctx.addError(refPath, fmt.Sprintf("$extends target '%s' must resolve to an object or tuple type", ref), SchemaConstraintTypeMismatch)
+			} else if extendsVal, hasExtends := resolved["$extends"]; hasExtends {
+				// Recursively validate the extended schema's $extends
+				ctx.validateExtends(extendsVal, refPath)
+			}
 		}
 		delete(ctx.seenExtends, ref)
 	}

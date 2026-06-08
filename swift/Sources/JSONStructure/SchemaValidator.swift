@@ -2,6 +2,7 @@
 // Schema Validator - validates JSON Structure schema documents
 
 import Foundation
+import CoreFoundation
 
 /// Validates JSON Structure schema documents.
 ///
@@ -129,11 +130,20 @@ private final class ValidationEngine {
             // Root schema must have $id
             if schema["$id"] == nil {
                 addError("", "Missing required '$id' keyword at root", schemaRootMissingID)
+            } else if let id = schema["$id"] as? String {
+                let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed.isEmpty {
+                    addError("\(path)/$id", "$id must not be empty", schemaKeywordEmpty)
+                } else if !hasURIScheme(trimmed) {
+                    addError("\(path)/$id", "$id must be a URI with a scheme", schemaConstraintValueInvalid)
+                }
             }
             
             // Root schema with 'type' must have 'name'
             if schema["type"] != nil && schema["name"] == nil {
                 addError("", "Root schema with 'type' must have a 'name' property", schemaRootMissingName)
+            } else if schema["name"] != nil && !isValidIdentifier(schema["name"]) {
+                addError("\(path)/name", "name must be a valid identifier", schemaNameInvalid)
             }
         }
         
@@ -481,16 +491,21 @@ private final class ValidationEngine {
         let propsMap = schema["properties"] as? [String: Any]
         
         for (i, elem) in tupleArr.enumerated() {
-            guard let name = elem as? String else {
-                addError("\(path)/tuple[\(i)]", "tuple elements must be strings", schemaKeywordInvalidType)
+            if let name = elem as? String {
+                if let props = propsMap {
+                    if props[name] == nil {
+                        addError("\(path)/tuple[\(i)]", "Tuple element '\(name)' not found in properties", schemaRequiredPropertyNotDefined)
+                    }
+                }
                 continue
             }
-            
-            if let props = propsMap {
-                if props[name] == nil {
-                    addError("\(path)/tuple[\(i)]", "Tuple element '\(name)' not found in properties", schemaRequiredPropertyNotDefined)
-                }
+
+            if let refObject = elem as? [String: Any], let ref = refObject["$ref"] {
+                validateRef(ref, "\(path)/tuple[\(i)]/$ref")
+                continue
             }
+
+            addError("\(path)/tuple[\(i)]", "tuple elements must be strings or $ref objects", schemaKeywordInvalidType)
         }
     }
     
@@ -534,6 +549,13 @@ private final class ValidationEngine {
                             break
                         }
                         seen.insert(str)
+                    }
+                }
+
+                for item in enumArr {
+                    if !isEnumValueValid(item, forType: typeStr) {
+                        addError("\(path)/enum", "enum value is not valid for type '\(typeStr)'", schemaConstraintTypeMismatch)
+                        break
                     }
                 }
             }
@@ -960,7 +982,10 @@ private final class ValidationEngine {
             seenExtends.insert(ref)
             
             if let resolved = resolveRef(ref) {
-                if let extendsVal = resolved["$extends"] {
+                let resolvedType = resolved["type"] as? String
+                if resolvedType != "object" && resolvedType != "tuple" {
+                    addError(refPath, "$extends target '\(ref)' must resolve to an object or tuple type", schemaConstraintTypeMismatch)
+                } else if let extendsVal = resolved["$extends"] {
                     validateExtends(extendsVal, refPath)
                 }
             } else {
@@ -1044,6 +1069,57 @@ private final class ValidationEngine {
         }
         
         return current as? [String: Any]
+    }
+
+    private func hasURIScheme(_ value: String) -> Bool {
+        value.range(of: "^[a-zA-Z][a-zA-Z0-9+\\-.]*:", options: .regularExpression) != nil
+    }
+
+    private func isValidIdentifier(_ value: Any?) -> Bool {
+        guard let value = value as? String else {
+            return false
+        }
+
+        return value.range(of: "^[A-Za-z_$][A-Za-z0-9_$]*$", options: .regularExpression) != nil
+    }
+
+    private func isEnumValueValid(_ value: Any, forType type: String) -> Bool {
+        switch type {
+        case "string":
+            return value is String
+        case "boolean":
+            return isJSONBoolean(value)
+        case "null":
+            return value is NSNull
+        case "integer", "int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64", "float", "double", "decimal":
+            return isJSONNumber(value)
+        default:
+            return true
+        }
+    }
+
+    private func isJSONBoolean(_ value: Any) -> Bool {
+        if value is Bool {
+            return true
+        }
+
+        guard let number = value as? NSNumber else {
+            return false
+        }
+
+        return CFGetTypeID(number) == CFBooleanGetTypeID()
+    }
+
+    private func isJSONNumber(_ value: Any) -> Bool {
+        if value is Bool {
+            return false
+        }
+
+        if let number = value as? NSNumber {
+            return CFGetTypeID(number) != CFBooleanGetTypeID()
+        }
+
+        return value is Int || value is Double || value is Float || value is Decimal
     }
     
     /// Serializes any value to a comparable string for uniqueness checks.

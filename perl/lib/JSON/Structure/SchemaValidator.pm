@@ -456,6 +456,19 @@ sub _check_required_top_level_keywords {
         $self->_add_error( SCHEMA_ROOT_MISSING_ID,
             "Missing required '\$id' keyword at root", $location );
     }
+    elsif ( defined $obj->{'$id'} && !ref( $obj->{'$id'} ) ) {
+        if ( $obj->{'$id'} eq '' ) {
+            $self->_add_error( SCHEMA_KEYWORD_EMPTY,
+                '\$id must not be empty', '#/$id' );
+        }
+        elsif ( $obj->{'$id'} !~ /^[a-zA-Z][a-zA-Z0-9+\-.]*:/ ) {
+            $self->_add_error(
+                SCHEMA_CONSTRAINT_VALUE_INVALID,
+                '\$id must be a URI with a scheme',
+                '#/$id'
+            );
+        }
+    }
 
     # Root schema with 'type' must have 'name'
     if ( exists $obj->{type} && !exists $obj->{name} ) {
@@ -788,14 +801,12 @@ sub _validate_schema {
 
     # Validate name if present
     if ( exists $schema->{name} ) {
-        my $id_regex =
-          $self->{allow_dollar} ? $IDENTIFIER_DOLLAR_REGEX : $IDENTIFIER_REGEX;
         if (  !defined $schema->{name}
             || ref( $schema->{name} )
-            || $schema->{name} !~ $id_regex )
+            || $schema->{name} !~ $IDENTIFIER_DOLLAR_REGEX )
         {
             $self->_add_error( SCHEMA_NAME_INVALID,
-                "'name' must be a valid identifier", "$path/name" );
+                'name must be a valid identifier', "$path/name" );
         }
     }
 
@@ -873,7 +884,7 @@ sub _validate_schema {
 
     # Validate enum
     if ( exists $schema->{enum} ) {
-        $self->_validate_enum( $schema->{enum}, "$path/enum" );
+        $self->_validate_enum( $schema->{enum}, "$path/enum", $schema->{type} );
     }
 
     # Validate const
@@ -1233,10 +1244,25 @@ sub _validate_tuple {
         return;
     }
 
-    # Validate each tuple entry exists in properties
+    # Validate each tuple entry exists in properties or resolves via $ref
     if ( defined $properties && ref($properties) eq 'HASH' ) {
         for my $i ( 0 .. $#$tuple ) {
             my $prop = $tuple->[$i];
+
+            if ( ref($prop) eq 'HASH' && exists $prop->{'$ref'} ) {
+                my $ref = $prop->{'$ref'};
+                my $target =
+                  defined $ref && !ref($ref)
+                  ? $self->_resolve_json_pointer( $ref, $self->{doc} )
+                  : undef;
+                if ( !defined $target ) {
+                    $self->_add_error( SCHEMA_REF_NOT_FOUND,
+                        "\$ref target does not exist: $ref",
+                        "$path/tuple[$i]/\$ref" );
+                }
+                next;
+            }
+
             if ( !defined $prop || ref($prop) ) {
                 $self->_add_error( SCHEMA_KEYWORD_INVALID_TYPE,
                     "tuple[$i] must be a string",
@@ -1256,7 +1282,7 @@ sub _validate_tuple {
 }
 
 sub _validate_enum {
-    my ( $self, $enum, $path ) = @_;
+    my ( $self, $enum, $path, $type ) = @_;
 
     if ( ref($enum) ne 'ARRAY' ) {
         $self->_add_error( SCHEMA_ENUM_NOT_ARRAY, 'enum must be an array',
@@ -1283,6 +1309,36 @@ sub _validate_enum {
         }
         $seen{$key} = 1;
     }
+
+    if ( defined $type && !ref($type) && !exists $COMPOUND_TYPES{$type} ) {
+        for my $i ( 0 .. $#$enum ) {
+            next if _enum_value_matches_type( $enum->[$i], $type );
+            $self->_add_error(
+                SCHEMA_CONSTRAINT_TYPE_MISMATCH,
+                "enum value at index $i does not match declared type '$type'",
+                "$path\[$i]"
+            );
+        }
+    }
+}
+
+sub _enum_value_matches_type {
+    my ( $value, $type ) = @_;
+
+    return !defined $value if $type eq 'null';
+    return _is_json_bool($value) if $type eq 'boolean';
+    return defined $value
+      && !ref($value)
+      && !_is_json_bool($value)
+      && looks_like_number($value)
+      if exists $NUMERIC_TYPES{$type};
+    return defined $value
+      && !ref($value)
+      && !_is_json_bool($value)
+      && !looks_like_number($value)
+      if $type eq 'string';
+
+    return 1;
 }
 
 sub _value_to_key {
@@ -1364,6 +1420,22 @@ sub _validate_extends {
             "$path/\$extends"
         );
     }
+    elsif (
+        ref($target) ne 'HASH'
+        || !defined $target->{type}
+        || ref( $target->{type} )
+        || (   $target->{type} ne 'object'
+            && $target->{type} ne 'tuple' )
+      )
+    {
+        $self->_add_error(
+            SCHEMA_CONSTRAINT_TYPE_MISMATCH,
+            "\$extends target '$extends' must resolve to an object or tuple type",
+            "$path/\$extends"
+        );
+    }
+
+    delete $self->{seen_extends}{$extends};
 }
 
 sub _has_enabled_extension {

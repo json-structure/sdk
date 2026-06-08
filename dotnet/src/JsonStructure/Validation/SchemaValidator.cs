@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 using System.Linq;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
@@ -93,8 +94,19 @@ public sealed class SchemaValidator
         RegexOptions.Compiled);
 
     private static readonly Regex IdentifierPattern = new(
-        @"^[a-zA-Z_][a-zA-Z0-9_]*$",
+        @"^[A-Za-z_$][A-Za-z0-9_$]*$",
         RegexOptions.Compiled);
+
+    private static readonly Regex UriSchemePattern = new(
+        @"^[a-zA-Z][a-zA-Z0-9+\-.]*:",
+        RegexOptions.Compiled);
+
+    private static readonly HashSet<string> EnumNumericTypes = new(StringComparer.Ordinal)
+    {
+        "integer", "int8", "int16", "int32", "int64",
+        "uint8", "uint16", "uint32", "uint64",
+        "float", "double", "decimal"
+    };
 
     /// <summary>
     /// Internal context for a single validation operation.
@@ -571,6 +583,10 @@ public sealed class SchemaValidator
             {
                 AddError(result, ErrorCodes.SchemaRootMissingName, "Root schema with 'type' must have a 'name' property", "");
             }
+            else if (schema.TryGetPropertyValue("name", out var nameValue))
+            {
+                ValidateIdentifier(nameValue, "name", path, result);
+            }
         }
 
         // Validate $schema if present
@@ -591,6 +607,17 @@ public sealed class SchemaValidator
         if (schema.TryGetPropertyValue("$id", out var idValue))
         {
             ValidateStringProperty(idValue, "$id", path, result);
+            if (idValue is JsonValue idJsonValue && idJsonValue.TryGetValue<string>(out var id))
+            {
+                if (string.IsNullOrWhiteSpace(id))
+                {
+                    AddError(result, ErrorCodes.SchemaKeywordEmpty, "$id must not be empty", AppendPath(path, "$id"));
+                }
+                else if (!UriSchemePattern.IsMatch(id))
+                {
+                    AddError(result, ErrorCodes.SchemaConstraintValueInvalid, "$id must be a URI with a scheme", AppendPath(path, "$id"));
+                }
+            }
         }
 
         // Check for bare $ref - this is NOT permitted per spec Section 3.4.1
@@ -718,7 +745,7 @@ public sealed class SchemaValidator
         // Validate enum if present
         if (schema.TryGetPropertyValue("enum", out var enumValue))
         {
-            ValidateEnum(enumValue, path, result);
+            ValidateEnum(enumValue, typeStr, path, result);
         }
 
         // Validate const if present - const value must be conformant with the type definition
@@ -764,8 +791,7 @@ public sealed class SchemaValidator
 
         if (!IdentifierPattern.IsMatch(str))
         {
-            AddError(result, ErrorCodes.SchemaNameInvalid, $"{keyword} must be a valid identifier (start with letter or underscore, contain only letters, digits, underscores)", 
-                AppendPath(path, keyword));
+            AddError(result, ErrorCodes.SchemaNameInvalid, $"{keyword} must be a valid identifier", AppendPath(path, keyword));
         }
     }
 
@@ -850,10 +876,25 @@ public sealed class SchemaValidator
             {
                 AddError(result, ErrorCodes.SchemaExtendsNotFound, $"$extends reference '{refStr}' not found", refPath);
             }
-            else if (resolved is JsonObject resolvedObj && resolvedObj.TryGetPropertyValue("$extends", out var nestedExtends))
+            else if (resolved is not JsonObject resolvedObj)
             {
-                // Recursively validate the extended schema's $extends
-                ValidateExtendsKeyword(nestedExtends, refPath, result);
+                AddError(result, ErrorCodes.SchemaConstraintTypeMismatch, $"$extends target '{refStr}' must resolve to an object or tuple type", refPath);
+            }
+            else
+            {
+                var resolvedType = resolvedObj.TryGetPropertyValue("type", out var resolvedTypeValue)
+                    ? GetTypeString(resolvedTypeValue)
+                    : null;
+
+                if (resolvedType is not ("object" or "tuple"))
+                {
+                    AddError(result, ErrorCodes.SchemaConstraintTypeMismatch, $"$extends target '{refStr}' must resolve to an object or tuple type", refPath);
+                }
+                else if (resolvedObj.TryGetPropertyValue("$extends", out var nestedExtends))
+                {
+                    // Recursively validate the extended schema's $extends
+                    ValidateExtendsKeyword(nestedExtends, refPath, result);
+                }
             }
             
             ctx.VisitedExtends.Remove(refStr);
@@ -1578,12 +1619,26 @@ public sealed class SchemaValidator
             }
             else if (schema.TryGetPropertyValue("properties", out var propsValue) && propsValue is JsonObject props)
             {
-                foreach (var propName in tupleArr)
+                for (int i = 0; i < tupleArr.Count; i++)
                 {
-                    var name = propName?.GetValue<string>();
-                    if (name is not null && props.TryGetPropertyValue(name, out var propSchema))
+                    var tupleEntry = tupleArr[i];
+                    if (tupleEntry is JsonValue propNameValue && propNameValue.TryGetValue<string>(out var name))
                     {
-                        ValidateSchemaCore(propSchema!, result, AppendPath(path, $"properties/{name}"), depth + 1, visitedRefs);
+                        if (props.TryGetPropertyValue(name, out var propSchema))
+                        {
+                            ValidateSchemaCore(propSchema!, result, AppendPath(path, $"properties/{name}"), depth + 1, visitedRefs);
+                        }
+
+                        continue;
+                    }
+
+                    if (tupleEntry is JsonObject refObject && refObject.TryGetPropertyValue("$ref", out var refValue))
+                    {
+                        ValidateReference(refValue, "$ref", $"{AppendPath(path, "tuple")}[{i}]", result);
+                        if (refValue is JsonValue refJsonValue && refJsonValue.TryGetValue<string>(out var refStr) && ResolveLocalRef(refStr) is null)
+                        {
+                            AddError(result, ErrorCodes.SchemaRefNotFound, $"$ref target does not exist: {refStr}", $"{AppendPath(path, "tuple")}[{i}]/$ref");
+                        }
                     }
                 }
             }
@@ -1776,7 +1831,7 @@ public sealed class SchemaValidator
         }
     }
 
-    private void ValidateEnum(JsonNode? value, string path, ValidationResult result)
+    private void ValidateEnum(JsonNode? value, string? typeStr, string path, ValidationResult result)
     {
         if (value is not JsonArray arr)
         {
@@ -1801,6 +1856,33 @@ public sealed class SchemaValidator
                 break;
             }
         }
+
+        if (string.IsNullOrEmpty(typeStr))
+        {
+            return;
+        }
+
+        foreach (var item in arr)
+        {
+            if (!IsEnumValueValidForType(item, typeStr))
+            {
+                AddError(result, ErrorCodes.SchemaConstraintTypeMismatch, $"enum value is not valid for type '{typeStr}'", AppendPath(path, "enum"));
+                break;
+            }
+        }
+    }
+
+    private static bool IsEnumValueValidForType(JsonNode? value, string typeStr)
+    {
+        var valueKind = value?.GetValueKind() ?? JsonValueKind.Null;
+        return typeStr switch
+        {
+            "string" => valueKind == JsonValueKind.String,
+            "boolean" => valueKind is JsonValueKind.True or JsonValueKind.False,
+            "null" => valueKind == JsonValueKind.Null,
+            _ when EnumNumericTypes.Contains(typeStr) => valueKind == JsonValueKind.Number,
+            _ => true
+        };
     }
 
     private void ValidateConstValue(JsonNode? constValue, string? typeStr, string path, ValidationResult result)

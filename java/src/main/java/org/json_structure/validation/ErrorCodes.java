@@ -54,6 +54,8 @@ public final class ErrorCodes {
     public static final String SCHEMA_CONSTRAINT_INVALID_FOR_TYPE = "SCHEMA_CONSTRAINT_INVALID_FOR_TYPE";
     /** Keyword is used with an incompatible schema type. */
     public static final String SCHEMA_CONSTRAINT_TYPE_MISMATCH = "SCHEMA_CONSTRAINT_TYPE_MISMATCH";
+    /** Constraint value is invalid. */
+    public static final String SCHEMA_CONSTRAINT_VALUE_INVALID = "SCHEMA_CONSTRAINT_VALUE_INVALID";
     /** Minimum cannot be greater than maximum. */
     public static final String SCHEMA_MIN_GREATER_THAN_MAX = "SCHEMA_MIN_GREATER_THAN_MAX";
     /** Properties must be an object. */

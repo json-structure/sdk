@@ -21,7 +21,7 @@ use crate::types::{
 /// use json_structure::SchemaValidator;
 ///
 /// let validator = SchemaValidator::new();
-/// let result = validator.validate(r#"{"$id": "test", "name": "Test", "type": "string"}"#);
+/// let result = validator.validate(r#"{"$id": "https://example.com/test", "name": "Test", "type": "string"}"#);
 /// assert!(result.is_valid());
 /// ```
 pub struct SchemaValidator {
@@ -299,7 +299,7 @@ impl SchemaValidator {
 
         // Validate enum
         if let Some(enum_val) = obj.get("enum") {
-            self.validate_enum(enum_val, locator, result, path);
+            self.validate_enum(enum_val, type_name, locator, result, path);
         }
 
         // Validate composition keywords
@@ -328,6 +328,9 @@ impl SchemaValidator {
         result: &mut ValidationResult,
         path: &str,
     ) {
+        let id_path = format!("{}/$id", path);
+        let name_path = format!("{}/name", path);
+
         // Root must have $id
         if !obj.contains_key("$id") {
             result.add_error(ValidationError::schema_error(
@@ -341,9 +344,25 @@ impl SchemaValidator {
                 result.add_error(ValidationError::schema_error(
                     SchemaErrorCode::SchemaRootMissingId,
                     "$id must be a string",
-                    &format!("{}/$id", path),
-                    locator.get_location(&format!("{}/$id", path)),
+                    &id_path,
+                    locator.get_location(&id_path),
                 ));
+            } else if let Some(id_str) = id.as_str() {
+                if id_str.trim().is_empty() {
+                    result.add_error(ValidationError::schema_error(
+                        SchemaErrorCode::SchemaKeywordEmpty,
+                        "$id must not be empty",
+                        &id_path,
+                        locator.get_location(&id_path),
+                    ));
+                } else if !Self::has_uri_scheme(id_str) {
+                    result.add_error(ValidationError::schema_error(
+                        SchemaErrorCode::SchemaConstraintValueInvalid,
+                        "$id must be a URI with a scheme",
+                        &id_path,
+                        locator.get_location(&id_path),
+                    ));
+                }
             }
         }
 
@@ -355,6 +374,15 @@ impl SchemaValidator {
                 path,
                 locator.get_location(path),
             ));
+        } else if let Some(name) = obj.get("name").and_then(Value::as_str) {
+            if !Self::is_valid_identifier(name) {
+                result.add_error(ValidationError::schema_error(
+                    SchemaErrorCode::SchemaNameInvalid,
+                    "name must be a valid identifier",
+                    &name_path,
+                    locator.get_location(&name_path),
+                ));
+            }
         }
 
         // Root must have type OR $root OR definitions OR composition keyword
@@ -572,6 +600,46 @@ impl SchemaValidator {
         }
 
         Some(current)
+    }
+
+    fn has_uri_scheme(value: &str) -> bool {
+        let Some(colon_pos) = value.find(':') else {
+            return false;
+        };
+
+        let mut chars = value[..colon_pos].chars();
+        let Some(first) = chars.next() else {
+            return false;
+        };
+
+        if !first.is_ascii_alphabetic() {
+            return false;
+        }
+
+        chars.all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '+' | '-' | '.'))
+    }
+
+    fn is_valid_identifier(value: &str) -> bool {
+        let mut chars = value.chars();
+        let Some(first) = chars.next() else {
+            return false;
+        };
+
+        if !(first.is_ascii_alphabetic() || matches!(first, '_' | '$')) {
+            return false;
+        }
+
+        chars.all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '$'))
+    }
+
+    fn enum_value_matches_type(type_name: &str, value: &Value) -> bool {
+        match type_name {
+            "string" => matches!(value, Value::String(_)),
+            "boolean" => matches!(value, Value::Bool(_)),
+            "null" => matches!(value, Value::Null),
+            _ if crate::types::is_numeric_type(type_name) => matches!(value, Value::Number(_)),
+            _ => true,
+        }
     }
 
     /// Validates the type keyword and type-specific requirements.
@@ -1240,7 +1308,7 @@ impl SchemaValidator {
     fn validate_tuple_type(
         &self,
         obj: &serde_json::Map<String, Value>,
-        _root_schema: &Value,
+        root_schema: &Value,
         locator: &JsonSourceLocator,
         result: &mut ValidationResult,
         path: &str,
@@ -1267,6 +1335,7 @@ impl SchemaValidator {
                     let properties = obj.get("properties").and_then(Value::as_object);
 
                     for (i, item) in arr.iter().enumerate() {
+                        let item_path = format!("{}/{}", tuple_path, i);
                         match item {
                             Value::String(s) => {
                                 // Check property exists
@@ -1278,18 +1347,43 @@ impl SchemaValidator {
                                                 "Tuple element references undefined property: {}",
                                                 s
                                             ),
-                                            &format!("{}/{}", tuple_path, i),
-                                            locator.get_location(&format!("{}/{}", tuple_path, i)),
+                                            &item_path,
+                                            locator.get_location(&item_path),
                                         ));
                                     }
+                                }
+                            }
+                            Value::Object(ref_obj) if ref_obj.contains_key("$ref") => {
+                                match ref_obj.get("$ref") {
+                                    Some(Value::String(ref_str)) => {
+                                        if self.resolve_ref(ref_str, root_schema).is_none() {
+                                            let ref_path = format!("{}/$ref", item_path);
+                                            result.add_error(ValidationError::schema_error(
+                                                SchemaErrorCode::SchemaRefNotFound,
+                                                format!("Reference not found: {}", ref_str),
+                                                &ref_path,
+                                                locator.get_location(&ref_path),
+                                            ));
+                                        }
+                                    }
+                                    Some(_) => {
+                                        let ref_path = format!("{}/$ref", item_path);
+                                        result.add_error(ValidationError::schema_error(
+                                            SchemaErrorCode::SchemaRefNotString,
+                                            "$ref must be a string",
+                                            &ref_path,
+                                            locator.get_location(&ref_path),
+                                        ));
+                                    }
+                                    None => {}
                                 }
                             }
                             _ => {
                                 result.add_error(ValidationError::schema_error(
                                     SchemaErrorCode::SchemaTupleInvalidFormat,
-                                    "Tuple element must be a string (property name)",
-                                    &format!("{}/{}", tuple_path, i),
-                                    locator.get_location(&format!("{}/{}", tuple_path, i)),
+                                    "Tuple element must be a string (property name) or $ref object",
+                                    &item_path,
+                                    locator.get_location(&item_path),
                                 ));
                             }
                         }
@@ -1507,6 +1601,7 @@ impl SchemaValidator {
     fn validate_enum(
         &self,
         enum_val: &Value,
+        type_name: Option<&str>,
         locator: &JsonSourceLocator,
         result: &mut ValidationResult,
         path: &str,
@@ -1525,19 +1620,31 @@ impl SchemaValidator {
                     return;
                 }
 
-                // Check for duplicates
+                // Check for duplicates and declared type compatibility
                 let mut seen = Vec::new();
                 for (i, item) in arr.iter().enumerate() {
+                    let item_path = format!("{}/{}", enum_path, i);
                     let item_str = item.to_string();
                     if seen.contains(&item_str) {
                         result.add_error(ValidationError::schema_error(
                             SchemaErrorCode::SchemaEnumDuplicates,
                             "enum contains duplicate values",
-                            &format!("{}/{}", enum_path, i),
-                            locator.get_location(&format!("{}/{}", enum_path, i)),
+                            &item_path,
+                            locator.get_location(&item_path),
                         ));
                     } else {
                         seen.push(item_str);
+                    }
+
+                    if let Some(type_str) = type_name {
+                        if !Self::enum_value_matches_type(type_str, item) {
+                            result.add_error(ValidationError::schema_error(
+                                SchemaErrorCode::SchemaConstraintTypeMismatch,
+                                format!("enum value is not valid for type '{}'", type_str),
+                                &item_path,
+                                locator.get_location(&item_path),
+                            ));
+                        }
                     }
                 }
             }
@@ -1826,15 +1933,28 @@ impl SchemaValidator {
             }
 
             // Resolve reference
-            if ref_str.starts_with("#/definitions/")
-                && self.resolve_ref(&ref_str, root_schema).is_none()
-            {
-                result.add_error(ValidationError::schema_error(
-                    SchemaErrorCode::SchemaExtendsNotFound,
-                    format!("$extends reference not found: {}", ref_str),
-                    &ref_path,
-                    locator.get_location(&ref_path),
-                ));
+            if ref_str.starts_with("#/definitions/") {
+                if let Some(resolved) = self.resolve_ref(&ref_str, root_schema) {
+                    let resolved_type = resolved.get("type").and_then(Value::as_str);
+                    if !matches!(resolved_type, Some("object" | "tuple")) {
+                        result.add_error(ValidationError::schema_error(
+                            SchemaErrorCode::SchemaConstraintTypeMismatch,
+                            format!(
+                                "$extends target '{}' must resolve to an object or tuple type",
+                                ref_str
+                            ),
+                            &ref_path,
+                            locator.get_location(&ref_path),
+                        ));
+                    }
+                } else {
+                    result.add_error(ValidationError::schema_error(
+                        SchemaErrorCode::SchemaExtendsNotFound,
+                        format!("$extends reference not found: {}", ref_str),
+                        &ref_path,
+                        locator.get_location(&ref_path),
+                    ));
+                }
             }
             // External references would be validated here if import is enabled
         }
@@ -2401,5 +2521,112 @@ mod tests {
             println!("Error: {:?}", err);
         }
         assert!(result.is_valid(), "Schema with union type should pass");
+    }
+
+    #[test]
+    fn test_extends_target_must_be_object_or_tuple() {
+        let schema = r##"{
+            "$id": "https://example.com/schema",
+            "name": "TestSchema",
+            "type": "object",
+            "definitions": {
+                "Base": { "type": "string" }
+            },
+            "$extends": "#/definitions/Base",
+            "properties": {}
+        }"##;
+
+        let validator = SchemaValidator::new();
+        let result = validator.validate(schema);
+        assert!(result.all_errors().iter().any(|err| {
+            err.code == SchemaErrorCode::SchemaConstraintTypeMismatch.as_str()
+                && err.message
+                    == "$extends target '#/definitions/Base' must resolve to an object or tuple type"
+        }));
+    }
+
+    #[test]
+    fn test_tuple_ref_must_exist() {
+        let schema = r##"{
+            "$id": "https://example.com/schema",
+            "name": "TestSchema",
+            "type": "tuple",
+            "properties": {
+                "first": { "type": "string" }
+            },
+            "tuple": [{ "$ref": "#/definitions/Missing" }]
+        }"##;
+
+        let validator = SchemaValidator::new();
+        let result = validator.validate(schema);
+        assert!(result.all_errors().iter().any(|err| {
+            err.code == SchemaErrorCode::SchemaRefNotFound.as_str()
+                && err.message == "Reference not found: #/definitions/Missing"
+        }));
+    }
+
+    #[test]
+    fn test_root_id_must_not_be_empty() {
+        let schema = r#"{
+            "$id": "   ",
+            "name": "TestSchema",
+            "type": "string"
+        }"#;
+
+        let validator = SchemaValidator::new();
+        let result = validator.validate(schema);
+        assert!(result.all_errors().iter().any(|err| {
+            err.code == SchemaErrorCode::SchemaKeywordEmpty.as_str()
+                && err.message == "$id must not be empty"
+        }));
+    }
+
+    #[test]
+    fn test_root_id_must_have_uri_scheme() {
+        let schema = r#"{
+            "$id": "example.com/schema",
+            "name": "TestSchema",
+            "type": "string"
+        }"#;
+
+        let validator = SchemaValidator::new();
+        let result = validator.validate(schema);
+        assert!(result.all_errors().iter().any(|err| {
+            err.code == SchemaErrorCode::SchemaConstraintValueInvalid.as_str()
+                && err.message == "$id must be a URI with a scheme"
+        }));
+    }
+
+    #[test]
+    fn test_root_name_must_be_valid_identifier() {
+        let schema = r#"{
+            "$id": "https://example.com/schema",
+            "name": "123Invalid",
+            "type": "string"
+        }"#;
+
+        let validator = SchemaValidator::new();
+        let result = validator.validate(schema);
+        assert!(result.all_errors().iter().any(|err| {
+            err.code == SchemaErrorCode::SchemaNameInvalid.as_str()
+                && err.message == "name must be a valid identifier"
+        }));
+    }
+
+    #[test]
+    fn test_enum_values_must_match_type() {
+        let schema = r#"{
+            "$id": "https://example.com/schema",
+            "name": "TestSchema",
+            "type": "boolean",
+            "enum": [true, "false"]
+        }"#;
+
+        let validator = SchemaValidator::new();
+        let result = validator.validate(schema);
+        assert!(result.all_errors().iter().any(|err| {
+            err.code == SchemaErrorCode::SchemaConstraintTypeMismatch.as_str()
+                && err.message == "enum value is not valid for type 'boolean'"
+        }));
     }
 }
