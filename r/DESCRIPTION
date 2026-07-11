@@ -1,0 +1,31 @@
+Package: jsonstructure
+Type: Package
+Title: JSON Structure Schema and Instance Validation
+Version: 0.1.0
+Authors@R: c(
+    person("Clemens", "Vasters", email = "clemensv@microsoft.com", role = c("aut", "cre")),
+    person("JSON Structure Contributors", role = "cph"))
+Description: R bindings for the JSON Structure validator, providing schema
+    validation and instance validation against JSON Structure schemas. The
+    package binds to the JSON Structure C library ('json_structure') for the
+    performance-critical validation work: a small compiled shim loads a
+    prebuilt shared library that is downloaded from GitHub Releases on first
+    use (mirroring the Ruby SDK). Additional extension-keyword checks (units,
+    relations, alternate names and identifier rules) are performed in R.
+License: MIT + file LICENSE
+URL: https://github.com/json-structure/sdk, https://json-structure.org
+BugReports: https://github.com/json-structure/sdk/issues
+Encoding: UTF-8
+Depends: R (>= 4.0)
+Imports:
+    jsonlite,
+    tools,
+    utils
+Suggests:
+    testthat (>= 3.0.0)
+SystemRequirements: GNU make. A C compiler is required to build the package.
+    At first use the package downloads a prebuilt 'json_structure' shared
+    library from GitHub Releases (network access required) unless the
+    JSONSTRUCTURE_LIB_PATH environment variable points at a local build.
+Config/testthat/edition: 3
+RoxygenNote: 7.3.2

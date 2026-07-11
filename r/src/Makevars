@@ -1,0 +1,14 @@
+# The shim loads the prebuilt json_structure library at runtime through the
+# platform dynamic loader (dlopen/dlsym). On Linux and Solaris those symbols
+# require linking libdl; on macOS and the BSDs they are part of libc/libSystem
+# and no extra library is needed. The conditional below requires GNU make,
+# which is declared in DESCRIPTION (SystemRequirements).
+UNAME_S := $(shell uname -s)
+
+ifeq ($(UNAME_S),Linux)
+PKG_LIBS = -ldl
+endif
+
+ifeq ($(UNAME_S),SunOS)
+PKG_LIBS = -ldl
+endif

@@ -1,0 +1,22 @@
+# R build artifacts
+*.o
+*.so
+*.dll
+*.dylib
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+
+# Downloaded C library binaries (mirrors ruby/ ext/)
+/inst/libs/
+/src/*.o
+/src/*.so
+/src/*.dll
+
+# Package build output
+/*.tar.gz
+/*.Rcheck/
+/doc/
+/Meta/
+.rspec_status

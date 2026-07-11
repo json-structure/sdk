@@ -20,6 +20,7 @@ that can be validated and mapped to programming language types.
 | [C](./c/) | `json-structure` | ✅ Available |
 | [PHP](./php/) | [`json-structure/sdk`](https://packagist.org/packages/json-structure/sdk) | ✅ Available |
 | [Ruby](./ruby/) | `jsonstructure` | ✅ Available |
+| [R](./r/) | `jsonstructure` | ✅ Available |
 
 ## Features
 
@@ -429,6 +430,34 @@ $schemaErrors = $schemaValidator->validate($schema);
 $instance = ['name' => 'Alice', 'age' => 30];
 $instanceValidator = new InstanceValidator($schema);
 $instanceErrors = $instanceValidator->validate($instance);
+```
+
+### R
+
+```r
+# install.packages("remotes")
+remotes::install_github("json-structure/sdk", subdir = "r")
+```
+
+```r
+library(jsonstructure)
+
+# Validate a schema (accepts a JSON string or an R list)
+schema <- list(
+  "$schema" = "https://json-structure.org/meta/core/v0/#",
+  name = "Person",
+  type = "object",
+  properties = list(
+    name = list(type = "string"),
+    age = list(type = "int32")
+  )
+)
+schema_result <- js_validate_schema(schema)
+is_valid(schema_result)
+
+# Validate an instance
+instance_result <- js_validate_instance(list(name = "Alice", age = 30L), schema)
+is_valid(instance_result)
 ```
 
 ## Documentation
