@@ -1,0 +1,4 @@
+# On Windows the shim uses LoadLibraryEx/GetProcAddress from kernel32, which is
+# linked automatically. No extra libraries are required (and we must not
+# inherit the Unix -ldl flag).
+PKG_LIBS =

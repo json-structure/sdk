@@ -361,6 +361,12 @@ The schema exporter generates JSON Structure schemas from native language types.
 | Go | `reflect` package | ✅ Yes |
 | Rust | (compile-time macros only) | ❌ No |
 | C/C++ | (no runtime reflection) | ❌ No |
+| Ruby | (FFI binding to the C engine) | ❌ No |
+| R | (FFI binding to the C engine) | ❌ No |
+
+> **Note:** The Ruby and R SDKs are thin FFI bindings over the C validation
+> engine rather than native ports. Because the C engine ships no exporter, these
+> SDKs do not provide one either.
 
 ### Exporter Requirements
 

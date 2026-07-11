@@ -1,0 +1,4 @@
+# Keep Unix build files LF so make/sh on the CI build hosts parse them even
+# when the repository is checked out or authored on Windows.
+src/Makevars    text eol=lf
+src/Makevars.win text eol=lf
