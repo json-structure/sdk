@@ -9,9 +9,12 @@ Description: R bindings for the JSON Structure validator, providing schema
     validation and instance validation against JSON Structure schemas. The
     package binds to the JSON Structure C library ('json_structure') for the
     performance-critical validation work: a small compiled shim loads a
-    prebuilt shared library that is downloaded from GitHub Releases on first
-    use (mirroring the Ruby SDK). Additional extension-keyword checks (units,
-    relations, alternate names and identifier rules) are performed in R.
+    prebuilt shared library. That library is obtained on demand via
+    install_jsonstructure_binary() (downloaded from GitHub Releases with an
+    integrity check) or supplied through the JSONSTRUCTURE_LIB_PATH environment
+    variable; it is never downloaded without the user's action or consent.
+    Additional extension-keyword checks (units, relations, alternate names and
+    identifier rules) are performed in R.
 License: MIT + file LICENSE
 URL: https://github.com/json-structure/sdk, https://json-structure.org
 BugReports: https://github.com/json-structure/sdk/issues
@@ -22,10 +25,14 @@ Imports:
     tools,
     utils
 Suggests:
+    digest,
+    openssl,
     testthat (>= 3.0.0)
 SystemRequirements: GNU make. A C compiler is required to build the package.
-    At first use the package downloads a prebuilt 'json_structure' shared
-    library from GitHub Releases (network access required) unless the
-    JSONSTRUCTURE_LIB_PATH environment variable points at a local build.
+    The prebuilt 'json_structure' shared library is obtained separately, either
+    by calling install_jsonstructure_binary() (which downloads it from GitHub
+    Releases; network access required) or by setting the JSONSTRUCTURE_LIB_PATH
+    environment variable to a local build.
 Config/testthat/edition: 3
-RoxygenNote: 7.3.2
+Roxygen: list(markdown = TRUE)
+Config/roxygen2/version: 8.0.0

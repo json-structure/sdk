@@ -2,8 +2,11 @@
 # Releases. Mirrors ruby/lib/jsonstructure/binary_installer.rb.
 #
 # The package ships only a thin compiled shim; the actual validation engine is
-# the prebuilt C library, resolved at first use. Set JSONSTRUCTURE_LIB_PATH to
-# point at a locally built library and skip the download entirely.
+# the prebuilt C library. It is NEVER downloaded implicitly during validation:
+# the download happens only when the user explicitly calls
+# install_jsonstructure_binary(), or, in an interactive session, agrees to the
+# consent prompt raised on first use. Set JSONSTRUCTURE_LIB_PATH to point at a
+# locally built library to skip the download entirely.
 
 `%||%` <- function(a, b) if (is.null(a) || length(a) == 0 || identical(a, "")) b else a
 
@@ -85,6 +88,9 @@
 #' the `JSONSTRUCTURE_LIB_PATH` override if set, otherwise the cached download.
 #'
 #' @return A file path, or `NULL` if no library is available locally.
+#' @seealso [install_jsonstructure_binary()]
+#' @examples
+#' jsonstructure_binary_path()
 #' @export
 jsonstructure_binary_path <- function() {
   override <- Sys.getenv("JSONSTRUCTURE_LIB_PATH", unset = "")
@@ -99,18 +105,33 @@ jsonstructure_binary_path <- function() {
 #'
 #' Downloads the prebuilt shared library for the current platform from the
 #' project's GitHub Releases and caches it under
-#' \code{tools::R_user_dir("jsonstructure", "cache")}. This is normally called
-#' automatically on first validation; call it explicitly to pre-fetch or to
-#' force a re-download.
+#' \code{tools::R_user_dir("jsonstructure", "cache")}. The library is never
+#' downloaded implicitly by the validators; call this function explicitly to
+#' install or update it (in an interactive session, the validators will offer
+#' to call it on first use). Set the \code{JSONSTRUCTURE_LIB_PATH} environment
+#' variable to point at a locally built library and skip downloading entirely.
 #'
 #' @param version Release tag to download (defaults to the pinned binary
 #'   version).
 #' @param force Re-download even if a cached copy exists.
-#' @param quiet Suppress download progress output.
+#' @param quiet Suppress download progress and integrity messages.
+#' @param sha256 Optional expected SHA-256 (hex) of the downloaded archive. When
+#'   supplied (or when \code{JSONSTRUCTURE_BINARY_SHA256} is set, or a shipped
+#'   checksum manifest matches), the download is verified before extraction and
+#'   an error is raised on mismatch. When no expected digest is available the
+#'   computed digest is reported so it can be pinned.
 #' @return (Invisibly) the path to the cached shared library.
+#' @seealso [jsonstructure_binary_path()], [jsonstructure_binary_version()]
+#' @examples
+#' \dontrun{
+#' # Downloads the prebuilt engine for the current platform (network access):
+#' install_jsonstructure_binary()
+#' # Enforce integrity against a known digest:
+#' install_jsonstructure_binary(sha256 = "e3b0c4...")
+#' }
 #' @export
 install_jsonstructure_binary <- function(version = NULL, force = FALSE,
-                                         quiet = FALSE) {
+                                         quiet = FALSE, sha256 = NULL) {
   version <- version %||% JSONSTRUCTURE_BINARY_VERSION
   dir <- .js_lib_dir(create = TRUE)
   target <- .js_cached_binary_path()
@@ -136,6 +157,10 @@ install_jsonstructure_binary <- function(version = NULL, force = FALSE,
          call. = FALSE)
   }
 
+  # Verify integrity before we extract and later load native code.
+  .js_verify_download(tmp, url = url, version = version,
+                      platform = .js_platform(), sha256 = sha256, quiet = quiet)
+
   exdir <- file.path(dir, "extract")
   unlink(exdir, recursive = TRUE, force = TRUE)
   dir.create(exdir, recursive = TRUE, showWarnings = FALSE)
@@ -148,39 +173,135 @@ install_jsonstructure_binary <- function(version = NULL, force = FALSE,
   }
 
   # The archive layout is not guaranteed to be flat (CMake install prefixes
-  # place the library under lib/ or bin/), so search recursively and copy every
-  # matching shared-library file into the cache directory.
-  libs <- list.files(exdir, pattern = .js_lib_pattern(), recursive = TRUE,
-                     full.names = TRUE)
+  # place the library under lib/ or bin/), so search recursively. Prefer the
+  # file whose name exactly matches this platform's expected library name and
+  # only fall back to a pattern match, so unexpected archive contents cannot
+  # silently substitute a differently named library.
+  expected_name <- .js_binary_name()
+  all_libs <- list.files(exdir, pattern = .js_lib_pattern(), recursive = TRUE,
+                         full.names = TRUE)
+  libs <- all_libs[basename(all_libs) == expected_name]
+  if (length(libs) == 0) {
+    libs <- all_libs
+  }
   for (f in libs) {
     file.copy(f, file.path(dir, basename(f)), overwrite = TRUE)
   }
 
   if (!file.exists(target)) {
     stop(sprintf(
-      "Downloaded archive from '%s' did not contain '%s'.",
-      url, .js_binary_name()), call. = FALSE)
+      "Downloaded archive from '%s' did not contain the expected library '%s'.",
+      url, expected_name), call. = FALSE)
   }
 
   invisible(target)
 }
 
-# Resolve the library path, downloading if necessary. Used by .js_ensure_loaded.
-.js_ensure_binary <- function(quiet = FALSE) {
-  override <- Sys.getenv("JSONSTRUCTURE_LIB_PATH", unset = "")
-  if (nzchar(override)) {
-    if (!file.exists(override)) {
-      stop(sprintf("JSONSTRUCTURE_LIB_PATH is set to '%s' but that file does not exist.",
-                   override), call. = FALSE)
+# --- Integrity verification ------------------------------------------------
+
+# Compute the SHA-256 (lowercase hex) of a file, using whatever hashing
+# facility is available: base tools (R >= 4.5), then the openssl or digest
+# packages. Returns NA_character_ if none is available.
+.js_sha256 <- function(file) {
+  tools_ns <- asNamespace("tools")
+  if (exists("sha256sum", where = tools_ns, inherits = FALSE)) {
+    return(tolower(unname(get("sha256sum", tools_ns)(file))))
+  }
+  if (requireNamespace("openssl", quietly = TRUE)) {
+    con <- file(file, "rb")
+    on.exit(close(con), add = TRUE)
+    # paste(collapse=) strips the openssl "hash" class and guarantees a plain,
+    # single lowercase hex string regardless of the openssl version in use.
+    return(tolower(paste(as.character(openssl::sha256(con)), collapse = "")))
+  }
+  if (requireNamespace("digest", quietly = TRUE)) {
+    return(tolower(digest::digest(file, algo = "sha256", file = TRUE)))
+  }
+  NA_character_
+}
+
+# Expected checksum shipped with the package, if any. Looks up a DCF manifest
+# (inst/checksums.dcf) keyed by Version + Platform. Returns "" when no manifest
+# or matching entry exists.
+.js_manifest_sha256 <- function(version, platform) {
+  path <- system.file("checksums.dcf", package = "jsonstructure")
+  if (!nzchar(path) || !file.exists(path)) {
+    return("")
+  }
+  recs <- tryCatch(read.dcf(path), error = function(e) NULL)
+  if (is.null(recs) || !all(c("Version", "Platform", "SHA256") %in% colnames(recs))) {
+    return("")
+  }
+  hit <- recs[, "Version"] == version & recs[, "Platform"] == platform
+  if (any(hit)) tolower(recs[which(hit)[1], "SHA256"]) else ""
+}
+
+# Verify a downloaded archive against an expected SHA-256. Resolution order for
+# the expected digest: explicit `sha256` arg -> JSONSTRUCTURE_BINARY_SHA256 ->
+# shipped manifest. Aborts on mismatch; warns (but proceeds) when no digest is
+# available to verify against.
+.js_verify_download <- function(file, url, version, platform, sha256 = NULL,
+                                quiet = FALSE) {
+  expected <- sha256 %||% Sys.getenv("JSONSTRUCTURE_BINARY_SHA256", unset = "")
+  if (!nzchar(expected)) {
+    expected <- .js_manifest_sha256(version, platform)
+  }
+  actual <- .js_sha256(file)
+
+  if (is.na(actual)) {
+    warning("Could not compute a SHA-256 of the downloaded archive (no hashing ",
+            "facility available); integrity was not verified. Install the ",
+            "'openssl' package to enable verification.", call. = FALSE)
+    return(invisible(NA_character_))
+  }
+
+  if (nzchar(expected)) {
+    if (!isTRUE(tolower(expected) == actual)) {
+      stop(sprintf(
+        "Checksum mismatch for '%s':\n  expected %s\n  actual   %s\nThe download may be corrupt or tampered with; aborting.",
+        url, tolower(expected), actual), call. = FALSE)
     }
-    return(override)
+    if (!quiet) {
+      message(sprintf("Verified SHA-256 of %s.", basename(url)))
+    }
+  } else if (!quiet) {
+    message(sprintf(
+      "Downloaded %s\n  SHA-256: %s\n  No expected checksum was available to verify against; pass sha256= or set JSONSTRUCTURE_BINARY_SHA256 to enforce integrity.",
+      basename(url), actual))
+  }
+  invisible(actual)
+}
+
+# Resolve the library path with explicit user consent. Called only when no
+# library is available via JSONSTRUCTURE_LIB_PATH or the cache. In an
+# interactive session the user is asked before any download; otherwise a clear,
+# actionable error is raised (no implicit network access).
+.js_prompt_and_install <- function() {
+  detail <- paste0(
+    "The json_structure native library is not installed. It can be downloaded ",
+    "from GitHub Releases into the per-user cache (",
+    .js_lib_dir(create = FALSE), "), or you can set the JSONSTRUCTURE_LIB_PATH ",
+    "environment variable to a locally built library.")
+
+  if (!interactive()) {
+    stop(detail,
+         "\nRun install_jsonstructure_binary() to download it, or set ",
+         "JSONSTRUCTURE_LIB_PATH.", call. = FALSE)
   }
 
-  cached <- .js_cached_binary_path()
-  if (file.exists(cached)) {
-    return(cached)
+  consent <- utils::askYesNo(
+    paste0(detail, "\nDownload it now?"), default = FALSE)
+  if (!isTRUE(consent)) {
+    stop("json_structure library not available and download was declined. ",
+         "Run install_jsonstructure_binary() or set JSONSTRUCTURE_LIB_PATH.",
+         call. = FALSE)
   }
 
-  install_jsonstructure_binary(quiet = quiet)
-  cached
+  install_jsonstructure_binary()
+  path <- jsonstructure_binary_path()
+  if (is.null(path)) {
+    stop("Installation did not produce a usable json_structure library.",
+         call. = FALSE)
+  }
+  path
 }

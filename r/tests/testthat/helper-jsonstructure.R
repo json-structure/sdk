@@ -1,16 +1,32 @@
 # Shared test helpers.
 
-# Skip a test unless the prebuilt json_structure library can be loaded. This
-# keeps the suite green on machines without the binary (e.g. offline dev boxes)
-# while running fully in CI where JSONSTRUCTURE_LIB_PATH points at a fresh build.
+# Skip a test unless the prebuilt json_structure library is *already* available
+# locally (via JSONSTRUCTURE_LIB_PATH or a previously installed cache copy).
+# This never triggers a download, so the suite stays fully offline/network-free
+# and CRAN-safe: it runs where JSONSTRUCTURE_LIB_PATH points at a fresh build
+# (e.g. CI) and skips cleanly everywhere else.
 skip_if_no_binding <- function() {
+  testthat::skip_on_cran()
+
+  if (isTRUE(tryCatch(jsonstructure:::js_binding_loaded(),
+                      error = function(e) FALSE))) {
+    return(invisible())
+  }
+
+  path <- tryCatch(jsonstructure::jsonstructure_binary_path(),
+                   error = function(e) NULL)
+  if (is.null(path)) {
+    testthat::skip("json_structure prebuilt library not available")
+  }
+
   ok <- tryCatch({
-    jsonstructure:::.js_ensure_loaded()
+    jsonstructure:::.js_load_binding(path)
     jsonstructure:::js_binding_loaded()
   }, error = function(e) FALSE)
   if (!isTRUE(ok)) {
-    testthat::skip("json_structure prebuilt library not available")
+    testthat::skip("json_structure prebuilt library could not be loaded")
   }
+  invisible()
 }
 
 # Construct a base (C-side) result to feed the pure-R augmentation directly,

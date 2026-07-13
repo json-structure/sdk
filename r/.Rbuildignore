@@ -8,3 +8,5 @@
 ^cran-comments\.md$
 ^doc$
 ^Meta$
+^src/.*\.(o|so|dll|dylib|a)$
+^\.lintr$

@@ -32,19 +32,37 @@ js_binding_loaded <- function() {
   .Call(C_validate_instance, instance_json, schema_json)
 }
 
-# Ensure the prebuilt library is loaded, resolving it lazily on first use:
-# JSONSTRUCTURE_LIB_PATH override -> cached binary -> download from Releases.
+# Ensure the prebuilt library is loaded, resolving it lazily on first use from
+# the JSONSTRUCTURE_LIB_PATH override or the per-user cache. The native engine
+# is never downloaded implicitly: if no library is available the user is asked
+# for consent (interactive sessions only), otherwise a clear error explains how
+# to install it. This keeps validation offline-safe and non-interactive / CRAN
+# runs quiet and free of surprise network access.
 .js_ensure_loaded <- function() {
   if (js_binding_loaded()) {
     return(invisible(TRUE))
   }
 
   override <- Sys.getenv("JSONSTRUCTURE_LIB_PATH", unset = "")
-  path <- if (nzchar(override) && file.exists(override)) {
-    override
-  } else {
-    .js_ensure_binary(quiet = FALSE)
+  if (nzchar(override) && !file.exists(override)) {
+    stop(sprintf(
+      "JSONSTRUCTURE_LIB_PATH is set to '%s' but that file does not exist.",
+      override), call. = FALSE)
+  }
+
+  path <- jsonstructure_binary_path()
+  if (is.null(path)) {
+    path <- .js_prompt_and_install()
   }
 
   .js_load_binding(path)
+}
+
+# Version string reported by the loaded json_structure engine, or "" when the
+# library is not loaded or does not export runtime version information.
+js_binding_version <- function() {
+  if (!js_binding_loaded()) {
+    return("")
+  }
+  .Call(C_binding_version)
 }
