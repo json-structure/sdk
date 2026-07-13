@@ -76,14 +76,17 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Use Node.js 20.x
+      - name: Use Node.js 22.x
         uses: actions/setup-node@v6
         with:
-          node-version: '20.x'
+          node-version: '22.x'
           registry-url: 'https://registry.npmjs.org'
 
+      # Pin the npm major (not @latest) so a future npm release that requires a
+      # newer Node than this job provisions cannot break publishing. npm 11.5.1+
+      # supports OIDC trusted publishing and runs on Node 22.
       - name: Update npm for trusted publishing
-        run: npm install -g npm@latest
+        run: npm install -g npm@11
 
       - name: Extract version from tag
         id: get_version

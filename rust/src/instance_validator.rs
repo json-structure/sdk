@@ -278,11 +278,10 @@ impl InstanceValidator {
                 // First try to get it directly as a definition
                 if let Some(next) = current.get(part) {
                     current = next;
-                } else if let Some(defs) = current.get("definitions") {
-                    // Try to get it from nested definitions (for namespaces)
-                    current = defs.get(part)?;
                 } else {
-                    return None;
+                    // Try to get it from nested definitions (for namespaces)
+                    let defs = current.get("definitions")?;
+                    current = defs.get(part)?;
                 }
             }
             Some(current)
