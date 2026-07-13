@@ -57,7 +57,7 @@ jobs:
 
       - name: Configure CMake
         working-directory: c
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DJSON_STRUCTURE_VERSION=${{ steps.get_version.outputs.VERSION }}
+        run: cmake -B build "-DCMAKE_BUILD_TYPE=Release" "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" "-DJSON_STRUCTURE_VERSION=${{ steps.get_version.outputs.VERSION }}"
 
       - name: Build
         working-directory: c
@@ -106,7 +106,7 @@ jobs:
 
       - name: Configure CMake (Debug)
         working-directory: c
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DJSON_STRUCTURE_VERSION=${{ steps.get_version.outputs.VERSION }}
+        run: cmake -B build "-DCMAKE_BUILD_TYPE=Debug" "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" "-DJSON_STRUCTURE_VERSION=${{ steps.get_version.outputs.VERSION }}"
 
       - name: Build
         working-directory: c
@@ -125,7 +125,7 @@ jobs:
     needs: [build-and-test, memory-check]
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
-      contents: read
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -133,10 +133,13 @@ jobs:
         include:
           - os: ubuntu-latest
             artifact_name: json_structure-linux-x64
+            asset_basename: json_structure-linux-x86_64
           - os: macos-latest
             artifact_name: json_structure-macos-x64
+            asset_basename: json_structure-macos-arm64
           - os: windows-latest
             artifact_name: json_structure-windows-x64
+            asset_basename: json_structure-windows-x86_64
 
     steps:
       - uses: actions/checkout@v6
@@ -170,7 +173,7 @@ jobs:
 
       - name: Configure CMake
         working-directory: c
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DJSON_STRUCTURE_VERSION=${{ steps.get_version.outputs.VERSION }}
+        run: cmake -B build "-DCMAKE_BUILD_TYPE=Release" "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" "-DJSON_STRUCTURE_VERSION=${{ steps.get_version.outputs.VERSION }}"
 
       - name: Build
         working-directory: c
@@ -208,3 +211,18 @@ jobs:
         with:
           name: ${{ matrix.artifact_name }}-${{ steps.get_version.outputs.VERSION }}
           path: c/${{ matrix.artifact_name }}-${{ steps.get_version.outputs.VERSION }}.zip
+
+      # Attach installer-compatible, unversioned .tar.gz assets to the GitHub
+      # Release so the Ruby and R SDK downloaders can fetch them by predictable
+      # URL: releases/download/vX.Y.Z/json_structure-<os>-<arch>.tar.gz
+      - name: Create installer-compatible archive
+        working-directory: c
+        shell: bash
+        run: |
+          cd staging
+          tar czf "../${{ matrix.asset_basename }}.tar.gz" *
+
+      - name: Attach archive to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: c/${{ matrix.asset_basename }}.tar.gz
