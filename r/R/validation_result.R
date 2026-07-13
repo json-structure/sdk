@@ -90,7 +90,9 @@ is_valid.default <- function(x, ...) {
 #' @return A character vector of messages whose severity is `error`.
 #' @export
 js_error_messages <- function(x) {
-  stopifnot(inherits(x, "js_validation_result"))
+  if (!inherits(x, "js_validation_result")) {
+    stop("`x` must be a js_validation_result object.", call. = FALSE)
+  }
   vapply(Filter(.js_error_is_error, x$errors),
          function(e) e$message, character(1))
 }
@@ -101,7 +103,9 @@ js_error_messages <- function(x) {
 #' @return A character vector of messages whose severity is `warning`.
 #' @export
 js_warning_messages <- function(x) {
-  stopifnot(inherits(x, "js_validation_result"))
+  if (!inherits(x, "js_validation_result")) {
+    stop("`x` must be a js_validation_result object.", call. = FALSE)
+  }
   vapply(Filter(.js_error_is_warning, x$errors),
          function(e) e$message, character(1))
 }

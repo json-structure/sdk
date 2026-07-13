@@ -118,7 +118,10 @@ jobs:
           working-directory: r
           extra-packages: any::lintr
 
-      - name: Run lintr
+      # Lint is advisory: it surfaces style/robustness suggestions in the log
+      # (scoped by r/.lintr) but does not gate merges while the SDK stabilises.
+      # Set continue-on-error to false to enforce once the backlog is clear.
+      - name: Run lintr (advisory)
         working-directory: r
         run: Rscript -e "lintr::lint_package()"
         continue-on-error: true
