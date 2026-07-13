@@ -145,16 +145,13 @@ jobs:
         with:
           working-directory: r
 
-      - name: Verify DESCRIPTION version matches tag
+      - name: Sync DESCRIPTION version from tag
         shell: bash
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          DESC_VERSION=$(grep -E '^Version:' r/DESCRIPTION | sed 's/Version:[[:space:]]*//')
-          if [ "$VERSION" != "$DESC_VERSION" ]; then
-            echo "Version mismatch: DESCRIPTION=$DESC_VERSION, tag=$VERSION"
-            exit 1
-          fi
-          echo "Version verified: $DESC_VERSION"
+          sed -i -E "s/^Version:[[:space:]]*.*/Version: ${VERSION}/" r/DESCRIPTION
+          echo "Set DESCRIPTION version to ${VERSION}"
+          grep -E '^Version:' r/DESCRIPTION
 
       - name: Build source tarball
         shell: bash
