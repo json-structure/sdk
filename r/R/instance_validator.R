@@ -10,14 +10,13 @@
 #'   Structure schema to validate against.
 #' @return A `js_validation_result` object.
 #' @seealso [js_validate_schema()], [js_validate_instance_strict()]
-#' @examplesIf !is.null(jsonstructure::jsonstructure_binary_path())
+#' @examples
 #' res <- js_validate_instance('"hello"', '{"type":"string"}')
 #' is_valid(res)
 #' @export
 js_validate_instance <- function(instance, schema) {
   instance_json <- .js_as_json_text(instance, "instance")
   schema_json <- .js_as_json_text(schema, "schema")
-  .js_ensure_loaded()
   res <- .js_call_validate_instance(instance_json, schema_json)
   .js_result_from_call(res)
 }

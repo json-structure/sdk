@@ -1,9 +1,10 @@
 # JSON Structure R SDK
 
 R package for [JSON Structure](https://json-structure.org) schema and instance
-validation. It binds to the JSON Structure **C engine** through a small compiled
-shim: the heavy validation work runs in native code, while the R layer provides
-an idiomatic API and a few extra extension-keyword checks.
+validation. It bundles the JSON Structure **C engine** and compiles it from
+source directly into the package: the heavy validation work runs in native code,
+while the R layer provides an idiomatic API and a few extra extension-keyword
+checks. Nothing is downloaded at install or run time.
 
 ## Features
 
@@ -14,35 +15,33 @@ an idiomatic API and a few extra extension-keyword checks.
   objects with `is_valid()`, `js_error_messages()` and `as.data.frame()`.
 - **Cross-platform** — Linux, macOS and Windows.
 
-## How the native library is provided
+## How the native engine is provided
 
-The package ships only a thin compiled shim. On first use it downloads a
-prebuilt `json_structure` shared library for your platform from the project's
-GitHub Releases and caches it under `tools::R_user_dir("jsonstructure", "cache")`
-— mirroring the Ruby SDK. No C toolchain is needed at *runtime* (a C compiler is
-needed once to build the shim when the package is installed).
+The JSON Structure validation engine (portable C99) and its `cJSON` dependency
+are **bundled in the package** and compiled from source when the package is
+installed. Nothing is fetched from the network at install or run time, so
+installs are reproducible and offline-friendly.
 
-Supported platforms: Linux (x86_64, arm64), macOS (x86_64, arm64),
-Windows (x86_64).
+Building from source requires a C toolchain:
 
-To use a locally built library and skip the download, set the
-`JSONSTRUCTURE_LIB_PATH` environment variable to the full path of the shared
-library (e.g. `c/build/libjson_structure.so`).
+- **Linux / macOS** — the system C compiler (as for any package with
+  compiled code).
+- **Windows** — [Rtools](https://cran.r-project.org/bin/windows/Rtools/)
+  matching your R version.
+
+The package is pure C (no C++ runtime dependency). `pattern` constraints are
+handled by a small embedded regular-expression matcher, so behaviour is
+identical on every platform.
+Supported platforms: Linux, macOS and Windows (x86_64 and arm64).
 
 ## Installation
 
-The package is not on CRAN (the download-at-first-use model is incompatible with
-CRAN policy). Install from GitHub:
+Because the engine is compiled from bundled source, the package is
+CRAN-policy-conformant. Install from GitHub:
 
 ```r
 # install.packages("remotes")
 remotes::install_github("json-structure/sdk", subdir = "r")
-```
-
-You can also pre-fetch the native library:
-
-```r
-jsonstructure::install_jsonstructure_binary()
 ```
 
 ## Usage
@@ -103,25 +102,17 @@ tryCatch(
 | `is_valid(result)` | `TRUE`/`FALSE` |
 | `js_error_messages(result)` / `js_warning_messages(result)` | Messages by severity |
 | `as.data.frame(result)` | Errors as a data frame |
-| `install_jsonstructure_binary()` | Pre-fetch the native library |
-| `jsonstructure_binary_path()` | Path to the resolved native library |
 | `jsonstructure_version()` | Installed package version |
+| `jsonstructure_engine_version()` | Version of the bundled native engine |
 
 ## Development
 
-Build the C library once and point the package at it:
-
-```bash
-# from the repo root
-cmake -S c -B c/build -DJS_BUILD_SHARED=ON
-cmake --build c/build
-export JSONSTRUCTURE_LIB_PATH="$PWD/c/build/libjson_structure.so"   # .dylib / .dll
-```
-
-Then, from the `r/` directory:
+The native engine sources are vendored under `src/` and compiled together with
+the R bindings, so a normal `devtools` workflow builds everything. From the `r/`
+directory:
 
 ```r
-devtools::load_all()
+devtools::load_all()      # compiles the bundled engine + shim
 devtools::test()          # runs testthat, including the shared test-assets corpus
 ```
 
@@ -129,19 +120,25 @@ devtools::test()          # runs testthat, including the shared test-assets corp
 
 ```bash
 R CMD build r
-R CMD check jsonstructure_*.tar.gz
+R CMD check --as-cran jsonstructure_*.tar.gz
 ```
 
-Tests that need the native library skip automatically when it is not available,
-and the shared `test-assets` conformance tests skip when the corpus is not
-present (e.g. when checking the built tarball outside the repo).
+The shared `test-assets` conformance tests skip automatically when the corpus is
+not present (e.g. when checking the built tarball outside the repo).
+
+The vendored engine sources are kept in sync with `c/` by
+`tools/vendor-engine.R` (see that script's header for how to refresh them).
 
 ## Limitations
 
 - No schema **exporter** in v1 (the C engine has none), matching the Ruby SDK.
-- Regex/pattern constraints are only enforced if the prebuilt C library was
-  built with regex support; the default build ships with it disabled, the same
-  behaviour as the C and Ruby SDKs.
+- `pattern` constraints are matched by an embedded ECMAScript-subset regular
+  expression engine. It covers the constructs used by JSON Structure schemas
+  (literals, `.`, anchors, character classes and shorthands, `\b`, greedy/lazy
+  quantifiers, groups and alternation). Constructs outside that subset —
+  lookbehind, named groups, inline flags such as `(?i)`, and Unicode property
+  escapes `\p{...}` — are treated as invalid patterns, and backtracking is
+  bounded to avoid pathological "ReDoS" inputs.
 
 ## License
 

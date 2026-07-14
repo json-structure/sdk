@@ -16,5 +16,5 @@ Package version
 jsonstructure_version()
 }
 \seealso{
-\code{\link[=jsonstructure_binary_version]{jsonstructure_binary_version()}} for the native engine version.
+\code{\link[=jsonstructure_engine_version]{jsonstructure_engine_version()}} for the bundled C engine version.
 }

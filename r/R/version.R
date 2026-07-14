@@ -1,16 +1,9 @@
 # Version metadata for the JSON Structure R SDK.
 
-# The prebuilt C library release tag this package is pinned to. Mirrors the
-# Ruby SDK's BinaryInstaller::DEFAULT_VERSION.
-JSONSTRUCTURE_BINARY_VERSION <- "v0.1.0"
-
-# GitHub repository that hosts the prebuilt binaries.
-JSONSTRUCTURE_REPO <- "json-structure/sdk"
-
 #' Package version
 #'
 #' @return The installed package version as a character string.
-#' @seealso [jsonstructure_binary_version()] for the native engine version.
+#' @seealso [jsonstructure_engine_version()] for the bundled C engine version.
 #' @examples
 #' jsonstructure_version()
 #' @export
@@ -18,24 +11,16 @@ jsonstructure_version <- function() {
   as.character(utils::packageVersion("jsonstructure"))
 }
 
-#' Version of the loaded json_structure native engine
+#' Version of the bundled JSON Structure C engine
 #'
-#' Reports the version string exposed by the prebuilt `json_structure` shared
-#' library currently loaded by the shim. Older engine builds do not export a
-#' runtime version symbol; in that case (or when no engine is loaded) the
-#' release tag this package is pinned to is returned instead.
+#' Reports the version string of the JSON Structure C engine that is compiled
+#' into this package. The engine and its cJSON dependency are built from source
+#' at install time; nothing is downloaded at run time.
 #'
-#' @return A single character string: the engine's reported version, or the
-#'   pinned target version (without the leading `v`) when the engine does not
-#'   report one.
-#' @seealso [install_jsonstructure_binary()], [jsonstructure_binary_path()]
+#' @return A single character string: the bundled engine's version.
 #' @examples
-#' jsonstructure_binary_version()
+#' jsonstructure_engine_version()
 #' @export
-jsonstructure_binary_version <- function() {
-  reported <- tryCatch(js_binding_version(), error = function(e) "")
-  if (is.character(reported) && length(reported) == 1L && nzchar(reported)) {
-    return(reported)
-  }
-  sub("^v", "", JSONSTRUCTURE_BINARY_VERSION)
+jsonstructure_engine_version <- function() {
+  .js_engine_version()
 }

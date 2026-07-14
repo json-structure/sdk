@@ -19,10 +19,8 @@ diagnostics.
 Validates that \code{schema} is a well-formed JSON Structure schema document.
 }
 \examples{
-\dontshow{if (!is.null(jsonstructure::jsonstructure_binary_path())) withAutoprint(\{ # examplesIf}
 res <- js_validate_schema('{"type":"string"}')
 is_valid(res)
-\dontshow{\}) # examplesIf}
 }
 \seealso{
 \code{\link[=js_validate_instance]{js_validate_instance()}}, \code{\link[=js_validate_schema_strict]{js_validate_schema_strict()}}

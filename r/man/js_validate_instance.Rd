@@ -20,10 +20,8 @@ A \code{js_validation_result} object.
 Validate a JSON instance against a JSON Structure schema
 }
 \examples{
-\dontshow{if (!is.null(jsonstructure::jsonstructure_binary_path())) withAutoprint(\{ # examplesIf}
 res <- js_validate_instance('"hello"', '{"type":"string"}')
 is_valid(res)
-\dontshow{\}) # examplesIf}
 }
 \seealso{
 \code{\link[=js_validate_schema]{js_validate_schema()}}, \code{\link[=js_validate_instance_strict]{js_validate_instance_strict()}}
