@@ -1,4 +1,11 @@
-# On Windows the shim uses LoadLibraryEx/GetProcAddress from kernel32, which is
-# linked automatically. No extra libraries are required (and we must not
-# inherit the Unix -ldl flag).
+# Build the vendored JSON Structure C engine (and its cJSON dependency) from
+# source, directly into the package shared object. Header lookups need this
+# directory -- for the engine's <cjson/cJSON.h> and "json_structure/*.h"
+# includes -- plus the cjson/ subdirectory for cJSON.c's own "cJSON.h".
+#
+# On Windows the engine serialises its allocator with Win32 SRWLOCK (from
+# windows.h, which the toolchain links automatically), and the regex matcher is
+# pure C (regex_utils.c) with no threading, so no extra libraries are required.
+# The whole package is C, so R links it with the C toolchain (no libstdc++).
+PKG_CPPFLAGS = -I. -Icjson
 PKG_LIBS =

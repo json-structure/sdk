@@ -1,22 +1,20 @@
 #' jsonstructure: JSON Structure validation for R
 #'
 #' Validate JSON Structure schemas and JSON instances against them. The package
-#' is a thin binding over the proven JSON Structure C engine: a small compiled
-#' shim loads a prebuilt `json_structure` shared library (installed on demand
-#' with [install_jsonstructure_binary()], or supplied via the
-#' `JSONSTRUCTURE_LIB_PATH` environment variable) and marshals results back into
-#' idiomatic R objects.
+#' is a thin binding over the JSON Structure C engine, which is compiled from
+#' bundled source directly into the package: validation runs in native code and
+#' the results are marshalled back into idiomatic R objects. Nothing is
+#' downloaded at install or run time.
 #'
 #' @section Main functions:
 #' \itemize{
 #'   \item [js_validate_schema()] / [js_validate_schema_strict()]
 #'   \item [js_validate_instance()] / [js_validate_instance_strict()]
-#'   \item [install_jsonstructure_binary()], [jsonstructure_binary_path()]
+#'   \item [jsonstructure_version()], [jsonstructure_engine_version()]
 #' }
 #'
 #' @useDynLib jsonstructure, .registration = TRUE, .fixes = "C_"
 #' @importFrom jsonlite fromJSON toJSON
-#' @importFrom tools R_user_dir
-#' @importFrom utils askYesNo download.file untar unzip packageVersion
+#' @importFrom utils packageVersion
 #' @keywords internal
 "_PACKAGE"

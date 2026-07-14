@@ -1,12 +1,12 @@
-# Package load/unload hooks.
+# Package unload hook.
 #
-# Loading of the prebuilt json_structure engine is deferred entirely to the
-# first validation call (see .js_ensure_loaded()): we do NOT load external
-# native code during library()/.onLoad, which keeps package attach fast,
-# side-effect-free and offline-safe. .onUnload releases the engine and the
-# compiled shim when the package is unloaded.
+# The JSON Structure C engine is compiled into the package shared object and is
+# initialised in R_init_jsonstructure() when that object loads, so there is no
+# .onLoad work to do. On unload we ask the engine to release its process-wide
+# resources (the compiled-regex cache) before detaching the shared object, so a
+# subsequent reload starts from a clean state.
 
 .onUnload <- function(libpath) {
-  try(.js_unload_binding(), silent = TRUE)
+  try(.Call(C_engine_cleanup), silent = TRUE)
   library.dynam.unload("jsonstructure", libpath)
 }

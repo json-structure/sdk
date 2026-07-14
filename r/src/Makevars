@@ -1,14 +1,12 @@
-# The shim loads the prebuilt json_structure library at runtime through the
-# platform dynamic loader (dlopen/dlsym). On Linux and Solaris those symbols
-# require linking libdl; on macOS and the BSDs they are part of libc/libSystem
-# and no extra library is needed. The conditional below requires GNU make,
-# which is declared in DESCRIPTION (SystemRequirements).
-UNAME_S := $(shell uname -s)
-
-ifeq ($(UNAME_S),Linux)
-PKG_LIBS = -ldl
-endif
-
-ifeq ($(UNAME_S),SunOS)
-PKG_LIBS = -ldl
-endif
+# Build the vendored JSON Structure C engine (and its cJSON dependency) from
+# source, directly into the package shared object. Header lookups need this
+# directory -- for the engine's <cjson/cJSON.h> and "json_structure/*.h"
+# includes -- plus the cjson/ subdirectory for cJSON.c's own "cJSON.h".
+#
+# The engine serialises its allocator with pthread primitives on Unix
+# (pthread_mutex + pthread_once in types.c), so the platform pthread flag is
+# applied to both compilation and linking. The regex matcher is pure C
+# (regex_utils.c) with no threading. R compiles every *.c in this directory
+# automatically; the whole package is C (no libstdc++).
+PKG_CPPFLAGS = -I. -Icjson $(SHLIB_PTHREAD_FLAGS)
+PKG_LIBS = $(SHLIB_PTHREAD_FLAGS)

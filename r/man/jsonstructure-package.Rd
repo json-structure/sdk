@@ -7,18 +7,17 @@
 \title{jsonstructure: JSON Structure validation for R}
 \description{
 Validate JSON Structure schemas and JSON instances against them. The package
-is a thin binding over the proven JSON Structure C engine: a small compiled
-shim loads a prebuilt \code{json_structure} shared library (installed on demand
-with \code{\link[=install_jsonstructure_binary]{install_jsonstructure_binary()}}, or supplied via the
-\code{JSONSTRUCTURE_LIB_PATH} environment variable) and marshals results back into
-idiomatic R objects.
+is a thin binding over the JSON Structure C engine, which is compiled from
+bundled source directly into the package: validation runs in native code and
+the results are marshalled back into idiomatic R objects. Nothing is
+downloaded at install or run time.
 }
 \section{Main functions}{
 
 \itemize{
 \item \code{\link[=js_validate_schema]{js_validate_schema()}} / \code{\link[=js_validate_schema_strict]{js_validate_schema_strict()}}
 \item \code{\link[=js_validate_instance]{js_validate_instance()}} / \code{\link[=js_validate_instance_strict]{js_validate_instance_strict()}}
-\item \code{\link[=install_jsonstructure_binary]{install_jsonstructure_binary()}}, \code{\link[=jsonstructure_binary_path]{jsonstructure_binary_path()}}
+\item \code{\link[=jsonstructure_version]{jsonstructure_version()}}, \code{\link[=jsonstructure_engine_version]{jsonstructure_engine_version()}}
 }
 }
 
@@ -42,6 +41,7 @@ Authors:
 Other contributors:
 \itemize{
   \item JSON Structure Contributors [copyright holder]
+  \item Dave Gamble (Author of the bundled cJSON library (src/cJSON.c, src/cjson/cJSON.h)) [contributor, copyright holder]
 }
 
 }

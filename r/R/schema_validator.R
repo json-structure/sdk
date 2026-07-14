@@ -47,13 +47,12 @@
 #'   outcome and [js_error_messages()] / [js_warning_messages()] to inspect
 #'   diagnostics.
 #' @seealso [js_validate_instance()], [js_validate_schema_strict()]
-#' @examplesIf !is.null(jsonstructure::jsonstructure_binary_path())
+#' @examples
 #' res <- js_validate_schema('{"type":"string"}')
 #' is_valid(res)
 #' @export
 js_validate_schema <- function(schema) {
   schema_json <- .js_as_json_text(schema, "schema")
-  .js_ensure_loaded()
   res <- .js_call_validate_schema(schema_json)
   base <- .js_result_from_call(res)
   .js_augment_schema_result(base, schema_json)

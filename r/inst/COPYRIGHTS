@@ -1,0 +1,28 @@
+The jsonstructure package bundles third-party source code that is compiled
+into the package's shared object. Each component is distributed under the MIT
+License, compatible with this package's license.
+
+-------------------------------------------------------------------------------
+JSON Structure C engine
+  Files:     src/types.c, src/error_codes.c, src/schema_validator.c,
+             src/instance_validator.c, src/json_source_locator.c,
+             src/regex_utils.c, src/regex_utils.h,
+             src/json_structure/*.h
+  Copyright: (c) 2024 JSON Structure Contributors
+  License:   MIT (SPDX-License-Identifier: MIT)
+  Source:    https://github.com/json-structure/sdk (directory: c/)
+  Note:      src/regex_utils.c is an R-package-specific pure-C ECMAScript-subset
+             matcher used in place of the upstream C++ (std::regex)
+             implementation, which deadlocks in an R-loaded DLL on Windows.
+
+-------------------------------------------------------------------------------
+cJSON
+  Files:     src/cJSON.c, src/cjson/cJSON.h
+  Version:   1.7.18
+  Copyright: (c) 2009-2017 Dave Gamble and cJSON contributors
+  License:   MIT (SPDX-License-Identifier: MIT)
+  Source:    https://github.com/DaveGamble/cJSON (tag v1.7.18)
+  Note:      src/cJSON.c is vendored from the tag above with one change: its
+             sprintf() calls are replaced by bounded snprintf() so the package
+             passes the CRAN "compiled code" entry-point check.
+-------------------------------------------------------------------------------
