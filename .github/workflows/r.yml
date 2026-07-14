@@ -60,30 +60,31 @@ jobs:
           error-on: '"warning"'
           upload-snapshots: true
 
-  sanitizers:
-    name: ASAN/UBSAN (R-devel, clang)
+  regex-sanitizers:
+    name: Regex ASAN/UBSAN (clang)
     runs-on: ubuntu-latest
-    container:
-      # r-hub v2 container: R-devel built with clang AddressSanitizer +
-      # UndefinedBehaviorSanitizer and R-tuned ASAN/UBSAN option suppressions.
-      image: ghcr.io/r-hub/containers/clang-asan:latest
-    env:
-      # Run the shared conformance corpus (including `pattern` cases) so the
-      # hand-written C regex matcher in src/regex_utils.c is exercised under
-      # the sanitizers, not just the engine and cJSON.
-      JSONSTRUCTURE_TEST_ASSETS: ${{ github.workspace }}/test-assets
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install package dependencies (compiled under sanitizers)
-        working-directory: r
-        run: R -q -e 'install.packages("remotes", repos = "https://cloud.r-project.org"); remotes::install_deps(dependencies = TRUE, upgrade = "never")'
+      # The engine and cJSON are covered by the C SDK's Valgrind job; the only
+      # hand-written, memory-sensitive C added for the R package is the pure-C
+      # regex matcher, so we stress it directly under AddressSanitizer and
+      # UndefinedBehaviorSanitizer with a dedicated harness (no R needed, so the
+      # check is fast and deterministic).
+      - name: Compile matcher + harness under ASAN/UBSAN
+        run: >-
+          clang -std=gnu11 -g -O1 -Wall -Wextra
+          -fsanitize=address,undefined -fno-sanitize-recover=all
+          -fno-omit-frame-pointer
+          -I r/src
+          r/src/regex_utils.c r/tools/sanitizer/regex_asan.c
+          -o regex_asan
 
-      - name: R CMD check under ASAN/UBSAN
-        working-directory: r
-        run: |
-          R CMD build --no-build-vignettes --no-manual .
-          R CMD check --no-manual --no-build-vignettes jsonstructure_*.tar.gz
+      - name: Run regex sanitizer harness
+        env:
+          ASAN_OPTIONS: abort_on_error=1:detect_leaks=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: ./regex_asan
 
   lint:
     name: Lint R code
@@ -112,7 +113,7 @@ jobs:
   release:
     name: Attach R source tarball to release
     runs-on: ubuntu-latest
-    needs: [test, sanitizers, lint]
+    needs: [test, regex-sanitizers, lint]
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
