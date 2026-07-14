@@ -18,6 +18,7 @@ License: MIT + file LICENSE
 URL: https://github.com/json-structure/sdk, https://json-structure.org
 BugReports: https://github.com/json-structure/sdk/issues
 Encoding: UTF-8
+Language: en-US
 Depends: R (>= 4.0)
 Imports:
     jsonlite,

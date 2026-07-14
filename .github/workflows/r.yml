@@ -28,7 +28,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        r: ['release', 'oldrel-1']
+        r: ['release', 'oldrel-1', 'devel']
 
     env:
       R_KEEP_PKG_SOURCE: yes
@@ -60,6 +60,32 @@ jobs:
           error-on: '"warning"'
           upload-snapshots: true
 
+  regex-sanitizers:
+    name: Regex ASAN/UBSAN (clang)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      # The engine and cJSON are covered by the C SDK's Valgrind job; the only
+      # hand-written, memory-sensitive C added for the R package is the pure-C
+      # regex matcher, so we stress it directly under AddressSanitizer and
+      # UndefinedBehaviorSanitizer with a dedicated harness (no R needed, so the
+      # check is fast and deterministic).
+      - name: Compile matcher + harness under ASAN/UBSAN
+        run: >-
+          clang -std=gnu11 -g -O1 -Wall -Wextra
+          -fsanitize=address,undefined -fno-sanitize-recover=all
+          -fno-omit-frame-pointer
+          -I r/src
+          r/src/regex_utils.c r/tools/sanitizer/regex_asan.c
+          -o regex_asan
+
+      - name: Run regex sanitizer harness
+        env:
+          ASAN_OPTIONS: abort_on_error=1:detect_leaks=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: ./regex_asan
+
   lint:
     name: Lint R code
     runs-on: ubuntu-latest
@@ -87,7 +113,7 @@ jobs:
   release:
     name: Attach R source tarball to release
     runs-on: ubuntu-latest
-    needs: [test, lint]
+    needs: [test, regex-sanitizers, lint]
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write

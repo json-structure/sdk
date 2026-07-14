@@ -126,6 +126,64 @@ TEST(invalid_circular_ref_direct) {
     return !valid ? 0 : 1;
 }
 
+TEST(invalid_circular_extends_chain) {
+    /* A -> C -> B -> A via $extends, on abstract types that are never
+     * referenced. Must be reported as circular even though nothing uses them. */
+    const char* schema = "{"
+        "\"$id\": \"https://example.com/test\","
+        "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
+        "\"name\": \"ExtendsCycle\","
+        "\"type\": \"object\","
+        "\"properties\": {\"data\": {\"type\": \"string\"}},"
+        "\"definitions\": {"
+            "\"A\": {\"type\": \"object\", \"abstract\": true, \"$extends\": \"#/definitions/C\", \"properties\": {\"a\": {\"type\": \"string\"}}},"
+            "\"B\": {\"type\": \"object\", \"abstract\": true, \"$extends\": \"#/definitions/A\", \"properties\": {\"b\": {\"type\": \"string\"}}},"
+            "\"C\": {\"type\": \"object\", \"abstract\": true, \"$extends\": \"#/definitions/B\", \"properties\": {\"c\": {\"type\": \"string\"}}}"
+        "}"
+    "}";
+
+    js_result_t result;
+    js_result_init(&result);
+    bool valid = js_validate_schema(schema, &result);
+    bool has_circular = false;
+    for (size_t i = 0; i < result.error_count; i++) {
+        if (result.errors[i].code == JS_SCHEMA_REF_CIRCULAR) {
+            has_circular = true;
+            break;
+        }
+    }
+    js_result_cleanup(&result);
+    /* Must be rejected specifically for the circular $extends chain. */
+    return (!valid && has_circular) ? 0 : 1;
+}
+
+TEST(invalid_self_referencing_extends) {
+    /* An abstract type whose $extends points at itself. */
+    const char* schema = "{"
+        "\"$id\": \"https://example.com/test\","
+        "\"$schema\": \"https://json-structure.org/meta/core/v0/schema\","
+        "\"name\": \"SelfExtends\","
+        "\"type\": \"object\","
+        "\"properties\": {\"data\": {\"type\": \"string\"}},"
+        "\"definitions\": {"
+            "\"R\": {\"type\": \"object\", \"abstract\": true, \"$extends\": \"#/definitions/R\", \"properties\": {\"v\": {\"type\": \"string\"}}}"
+        "}"
+    "}";
+
+    js_result_t result;
+    js_result_init(&result);
+    bool valid = js_validate_schema(schema, &result);
+    bool has_circular = false;
+    for (size_t i = 0; i < result.error_count; i++) {
+        if (result.errors[i].code == JS_SCHEMA_REF_CIRCULAR) {
+            has_circular = true;
+            break;
+        }
+    }
+    js_result_cleanup(&result);
+    return (!valid && has_circular) ? 0 : 1;
+}
+
 TEST(invalid_defs_not_object) {
     const char* schema = "{"
         "\"$id\": \"https://example.com/test\","
@@ -1884,6 +1942,8 @@ int test_conformance(void) {
     RUN_TEST(invalid_allof_not_array);
     RUN_TEST(invalid_array_missing_items);
     RUN_TEST(invalid_circular_ref_direct);
+    RUN_TEST(invalid_circular_extends_chain);
+    RUN_TEST(invalid_self_referencing_extends);
     RUN_TEST(invalid_defs_not_object);
     RUN_TEST(invalid_enum_duplicates);
     RUN_TEST(invalid_enum_empty);

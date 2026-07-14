@@ -2014,20 +2014,11 @@ CJSON_PUBLIC(cJSON_bool) cJSON_AddItemToArray(cJSON *array, cJSON *item)
     return add_item_to_array(array, item);
 }
 
-#if defined(__clang__) || (defined(__GNUC__)  && ((__GNUC__ > 4) || ((__GNUC__ == 4) && (__GNUC_MINOR__ > 5))))
-    #pragma GCC diagnostic push
-#endif
-#ifdef __GNUC__
-#pragma GCC diagnostic ignored "-Wcast-qual"
-#endif
 /* helper function to cast away const */
 static void* cast_away_const(const void* string)
 {
     return (void*)string;
 }
-#if defined(__clang__) || (defined(__GNUC__)  && ((__GNUC__ > 4) || ((__GNUC__ == 4) && (__GNUC_MINOR__ > 5))))
-    #pragma GCC diagnostic pop
-#endif
 
 
 static cJSON_bool add_item_to_object(cJSON * const object, const char * const string, cJSON * const item, const internal_hooks * const hooks, const cJSON_bool constant_key)
