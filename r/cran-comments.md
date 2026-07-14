@@ -1,21 +1,8 @@
 ## R CMD check results
 
-0 errors | 0 warnings | 2 notes
+0 errors | 0 warnings | 1 note
 
 * This is a new submission.
-
-* checking pragmas in C/C++ headers and code ... NOTE
-  File which contains pragma(s) suppressing diagnostics: 'src/cJSON.c'
-
-  `src/cJSON.c` is the vendored cJSON library (v1.7.18, MIT,
-  © Dave Gamble and cJSON contributors). It contains a
-  `#pragma GCC diagnostic ignored "-Wcast-qual"` in its upstream source. The
-  file is bundled so that the package's native engine has no external
-  dependency; the pragma only takes effect under `-Wcast-qual`, which is not part
-  of the default R compilation flags. The only modification to the upstream
-  source is replacing its `sprintf()` calls with bounded `snprintf()` to satisfy
-  the CRAN "compiled code" check (no `sprintf`/`__sprintf_chk` entry point).
-  Authorship and copyright are recorded in `DESCRIPTION` and `inst/COPYRIGHTS`.
 
 ## Test environments
 
@@ -31,3 +18,10 @@ run time. The package is pure C and links only with the C runtime; `pattern`
 keyword matching is provided by a small embedded regular-expression engine, so
 there is no `std::regex`/C++ dependency and behaviour is identical on every
 platform.
+
+The bundled cJSON (v1.7.18, MIT) is used unmodified except for two changes made
+for CRAN compliance: its `sprintf()` calls are replaced by bounded `snprintf()`
+(no `sprintf` entry point in compiled code), and the upstream
+`#pragma GCC diagnostic ignored "-Wcast-qual"` around an internal helper is
+removed (no diagnostic-suppressing pragmas). Both changes are recorded in
+`inst/COPYRIGHTS`.

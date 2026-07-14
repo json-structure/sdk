@@ -22,7 +22,12 @@ cJSON
   Copyright: (c) 2009-2017 Dave Gamble and cJSON contributors
   License:   MIT (SPDX-License-Identifier: MIT)
   Source:    https://github.com/DaveGamble/cJSON (tag v1.7.18)
-  Note:      src/cJSON.c is vendored from the tag above with one change: its
-             sprintf() calls are replaced by bounded snprintf() so the package
-             passes the CRAN "compiled code" entry-point check.
+  Note:      src/cJSON.c is vendored from the tag above with two changes made
+             to satisfy CRAN policy: (1) its sprintf() calls are replaced by
+             bounded snprintf() so the package passes the CRAN "compiled code"
+             entry-point check; (2) the upstream "#pragma GCC diagnostic
+             ignored \"-Wcast-qual\"" (and its push/pop) around the internal
+             cast_away_const() helper is removed so the package passes the CRAN
+             "pragmas suppressing diagnostics" check. The helper is unchanged
+             and produces no warning under the compiler flags R uses.
 -------------------------------------------------------------------------------
