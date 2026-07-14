@@ -7,13 +7,15 @@
 * checking pragmas in C/C++ headers and code ... NOTE
   File which contains pragma(s) suppressing diagnostics: 'src/cJSON.c'
 
-  `src/cJSON.c` is the unmodified, vendored cJSON library (v1.7.18, MIT,
+  `src/cJSON.c` is the vendored cJSON library (v1.7.18, MIT,
   © Dave Gamble and cJSON contributors). It contains a
   `#pragma GCC diagnostic ignored "-Wcast-qual"` in its upstream source. The
-  file is bundled verbatim so that the package's native engine has no external
+  file is bundled so that the package's native engine has no external
   dependency; the pragma only takes effect under `-Wcast-qual`, which is not part
-  of the default R compilation flags. Authorship and copyright are recorded in
-  `DESCRIPTION` and `inst/COPYRIGHTS`.
+  of the default R compilation flags. The only modification to the upstream
+  source is replacing its `sprintf()` calls with bounded `snprintf()` to satisfy
+  the CRAN "compiled code" check (no `sprintf`/`__sprintf_chk` entry point).
+  Authorship and copyright are recorded in `DESCRIPTION` and `inst/COPYRIGHTS`.
 
 ## Test environments
 

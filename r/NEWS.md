@@ -36,3 +36,5 @@ shared library downloaded from GitHub Releases on first use.
   platform with no C++/`std::regex` dependency. Constructs outside the subset
   (lookbehind, named groups, inline flags, Unicode property escapes) are treated
   as invalid patterns, and backtracking is bounded against pathological inputs.
+* The vendored `cJSON` sources use bounded `snprintf()` (in place of the
+  upstream `sprintf()`) so the package passes the CRAN "compiled code" check.
