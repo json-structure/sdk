@@ -6,6 +6,7 @@
 ^\.gitignore$
 ^\.gitattributes$
 ^cran-comments\.md$
+^CRAN-RELEASE\.md$
 ^tools$
 ^doc$
 ^Meta$
