@@ -28,7 +28,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        r: ['release', 'oldrel-1']
+        r: ['release', 'oldrel-1', 'devel']
 
     env:
       R_KEEP_PKG_SOURCE: yes
@@ -60,6 +60,31 @@ jobs:
           error-on: '"warning"'
           upload-snapshots: true
 
+  sanitizers:
+    name: ASAN/UBSAN (R-devel, clang)
+    runs-on: ubuntu-latest
+    container:
+      # r-hub v2 container: R-devel built with clang AddressSanitizer +
+      # UndefinedBehaviorSanitizer and R-tuned ASAN/UBSAN option suppressions.
+      image: ghcr.io/r-hub/containers/clang-asan:latest
+    env:
+      # Run the shared conformance corpus (including `pattern` cases) so the
+      # hand-written C regex matcher in src/regex_utils.c is exercised under
+      # the sanitizers, not just the engine and cJSON.
+      JSONSTRUCTURE_TEST_ASSETS: ${{ github.workspace }}/test-assets
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install package dependencies (compiled under sanitizers)
+        working-directory: r
+        run: R -q -e 'install.packages("remotes", repos = "https://cloud.r-project.org"); remotes::install_deps(dependencies = TRUE, upgrade = "never")'
+
+      - name: R CMD check under ASAN/UBSAN
+        working-directory: r
+        run: |
+          R CMD build --no-build-vignettes --no-manual .
+          R CMD check --no-manual --no-build-vignettes jsonstructure_*.tar.gz
+
   lint:
     name: Lint R code
     runs-on: ubuntu-latest
@@ -87,7 +112,7 @@ jobs:
   release:
     name: Attach R source tarball to release
     runs-on: ubuntu-latest
-    needs: [test, lint]
+    needs: [test, sanitizers, lint]
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
