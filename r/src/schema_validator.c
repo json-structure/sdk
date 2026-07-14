@@ -1586,6 +1586,54 @@ static bool validate_extends_keyword(validate_context_t* ctx, const cJSON* exten
     return valid;
 }
 
+/* Detect a circular $extends chain starting at `start_node`. Follows string
+ * ($ref-style) $extends links, recording each resolved node in a bounded
+ * visited set; if a node is revisited the chain is circular. Reports
+ * JS_SCHEMA_REF_CIRCULAR and returns false on a cycle (or a chain that is
+ * implausibly deep). A non-string / array-valued $extends or an unresolvable
+ * target ends the simple walk (those are reported by validate_extends_keyword).
+ * Note: an unreferenced abstract type whose $extends forms a cycle would not be
+ * reached through instance-driven $ref resolution, so this walk is what makes
+ * circular $extends detectable regardless of whether the type is used. */
+static bool check_extends_cycle(validate_context_t* ctx, const cJSON* start_node) {
+    enum { JS_MAX_EXTENDS_DEPTH = 128 };
+    const cJSON* visited[JS_MAX_EXTENDS_DEPTH];
+    size_t count = 0;
+
+    const cJSON* current = start_node;
+    while (current) {
+        if (count >= JS_MAX_EXTENDS_DEPTH) {
+            add_error(ctx, JS_SCHEMA_REF_CIRCULAR,
+                      "$extends chain too deep (possible circular $extends)");
+            return false;
+        }
+        visited[count++] = current;
+
+        const cJSON* ext = cJSON_GetObjectItemCaseSensitive(current, "$extends");
+        if (!cJSON_IsString(ext) || !ext->valuestring || ext->valuestring[0] != '#') {
+            return true; /* chain ends, or is not a simple string reference */
+        }
+
+        const cJSON* target = resolve_ref(ctx, ext->valuestring);
+        if (!target) {
+            return true; /* missing target is reported by validate_extends_keyword */
+        }
+
+        for (size_t i = 0; i < count; i++) {
+            if (visited[i] == target) {
+                char msg[256];
+                snprintf(msg, sizeof(msg),
+                         "Circular $extends chain detected at '%s'",
+                         ext->valuestring);
+                add_error(ctx, JS_SCHEMA_REF_CIRCULAR, msg);
+                return false;
+            }
+        }
+        current = target;
+    }
+    return true;
+}
+
 static bool validate_composition(validate_context_t* ctx, const cJSON* schema) {
     bool valid = true;
     const cJSON* allOf = cJSON_GetObjectItemCaseSensitive(schema, "allOf");
@@ -1783,6 +1831,9 @@ static bool validate_schema_node(validate_context_t* ctx, const cJSON* schema) {
         size_t prev_len = strlen(ctx->path);
         push_path(ctx, "$extends");
         if (!validate_extends_keyword(ctx, extends_node)) {
+            valid = false;
+        }
+        if (!check_extends_cycle(ctx, schema)) {
             valid = false;
         }
         pop_path(ctx, prev_len);
