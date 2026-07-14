@@ -3,10 +3,14 @@
 0 errors | 0 warnings | 1 note
 
 * This is a new submission.
+* The note also lists two "possibly misspelled words" in DESCRIPTION,
+  'schemas' and 'validator'. Both are spelled correctly and are standard
+  terms in this domain: a *validator* checks data against *schemas*.
 
 ## Test environments
 
 * Windows 11 x86_64, R 4.6.1 (local), gcc 14.3.0 (Rtools45)
+* win-builder: R-devel and R-release (Status: 1 NOTE, new submission only)
 * GitHub Actions: ubuntu-latest, macos-latest, windows-latest; R release and
   oldrel-1
 
