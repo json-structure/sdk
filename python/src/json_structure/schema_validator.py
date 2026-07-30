@@ -78,7 +78,7 @@ class JSONStructureSchemaCoreValidator:
     KNOWN_EXTENSIONS = {
         "JSONStructureImport", "JSONStructureAlternateNames", "JSONStructureUnits",
         "JSONStructureConditionalComposition", "JSONStructureValidation",
-        "JSONStructureRelations"
+        "JSONStructureRelations", "JSONStructureCharacteristics"
     }
 
     def __init__(self, allow_dollar=False, allow_import=False, import_map=None, extended=False, external_schemas=None, warn_on_unused_extension_keywords=True, max_validation_depth=64):
@@ -251,6 +251,14 @@ class JSONStructureSchemaCoreValidator:
             if "validation" in schema_uri:
                 self.enabled_extensions.add("JSONStructureConditionalComposition")
                 self.enabled_extensions.add("JSONStructureValidation")
+
+        # The characteristics meta-schema enables the extensions it declares in $uses
+        if "characteristics" in schema_uri:
+            self.enabled_extensions.add("JSONStructureUnits")
+            self.enabled_extensions.add("JSONStructureImport")
+            self.enabled_extensions.add("JSONStructureConditionalComposition")
+            self.enabled_extensions.add("JSONStructureValidation")
+            self.enabled_extensions.add("JSONStructureCharacteristics")
         
         # Check $uses array
         if isinstance(uses, list):
