@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package com.example.app;
+
+import "com/example/left.proto";
+import "com/example/right.proto";
+
+message Root {
+  com.example.left.Thing left = 1;
+  com.example.right.Thing right = 2;
+}

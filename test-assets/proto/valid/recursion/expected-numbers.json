@@ -1,0 +1,12 @@
+{
+  "version": 2,
+  "messages": {
+    "Node": {
+      "fields": {
+        "value": 1,
+        "children": 2
+      }
+    }
+  },
+  "enums": {}
+}

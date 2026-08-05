@@ -1,0 +1,2 @@
+kind: Numbering
+message: value 'open' is pinned to 7 but locked at 3 (in message Account_state)

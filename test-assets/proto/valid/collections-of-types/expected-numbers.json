@@ -1,0 +1,39 @@
+{
+  "version": 2,
+  "messages": {
+    "Item": {
+      "fields": {
+        "sku": 1
+      }
+    },
+    "Basket_inlineItem": {
+      "fields": {
+        "n": 1
+      }
+    },
+    "Basket": {
+      "fields": {
+        "items": 1,
+        "byId": 2,
+        "colours": 3,
+        "inline": 4,
+        "inlineEnum": 5,
+        "grid": 6
+      }
+    }
+  },
+  "enums": {
+    "Colour": {
+      "values": {
+        "RED": 1,
+        "BLUE": 2
+      }
+    },
+    "Basket_inlineEnumItem": {
+      "values": {
+        "A": 1,
+        "B": 2
+      }
+    }
+  }
+}

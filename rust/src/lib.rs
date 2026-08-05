@@ -83,6 +83,11 @@ mod json_source_locator;
 mod schema_validator;
 mod types;
 
+pub mod avro;
+pub mod consolidate;
+pub mod proto;
+
+pub use consolidate::{consolidate, ConsolidateError, FileResolver, MapResolver, SchemaResolver};
 pub use error_codes::{InstanceErrorCode, SchemaErrorCode};
 pub use instance_validator::InstanceValidator;
 pub use json_source_locator::JsonSourceLocator;

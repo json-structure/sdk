@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/proto/enum-symbol-collision",
+  "$root": "#/definitions/Thing",
+  "definitions": {
+    "Thing": {
+      "name": "Thing",
+      "type": "object",
+      "properties": {
+        "a": { "type": { "$ref": "#/definitions/Colour" } },
+        "b": { "type": { "$ref": "#/definitions/Mood" } }
+      },
+      "required": ["a", "b"]
+    },
+    "Colour": { "name": "Colour", "type": "string", "enum": ["RED", "BLUE"] },
+    "Mood": { "name": "Mood", "type": "string", "enum": ["RED", "CALM"] }
+  }
+}

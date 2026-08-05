@@ -1,0 +1,16 @@
+{
+  "numbers": {
+    "version": 2,
+    "messages": {
+      "Account": {
+        "fields": { "id": 1, "label": 4, "retired": 6 },
+        "reserved": [9]
+      }
+    },
+    "enums": {
+      "Account_state": {
+        "values": { "open": 7, "closed": 8, "archived": 5 }
+      }
+    }
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/avro/lossless-strings",
+  "name": "Lossless",
+  "type": "object",
+  "properties": {
+    "dec": { "type": "decimal", "precision": 10, "scale": 2 },
+    "date": { "type": "date" },
+    "time": { "type": "time" },
+    "dt": { "type": "datetime" },
+    "dur": { "type": "duration" },
+    "uuid": { "type": "uuid" },
+    "uri": { "type": "uri" },
+    "ptr": { "type": "jsonpointer" },
+    "i128": { "type": "int128" },
+    "u64": { "type": "uint64" },
+    "u128": { "type": "uint128" }
+  },
+  "required": ["dec","date","time","dt","dur","uuid","uri","ptr","i128","u64","u128"]
+}

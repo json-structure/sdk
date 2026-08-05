@@ -8,13 +8,14 @@
 use std::fs::File;
 use std::io::Write;
 
+use assert_cmd::cargo::cargo_bin_cmd;
 use assert_cmd::Command;
 use predicates::prelude::*;
 use tempfile::TempDir;
 
 /// Helper to get the jstruct command
 fn jstruct() -> Command {
-    Command::cargo_bin("jstruct").unwrap()
+    cargo_bin_cmd!("jstruct")
 }
 
 /// Helper to create a temp directory with test files

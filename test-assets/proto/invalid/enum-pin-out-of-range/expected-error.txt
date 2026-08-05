@@ -1,0 +1,3 @@
+kind: Invalid
+path: #/properties/state
+message: `protoNumbers` value 2147483648 for 'open' is outside the int32 range protobuf enum values occupy (at #/properties/state)

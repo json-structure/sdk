@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+message Envelope_payload_1 {
+  string body = 1;
+}
+
+message Envelope {
+  string id = 1;
+  Envelope_payload_1 payload = 2;
+  Envelope_payload declared = 3;
+}
+
+message Envelope_payload {
+  string note = 1;
+}

@@ -1,0 +1,2 @@
+kind: UnknownAddIn
+message: add-in 'Nonexistent' is not offered by this schema

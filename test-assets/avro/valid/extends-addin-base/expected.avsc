@@ -1,0 +1,34 @@
+{
+  "type": "record",
+  "name": "Landmark",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string"
+    },
+    {
+      "name": "label",
+      "type": "string"
+    },
+    {
+      "name": "auditedBy",
+      "type": "string"
+    },
+    {
+      "name": "auditedAt",
+      "type": [
+        "null",
+        "string"
+      ],
+      "default": null
+    },
+    {
+      "name": "visitors",
+      "type": [
+        "null",
+        "int"
+      ],
+      "default": null
+    }
+  ]
+}

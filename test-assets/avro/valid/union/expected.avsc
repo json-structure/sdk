@@ -1,0 +1,14 @@
+{
+  "type": "record",
+  "name": "Cell",
+  "fields": [
+    {
+      "name": "value",
+      "type": [
+        "string",
+        "int",
+        "boolean"
+      ]
+    }
+  ]
+}

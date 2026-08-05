@@ -1,0 +1,9 @@
+syntax = "proto3";
+
+message Landmark {
+  string id = 1;
+  string label = 2;
+  string auditedBy = 3;
+  optional string auditedAt = 4;
+  optional int32 visitors = 5;
+}

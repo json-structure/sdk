@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "messages": {
+    "Document": {
+      "fields": {
+        "title": 1,
+        "createdBy": 2,
+        "tags": 3
+      }
+    }
+  },
+  "enums": {}
+}

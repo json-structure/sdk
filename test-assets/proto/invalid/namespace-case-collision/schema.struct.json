@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/namespace-case-collision",
+  "$root": "#/definitions/Sales/Order",
+  "definitions": {
+    "Sales": {
+      "Order": {
+        "name": "Order",
+        "type": "object",
+        "properties": { "id": { "type": "string" } },
+        "required": ["id"]
+      }
+    },
+    "sales": {
+      "Invoice": {
+        "name": "Invoice",
+        "type": "object",
+        "properties": { "id": { "type": "string" } },
+        "required": ["id"]
+      }
+    }
+  }
+}

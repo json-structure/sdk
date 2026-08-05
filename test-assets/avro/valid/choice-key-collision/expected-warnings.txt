@@ -1,0 +1,1 @@
+#/properties/foot/choices/text: generated name `text` is already taken; this anonymous type is named `text_2` instead

@@ -1,0 +1,18 @@
+{
+  "version": 2,
+  "messages": {
+    "Reading_point": {
+      "fields": {
+        "x": 1,
+        "y": 2,
+        "label": 3
+      }
+    },
+    "Reading": {
+      "fields": {
+        "point": 1
+      }
+    }
+  },
+  "enums": {}
+}

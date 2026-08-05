@@ -12,6 +12,8 @@ This document provides comprehensive guidelines for developing JSON Structure SD
 - [Error Codes](#error-codes)
 - [Test Assets](#test-assets)
 - [Schema Exporter (Optional)](#schema-exporter-optional)
+- [Avro Compiler](#avro-compiler)
+- [Protobuf Generator (CLI only)](#protobuf-generator-cli-only)
 - [Conformance Checklist](#conformance-checklist)
 
 ---
@@ -25,6 +27,7 @@ JSON Structure is a type-oriented schema language for JSON, designed for definin
 3. **Error Codes** - Standardized error codes matching `assets/error-messages.json`
 4. **Source Location Tracking** - Line/column tracking for error messages
 5. **Schema Exporter** (optional) - Generates schemas from native language types (only for languages with runtime introspection)
+6. **Avro Compiler** (optional) - Compiles schemas to Apache Avro so the schema can drive a serializer directly
 
 ---
 
@@ -403,6 +406,111 @@ When implementing a schema exporter:
 - .NET: [`dotnet/src/JsonStructure/Schema/JsonStructureSchemaExporter.cs`](dotnet/src/JsonStructure/Schema/JsonStructureSchemaExporter.cs)
 - Java: [`java/src/main/java/org/json_structure/schema/JsonStructureSchemaExporter.java`](java/src/main/java/org/json_structure/schema/JsonStructureSchemaExporter.java)
 - Python: [`python/src/json_structure/schema_exporter.py`](python/src/json_structure/schema_exporter.py)
+
+---
+
+## Avro Compiler
+
+The Avro compiler turns a JSON Structure document into an Apache Avro schema so
+that a developer can hand us a `.struct.json` and get a working Avro serializer.
+The `.avsc` is an implementation detail they never have to look at.
+
+Every SDK whose language has a usable Avro library should ship one. The
+normative contract is [`spec/json-structure-to-avro.md`](spec/json-structure-to-avro.md);
+the reference implementation is [`rust/src/avro/`](rust/src/avro/).
+
+### Requirements
+
+1. **Deterministic.** Two conforming implementations MUST emit byte-identical
+   output for the same input. Attribute order, field order, generated names, and
+   union branch order are all specified — see spec §7. Do not use hash sets or
+   any other unordered collection anywhere the output depends on iteration order.
+2. **Pure.** No I/O, no clock, no randomness, no global state. The compiler is a
+   function of its input document and its options.
+3. **Fast.** This runs at application startup. Budget microseconds, not
+   milliseconds, and cache the result behind a lazy initializer for embedded
+   schemas.
+4. **Loud on the things Avro cannot express** rather than quietly lossy. See
+   spec §8 for the error taxonomy and §9 for the warnings.
+5. **`$import` resolved first.** The compiler consumes a consolidated document.
+   Either resolve imports before compiling or accept a resolver.
+
+### API shape
+
+The point is that the developer never touches an `.avsc`. Find the seam in the
+language's Avro library where a schema enters, and slip the compiler in there.
+
+| Language   | Avro library                   | Natural seam                                     |
+| ---------- | ------------------------------ | ------------------------------------------------ |
+| Rust       | `apache-avro`                  | Produce an `apache_avro::Schema`                 |
+| Java       | `org.apache.avro`              | Produce a `Schema`, feed `SpecificDatumWriter`   |
+| Python     | `avro` / `fastavro`            | Produce a parsed schema dict for `fastavro`      |
+| .NET/C#    | `Apache.Avro` or `Chr.Avro`    | Produce a `Schema` for `DatumWriter<T>`          |
+| Go         | `hamba/avro` or `linkedin/goavro` | Produce an `avro.Schema`                      |
+| TypeScript | `avsc`                         | Produce a `Type` via `avsc.Type.forSchema`       |
+
+Each SDK MUST expose both the raw compile (returns the schema document, for
+inspection and for writing to disk) and the library-native path (returns the
+library's parsed schema object).
+
+### Naming
+
+Name the library-native entry point after **the function it replaces**. A
+developer adopting this is editing a line that already exists: they had a
+hand-maintained `.avsc` going into their Avro library, and now a `.struct.json`
+goes in instead. The smaller that diff looks, the better the API.
+
+| Language   | Replaces                      | Becomes                                  |
+| ---------- | ----------------------------- | ---------------------------------------- |
+| Rust       | `Schema::parse_str(avsc)`     | `avro::schema_from_str(src)`             |
+| Java       | `new Schema.Parser().parse()` | `JsonStructureAvro.schemaFrom(src)`      |
+| Python     | `fastavro.parse_schema(d)`    | `json_structure.avro.schema_from_str(s)` |
+| .NET/C#    | `Schema.Parse(avsc)`          | `JsonStructureAvro.SchemaFrom(src)`      |
+| Go         | `avro.Parse(avsc)`            | `jsavro.SchemaFrom(src)`                 |
+| TypeScript | `avsc.Type.forSchema(d)`      | `avro.typeFromStruct(src)`               |
+
+Two rules, and they pull in opposite directions in different languages:
+
+1. **Do not repeat what the namespace already says.** In Rust, Python, and
+   TypeScript the module path carries `avro`, so the function must not; Rust's
+   clippy lints this as `module_name_repetitions`. Prefer
+   `avro::schema_from_str` over `avro::avro_schema_from_jstruct_str`.
+2. **Do say it when there is no namespace to lean on.** Java and C# resolve
+   types by simple name after an import, so a bare `SchemaFrom` would be
+   ambiguous at the call site; the type name carries the qualification instead.
+
+Avoid naming a module or package after a lifecycle phase — `runtime`, `helpers`,
+`util`. A module name should say what something *is*. `avro::schema_from_str`
+needs no second qualifier, and `avro::runtime::schema_from_str` reads like the
+schema is being built at some special time rather than simply being built.
+
+### Conformance corpus
+
+[`test-assets/avro/`](test-assets/avro/) — 32 valid cases and 10 negative cases.
+The harness contract is described in its README and has five checks: golden
+byte-match, determinism across repeated runs, acceptance by a real Avro parser,
+the expected warnings for every valid case, and the expected error for every
+negative case. The reference harness is
+[`rust/tests/avro_corpus.rs`](rust/tests/avro_corpus.rs).
+
+---
+
+## Protobuf Generator (CLI only)
+
+Protobuf is a build-time concern, not a runtime one. `.proto` files are
+artifacts you check in, feed to `protoc`, and `import` from a gRPC service
+definition. The generator therefore lives in the `jstruct` CLI, not in the
+runtime libraries, and SDKs are **not** expected to port it.
+
+The contract is [`spec/json-structure-to-proto.md`](spec/json-structure-to-proto.md),
+the implementation [`rust/src/proto/`](rust/src/proto/), and the corpus
+[`test-assets/proto/`](test-assets/proto/).
+
+The one thing worth knowing even if you never touch the generator: **field
+numbers are a wire contract.** `jstruct proto --numbers <lock>` keeps a
+checked-in lock file so that existing fields keep their numbers, new fields get
+fresh ones, and removed fields become `reserved`. Without it, inserting a
+property in the middle of a schema silently renumbers everything after it.
 
 ---
 

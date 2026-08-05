@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+message Item {
+  string sku = 1;
+}
+
+enum Colour {
+  COLOUR_UNSPECIFIED = 0;
+  RED = 1;
+  BLUE = 2;
+}
+
+message Basket_inlineItem {
+  int32 n = 1;
+}
+
+enum Basket_inlineEnumItem {
+  BASKET_INLINE_ENUM_ITEM_UNSPECIFIED = 0;
+  A = 1;
+  B = 2;
+}
+
+message Basket_gridItem {
+  repeated Item items = 1;
+}
+
+message Basket {
+  repeated Item items = 1;
+  map<string, Item> byId = 2;
+  repeated Colour colours = 3;
+  repeated Basket_inlineItem inline = 4;
+  repeated Basket_inlineEnumItem inlineEnum = 5;
+  repeated Basket_gridItem grid = 6;
+}

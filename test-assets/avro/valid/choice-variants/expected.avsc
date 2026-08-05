@@ -1,0 +1,141 @@
+{
+  "type": "record",
+  "name": "Node",
+  "fields": [
+    {
+      "name": "value",
+      "type": [
+        {
+          "type": "record",
+          "name": "text",
+          "fields": [
+            {
+              "name": "value",
+              "type": "string"
+            }
+          ]
+        },
+        {
+          "type": "record",
+          "name": "number",
+          "fields": [
+            {
+              "name": "value",
+              "type": "double"
+            }
+          ]
+        },
+        {
+          "type": "record",
+          "name": "flag",
+          "fields": [
+            {
+              "name": "value",
+              "type": "boolean"
+            }
+          ]
+        },
+        {
+          "type": "record",
+          "name": "nested",
+          "fields": [
+            {
+              "name": "value",
+              "type": [
+                {
+                  "type": "record",
+                  "name": "a",
+                  "fields": [
+                    {
+                      "name": "value",
+                      "type": "int"
+                    }
+                  ]
+                },
+                {
+                  "type": "record",
+                  "name": "b",
+                  "fields": [
+                    {
+                      "name": "value",
+                      "type": "string"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "record",
+          "name": "children",
+          "fields": [
+            {
+              "name": "value",
+              "type": {
+                "type": "array",
+                "items": "Node"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "list",
+      "type": {
+        "type": "array",
+        "items": [
+          {
+            "type": "record",
+            "name": "x",
+            "fields": [
+              {
+                "name": "value",
+                "type": "string"
+              }
+            ]
+          },
+          {
+            "type": "record",
+            "name": "y",
+            "fields": [
+              {
+                "name": "value",
+                "type": "int"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "bag",
+      "type": {
+        "type": "map",
+        "values": [
+          {
+            "type": "record",
+            "name": "p",
+            "fields": [
+              {
+                "name": "value",
+                "type": "string"
+              }
+            ]
+          },
+          {
+            "type": "record",
+            "name": "q",
+            "fields": [
+              {
+                "name": "value",
+                "type": "int"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

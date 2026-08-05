@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "messages": {
+    "com.example.sales.Order": {
+      "fields": {
+        "id": 1,
+        "customer": 2
+      }
+    },
+    "com.example.crm.Customer": {
+      "fields": {
+        "name": 1
+      }
+    }
+  },
+  "enums": {}
+}

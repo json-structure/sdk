@@ -1,0 +1,3 @@
+kind: UnresolvedRef
+path: #/properties/a
+message: cannot resolve '#/definitions/Nope' (at #/properties/a)

@@ -1,0 +1,3 @@
+kind: Invalid
+path: #/definitions/Base
+message: abstract types cannot be used as a value type (at #/definitions/Base)

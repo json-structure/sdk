@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+enum Order_status {
+  ORDER_STATUS_UNSPECIFIED = 0;
+  pending = 1;
+  shipped = 2;
+  delivered = 3;
+}
+
+enum Order_priority {
+  ORDER_PRIORITY_UNSPECIFIED = 0;
+  low = 1;
+  high = 2;
+}
+
+message Order {
+  Order_status status = 1;
+  // JSON Structure default: "low"
+  optional Order_priority priority = 2;
+}

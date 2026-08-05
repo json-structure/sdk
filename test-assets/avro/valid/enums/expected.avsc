@@ -1,0 +1,34 @@
+{
+  "type": "record",
+  "name": "Order",
+  "fields": [
+    {
+      "name": "status",
+      "type": {
+        "type": "enum",
+        "name": "Order_status",
+        "symbols": [
+          "pending",
+          "shipped",
+          "delivered"
+        ]
+      }
+    },
+    {
+      "name": "priority",
+      "type": [
+        {
+          "type": "enum",
+          "name": "Order_priority",
+          "symbols": [
+            "low",
+            "high"
+          ],
+          "default": "low"
+        },
+        "null"
+      ],
+      "default": "low"
+    }
+  ]
+}

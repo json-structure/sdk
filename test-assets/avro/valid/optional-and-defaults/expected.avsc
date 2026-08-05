@@ -1,0 +1,42 @@
+{
+  "type": "record",
+  "name": "Settings",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string"
+    },
+    {
+      "name": "retries",
+      "type": [
+        "int",
+        "null"
+      ],
+      "default": 3
+    },
+    {
+      "name": "label",
+      "type": [
+        "null",
+        "string"
+      ],
+      "default": null
+    },
+    {
+      "name": "enabled",
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "default": true
+    },
+    {
+      "name": "kind",
+      "type": [
+        "null",
+        "string"
+      ],
+      "default": null
+    }
+  ]
+}

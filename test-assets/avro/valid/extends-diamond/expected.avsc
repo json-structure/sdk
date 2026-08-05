@@ -1,0 +1,30 @@
+{
+  "type": "record",
+  "name": "Joint",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string"
+    },
+    {
+      "name": "side",
+      "type": "string"
+    },
+    {
+      "name": "shared",
+      "type": "string"
+    },
+    {
+      "name": "arm",
+      "type": "string"
+    },
+    {
+      "name": "note",
+      "type": [
+        "null",
+        "string"
+      ],
+      "default": null
+    }
+  ]
+}

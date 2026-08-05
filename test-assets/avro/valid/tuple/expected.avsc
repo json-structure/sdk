@@ -1,0 +1,27 @@
+{
+  "type": "record",
+  "name": "Reading",
+  "fields": [
+    {
+      "name": "point",
+      "type": {
+        "type": "record",
+        "name": "Reading_point",
+        "fields": [
+          {
+            "name": "x",
+            "type": "double"
+          },
+          {
+            "name": "y",
+            "type": "double"
+          },
+          {
+            "name": "label",
+            "type": "string"
+          }
+        ]
+      }
+    }
+  ]
+}

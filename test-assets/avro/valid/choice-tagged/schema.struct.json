@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/avro/choice-tagged",
+  "name": "Event",
+  "type": "object",
+  "properties": {
+    "body": {
+      "type": "choice",
+      "choices": {
+        "created": { "type": "object", "properties": { "at": { "type": "string" } }, "required": ["at"] },
+        "deleted": { "type": "object", "properties": { "reason": { "type": "string" } }, "required": ["reason"] }
+      }
+    }
+  },
+  "required": ["body"]
+}

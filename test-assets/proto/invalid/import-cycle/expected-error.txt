@@ -1,0 +1,2 @@
+kind: ImportCycle
+message: packages 'left' and 'right' reference each other; protoc forbids circular file imports. Put mutually-referencing types in one namespace.

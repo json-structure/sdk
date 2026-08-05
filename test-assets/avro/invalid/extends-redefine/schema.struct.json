@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/extends-redefine",
+  "$root": "#/definitions/Dog",
+  "definitions": {
+    "Animal": {
+      "name": "Animal",
+      "abstract": true,
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "age": { "type": "int32" }
+      },
+      "required": ["name"]
+    },
+    "Dog": {
+      "name": "Dog",
+      "type": "object",
+      "$extends": "#/definitions/Animal",
+      "properties": {
+        "age": { "type": "string" },
+        "breed": { "type": "string" }
+      }
+    }
+  }
+}

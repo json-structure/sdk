@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "messages": {
+    "Landmark": {
+      "fields": {
+        "id": 1,
+        "label": 2,
+        "auditedBy": 3,
+        "auditedAt": 4,
+        "visitors": 5
+      }
+    }
+  },
+  "enums": {}
+}

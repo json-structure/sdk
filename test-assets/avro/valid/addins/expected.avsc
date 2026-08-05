@@ -1,0 +1,21 @@
+{
+  "type": "record",
+  "name": "Document",
+  "fields": [
+    {
+      "name": "title",
+      "type": "string"
+    },
+    {
+      "name": "createdBy",
+      "type": "string"
+    },
+    {
+      "name": "tags",
+      "type": {
+        "type": "array",
+        "items": "string"
+      }
+    }
+  ]
+}

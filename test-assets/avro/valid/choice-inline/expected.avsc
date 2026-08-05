@@ -1,0 +1,38 @@
+[
+  {
+    "type": "record",
+    "name": "Circle",
+    "fields": [
+      {
+        "name": "kind",
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "type": "string"
+      },
+      {
+        "name": "radius",
+        "type": "double"
+      }
+    ]
+  },
+  {
+    "type": "record",
+    "name": "Square",
+    "fields": [
+      {
+        "name": "kind",
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "type": "string"
+      },
+      {
+        "name": "side",
+        "type": "double"
+      }
+    ]
+  }
+]

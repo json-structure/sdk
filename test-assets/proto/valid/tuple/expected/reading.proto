@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+message Reading_point {
+  double x = 1;
+  double y = 2;
+  string label = 3;
+}
+
+message Reading {
+  Reading_point point = 1;
+}

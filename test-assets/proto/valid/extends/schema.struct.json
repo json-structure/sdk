@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/avro/extends",
+  "$root": "#/definitions/Dog",
+  "definitions": {
+    "Animal": {
+      "name": "Animal",
+      "abstract": true,
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "age": { "type": "int32" }
+      },
+      "required": ["name"]
+    },
+    "Dog": {
+      "name": "Dog",
+      "type": "object",
+      "$extends": "#/definitions/Animal",
+      "properties": {
+        "breed": { "type": "string" }
+      },
+      "required": ["breed"]
+    }
+  }
+}

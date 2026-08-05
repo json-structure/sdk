@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+package com.example.sales;
+
+import "com/example/crm.proto";
+
+message Order {
+  string id = 1;
+  com.example.crm.Customer customer = 2;
+}

@@ -1,0 +1,3 @@
+kind: IllegalName
+path: #/properties/a/altnames/proto
+message: 'not-a-legal-name' is not a legal protobuf identifier (at #/properties/a/altnames/proto)

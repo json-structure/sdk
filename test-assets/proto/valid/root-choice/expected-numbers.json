@@ -1,0 +1,22 @@
+{
+  "version": 2,
+  "messages": {
+    "Shape_circle": {
+      "fields": {
+        "r": 1
+      }
+    },
+    "Shape_square": {
+      "fields": {
+        "s": 1
+      }
+    },
+    "Shape": {
+      "fields": {
+        "circle": 1,
+        "square": 2
+      }
+    }
+  },
+  "enums": {}
+}

@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+message Shape_circle {
+  double r = 1;
+}
+
+message Shape_square {
+  double s = 1;
+}
+
+message Shape {
+  oneof value {
+    Shape_circle circle = 1;
+    Shape_square square = 2;
+  }
+}

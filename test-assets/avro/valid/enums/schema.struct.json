@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/avro/enums",
+  "name": "Order",
+  "type": "object",
+  "properties": {
+    "status": { "type": "string", "enum": ["pending", "shipped", "delivered"] },
+    "priority": { "type": "string", "enum": ["low", "high"], "default": "low" }
+  },
+  "required": ["status"]
+}

@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/proto/enum-pin-out-of-range",
+  "name": "Account",
+  "type": "object",
+  "properties": {
+    "state": { "type": "string", "enum": ["open"], "protoNumbers": { "open": 2147483648 } }
+  },
+  "required": ["state"]
+}

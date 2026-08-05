@@ -1,0 +1,3 @@
+kind: Invalid
+path: #/properties/state
+message: enum symbol 'ACCOUNT_STATE_UNSPECIFIED' collides with the synthesized zero value (at #/properties/state)

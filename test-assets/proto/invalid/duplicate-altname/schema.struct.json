@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/proto/duplicate-altname",
+  "$uses": ["JSONStructureAlternateNames"],
+  "$root": "#/definitions/Order",
+  "definitions": {
+    "Order": {
+      "name": "Order",
+      "type": "object",
+      "properties": { "id": { "type": "string" } },
+      "required": ["id"]
+    },
+    "Invoice": {
+      "name": "Invoice",
+      "altnames": { "proto": "Order" },
+      "type": "object",
+      "properties": { "id": { "type": "string" } },
+      "required": ["id"]
+    }
+  }
+}
