@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/extends-cycle",
+  "$root": "#/definitions/Concrete",
+  "definitions": {
+    "A": {
+      "name": "A",
+      "abstract": true,
+      "type": "object",
+      "$extends": "#/definitions/B",
+      "properties": { "a": { "type": "string" } }
+    },
+    "B": {
+      "name": "B",
+      "abstract": true,
+      "type": "object",
+      "$extends": "#/definitions/A",
+      "properties": { "b": { "type": "string" } }
+    },
+    "Concrete": {
+      "name": "Concrete",
+      "type": "object",
+      "$extends": "#/definitions/A",
+      "properties": { "c": { "type": "string" } }
+    }
+  }
+}

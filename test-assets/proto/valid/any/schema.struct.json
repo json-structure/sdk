@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/avro/any",
+  "name": "Envelope",
+  "type": "object",
+  "properties": {
+    "id": { "type": "string" },
+    "payload": { "type": "any" },
+    "meta": { "type": "any" }
+  },
+  "required": ["id", "payload", "meta"]
+}

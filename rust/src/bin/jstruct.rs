@@ -4,7 +4,7 @@
 
 use std::fs;
 use std::io::{self, Read};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
@@ -50,6 +50,17 @@ enum Commands {
     /// Validate instance file(s) against a schema
     #[command(alias = "v")]
     Validate(ValidateArgs),
+
+    /// Compile a schema to an Apache Avro schema (.avsc)
+    #[command(alias = "a")]
+    Avro(AvroArgs),
+
+    /// Generate Protocol Buffers (.proto) files from a schema
+    #[command(alias = "p")]
+    Proto(ProtoArgs),
+
+    /// Resolve $import/$importdefs into a single self-contained document
+    Consolidate(ConsolidateArgs),
 }
 
 #[derive(Args)]
@@ -102,6 +113,106 @@ struct ValidateArgs {
     verbose: bool,
 }
 
+/// How to treat `additionalProperties` on the command line.
+#[derive(Debug, Clone, Copy, Default, ValueEnum)]
+enum OpenRecords {
+    /// Emit a closed record and warn (default)
+    #[default]
+    Warn,
+    /// Fail compilation
+    Error,
+}
+
+#[derive(Args)]
+struct AvroArgs {
+    /// Schema file to compile. Use '-' to read from stdin.
+    files: Vec<PathBuf>,
+
+    /// Bundle file(s) providing schemas for $import resolution
+    #[arg(short, long)]
+    bundle: Vec<PathBuf>,
+
+    /// Write output to this file instead of stdout
+    #[arg(short, long)]
+    output: Option<PathBuf>,
+
+    /// Add-in from $offers to apply. Repeatable.
+    #[arg(long = "use", value_name = "ADDIN")]
+    uses: Vec<String>,
+
+    /// How to treat open records (additionalProperties)
+    #[arg(long, value_enum, default_value_t = OpenRecords::Warn)]
+    open_records: OpenRecords,
+
+    /// Omit Avro `doc` attributes derived from `description`
+    #[arg(long)]
+    no_doc: bool,
+
+    /// Emit compact JSON on a single line
+    #[arg(long)]
+    compact: bool,
+
+    /// Suppress warnings
+    #[arg(short, long)]
+    quiet: bool,
+}
+
+#[derive(Args)]
+struct ProtoArgs {
+    /// Schema file to generate from. Use '-' to read from stdin.
+    files: Vec<PathBuf>,
+
+    /// Bundle file(s) providing schemas for $import resolution
+    #[arg(short, long)]
+    bundle: Vec<PathBuf>,
+
+    /// Directory to write .proto files into. Without it, files go to stdout.
+    #[arg(short, long)]
+    output: Option<PathBuf>,
+
+    /// Add-in from $offers to apply. Repeatable.
+    #[arg(long = "use", value_name = "ADDIN")]
+    uses: Vec<String>,
+
+    /// Field-number lock file. Read before generating, rewritten after.
+    #[arg(long, value_name = "FILE")]
+    numbers: Option<PathBuf>,
+
+    /// How to treat open records (additionalProperties)
+    #[arg(long, value_enum, default_value_t = OpenRecords::Warn)]
+    open_records: OpenRecords,
+
+    /// Omit comments derived from `description`
+    #[arg(long)]
+    no_comments: bool,
+
+    /// Suppress warnings
+    #[arg(short, long)]
+    quiet: bool,
+}
+
+#[derive(Args)]
+struct ConsolidateArgs {
+    /// Schema file to consolidate. Use '-' to read from stdin.
+    files: Vec<PathBuf>,
+
+    /// Bundle file(s) providing schemas for $import resolution
+    #[arg(short, long)]
+    bundle: Vec<PathBuf>,
+
+    /// Write output to this file instead of stdout
+    #[arg(short, long)]
+    output: Option<PathBuf>,
+
+    /// Emit compact JSON on a single line
+    #[arg(long)]
+    compact: bool,
+
+    /// Suppress diagnostics
+    #[arg(short, long)]
+    quiet: bool,
+}
+
 /// Result for a single file validation
 #[derive(Debug, Serialize)]
 struct FileResult {
@@ -134,6 +245,9 @@ fn main() -> ExitCode {
     let exit_code = match cli.command {
         Commands::Check(args) => cmd_check(args),
         Commands::Validate(args) => cmd_validate(args),
+        Commands::Avro(args) => cmd_avro(args),
+        Commands::Proto(args) => cmd_proto(args),
+        Commands::Consolidate(args) => cmd_consolidate(args),
     };
 
     ExitCode::from(exit_code)
@@ -503,4 +617,299 @@ fn output_tap(results: &[FileResult], verbose: bool) {
             }
         }
     }
+}
+
+
+// ---------------------------------------------------------------------------
+// Avro and consolidation
+// ---------------------------------------------------------------------------
+
+/// Tries each resolver in order. Bundle entries win over files on disk.
+struct ChainResolver {
+    map: json_structure::MapResolver,
+    files: json_structure::FileResolver,
+}
+
+impl json_structure::SchemaResolver for ChainResolver {
+    fn resolve(
+        &self,
+        uri: &str,
+    ) -> Result<Option<serde_json::Value>, json_structure::ConsolidateError> {
+        if let Some(found) = self.map.resolve(uri)? {
+            return Ok(Some(found));
+        }
+        self.files.resolve(uri)
+    }
+}
+
+/// Reads the single input document a generator command operates on, and builds
+/// a resolver rooted at that document's directory.
+fn load_source(
+    files: &[PathBuf],
+    bundle: &[PathBuf],
+    quiet: bool,
+) -> Result<(serde_json::Value, ChainResolver), u8> {
+    let file = match files {
+        [] => PathBuf::from("-"),
+        [one] => one.clone(),
+        _ => {
+            if !quiet {
+                eprintln!("jstruct: expected a single schema file, got {}", files.len());
+            }
+            return Err(EXIT_ERROR);
+        }
+    };
+
+    let content = read_file(&file).map_err(|e| {
+        if !quiet {
+            eprintln!("jstruct: cannot read '{}': {}", file.display(), e);
+        }
+        EXIT_ERROR
+    })?;
+
+    let document: serde_json::Value = serde_json::from_str(&content).map_err(|e| {
+        if !quiet {
+            eprintln!("jstruct: invalid JSON in '{}': {}", file.display(), e);
+        }
+        EXIT_ERROR
+    })?;
+
+    let bundles = load_bundle_schemas(bundle, quiet).map_err(|_| EXIT_ERROR)?;
+    let base = if file.as_os_str() == "-" {
+        PathBuf::from(".")
+    } else {
+        file.parent().unwrap_or(Path::new(".")).to_path_buf()
+    };
+
+    Ok((
+        document,
+        ChainResolver {
+            map: json_structure::MapResolver::new(bundles),
+            files: json_structure::FileResolver::new(base),
+        },
+    ))
+}
+
+/// Writes a JSON document to a file or to stdout.
+fn emit_json(value: &serde_json::Value, output: &Option<PathBuf>, compact: bool, quiet: bool) -> u8 {
+    let text = if compact {
+        serde_json::to_string(value)
+    } else {
+        serde_json::to_string_pretty(value)
+    };
+    let mut text = match text {
+        Ok(t) => t,
+        Err(e) => {
+            if !quiet {
+                eprintln!("jstruct: cannot serialize output: {}", e);
+            }
+            return EXIT_ERROR;
+        }
+    };
+    text.push('\n');
+
+    match output {
+        Some(path) => match fs::write(path, text) {
+            Ok(()) => EXIT_SUCCESS,
+            Err(e) => {
+                if !quiet {
+                    eprintln!("jstruct: cannot write '{}': {}", path.display(), e);
+                }
+                EXIT_ERROR
+            }
+        },
+        None => {
+            print!("{}", text);
+            EXIT_SUCCESS
+        }
+    }
+}
+
+/// Compile a schema to an Avro schema
+fn cmd_avro(args: AvroArgs) -> u8 {
+    let (document, resolver) = match load_source(&args.files, &args.bundle, args.quiet) {
+        Ok(v) => v,
+        Err(code) => return code,
+    };
+
+    let consolidated = if json_structure::consolidate::has_imports(&document) {
+        match json_structure::consolidate::consolidate(&document, &resolver) {
+            Ok(v) => v,
+            Err(e) => {
+                if !args.quiet {
+                    eprintln!("jstruct: {}", e);
+                }
+                return EXIT_INVALID;
+            }
+        }
+    } else {
+        document
+    };
+
+    let options = json_structure::avro::AvroOptions {
+        uses: args.uses.clone(),
+        additional_properties: match args.open_records {
+            OpenRecords::Warn => json_structure::avro::AdditionalProperties::Ignore,
+            OpenRecords::Error => json_structure::avro::AdditionalProperties::Error,
+        },
+        emit_doc: !args.no_doc,
+    };
+
+    let output = match json_structure::avro::compile_with(&consolidated, &options) {
+        Ok(o) => o,
+        Err(e) => {
+            if !args.quiet {
+                eprintln!("jstruct: {}", e);
+            }
+            return EXIT_INVALID;
+        }
+    };
+
+    if !args.quiet {
+        for warning in &output.warnings {
+            eprintln!("jstruct: warning: {}: {}", warning.path, warning.message);
+        }
+    }
+
+    emit_json(&output.schema, &args.output, args.compact, args.quiet)
+}
+
+/// Resolve imports into a single self-contained document
+fn cmd_consolidate(args: ConsolidateArgs) -> u8 {
+    let (document, resolver) = match load_source(&args.files, &args.bundle, args.quiet) {
+        Ok(v) => v,
+        Err(code) => return code,
+    };
+
+    match json_structure::consolidate::consolidate(&document, &resolver) {
+        Ok(v) => emit_json(&v, &args.output, args.compact, args.quiet),
+        Err(e) => {
+            if !args.quiet {
+                eprintln!("jstruct: {}", e);
+            }
+            EXIT_INVALID
+        }
+    }
+}
+
+/// Generate .proto files from a schema
+fn cmd_proto(args: ProtoArgs) -> u8 {
+    let (document, resolver) = match load_source(&args.files, &args.bundle, args.quiet) {
+        Ok(v) => v,
+        Err(code) => return code,
+    };
+
+    let consolidated = if json_structure::consolidate::has_imports(&document) {
+        match json_structure::consolidate::consolidate(&document, &resolver) {
+            Ok(v) => v,
+            Err(e) => {
+                if !args.quiet {
+                    eprintln!("jstruct: {}", e);
+                }
+                return EXIT_INVALID;
+            }
+        }
+    } else {
+        document
+    };
+
+    // A missing lock file is the first run, not an error.
+    let numbers = match &args.numbers {
+        Some(path) if path.is_file() => match fs::read_to_string(path) {
+            Ok(text) => match serde_json::from_str(&text) {
+                Ok(v) => Some(v),
+                Err(e) => {
+                    if !args.quiet {
+                        eprintln!("jstruct: invalid JSON in '{}': {}", path.display(), e);
+                    }
+                    return EXIT_ERROR;
+                }
+            },
+            Err(e) => {
+                if !args.quiet {
+                    eprintln!("jstruct: cannot read '{}': {}", path.display(), e);
+                }
+                return EXIT_ERROR;
+            }
+        },
+        _ => None,
+    };
+
+    let options = json_structure::proto::ProtoOptions {
+        uses: args.uses.clone(),
+        additional_properties: match args.open_records {
+            OpenRecords::Warn => json_structure::proto::AdditionalProperties::Ignore,
+            OpenRecords::Error => json_structure::proto::AdditionalProperties::Error,
+        },
+        emit_comments: !args.no_comments,
+        numbers,
+    };
+
+    let output = match json_structure::proto::generate_with(&consolidated, &options) {
+        Ok(o) => o,
+        Err(e) => {
+            if !args.quiet {
+                eprintln!("jstruct: {}", e);
+            }
+            return EXIT_INVALID;
+        }
+    };
+
+    if !args.quiet {
+        for warning in &output.warnings {
+            eprintln!("jstruct: warning: {}: {}", warning.path, warning.message);
+        }
+    }
+
+    match &args.output {
+        Some(root) => {
+            for file in &output.files {
+                let path = root.join(&file.path);
+                if let Some(parent) = path.parent() {
+                    if let Err(e) = fs::create_dir_all(parent) {
+                        if !args.quiet {
+                            eprintln!("jstruct: cannot create '{}': {}", parent.display(), e);
+                        }
+                        return EXIT_ERROR;
+                    }
+                }
+                if let Err(e) = fs::write(&path, &file.contents) {
+                    if !args.quiet {
+                        eprintln!("jstruct: cannot write '{}': {}", path.display(), e);
+                    }
+                    return EXIT_ERROR;
+                }
+                if !args.quiet {
+                    eprintln!("jstruct: wrote {}", path.display());
+                }
+            }
+        }
+        None => {
+            for file in &output.files {
+                println!("// ===== {}", file.path);
+                print!("{}", file.contents);
+            }
+        }
+    }
+
+    if let Some(path) = &args.numbers {
+        let mut text = match serde_json::to_string_pretty(&output.numbers) {
+            Ok(t) => t,
+            Err(e) => {
+                if !args.quiet {
+                    eprintln!("jstruct: cannot serialize the number lock: {}", e);
+                }
+                return EXIT_ERROR;
+            }
+        };
+        text.push('\n');
+        if let Err(e) = fs::write(path, text) {
+            if !args.quiet {
+                eprintln!("jstruct: cannot write '{}': {}", path.display(), e);
+            }
+            return EXIT_ERROR;
+        }
+    }
+
+    EXIT_SUCCESS
 }

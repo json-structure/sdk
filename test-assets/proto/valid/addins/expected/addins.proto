@@ -1,0 +1,7 @@
+syntax = "proto3";
+
+message Document {
+  string title = 1;
+  string createdBy = 2;
+  repeated string tags = 3;
+}

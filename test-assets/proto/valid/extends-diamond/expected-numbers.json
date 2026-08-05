@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "messages": {
+    "Joint": {
+      "fields": {
+        "id": 1,
+        "side": 2,
+        "shared": 3,
+        "arm": 4,
+        "note": 5
+      }
+    }
+  },
+  "enums": {}
+}

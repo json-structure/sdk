@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+message Event_body_created {
+  string at = 1;
+}
+
+message Event_body_deleted {
+  string reason = 1;
+}
+
+message Event_body {
+  oneof body {
+    Event_body_created created = 1;
+    Event_body_deleted deleted = 2;
+  }
+}
+
+message Event {
+  Event_body body = 1;
+}

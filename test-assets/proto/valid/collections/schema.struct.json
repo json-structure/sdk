@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/avro/collections",
+  "name": "Collections",
+  "type": "object",
+  "properties": {
+    "tags": { "type": "array", "items": { "type": "string" } },
+    "ids": { "type": "set", "items": { "type": "int32" } },
+    "counts": { "type": "map", "values": { "type": "int64" } },
+    "matrix": { "type": "array", "items": { "type": "array", "items": { "type": "double" } } }
+  },
+  "required": ["tags","ids","counts","matrix"]
+}

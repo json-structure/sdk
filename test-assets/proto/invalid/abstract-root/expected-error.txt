@@ -1,0 +1,3 @@
+kind: Invalid
+path: #/definitions/Base
+message: the root type is abstract and cannot be generated (at #/definitions/Base)

@@ -1,0 +1,1 @@
+#: `required` declares 2 alternative sets; the target has no way to express that choice. Only the properties common to every alternative [name] are emitted as non-null, and the alternatives are not enforced on the wire

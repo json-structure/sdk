@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/avro/altnames",
+  "$uses": ["JSONStructureAlternateNames"],
+  "name": "Record",
+  "type": "object",
+  "altnames": { "avro": "LegacyRecord" },
+  "properties": {
+    "first-name": { "type": "string", "altnames": { "avro": "firstName" } },
+    "status": {
+      "type": "string",
+      "enum": ["in-stock", "out-of-stock"],
+      "altenums": { "avro": { "in-stock": "IN_STOCK", "out-of-stock": "OUT_OF_STOCK" } }
+    }
+  },
+  "required": ["first-name", "status"]
+}

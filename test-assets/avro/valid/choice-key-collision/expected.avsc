@@ -1,0 +1,74 @@
+{
+  "type": "record",
+  "name": "Doc",
+  "fields": [
+    {
+      "name": "head",
+      "type": [
+        {
+          "type": "record",
+          "name": "text",
+          "fields": [
+            {
+              "name": "value",
+              "type": {
+                "type": "record",
+                "name": "Doc_head_text",
+                "fields": [
+                  {
+                    "name": "a",
+                    "type": "string"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "type": "record",
+          "name": "n",
+          "fields": [
+            {
+              "name": "value",
+              "type": "int"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "foot",
+      "type": [
+        {
+          "type": "record",
+          "name": "text_2",
+          "fields": [
+            {
+              "name": "value",
+              "type": {
+                "type": "record",
+                "name": "Doc_foot_text",
+                "fields": [
+                  {
+                    "name": "b",
+                    "type": "int"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "type": "record",
+          "name": "m",
+          "fields": [
+            {
+              "name": "value",
+              "type": "int"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

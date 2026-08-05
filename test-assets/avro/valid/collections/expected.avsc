@@ -1,0 +1,37 @@
+{
+  "type": "record",
+  "name": "Collections",
+  "fields": [
+    {
+      "name": "tags",
+      "type": {
+        "type": "array",
+        "items": "string"
+      }
+    },
+    {
+      "name": "ids",
+      "type": {
+        "type": "array",
+        "items": "int"
+      }
+    },
+    {
+      "name": "counts",
+      "type": {
+        "type": "map",
+        "values": "long"
+      }
+    },
+    {
+      "name": "matrix",
+      "type": {
+        "type": "array",
+        "items": {
+          "type": "array",
+          "items": "double"
+        }
+      }
+    }
+  ]
+}

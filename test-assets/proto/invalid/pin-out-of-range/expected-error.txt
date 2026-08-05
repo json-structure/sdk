@@ -1,0 +1,3 @@
+kind: Invalid
+path: #/properties/a
+message: `protoNumber` 19500 falls in the reserved range 19000..=19999 (at #/properties/a)

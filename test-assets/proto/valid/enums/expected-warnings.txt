@@ -1,0 +1,1 @@
+#/properties/priority: proto3 cannot express `default`; the value is not enforced

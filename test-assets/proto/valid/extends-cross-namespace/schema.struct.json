@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/extends-cross-namespace",
+  "$root": "#/definitions/app/Ticket",
+  "definitions": {
+    "core": {
+      "Auditable": {
+        "name": "Auditable",
+        "abstract": true,
+        "type": "object",
+        "properties": { "createdBy": { "type": "string" } },
+        "required": ["createdBy"]
+      },
+      "Entity": {
+        "name": "Entity",
+        "abstract": true,
+        "type": "object",
+        "$extends": "#/definitions/core/Auditable",
+        "properties": { "id": { "type": "string" } },
+        "required": ["id"]
+      }
+    },
+    "app": {
+      "Ticket": {
+        "name": "Ticket",
+        "type": "object",
+        "$extends": "#/definitions/core/Entity",
+        "properties": { "title": { "type": "string" } },
+        "required": ["title"]
+      }
+    }
+  }
+}

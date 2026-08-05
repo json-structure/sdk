@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/required-alternatives",
+  "name": "Animal",
+  "type": "object",
+  "properties": {
+    "name": { "type": "string" },
+    "fins": { "type": "int32" },
+    "legs": { "type": "int32" },
+    "nickname": { "type": "string" }
+  },
+  "required": [
+    ["name", "fins"],
+    ["name", "legs"]
+  ]
+}

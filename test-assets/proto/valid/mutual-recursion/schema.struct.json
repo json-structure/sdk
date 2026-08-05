@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/proto/mutual-recursion",
+  "$root": "#/definitions/Parent",
+  "definitions": {
+    "Parent": {
+      "name": "Parent",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "children": { "type": "array", "items": { "type": { "$ref": "#/definitions/Child" } } }
+      },
+      "required": ["name", "children"]
+    },
+    "Child": {
+      "name": "Child",
+      "type": "object",
+      "properties": {
+        "label": { "type": "string" },
+        "parent": { "type": { "$ref": "#/definitions/Parent" } }
+      },
+      "required": ["label"]
+    }
+  }
+}

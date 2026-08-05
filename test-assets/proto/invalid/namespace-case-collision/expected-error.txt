@@ -1,0 +1,3 @@
+kind: Invalid
+path: #/definitions
+message: namespaces [Sales, sales] all lowercase to the protobuf package `sales`; protobuf package segments are lowercased, so these namespaces would merge. Rename them in the JSON Structure document so they differ by more than case (at #/definitions)

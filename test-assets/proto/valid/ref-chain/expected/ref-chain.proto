@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+message A {
+  B b = 1;
+}
+
+message B {
+  C c = 1;
+}
+
+message C {
+  D d = 1;
+}
+
+message D {
+  string leaf = 1;
+}

@@ -1,0 +1,3 @@
+kind: Invalid
+path: #/definitions/Invoice
+message: two declared types both map to the protobuf name `Order` (at #/definitions/Invoice)

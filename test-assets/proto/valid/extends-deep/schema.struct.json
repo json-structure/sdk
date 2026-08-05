@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/extends-deep",
+  "$root": "#/definitions/Landmark",
+  "definitions": {
+    "Entity": {
+      "name": "Entity",
+      "abstract": true,
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "createdAt": { "type": "datetime" }
+      },
+      "required": ["id"]
+    },
+    "Node": {
+      "name": "Node",
+      "abstract": true,
+      "type": "object",
+      "$extends": "#/definitions/Entity",
+      "properties": {
+        "label": { "type": "string" }
+      },
+      "required": ["label"]
+    },
+    "Placemark": {
+      "name": "Placemark",
+      "abstract": true,
+      "type": "object",
+      "$extends": "#/definitions/Node",
+      "properties": {
+        "location": {
+          "type": "object",
+          "properties": {
+            "lat": { "type": "double" },
+            "lon": { "type": "double" }
+          },
+          "required": ["lat", "lon"]
+        }
+      },
+      "required": ["location"]
+    },
+    "Landmark": {
+      "name": "Landmark",
+      "type": "object",
+      "$extends": "#/definitions/Placemark",
+      "properties": {
+        "visitors": { "type": "int32" }
+      }
+    }
+  }
+}

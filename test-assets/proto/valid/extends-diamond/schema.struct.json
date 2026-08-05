@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/extends-diamond",
+  "$root": "#/definitions/Joint",
+  "definitions": {
+    "Base": {
+      "name": "Base",
+      "abstract": true,
+      "type": "object",
+      "properties": { "id": { "type": "string" } },
+      "required": ["id"]
+    },
+    "Left": {
+      "name": "Left",
+      "abstract": true,
+      "type": "object",
+      "$extends": "#/definitions/Base",
+      "properties": {
+        "side": { "type": "string" },
+        "shared": { "type": "string" }
+      },
+      "required": ["side", "shared"]
+    },
+    "Right": {
+      "name": "Right",
+      "abstract": true,
+      "type": "object",
+      "$extends": "#/definitions/Base",
+      "properties": {
+        "arm": { "type": "string" },
+        "shared": { "type": "int32" }
+      },
+      "required": ["arm", "shared"]
+    },
+    "Joint": {
+      "name": "Joint",
+      "type": "object",
+      "$extends": ["#/definitions/Left", "#/definitions/Right"],
+      "properties": { "note": { "type": "string" } }
+    }
+  }
+}

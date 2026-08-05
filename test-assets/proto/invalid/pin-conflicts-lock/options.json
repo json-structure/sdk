@@ -1,0 +1,7 @@
+{
+  "numbers": {
+    "version": 2,
+    "messages": {},
+    "enums": { "Account_state": { "values": { "open": 3 } } }
+  }
+}

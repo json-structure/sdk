@@ -1,0 +1,36 @@
+{
+  "type": "record",
+  "name": "Envelope",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string"
+    },
+    {
+      "name": "payload",
+      "type": {
+        "type": "record",
+        "name": "Envelope_payload_2",
+        "fields": [
+          {
+            "name": "body",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "name": "declared",
+      "type": {
+        "type": "record",
+        "name": "Envelope_payload",
+        "fields": [
+          {
+            "name": "note",
+            "type": "string"
+          }
+        ]
+      }
+    }
+  ]
+}

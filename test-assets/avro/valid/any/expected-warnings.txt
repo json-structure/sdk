@@ -1,0 +1,2 @@
+#/properties/payload: `any` compiles to an empty Avro record: readable but not writable at this position. A writer must supply a schema that fills the hole with a concrete type; inside `array`/`map` every element must share that one type, because Avro collections are homogeneous
+#/properties/meta: `any` compiles to an empty Avro record: readable but not writable at this position. A writer must supply a schema that fills the hole with a concrete type; inside `array`/`map` every element must share that one type, because Avro collections are homogeneous

@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+message Parent {
+  string name = 1;
+  repeated Child children = 2;
+}
+
+message Child {
+  string label = 1;
+  optional Parent parent = 2;
+}

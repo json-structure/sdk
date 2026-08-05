@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/avro/dangling-ref",
+  "name": "Thing",
+  "type": "object",
+  "properties": { "a": { "type": { "$ref": "#/definitions/Nope" } } },
+  "required": ["a"]
+}

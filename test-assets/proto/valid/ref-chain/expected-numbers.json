@@ -1,0 +1,26 @@
+{
+  "version": 2,
+  "messages": {
+    "A": {
+      "fields": {
+        "b": 1
+      }
+    },
+    "B": {
+      "fields": {
+        "c": 1
+      }
+    },
+    "C": {
+      "fields": {
+        "d": 1
+      }
+    },
+    "D": {
+      "fields": {
+        "leaf": 1
+      }
+    }
+  },
+  "enums": {}
+}

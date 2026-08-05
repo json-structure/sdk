@@ -1,0 +1,49 @@
+{
+  "type": "record",
+  "name": "Event",
+  "fields": [
+    {
+      "name": "body",
+      "type": [
+        {
+          "type": "record",
+          "name": "created",
+          "fields": [
+            {
+              "name": "value",
+              "type": {
+                "type": "record",
+                "name": "Event_body_created",
+                "fields": [
+                  {
+                    "name": "at",
+                    "type": "string"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "type": "record",
+          "name": "deleted",
+          "fields": [
+            {
+              "name": "value",
+              "type": {
+                "type": "record",
+                "name": "Event_body_deleted",
+                "fields": [
+                  {
+                    "name": "reason",
+                    "type": "string"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

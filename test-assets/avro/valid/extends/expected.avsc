@@ -1,0 +1,22 @@
+{
+  "type": "record",
+  "name": "Dog",
+  "fields": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "age",
+      "type": [
+        "null",
+        "int"
+      ],
+      "default": null
+    },
+    {
+      "name": "breed",
+      "type": "string"
+    }
+  ]
+}

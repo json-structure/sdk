@@ -1,0 +1,14 @@
+{
+  "version": 2,
+  "messages": {
+    "Animal": {
+      "fields": {
+        "name": 1,
+        "fins": 2,
+        "legs": 3,
+        "nickname": 4
+      }
+    }
+  },
+  "enums": {}
+}
