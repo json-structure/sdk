@@ -8,11 +8,13 @@ A comprehensive C# SDK for JSON Structure validation, including schema validatio
 - **Instance Validation**: Validate JSON instances against JSON Structure schemas
 - **Schema Export**: Generate JSON Structure schemas from .NET types (similar to System.Text.Json.Schema.JsonSchemaExporter)
 - **System.Text.Json Converters**: Serialize large integers (int64, uint64, int128, uint128, decimal) as strings to preserve precision
+- **Apache Avro**: Hand an Avro serializer a `.struct.json` and never maintain an `.avsc` — see [Apache Avro](#apache-avro)
 
 ## Installation
 
 ```bash
 dotnet add package JsonStructure
+dotnet add package JsonStructure.Avro   # optional, for Apache Avro
 ```
 
 ## Usage
@@ -176,6 +178,67 @@ var schema = JsonStructureSchemaExporter.GetJsonStructureSchemaAsNode<Person>();
 //   "required": ["Name"]
 // }
 ```
+
+### Apache Avro
+
+`JsonStructure.Avro` compiles a JSON Structure document into an Apache Avro
+schema, so the `.avsc` stops being something anyone has to maintain. JSON
+Structure is the source; Avro is the assembly language it compiles to.
+
+The change at the call site is one line — wherever `Schema.Parse` took a
+hand-written `.avsc`, `JsonStructureAvro.SchemaFrom` takes the schema you
+already have:
+
+```csharp
+using Avro.Generic;
+using Avro.IO;
+using JsonStructure.Avro;
+
+var schema = (Avro.RecordSchema)JsonStructureAvro.SchemaFromFile("person.struct.json");
+
+var person = new GenericRecord(schema);
+person.Add("name", "Alice");
+person.Add("age", 42);
+
+using var stream = new MemoryStream();
+new GenericDatumWriter<GenericRecord>(schema).Write(person, new BinaryEncoder(stream));
+```
+
+Everything downstream — datum writers, readers, file writers, a schema registry
+client — is unchanged, because what comes back is an ordinary `Avro.Schema`.
+
+Compilation is a few microseconds per declared property and linear in document
+size: nothing once, a great deal per message. Hold the result rather than
+recompiling:
+
+```csharp
+private static readonly Lazy<Avro.Schema> PersonSchema =
+    new(() => JsonStructureAvro.SchemaFrom(EmbeddedPersonStructJson));
+```
+
+Not every JSON Structure construct survives the trip. Where the mapping loses
+something — a `const`, a `set`'s uniqueness — the compiler says so rather than
+quietly dropping it:
+
+```csharp
+var result = AvroCompiler.Compile(JsonNode.Parse(source)!);
+foreach (var warning in result.Warnings)
+{
+    Console.WriteLine(warning);   // "#/properties/tags: ..."
+}
+```
+
+Anything that cannot be represented at all throws `AvroCompileException`, which
+carries the offending JSON Pointer in `Path`.
+
+The mapping is specified construct by construct in
+[`spec/json-structure-to-avro.md`](../spec/json-structure-to-avro.md), and it is
+deterministic by requirement: every SDK emits byte-identical `.avsc` for the same
+input, checked against the shared corpus in
+[`test-assets/avro/`](../test-assets/avro/).
+
+For Protobuf, use the `jstruct` CLI — `.proto` files are build-time artifacts,
+not something to generate at startup.
 
 ### System.Text.Json Converters
 

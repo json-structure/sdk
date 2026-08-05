@@ -85,9 +85,20 @@ is written by hand against what the *source* document means, so a schema that
 is self-consistent but wrong fails here.
 
 Note that the Avro JSON encoding is not universally implemented — Rust's
-`apache-avro`, for one, has no decoder for it. Writing a small schema-driven
-decoder in the harness is expected, and is a good deal cheaper than the class
-of bug it catches.
+`apache-avro`, for one, has no decoder for it. Java and C# do ship one, but
+Apache.Avro's `JsonDecoder` throws on any schema containing a *self*-referential
+type, so the `recursion` case still needs a hand-written reader there. Writing a
+small schema-driven decoder in the harness is expected, and is a good deal
+cheaper than the class of bug it catches. Where a library decoder is available,
+decoding twice and comparing the encoded bytes is worth the few lines: it is the
+only thing that checks the harness's own decoder.
+
+Two of the cases below exist because mutation testing found the corpus silent
+about them. Both were holes a port could fall into and still go green:
+`union-namespaced-branches` is the only case whose union tag is a fullname
+rather than a bare type name, and `union-default-placement` is the only one
+where a declared default names a branch that is not already first. Anything the
+corpus does not exercise, it endorses.
 
 ## `expected-error.txt`
 
@@ -154,6 +165,8 @@ before committing. It is not how a failing test gets silenced.
 | `root-array`           | §5.1 — the root type is an `array`                                  |
 | `root-enum`            | §5.1 — the root type is an `enum`                                   |
 | `root-choice`          | §5.1, §3.7.1 — the root type is a tagged `choice`, so the schema is a union |
+| `union-namespaced-branches` | §3.8 — a union branch whose tag is a *fullname*, not a bare name |
+| `union-default-placement` | §3.8 — a default naming a branch that is not first, so the union is rotated |
 
 ### Invalid
 

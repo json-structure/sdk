@@ -462,7 +462,7 @@ goes in instead. The smaller that diff looks, the better the API.
 
 | Language   | Replaces                      | Becomes                                  |
 | ---------- | ----------------------------- | ---------------------------------------- |
-| Rust       | `Schema::parse_str(avsc)`     | `avro::schema_from_str(src)`             |
+| Rust       | `Schema::parse_str(avsc)`     | `avro::schema_from_jstruct_str(src)`     |
 | Java       | `new Schema.Parser().parse()` | `JsonStructureAvro.schemaFrom(src)`      |
 | Python     | `fastavro.parse_schema(d)`    | `json_structure.avro.schema_from_str(s)` |
 | .NET/C#    | `Schema.Parse(avsc)`          | `JsonStructureAvro.SchemaFrom(src)`      |
@@ -474,19 +474,22 @@ Two rules, and they pull in opposite directions in different languages:
 1. **Do not repeat what the namespace already says.** In Rust, Python, and
    TypeScript the module path carries `avro`, so the function must not; Rust's
    clippy lints this as `module_name_repetitions`. Prefer
-   `avro::schema_from_str` over `avro::avro_schema_from_jstruct_str`.
+   `avro::schema_from_jstruct_str` over `avro::avro_schema_from_jstruct_str`.
+   Note that `jstruct` in that name is not a repetition: it names the *input*,
+   which is the whole point of the call.
 2. **Do say it when there is no namespace to lean on.** Java and C# resolve
    types by simple name after an import, so a bare `SchemaFrom` would be
    ambiguous at the call site; the type name carries the qualification instead.
 
 Avoid naming a module or package after a lifecycle phase — `runtime`, `helpers`,
-`util`. A module name should say what something *is*. `avro::schema_from_str`
-needs no second qualifier, and `avro::runtime::schema_from_str` reads like the
-schema is being built at some special time rather than simply being built.
+`util`. A module name should say what something *is*.
+`avro::schema_from_jstruct_str` needs no second qualifier, and
+`avro::runtime::schema_from_jstruct_str` reads like the schema is being built at
+some special time rather than simply being built.
 
 ### Conformance corpus
 
-[`test-assets/avro/`](test-assets/avro/) — 32 valid cases and 10 negative cases.
+[`test-assets/avro/`](test-assets/avro/) — 34 valid cases and 10 negative cases.
 The harness contract is described in its README and has six checks: golden
 byte-match, determinism across repeated runs, acceptance by a real Avro parser,
 a write/read round trip of a hand-written `instance.avro.json` through a real
@@ -495,6 +498,28 @@ for every negative case. The round trip is the one check a blessed golden
 cannot perform, because the golden was blessed from the implementation it is
 supposed to be testing. The reference harness is
 [`rust/tests/avro_corpus.rs`](rust/tests/avro_corpus.rs).
+
+### Ports
+
+| Language | Compiler | Harness |
+| -------- | -------- | ------- |
+| Rust (reference) | [`rust/src/avro/`](rust/src/avro/) | [`rust/tests/avro_corpus.rs`](rust/tests/avro_corpus.rs) |
+| .NET | [`dotnet/src/JsonStructure.Avro/`](dotnet/src/JsonStructure.Avro/) | [`dotnet/tests/JsonStructure.Avro.Tests/`](dotnet/tests/JsonStructure.Avro.Tests/) |
+
+Two things the .NET port learned that the next port will hit as well:
+
+- **`JsonArray.Add<T>` is not `JsonValue.Create(string)`.** On .NET 8 the
+  generic overload boxes even a `string` into a `JsonValueCustomized<T>`, which
+  cannot be written without a reflection-based type-info resolver. It throws at
+  serialization time, not at the call site, and only for the schemas that reach
+  that code path.
+- **Line endings are part of the golden contract.** `WriteIndented` breaks lines
+  with `Environment.NewLine`. Normalize to LF on the way out, and normalize the
+  golden on the way in, or every case fails on Windows and passes on Linux.
+
+**Do not port the corpus by relaxing it.** If a port passes on the first run,
+mutate its compiler and confirm the corpus notices — that is how both of the
+union cases above came to exist.
 
 ---
 

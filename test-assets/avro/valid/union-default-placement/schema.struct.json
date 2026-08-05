@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/avro/union-default-placement",
+  "name": "Cell",
+  "type": "object",
+  "properties": {
+    "value": { "type": ["string", "int32", "boolean"], "default": 7 }
+  },
+  "required": ["value"]
+}
