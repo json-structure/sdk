@@ -1357,7 +1357,8 @@ fn is_type_declaration(node: &Map<String, Value>) -> bool {
     node.contains_key("type") || node.contains_key("$extends") || node.contains_key("abstract")
 }
 
-fn is_null_branch(value: &Value) -> bool {    value.as_str() == Some("null")
+fn is_null_branch(value: &Value) -> bool {
+    value.as_str() == Some("null")
 }
 
 fn flatten_union(value: Value) -> Vec<Value> {
@@ -1498,7 +1499,6 @@ fn default_matches(branch: &Value, default: &Value) -> bool {
     }
 }
 
-/// Builds a union from `branches`, deduplicating by Avro type identity and
 /// Builds a union from `branches`, deduplicating by Avro type identity and
 /// collapsing a single branch to the bare type (§3.8).
 fn union_of(branches: Vec<Value>) -> Value {

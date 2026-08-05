@@ -1,0 +1,15 @@
+{
+  "type": "record",
+  "name": "Cell",
+  "fields": [
+    {
+      "name": "value",
+      "type": [
+        "int",
+        "string",
+        "boolean"
+      ],
+      "default": 7
+    }
+  ]
+}

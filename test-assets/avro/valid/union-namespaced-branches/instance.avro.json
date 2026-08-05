@@ -1,0 +1,4 @@
+{
+  "left": { "com.example.left.Thing": { "a": "l" } },
+  "right": { "com.example.right.Thing": { "b": "r" } }
+}

@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>12.0</LangVersion>
+    <RootNamespace>JsonStructure.Avro</RootNamespace>
+    <AssemblyName>JsonStructure.Avro</AssemblyName>
+    <Version>0.1.0</Version>
+    <Authors>JSON Structure Authors</Authors>
+    <Description>Compiles JSON Structure documents to Apache Avro schemas, so an application can hand its Avro serializer a .struct.json and never maintain an .avsc.</Description>
+    <PackageId>JsonStructure.Avro</PackageId>
+    <PackageTags>json;schema;avro;serialization;json-structure</PackageTags>
+    <RepositoryUrl>https://github.com/json-structure/sdk</RepositoryUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>logo.png</PackageIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+    <None Include="../../../primer-and-samples/media/logo.png" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Apache.Avro" Version="1.12.1" />
+  </ItemGroup>
+
+</Project>
