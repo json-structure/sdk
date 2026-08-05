@@ -1,0 +1,7 @@
+{
+  "id": "l-2",
+  "createdAt": { "string": "2026-01-02" },
+  "label": "Bridge",
+  "location": { "lat": 51.2, "lon": 4.4 },
+  "visitors": null
+}

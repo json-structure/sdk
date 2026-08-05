@@ -282,11 +282,31 @@ position. The substituted record MUST carry the same unqualified name as the
 placeholder, or resolution will fail. A writer that has nothing to put there
 writes the empty record, which occupies **zero bytes** on the wire.
 
-**Reading.** A reader whose schema carries the placeholder decodes the position
-and discards its content, per the field-ignoring rule above. A reader that wants
-the content decodes that subtree against the *writer's* schema instead of its
-own — reading the data as if it did not know the reader schema. Every mainstream
-Avro implementation exposes this as generic decoding against the writer schema.
+**Reading.** The payload is ordinary Avro data described by an ordinary writer
+schema. The hole exists only in one reader's view of it, so three readers can
+stand at the same position and each get what it needs:
+
+- A reader carrying the **placeholder** decodes the position and discards its
+  content, per the field-ignoring rule above. It needs to know nothing about the
+  payload and pays nothing to skip it.
+- A reader carrying a schema in which the **hole is filled** — same unqualified
+  name, but with the concrete fields declared — resolves against the writer's
+  schema by the ordinary rules and gets fully typed data. Such a schema comes
+  from compiling a document in which that position is the concrete type rather
+  than `any`. Nothing special happens at read time: to this reader the position
+  was never a hole. The usual resolution rules still apply, so any field the
+  reader declares that the writer did not write needs a default.
+- A **generic reader** decodes the subtree against the *writer's* schema instead
+  of its own, reading the data as if it did not know the reader schema at all.
+  Every mainstream Avro implementation exposes this. This is the route for a
+  party that has no schema for the payload and wants the content anyway — a log
+  indexer, a router, a debugging tool.
+
+So `any` does not make data unreadable, it makes it unread. A writer that fills
+the hole emits exactly the bytes it would have emitted had the position been
+declared concretely from the start, which means the decision to look inside
+belongs to each reader independently, and a reader that starts out ignoring a
+position can begin interpreting it later without any change on the writing side.
 
 This costs nothing on the wire and needs no union tags, no recursive intrinsic
 type, and no agreement between writer and reader about the shape of the payload.

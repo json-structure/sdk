@@ -1,0 +1,11 @@
+# message: Collections
+tags: "a"
+tags: "b"
+ids: 1
+ids: 2
+counts {
+key: "x"
+value: 5 }
+matrix {
+items: 1.5
+items: 2.5 }

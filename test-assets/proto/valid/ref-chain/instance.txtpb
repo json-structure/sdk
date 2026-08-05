@@ -1,0 +1,5 @@
+# message: A
+b {
+c {
+d {
+leaf: "end" } } }

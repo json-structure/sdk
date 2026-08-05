@@ -1,0 +1,4 @@
+# message: Node
+value: "root"
+children {
+value: "kid" }

@@ -1,0 +1,6 @@
+# message: Envelope
+id: "e-1"
+payload {
+body: "b" }
+declared {
+note: "n" }

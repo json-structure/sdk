@@ -300,6 +300,154 @@ fn every_valid_case_compiles_with_protoc() {
     let _ = std::fs::remove_dir_all(&scratch);
 }
 
+/// Moves real protobuf bytes.
+///
+/// Compiling with `protoc` proves the generated `.proto` is syntactically
+/// valid; it says nothing about whether the message can actually carry the
+/// data the JSON Structure document describes. This test encodes a
+/// hand-written text-format instance to the wire with `protoc --encode`,
+/// decodes it back with `protoc --decode`, and re-encodes the result. The two
+/// binaries must match byte for byte.
+///
+/// The instance is written by hand against what the *source* document means,
+/// so a compiler that emits a self-consistent but wrong message — the one
+/// failure mode a blessed golden can never catch — fails here.
+#[test]
+fn every_case_with_an_instance_round_trips_on_the_wire() {
+    let Some(protoc) = which_protoc() else {
+        assert!(
+            std::env::var_os("JSTRUCT_REQUIRE_PROTOC").is_none(),
+            "JSTRUCT_REQUIRE_PROTOC is set but `protoc` is not on PATH"
+        );
+        eprintln!("protoc not found on PATH; skipping");
+        return;
+    };
+
+    let scratch = std::env::temp_dir().join(format!("jstruct-wire-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&scratch);
+
+    let mut exercised = 0usize;
+    for (name, dir) in cases("valid") {
+        let Some((message, instance)) = read_instance(&dir) else {
+            assert!(
+                dir.join("no-instance.md").is_file(),
+                "case '{name}' has no instance.txtpb, so nothing about it is ever put on the \
+                 wire. Add one, or add a no-instance.md saying why the case cannot have one."
+            );
+            continue;
+        };
+        exercised += 1;
+
+        let document = read_document(&dir);
+        let options = read_options(&dir);
+        let output = generate_with(&document, &options)
+            .unwrap_or_else(|e| panic!("case '{name}' failed to generate: {e}"));
+
+        let root = scratch.join(&name);
+        std::fs::create_dir_all(&root).expect("scratch directory is creatable");
+        let mut sources: Vec<String> = Vec::new();
+        for file in &output.files {
+            let path = root.join(&file.path);
+            std::fs::create_dir_all(path.parent().expect("file has a parent"))
+                .expect("scratch subdirectory is creatable");
+            std::fs::write(&path, &file.contents).expect("scratch file is writable");
+            sources.push(file.path.replace('\\', "/"));
+        }
+        sources.sort();
+
+        let bytes = run_protoc(&protoc, &root, &sources, &format!("--encode={message}"), &instance)
+            .unwrap_or_else(|e| panic!("case '{name}': protoc could not encode the instance:\n{e}"));
+
+        let text = run_protoc(&protoc, &root, &sources, &format!("--decode={message}"), &bytes)
+            .unwrap_or_else(|e| panic!("case '{name}': protoc could not decode the bytes:\n{e}"));
+
+        let again = run_protoc(&protoc, &root, &sources, &format!("--encode={message}"), &text)
+            .unwrap_or_else(|e| panic!("case '{name}': protoc could not re-encode:\n{e}"));
+
+        assert_eq!(
+            bytes,
+            again,
+            "case '{name}': the wire form is not stable across a decode/encode cycle.\n\
+             decoded text format was:\n{}",
+            String::from_utf8_lossy(&text)
+        );
+
+        // An instance that encodes to nothing proves nothing. Messages whose
+        // every field is genuinely empty are excluded by writing a non-empty
+        // instance; a case that cannot have one does not get an instance file.
+        assert!(
+            !bytes.is_empty(),
+            "case '{name}': the instance encoded to zero bytes, so it exercises nothing"
+        );
+    }
+
+    let total = cases("valid").len();
+    assert!(
+        exercised > 0 && exercised + 4 >= total,
+        "the wire round trip covers only {exercised} of {total} valid cases; \
+         the corpus has drifted away from exercising serialization"
+    );
+
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// Reads `instance.txtpb`, returning the message to encode and the text.
+///
+/// The first line names the entry point, because a generated file set holds
+/// many messages and only the case author knows which one is the root:
+///
+/// ```text
+/// # message: com.example.Order
+/// id: "A-1"
+/// ```
+fn read_instance(dir: &Path) -> Option<(String, Vec<u8>)> {
+    let path = dir.join("instance.txtpb");
+    let text = std::fs::read_to_string(&path).ok()?;
+    let message = text
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("# message:").map(str::trim))
+        .unwrap_or_else(|| {
+            panic!(
+                "{} must start with a `# message: <fullname>` line",
+                path.display()
+            )
+        })
+        .to_string();
+    Some((message, text.into_bytes()))
+}
+
+fn run_protoc(
+    protoc: &Path,
+    root: &Path,
+    sources: &[String],
+    mode: &str,
+    stdin: &[u8],
+) -> Result<Vec<u8>, String> {
+    use std::io::Write;
+
+    let mut child = std::process::Command::new(protoc)
+        .arg(format!("--proto_path={}", root.display()))
+        .arg(mode)
+        .args(sources)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("protoc runs");
+    child
+        .stdin
+        .take()
+        .expect("stdin is piped")
+        .write_all(stdin)
+        .expect("protoc accepts stdin");
+    let out = child.wait_with_output().expect("protoc completes");
+    if out.status.success() {
+        Ok(out.stdout)
+    } else {
+        Err(String::from_utf8_lossy(&out.stderr).into_owned())
+    }
+}
+
 fn which_protoc() -> Option<PathBuf> {
     let exe = if cfg!(windows) { "protoc.exe" } else { "protoc" };
     std::env::var_os("PATH").and_then(|paths| {

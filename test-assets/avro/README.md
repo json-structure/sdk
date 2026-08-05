@@ -16,7 +16,8 @@ avro/
 │   ├── schema.struct.json    the input JSON Structure document
 │   ├── options.json          compile options (optional)
 │   ├── expected.avsc         the expected output, byte-exact
-│   └── expected-warnings.txt `<pointer>: <message>` per line (absent = none)
+│   ├── expected-warnings.txt `<pointer>: <message>` per line (absent = none)
+│   └── instance.avro.json    a sample datum in Avro JSON encoding
 │
 └── invalid/<case>/
     ├── schema.struct.json    the input JSON Structure document
@@ -48,7 +49,7 @@ Line endings in these files are LF. A harness on Windows should normalize
 
 ## Harness contract
 
-Each SDK's harness must implement five checks:
+Each SDK's harness must implement six checks:
 
 1. **Golden match.** Compile every `valid/` case with its options and compare
    bytes against `expected.avsc`.
@@ -56,12 +57,37 @@ Each SDK's harness must implement five checks:
    every run is byte-identical.
 3. **Validity.** Feed every generated schema to a real Avro parser for the host
    language and confirm it is accepted.
-4. **Warnings.** Compare the emitted warnings against `expected-warnings.txt`,
+4. **Round trip.** Decode `instance.avro.json`, write it with a real Avro
+   writer using the compiled schema, read the bytes back, and confirm the datum
+   survives. See below.
+5. **Warnings.** Compare the emitted warnings against `expected-warnings.txt`,
    one `<pointer>: <message>` per line in emission order. A warning is a promise
    that something was lost; unasserted, it is free to stop being made.
-5. **Negative.** Compile every `invalid/` case and confirm it fails with the
+6. **Negative.** Compile every `invalid/` case and confirm it fails with the
    error variant, JSON Pointer, and message text recorded in
    `expected-error.txt` (see below).
+
+## `instance.avro.json`
+
+Every valid case carries one, and the harness MUST assert that it does — a case
+without an instance is a case whose schema is never asked to carry data.
+
+The file holds a single datum in the **Avro JSON encoding** defined by the Avro
+specification, which differs from ordinary JSON in one place that matters here:
+a union value is written as `{"<tag>": <value>}`, where the tag is the branch's
+fullname for named types and its type name for primitives. `null` is written
+bare. `bytes` and `fixed` are strings whose code points are the byte values.
+
+This is the check a blessed golden cannot perform. `expected.avsc` proves that
+every port agrees with the reference implementation; it cannot prove the
+reference implementation is right, because it was blessed from it. The instance
+is written by hand against what the *source* document means, so a schema that
+is self-consistent but wrong fails here.
+
+Note that the Avro JSON encoding is not universally implemented — Rust's
+`apache-avro`, for one, has no decoder for it. Writing a small schema-driven
+decoder in the harness is expected, and is a good deal cheaper than the class
+of bug it catches.
 
 ## `expected-error.txt`
 

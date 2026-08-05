@@ -17,7 +17,8 @@ proto/
 │   ├── options.json             generation options (optional)
 │   ├── expected/<path>.proto    the expected files, byte-exact
 │   ├── expected-numbers.json    the field-number lock the run produces
-│   └── expected-warnings.txt    `<pointer>: <message>` per line (absent = none)
+│   ├── expected-warnings.txt    `<pointer>: <message>` per line (absent = none)
+│   └── instance.txtpb           a sample message in protobuf text format
 │
 └── invalid/<case>/
     ├── schema.struct.json       the input JSON Structure document
@@ -42,7 +43,7 @@ the document alone.
 
 ## Harness contract
 
-Each SDK's harness must implement six checks:
+Each SDK's harness must implement seven checks:
 
 1. **Golden match.** Generate every `valid/` case and compare each file's bytes
    against its counterpart under `expected/`, and the produced lock against
@@ -60,12 +61,49 @@ Each SDK's harness must implement six checks:
    not installed — but a test that can silently skip is a test that might not be
    running, so honour `JSTRUCT_REQUIRE_PROTOC`: when that variable is set, a
    missing `protoc` is a failure. CI sets it.
-5. **Warnings.** Compare the emitted warnings against `expected-warnings.txt`,
+5. **Wire round trip.** Encode `instance.txtpb` to the wire, decode it back, and
+   re-encode; the two binaries must match byte for byte, and the first must not
+   be empty. See below.
+6. **Warnings.** Compare the emitted warnings against `expected-warnings.txt`,
    one `<pointer>: <message>` per line in emission order. A warning is a promise
    that something was lost; unasserted, it is free to stop being made.
-6. **Negative.** Generate every `invalid/` case and confirm it fails with the
+7. **Negative.** Generate every `invalid/` case and confirm it fails with the
    error variant, JSON Pointer, and message text recorded in
    `expected-error.txt` (see below).
+
+## `instance.txtpb`
+
+Compiling with `protoc` proves the generated `.proto` is *syntactically* valid.
+It says nothing about whether the message can actually carry the data the
+JSON Structure document describes — and that is the failure mode a blessed
+golden can never catch, because the golden was blessed from the same
+implementation.
+
+So every valid case also carries an instance in protobuf **text format**, whose
+first line names the entry-point message, because a generated file set holds
+many messages and only the case author knows which one is the root:
+
+```text
+# message: com.example.sales.Order
+id: "o-1"
+customer {
+  name: "Ada"
+}
+```
+
+The Rust harness drives this through `protoc` itself — `--encode` to get wire
+bytes, `--decode` to read them back, `--encode` again on the result — so it
+needs no protobuf runtime dependency at all. An SDK whose language has a
+dynamic protobuf runtime may use that instead; the assertion is the same.
+
+The instance must encode to a non-empty message. In proto3 a singular scalar
+holding its default value is *not* written to the wire, so an instance of all
+zeros and empty strings exercises nothing and the harness rejects it.
+
+One case has no instance: `root-enum` generates an enum and no message at all,
+and `--encode` needs a message. A case in that position carries a
+`no-instance.md` giving the reason, and the harness requires that file when the
+instance is absent — silence is not an acceptable way to opt out.
 
 ## `expected-error.txt`
 

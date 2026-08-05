@@ -1,0 +1,7 @@
+{
+  "name": "root",
+  "children": [
+    { "label": "a", "parent": null },
+    { "label": "b", "parent": { "Parent": { "name": "inner", "children": [] } } }
+  ]
+}

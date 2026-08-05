@@ -1,0 +1,7 @@
+{
+  "id": "s-1",
+  "retries": { "int": 5 },
+  "label": { "string": "prod" },
+  "enabled": { "boolean": false },
+  "kind": null
+}

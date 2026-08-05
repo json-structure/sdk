@@ -1,0 +1,7 @@
+{
+  "id": "l-1",
+  "label": "Tower",
+  "auditedBy": "bob",
+  "auditedAt": { "string": "2026-01-01" },
+  "visitors": { "int": 12 }
+}
