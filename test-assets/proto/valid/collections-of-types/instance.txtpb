@@ -1,0 +1,16 @@
+# message: Basket
+items {
+sku: "s1" }
+byId {
+key: "s1"
+value {
+sku: "s1" } }
+colours:
+RED
+inline {
+n: 4 }
+inlineEnum:
+A
+grid {
+items {
+sku: "s2" } }

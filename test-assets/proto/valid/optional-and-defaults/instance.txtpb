@@ -1,0 +1,7 @@
+# message: Settings
+id: "s-1"
+retries: 5
+label: "l"
+enabled:
+false
+kind: "settings"

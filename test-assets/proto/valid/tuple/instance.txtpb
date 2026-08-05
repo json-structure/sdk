@@ -1,0 +1,5 @@
+# message: Reading
+point {
+x: 1.5
+y: 2.5
+label: "p" }

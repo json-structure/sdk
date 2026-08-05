@@ -1,0 +1,6 @@
+# message: Parent
+name: "p"
+children {
+label: "c"
+parent {
+name: "p2" } }

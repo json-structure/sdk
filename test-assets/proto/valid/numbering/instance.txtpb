@@ -1,0 +1,6 @@
+# message: Account
+id: "a-1"
+inserted: "x"
+code: "c"
+label: "l"
+state: open

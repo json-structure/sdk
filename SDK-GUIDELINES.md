@@ -487,10 +487,13 @@ schema is being built at some special time rather than simply being built.
 ### Conformance corpus
 
 [`test-assets/avro/`](test-assets/avro/) — 32 valid cases and 10 negative cases.
-The harness contract is described in its README and has five checks: golden
+The harness contract is described in its README and has six checks: golden
 byte-match, determinism across repeated runs, acceptance by a real Avro parser,
-the expected warnings for every valid case, and the expected error for every
-negative case. The reference harness is
+a write/read round trip of a hand-written `instance.avro.json` through a real
+Avro writer, the expected warnings for every valid case, and the expected error
+for every negative case. The round trip is the one check a blessed golden
+cannot perform, because the golden was blessed from the implementation it is
+supposed to be testing. The reference harness is
 [`rust/tests/avro_corpus.rs`](rust/tests/avro_corpus.rs).
 
 ---

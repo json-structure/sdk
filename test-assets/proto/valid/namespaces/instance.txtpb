@@ -1,0 +1,4 @@
+# message: com.example.sales.Order
+id: "o-1"
+customer {
+name: "Ada" }
