@@ -428,7 +428,7 @@ impl<'a> Compiler<'a> {
             out.insert("doc".to_string(), Value::String(doc));
         }
         if let Some(constraints) = self.constraints_of(decl) {
-            out.insert("jsonStructure".to_string(), constraints);
+            out.insert("annotations".to_string(), constraints);
         }
         out.insert("fields".to_string(), Value::Array(fields));
         Ok(Value::Object(out))
@@ -470,7 +470,7 @@ impl<'a> Compiler<'a> {
             out.insert("doc".to_string(), Value::String(doc));
         }
         if let Some(constraints) = self.constraints_of(decl) {
-            out.insert("jsonStructure".to_string(), constraints);
+            out.insert("annotations".to_string(), constraints);
         }
         if let Some(default) = default {
             out.insert("default".to_string(), default);
@@ -659,7 +659,7 @@ impl<'a> Compiler<'a> {
             out.insert("doc".to_string(), Value::String(doc));
         }
         if let Some(constraints) = self.constraints_of(decl) {
-            out.insert("jsonStructure".to_string(), constraints);
+            out.insert("annotations".to_string(), constraints);
         }
         out.insert("fields".to_string(), Value::Array(fields));
         Ok(Value::Object(out))
@@ -986,7 +986,7 @@ impl<'a> Compiler<'a> {
             out.insert("doc".to_string(), Value::String(doc));
         }
         if let Some(constraints) = self.constraints_of(decl) {
-            out.insert("jsonStructure".to_string(), constraints);
+            out.insert("annotations".to_string(), constraints);
         }
         out.insert("symbols".to_string(), Value::Array(symbols.clone()));
 
@@ -1128,7 +1128,7 @@ impl<'a> Compiler<'a> {
             .map(str::to_string)
     }
 
-    /// §6.4.1: the `jsonStructure` attribute `full` mode emits alongside `doc`.
+    /// §6.4.1: the `annotations` attribute `full` mode emits alongside `doc`.
     ///
     /// These are the constraints Avro's type system has no place for. Putting
     /// them in an attribute rather than appending them to `doc` keeps them in
@@ -1338,7 +1338,7 @@ fn avro_logical(type_name: &str) -> Option<&'static str> {
     })
 }
 
-/// The constraint keywords §6.4.1 carries in the `jsonStructure` attribute in
+/// The constraint keywords §6.4.1 carries in the `annotations` attribute in
 /// `full` mode, in their fixed emission order.
 const CONSTRAINT_ANNOTATIONS: &[&str] = &[
     "maxLength",

@@ -59,8 +59,8 @@ public enum AvroMode
     Compact,
 
     /// <summary>
-    /// Adds <c>logicalType</c> annotations and constraint annotations on
-    /// <c>doc</c>, following Avrotize's mapping. Nothing else changes.
+    /// Adds <c>logicalType</c> annotations, and carries the constraints Avro
+    /// cannot express in an <c>annotations</c> attribute. Nothing else changes.
     /// </summary>
     /// <remarks>
     /// A schema emitted in this mode names logical types the Apache Avro

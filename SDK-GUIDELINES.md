@@ -524,7 +524,7 @@ a handful of direct negative tests for its own decoder next to the harness.
 The compiler has two modes, and **they encode identically**. `full` adds
 `logicalType` annotations for the temporal types and `uuid`, and carries the
 constraints Avro's type system cannot express — `maxLength`, `pattern`,
-`minimum` and the rest — in a `jsonStructure` attribute. It changes no base
+`minimum` and the rest — in an `annotations` attribute. It changes no base
 type and therefore no byte. A port MUST keep that true, and the corpus asserts
 it directly by compiling every case both ways and comparing the encoded bytes.
 

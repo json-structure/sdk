@@ -217,7 +217,7 @@ before committing. It is not how a failing test gets silenced.
 | `union-default-placement` | §3.8 — a default naming a branch that is not first, so the union is rotated |
 | `full-logical-types`   | §2.5 — the `rfc3339-*` annotations, which no Avro parser has to understand |
 | `full-reserved-logicals` | §2.5 — `uuid`, and the `decimal` that both modes emit             |
-| `full-constraint-annotations` | §6.4.1 — all ten constraints in a `jsonStructure` attribute, reordered from the source |
+| `full-constraint-annotations` | §6.4.1 — all ten constraints in an `annotations` attribute, reordered from the source |
 | `full-constraints-no-doc` | §6.4.1 — `emitDoc` off still emits constraints; the two options are orthogonal |
 | `full-decimal-constraints` | §6.4.1 — `precision`/`scale` carried by the `decimal` logical type are not repeated |
 

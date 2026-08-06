@@ -168,7 +168,7 @@ jstruct avro [OPTIONS] <FILES>...
 
 **The two modes encode identically.** `full` adds `logicalType` annotations for
 the temporal types and `uuid`, and carries the constraints Avro cannot express
-in a `jsonStructure` attribute beside `doc`. It changes no base type and
+in an `annotations` attribute beside `doc`. It changes no base type and
 therefore no byte on the wire — a `full` schema and a `compact` schema compiled
 from the same document are interchangeable as reader and writer. Choose `full`
 when the schema is going to be read by a human or a code generator, `compact`

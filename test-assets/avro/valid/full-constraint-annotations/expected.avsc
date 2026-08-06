@@ -12,7 +12,7 @@
       "name": "constrained",
       "type": "string",
       "doc": "Has both",
-      "jsonStructure": {
+      "annotations": {
         "maxLength": 10,
         "minLength": 2,
         "pattern": "^[a-z]+$"
@@ -21,7 +21,7 @@
     {
       "name": "bare",
       "type": "int",
-      "jsonStructure": {
+      "annotations": {
         "minimum": 0,
         "maximum": 99
       }
@@ -29,7 +29,7 @@
     {
       "name": "content",
       "type": "string",
-      "jsonStructure": {
+      "annotations": {
         "contentEncoding": "base64",
         "contentMediaType": "image/png",
         "contentCompression": "gzip"
@@ -43,7 +43,7 @@
       "name": "ordering",
       "type": "string",
       "doc": "All ten, out of order in the source",
-      "jsonStructure": {
+      "annotations": {
         "maxLength": 1,
         "minLength": 2,
         "precision": 3,

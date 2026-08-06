@@ -41,7 +41,7 @@
 //! reads it. [`Mode::Full`] additionally annotates the temporal types and
 //! `uuid` with a `logicalType`, and carries the constraints Avro's type system
 //! cannot express — `maxLength`, `pattern`, `minimum` and the rest — in a
-//! `jsonStructure` attribute beside `doc`. Avro parsers ignore attributes they
+//! `annotations` attribute beside `doc`. Avro parsers ignore attributes they
 //! do not recognize, so the constraint survives in the form it was written
 //! without costing an unaware reader anything.
 //!
@@ -112,7 +112,8 @@ pub enum Mode {
     #[default]
     Compact,
     /// Everything `Compact` emits, plus Avrotize's `rfc3339-*` logical type
-    /// annotations on temporals and its constraint annotations in `doc`.
+    /// annotations on temporals and the constraints Avro cannot express in an
+    /// `annotations` attribute.
     ///
     /// The `rfc3339-*` names are not reserved Avro logical types, so a reader
     /// that does not know them sees the `string` base and is correct. Some Avro
