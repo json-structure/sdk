@@ -20,14 +20,26 @@ to make Avro express everything JSON Structure can say. It tries to make Avro
 carry every *value* a JSON Structure schema admits, losslessly, and to make the
 resulting schema evolve well under Avro's reader/writer schema resolution.
 
-**No logical types.** Avro logical types are not used. Two reasons. First,
-Avro's temporal types are UTC instants with no offset — mapping a JSON Structure
-`datetime` to `timestamp-micros` silently discards the time zone that RFC 3339
-requires the value to carry. Second, logical type support is uneven across Avro
-implementations, and a schema that means different things to different readers
-is worse than one that means the same simple thing everywhere. Values that have
-no exact Avro primitive are carried as `string` in their JSON Structure lexical
-form.
+**Two modes, and `compact` is the default.** The mapping has one wire format
+and two *annotation* levels, selected by the `mode` option ({{full-mode}}).
+
+`compact` emits only what serialization requires. `full` emits the same schema
+plus descriptive metadata: logical type annotations on the values that have a
+narrower meaning than their Avro base type, and the constraint annotations
+Avrotize writes into `doc`.
+
+**The two modes are wire-compatible.** This is the load-bearing property.
+Every value occupies the same Avro base type in both modes, so data written
+under one mode reads correctly under the other, and a reader that has never
+heard of the annotations sees exactly the `compact` schema. `full` adds
+information *about* the bytes; it never changes them.
+
+That is why the temporal annotations use Avrotize's `rfc3339-*` family over a
+`string` base rather than Avro's own `date` and `timestamp-micros`. Avro's
+temporal logical types are UTC instants on integer bases: adopting them would
+change the wire format *and* silently discard the offset that RFC 3339 requires
+the value to carry. Keeping RFC 3339 text and naming what it holds loses
+neither.
 
 **Losslessness beats compactness.** Where a narrower Avro type would truncate or
 wrap a legal JSON Structure value, the mapping chooses the wider or lexical
@@ -64,6 +76,7 @@ The compiler accepts the following options:
 
 | Option | Default | Effect |
 |---|---|---|
+| `mode` | `compact` | `compact` or `full`; see {{full-mode}} |
 | `uses` | empty | Add-in names from `$offers` to apply (see {{offers-uses}}) |
 | `additional_properties` | `ignore` | `ignore` or `error`; see {{additional-properties}} |
 | `emit_doc` | `true` | Emit `doc` from `description` |
@@ -76,46 +89,52 @@ rewrite, or otherwise override a derived name or namespace.
 
 ## 2. Primitive types {#primitives}
 
-| JSON Structure | Avro | Notes |
-|---|---|---|
-| `null` | `null` | |
-| `boolean` | `boolean` | |
-| `string` | `string` | |
-| `number` | `double` | See {{number}} |
-| `integer` | `int` | `integer` is an alias for `int32` |
-| `int8` | `int` | |
-| `int16` | `int` | |
-| `int32` | `int` | |
-| `int64` | `long` | |
-| `int128` | `string` | Decimal literal; exceeds `long` |
-| `uint8` | `int` | |
-| `uint16` | `int` | |
-| `uint32` | `long` | Exceeds signed `int` |
-| `uint64` | `string` | Decimal literal; exceeds signed `long`. See {{uint64}} |
-| `uint128` | `string` | Decimal literal |
-| `float8` | `float` | |
-| `float` | `float` | |
-| `double` | `double` | |
-| `decimal` | `string` | Decimal literal, arbitrary precision |
-| `date` | `string` | RFC 3339 `full-date` |
-| `time` | `string` | RFC 3339 `full-time`, offset preserved |
-| `datetime` | `string` | RFC 3339 `date-time`, offset preserved |
-| `duration` | `string` | ISO 8601 duration |
-| `uuid` | `string` | RFC 9562 textual form |
-| `uri` | `string` | RFC 3986 |
-| `jsonpointer` | `string` | RFC 6901 |
-| `binary` | `bytes` | |
-| `any` | see {{any}} | Empty record; a schema hole |
+The `Avro` column is the wire type, and it is the same in both modes. The
+`full` column is the annotation `full` mode adds on top of it; an empty cell
+means `full` emits the bare type, exactly as `compact` does.
 
-Implementations MUST NOT emit a `logicalType` attribute for any of these.
+| JSON Structure | Avro (both modes) | `full` adds | Notes |
+|---|---|---|---|
+| `null` | `null` | | |
+| `boolean` | `boolean` | | |
+| `string` | `string` | | |
+| `number` | `double` | | See {{number}} |
+| `integer` | `int` | | `integer` is an alias for `int32` |
+| `int8` | `int` | | |
+| `int16` | `int` | | |
+| `int32` | `int` | | |
+| `int64` | `long` | | |
+| `int128` | `string` | | Decimal literal; exceeds `long` |
+| `uint8` | `int` | | |
+| `uint16` | `int` | | |
+| `uint32` | `long` | | Exceeds signed `int` |
+| `uint64` | `string` | | Decimal literal; exceeds signed `long`. See {{uint64}} |
+| `uint128` | `string` | | Decimal literal |
+| `float8` | `float` | | |
+| `float` | `float` | | |
+| `double` | `double` | | |
+| `decimal` | `bytes` | | `decimal` logical type in **both** modes; see {{decimal}} |
+| `date` | `string` | `rfc3339-date` | RFC 3339 `full-date` |
+| `time` | `string` | `rfc3339-time-micros` | RFC 3339 `full-time`, offset preserved |
+| `datetime` | `string` | `rfc3339-timestamp-micros` | RFC 3339 `date-time`, offset preserved |
+| `duration` | `string` | `rfc3339-duration` | ISO 8601 duration |
+| `uuid` | `string` | `uuid` | RFC 9562 textual form |
+| `uri` | `string` | | RFC 3986 |
+| `jsonpointer` | `string` | | RFC 6901 |
+| `binary` | `bytes` | | |
+| `any` | see {{any}} | | Empty record; a schema hole |
+
+In `compact` mode, implementations MUST NOT emit a `logicalType` attribute for
+any of these except `decimal`, which carries one in both modes ({{decimal}}).
+In `full` mode, implementations MUST emit exactly the annotations in the `full`
+column and no others.
 
 ### 2.1 `number` {#number}
 
 JSON Structure `number` is any JSON number and is therefore not bounded in
-precision. Avro has no arbitrary-precision numeric primitive that does not
-require a logical type, so `number` maps to `double`. Schema authors who need
-exact arbitrary-precision values MUST declare `decimal` rather than `number`;
-`decimal` is carried lexically and is lossless.
+precision. Avro has no arbitrary-precision numeric primitive, so `number` maps
+to `double`. Schema authors who need exact arbitrary-precision values MUST
+declare `decimal` rather than `number`; `decimal` is exact ({{decimal}}).
 
 This is the one place the mapping knowingly narrows, and it does so because
 `number` is already a loosely specified type whose values are, in practice,
@@ -130,18 +149,97 @@ string.
 
 `uint32` has no such problem against `long` and is mapped numerically.
 
-### 2.3 `precision`, `scale`, `maxLength`, and content keywords
+### 2.3 `decimal` {#decimal}
 
-`precision` and `scale` (on `decimal`), `maxLength`, `contentEncoding`,
-`contentCompression`, and `contentMediaType` are constraints, not
-representations. They do not affect the emitted Avro type and MUST be ignored by
-the compiler. Constraint enforcement remains the job of the JSON Structure
-instance validator.
+`decimal` maps to Avro's `decimal` logical type on a `bytes` base, in **both**
+modes:
+
+```json
+{ "type": "bytes", "logicalType": "decimal", "precision": 20, "scale": 2 }
+```
+
+This is the one logical type `compact` mode emits, because here Avro's own
+model is exactly right. `decimal` is a reserved Avro logical type with a
+defined binary encoding — the unscaled value as a two's-complement big-endian
+integer — that is lossless for any precision and scale a JSON Structure author
+can declare. There is nothing to lose by using it and a real interchange
+benefit to gain, so the choice does not belong to a mode.
+
+`precision` comes from the declaration and `scale` defaults to `0` when absent,
+as in Avro.
+
+Avro requires `precision` to be present and `scale` to be no greater than it.
+A `decimal` that declares no `precision`, or a `scale` exceeding its
+`precision`, cannot be expressed: the compiler emits a `string` carrying the
+decimal literal and MUST warn ({{warnings}}). Inventing a precision would
+silently impose a range the author never wrote.
+
+Avrotize instead writes `{"type": "string", "logicalType": "decimal"}`. That
+schema is not loadable: `decimal` is a reserved name, and Apache Avro 1.12 for
+.NET rejects it with `'decimal' can only be used with an underlying bytes or
+fixed type`. This specification does not follow it.
+
+### 2.4 `precision`, `scale`, `maxLength`, and content keywords
+
+`maxLength`, `contentEncoding`, `contentCompression`, and `contentMediaType`
+are constraints, not representations. They do not affect the emitted Avro type
+and MUST be ignored by the compiler. Constraint enforcement remains the job of
+the JSON Structure instance validator.
+
+`precision` and `scale` are the exception: on `decimal` they are part of the
+value's representation, and {{decimal}} governs them.
 
 In particular, `binary` MUST map to `bytes` and MUST NOT map to Avro `fixed`,
 even when a length constraint is present. `fixed` couples the wire format to a
 length that JSON Structure treats as a validation rule, and changing that rule
 would be a breaking schema change rather than a validation change.
+
+### 2.5 `full` mode {#full-mode}
+
+`full` mode emits the schema `compact` would emit, plus two kinds of
+annotation. It changes no base type, no field, no name, and no byte on the
+wire.
+
+**Logical type annotations.** Values whose `string` base understates what they
+carry are annotated with Avrotize's `rfc3339-*` family:
+
+| JSON Structure | Emitted in `full` mode |
+|---|---|
+| `date` | `{"type": "string", "logicalType": "rfc3339-date"}` |
+| `time` | `{"type": "string", "logicalType": "rfc3339-time-micros"}` |
+| `datetime` | `{"type": "string", "logicalType": "rfc3339-timestamp-micros"}` |
+| `duration` | `{"type": "string", "logicalType": "rfc3339-duration"}` |
+| `uuid` | `{"type": "string", "logicalType": "uuid"}` |
+
+`uuid` is a reserved Avro logical type and `string` is its required base, so it
+needs nothing special. The `rfc3339-*` names are an Avrotize extension.
+
+`int128`, `uint64`, `uint128`, `uri`, and `jsonpointer` get no annotation.
+There is no established logical name for them, and inventing one would put a
+private vocabulary on the wire for no reader's benefit.
+
+**Constraint annotations** in `doc`, per {{doc-annotations}}.
+
+#### 2.5.1 Reading a `full` schema {#full-mode-readers}
+
+An `rfc3339-*` annotation is descriptive. A reader that does not recognize the
+name sees a `string` and is correct; that is the whole design.
+
+Some Avro libraries are nonetheless strict about *unknown* logical type names
+and refuse to parse rather than ignore. Apache Avro 1.12 for .NET is one:
+
+```
+AvroTypeException: Logical type 'rfc3339-date' is not supported.
+```
+
+A conforming SDK that offers `full` mode MUST therefore ensure its own runtime
+can load what it emits — by registering the `rfc3339-*` names with the Avro
+library where the library allows it, as the .NET SDK does. Implementations
+SHOULD document this for callers who hand a `full` schema to a third-party
+consumer, because that consumer may need the same registration.
+
+This is the practical cost of `full` mode, and it is the reason `compact` is
+the default. `compact` is loadable everywhere with no arrangements at all.
 
 ## 3. Compound types
 
@@ -657,10 +755,33 @@ fixed types, and fields, verbatim.
 emitted. Avro `doc` is a single string with no language tag, and picking one
 language silently would be worse than emitting nothing.
 
-Avrotize's practice of serializing validation constraints into `doc` is
-deliberately not adopted. `doc` is documentation; encoding machine-readable
-constraints into a human-readable field produces a string that nothing parses
-and everything displays.
+#### 6.4.1 Constraint annotations in `full` mode {#doc-annotations}
+
+In `compact` mode, `doc` is documentation and nothing else. Encoding
+machine-readable constraints into a human-readable field produces a string that
+nothing parses and everything displays.
+
+In `full` mode, the compiler additionally appends Avrotize's constraint
+annotation, because interoperating with Avrotize-generated schemas is the point
+of the mode. The annotation is a single bracketed, comma-separated list appended
+to the `doc` string, separated from any preceding text by one space:
+
+```
+Order total [minimum: 0, scale: 2]
+```
+
+Annotations are emitted in this fixed order, omitting absent ones:
+`maxLength`, `minLength`, `precision`, `scale`, `pattern`, `minimum`,
+`maximum`, `encoding` (from `contentEncoding`), `mediaType` (from
+`contentMediaType`), `compression` (from `contentCompression`). Each is rendered
+as `<name>: <value>`, with the value in its JSON lexical form.
+
+If there is no `description` and no annotation applies, no `doc` is emitted. If
+`emit_doc` is false, no `doc` is emitted and no annotation is built; the option
+means what it says.
+
+This is a documentation string, not a contract. Nothing in this specification
+parses it back, and a reader MUST NOT rely on it.
 
 ## 7. Determinism {#determinism}
 
@@ -676,8 +797,9 @@ input and options.
    lookup, never an iteration source.
 3. **Key order in emitted JSON objects.** Attributes are emitted in this order,
    omitting absent ones: `type`, `name`, `namespace`, `doc`, `aliases`,
-   `fields`, `symbols`, `items`, `values`, `size`, `default`. Within a field
-   object: `name`, `type`, `doc`, `default`, `order`, `aliases`.
+   `fields`, `symbols`, `items`, `values`, `size`, `logicalType`, `precision`,
+   `scale`, `default`. Within a field object: `name`, `type`, `doc`, `default`,
+   `order`, `aliases`.
 4. **Generated-name suffixing** follows traversal order, per
    {{generated-names}}.
 5. **Add-in application** follows `$offers` document order, per {{offers-uses}}.
@@ -715,6 +837,8 @@ The following MUST be warnings {#warnings}, each carrying the same JSON Pointer:
 | `required` declares alternative sets | Only the intersection is emitted non-null; the choice is not enforced |
 | `any` used | The position is readable but not writable; see {{any-asymmetry}} |
 | A generated name is suffixed to avoid a declared type | The anonymous type's Avro name is not the one the naming rules would predict |
+| `decimal` with no `precision` | Avro requires one; the value is carried as a lexical string instead ({{decimal}}) |
+| `decimal` with `scale` greater than `precision` | Avro forbids it; the value is carried as a lexical string instead ({{decimal}}) |
 
 ## 9. Compatibility notes
 

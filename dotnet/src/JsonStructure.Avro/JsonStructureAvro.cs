@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using Avro;
+using Avro.Util;
 
 namespace JsonStructure.Avro;
 
@@ -73,8 +74,52 @@ public static class JsonStructureAvro
     public static Schema SchemaFrom(JsonNode document, AvroOptions options)
     {
         var compiled = AvroCompiler.Compile(document, options).Schema;
+        RegisterLogicalTypes();
         return Schema.Parse(compiled.ToJsonString(Js.Compact_));
     }
+
+    private static readonly object RegistrationGate = new();
+    private static bool _registered;
+
+    /// <summary>
+    /// Teaches the Apache Avro runtime the <c>rfc3339-*</c> logical types that
+    /// <see cref="AvroMode.Full"/> emits, so that it can parse what this SDK
+    /// writes. Idempotent, thread-safe, and called for you by every
+    /// <c>SchemaFrom</c> overload.
+    /// </summary>
+    /// <remarks>
+    /// Call this directly only when parsing a <c>full</c>-mode schema that
+    /// reached you some other way — off a schema registry, say, or out of a
+    /// container file header. Without it, <see cref="Schema.Parse(string)"/>
+    /// throws <c>Logical type 'rfc3339-date' is not supported</c>.
+    /// </remarks>
+    public static void RegisterLogicalTypes()
+    {
+        if (Volatile.Read(ref _registered))
+        {
+            return;
+        }
+        lock (RegistrationGate)
+        {
+            if (_registered)
+            {
+                return;
+            }
+            foreach (var name in Rfc3339Names)
+            {
+                LogicalTypeFactory.Instance.Register(new Rfc3339LogicalType(name));
+            }
+            Volatile.Write(ref _registered, true);
+        }
+    }
+
+    private static readonly string[] Rfc3339Names =
+    [
+        "rfc3339-date",
+        "rfc3339-time-micros",
+        "rfc3339-timestamp-micros",
+        "rfc3339-duration",
+    ];
 
     /// <summary>Compiles a JSON Structure document read from disk.</summary>
     /// <param name="path">Path to the document.</param>

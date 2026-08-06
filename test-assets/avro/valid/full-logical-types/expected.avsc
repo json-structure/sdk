@@ -1,0 +1,67 @@
+{
+  "type": "record",
+  "name": "Logical",
+  "doc": "The rfc3339-* annotations, which are transparent to any reader.",
+  "fields": [
+    {
+      "name": "date",
+      "type": {
+        "type": "string",
+        "logicalType": "rfc3339-date"
+      }
+    },
+    {
+      "name": "time",
+      "type": {
+        "type": "string",
+        "logicalType": "rfc3339-time-micros"
+      }
+    },
+    {
+      "name": "dt",
+      "type": {
+        "type": "string",
+        "logicalType": "rfc3339-timestamp-micros"
+      }
+    },
+    {
+      "name": "dur",
+      "type": {
+        "type": "string",
+        "logicalType": "rfc3339-duration"
+      }
+    },
+    {
+      "name": "uri",
+      "type": "string"
+    },
+    {
+      "name": "ptr",
+      "type": "string"
+    },
+    {
+      "name": "i128",
+      "type": "string"
+    },
+    {
+      "name": "u64",
+      "type": "string"
+    },
+    {
+      "name": "u128",
+      "type": "string"
+    },
+    {
+      "name": "plainString",
+      "type": "string"
+    },
+    {
+      "name": "plainInt",
+      "type": "int"
+    },
+    {
+      "name": "blob",
+      "type": "bytes"
+    }
+  ]
+}

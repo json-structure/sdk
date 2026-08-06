@@ -1,6 +1,6 @@
 {
   "name": "Nemo",
-  "fins": { "int": 2 },
+  "fins": 2,
   "legs": null,
   "nickname": null
 }

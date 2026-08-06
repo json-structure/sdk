@@ -489,15 +489,49 @@ some special time rather than simply being built.
 
 ### Conformance corpus
 
-[`test-assets/avro/`](test-assets/avro/) — 34 valid cases and 10 negative cases.
-The harness contract is described in its README and has six checks: golden
+[`test-assets/avro/`](test-assets/avro/) — 37 valid cases and 10 negative cases.
+The harness contract is described in its README and has seven checks: golden
 byte-match, determinism across repeated runs, acceptance by a real Avro parser,
 a write/read round trip of a hand-written `instance.avro.json` through a real
-Avro writer, the expected warnings for every valid case, and the expected error
-for every negative case. The round trip is the one check a blessed golden
-cannot perform, because the golden was blessed from the implementation it is
-supposed to be testing. The reference harness is
+Avro writer, a comparison of the encoded bytes against `expected.avro.b64`, the
+expected warnings for every valid case, and the expected error for every
+negative case. The reference harness is
 [`rust/tests/avro_corpus.rs`](rust/tests/avro_corpus.rs).
+
+The last two of those exist because a blessed golden cannot test the thing it
+was blessed from. `expected.avsc` proves every port agrees with the reference
+implementation; the round trip proves the reference implementation matches what
+the *source document* means, because the instance was written by hand against
+the document rather than generated from the schema.
+
+`instance.avro.json` uses the **Plain JSON** encoding from
+[avrojson.md](https://github.com/clemensv/avrotize/blob/master/avrojson.md), not
+Avro's own JSON encoding — base64 binary, quoted `long` and `decimal`, RFC 3339
+temporals, and untagged unions resolved by structure. No shipping Avro library
+reads it, so every harness writes its own schema-driven decoder, which means
+that decoder has no second opinion inside its own SDK. `expected.avro.b64`
+supplies one from outside: the same instance must encode to the same bytes
+everywhere. Cases containing a `map` are exempt, because Avro writes map entries
+in iteration order and nothing pins it.
+
+The corpus is a happy-path corpus and cannot reach a decoder's guards — mutation
+testing confirmed that relaxing the ambiguous-union rule, the omitted-field
+rule, and the decimal scale check all left it green. Each port therefore carries
+a handful of direct negative tests for its own decoder next to the harness.
+
+### Modes
+
+The compiler has two modes, and **they encode identically**. `full` adds
+`logicalType` annotations for the temporal types and `uuid` and appends
+inexpressible constraints to each field's `doc`; it changes no base type and
+therefore no byte. A port MUST keep that true, and the corpus asserts it
+directly by compiling every case both ways and comparing the encoded bytes.
+
+`full` uses the `rfc3339-*` logical type names, which are not in the Avro
+specification. Avro tells a parser to ignore a logical type it does not
+recognize, and Rust's `apache-avro` does — but Apache.Avro throws instead, so
+the .NET port registers the names with `LogicalTypeFactory` before parsing.
+Check which your library does before assuming `full` mode works; see spec §2.5.1.
 
 ### Ports
 
