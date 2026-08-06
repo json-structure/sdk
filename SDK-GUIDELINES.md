@@ -559,6 +559,7 @@ Check which your library does before assuming `full` mode works; see spec §2.5.
 | -------- | -------- | ------- |
 | Rust (reference) | [`rust/src/avro/`](rust/src/avro/) | [`rust/tests/avro_corpus.rs`](rust/tests/avro_corpus.rs) |
 | .NET | [`dotnet/src/JsonStructure.Avro/`](dotnet/src/JsonStructure.Avro/) | [`dotnet/tests/JsonStructure.Avro.Tests/`](dotnet/tests/JsonStructure.Avro.Tests/) |
+| Java | [`java/src/main/java/org/json_structure/avro/`](java/src/main/java/org/json_structure/avro/) | [`java/src/test/java/org/json_structure/avro/`](java/src/test/java/org/json_structure/avro/) |
 
 Two things the .NET port learned that the next port will hit as well:
 
@@ -572,9 +573,28 @@ Two things the .NET port learned that the next port will hit as well:
   normalize the expected file on the way in, or every case fails on Windows and
   passes on Linux.
 
+And three the Java port added:
+
+- **Absent and JSON-null are not the same key.** Jackson has a real `NullNode`
+  where `System.Text.Json` has a C# `null`, so a naive accessor makes
+  `"default": null` — which is how a nullable field asks for a null default —
+  look like no default at all. Fold `NullNode` in with absent in the accessor,
+  and read the raw node wherever the difference is load-bearing.
+- **Don't try to configure a pretty printer into byte-exactness.** Jackson's
+  `DefaultPrettyPrinter` writes `"key" : value`, with a space before the colon,
+  and indents arrays on its own scheme. Writing the bytes by hand is less code
+  than bending it and does not drift when Jackson changes.
+- **`Schema.Parser` is stateful.** It remembers every named type it has parsed
+  and rejects a redefinition, so a shared instance fails the second time it sees
+  the same schema. Mint a fresh one per call.
+
 **Do not port the corpus by relaxing it.** If a port passes on the first run,
 mutate its compiler and confirm the corpus notices — that is how both of the
-union cases above came to exist.
+union cases above came to exist. The Java port passed 265 corpus assertions on
+its first green run; five deliberate mutations (a reordered annotation table, a
+dropped record-level `annotations`, a suppressed warning, a decimal scaled by
+ten, an off-by-one `long`) were all caught, which is what made the green
+believable.
 
 ---
 
