@@ -1,6 +1,6 @@
 # Avro Conformance Corpus
 
-Golden fixtures for the JSON Structure → Apache Avro compiler defined by
+Conformance fixtures for the JSON Structure → Apache Avro compiler defined by
 [`spec/json-structure-to-avro.md`](../../spec/json-structure-to-avro.md).
 
 Every SDK that ships an Avro compiler is measured against this corpus. The
@@ -53,8 +53,8 @@ Line endings in these files are LF. A harness on Windows should normalize
 
 Each SDK's harness must implement seven checks:
 
-1. **Golden match.** Compile every `valid/` case with its options and compare
-   bytes against `expected.avsc`.
+1. **Expected-output match.** Compile every `valid/` case with its options and
+   compare bytes against `expected.avsc`.
 2. **Determinism.** Compile every `valid/` case at least ten times and confirm
    every run is byte-identical.
 3. **Validity.** Feed every generated schema to a real Avro parser for the host
@@ -74,7 +74,7 @@ Each SDK's harness must implement seven checks:
    `expected-error.txt` (see below).
 
 Checks 4 and 5 are conditional — check 4 on the instance existing, check 5 on
-the golden existing — and a conditional check that skips everything still
+the expected file existing — and a conditional check that skips everything still
 passes. Both harnesses therefore count how often each branch fired and assert
 the counts are non-zero. This trap has fired twice for real in this corpus.
 
@@ -171,7 +171,7 @@ anywhere useful.
 
 The reference harness is
 [`rust/tests/avro_corpus.rs`](../../rust/tests/avro_corpus.rs). It supports
-`JSTRUCT_BLESS=1` to rewrite the golden files from the current implementation.
+`JSTRUCT_BLESS=1` to rewrite the expected files from the current implementation.
 Blessing is how a deliberate behavioral change gets recorded — review the diff
 before committing. It is not how a failing test gets silenced.
 

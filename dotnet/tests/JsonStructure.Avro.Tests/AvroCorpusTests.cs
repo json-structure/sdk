@@ -25,10 +25,10 @@ public sealed class AvroCorpusTests
 
     public static TheoryData<string> InvalidCases => Cases("invalid");
 
-    /// <summary>Check 1: the compiled schema matches the golden, byte for byte.</summary>
+    /// <summary>Check 1: the compiled schema matches the expected file, byte for byte.</summary>
     [Theory]
     [MemberData(nameof(ValidCases))]
-    public void CompilesToTheGoldenSchema(string name)
+    public void CompilesToTheExpectedSchema(string name)
     {
         var dir = CaseDir("valid", name);
         var result = AvroCompiler.Compile(ReadDocument(dir), ReadOptions(dir));
@@ -37,7 +37,7 @@ public sealed class AvroCorpusTests
 
         actual.ShouldBe(
             expected,
-            $"case '{name}' does not match its golden .avsc. Attribute order is part of the "
+            $"case '{name}' does not match its expected .avsc. Attribute order is part of the "
             + "contract (spec §7), so a difference here is a real divergence even if the "
             + "parsed JSON would compare equal.");
     }
@@ -81,9 +81,9 @@ public sealed class AvroCorpusTests
     /// Check 4: an instance written by hand survives a real write and read.
     /// </summary>
     /// <remarks>
-    /// This is the one check a blessed golden cannot perform. <c>expected.avsc</c>
+    /// This is the one check a blessed expected file cannot perform. <c>expected.avsc</c>
     /// proves this implementation agrees with the reference; it cannot prove the
-    /// reference is right, because the golden was blessed from it. The instance is
+    /// reference is right, because the expected file was blessed from it. The instance is
     /// written against what the <em>source document</em> means, so a schema that is
     /// self-consistent but wrong fails here.
     /// <para>
@@ -140,8 +140,8 @@ public sealed class AvroCorpusTests
     /// The pinned-bytes check has not quietly stopped happening.
     /// </summary>
     /// <remarks>
-    /// A check wrapped in "if there is a golden for it" degrades silently to no
-    /// check at all when the goldens go missing, so both sides of that condition
+    /// A check wrapped in "if there is an expected file for it" degrades silently to no
+    /// check at all when the expected files go missing, so both sides of that condition
     /// are counted and asserted. The same trap has fired twice in this corpus
     /// already.
     /// </remarks>

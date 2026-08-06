@@ -490,19 +490,19 @@ some special time rather than simply being built.
 ### Conformance corpus
 
 [`test-assets/avro/`](test-assets/avro/) — 39 valid cases and 10 negative cases.
-The harness contract is described in its README and has seven checks: golden
-byte-match, determinism across repeated runs, acceptance by a real Avro parser,
-a write/read round trip of a hand-written `instance.avro.json` through a real
-Avro writer, a comparison of the encoded bytes against `expected.avro.b64`, the
-expected warnings for every valid case, and the expected error for every
-negative case. The reference harness is
+The harness contract is described in its README and has seven checks: byte-match
+against the expected output, determinism across repeated runs, acceptance by a
+real Avro parser, a write/read round trip of a hand-written `instance.avro.json`
+through a real Avro writer, a comparison of the encoded bytes against
+`expected.avro.b64`, the expected warnings for every valid case, and the
+expected error for every negative case. The reference harness is
 [`rust/tests/avro_corpus.rs`](rust/tests/avro_corpus.rs).
 
-The last two of those exist because a blessed golden cannot test the thing it
-was blessed from. `expected.avsc` proves every port agrees with the reference
-implementation; the round trip proves the reference implementation matches what
-the *source document* means, because the instance was written by hand against
-the document rather than generated from the schema.
+The last two of those exist because a blessed expected file cannot test the
+thing it was blessed from. `expected.avsc` proves every port agrees with the
+reference implementation; the round trip proves the reference implementation
+matches what the *source document* means, because the instance was written by
+hand against the document rather than generated from the schema.
 
 `instance.avro.json` uses the **Plain JSON** encoding from
 [avrojson.md](https://github.com/clemensv/avrotize/blob/master/avrojson.md), not
@@ -556,9 +556,10 @@ Two things the .NET port learned that the next port will hit as well:
   cannot be written without a reflection-based type-info resolver. It throws at
   serialization time, not at the call site, and only for the schemas that reach
   that code path.
-- **Line endings are part of the golden contract.** `WriteIndented` breaks lines
-  with `Environment.NewLine`. Normalize to LF on the way out, and normalize the
-  golden on the way in, or every case fails on Windows and passes on Linux.
+- **Line endings are part of the expected-output contract.** `WriteIndented`
+  breaks lines with `Environment.NewLine`. Normalize to LF on the way out, and
+  normalize the expected file on the way in, or every case fails on Windows and
+  passes on Linux.
 
 **Do not port the corpus by relaxing it.** If a port passes on the first run,
 mutate its compiler and confirm the corpus notices — that is how both of the

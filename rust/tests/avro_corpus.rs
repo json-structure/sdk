@@ -1,4 +1,4 @@
-//! Golden-corpus harness for the JSON Structure → Avro compiler.
+//! Conformance-corpus harness for the JSON Structure → Avro compiler.
 //!
 //! The corpus lives in `test-assets/avro/` and is the contract every SDK port is
 //! measured against. Each case is a directory:
@@ -109,7 +109,7 @@ fn render(schema: &Value) -> String {
 }
 
 #[test]
-fn every_valid_case_matches_its_golden_output() {
+fn every_valid_case_matches_its_expected_output() {
     let mut blessed = Vec::new();
 
     for (name, dir) in cases("valid") {
@@ -128,7 +128,7 @@ fn every_valid_case_matches_its_golden_output() {
             .map(|w| format!("{}: {}\n", w.path, w.message))
             .collect();
         if blessing() {
-            std::fs::write(&expected_path, &actual).expect("golden file is writable");
+            std::fs::write(&expected_path, &actual).expect("expected file is writable");
             if warnings.is_empty() {
                 let _ = std::fs::remove_file(&warnings_path);
             } else {
@@ -148,7 +148,7 @@ fn every_valid_case_matches_its_golden_output() {
 
         assert_eq!(
             actual, expected,
-            "case '{name}' does not match its golden output"
+            "case '{name}' does not match its expected output"
         );
 
         // A warning is a promise to the developer that something was lost.
@@ -164,7 +164,7 @@ fn every_valid_case_matches_its_golden_output() {
 
     assert!(
         blessed.is_empty(),
-        "golden files were rewritten for {blessed:?}; unset JSTRUCT_BLESS and re-run"
+        "expected files were rewritten for {blessed:?}; unset JSTRUCT_BLESS and re-run"
     );
 }
 
@@ -359,7 +359,7 @@ fn every_case_with_an_instance_round_trips() {
 
     assert!(
         blessed.is_empty(),
-        "golden files were rewritten for {blessed:?}; unset JSTRUCT_BLESS and re-run"
+        "expected files were rewritten for {blessed:?}; unset JSTRUCT_BLESS and re-run"
     );
 
     // A conditional check that skips everything still passes, so both sides of
@@ -387,7 +387,7 @@ fn contains_map(schema: &apache_avro::Schema) -> bool {
     walk(&serde_json::to_value(schema).expect("a schema serializes"))
 }
 
-/// Compares against a golden file, or rewrites it when blessing.
+/// Compares against an expected file, or rewrites it when blessing.
 fn bless_or_compare(path: &Path, actual: &str, case: &str, what: &str, blessed: &mut Vec<String>) {
     if blessing() {
         std::fs::write(path, actual)
@@ -793,7 +793,7 @@ fn every_invalid_case_fails_with_the_expected_error() {
         let expected_path = dir.join("expected-error.txt");
         if blessing() {
             std::fs::write(&expected_path, bless_error(error.kind(), error.path(), &error.to_string()))
-                .expect("golden file is writable");
+                .expect("expected file is writable");
             blessed.push(name);
             continue;
         }
@@ -839,15 +839,15 @@ fn every_invalid_case_fails_with_the_expected_error() {
 
     assert!(
         blessed.is_empty(),
-        "golden files were rewritten for {blessed:?}; unset JSTRUCT_BLESS and re-run"
+        "expected files were rewritten for {blessed:?}; unset JSTRUCT_BLESS and re-run"
     );
 }
 
-/// The parsed form of an `expected-error.txt` golden.
+/// The parsed form of an `expected-error.txt` file.
 ///
 /// A substring of the message alone is a weak assertion: it passes when the
 /// right words come out of the wrong code path, and says nothing about whether
-/// the error points anywhere useful. The golden therefore pins the error
+/// the error points anywhere useful. The expected file therefore pins the error
 /// variant and the JSON Pointer as well.
 struct ExpectedError {
     kind: String,
