@@ -1,6 +1,6 @@
 # Protobuf Conformance Corpus
 
-Golden fixtures for the JSON Structure → Protocol Buffers generator defined by
+Conformance fixtures for the JSON Structure → Protocol Buffers generator defined by
 [`spec/json-structure-to-proto.md`](../../spec/json-structure-to-proto.md).
 
 Every SDK that ships a `.proto` generator is measured against this corpus. The
@@ -45,9 +45,9 @@ the document alone.
 
 Each SDK's harness must implement seven checks:
 
-1. **Golden match.** Generate every `valid/` case and compare each file's bytes
-   against its counterpart under `expected/`, and the produced lock against
-   `expected-numbers.json`. Compare the *sets* of files in both directions — a
+1. **Expected-output match.** Generate every `valid/` case and compare each
+   file's bytes against its counterpart under `expected/`, and the produced
+   lock against `expected-numbers.json`. Compare the *sets* of files in both directions — a
    check that only walks the generated files will never notice one that stopped
    being generated.
 2. **Determinism.** Generate every `valid/` case at least ten times and confirm
@@ -56,10 +56,10 @@ Each SDK's harness must implement seven checks:
    `numbers` option and confirm nothing moves. A generator that renumbers on
    regeneration breaks the wire contract every time it runs.
 4. **`protoc` validity.** Where `protoc` is available, compile the *actual
-   generated output* — not the goldens — and confirm it is accepted. Compiling
-   the goldens only proves a blessed file is still valid. Skip when `protoc` is
-   not installed — but a test that can silently skip is a test that might not be
-   running, so honour `JSTRUCT_REQUIRE_PROTOC`: when that variable is set, a
+   generated output* — not the expected files — and confirm it is accepted.
+   Compiling the expected files only proves a blessed file is still valid.
+   Skip when `protoc` is not installed — but a test that can silently skip is
+   a test that might not be running, so honour `JSTRUCT_REQUIRE_PROTOC`: when that variable is set, a
    missing `protoc` is a failure. CI sets it.
 5. **Wire round trip.** Encode `instance.txtpb` to the wire, decode it back, and
    re-encode; the two binaries must match byte for byte, and the first must not
@@ -76,7 +76,7 @@ Each SDK's harness must implement seven checks:
 Compiling with `protoc` proves the generated `.proto` is *syntactically* valid.
 It says nothing about whether the message can actually carry the data the
 JSON Structure document describes — and that is the failure mode a blessed
-golden can never catch, because the golden was blessed from the same
+expected file can never catch, because it was blessed from the same
 implementation.
 
 So every valid case also carries an instance in protobuf **text format**, whose
@@ -128,7 +128,7 @@ anywhere useful.
 
 The reference harness is
 [`rust/tests/proto_corpus.rs`](../../rust/tests/proto_corpus.rs). It supports
-`JSTRUCT_BLESS=1` to rewrite the golden files. Review the diff before
+`JSTRUCT_BLESS=1` to rewrite the expected files. Review the diff before
 committing — a change to a field number in `expected-numbers.json` is a
 breaking change to anyone already on the wire.
 

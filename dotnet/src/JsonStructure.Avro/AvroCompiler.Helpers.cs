@@ -36,7 +36,7 @@ internal static class Js
     /// <summary>Pretty JSON: two-space indent, matching <c>serde_json::to_string_pretty</c>.</summary>
     /// <remarks>
     /// <see cref="JsonSerializerOptions.WriteIndented"/> breaks lines with
-    /// <see cref="Environment.NewLine"/>, which is CRLF on Windows. The golden
+    /// <see cref="Environment.NewLine"/>, which is CRLF on Windows. The expected
     /// <c>.avsc</c> files are LF, so <see cref="AvroCompiler.ToAvsc"/> normalizes
     /// afterwards rather than depending on a writer option that only exists from
     /// .NET 9 onward.
@@ -72,7 +72,7 @@ internal static class Js
 public static partial class AvroCompiler
 {
     /// <summary>
-    /// Serializes a compiled schema the way the conformance goldens are written:
+    /// Serializes a compiled schema the way the conformance corpus is written:
     /// two-space indent, a trailing newline, and no gratuitous escaping.
     /// </summary>
     /// <param name="schema">A schema produced by <see cref="Compile(JsonNode)"/>.</param>

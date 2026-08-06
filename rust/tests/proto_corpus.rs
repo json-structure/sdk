@@ -1,4 +1,4 @@
-//! Golden-corpus harness for the JSON Structure → Protobuf generator.
+//! Conformance-corpus harness for the JSON Structure → Protobuf generator.
 //!
 //! The corpus lives in `test-assets/proto/`. Each case is a directory:
 //!
@@ -88,7 +88,7 @@ fn normalize(text: &str) -> String {
 }
 
 #[test]
-fn every_valid_case_matches_its_golden_output() {
+fn every_valid_case_matches_its_expected_output() {
     let mut blessed = Vec::new();
 
     for (name, dir) in cases("valid") {
@@ -114,7 +114,7 @@ fn every_valid_case_matches_its_golden_output() {
                 let path = expected_dir.join(&file.path);
                 std::fs::create_dir_all(path.parent().expect("file has a parent"))
                     .expect("output directory is creatable");
-                std::fs::write(&path, &file.contents).expect("golden file is writable");
+                std::fs::write(&path, &file.contents).expect("expected file is writable");
             }
             std::fs::write(&lock_path, &lock).expect("lock file is writable");
             if warnings.is_empty() {
@@ -142,7 +142,7 @@ fn every_valid_case_matches_its_golden_output() {
             assert_eq!(
                 normalize(&file.contents),
                 normalize(&expected),
-                "case '{name}': {} does not match its golden output",
+                "case '{name}': {} does not match its expected output",
                 file.path
             );
         }
@@ -156,10 +156,10 @@ fn every_valid_case_matches_its_golden_output() {
         );
 
         // Comparing only the files we produced would never notice one we
-        // stopped producing. Walk the goldens too.
-        let mut goldens: Vec<String> = Vec::new();
-        collect_protos(&expected_dir, &expected_dir, &mut goldens);
-        goldens.sort();
+        // stopped producing. Walk the expected files too.
+        let mut expected_files: Vec<String> = Vec::new();
+        collect_protos(&expected_dir, &expected_dir, &mut expected_files);
+        expected_files.sort();
         let mut produced: Vec<String> = output
             .files
             .iter()
@@ -167,8 +167,8 @@ fn every_valid_case_matches_its_golden_output() {
             .collect();
         produced.sort();
         assert_eq!(
-            produced, goldens,
-            "case '{name}': the set of generated files does not match the goldens"
+            produced, expected_files,
+            "case '{name}': the set of generated files does not match the expected files"
         );
 
         // A warning is a promise to the developer that something was lost.
@@ -183,7 +183,7 @@ fn every_valid_case_matches_its_golden_output() {
 
     assert!(
         blessed.is_empty(),
-        "golden files were rewritten for {blessed:?}; unset JSTRUCT_BLESS and re-run"
+        "expected files were rewritten for {blessed:?}; unset JSTRUCT_BLESS and re-run"
     );
 }
 
@@ -201,7 +201,7 @@ fn every_valid_case_is_byte_deterministic() {
                 "case '{name}' is not deterministic"
             );
             // `Value`'s PartialEq ignores object key order, so compare the
-            // serialization — key order is part of the golden.
+            // serialization — key order is part of the expected file.
             assert_eq!(
                 serde_json::to_string(&first.numbers).unwrap(),
                 serde_json::to_string(&again.numbers).unwrap(),
@@ -238,7 +238,7 @@ fn regenerating_with_the_produced_lock_changes_nothing() {
 /// Compiles the *actual generated output* with `protoc` when it is on PATH.
 /// Skipped otherwise — the corpus must be checkable without a protobuf
 /// toolchain installed, but where one exists there is no excuse for not using
-/// it. Compiling the goldens rather than the output would only prove that a
+/// it. Compiling the expected files rather than the output would only prove that a
 /// blessed file is still valid, not that today's generator produces valid
 /// protobuf.
 ///
@@ -311,7 +311,7 @@ fn every_valid_case_compiles_with_protoc() {
 ///
 /// The instance is written by hand against what the *source* document means,
 /// so a compiler that emits a self-consistent but wrong message — the one
-/// failure mode a blessed golden can never catch — fails here.
+/// failure mode a blessed expected file can never catch — fails here.
 #[test]
 fn every_case_with_an_instance_round_trips_on_the_wire() {
     let Some(protoc) = which_protoc() else {
@@ -491,7 +491,7 @@ fn every_invalid_case_fails_with_the_expected_error() {
                 &expected_path,
                 bless_error(error.kind(), error.path(), &error.to_string()),
             )
-            .expect("golden file is writable");
+            .expect("expected file is writable");
             blessed.push(name);
             continue;
         }
@@ -534,15 +534,15 @@ fn every_invalid_case_fails_with_the_expected_error() {
 
     assert!(
         blessed.is_empty(),
-        "golden files were rewritten for {blessed:?}; unset JSTRUCT_BLESS and re-run"
+        "expected files were rewritten for {blessed:?}; unset JSTRUCT_BLESS and re-run"
     );
 }
 
-/// The parsed form of an `expected-error.txt` golden.
+/// The parsed form of an `expected-error.txt` file.
 ///
 /// A substring of the message alone is a weak assertion: it passes when the
 /// right words come out of the wrong code path, and says nothing about whether
-/// the error points anywhere useful. The golden therefore pins the error
+/// the error points anywhere useful. The expected file therefore pins the error
 /// variant and the JSON Pointer as well.
 struct ExpectedError {
     kind: String,

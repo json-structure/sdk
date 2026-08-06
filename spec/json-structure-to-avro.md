@@ -48,7 +48,7 @@ signed and the upper half of the `uint64` range would wrap silently.
 
 **Determinism is normative.** Two conforming implementations MUST produce
 byte-identical output for the same input document and options. This is not a
-quality-of-implementation matter; the golden corpus in `test-assets/avro/` is
+quality-of-implementation matter; the conformance corpus in `test-assets/avro/` is
 the conformance contract, and it cannot exist without it. See {{determinism}}.
 
 ### 1.2 Conventions
