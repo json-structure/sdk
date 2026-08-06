@@ -33,6 +33,39 @@
 //! // `age` is optional, so it is nullable with a null default.
 //! assert_eq!(avsc["fields"][1]["type"], json!(["null", "int"]));
 //! ```
+//!
+//! # Modes
+//!
+//! [`Mode::Compact`], the default, emits the smallest schema that carries the
+//! data — right when the schema is parsed at process start and nothing else
+//! reads it. [`Mode::Full`] additionally annotates the temporal types and
+//! `uuid` with a `logicalType` and appends the constraints Avro cannot express
+//! to each field's `doc`, which is what a human or a code generator wants.
+//!
+//! The two are **wire-compatible**. `Full` changes no base type and therefore
+//! no byte, so a schema compiled either way can read data written by the other.
+//! The conformance corpus asserts this directly rather than taking it on faith.
+//!
+//! ```rust
+//! use json_structure::avro::{self, AvroOptions, Mode};
+//! # use serde_json::json;
+//! # let schema = json!({
+//! #     "$schema": "https://json-structure.org/meta/core/v0/#",
+//! #     "$id": "https://example.com/event",
+//! #     "name": "Event",
+//! #     "type": "object",
+//! #     "properties": { "at": { "type": "datetime" } },
+//! #     "required": ["at"]
+//! # });
+//! let options = AvroOptions { mode: Mode::Full, ..Default::default() };
+//! let avsc = avro::compile_with(&schema, &options).unwrap().schema;
+//! assert_eq!(avsc["fields"][0]["type"]["logicalType"], "rfc3339-timestamp-micros");
+//! ```
+//!
+//! The `rfc3339-*` names are not in the Avro specification. Avro requires a
+//! parser to ignore a logical type it does not recognize, and `apache-avro`
+//! does — but not every implementation obeys that, so a port shipping `Full`
+//! may have to register the names with its runtime first. See spec §2.5.1.
 
 mod compiler;
 
