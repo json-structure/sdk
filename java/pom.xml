@@ -46,6 +46,7 @@
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <jackson.version>2.16.1</jackson.version>
+        <avro.version>1.12.0</avro.version>
         <junit.version>6.0.3</junit.version>
         <assertj.version>3.27.7</assertj.version>
     </properties>
@@ -73,6 +74,20 @@
             <groupId>com.fasterxml.jackson.datatype</groupId>
             <artifactId>jackson-datatype-jsr310</artifactId>
             <version>${jackson.version}</version>
+        </dependency>
+
+        <!--
+            Apache Avro. Optional: only org.json_structure.avro needs it, and
+            only for the entry points that hand back a parsed org.apache.avro
+            Schema. AvroCompiler itself produces a Jackson tree and runs without
+            it, so a consumer using nothing but the validator never pulls it in.
+            Declare it explicitly to use JsonStructureAvro.
+        -->
+        <dependency>
+            <groupId>org.apache.avro</groupId>
+            <artifactId>avro</artifactId>
+            <version>${avro.version}</version>
+            <optional>true</optional>
         </dependency>
 
         <!-- Testing -->

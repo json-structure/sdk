@@ -139,6 +139,113 @@ mapper.registerModule(new JsonStructureModule());
 // Supports extended numeric types like Int128, UInt128, Decimal, etc.
 ```
 
+### Apache Avro
+
+`org.json_structure.avro` compiles a JSON Structure document into an Apache Avro
+schema, so the `.avsc` stops being something anyone has to maintain. JSON
+Structure is the source; Avro is the assembly language it compiles to.
+
+The change at the call site is one line — wherever `new Schema.Parser().parse()`
+took a hand-written `.avsc`, `JsonStructureAvro.schemaFrom` takes the schema you
+already have:
+
+```java
+import org.apache.avro.Schema;
+import org.apache.avro.generic.*;
+import org.apache.avro.io.*;
+import org.json_structure.avro.JsonStructureAvro;
+
+Schema schema = JsonStructureAvro.schemaFromFile(Path.of("person.struct.json"));
+
+GenericRecord person = new GenericData.Record(schema);
+person.put("name", "Alice");
+person.put("age", 42);
+
+ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+Encoder encoder = EncoderFactory.get().binaryEncoder(buffer, null);
+new GenericDatumWriter<GenericRecord>(schema).write(person, encoder);
+encoder.flush();
+```
+
+Everything downstream — datum writers, readers, `DataFileWriter`, a schema
+registry client, `SpecificDatumWriter` over generated classes — is unchanged,
+because what comes back is an ordinary `org.apache.avro.Schema`.
+
+Avro is an **optional** dependency. Declare `org.apache.avro:avro` yourself if
+you want the `JsonStructureAvro` facade; `AvroCompiler`, which returns the
+`.avsc` as a Jackson tree, needs nothing beyond Jackson.
+
+Compilation is a few microseconds per declared property and linear in document
+size: nothing once, a great deal per message. Hold the result rather than
+recompiling:
+
+```java
+private static final Supplier<Schema> PERSON_SCHEMA =
+    Suppliers.memoize(() -> JsonStructureAvro.schemaFrom(EMBEDDED_PERSON_STRUCT_JSON));
+```
+
+Not every JSON Structure construct survives the trip. Where the mapping loses
+something — a `const`, a `set`'s uniqueness — the compiler says so rather than
+quietly dropping it:
+
+```java
+AvroCompileResult result = AvroCompiler.compile(mapper.readTree(source));
+result.warnings().forEach(System.out::println);   // "#/properties/tags: ..."
+```
+
+Anything that cannot be represented at all throws `AvroCompileException`, an
+unchecked exception carrying the offending JSON Pointer in `path()`.
+
+#### Compact and full modes
+
+By default the compiler emits the smallest schema that carries the data. Pass
+`AvroMode.FULL` to get one that also describes it:
+
+```java
+Schema schema = JsonStructureAvro.schemaFromFile(
+    Path.of("person.struct.json"),
+    AvroOptions.builder().mode(AvroMode.FULL).build());
+```
+
+`FULL` adds `logicalType` annotations for the temporal types and `uuid`, and
+carries what Avro cannot express — the constraints, the `unit` and `currency`
+annotations, and the semantic annotations — in an `annotations` attribute
+beside `doc`:
+
+```json
+{
+  "name": "total",
+  "type": { "type": "bytes", "logicalType": "decimal", "precision": 9, "scale": 2 },
+  "doc": "Order total",
+  "annotations": { "minimum": 0 }
+}
+```
+
+Avro parsers ignore attributes they do not recognize, so this costs a reader
+that has never heard of JSON Structure nothing, and gives one that has the
+constraint in the form it was written. `mode` alone governs it — `emitDoc` is
+about prose for a human, and suppressing that leaves the constraints in place.
+
+It changes no base type and therefore no byte on the wire: a `FULL` schema and a
+`COMPACT` schema compiled from the same document are interchangeable as reader
+and writer, which the corpus asserts directly. Reach for `FULL` when a human or
+a code generator is going to read the schema, `COMPACT` when it is going to be
+parsed at process start.
+
+The temporal annotations use the `rfc3339-*` names, which are not in the Avro
+specification. Java's Avro runtime ignores a `logicalType` it does not know, so
+unlike the .NET SDK there is nothing to register: such a schema parses, and the
+values stay ordinary strings on the wire.
+
+The mapping is specified construct by construct in
+[`spec/json-structure-to-avro.md`](../spec/json-structure-to-avro.md), and it is
+deterministic by requirement: every SDK emits byte-identical `.avsc` for the
+same input, checked against the shared corpus in
+[`test-assets/avro/`](../test-assets/avro/).
+
+For Protobuf, use the `jstruct` CLI — `.proto` files are build-time artifacts,
+not something to generate at startup.
+
 ## JVM Language Interoperability
 
 The Java SDK can be used directly from other JVM languages without any wrapper code. The following examples demonstrate how to use the SDK from popular JVM languages.
