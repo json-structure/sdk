@@ -39,8 +39,11 @@
 //! [`Mode::Compact`], the default, emits the smallest schema that carries the
 //! data — right when the schema is parsed at process start and nothing else
 //! reads it. [`Mode::Full`] additionally annotates the temporal types and
-//! `uuid` with a `logicalType` and appends the constraints Avro cannot express
-//! to each field's `doc`, which is what a human or a code generator wants.
+//! `uuid` with a `logicalType`, and carries the constraints Avro's type system
+//! cannot express — `maxLength`, `pattern`, `minimum` and the rest — in a
+//! `jsonStructure` attribute beside `doc`. Avro parsers ignore attributes they
+//! do not recognize, so the constraint survives in the form it was written
+//! without costing an unaware reader anything.
 //!
 //! The two are **wire-compatible**. `Full` changes no base type and therefore
 //! no byte, so a schema compiled either way can read data written by the other.

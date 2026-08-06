@@ -1,0 +1,34 @@
+{
+  "type": "record",
+  "name": "Money",
+  "fields": [
+    {
+      "name": "carried",
+      "type": {
+        "type": "bytes",
+        "logicalType": "decimal",
+        "precision": 9,
+        "scale": 2
+      },
+      "jsonStructure": {
+        "minimum": 0
+      }
+    },
+    {
+      "name": "noPrecision",
+      "type": "string",
+      "jsonStructure": {
+        "scale": 2,
+        "maximum": 100
+      }
+    },
+    {
+      "name": "scaleOverPrecision",
+      "type": "string",
+      "jsonStructure": {
+        "precision": 2,
+        "scale": 5
+      }
+    }
+  ]
+}

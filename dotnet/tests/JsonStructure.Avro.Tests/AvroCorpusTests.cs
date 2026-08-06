@@ -250,7 +250,7 @@ public sealed class AvroCorpusTests
     [Fact]
     public void FindsTheWholeCorpus()
     {
-        Cases("valid").Count.ShouldBeGreaterThanOrEqualTo(37);
+        Cases("valid").Count.ShouldBeGreaterThanOrEqualTo(39);
         Cases("invalid").Count.ShouldBeGreaterThanOrEqualTo(10);
     }
 
@@ -295,9 +295,10 @@ public sealed class AvroCorpusTests
 
     /// <summary>
     /// Rebuilds <paramref name="value"/> without anything <c>full</c> mode is
-    /// allowed to add. Builds a new tree rather than editing in place: a
-    /// <see cref="JsonNode"/> carries a parent pointer, so reassigning one into
-    /// the tree it already belongs to throws.
+    /// allowed to add — <c>doc</c>, the <c>jsonStructure</c> constraint
+    /// attribute, and a non-<c>decimal</c> <c>logicalType</c>. Builds a new tree
+    /// rather than editing in place: a <see cref="JsonNode"/> carries a parent
+    /// pointer, so reassigning one into the tree it already belongs to throws.
     /// </summary>
     private static JsonNode? Strip(JsonNode? value)
     {
@@ -319,7 +320,7 @@ public sealed class AvroCorpusTests
         var outMap = new JsonObject();
         foreach (var (key, child) in map)
         {
-            if (key == "doc")
+            if (key is "doc" or "jsonStructure")
             {
                 continue;
             }

@@ -25,8 +25,8 @@ and two *annotation* levels, selected by the `mode` option ({{full-mode}}).
 
 `compact` emits only what serialization requires. `full` emits the same schema
 plus descriptive metadata: logical type annotations on the values that have a
-narrower meaning than their Avro base type, and the constraint annotations
-Avrotize writes into `doc`.
+narrower meaning than their Avro base type, and a `jsonStructure` attribute
+carrying the constraints Avro's type system cannot express.
 
 **The two modes are wire-compatible.** This is the load-bearing property.
 Every value occupies the same Avro base type in both modes, so data written
@@ -218,7 +218,8 @@ needs nothing special. The `rfc3339-*` names are an Avrotize extension.
 There is no established logical name for them, and inventing one would put a
 private vocabulary on the wire for no reader's benefit.
 
-**Constraint annotations** in `doc`, per {{doc-annotations}}.
+**Constraint annotations** in a `jsonStructure` attribute, per
+{{constraint-annotations}}.
 
 #### 2.5.1 Reading a `full` schema {#full-mode-readers}
 
@@ -755,33 +756,72 @@ fixed types, and fields, verbatim.
 emitted. Avro `doc` is a single string with no language tag, and picking one
 language silently would be worse than emitting nothing.
 
-#### 6.4.1 Constraint annotations in `full` mode {#doc-annotations}
+#### 6.4.1 Constraint annotations in `full` mode {#constraint-annotations}
 
-In `compact` mode, `doc` is documentation and nothing else. Encoding
-machine-readable constraints into a human-readable field produces a string that
-nothing parses and everything displays.
+JSON Structure constrains values in ways Avro's type system cannot: a
+`maxLength` on a string, a `minimum` on a number, a `pattern`. Avro has no
+place for them, so `compact` mode drops them and warns where it matters.
 
-In `full` mode, the compiler additionally appends Avrotize's constraint
-annotation, because interoperating with Avrotize-generated schemas is the point
-of the mode. The annotation is a single bracketed, comma-separated list appended
-to the `doc` string, separated from any preceding text by one space:
+`full` mode carries them instead, in a single `jsonStructure` attribute
+alongside `doc`:
 
+```json
+{
+  "name": "total",
+  "type": { "type": "bytes", "logicalType": "decimal", "precision": 9, "scale": 2 },
+  "doc": "Order total",
+  "jsonStructure": { "minimum": 0 }
+}
 ```
-Order total [minimum: 0, scale: 2]
-```
 
-Annotations are emitted in this fixed order, omitting absent ones:
+Avro schemas are extensible: a parser MUST ignore an attribute it does not
+recognize, and a well-behaved one preserves it. So an attribute costs a reader
+that has never heard of JSON Structure nothing, and gives one that has the
+constraint in the form it was written — a number is a number, a pattern is a
+string that a regex engine can compile.
+
+This is a deliberate departure from Avrotize, which appends the same
+information to `doc` as `[minimum: 0, scale: 2]`. That form is a display string:
+it cannot round-trip, it collides with prose, and nothing parses it back. An
+attribute has none of those problems, and the two can coexist in one schema
+because they occupy different keys.
+
+**The attribute.** `jsonStructure` is a JSON object. Its keys are JSON
+Structure keywords and its values are those keywords' values, verbatim and with
+their original JSON types. The attribute is emitted on the same object that
+carries `doc` — a field object for a property, the type object for a named
+record or enum — and only when at least one key applies. It is never emitted in
+`compact` mode.
+
+Keys are emitted in this fixed order, omitting absent ones:
+
 `maxLength`, `minLength`, `precision`, `scale`, `pattern`, `minimum`,
-`maximum`, `encoding` (from `contentEncoding`), `mediaType` (from
-`contentMediaType`), `compression` (from `contentCompression`). Each is rendered
-as `<name>: <value>`, with the value in its JSON lexical form.
+`maximum`, `contentEncoding`, `contentMediaType`, `contentCompression`.
 
-If there is no `description` and no annotation applies, no `doc` is emitted. If
-`emit_doc` is false, no `doc` is emitted and no annotation is built; the option
-means what it says.
+**Not a contract.** The attribute records what the source document said. It
+does not make Avro enforce anything, and an implementation MUST NOT treat a
+value that violates a constraint as a serialization error. The warnings of
+{{warnings}} still apply: `full` mode makes the loss visible, not absent.
 
-This is a documentation string, not a contract. Nothing in this specification
-parses it back, and a reader MUST NOT rely on it.
+**No duplication with `decimal`.** When a `decimal` declaration's `precision`
+and `scale` were carried by Avro's own `decimal` logical type ({{decimal}}),
+they MUST NOT also appear in `jsonStructure`. They are already on the wire, in
+Avro's own vocabulary, and repeating them invites the two copies to disagree.
+When the declaration fell back to a lexical `string` — no `precision`, or a
+`scale` above it — whichever of the two is present is annotated, because
+nothing else is carrying it.
+
+**Independent of `emit_doc`.** `emit_doc` governs `doc`, which is prose for a
+human. Constraints are metadata for a program. An implementation that suppresses
+`doc` MUST still emit `jsonStructure`, and one that emits `doc` in `compact`
+mode MUST NOT emit `jsonStructure`. The two options are orthogonal, and
+`emit_doc` means what it says.
+
+**Extending it.** The key set above is closed for this version. A future version
+MAY add keys; because the attribute is an object, doing so is additive and an
+existing reader is unaffected. An implementation MUST NOT add keys of its own —
+determinism ({{determinism}}) requires that two conforming implementations emit
+the same bytes.
 
 ## 7. Determinism {#determinism}
 
@@ -796,10 +836,12 @@ input and options.
    hash map at any point that influences output. `required` membership is a
    lookup, never an iteration source.
 3. **Key order in emitted JSON objects.** Attributes are emitted in this order,
-   omitting absent ones: `type`, `name`, `namespace`, `doc`, `aliases`,
-   `fields`, `symbols`, `items`, `values`, `size`, `logicalType`, `precision`,
-   `scale`, `default`. Within a field object: `name`, `type`, `doc`, `default`,
-   `order`, `aliases`.
+   omitting absent ones: `type`, `name`, `namespace`, `doc`, `jsonStructure`,
+   `aliases`, `fields`, `symbols`, `items`, `values`, `size`, `logicalType`,
+   `precision`, `scale`, `default`. Within a field object: `name`, `type`,
+   `doc`, `jsonStructure`, `default`, `order`, `aliases`. Within
+   `jsonStructure`, keys follow the fixed order of {{constraint-annotations}},
+   not the source document's order.
 4. **Generated-name suffixing** follows traversal order, per
    {{generated-names}}.
 5. **Add-in application** follows `$offers` document order, per {{offers-uses}}.

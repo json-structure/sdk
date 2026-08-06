@@ -427,6 +427,9 @@ impl<'a> Compiler<'a> {
         if let Some(doc) = self.doc_of(decl) {
             out.insert("doc".to_string(), Value::String(doc));
         }
+        if let Some(constraints) = self.constraints_of(decl) {
+            out.insert("jsonStructure".to_string(), constraints);
+        }
         out.insert("fields".to_string(), Value::Array(fields));
         Ok(Value::Object(out))
     }
@@ -465,6 +468,9 @@ impl<'a> Compiler<'a> {
         out.insert("type".to_string(), field_type);
         if let Some(doc) = self.doc_of(decl) {
             out.insert("doc".to_string(), Value::String(doc));
+        }
+        if let Some(constraints) = self.constraints_of(decl) {
+            out.insert("jsonStructure".to_string(), constraints);
         }
         if let Some(default) = default {
             out.insert("default".to_string(), default);
@@ -651,6 +657,9 @@ impl<'a> Compiler<'a> {
         }
         if let Some(doc) = self.doc_of(decl) {
             out.insert("doc".to_string(), Value::String(doc));
+        }
+        if let Some(constraints) = self.constraints_of(decl) {
+            out.insert("jsonStructure".to_string(), constraints);
         }
         out.insert("fields".to_string(), Value::Array(fields));
         Ok(Value::Object(out))
@@ -976,6 +985,9 @@ impl<'a> Compiler<'a> {
         if let Some(doc) = self.doc_of(decl) {
             out.insert("doc".to_string(), Value::String(doc));
         }
+        if let Some(constraints) = self.constraints_of(decl) {
+            out.insert("jsonStructure".to_string(), constraints);
+        }
         out.insert("symbols".to_string(), Value::Array(symbols.clone()));
 
         // An Avro reader fails on an unknown symbol unless the enum has a
@@ -1111,26 +1123,41 @@ impl<'a> Compiler<'a> {
         if !self.opts.emit_doc {
             return None;
         }
-        let base = decl.get("description").and_then(Value::as_str);
+        decl.get("description")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }
+
+    /// §6.4.1: the `jsonStructure` attribute `full` mode emits alongside `doc`.
+    ///
+    /// These are the constraints Avro's type system has no place for. Putting
+    /// them in an attribute rather than appending them to `doc` keeps them in
+    /// the form they were written — a number stays a number, a pattern stays
+    /// something a regex engine can compile — and Avro requires a parser to
+    /// ignore an attribute it does not recognize, so it costs a reader that has
+    /// never heard of JSON Structure nothing.
+    ///
+    /// Governed by `mode` alone. `emit_doc` is about prose for a human; this is
+    /// metadata for a program, and coupling the two would make one option mean
+    /// two things.
+    fn constraints_of(&self, decl: &Map<String, Value>) -> Option<Value> {
         if self.opts.mode != Mode::Full {
-            return base.map(str::to_string);
+            return None;
         }
-        // §6.4.1: `full` mode appends Avrotize's constraint annotation, because
-        // interoperating with Avrotize-generated schemas is the point of the
-        // mode. It is a display string; nothing parses it back.
-        let annotations: Vec<String> = DOC_ANNOTATIONS
-            .iter()
-            .filter_map(|(keyword, label)| {
-                decl.get(*keyword)
-                    .map(|value| format!("{label}: {}", lexical(value)))
-            })
-            .collect();
-        match (base, annotations.is_empty()) {
-            (None, true) => None,
-            (None, false) => Some(format!("[{}]", annotations.join(", "))),
-            (Some(text), true) => Some(text.to_string()),
-            (Some(text), false) => Some(format!("{text} [{}]", annotations.join(", "))),
+        // Avro's own decimal logical type already carries these, in Avro's own
+        // vocabulary. A second copy could only ever disagree with the first.
+        let decimal_carries = carries_decimal_constraints(decl);
+
+        let mut out = Map::new();
+        for keyword in CONSTRAINT_ANNOTATIONS {
+            if decimal_carries && matches!(*keyword, "precision" | "scale") {
+                continue;
+            }
+            if let Some(value) = decl.get(*keyword) {
+                out.insert((*keyword).to_string(), value.clone());
+            }
         }
+        (!out.is_empty()).then(|| Value::Object(out))
     }
 
     /// Renders a primitive.
@@ -1311,20 +1338,36 @@ fn avro_logical(type_name: &str) -> Option<&'static str> {
     })
 }
 
-/// The constraint keywords §6.4.1 appends to `doc` in `full` mode, in their
-/// fixed emission order, paired with the annotation label.
-const DOC_ANNOTATIONS: &[(&str, &str)] = &[
-    ("maxLength", "maxLength"),
-    ("minLength", "minLength"),
-    ("precision", "precision"),
-    ("scale", "scale"),
-    ("pattern", "pattern"),
-    ("minimum", "minimum"),
-    ("maximum", "maximum"),
-    ("contentEncoding", "encoding"),
-    ("contentMediaType", "mediaType"),
-    ("contentCompression", "compression"),
+/// The constraint keywords §6.4.1 carries in the `jsonStructure` attribute in
+/// `full` mode, in their fixed emission order.
+const CONSTRAINT_ANNOTATIONS: &[&str] = &[
+    "maxLength",
+    "minLength",
+    "precision",
+    "scale",
+    "pattern",
+    "minimum",
+    "maximum",
+    "contentEncoding",
+    "contentMediaType",
+    "contentCompression",
 ];
+
+/// Whether this declaration's `precision` and `scale` reached the wire as Avro
+/// `decimal` attributes, in which case §6.4.1 forbids repeating them.
+///
+/// Mirrors the fallback conditions of [`Compiler::decimal_value`]: a `decimal`
+/// with no `precision`, or a `scale` above it, is carried as a lexical string
+/// and its constraints are annotated like anyone else's.
+fn carries_decimal_constraints(decl: &Map<String, Value>) -> bool {
+    if decl.get("type").and_then(Value::as_str) != Some("decimal") {
+        return false;
+    }
+    let Some(precision) = decl.get("precision").and_then(Value::as_u64) else {
+        return false;
+    };
+    decl.get("scale").and_then(Value::as_u64).unwrap_or(0) <= precision
+}
 
 /// Avro identifier rule, which is also JSON Structure's identifier rule.
 fn is_avro_name(name: &str) -> bool {
@@ -1663,16 +1706,6 @@ fn type_key(value: &Value) -> String {
             Some(other) => other.to_string(),
             None => value.to_string(),
         },
-        other => other.to_string(),
-    }
-}
-
-/// Renders a JSON value in its lexical form for a §6.4.1 `doc` annotation.
-/// Strings appear unquoted; a `pattern` reads better as `pattern: ^a+$` than as
-/// `pattern: "^a+$"`, and nothing parses this back.
-fn lexical(value: &Value) -> String {
-    match value {
-        Value::String(text) => text.clone(),
         other => other.to_string(),
     }
 }
