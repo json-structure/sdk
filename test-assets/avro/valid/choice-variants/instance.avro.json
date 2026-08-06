@@ -1,5 +1,5 @@
 {
-  "value": { "nested": { "value": { "b": { "value": "deep" } } } },
-  "list": [{ "x": { "value": "one" } }, { "y": { "value": 2 } }],
-  "bag": { "k": { "p": { "value": "v" } } }
+  "value": { "value": { "value": "deep" } },
+  "list": [{ "value": "one" }, { "value": 2 }],
+  "bag": { "k": { "value": "v" } }
 }

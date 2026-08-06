@@ -2,7 +2,7 @@
 //! mapping; this file is its implementation and the section references in the
 //! comments point back at it.
 
-use super::{AdditionalProperties, AvroOptions, CompileOutput, Warning};
+use super::{AdditionalProperties, AvroOptions, CompileOutput, Mode, Warning};
 use serde_json::{Map, Value};
 use std::collections::HashSet;
 
@@ -811,7 +811,7 @@ impl<'a> Compiler<'a> {
         ctx: &Ctx,
     ) -> Result<Value, AvroError> {
         if let Some(primitive) = avro_primitive(type_name) {
-            return Ok(Value::String(primitive.to_string()));
+            return Ok(self.primitive_value(type_name, primitive, decl, ctx));
         }
 
         match type_name {
@@ -1111,9 +1111,94 @@ impl<'a> Compiler<'a> {
         if !self.opts.emit_doc {
             return None;
         }
-        decl.get("description")
-            .and_then(Value::as_str)
-            .map(str::to_string)
+        let base = decl.get("description").and_then(Value::as_str);
+        if self.opts.mode != Mode::Full {
+            return base.map(str::to_string);
+        }
+        // §6.4.1: `full` mode appends Avrotize's constraint annotation, because
+        // interoperating with Avrotize-generated schemas is the point of the
+        // mode. It is a display string; nothing parses it back.
+        let annotations: Vec<String> = DOC_ANNOTATIONS
+            .iter()
+            .filter_map(|(keyword, label)| {
+                decl.get(*keyword)
+                    .map(|value| format!("{label}: {}", lexical(value)))
+            })
+            .collect();
+        match (base, annotations.is_empty()) {
+            (None, true) => None,
+            (None, false) => Some(format!("[{}]", annotations.join(", "))),
+            (Some(text), true) => Some(text.to_string()),
+            (Some(text), false) => Some(format!("{text} [{}]", annotations.join(", "))),
+        }
+    }
+
+    /// Renders a primitive.
+    ///
+    /// `decimal` is resolved in both modes (§2.3); the `full`-mode annotations
+    /// of §2.5 ride on top of the base type without changing it.
+    fn primitive_value(
+        &mut self,
+        type_name: &str,
+        primitive: &str,
+        decl: &Map<String, Value>,
+        ctx: &Ctx,
+    ) -> Value {
+        if type_name == "decimal" {
+            return self.decimal_value(decl, ctx);
+        }
+
+        if self.opts.mode == Mode::Full {
+            if let Some(logical) = avro_logical(type_name) {
+                let mut out = Map::new();
+                out.insert("type".to_string(), Value::String(primitive.to_string()));
+                out.insert("logicalType".to_string(), Value::String(logical.to_string()));
+                return Value::Object(out);
+            }
+        }
+
+        Value::String(primitive.to_string())
+    }
+
+    /// §2.3: `decimal` carries Avro's own `decimal` logical type on a `bytes`
+    /// base, in both modes. Avro is exactly right here, so the choice does not
+    /// belong to a mode.
+    ///
+    /// Avro requires a `precision` and forbids a `scale` above it. Neither can
+    /// be invented, so a declaration that satisfies neither falls back to a
+    /// lexical `string` with a warning.
+    fn decimal_value(&mut self, decl: &Map<String, Value>, ctx: &Ctx) -> Value {
+        let Some(precision) = decl.get("precision").and_then(Value::as_u64) else {
+            self.warnings.push(Warning {
+                path: ctx.pointer.clone(),
+                message: "`decimal` declares no `precision`, which Avro's decimal logical type \
+                          requires; the value is carried as a lexical string"
+                    .to_string(),
+            });
+            return Value::String("string".to_string());
+        };
+
+        let scale = decl.get("scale").and_then(Value::as_u64).unwrap_or(0);
+        if scale > precision {
+            self.warnings.push(Warning {
+                path: ctx.pointer.clone(),
+                message: format!(
+                    "`decimal` declares scale {scale} greater than precision {precision}, which \
+                     Avro forbids; the value is carried as a lexical string"
+                ),
+            });
+            return Value::String("string".to_string());
+        }
+
+        let mut out = Map::new();
+        out.insert("type".to_string(), Value::String("bytes".to_string()));
+        out.insert(
+            "logicalType".to_string(),
+            Value::String("decimal".to_string()),
+        );
+        out.insert("precision".to_string(), Value::from(precision));
+        out.insert("scale".to_string(), Value::from(scale));
+        Value::Object(out)
     }
 
     /// Mints a generated name, suffixing on collision (§6.3).
@@ -1180,6 +1265,9 @@ impl<'a> Compiler<'a> {
 // -- free functions --------------------------------------------------------
 
 /// The primitive mapping table of §2. `None` means the name is not a primitive.
+///
+/// This is the *wire* type and is the same in both modes; `full` mode only adds
+/// annotations on top of it (§2.5).
 fn avro_primitive(type_name: &str) -> Option<&'static str> {
     Some(match type_name {
         "null" => "null",
@@ -1188,11 +1276,14 @@ fn avro_primitive(type_name: &str) -> Option<&'static str> {
         "number" => "double",
         "integer" | "int8" | "int16" | "int32" | "uint8" | "uint16" => "int",
         "int64" | "uint32" => "long",
-        // Lossless by construction: these exceed a signed 64-bit range or have
-        // no bounded binary form, so they travel in their lexical form (§2.2).
-        "int128" | "uint64" | "uint128" | "decimal" => "string",
+        // Lossless by construction: these exceed a signed 64-bit range, so they
+        // travel in their lexical form (§2.2).
+        "int128" | "uint64" | "uint128" => "string",
         "float8" | "float" => "float",
         "double" => "double",
+        // Only when `precision` is declared; `primitive_value` falls back to
+        // `string` and warns otherwise (§2.3).
+        "decimal" => "bytes",
         // Avro has no offset-carrying temporal type; RFC 3339 text keeps it.
         "date" | "time" | "datetime" | "duration" => "string",
         "uuid" | "uri" | "jsonpointer" => "string",
@@ -1200,6 +1291,40 @@ fn avro_primitive(type_name: &str) -> Option<&'static str> {
         _ => return None,
     })
 }
+
+/// The `full`-mode logical annotation for a primitive (§2.5), over the *same*
+/// base type `avro_primitive` already chose.
+///
+/// The `rfc3339-*` names are Avrotize's extension. They are not reserved Avro
+/// logical types, which is exactly the point: a reader that does not know the
+/// name sees the `string` base and is correct, so `full` and `compact` describe
+/// byte-identical data. Avro's own `date` and `timestamp-micros` would instead
+/// move the value onto an integer base and discard the RFC 3339 offset.
+fn avro_logical(type_name: &str) -> Option<&'static str> {
+    Some(match type_name {
+        "date" => "rfc3339-date",
+        "time" => "rfc3339-time-micros",
+        "datetime" => "rfc3339-timestamp-micros",
+        "duration" => "rfc3339-duration",
+        "uuid" => "uuid",
+        _ => return None,
+    })
+}
+
+/// The constraint keywords §6.4.1 appends to `doc` in `full` mode, in their
+/// fixed emission order, paired with the annotation label.
+const DOC_ANNOTATIONS: &[(&str, &str)] = &[
+    ("maxLength", "maxLength"),
+    ("minLength", "minLength"),
+    ("precision", "precision"),
+    ("scale", "scale"),
+    ("pattern", "pattern"),
+    ("minimum", "minimum"),
+    ("maximum", "maximum"),
+    ("contentEncoding", "encoding"),
+    ("contentMediaType", "mediaType"),
+    ("contentCompression", "compression"),
+];
 
 /// Avro identifier rule, which is also JSON Structure's identifier rule.
 fn is_avro_name(name: &str) -> bool {
@@ -1520,6 +1645,12 @@ fn union_of(branches: Vec<Value>) -> Value {
 /// Identity of an Avro type for union deduplication. Named types are identified
 /// by their fully-qualified name so a definition and a later reference to it
 /// collapse to one branch.
+///
+/// Everything else is identified by its Avro *type*, which is exactly the rule
+/// Avro states: a union may not hold two schemas of the same type unless they
+/// are `record`, `enum`, or `fixed`. That matters in `full` mode, where a `date`
+/// is `{"type": "int", "logicalType": "date"}` and would otherwise sit beside a
+/// plain `int` in a union that no Avro parser will accept.
 fn type_key(value: &Value) -> String {
     match value {
         Value::String(name) => name.clone(),
@@ -1529,8 +1660,19 @@ fn type_key(value: &Value) -> String {
                 let namespace = map.get("namespace").and_then(Value::as_str).unwrap_or("");
                 qualify(namespace, name)
             }
-            _ => value.to_string(),
+            Some(other) => other.to_string(),
+            None => value.to_string(),
         },
+        other => other.to_string(),
+    }
+}
+
+/// Renders a JSON value in its lexical form for a §6.4.1 `doc` annotation.
+/// Strings appear unquoted; a `pattern` reads better as `pattern: ^a+$` than as
+/// `pattern: "^a+$"`, and nothing parses this back.
+fn lexical(value: &Value) -> String {
+    match value {
+        Value::String(text) => text.clone(),
         other => other.to_string(),
     }
 }

@@ -4,6 +4,28 @@
   "fields": [
     {
       "name": "dec",
+      "type": {
+        "type": "bytes",
+        "logicalType": "decimal",
+        "precision": 10,
+        "scale": 2
+      }
+    },
+    {
+      "name": "decNoScale",
+      "type": {
+        "type": "bytes",
+        "logicalType": "decimal",
+        "precision": 4,
+        "scale": 0
+      }
+    },
+    {
+      "name": "decNoPrecision",
+      "type": "string"
+    },
+    {
+      "name": "decScaleOverPrecision",
       "type": "string"
     },
     {

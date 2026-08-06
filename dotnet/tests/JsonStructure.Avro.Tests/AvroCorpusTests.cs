@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Avro;
 using Avro.Generic;
@@ -86,11 +87,12 @@ public sealed class AvroCorpusTests
     /// written against what the <em>source document</em> means, so a schema that is
     /// self-consistent but wrong fails here.
     /// <para>
-    /// The instance is decoded twice where the library allows it — once by
-    /// <see cref="AvroJson"/> and once by Apache.Avro's own
-    /// <see cref="JsonDecoder"/> — and the two decodes must serialize to identical
-    /// bytes. See <see cref="AvroJson"/> for why the library cannot be the only
-    /// decoder.
+    /// The bytes are then compared against <c>expected.avro.b64</c>, which the Rust
+    /// harness blessed from the same instance. That is what keeps this honest: a
+    /// round trip only proves this SDK agrees with itself, while the pinned bytes
+    /// prove the two SDKs read the same instance the same way and hand Avro the
+    /// same datum. Cases containing a <c>map</c> are exempt, because Avro writes
+    /// map entries in iteration order and no two implementations need agree on it.
     /// </para>
     /// </remarks>
     [Theory]
@@ -114,58 +116,80 @@ public sealed class AvroCorpusTests
         WriteBinary(schema, readBack).ShouldBe(
             bytes, $"case '{name}' did not survive a binary write, read and rewrite");
 
-        if (TryLibraryDecode(schema, text, out var viaLibrary))
+        if (TryReadPinnedBytes(dir, out var pinned))
         {
-            WriteBinary(schema, viaLibrary).ShouldBe(
-                bytes,
-                $"case '{name}' decoded differently by Apache.Avro's JsonDecoder than by the "
-                + "harness reader; one of the two is misreading the Avro JSON encoding");
-            Interlocked.Increment(ref _crossChecked);
+            Convert.ToBase64String(bytes).ShouldBe(
+                pinned,
+                $"case '{name}' encoded to different bytes than expected.avro.b64, which the "
+                + "Rust harness blessed from the same instance. Either the two decoders read "
+                + "the Plain JSON encoding differently, or the two compilers emit different "
+                + "schemas");
+            Interlocked.Increment(ref _pinned);
+        }
+        else
+        {
+            ContainsMap(schema).ShouldBeTrue(
+                $"case '{name}' has no expected.avro.b64 but contains no map either. Only "
+                + "map-bearing cases may skip the pinned bytes; bless the rest from the Rust "
+                + "harness");
+            Interlocked.Increment(ref _unordered);
         }
     }
 
     /// <summary>
-    /// The library cross-check has not quietly stopped happening.
+    /// The pinned-bytes check has not quietly stopped happening.
     /// </summary>
     /// <remarks>
-    /// A cross-check wrapped in an "if the library manages it" condition degrades
-    /// silently to no check at all. Exactly one case in the corpus,
-    /// <c>recursion</c>, defeats Apache.Avro's <c>JsonDecoder</c> — a record whose
-    /// own array field refers back to it. <c>mutual-recursion</c>, where the cycle
-    /// runs through a second named type, is fine.
+    /// A check wrapped in "if there is a golden for it" degrades silently to no
+    /// check at all when the goldens go missing, so both sides of that condition
+    /// are counted and asserted. The same trap has fired twice in this corpus
+    /// already.
     /// </remarks>
     [Fact]
-    public void CrossChecksMostInstancesAgainstTheLibraryDecoder()
+    public void PinsTheEncodedBytesOfMostInstances()
     {
         foreach (var name in CaseNames("valid"))
         {
             RoundTripsItsInstanceThroughAvro(name);
         }
 
-        _crossChecked.ShouldBeGreaterThanOrEqualTo(
-            CaseNames("valid").Count() - 1,
-            "more cases than expected fell back to the harness reader; Apache.Avro's "
-            + "JsonDecoder should handle everything except the recursive schemas");
+        _pinned.ShouldBeGreaterThan(0, "no case pinned its encoded bytes");
+        _unordered.ShouldBeGreaterThan(
+            0, "no case contains a map any more, so the exemption above is dead code");
     }
 
-    private static int _crossChecked;
+    private static int _pinned;
+    private static int _unordered;
 
-    private static bool TryLibraryDecode(Schema schema, string json, out object? datum)
+    private static bool TryReadPinnedBytes(string dir, out string base64)
     {
-        try
+        var path = Path.Combine(dir, "expected.avro.b64");
+        base64 = File.Exists(path) ? File.ReadAllText(path).Trim() : string.Empty;
+        return base64.Length > 0;
+    }
+
+    /// <summary>
+    /// Whether a schema contains a <c>map</c> anywhere, and so has no stable byte
+    /// encoding.
+    /// </summary>
+    /// <remarks>
+    /// Walking the serialized JSON is simpler, and more obviously exhaustive, than
+    /// walking every <see cref="Schema"/> subclass.
+    /// </remarks>
+    private static bool ContainsMap(Schema schema)
+    {
+        static bool Walk(JsonNode? node) => node switch
         {
-            datum = new GenericDatumReader<object>(schema, schema)
-                .Read(null!, new JsonDecoder(schema, json));
-            return true;
-        }
-        catch (NullReferenceException)
-        {
-            // Apache.Avro 1.12's JsonDecoder cannot build a parser for a schema
-            // with a recursive type reference. Nothing to report: AvroJson has
-            // already decoded this instance and the round trip stands.
-            datum = null;
-            return false;
-        }
+            JsonObject obj =>
+                obj.TryGetPropertyValue("type", out var type)
+                && type?.GetValueKind() == JsonValueKind.String
+                && type.GetValue<string>() == "map"
+                || obj.Any(entry => Walk(entry.Value)),
+            JsonArray items => items.Any(Walk),
+            _ => false,
+        };
+
+        return Walk(JsonNode.Parse(schema.ToString()));
     }
 
     private static byte[] WriteBinary(Schema schema, object? datum)
@@ -226,8 +250,145 @@ public sealed class AvroCorpusTests
     [Fact]
     public void FindsTheWholeCorpus()
     {
-        Cases("valid").Count.ShouldBeGreaterThanOrEqualTo(34);
+        Cases("valid").Count.ShouldBeGreaterThanOrEqualTo(37);
         Cases("invalid").Count.ShouldBeGreaterThanOrEqualTo(10);
+    }
+
+    /// <summary>
+    /// <c>full</c> mode adds metadata and changes nothing else.
+    /// </summary>
+    /// <remarks>
+    /// Strip everything the mode is allowed to add — <c>doc</c>, and a
+    /// <c>logicalType</c> that is not <c>decimal</c>, which §2.3 emits in both
+    /// modes — and the two schemas must be the same bytes. Anything left over is
+    /// a wire change the mode was never allowed to make.
+    /// </remarks>
+    [Theory]
+    [MemberData(nameof(ValidCases))]
+    public void FullModeOnlyAddsMetadata(string name)
+    {
+        var dir = CaseDir("valid", name);
+        var document = ReadDocument(dir);
+        var options = ReadOptions(dir);
+
+        var compact = AvroCompiler.Compile(document, WithMode(options, AvroMode.Compact));
+        var full = AvroCompiler.Compile(document, WithMode(options, AvroMode.Full));
+
+        AvroCompiler.ToAvsc(Strip(full.Schema.DeepClone())).ShouldBe(
+            AvroCompiler.ToAvsc(Strip(compact.Schema.DeepClone())),
+            $"case '{name}': full mode changed the wire format, not just the metadata");
+
+        // Warnings describe lost information, which is a property of the
+        // document rather than of how much metadata was asked for.
+        full.Warnings.Select(w => w.ToString()).ShouldBe(
+            compact.Warnings.Select(w => w.ToString()),
+            $"case '{name}': the two modes disagreed about what was lost");
+    }
+
+    private static AvroOptions WithMode(AvroOptions options, AvroMode mode) => new()
+    {
+        Uses = options.Uses,
+        AdditionalProperties = options.AdditionalProperties,
+        EmitDoc = options.EmitDoc,
+        Mode = mode,
+    };
+
+    /// <summary>
+    /// Rebuilds <paramref name="value"/> without anything <c>full</c> mode is
+    /// allowed to add. Builds a new tree rather than editing in place: a
+    /// <see cref="JsonNode"/> carries a parent pointer, so reassigning one into
+    /// the tree it already belongs to throws.
+    /// </summary>
+    private static JsonNode? Strip(JsonNode? value)
+    {
+        if (value is JsonArray items)
+        {
+            var outItems = new JsonArray();
+            foreach (var item in items)
+            {
+                outItems.Add(Strip(item?.DeepClone()));
+            }
+            return outItems;
+        }
+
+        if (value is not JsonObject map)
+        {
+            return value;
+        }
+
+        var outMap = new JsonObject();
+        foreach (var (key, child) in map)
+        {
+            if (key == "doc")
+            {
+                continue;
+            }
+            // `decimal` is not a `full`-mode annotation -- §2.3 emits it in both
+            // modes -- so it and its `precision` and `scale` stay.
+            if (key == "logicalType"
+                && (child as JsonValue)?.GetValue<string>() != "decimal")
+            {
+                continue;
+            }
+            outMap[key] = Strip(child?.DeepClone());
+        }
+
+        // An annotation-only object collapses back to its base type, which is
+        // how `compact` would have written it in the first place.
+        if (outMap.Count == 1 && (outMap["type"] as JsonValue)?.GetValue<string>() is { } baseName)
+        {
+            return JsonValue.Create(baseName);
+        }
+        return outMap;
+    }
+    /// <summary>
+    /// The wire-compatibility claim, proved on bytes rather than schema shape.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="FullModeOnlyAddsMetadata"/> checks that the two schemas
+    /// <i>look</i> the same once annotations are stripped. This checks what
+    /// actually matters: that the same value encodes to the same bytes under
+    /// both modes. If that holds, turning <c>full</c> on for a deployed schema
+    /// is safe, which is the whole promise.
+    /// </para>
+    /// <para>
+    /// Unlike Rust's <c>apache-avro</c>, which discards a <c>logicalType</c> it
+    /// does not recognize, Apache.Avro models every registered name as a
+    /// <c>LogicalSchema</c> — so here every annotated case reaches the byte
+    /// comparison rather than collapsing into schema equality first.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void TheTwoModesEncodeIdenticalBytes()
+    {
+        var compared = 0;
+
+        foreach (var name in CaseNames("valid"))
+        {
+            var dir = CaseDir("valid", name);
+            var document = ReadDocument(dir);
+            var options = ReadOptions(dir);
+
+            var compact = JsonStructureAvro.SchemaFrom(document, WithMode(options, AvroMode.Compact));
+            var full = JsonStructureAvro.SchemaFrom(document, WithMode(options, AvroMode.Full));
+            if (compact.ToString() == full.ToString())
+            {
+                continue;
+            }
+            compared++;
+
+            var text = Normalize(File.ReadAllText(Path.Combine(dir, "instance.avro.json"))).Trim();
+            var json = JsonNode.Parse(text);
+
+            WriteBinary(full, AvroJson.Decode(full, json)).ShouldBe(
+                WriteBinary(compact, AvroJson.Decode(compact, json)),
+                $"case '{name}': the two modes encoded the same value to different bytes");
+        }
+
+        compared.ShouldBeGreaterThan(
+            0,
+            "no case exercises a difference between the modes, so this test proves nothing");
     }
 
     // -- corpus plumbing -------------------------------------------------------
@@ -276,11 +437,18 @@ public sealed class AvroCorpusTests
 
         var emitDoc = node["emitDoc"]?.GetValue<bool>() ?? true;
 
+        var mode = node["mode"]?.GetValue<string>() switch
+        {
+            "full" => AvroMode.Full,
+            _ => AvroMode.Compact,
+        };
+
         return new AvroOptions
         {
             Uses = uses,
             AdditionalProperties = additional,
             EmitDoc = emitDoc,
+            Mode = mode,
         };
     }
 

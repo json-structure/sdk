@@ -231,6 +231,31 @@ foreach (var warning in result.Warnings)
 Anything that cannot be represented at all throws `AvroCompileException`, which
 carries the offending JSON Pointer in `Path`.
 
+#### Compact and full modes
+
+By default the compiler emits the smallest schema that carries the data. Pass
+`AvroMode.Full` to get one that also describes it:
+
+```csharp
+var schema = JsonStructureAvro.SchemaFromFile(
+    "person.struct.json", new AvroOptions { Mode = AvroMode.Full });
+```
+
+`Full` adds `logicalType` annotations for the temporal types and `uuid`, and
+appends the constraints Avro cannot express — `minimum`, `maxLength`, `pattern`
+and the rest — to each field's `doc`. It changes no base type and therefore no
+byte on the wire: a `Full` schema and a `Compact` schema compiled from the same
+document are interchangeable as reader and writer, which the corpus asserts
+directly. Reach for `Full` when a human or a code generator is going to read the
+schema, `Compact` when it is going to be parsed at process start.
+
+The temporal annotations use the `rfc3339-*` names, which are not in the Avro
+specification. Apache.Avro rejects a logical type it does not know rather than
+ignoring it, so `JsonStructureAvro` registers them with
+`LogicalTypeFactory.Instance` on first use. That happens automatically inside
+every `SchemaFrom` overload; call `JsonStructureAvro.RegisterLogicalTypes()`
+yourself only if you parse such a schema through `Avro.Schema.Parse` directly.
+
 The mapping is specified construct by construct in
 [`spec/json-structure-to-avro.md`](../spec/json-structure-to-avro.md), and it is
 deterministic by requirement: every SDK emits byte-identical `.avsc` for the same

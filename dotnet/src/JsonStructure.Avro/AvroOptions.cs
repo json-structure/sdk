@@ -34,6 +34,44 @@ public sealed record AvroWarning(string Path, string Message)
 }
 
 /// <summary>
+/// How much of the source document the emitted schema describes.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The two modes are <b>wire-compatible</b>. Every value takes the same Avro
+/// base type under both, so the same datum encodes to the same bytes and a
+/// schema compiled in one mode reads data written under the other. Turning
+/// <see cref="AvroMode.Full"/> on for a deployed schema changes what the
+/// schema says, never what the bytes mean.
+/// </para>
+/// <para>
+/// That is only possible because the temporal annotations are Avrotize's
+/// <c>rfc3339-*</c> names over a <c>string</c> base. Avro's own <c>date</c> and
+/// <c>timestamp-micros</c> would move the value onto an integer base and throw
+/// the RFC 3339 offset away.
+/// </para>
+/// </remarks>
+public enum AvroMode
+{
+    /// <summary>
+    /// Base types only. The default: the smallest schema that carries the data.
+    /// </summary>
+    Compact,
+
+    /// <summary>
+    /// Adds <c>logicalType</c> annotations and constraint annotations on
+    /// <c>doc</c>, following Avrotize's mapping. Nothing else changes.
+    /// </summary>
+    /// <remarks>
+    /// A schema emitted in this mode names logical types the Apache Avro
+    /// runtime does not know. Call
+    /// <see cref="JsonStructureAvro.RegisterLogicalTypes"/> — which the
+    /// <c>SchemaFrom*</c> helpers do for you — before parsing one.
+    /// </remarks>
+    Full,
+}
+
+/// <summary>
 /// Options that steer compilation without ever affecting a generated name.
 /// </summary>
 /// <remarks>
@@ -56,4 +94,7 @@ public sealed class AvroOptions
 
     /// <summary>Carry <c>description</c> across as Avro <c>doc</c>.</summary>
     public bool EmitDoc { get; init; } = true;
+
+    /// <summary>How much the emitted schema describes. Wire-compatible either way.</summary>
+    public AvroMode Mode { get; init; } = AvroMode.Compact;
 }

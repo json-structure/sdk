@@ -1,0 +1,8 @@
+{
+  "described": "a",
+  "constrained": "abc",
+  "bare": 5,
+  "content": "x",
+  "plain": true,
+  "ordering": "z"
+}

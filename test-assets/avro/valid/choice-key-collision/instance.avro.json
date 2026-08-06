@@ -1,1 +1,1 @@
-{ "head": { "text": { "value": { "a": "top" } } }, "foot": { "text_2": { "value": { "b": 9 } } } }
+{ "head": { "value": { "a": "top" } }, "foot": { "value": { "b": 9 } } }

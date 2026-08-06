@@ -1,0 +1,24 @@
+{
+  "type": "record",
+  "name": "Reserved",
+  "doc": "The two reserved Avro logical types: uuid, and decimal in both modes.",
+  "fields": [
+    {
+      "name": "id",
+      "type": {
+        "type": "string",
+        "logicalType": "uuid"
+      }
+    },
+    {
+      "name": "amount",
+      "type": {
+        "type": "bytes",
+        "logicalType": "decimal",
+        "precision": 10,
+        "scale": 2
+      },
+      "doc": "[precision: 10, scale: 2]"
+    }
+  ]
+}

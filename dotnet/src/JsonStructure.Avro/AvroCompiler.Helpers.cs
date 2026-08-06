@@ -103,15 +103,66 @@ public static partial class AvroCompiler
         "int64" or "uint32" => "long",
         // Lossless by construction: these exceed a signed 64-bit range or have
         // no bounded binary form, so they travel in their lexical form (§2.2).
-        "int128" or "uint64" or "uint128" or "decimal" => "string",
+        "int128" or "uint64" or "uint128" => "string",
         "float8" or "float" => "float",
         "double" => "double",
         // Avro has no offset-carrying temporal type; RFC 3339 text keeps it.
         "date" or "time" or "datetime" or "duration" => "string",
         "uuid" or "uri" or "jsonpointer" => "string",
         "binary" => "bytes",
+        // §2.3: the base for Avro's own `decimal` logical type, in both modes.
+        // `DecimalValue` may still fall back to `string` when the declaration
+        // gives Avro nothing it can work with.
+        "decimal" => "bytes",
         _ => null,
     };
+
+    /// <summary>
+    /// The <c>full</c>-mode annotation for a primitive (§2.5), or <c>null</c>
+    /// where the mode adds nothing. Purely additive: it rides on top of the
+    /// base type <see cref="AvroPrimitive"/> already chose.
+    /// </summary>
+    /// <remarks>
+    /// The <c>rfc3339-*</c> names are Avrotize's extension, and are not
+    /// reserved Avro logical types. That is exactly the point: a reader that
+    /// does not know the name sees the <c>string</c> base and is correct, so
+    /// the two modes describe byte-identical data.
+    /// </remarks>
+    private static string? AvroLogical(string typeName) => typeName switch
+    {
+        "date" => "rfc3339-date",
+        "time" => "rfc3339-time-micros",
+        "datetime" => "rfc3339-timestamp-micros",
+        "duration" => "rfc3339-duration",
+        "uuid" => "uuid",
+        _ => null,
+    };
+
+    /// <summary>
+    /// The constraint keywords §6.4.1 appends to <c>doc</c> in <c>full</c> mode,
+    /// in their fixed emission order, paired with the annotation label.
+    /// </summary>
+    private static readonly (string Keyword, string Label)[] DocAnnotations =
+    [
+        ("maxLength", "maxLength"),
+        ("minLength", "minLength"),
+        ("precision", "precision"),
+        ("scale", "scale"),
+        ("pattern", "pattern"),
+        ("minimum", "minimum"),
+        ("maximum", "maximum"),
+        ("contentEncoding", "encoding"),
+        ("contentMediaType", "mediaType"),
+        ("contentCompression", "compression"),
+    ];
+
+    /// <summary>
+    /// Renders a JSON value in its lexical form for a §6.4.1 <c>doc</c>
+    /// annotation. Strings appear unquoted: <c>pattern: ^a+$</c> reads better
+    /// than <c>pattern: "^a+$"</c>, and nothing parses this back.
+    /// </summary>
+    private static string Lexical(JsonNode value) =>
+        Js.Str(value) ?? Js.Compact(value);
 
     /// <summary>Avro identifier rule, which is also JSON Structure's identifier rule.</summary>
     private static bool IsAvroName(string name)
@@ -540,6 +591,13 @@ public static partial class AvroCompiler
     /// identified by their fully-qualified name so a definition and a later
     /// reference to it collapse to one branch.
     /// </summary>
+    /// <remarks>
+    /// Everything else is identified by its Avro <i>type</i>, which is exactly
+    /// the rule Avro states: a union may not hold two schemas of the same type
+    /// unless they are <c>record</c>, <c>enum</c>, or <c>fixed</c>. That matters
+    /// in <c>full</c> mode, where an annotated <c>date</c> would otherwise sit
+    /// beside a plain <c>string</c> in a union no Avro parser will accept.
+    /// </remarks>
     private static string TypeKey(JsonNode value)
     {
         if (Js.Str(value) is { } literal)
@@ -547,12 +605,15 @@ public static partial class AvroCompiler
             return literal;
         }
 
-        if (Js.Obj(value) is { } map && Js.Str(Js.Get(map, "type")) is { } typeName
-            && typeName is "record" or "enum" or "fixed")
+        if (Js.Obj(value) is { } map && Js.Str(Js.Get(map, "type")) is { } typeName)
         {
-            var name = Js.Str(Js.Get(map, "name")) ?? string.Empty;
-            var ns = Js.Str(Js.Get(map, "namespace")) ?? string.Empty;
-            return Qualify(ns, name);
+            if (typeName is "record" or "enum" or "fixed")
+            {
+                var name = Js.Str(Js.Get(map, "name")) ?? string.Empty;
+                var ns = Js.Str(Js.Get(map, "namespace")) ?? string.Empty;
+                return Qualify(ns, name);
+            }
+            return typeName;
         }
 
         return Js.Compact(value);

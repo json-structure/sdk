@@ -5,6 +5,9 @@
   "type": "object",
   "properties": {
     "dec": { "type": "decimal", "precision": 10, "scale": 2 },
+    "decNoScale": { "type": "decimal", "precision": 4 },
+    "decNoPrecision": { "type": "decimal" },
+    "decScaleOverPrecision": { "type": "decimal", "precision": 2, "scale": 5 },
     "date": { "type": "date" },
     "time": { "type": "time" },
     "dt": { "type": "datetime" },
@@ -16,5 +19,5 @@
     "u64": { "type": "uint64" },
     "u128": { "type": "uint128" }
   },
-  "required": ["dec","date","time","dt","dur","uuid","uri","ptr","i128","u64","u128"]
+  "required": ["dec","decNoScale","decNoPrecision","decScaleOverPrecision","date","time","dt","dur","uuid","uri","ptr","i128","u64","u128"]
 }

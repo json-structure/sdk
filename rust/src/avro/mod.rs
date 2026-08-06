@@ -65,6 +65,26 @@ pub enum AdditionalProperties {
     Error,
 }
 
+/// How much descriptive metadata to emit (spec §2.5).
+///
+/// The two modes are **wire-compatible**: every value occupies the same Avro
+/// base type in both, so data written under one reads correctly under the
+/// other. `Full` adds information *about* the bytes, never different bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Mode {
+    /// Only what serialization requires.
+    #[default]
+    Compact,
+    /// Everything `Compact` emits, plus Avrotize's `rfc3339-*` logical type
+    /// annotations on temporals and its constraint annotations in `doc`.
+    ///
+    /// The `rfc3339-*` names are not reserved Avro logical types, so a reader
+    /// that does not know them sees the `string` base and is correct. Some Avro
+    /// libraries are nonetheless strict about unknown logical names and refuse
+    /// to parse; see the spec's §2.5.1.
+    Full,
+}
+
 /// Options controlling compilation.
 ///
 /// Nothing here can change the *names* in the output. The JSON Structure
@@ -74,6 +94,8 @@ pub enum AdditionalProperties {
 /// command-line flag is not a contract.
 #[derive(Debug, Clone)]
 pub struct AvroOptions {
+    /// Representation mode for primitives.
+    pub mode: Mode,
     /// Add-in names from `$offers` to apply.
     ///
     /// JSON Structure puts `$uses` in the *instance* document, so the compiler
@@ -88,6 +110,7 @@ pub struct AvroOptions {
 impl Default for AvroOptions {
     fn default() -> Self {
         Self {
+            mode: Mode::default(),
             uses: Vec::new(),
             additional_properties: AdditionalProperties::default(),
             emit_doc: true,

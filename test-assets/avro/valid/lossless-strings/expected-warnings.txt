@@ -1,0 +1,2 @@
+#/properties/decNoPrecision: `decimal` declares no `precision`, which Avro's decimal logical type requires; the value is carried as a lexical string
+#/properties/decScaleOverPrecision: `decimal` declares scale 5 greater than precision 2, which Avro forbids; the value is carried as a lexical string

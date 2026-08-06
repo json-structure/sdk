@@ -781,7 +781,7 @@ public static partial class AvroCompiler
         {
             if (AvroPrimitive(typeName) is { } primitive)
             {
-                return JsonValue.Create(primitive)!;
+                return PrimitiveValue(typeName, primitive, decl, ctx);
             }
 
             switch (typeName)
@@ -1058,8 +1058,110 @@ public static partial class AvroCompiler
             return name;
         }
 
-        private string? DocOf(JsonObject decl) =>
-            _opts.EmitDoc ? Js.Str(Js.Get(decl, "description")) : null;
+        private string? DocOf(JsonObject decl)
+        {
+            if (!_opts.EmitDoc)
+            {
+                return null;
+            }
+
+            var text = Js.Str(Js.Get(decl, "description"));
+            if (_opts.Mode != AvroMode.Full)
+            {
+                return text;
+            }
+
+            // §6.4.1: `full` mode appends Avrotize's constraint annotation,
+            // because interoperating with Avrotize-generated schemas is the
+            // point of the mode. It is a display string; nothing parses it back.
+            var annotations = new List<string>();
+            foreach (var (keyword, label) in DocAnnotations)
+            {
+                if (Js.Get(decl, keyword) is { } value)
+                {
+                    annotations.Add($"{label}: {Lexical(value)}");
+                }
+            }
+
+            if (annotations.Count == 0)
+            {
+                return text;
+            }
+            var rendered = $"[{string.Join(", ", annotations)}]";
+            return text is null ? rendered : $"{text} {rendered}";
+        }
+
+        /// <summary>
+        /// Renders a primitive. <c>decimal</c> is resolved in both modes (§2.3);
+        /// the <c>full</c>-mode annotations of §2.5 ride on top of the base type
+        /// without changing it.
+        /// </summary>
+        private JsonNode PrimitiveValue(string typeName, string primitive, JsonObject decl, Ctx ctx)
+        {
+            if (typeName == "decimal")
+            {
+                return DecimalValue(decl, ctx);
+            }
+
+            if (_opts.Mode == AvroMode.Full && AvroLogical(typeName) is { } logical)
+            {
+                return new JsonObject
+                {
+                    ["type"] = JsonValue.Create(primitive),
+                    ["logicalType"] = JsonValue.Create(logical),
+                };
+            }
+
+            return JsonValue.Create(primitive)!;
+        }
+
+        /// <summary>
+        /// §2.3: <c>decimal</c> carries Avro's own <c>decimal</c> logical type on
+        /// a <c>bytes</c> base, in both modes. Avro is exactly right here, so the
+        /// choice does not belong to a mode.
+        /// </summary>
+        /// <remarks>
+        /// Avro requires a <c>precision</c> and forbids a <c>scale</c> above it.
+        /// Neither can be invented, so a declaration that satisfies neither falls
+        /// back to a lexical <c>string</c> with a warning.
+        /// </remarks>
+        private JsonNode DecimalValue(JsonObject decl, Ctx ctx)
+        {
+            if (Js.Get(decl, "precision") is not { } precisionNode
+                || precisionNode.GetValueKind() != JsonValueKind.Number
+                || !precisionNode.AsValue().TryGetValue<ulong>(out var precision))
+            {
+                _warnings.Add(new AvroWarning(
+                    ctx.Pointer,
+                    "`decimal` declares no `precision`, which Avro's decimal logical type "
+                    + "requires; the value is carried as a lexical string"));
+                return JsonValue.Create("string")!;
+            }
+
+            ulong scale = 0;
+            if (Js.Get(decl, "scale") is { } scaleNode
+                && scaleNode.GetValueKind() == JsonValueKind.Number)
+            {
+                scaleNode.AsValue().TryGetValue(out scale);
+            }
+
+            if (scale > precision)
+            {
+                _warnings.Add(new AvroWarning(
+                    ctx.Pointer,
+                    $"`decimal` declares scale {scale} greater than precision {precision}, "
+                    + "which Avro forbids; the value is carried as a lexical string"));
+                return JsonValue.Create("string")!;
+            }
+
+            return new JsonObject
+            {
+                ["type"] = JsonValue.Create("bytes"),
+                ["logicalType"] = JsonValue.Create("decimal"),
+                ["precision"] = JsonValue.Create(precision),
+                ["scale"] = JsonValue.Create(scale),
+            };
+        }
 
         /// <summary>Mints a generated name, suffixing on collision (§6.3).</summary>
         private string MintName(Ctx ctx) => MintNamed(ctx.Hint, ctx);

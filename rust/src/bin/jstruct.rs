@@ -123,6 +123,16 @@ enum OpenRecords {
     Error,
 }
 
+/// How much descriptive metadata to put in Avro output.
+#[derive(Debug, Clone, Copy, Default, ValueEnum)]
+enum AvroMode {
+    /// Only what serialization requires (default)
+    #[default]
+    Compact,
+    /// Also rfc3339-* logical type annotations and constraint annotations in doc
+    Full,
+}
+
 #[derive(Args)]
 struct AvroArgs {
     /// Schema file to compile. Use '-' to read from stdin.
@@ -144,6 +154,9 @@ struct AvroArgs {
     #[arg(long, value_enum, default_value_t = OpenRecords::Warn)]
     open_records: OpenRecords,
 
+    /// How much descriptive metadata to emit
+    #[arg(long, value_enum, default_value_t = AvroMode::Compact)]
+    mode: AvroMode,
     /// Omit Avro `doc` attributes derived from `description`
     #[arg(long)]
     no_doc: bool,
@@ -747,6 +760,10 @@ fn cmd_avro(args: AvroArgs) -> u8 {
     };
 
     let options = json_structure::avro::AvroOptions {
+        mode: match args.mode {
+            AvroMode::Compact => json_structure::avro::Mode::Compact,
+            AvroMode::Full => json_structure::avro::Mode::Full,
+        },
         uses: args.uses.clone(),
         additional_properties: match args.open_records {
             OpenRecords::Warn => json_structure::avro::AdditionalProperties::Ignore,
