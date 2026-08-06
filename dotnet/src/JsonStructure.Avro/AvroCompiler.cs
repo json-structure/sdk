@@ -401,9 +401,9 @@ public static partial class AvroCompiler
             {
                 outNode["doc"] = doc;
             }
-            if (ConstraintsOf(decl) is { } constraints)
+            if (AnnotationsOf(decl, pointer) is { } annotations)
             {
-                outNode["annotations"] = constraints;
+                outNode["annotations"] = annotations;
             }
             outNode["fields"] = fields;
             return outNode;
@@ -442,9 +442,9 @@ public static partial class AvroCompiler
             {
                 outNode["doc"] = doc;
             }
-            if (ConstraintsOf(decl) is { } constraints)
+            if (AnnotationsOf(decl, spec.Pointer) is { } annotations)
             {
-                outNode["annotations"] = constraints;
+                outNode["annotations"] = annotations;
             }
             if (hasEmittedDefault)
             {
@@ -640,9 +640,9 @@ public static partial class AvroCompiler
             {
                 outNode["doc"] = doc;
             }
-            if (ConstraintsOf(decl) is { } constraints)
+            if (AnnotationsOf(decl, pointer) is { } annotations)
             {
-                outNode["annotations"] = constraints;
+                outNode["annotations"] = annotations;
             }
             outNode["fields"] = fields;
             return outNode;
@@ -943,9 +943,9 @@ public static partial class AvroCompiler
             {
                 outNode["doc"] = doc;
             }
-            if (ConstraintsOf(decl) is { } constraints)
+            if (AnnotationsOf(decl, pointer) is { } annotations)
             {
-                outNode["annotations"] = constraints;
+                outNode["annotations"] = annotations;
             }
 
             var symbolArray = new JsonArray();
@@ -1083,12 +1083,19 @@ public static partial class AvroCompiler
         /// </summary>
         /// <remarks>
         /// <para>
-        /// These are the constraints Avro's type system has no place for. Putting
-        /// them in an attribute rather than appending them to <c>doc</c> keeps
+        /// These are the things Avro's type system has no place for: the
+        /// constraints, the unit and currency annotations, and the semantic
+        /// annotations that carry no property names. Putting them in an
+        /// attribute rather than appending them to <c>doc</c> keeps
         /// them in the form they were written — a number stays a number, a
         /// pattern stays something a regex engine can compile — and Avro requires
         /// a parser to ignore an attribute it does not recognize, so it costs a
         /// reader that has never heard of JSON Structure nothing.
+        /// </para>
+        /// <para>
+        /// Emitted on whatever object carries <c>doc</c>, which for a record or
+        /// enum is the type object. <c>concepts</c> and <c>observedProperty</c>
+        /// annotate a type, so the type object is not a theoretical case.
         /// </para>
         /// <para>
         /// Governed by <c>Mode</c> alone. <c>EmitDoc</c> is about prose for a
@@ -1096,8 +1103,21 @@ public static partial class AvroCompiler
         /// one option mean two things.
         /// </para>
         /// </remarks>
-        private JsonObject? ConstraintsOf(JsonObject decl)
+        private JsonObject? AnnotationsOf(JsonObject decl, string pointer)
         {
+            // A name-binding annotation is lost in both modes, so it is reported
+            // in both. Unlike a constraint, `full` mode cannot rescue it.
+            foreach (var keyword in NameBindingAnnotations)
+            {
+                if (decl.ContainsKey(keyword))
+                {
+                    _warnings.Add(new AvroWarning(
+                        pointer,
+                        $"`{keyword}` names properties of the annotated type, and Avro field "
+                        + "names are not the names it binds; the annotation is dropped"));
+                }
+            }
+
             if (_opts.Mode != AvroMode.Full)
             {
                 return null;
@@ -1108,7 +1128,7 @@ public static partial class AvroCompiler
             var decimalCarries = CarriesDecimalConstraints(decl);
 
             var out_ = new JsonObject();
-            foreach (var keyword in ConstraintAnnotations)
+            foreach (var keyword in AnnotationKeywords)
             {
                 if (decimalCarries && keyword is "precision" or "scale")
                 {

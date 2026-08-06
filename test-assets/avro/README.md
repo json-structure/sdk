@@ -220,6 +220,9 @@ before committing. It is not how a failing test gets silenced.
 | `full-constraint-annotations` | §6.4.1 — all ten constraints in an `annotations` attribute, reordered from the source |
 | `full-constraints-no-doc` | §6.4.1 — `emitDoc` off still emits constraints; the two options are orthogonal |
 | `full-decimal-constraints` | §6.4.1 — `precision`/`scale` carried by the `decimal` logical type are not repeated |
+| `full-units` | §6.4.1 — `unit`, `ucumUnit`, `currency`, `symbols`; `currency` survives on a `decimal` whose `precision`/`scale` are suppressed |
+| `full-semantic-annotations` | §6.4.1 — `concepts` and `observedProperty` on the record *and* enum type objects, the semantic keywords on a field, reordered from the source |
+| `full-name-binding-dropped` | §6.4.1 — `coordinateReferenceSystem` and `temporalReferenceSystem` dropped with a warning; the record renames its properties through `altnames`, which is what a verbatim copy would dangle against |
 
 ### Invalid
 

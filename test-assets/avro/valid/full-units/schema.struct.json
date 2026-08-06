@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/avro/full-units",
+  "$uses": ["JSONStructureUnits"],
+  "name": "Reading",
+  "type": "object",
+  "properties": {
+    "distance": { "type": "double", "unit": "m", "symbol": "d" },
+    "concentration": { "type": "double", "ucumUnit": "mg/L" },
+    "price": { "type": "decimal", "precision": 9, "scale": 2, "currency": "EUR" },
+    "bunnies": {
+      "type": "int32",
+      "symbols": { "lang:en": "Bunnies", "lang:de": "Kaninchen" }
+    }
+  },
+  "required": ["distance", "concentration", "price", "bunnies"]
+}

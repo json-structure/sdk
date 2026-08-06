@@ -167,8 +167,9 @@ jstruct avro [OPTIONS] <FILES>...
 - `-q, --quiet` - Suppress warnings
 
 **The two modes encode identically.** `full` adds `logicalType` annotations for
-the temporal types and `uuid`, and carries the constraints Avro cannot express
-in an `annotations` attribute beside `doc`. It changes no base type and
+the temporal types and `uuid`, and carries what Avro cannot express — the
+constraints, the units and currencies, and the semantic annotations — in an
+`annotations` attribute beside `doc`. It changes no base type and
 therefore no byte on the wire — a `full` schema and a `compact` schema compiled
 from the same document are interchangeable as reader and writer. Choose `full`
 when the schema is going to be read by a human or a code generator, `compact`

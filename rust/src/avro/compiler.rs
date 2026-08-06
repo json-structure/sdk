@@ -427,8 +427,8 @@ impl<'a> Compiler<'a> {
         if let Some(doc) = self.doc_of(decl) {
             out.insert("doc".to_string(), Value::String(doc));
         }
-        if let Some(constraints) = self.constraints_of(decl) {
-            out.insert("annotations".to_string(), constraints);
+        if let Some(annotations) = self.annotations_of(decl, pointer) {
+            out.insert("annotations".to_string(), annotations);
         }
         out.insert("fields".to_string(), Value::Array(fields));
         Ok(Value::Object(out))
@@ -469,8 +469,8 @@ impl<'a> Compiler<'a> {
         if let Some(doc) = self.doc_of(decl) {
             out.insert("doc".to_string(), Value::String(doc));
         }
-        if let Some(constraints) = self.constraints_of(decl) {
-            out.insert("annotations".to_string(), constraints);
+        if let Some(annotations) = self.annotations_of(decl, &spec.pointer) {
+            out.insert("annotations".to_string(), annotations);
         }
         if let Some(default) = default {
             out.insert("default".to_string(), default);
@@ -658,8 +658,8 @@ impl<'a> Compiler<'a> {
         if let Some(doc) = self.doc_of(decl) {
             out.insert("doc".to_string(), Value::String(doc));
         }
-        if let Some(constraints) = self.constraints_of(decl) {
-            out.insert("annotations".to_string(), constraints);
+        if let Some(annotations) = self.annotations_of(decl, pointer) {
+            out.insert("annotations".to_string(), annotations);
         }
         out.insert("fields".to_string(), Value::Array(fields));
         Ok(Value::Object(out))
@@ -985,8 +985,8 @@ impl<'a> Compiler<'a> {
         if let Some(doc) = self.doc_of(decl) {
             out.insert("doc".to_string(), Value::String(doc));
         }
-        if let Some(constraints) = self.constraints_of(decl) {
-            out.insert("annotations".to_string(), constraints);
+        if let Some(annotations) = self.annotations_of(decl, pointer) {
+            out.insert("annotations".to_string(), annotations);
         }
         out.insert("symbols".to_string(), Value::Array(symbols.clone()));
 
@@ -1130,17 +1130,37 @@ impl<'a> Compiler<'a> {
 
     /// §6.4.1: the `annotations` attribute `full` mode emits alongside `doc`.
     ///
-    /// These are the constraints Avro's type system has no place for. Putting
-    /// them in an attribute rather than appending them to `doc` keeps them in
-    /// the form they were written — a number stays a number, a pattern stays
-    /// something a regex engine can compile — and Avro requires a parser to
-    /// ignore an attribute it does not recognize, so it costs a reader that has
-    /// never heard of JSON Structure nothing.
+    /// These are the things Avro's type system has no place for: the
+    /// constraints, the unit and currency annotations, and the semantic
+    /// annotations that carry no property names. Putting them in an attribute
+    /// rather than appending them to `doc` keeps them in the form they were
+    /// written — a number stays a number, a pattern stays something a regex
+    /// engine can compile — and Avro requires a parser to ignore an attribute
+    /// it does not recognize, so it costs a reader that has never heard of
+    /// JSON Structure nothing.
+    ///
+    /// Emitted on whatever object carries `doc`, which for a record or enum is
+    /// the type object. `concepts` and `observedProperty` annotate a type, so
+    /// the type object is not a theoretical case.
     ///
     /// Governed by `mode` alone. `emit_doc` is about prose for a human; this is
     /// metadata for a program, and coupling the two would make one option mean
     /// two things.
-    fn constraints_of(&self, decl: &Map<String, Value>) -> Option<Value> {
+    fn annotations_of(&mut self, decl: &Map<String, Value>, pointer: &str) -> Option<Value> {
+        // A name-binding annotation is lost in both modes, so it is reported in
+        // both. Unlike a constraint, `full` mode cannot rescue it.
+        for keyword in NAME_BINDING_ANNOTATIONS {
+            if decl.contains_key(*keyword) {
+                self.warnings.push(Warning {
+                    path: pointer.to_string(),
+                    message: format!(
+                        "`{keyword}` names properties of the annotated type, and Avro field \
+                         names are not the names it binds; the annotation is dropped"
+                    ),
+                });
+            }
+        }
+
         if self.opts.mode != Mode::Full {
             return None;
         }
@@ -1149,7 +1169,7 @@ impl<'a> Compiler<'a> {
         let decimal_carries = carries_decimal_constraints(decl);
 
         let mut out = Map::new();
-        for keyword in CONSTRAINT_ANNOTATIONS {
+        for keyword in ANNOTATION_KEYWORDS {
             if decimal_carries && matches!(*keyword, "precision" | "scale") {
                 continue;
             }
@@ -1338,9 +1358,16 @@ fn avro_logical(type_name: &str) -> Option<&'static str> {
     })
 }
 
-/// The constraint keywords §6.4.1 carries in the `annotations` attribute in
-/// `full` mode, in their fixed emission order.
-const CONSTRAINT_ANNOTATIONS: &[&str] = &[
+/// The keywords §6.4.1 carries in the `annotations` attribute in `full` mode,
+/// in their fixed emission order.
+///
+/// Three groups, in this order: the constraints Avro's type system cannot
+/// express, the unit and symbol annotations of JSON Structure Units, and the
+/// semantic annotations that carry no property names. The order is fixed
+/// rather than derived from the source document so that two conforming
+/// implementations emit the same bytes.
+const ANNOTATION_KEYWORDS: &[&str] = &[
+    // Constraints (JSON Structure Core and Validation).
     "maxLength",
     "minLength",
     "precision",
@@ -1351,6 +1378,48 @@ const CONSTRAINT_ANNOTATIONS: &[&str] = &[
     "contentEncoding",
     "contentMediaType",
     "contentCompression",
+    // Symbols, units, and currencies.
+    "symbol",
+    "symbols",
+    "unit",
+    "ucumUnit",
+    "currency",
+    // Semantic annotations whose values are self-contained.
+    "concepts",
+    "observedProperty",
+    "semanticRole",
+    "derivation",
+    "statistic",
+    "phenomenonTimeRelation",
+    "supportPeriod",
+    "cadence",
+    "codedValues",
+    "measurementConditioning",
+];
+
+/// The semantic annotations that bind *property names* of the type they
+/// annotate, and are therefore dropped with a warning rather than copied.
+///
+/// `coordinateReferenceSystem`, for instance, carries a `coordinates` array
+/// naming the properties that form a coordinate. Those are JSON Structure
+/// property names, and JSON Structure Semantic Annotations is explicit that an
+/// alternate name does not change the identity an annotation binds. Avro is the
+/// renamed world: `altnames.avro` and the name rules of §6 mean a field can
+/// reach the schema under a different name, or as a member of a different
+/// record after flattening. Copying the annotation verbatim would leave it
+/// naming fields that do not exist, silently, which is worse than not carrying
+/// it at all.
+const NAME_BINDING_ANNOTATIONS: &[&str] = &[
+    "coordinateReferenceSystem",
+    "vectorReferenceFrames",
+    "tensorReferenceFrames",
+    "frameTransforms",
+    "linearReferenceSystem",
+    "colorSpaces",
+    "audioChannels",
+    "spectralBands",
+    "temporalReferenceSystem",
+    "referenceRole",
 ];
 
 /// Whether this declaration's `precision` and `scale` reached the wire as Avro

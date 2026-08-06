@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/avro/full-semantic-annotations",
+  "name": "Observation",
+  "type": "object",
+  "concepts": [
+    {
+      "reference": "http://www.w3.org/ns/sosa/Observation",
+      "kind": "owl-class"
+    }
+  ],
+  "observedProperty": {
+    "reference": "https://vocab.nerc.ac.uk/standard_name/air_temperature/",
+    "kind": "cf-standard-name"
+  },
+  "properties": {
+    "result": {
+      "type": "double",
+      "semanticRole": "result",
+      "derivation": "measured",
+      "statistic": "mean",
+      "supportPeriod": { "duration": "PT1H", "position": "end" },
+      "phenomenonTimeRelation": "period",
+      "cadence": { "kind": "regular", "period": "PT1H" },
+      "measurementConditioning": { "frequencyWeighting": "A" }
+    },
+    "quality": {
+      "type": { "$ref": "#/definitions/Quality" }
+    }
+  },
+  "required": ["result", "quality"],
+  "definitions": {
+    "Quality": {
+      "name": "Quality",
+      "type": "string",
+      "enum": ["good", "suspect", "bad"],
+      "concepts": [
+        {
+          "reference": "http://www.w3.org/ns/sosa/hasResultQuality",
+          "kind": "rdf-property"
+        }
+      ]
+    }
+  }
+}

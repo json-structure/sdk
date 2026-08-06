@@ -1,0 +1,2 @@
+#/properties/observedAt: `temporalReferenceSystem` names properties of the annotated type, and Avro field names are not the names it binds; the annotation is dropped
+#: `coordinateReferenceSystem` names properties of the annotated type, and Avro field names are not the names it binds; the annotation is dropped

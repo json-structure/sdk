@@ -132,6 +132,69 @@ public sealed class JsonStructureAvroTests
         result.Warnings[0].ToString().ShouldContain("#/properties/tags");
     }
 
+    /// <summary>
+    /// A semantic annotation that names properties is dropped, in both modes.
+    /// </summary>
+    /// <remarks>
+    /// A corpus case pins this in <c>full</c> mode. The claim is that the
+    /// warning does not depend on the mode, and a corpus case cannot say that:
+    /// it carries one options file.
+    /// </remarks>
+    [Theory]
+    [InlineData(AvroMode.Compact)]
+    [InlineData(AvroMode.Full)]
+    public void DropsANameBindingAnnotationWithAWarningInBothModes(AvroMode mode)
+    {
+        var result = AvroCompiler.Compile(
+            JsonNode.Parse("""
+                {
+                  "$schema": "https://json-structure.org/meta/core/v0/#",
+                  "$id": "https://example.com/track",
+                  "name": "Track",
+                  "type": "object",
+                  "coordinateReferenceSystem": {
+                    "reference": "http://www.opengis.net/def/crs/EPSG/0/4326",
+                    "kind": "epsg",
+                    "coordinates": ["lat", "lon"]
+                  },
+                  "properties": {
+                    "lat": { "type": "double" },
+                    "lon": { "type": "double" }
+                  },
+                  "required": ["lat", "lon"]
+                }
+                """)!,
+            new AvroOptions { Mode = mode });
+
+        result.Warnings.ShouldContain(w => w.ToString().Contains("coordinateReferenceSystem"));
+        result.Schema["annotations"].ShouldBeNull();
+    }
+
+    /// <summary>
+    /// The warning list and the emission list must not overlap, or every
+    /// annotated schema would produce noise.
+    /// </summary>
+    [Fact]
+    public void DoesNotWarnAboutAnAnnotationItCarries()
+    {
+        var result = AvroCompiler.Compile(
+            JsonNode.Parse("""
+                {
+                  "$schema": "https://json-structure.org/meta/core/v0/#",
+                  "$id": "https://example.com/reading",
+                  "$uses": ["JSONStructureUnits"],
+                  "name": "Reading",
+                  "type": "object",
+                  "properties": { "distance": { "type": "double", "unit": "m" } },
+                  "required": ["distance"]
+                }
+                """)!,
+            new AvroOptions { Mode = AvroMode.Full });
+
+        result.Warnings.ShouldBeEmpty();
+        result.Schema["fields"]![0]!["annotations"]!["unit"]!.ToString().ShouldBe("m");
+    }
+
     [Fact]
     public void RejectsANullSource()
     {
