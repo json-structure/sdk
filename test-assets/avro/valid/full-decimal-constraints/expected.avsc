@@ -10,14 +10,14 @@
         "precision": 9,
         "scale": 2
       },
-      "jsonStructure": {
+      "annotations": {
         "minimum": 0
       }
     },
     {
       "name": "noPrecision",
       "type": "string",
-      "jsonStructure": {
+      "annotations": {
         "scale": 2,
         "maximum": 100
       }
@@ -25,7 +25,7 @@
     {
       "name": "scaleOverPrecision",
       "type": "string",
-      "jsonStructure": {
+      "annotations": {
         "precision": 2,
         "scale": 5
       }

@@ -295,7 +295,7 @@ public sealed class AvroCorpusTests
 
     /// <summary>
     /// Rebuilds <paramref name="value"/> without anything <c>full</c> mode is
-    /// allowed to add — <c>doc</c>, the <c>jsonStructure</c> constraint
+    /// allowed to add — <c>doc</c>, the <c>annotations</c> constraint
     /// attribute, and a non-<c>decimal</c> <c>logicalType</c>. Builds a new tree
     /// rather than editing in place: a <see cref="JsonNode"/> carries a parent
     /// pointer, so reassigning one into the tree it already belongs to throws.
@@ -320,7 +320,7 @@ public sealed class AvroCorpusTests
         var outMap = new JsonObject();
         foreach (var (key, child) in map)
         {
-            if (key is "doc" or "jsonStructure")
+            if (key is "doc" or "annotations")
             {
                 continue;
             }

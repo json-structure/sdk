@@ -25,7 +25,7 @@ and two *annotation* levels, selected by the `mode` option ({{full-mode}}).
 
 `compact` emits only what serialization requires. `full` emits the same schema
 plus descriptive metadata: logical type annotations on the values that have a
-narrower meaning than their Avro base type, and a `jsonStructure` attribute
+narrower meaning than their Avro base type, and an `annotations` attribute
 carrying the constraints Avro's type system cannot express.
 
 **The two modes are wire-compatible.** This is the load-bearing property.
@@ -218,7 +218,7 @@ needs nothing special. The `rfc3339-*` names are an Avrotize extension.
 There is no established logical name for them, and inventing one would put a
 private vocabulary on the wire for no reader's benefit.
 
-**Constraint annotations** in a `jsonStructure` attribute, per
+**Constraint annotations** in an `annotations` attribute, per
 {{constraint-annotations}}.
 
 #### 2.5.1 Reading a `full` schema {#full-mode-readers}
@@ -762,7 +762,7 @@ JSON Structure constrains values in ways Avro's type system cannot: a
 `maxLength` on a string, a `minimum` on a number, a `pattern`. Avro has no
 place for them, so `compact` mode drops them and warns where it matters.
 
-`full` mode carries them instead, in a single `jsonStructure` attribute
+`full` mode carries them instead, in a single `annotations` attribute
 alongside `doc`:
 
 ```json
@@ -770,7 +770,7 @@ alongside `doc`:
   "name": "total",
   "type": { "type": "bytes", "logicalType": "decimal", "precision": 9, "scale": 2 },
   "doc": "Order total",
-  "jsonStructure": { "minimum": 0 }
+  "annotations": { "minimum": 0 }
 }
 ```
 
@@ -786,7 +786,7 @@ it cannot round-trip, it collides with prose, and nothing parses it back. An
 attribute has none of those problems, and the two can coexist in one schema
 because they occupy different keys.
 
-**The attribute.** `jsonStructure` is a JSON object. Its keys are JSON
+**The attribute.** `annotations` is a JSON object. Its keys are JSON
 Structure keywords and its values are those keywords' values, verbatim and with
 their original JSON types. The attribute is emitted on the same object that
 carries `doc` — a field object for a property, the type object for a named
@@ -805,7 +805,7 @@ value that violates a constraint as a serialization error. The warnings of
 
 **No duplication with `decimal`.** When a `decimal` declaration's `precision`
 and `scale` were carried by Avro's own `decimal` logical type ({{decimal}}),
-they MUST NOT also appear in `jsonStructure`. They are already on the wire, in
+they MUST NOT also appear in `annotations`. They are already on the wire, in
 Avro's own vocabulary, and repeating them invites the two copies to disagree.
 When the declaration fell back to a lexical `string` — no `precision`, or a
 `scale` above it — whichever of the two is present is annotated, because
@@ -813,8 +813,8 @@ nothing else is carrying it.
 
 **Independent of `emit_doc`.** `emit_doc` governs `doc`, which is prose for a
 human. Constraints are metadata for a program. An implementation that suppresses
-`doc` MUST still emit `jsonStructure`, and one that emits `doc` in `compact`
-mode MUST NOT emit `jsonStructure`. The two options are orthogonal, and
+`doc` MUST still emit `annotations`, and one that emits `doc` in `compact`
+mode MUST NOT emit `annotations`. The two options are orthogonal, and
 `emit_doc` means what it says.
 
 **Extending it.** The key set above is closed for this version. A future version
@@ -836,11 +836,11 @@ input and options.
    hash map at any point that influences output. `required` membership is a
    lookup, never an iteration source.
 3. **Key order in emitted JSON objects.** Attributes are emitted in this order,
-   omitting absent ones: `type`, `name`, `namespace`, `doc`, `jsonStructure`,
+   omitting absent ones: `type`, `name`, `namespace`, `doc`, `annotations`,
    `aliases`, `fields`, `symbols`, `items`, `values`, `size`, `logicalType`,
    `precision`, `scale`, `default`. Within a field object: `name`, `type`,
-   `doc`, `jsonStructure`, `default`, `order`, `aliases`. Within
-   `jsonStructure`, keys follow the fixed order of {{constraint-annotations}},
+   `doc`, `annotations`, `default`, `order`, `aliases`. Within
+   `annotations`, keys follow the fixed order of {{constraint-annotations}},
    not the source document's order.
 4. **Generated-name suffixing** follows traversal order, per
    {{generated-names}}.

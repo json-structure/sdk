@@ -403,7 +403,7 @@ public static partial class AvroCompiler
             }
             if (ConstraintsOf(decl) is { } constraints)
             {
-                outNode["jsonStructure"] = constraints;
+                outNode["annotations"] = constraints;
             }
             outNode["fields"] = fields;
             return outNode;
@@ -444,7 +444,7 @@ public static partial class AvroCompiler
             }
             if (ConstraintsOf(decl) is { } constraints)
             {
-                outNode["jsonStructure"] = constraints;
+                outNode["annotations"] = constraints;
             }
             if (hasEmittedDefault)
             {
@@ -642,7 +642,7 @@ public static partial class AvroCompiler
             }
             if (ConstraintsOf(decl) is { } constraints)
             {
-                outNode["jsonStructure"] = constraints;
+                outNode["annotations"] = constraints;
             }
             outNode["fields"] = fields;
             return outNode;
@@ -945,7 +945,7 @@ public static partial class AvroCompiler
             }
             if (ConstraintsOf(decl) is { } constraints)
             {
-                outNode["jsonStructure"] = constraints;
+                outNode["annotations"] = constraints;
             }
 
             var symbolArray = new JsonArray();
@@ -1078,7 +1078,7 @@ public static partial class AvroCompiler
             _opts.EmitDoc ? Js.Str(Js.Get(decl, "description")) : null;
 
         /// <summary>
-        /// §6.4.1: the <c>jsonStructure</c> attribute <c>full</c> mode emits
+        /// §6.4.1: the <c>annotations</c> attribute <c>full</c> mode emits
         /// alongside <c>doc</c>.
         /// </summary>
         /// <remarks>

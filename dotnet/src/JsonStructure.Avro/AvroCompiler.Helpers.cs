@@ -139,7 +139,7 @@ public static partial class AvroCompiler
     };
 
     /// <summary>
-    /// The constraint keywords §6.4.1 carries in the <c>jsonStructure</c>
+    /// The constraint keywords §6.4.1 carries in the <c>annotations</c>
     /// attribute in <c>full</c> mode, in their fixed emission order.
     /// </summary>
     private static readonly string[] ConstraintAnnotations =
