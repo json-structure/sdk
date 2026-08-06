@@ -17,8 +17,7 @@
         "logicalType": "decimal",
         "precision": 10,
         "scale": 2
-      },
-      "doc": "[precision: 10, scale: 2]"
+      }
     }
   ]
 }

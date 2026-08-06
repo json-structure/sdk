@@ -167,12 +167,12 @@ jstruct avro [OPTIONS] <FILES>...
 - `-q, --quiet` - Suppress warnings
 
 **The two modes encode identically.** `full` adds `logicalType` annotations for
-the temporal types and `uuid`, and appends the constraints it cannot express to
-each field's `doc`. It changes no base type and therefore no byte on the wire —
-a `full` schema and a `compact` schema compiled from the same document are
-interchangeable as reader and writer. Choose `full` when the schema is going to
-be read by a human or a code generator, `compact` when it is going to be parsed
-at process start.
+the temporal types and `uuid`, and carries the constraints Avro cannot express
+in a `jsonStructure` attribute beside `doc`. It changes no base type and
+therefore no byte on the wire — a `full` schema and a `compact` schema compiled
+from the same document are interchangeable as reader and writer. Choose `full`
+when the schema is going to be read by a human or a code generator, `compact`
+when it is going to be parsed at process start.
 
 `full` uses the `rfc3339-*` logical type names, which are not in the Avro
 specification. Avro requires a parser to ignore a logical type it does not

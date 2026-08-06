@@ -1,0 +1,21 @@
+{
+  "type": "record",
+  "name": "Unspoken",
+  "fields": [
+    {
+      "name": "code",
+      "type": "string",
+      "jsonStructure": {
+        "maxLength": 8,
+        "pattern": "^[A-Z]+$"
+      }
+    },
+    {
+      "name": "count",
+      "type": "int",
+      "jsonStructure": {
+        "minimum": 1
+      }
+    }
+  ]
+}

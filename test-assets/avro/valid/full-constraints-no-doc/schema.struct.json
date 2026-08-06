@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/avro/full-constraints-no-doc",
+  "name": "Unspoken",
+  "description": "This description is suppressed",
+  "type": "object",
+  "properties": {
+    "code": { "type": "string", "description": "Also suppressed", "maxLength": 8, "pattern": "^[A-Z]+$" },
+    "count": { "type": "int32", "minimum": 1 }
+  },
+  "required": ["code", "count"]
+}

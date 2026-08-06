@@ -401,6 +401,10 @@ public static partial class AvroCompiler
             {
                 outNode["doc"] = doc;
             }
+            if (ConstraintsOf(decl) is { } constraints)
+            {
+                outNode["jsonStructure"] = constraints;
+            }
             outNode["fields"] = fields;
             return outNode;
         }
@@ -437,6 +441,10 @@ public static partial class AvroCompiler
             if (DocOf(decl) is { } doc)
             {
                 outNode["doc"] = doc;
+            }
+            if (ConstraintsOf(decl) is { } constraints)
+            {
+                outNode["jsonStructure"] = constraints;
             }
             if (hasEmittedDefault)
             {
@@ -631,6 +639,10 @@ public static partial class AvroCompiler
             if (DocOf(decl) is { } doc)
             {
                 outNode["doc"] = doc;
+            }
+            if (ConstraintsOf(decl) is { } constraints)
+            {
+                outNode["jsonStructure"] = constraints;
             }
             outNode["fields"] = fields;
             return outNode;
@@ -931,6 +943,10 @@ public static partial class AvroCompiler
             {
                 outNode["doc"] = doc;
             }
+            if (ConstraintsOf(decl) is { } constraints)
+            {
+                outNode["jsonStructure"] = constraints;
+            }
 
             var symbolArray = new JsonArray();
             foreach (var symbol in symbols)
@@ -1058,37 +1074,53 @@ public static partial class AvroCompiler
             return name;
         }
 
-        private string? DocOf(JsonObject decl)
+        private string? DocOf(JsonObject decl) =>
+            _opts.EmitDoc ? Js.Str(Js.Get(decl, "description")) : null;
+
+        /// <summary>
+        /// §6.4.1: the <c>jsonStructure</c> attribute <c>full</c> mode emits
+        /// alongside <c>doc</c>.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// These are the constraints Avro's type system has no place for. Putting
+        /// them in an attribute rather than appending them to <c>doc</c> keeps
+        /// them in the form they were written — a number stays a number, a
+        /// pattern stays something a regex engine can compile — and Avro requires
+        /// a parser to ignore an attribute it does not recognize, so it costs a
+        /// reader that has never heard of JSON Structure nothing.
+        /// </para>
+        /// <para>
+        /// Governed by <c>Mode</c> alone. <c>EmitDoc</c> is about prose for a
+        /// human; this is metadata for a program, and coupling the two would make
+        /// one option mean two things.
+        /// </para>
+        /// </remarks>
+        private JsonObject? ConstraintsOf(JsonObject decl)
         {
-            if (!_opts.EmitDoc)
+            if (_opts.Mode != AvroMode.Full)
             {
                 return null;
             }
 
-            var text = Js.Str(Js.Get(decl, "description"));
-            if (_opts.Mode != AvroMode.Full)
-            {
-                return text;
-            }
+            // Avro's own decimal logical type already carries these, in Avro's
+            // own vocabulary. A second copy could only ever disagree with it.
+            var decimalCarries = CarriesDecimalConstraints(decl);
 
-            // §6.4.1: `full` mode appends Avrotize's constraint annotation,
-            // because interoperating with Avrotize-generated schemas is the
-            // point of the mode. It is a display string; nothing parses it back.
-            var annotations = new List<string>();
-            foreach (var (keyword, label) in DocAnnotations)
+            var out_ = new JsonObject();
+            foreach (var keyword in ConstraintAnnotations)
             {
+                if (decimalCarries && keyword is "precision" or "scale")
+                {
+                    continue;
+                }
                 if (Js.Get(decl, keyword) is { } value)
                 {
-                    annotations.Add($"{label}: {Lexical(value)}");
+                    out_[keyword] = value.DeepClone();
                 }
             }
 
-            if (annotations.Count == 0)
-            {
-                return text;
-            }
-            var rendered = $"[{string.Join(", ", annotations)}]";
-            return text is null ? rendered : $"{text} {rendered}";
+            return out_.Count == 0 ? null : out_;
         }
 
         /// <summary>

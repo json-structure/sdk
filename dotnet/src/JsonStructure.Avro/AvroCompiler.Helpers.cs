@@ -139,30 +139,51 @@ public static partial class AvroCompiler
     };
 
     /// <summary>
-    /// The constraint keywords §6.4.1 appends to <c>doc</c> in <c>full</c> mode,
-    /// in their fixed emission order, paired with the annotation label.
+    /// The constraint keywords §6.4.1 carries in the <c>jsonStructure</c>
+    /// attribute in <c>full</c> mode, in their fixed emission order.
     /// </summary>
-    private static readonly (string Keyword, string Label)[] DocAnnotations =
+    private static readonly string[] ConstraintAnnotations =
     [
-        ("maxLength", "maxLength"),
-        ("minLength", "minLength"),
-        ("precision", "precision"),
-        ("scale", "scale"),
-        ("pattern", "pattern"),
-        ("minimum", "minimum"),
-        ("maximum", "maximum"),
-        ("contentEncoding", "encoding"),
-        ("contentMediaType", "mediaType"),
-        ("contentCompression", "compression"),
+        "maxLength",
+        "minLength",
+        "precision",
+        "scale",
+        "pattern",
+        "minimum",
+        "maximum",
+        "contentEncoding",
+        "contentMediaType",
+        "contentCompression",
     ];
 
     /// <summary>
-    /// Renders a JSON value in its lexical form for a §6.4.1 <c>doc</c>
-    /// annotation. Strings appear unquoted: <c>pattern: ^a+$</c> reads better
-    /// than <c>pattern: "^a+$"</c>, and nothing parses this back.
+    /// Whether this declaration's <c>precision</c> and <c>scale</c> reached the
+    /// wire as Avro <c>decimal</c> attributes, in which case §6.4.1 forbids
+    /// repeating them.
     /// </summary>
-    private static string Lexical(JsonNode value) =>
-        Js.Str(value) ?? Js.Compact(value);
+    /// <remarks>
+    /// Mirrors the fallback conditions of <c>DecimalValue</c>: a <c>decimal</c>
+    /// with no <c>precision</c>, or a <c>scale</c> above it, is carried as a
+    /// lexical string and its constraints are annotated like anyone else's.
+    /// </remarks>
+    private static bool CarriesDecimalConstraints(JsonObject decl)
+    {
+        if (Js.Str(Js.Get(decl, "type")) != "decimal")
+        {
+            return false;
+        }
+        if (Unsigned(Js.Get(decl, "precision")) is not { } precision)
+        {
+            return false;
+        }
+        return (Unsigned(Js.Get(decl, "scale")) ?? 0) <= precision;
+    }
+
+    /// <summary>Reads a JSON node as an unsigned integer, or <c>null</c>.</summary>
+    private static ulong? Unsigned(JsonNode? node) =>
+        node?.GetValueKind() == JsonValueKind.Number && node.AsValue().TryGetValue<ulong>(out var value)
+            ? value
+            : null;
 
     /// <summary>Avro identifier rule, which is also JSON Structure's identifier rule.</summary>
     private static bool IsAvroName(string name)

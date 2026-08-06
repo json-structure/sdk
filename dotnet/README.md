@@ -242,8 +242,24 @@ var schema = JsonStructureAvro.SchemaFromFile(
 ```
 
 `Full` adds `logicalType` annotations for the temporal types and `uuid`, and
-appends the constraints Avro cannot express — `minimum`, `maxLength`, `pattern`
-and the rest — to each field's `doc`. It changes no base type and therefore no
+carries the constraints Avro cannot express — `minimum`, `maxLength`, `pattern`
+and the rest — in a `jsonStructure` attribute beside `doc`:
+
+```json
+{
+  "name": "total",
+  "type": { "type": "bytes", "logicalType": "decimal", "precision": 9, "scale": 2 },
+  "doc": "Order total",
+  "jsonStructure": { "minimum": 0 }
+}
+```
+
+Avro parsers ignore attributes they do not recognize, so this costs a reader
+that has never heard of JSON Structure nothing, and gives one that has the
+constraint in the form it was written. `Mode` alone governs it — `EmitDoc` is
+about prose for a human and suppressing that leaves the constraints in place.
+
+It changes no base type and therefore no
 byte on the wire: a `Full` schema and a `Compact` schema compiled from the same
 document are interchangeable as reader and writer, which the corpus asserts
 directly. Reach for `Full` when a human or a code generator is going to read the

@@ -179,9 +179,9 @@ fn every_valid_case_matches_its_golden_output() {
 #[test]
 fn full_mode_only_adds_metadata() {
     /// Removes everything `full` mode is allowed to add: `logicalType` on a
-    /// non-`decimal` type, and `doc`. `decimal` is not a `full`-mode
-    /// annotation — it is emitted in both modes (§2.3) — so its `logicalType`,
-    /// `precision`, and `scale` stay.
+    /// non-`decimal` type, `doc`, and the `jsonStructure` constraint
+    /// attribute. `decimal` is not a `full`-mode annotation — it is emitted in
+    /// both modes (§2.3) — so its `logicalType`, `precision`, and `scale` stay.
     fn strip(value: &mut Value) {
         match value {
             Value::Object(map) => {
@@ -189,6 +189,7 @@ fn full_mode_only_adds_metadata() {
                     map.remove("logicalType");
                 }
                 map.remove("doc");
+                map.remove("jsonStructure");
                 // An annotation-only object collapses back to its base type,
                 // which is how `compact` would have written it.
                 if map.len() == 1 {

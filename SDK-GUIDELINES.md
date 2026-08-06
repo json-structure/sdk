@@ -489,7 +489,7 @@ some special time rather than simply being built.
 
 ### Conformance corpus
 
-[`test-assets/avro/`](test-assets/avro/) — 37 valid cases and 10 negative cases.
+[`test-assets/avro/`](test-assets/avro/) — 39 valid cases and 10 negative cases.
 The harness contract is described in its README and has seven checks: golden
 byte-match, determinism across repeated runs, acceptance by a real Avro parser,
 a write/read round trip of a hand-written `instance.avro.json` through a real
@@ -522,10 +522,19 @@ a handful of direct negative tests for its own decoder next to the harness.
 ### Modes
 
 The compiler has two modes, and **they encode identically**. `full` adds
-`logicalType` annotations for the temporal types and `uuid` and appends
-inexpressible constraints to each field's `doc`; it changes no base type and
-therefore no byte. A port MUST keep that true, and the corpus asserts it
-directly by compiling every case both ways and comparing the encoded bytes.
+`logicalType` annotations for the temporal types and `uuid`, and carries the
+constraints Avro's type system cannot express — `maxLength`, `pattern`,
+`minimum` and the rest — in a `jsonStructure` attribute. It changes no base
+type and therefore no byte. A port MUST keep that true, and the corpus asserts
+it directly by compiling every case both ways and comparing the encoded bytes.
+
+The constraints are an *attribute*, not a suffix on `doc`. Avrotize writes them
+into `doc` as `[minimum: 0]`; we deviate deliberately, because Avro schemas are
+extensible and an attribute keeps a number a number and a pattern something a
+regex engine can compile. Two consequences a port will trip over: the attribute
+is governed by `mode` alone and MUST survive `emitDoc` being false, and
+`precision`/`scale` already carried by Avro's `decimal` logical type MUST NOT be
+repeated inside it.
 
 `full` uses the `rfc3339-*` logical type names, which are not in the Avro
 specification. Avro tells a parser to ignore a logical type it does not
