@@ -4,7 +4,7 @@
 //! here has produced Avro that Avro itself accepts.
 
 use apache_avro::Schema as AvroSchema;
-use json_structure::avro::{self, AdditionalProperties, AvroOptions};
+use json_structure::avro::{self, AdditionalProperties, AvroOptions, Mode};
 use serde_json::{json, Value};
 
 /// Compiles and asserts the output parses as real Avro.
@@ -1144,4 +1144,53 @@ fn an_inherited_inline_object_is_named_after_the_concrete_type() {
     }));
     let out = compile(&schema);
     assert_eq!(out["fields"][0]["type"]["name"], "Derived_at");
+}
+
+#[test]
+fn a_name_binding_annotation_is_dropped_with_a_warning_in_both_modes() {
+    // A corpus case pins this in `full` mode. The claim is that the warning
+    // does not depend on the mode, and a corpus case cannot say that: it
+    // carries one options file.
+    let schema = doc(json!({
+        "name": "Track", "type": "object",
+        "coordinateReferenceSystem": {
+            "reference": "http://www.opengis.net/def/crs/EPSG/0/4326",
+            "kind": "epsg",
+            "coordinates": ["lat", "lon"]
+        },
+        "properties": { "lat": { "type": "double" }, "lon": { "type": "double" } },
+        "required": ["lat", "lon"]
+    }));
+
+    for mode in [Mode::Compact, Mode::Full] {
+        let opts = AvroOptions { mode, ..AvroOptions::default() };
+        let out = avro::compile_with(&schema, &opts).unwrap();
+        assert!(
+            out.warnings
+                .iter()
+                .any(|w| w.message.contains("coordinateReferenceSystem")),
+            "{mode:?} must report the dropped annotation: {:?}",
+            out.warnings
+        );
+        assert!(
+            out.schema.get("annotations").is_none(),
+            "{mode:?} must not carry an annotation that names properties: {}",
+            out.schema
+        );
+    }
+}
+
+#[test]
+fn a_carryable_annotation_is_not_warned_about() {
+    // The warning list and the emission list must not overlap, or every
+    // annotated schema would produce noise.
+    let schema = doc(json!({
+        "name": "Reading", "type": "object",
+        "properties": { "distance": { "type": "double", "unit": "m" } },
+        "required": ["distance"]
+    }));
+    let opts = AvroOptions { mode: Mode::Full, ..AvroOptions::default() };
+    let out = avro::compile_with(&schema, &opts).unwrap();
+    assert!(out.warnings.is_empty(), "unexpected warnings: {:?}", out.warnings);
+    assert_eq!(out.schema["fields"][0]["annotations"]["unit"], "m");
 }

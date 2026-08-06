@@ -39,11 +39,15 @@
 //! [`Mode::Compact`], the default, emits the smallest schema that carries the
 //! data — right when the schema is parsed at process start and nothing else
 //! reads it. [`Mode::Full`] additionally annotates the temporal types and
-//! `uuid` with a `logicalType`, and carries the constraints Avro's type system
-//! cannot express — `maxLength`, `pattern`, `minimum` and the rest — in a
-//! `annotations` attribute beside `doc`. Avro parsers ignore attributes they
-//! do not recognize, so the constraint survives in the form it was written
-//! without costing an unaware reader anything.
+//! `uuid` with a `logicalType`, and carries what Avro's type system cannot
+//! express — the constraints, the `unit` and `currency` annotations, and the
+//! semantic annotations — in an `annotations` attribute beside `doc`. Avro
+//! parsers ignore attributes they do not recognize, so the annotation survives
+//! in the form it was written without costing an unaware reader anything.
+//!
+//! Semantic annotations that name properties of the type they annotate, such as
+//! `coordinateReferenceSystem`, are dropped with a warning in both modes: Avro
+//! field names are not the names they bind.
 //!
 //! The two are **wire-compatible**. `Full` changes no base type and therefore
 //! no byte, so a schema compiled either way can read data written by the other.

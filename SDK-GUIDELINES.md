@@ -489,7 +489,7 @@ some special time rather than simply being built.
 
 ### Conformance corpus
 
-[`test-assets/avro/`](test-assets/avro/) — 39 valid cases and 10 negative cases.
+[`test-assets/avro/`](test-assets/avro/) — 42 valid cases and 10 negative cases.
 The harness contract is described in its README and has seven checks: byte-match
 against the expected output, determinism across repeated runs, acceptance by a
 real Avro parser, a write/read round trip of a hand-written `instance.avro.json`
@@ -522,19 +522,30 @@ a handful of direct negative tests for its own decoder next to the harness.
 ### Modes
 
 The compiler has two modes, and **they encode identically**. `full` adds
-`logicalType` annotations for the temporal types and `uuid`, and carries the
-constraints Avro's type system cannot express — `maxLength`, `pattern`,
-`minimum` and the rest — in an `annotations` attribute. It changes no base
+`logicalType` annotations for the temporal types and `uuid`, and carries what
+Avro's type system cannot express — the constraints, the units and currencies,
+and the semantic annotations — in an `annotations` attribute. It changes no base
 type and therefore no byte. A port MUST keep that true, and the corpus asserts
 it directly by compiling every case both ways and comparing the encoded bytes.
 
-The constraints are an *attribute*, not a suffix on `doc`. Avrotize writes them
+These are an *attribute*, not a suffix on `doc`. Avrotize writes the constraints
 into `doc` as `[minimum: 0]`; we deviate deliberately, because Avro schemas are
 extensible and an attribute keeps a number a number and a pattern something a
-regex engine can compile. Two consequences a port will trip over: the attribute
-is governed by `mode` alone and MUST survive `emitDoc` being false, and
-`precision`/`scale` already carried by Avro's `decimal` logical type MUST NOT be
-repeated inside it.
+regex engine can compile. Four consequences a port will trip over:
+
+- The attribute is governed by `mode` alone and MUST survive `emitDoc` being
+  false. `emitDoc` is about prose for a human.
+- `precision`/`scale` already carried by Avro's `decimal` logical type MUST NOT
+  be repeated inside it.
+- It is emitted on **whatever object carries `doc`**, which for a record or enum
+  is the type object, not a field object. `concepts` and `observedProperty`
+  annotate a type, so this is not a theoretical path — if your port only emits
+  at field level, `full-semantic-annotations` fails.
+- Semantic annotations that bind *property names* — `coordinateReferenceSystem`
+  and friends — MUST be dropped with a warning, in **both** modes. The names
+  they bind are JSON Structure property names, and `altnames.avro` means Avro's
+  field names may differ. Copying them verbatim silently produces an annotation
+  pointing at fields that do not exist.
 
 `full` uses the `rfc3339-*` logical type names, which are not in the Avro
 specification. Avro tells a parser to ignore a logical type it does not

@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/avro/full-name-binding-dropped",
+  "$uses": ["JSONStructureAlternateNames"],
+  "name": "Track",
+  "type": "object",
+  "coordinateReferenceSystem": {
+    "reference": "http://www.opengis.net/def/crs/EPSG/0/4326",
+    "kind": "epsg",
+    "coordinates": ["latitude-deg", "longitude-deg"]
+  },
+  "properties": {
+    "latitude-deg": {
+      "type": "double",
+      "unit": "deg",
+      "altnames": { "avro": "latitude" }
+    },
+    "longitude-deg": {
+      "type": "double",
+      "unit": "deg",
+      "altnames": { "avro": "longitude" }
+    },
+    "observedAt": {
+      "type": "datetime",
+      "temporalReferenceSystem": {
+        "reference": "http://www.opengis.net/def/uom/ISO-8601/0/Gregorian",
+        "kind": "ogc-trs"
+      }
+    }
+  },
+  "required": ["latitude-deg", "longitude-deg", "observedAt"]
+}

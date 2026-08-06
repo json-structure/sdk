@@ -1,0 +1,27 @@
+{
+  "type": "record",
+  "name": "Track",
+  "fields": [
+    {
+      "name": "latitude",
+      "type": "double",
+      "annotations": {
+        "unit": "deg"
+      }
+    },
+    {
+      "name": "longitude",
+      "type": "double",
+      "annotations": {
+        "unit": "deg"
+      }
+    },
+    {
+      "name": "observedAt",
+      "type": {
+        "type": "string",
+        "logicalType": "rfc3339-timestamp-micros"
+      }
+    }
+  ]
+}

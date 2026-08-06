@@ -139,11 +139,19 @@ public static partial class AvroCompiler
     };
 
     /// <summary>
-    /// The constraint keywords §6.4.1 carries in the <c>annotations</c>
-    /// attribute in <c>full</c> mode, in their fixed emission order.
+    /// The keywords §6.4.1 carries in the <c>annotations</c> attribute in
+    /// <c>full</c> mode, in their fixed emission order.
     /// </summary>
-    private static readonly string[] ConstraintAnnotations =
+    /// <remarks>
+    /// Three groups, in this order: the constraints Avro's type system cannot
+    /// express, the unit and symbol annotations of JSON Structure Units, and
+    /// the semantic annotations that carry no property names. The order is
+    /// fixed rather than derived from the source document so that two
+    /// conforming implementations emit the same bytes.
+    /// </remarks>
+    private static readonly string[] AnnotationKeywords =
     [
+        // Constraints (JSON Structure Core and Validation).
         "maxLength",
         "minLength",
         "precision",
@@ -154,6 +162,54 @@ public static partial class AvroCompiler
         "contentEncoding",
         "contentMediaType",
         "contentCompression",
+        // Symbols, units, and currencies.
+        "symbol",
+        "symbols",
+        "unit",
+        "ucumUnit",
+        "currency",
+        // Semantic annotations whose values are self-contained.
+        "concepts",
+        "observedProperty",
+        "semanticRole",
+        "derivation",
+        "statistic",
+        "phenomenonTimeRelation",
+        "supportPeriod",
+        "cadence",
+        "codedValues",
+        "measurementConditioning",
+    ];
+
+    /// <summary>
+    /// The semantic annotations that bind <em>property names</em> of the type
+    /// they annotate, and are therefore dropped with a warning rather than
+    /// copied.
+    /// </summary>
+    /// <remarks>
+    /// <c>coordinateReferenceSystem</c>, for instance, carries a
+    /// <c>coordinates</c> array naming the properties that form a coordinate.
+    /// Those are JSON Structure property names, and JSON Structure Semantic
+    /// Annotations is explicit that an alternate name does not change the
+    /// identity an annotation binds. Avro is the renamed world:
+    /// <c>altnames.avro</c> and the name rules of §6 mean a field can reach the
+    /// schema under a different name, or as a member of a different record
+    /// after flattening. Copying the annotation verbatim would leave it naming
+    /// fields that do not exist, silently, which is worse than not carrying it
+    /// at all.
+    /// </remarks>
+    private static readonly string[] NameBindingAnnotations =
+    [
+        "coordinateReferenceSystem",
+        "vectorReferenceFrames",
+        "tensorReferenceFrames",
+        "frameTransforms",
+        "linearReferenceSystem",
+        "colorSpaces",
+        "audioChannels",
+        "spectralBands",
+        "temporalReferenceSystem",
+        "referenceRole",
     ];
 
     /// <summary>

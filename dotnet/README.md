@@ -242,8 +242,9 @@ var schema = JsonStructureAvro.SchemaFromFile(
 ```
 
 `Full` adds `logicalType` annotations for the temporal types and `uuid`, and
-carries the constraints Avro cannot express — `minimum`, `maxLength`, `pattern`
-and the rest — in an `annotations` attribute beside `doc`:
+carries what Avro cannot express — the constraints, the `unit` and `currency`
+annotations, and the semantic annotations — in an `annotations` attribute
+beside `doc`:
 
 ```json
 {

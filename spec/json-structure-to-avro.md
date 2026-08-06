@@ -26,7 +26,8 @@ and two *annotation* levels, selected by the `mode` option ({{full-mode}}).
 `compact` emits only what serialization requires. `full` emits the same schema
 plus descriptive metadata: logical type annotations on the values that have a
 narrower meaning than their Avro base type, and an `annotations` attribute
-carrying the constraints Avro's type system cannot express.
+carrying what Avro's type system cannot express — the constraints, the units
+and currencies, and the semantic annotations.
 
 **The two modes are wire-compatible.** This is the load-bearing property.
 Every value occupies the same Avro base type in both modes, so data written
@@ -218,7 +219,7 @@ needs nothing special. The `rfc3339-*` names are an Avrotize extension.
 There is no established logical name for them, and inventing one would put a
 private vocabulary on the wire for no reader's benefit.
 
-**Constraint annotations** in an `annotations` attribute, per
+**Constraint, unit, and semantic annotations** in an `annotations` attribute, per
 {{constraint-annotations}}.
 
 #### 2.5.1 Reading a `full` schema {#full-mode-readers}
@@ -756,13 +757,15 @@ fixed types, and fields, verbatim.
 emitted. Avro `doc` is a single string with no language tag, and picking one
 language silently would be worse than emitting nothing.
 
-#### 6.4.1 Constraint annotations in `full` mode {#constraint-annotations}
+#### 6.4.1 The `annotations` attribute in `full` mode {#constraint-annotations}
 
-JSON Structure constrains values in ways Avro's type system cannot: a
-`maxLength` on a string, a `minimum` on a number, a `pattern`. Avro has no
-place for them, so `compact` mode drops them and warns where it matters.
+JSON Structure says things about a value that Avro's type system cannot: a
+`maxLength` on a string, a `minimum` on a number, a `pattern`, the `unit` a
+number is measured in, the `currency` an amount is denominated in, the concept
+a field realizes. Avro has no place for any of it, so `compact` mode drops it
+and warns where it matters.
 
-`full` mode carries them instead, in a single `annotations` attribute
+`full` mode carries it instead, in a single `annotations` attribute
 alongside `doc`:
 
 ```json
@@ -793,10 +796,48 @@ carries `doc` — a field object for a property, the type object for a named
 record or enum — and only when at least one key applies. It is never emitted in
 `compact` mode.
 
+The type object is not a theoretical case. `concepts` and `observedProperty`
+annotate a type rather than a value, so a record or enum carries them the same
+way a field carries `unit`.
+
 Keys are emitted in this fixed order, omitting absent ones:
 
+*Constraints*, from JSON Structure Core and Validation:
 `maxLength`, `minLength`, `precision`, `scale`, `pattern`, `minimum`,
 `maximum`, `contentEncoding`, `contentMediaType`, `contentCompression`.
+
+*Symbols, units, and currencies*, from JSON Structure Units:
+`symbol`, `symbols`, `unit`, `ucumUnit`, `currency`.
+
+*Semantic annotations*, from JSON Structure Semantic Annotations:
+`concepts`, `observedProperty`, `semanticRole`, `derivation`, `statistic`,
+`phenomenonTimeRelation`, `supportPeriod`, `cadence`, `codedValues`,
+`measurementConditioning`.
+
+A unit is a stronger case for carrying than a constraint, not a weaker one. A
+constraint is a rule that can be re-checked against the source document, and
+the data means the same thing with or without it. A unit is identity: a
+`double` that lost "metres" is a number that means nothing, and no reader
+recovers it from the bytes.
+
+**Annotations that bind property names are dropped.** JSON Structure Semantic
+Annotations defines keywords whose values name properties of the type they
+annotate — `coordinateReferenceSystem` carries a `coordinates` array naming the
+properties that form a coordinate, and `frameTransforms`, `colorSpaces`,
+`audioChannels`, `spectralBands`, `vectorReferenceFrames`,
+`tensorReferenceFrames`, `linearReferenceSystem`, `temporalReferenceSystem`,
+and `referenceRole` do the same. These MUST NOT appear in `annotations`.
+
+The names they bind are JSON Structure property names, and that specification
+is explicit that an alternate name does not change the identity an annotation
+binds. Avro is the renamed world: `altnames.avro` ({{altnames}}) and the name
+rules of this section mean a property can reach the schema under a different
+name. A verbatim copy would name fields that do not exist, and it would do so
+silently — worse than not carrying the annotation at all.
+
+An implementation MUST warn for each such keyword it drops. Unlike a
+constraint, `full` mode cannot rescue these, so the warning MUST be issued in
+both modes.
 
 **Not a contract.** The attribute records what the source document said. It
 does not make Avro enforce anything, and an implementation MUST NOT treat a
@@ -812,7 +853,7 @@ When the declaration fell back to a lexical `string` — no `precision`, or a
 nothing else is carrying it.
 
 **Independent of `emit_doc`.** `emit_doc` governs `doc`, which is prose for a
-human. Constraints are metadata for a program. An implementation that suppresses
+human. Annotations are metadata for a program. An implementation that suppresses
 `doc` MUST still emit `annotations`, and one that emits `doc` in `compact`
 mode MUST NOT emit `annotations`. The two options are orthogonal, and
 `emit_doc` means what it says.
@@ -881,6 +922,7 @@ The following MUST be warnings {#warnings}, each carrying the same JSON Pointer:
 | A generated name is suffixed to avoid a declared type | The anonymous type's Avro name is not the one the naming rules would predict |
 | `decimal` with no `precision` | Avro requires one; the value is carried as a lexical string instead ({{decimal}}) |
 | `decimal` with `scale` greater than `precision` | Avro forbids it; the value is carried as a lexical string instead ({{decimal}}) |
+| A semantic annotation that binds property names is present | The names it binds are not Avro's field names; the annotation is dropped, in both modes ({{constraint-annotations}}) |
 
 ## 9. Compatibility notes
 

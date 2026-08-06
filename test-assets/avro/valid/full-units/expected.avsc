@@ -1,0 +1,43 @@
+{
+  "type": "record",
+  "name": "Reading",
+  "fields": [
+    {
+      "name": "distance",
+      "type": "double",
+      "annotations": {
+        "symbol": "d",
+        "unit": "m"
+      }
+    },
+    {
+      "name": "concentration",
+      "type": "double",
+      "annotations": {
+        "ucumUnit": "mg/L"
+      }
+    },
+    {
+      "name": "price",
+      "type": {
+        "type": "bytes",
+        "logicalType": "decimal",
+        "precision": 9,
+        "scale": 2
+      },
+      "annotations": {
+        "currency": "EUR"
+      }
+    },
+    {
+      "name": "bunnies",
+      "type": "int",
+      "annotations": {
+        "symbols": {
+          "lang:en": "Bunnies",
+          "lang:de": "Kaninchen"
+        }
+      }
+    }
+  ]
+}

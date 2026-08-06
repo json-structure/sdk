@@ -250,7 +250,7 @@ public sealed class AvroCorpusTests
     [Fact]
     public void FindsTheWholeCorpus()
     {
-        Cases("valid").Count.ShouldBeGreaterThanOrEqualTo(39);
+        Cases("valid").Count.ShouldBeGreaterThanOrEqualTo(42);
         Cases("invalid").Count.ShouldBeGreaterThanOrEqualTo(10);
     }
 
