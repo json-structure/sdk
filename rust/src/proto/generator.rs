@@ -5,7 +5,7 @@ use super::ir::{self, Decl, Enum, EnumValue, Field, File, Member, Message, Oneof
 use super::{AdditionalProperties, GenerateOutput, ProtoFile, ProtoOptions, Warning};
 use serde_json::{Map, Value};
 use std::collections::{HashMap, HashSet};
-
+
 /// The field-number lock format version. Bumped whenever the shape changes, so
 /// that a stale lock is rejected rather than silently ignored — an ignored lock
 /// renumbers every field, which is precisely the corruption the lock prevents.
@@ -95,7 +95,10 @@ impl ProtoError {
             Self::UnresolvedRef { path, .. }
             | Self::Invalid { path, .. }
             | Self::IllegalName { path, .. } => Some(path),
-            Self::NoRootType | Self::UnknownAddIn { .. } | Self::Numbering { .. } | Self::ImportCycle { .. } => None,
+            Self::NoRootType
+            | Self::UnknownAddIn { .. }
+            | Self::Numbering { .. }
+            | Self::ImportCycle { .. } => None,
         }
     }
 }
@@ -332,21 +335,23 @@ impl<'a> Generator<'a> {
         plan: &mut Vec<(Vec<String>, String)>,
     ) -> Result<(), ProtoError> {
         for (key, value) in node {
-            let Some(map) = value.as_object() else { continue };
+            let Some(map) = value.as_object() else {
+                continue;
+            };
             let mut child_path = path.to_vec();
             child_path.push(key.clone());
 
             if is_type_declaration(map) {
                 let pointer = definition_pointer(&child_path);
-                let name = self.declared_name(map, &pointer)?.unwrap_or_else(|| key.clone());
+                let name = self
+                    .declared_name(map, &pointer)?
+                    .unwrap_or_else(|| key.clone());
                 let file = self.file_for(path);
                 let package = self.files[file].package.clone();
                 let fq = qualify(&package, &name);
                 if !self.taken.insert(fq.clone()) {
                     return Err(ProtoError::Invalid {
-                        message: format!(
-                            "two declared types both map to the protobuf name `{fq}`"
-                        ),
+                        message: format!("two declared types both map to the protobuf name `{fq}`"),
                         path: pointer,
                     });
                 }
@@ -857,7 +862,10 @@ impl<'a> Generator<'a> {
             })?
             .clone();
 
-        let selector = decl.get("selector").and_then(Value::as_str).map(str::to_string);
+        let selector = decl
+            .get("selector")
+            .and_then(Value::as_str)
+            .map(str::to_string);
         let inline = decl.contains_key("$extends") && selector.is_some();
 
         let mut members = Vec::new();
@@ -1126,7 +1134,9 @@ impl<'a> Generator<'a> {
                 // full type path, which is unique by construction.
                 field_name = format!(
                     "{}_value",
-                    ty.trim_start_matches('.').replace('.', "_").to_ascii_lowercase()
+                    ty.trim_start_matches('.')
+                        .replace('.', "_")
+                        .to_ascii_lowercase()
                 );
             }
             fields.push(Field {
@@ -1140,10 +1150,15 @@ impl<'a> Generator<'a> {
         }
 
         let package = self.files[ctx.file].package.clone();
-        let message = self.finish_message(&name, &package, None, vec![Member::Oneof(Oneof {
-            name: "value".to_string(),
-            fields,
-        })])?;
+        let message = self.finish_message(
+            &name,
+            &package,
+            None,
+            vec![Member::Oneof(Oneof {
+                name: "value".to_string(),
+                fields,
+            })],
+        )?;
         self.files[ctx.file].decls.push(Decl::Message(message));
         Ok(name)
     }
@@ -1168,14 +1183,12 @@ impl<'a> Generator<'a> {
             pointer: pointer.to_string(),
             path: ctx.pointer.clone(),
         })?;
-        let registered = self
-            .registry
-            .get(&path.join("/"))
-            .cloned()
-            .ok_or_else(|| ProtoError::UnresolvedRef {
+        let registered = self.registry.get(&path.join("/")).cloned().ok_or_else(|| {
+            ProtoError::UnresolvedRef {
                 pointer: pointer.to_string(),
                 path: ctx.pointer.clone(),
-            })?;
+            }
+        })?;
 
         if registered.abstract_ {
             return Err(ProtoError::Invalid {
@@ -1367,7 +1380,12 @@ impl<'a> Generator<'a> {
         let mut reserved: Vec<u32> = locked
             .and_then(|m| m.get("reserved"))
             .and_then(Value::as_array)
-            .map(|a| a.iter().filter_map(Value::as_u64).map(|n| n as u32).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(Value::as_u64)
+                    .map(|n| n as u32)
+                    .collect()
+            })
             .unwrap_or_default();
 
         let mut taken: HashSet<u32> = reserved.iter().copied().collect();
@@ -1490,7 +1508,9 @@ impl<'a> Generator<'a> {
             .as_ref()
             .and_then(|l| l.get("enums"))
             .and_then(|m| m.get(fq));
-        let locked = entry.and_then(|e| e.get("values")).and_then(Value::as_object);
+        let locked = entry
+            .and_then(|e| e.get("values"))
+            .and_then(Value::as_object);
 
         let mut taken: HashSet<u32> = HashSet::from([0]);
         let mut assigned: HashMap<String, u32> = HashMap::new();
@@ -1501,7 +1521,12 @@ impl<'a> Generator<'a> {
         let mut retired: Vec<u32> = entry
             .and_then(|e| e.get("reserved"))
             .and_then(Value::as_array)
-            .map(|a| a.iter().filter_map(Value::as_u64).map(|n| n as u32).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(Value::as_u64)
+                    .map(|n| n as u32)
+                    .collect()
+            })
             .unwrap_or_default();
         for number in &retired {
             taken.insert(*number);
@@ -1639,7 +1664,10 @@ impl<'a> Generator<'a> {
             done: &mut Vec<String>,
         ) -> Option<(String, String)> {
             if let Some(index) = path.iter().position(|p| p == node) {
-                return Some((path[index].clone(), path.last().cloned().unwrap_or_default()));
+                return Some((
+                    path[index].clone(),
+                    path.last().cloned().unwrap_or_default(),
+                ));
             }
             if done.iter().any(|d| d == node) {
                 return None;
@@ -1774,10 +1802,12 @@ impl<'a> Generator<'a> {
             pointer: pointer.to_string(),
             path: from.to_string(),
         })?;
-        let value = self.lookup(&path).ok_or_else(|| ProtoError::UnresolvedRef {
-            pointer: pointer.to_string(),
-            path: from.to_string(),
-        })?;
+        let value = self
+            .lookup(&path)
+            .ok_or_else(|| ProtoError::UnresolvedRef {
+                pointer: pointer.to_string(),
+                path: from.to_string(),
+            })?;
         Ok((value, path))
     }
 
