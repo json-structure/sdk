@@ -47,12 +47,12 @@ fn create_test_files() -> TempDir {
     // Valid instance
     let valid_instance_path = dir.path().join("valid.json");
     let mut f = File::create(&valid_instance_path).unwrap();
-    writeln!(f, r#"{{"name": "Alice", "age": 30}}"#).unwrap();
+    writeln!(f, r#"{{"$schema": "https://example.com/test", "name": "Alice", "age": 30}}"#).unwrap();
     
     // Invalid instance
     let invalid_instance_path = dir.path().join("invalid.json");
     let mut f = File::create(&invalid_instance_path).unwrap();
-    writeln!(f, r#"{{"age": "not a number"}}"#).unwrap();
+    writeln!(f, r#"{{"$schema": "https://example.com/test", "age": "not a number"}}"#).unwrap();
     
     // Invalid JSON
     let bad_json_path = dir.path().join("bad.json");
@@ -68,7 +68,10 @@ fn test_version() {
         .arg("--version")
         .assert()
         .success()
-        .stdout(predicate::str::contains("jstruct"));
+        .stdout(predicate::str::contains(format!(
+            "jstruct {}",
+            env!("CARGO_PKG_VERSION")
+        )));
 }
 
 #[test]

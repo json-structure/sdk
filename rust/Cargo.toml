@@ -1,6 +1,6 @@
 [package]
 name = "json-structure"
-version = "0.1.0"
+version = "0.8.1"
 edition = "2021"
 authors = ["JSON Structure Contributors"]
 license = "MIT"
