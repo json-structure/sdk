@@ -92,6 +92,7 @@ fn test_valid_extends_schema() {
         "definitions": {
             "BaseType": {
                 "name": "BaseType",
+                "abstract": true,
                 "type": "object",
                 "properties": {
                     "baseProp": {"type": "string"}
@@ -134,7 +135,6 @@ fn test_valid_choice_schema() {
         "$id": "https://example.com/schema/choice",
         "name": "PaymentMethod",
         "type": "choice",
-        "selector": "type",
         "choices": {
             "card": {"type": "object", "properties": {"cardNumber": {"type": "string"}}},
             "cash": {"type": "object", "properties": {"amount": {"type": "decimal"}}}
@@ -604,10 +604,28 @@ fn test_choice_uses_choices_and_selector() {
         "$id": "https://example.com/schema/choice",
         "name": "ValidChoice",
         "type": "choice",
+        "$extends": "#/definitions/Base",
         "selector": "kind",
+        "definitions": {
+            "Base": {
+                "abstract": true,
+                "type": "object",
+                "properties": { "id": { "type": "string" } }
+            },
+            "OptionA": {
+                "type": "object",
+                "$extends": "#/definitions/Base",
+                "properties": { "a": { "type": "string" } }
+            },
+            "OptionB": {
+                "type": "object",
+                "$extends": "#/definitions/Base",
+                "properties": { "b": { "type": "int32" } }
+            }
+        },
         "choices": {
-            "optionA": {"type": "object", "properties": {"a": {"type": "string"}}},
-            "optionB": {"type": "object", "properties": {"b": {"type": "int32"}}}
+            "optionA": { "type": { "$ref": "#/definitions/OptionA" } },
+            "optionB": { "type": { "$ref": "#/definitions/OptionB" } }
         }
     }"##;
     let validator = SchemaValidator::new();
@@ -764,13 +782,65 @@ fn test_valid_offers_extension() {
     let schema = r##"{
         "$schema": "https://json-structure.org/meta/core/v0/#",
         "$id": "https://example.com/schema/offers",
-        "name": "OffersSchema",
-        "type": "string",
-        "$offers": ["JSONStructureUnits"]
+        "$root": "#/definitions/Root",
+        "$offers": { "Audited": "#/definitions/Audited" },
+        "definitions": {
+            "Root": {
+                "name": "Root",
+                "type": "object",
+                "properties": { "id": { "type": "string" } }
+            },
+            "Audited": {
+                "abstract": true,
+                "type": "object",
+                "properties": { "auditId": { "type": "string" } }
+            }
+        }
     }"##;
     let validator = SchemaValidator::new();
     let result = validator.validate(schema);
     assert!(result.is_valid(), "$offers extension should be valid");
+}
+
+#[test]
+fn test_invalid_inline_choice_alternative_without_common_base() {
+    let schema = r##"{
+        "$id": "https://example.com/schema/invalid-choice",
+        "name": "InvalidChoice",
+        "type": "choice",
+        "$extends": "#/definitions/Base",
+        "selector": "kind",
+        "definitions": {
+            "Base": {
+                "abstract": true,
+                "type": "object",
+                "properties": { "id": { "type": "string" } }
+            }
+        },
+        "choices": {
+            "optionA": { "type": "object", "properties": { "a": { "type": "string" } } }
+        }
+    }"##;
+    let result = SchemaValidator::new().validate(schema);
+    assert!(!result.is_valid(), "Inline alternatives must extend the common base");
+}
+
+#[test]
+fn test_invalid_abstract_type_with_additional_properties() {
+    let schema = r##"{
+        "$id": "https://example.com/schema/abstract",
+        "$root": "#/definitions/Base",
+        "definitions": {
+            "Base": {
+                "abstract": true,
+                "type": "object",
+                "properties": { "id": { "type": "string" } },
+                "additionalProperties": false
+            }
+        }
+    }"##;
+    let result = SchemaValidator::new().validate(schema);
+    assert!(!result.is_valid(), "Abstract types must not declare additionalProperties");
 }
 
 // =============================================================================

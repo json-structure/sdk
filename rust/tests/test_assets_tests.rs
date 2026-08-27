@@ -347,8 +347,6 @@ fn prepare_instance_for_validation(instance: &Value, schema: &Value) -> Value {
         obj.remove("_description");
         obj.remove("_expectedError");
         obj.remove("_expectedValid");
-        // $schema is a meta-annotation, not instance data
-        obj.remove("$schema");
     }
 
     // Check if schema expects a primitive/array type and instance has { value: ... } wrapper

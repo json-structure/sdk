@@ -39,7 +39,8 @@
 //!
 //! // Validate an instance
 //! let schema: serde_json::Value = serde_json::from_str(schema_json).unwrap();
-//! let instance_json = r#"{"name": "Alice", "age": 30}"#;
+//! let instance_json =
+//!     r#"{"$schema": "https://example.com/person", "name": "Alice", "age": 30}"#;
 //!
 //! let instance_validator = InstanceValidator::new();
 //! let instance_result = instance_validator.validate(instance_json, &schema);

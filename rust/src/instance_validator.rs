@@ -91,8 +91,23 @@ impl InstanceValidator {
                 } else {
                     schema
                 };
-                
-                self.validate_instance(&instance, effective_schema, schema, &mut result, "", &locator, 0);
+
+                let (effective_instance, effective_root_schema) = self.prepare_root_instance(
+                    &instance,
+                    effective_schema,
+                    schema,
+                    &mut result,
+                    &locator,
+                );
+                self.validate_instance(
+                    &effective_instance,
+                    &effective_root_schema,
+                    schema,
+                    &mut result,
+                    "",
+                    &locator,
+                    0,
+                );
             }
             Err(e) => {
                 result.add_error(ValidationError::instance_error(
@@ -105,6 +120,203 @@ impl InstanceValidator {
         }
 
         result
+    }
+
+    fn prepare_root_instance(
+        &self,
+        instance: &Value,
+        effective_schema: &Value,
+        root_schema: &Value,
+        result: &mut ValidationResult,
+        locator: &JsonSourceLocator,
+    ) -> (Value, Value) {
+        let Some(instance_obj) = instance.as_object() else {
+            return (instance.clone(), effective_schema.clone());
+        };
+
+        let mut prepared = instance_obj.clone();
+        let mut prepared_schema = effective_schema.clone();
+        let schema_id = root_schema.get("$id").and_then(Value::as_str);
+        let expects_object = effective_schema.get("type").and_then(Value::as_str) == Some("object");
+
+        match instance_obj.get("$schema") {
+            Some(Value::String(instance_schema)) => {
+                if url::Url::parse(instance_schema).is_err() {
+                    result.add_error(ValidationError::instance_error(
+                        InstanceErrorCode::InstanceSchemaInvalid,
+                        "$schema must be an absolute URI",
+                        "/$schema",
+                        locator.get_location("/$schema"),
+                    ));
+                } else if let Some(expected) = schema_id {
+                    if instance_schema != expected {
+                        result.add_error(ValidationError::instance_error(
+                            InstanceErrorCode::InstanceSchemaMismatch,
+                            format!("$schema '{}' does not match schema $id '{}'", instance_schema, expected),
+                            "/$schema",
+                            locator.get_location("/$schema"),
+                        ));
+                    }
+                }
+            }
+            Some(_) => result.add_error(ValidationError::instance_error(
+                InstanceErrorCode::InstanceSchemaInvalid,
+                "$schema must be a string containing an absolute URI",
+                "/$schema",
+                locator.get_location("/$schema"),
+            )),
+            None if expects_object && schema_id.is_some() => {
+                result.add_error(ValidationError::instance_error(
+                    InstanceErrorCode::InstanceSchemaMissing,
+                    "Root JSON document must declare $schema",
+                    "",
+                    locator.get_location(""),
+                ));
+            }
+            None => {}
+        }
+
+        prepared.remove("$schema");
+        if let Some(uses) = instance_obj.get("$uses") {
+            self.apply_root_uses(uses, &mut prepared_schema, root_schema, result, locator);
+            prepared.remove("$uses");
+        }
+
+        (Value::Object(prepared), prepared_schema)
+    }
+
+    fn apply_root_uses(
+        &self,
+        uses: &Value,
+        effective_schema: &mut Value,
+        root_schema: &Value,
+        result: &mut ValidationResult,
+        locator: &JsonSourceLocator,
+    ) {
+        let Some(use_names) = uses.as_array() else {
+            result.add_error(ValidationError::instance_error(
+                InstanceErrorCode::InstanceUsesInvalid,
+                "$uses must be an array of unique add-in names",
+                "/$uses",
+                locator.get_location("/$uses"),
+            ));
+            return;
+        };
+        let offers = root_schema.get("$offers").and_then(Value::as_object);
+        let mut seen = std::collections::HashSet::new();
+
+        for (index, use_name) in use_names.iter().enumerate() {
+            let use_path = format!("/$uses/{}", index);
+            let Some(use_name) = use_name.as_str() else {
+                result.add_error(ValidationError::instance_error(
+                    InstanceErrorCode::InstanceUsesInvalid,
+                    "$uses entries must be strings",
+                    &use_path,
+                    locator.get_location(&use_path),
+                ));
+                continue;
+            };
+            if !seen.insert(use_name) {
+                result.add_error(ValidationError::instance_error(
+                    InstanceErrorCode::InstanceUsesInvalid,
+                    format!("Duplicate add-in name in $uses: {}", use_name),
+                    &use_path,
+                    locator.get_location(&use_path),
+                ));
+                continue;
+            }
+
+            let Some(offer) = offers.and_then(|available| available.get(use_name)) else {
+                result.add_error(ValidationError::instance_error(
+                    InstanceErrorCode::InstanceUsesUnknown,
+                    format!("Add-in '{}' is not advertised by $offers", use_name),
+                    &use_path,
+                    locator.get_location(&use_path),
+                ));
+                continue;
+            };
+
+            let refs: Vec<&str> = match offer {
+                Value::String(reference) => vec![reference],
+                Value::Array(references) => references.iter().filter_map(Value::as_str).collect(),
+                _ => {
+                    result.add_error(ValidationError::instance_error(
+                        InstanceErrorCode::InstanceUsesInvalid,
+                        format!("Offer '{}' must contain a JSON Pointer or an array of JSON Pointers", use_name),
+                        &use_path,
+                        locator.get_location(&use_path),
+                    ));
+                    continue;
+                }
+            };
+
+            for reference in refs {
+                let Some(addin) = self.resolve_ref(reference, root_schema).and_then(Value::as_object) else {
+                    result.add_error(ValidationError::instance_error(
+                        InstanceErrorCode::InstanceUsesInvalid,
+                        format!("Add-in '{}' reference could not be resolved: {}", use_name, reference),
+                        &use_path,
+                        locator.get_location(&use_path),
+                    ));
+                    continue;
+                };
+                self.merge_addin(use_name, addin, effective_schema, result, &use_path, locator);
+            }
+        }
+    }
+
+    fn merge_addin(
+        &self,
+        use_name: &str,
+        addin: &serde_json::Map<String, Value>,
+        effective_schema: &mut Value,
+        result: &mut ValidationResult,
+        path: &str,
+        locator: &JsonSourceLocator,
+    ) {
+        let Some(effective_obj) = effective_schema.as_object_mut() else {
+            result.add_error(ValidationError::instance_error(
+                InstanceErrorCode::InstanceUsesInvalid,
+                format!("Add-in '{}' requires an object root schema", use_name),
+                path,
+                locator.get_location(path),
+            ));
+            return;
+        };
+        let properties = effective_obj
+            .entry("properties".to_string())
+            .or_insert_with(|| Value::Object(serde_json::Map::new()));
+        let Some(properties) = properties.as_object_mut() else {
+            return;
+        };
+
+        if let Some(addin_properties) = addin.get("properties").and_then(Value::as_object) {
+            for (name, property_schema) in addin_properties {
+                if properties.contains_key(name) {
+                    result.add_error(ValidationError::instance_error(
+                        InstanceErrorCode::InstanceUsesConflict,
+                        format!("Add-in '{}' conflicts on property '{}'", use_name, name),
+                        path,
+                        locator.get_location(path),
+                    ));
+                } else {
+                    properties.insert(name.clone(), property_schema.clone());
+                }
+            }
+        }
+
+        if let Some(addin_required) = addin.get("required").and_then(Value::as_array) {
+            let required = effective_obj
+                .entry("required".to_string())
+                .or_insert_with(|| Value::Array(Vec::new()));
+            if let Some(required) = required.as_array_mut() {
+                for name in addin_required {
+                    if !required.contains(name) {
+                        required.push(name.clone());
+                    }
+                }
+            }
+        }
     }
 
     /// Validates an instance value against a schema.
@@ -354,7 +566,6 @@ impl InstanceValidator {
         
         // Build merged schema
         let mut merged = schema_obj.clone();
-        merged.remove("$extends");
         if !merged_properties.is_empty() {
             merged.insert("properties".to_string(), Value::Object(merged_properties));
         }
@@ -2138,10 +2349,20 @@ impl InstanceValidator {
             None => return,
         };
 
-        let selector = schema_obj.get("selector").and_then(Value::as_str);
+        if schema_obj.contains_key("$extends") {
+            let selector_prop = match schema_obj.get("selector").and_then(Value::as_str) {
+                Some(selector) => selector,
+                None => {
+                    result.add_error(ValidationError::instance_error(
+                        InstanceErrorCode::InstanceChoiceSelectorMissing,
+                        "Inline choice schema must declare a selector",
+                        path,
+                        locator.get_location(path),
+                    ));
+                    return;
+                }
+            };
 
-        if let Some(selector_prop) = selector {
-            // Discriminated choice
             let obj = match instance {
                 Value::Object(o) => o,
                 _ => {
@@ -2178,7 +2399,45 @@ impl InstanceValidator {
             };
 
             if let Some(choice_schema) = choices.get(selector_value) {
-                self.validate_instance(instance, choice_schema, root_schema, result, path, locator, depth + 1);
+                let Some(mut selected_schema) = self.materialize_choice_schema(choice_schema, root_schema) else {
+                    result.add_error(ValidationError::instance_error(
+                        InstanceErrorCode::InstanceChoiceNoMatch,
+                        format!("Inline choice '{}' does not resolve to an object schema", selector_value),
+                        path,
+                        locator.get_location(path),
+                    ));
+                    return;
+                };
+
+                let properties = selected_schema
+                    .entry("properties".to_string())
+                    .or_insert_with(|| Value::Object(serde_json::Map::new()));
+                let Some(properties) = properties.as_object_mut() else {
+                    result.add_error(ValidationError::instance_error(
+                        InstanceErrorCode::InstanceChoiceNoMatch,
+                        format!("Inline choice '{}' has invalid object properties", selector_value),
+                        path,
+                        locator.get_location(path),
+                    ));
+                    return;
+                };
+
+                let selector_schema = properties
+                    .entry(selector_prop.to_string())
+                    .or_insert_with(|| serde_json::json!({ "type": "string" }));
+                if let Some(selector_schema) = selector_schema.as_object_mut() {
+                    selector_schema.insert("const".to_string(), Value::String(selector_value.to_string()));
+                }
+
+                self.validate_instance(
+                    instance,
+                    &Value::Object(selected_schema),
+                    root_schema,
+                    result,
+                    path,
+                    locator,
+                    depth + 1,
+                );
             } else {
                 result.add_error(ValidationError::instance_error(
                     InstanceErrorCode::InstanceChoiceUnknown,
@@ -2240,6 +2499,37 @@ impl InstanceValidator {
                     locator.get_location(path),
                 ));
             }
+        }
+    }
+
+    fn materialize_choice_schema(
+        &self,
+        choice_schema: &Value,
+        root_schema: &Value,
+    ) -> Option<serde_json::Map<String, Value>> {
+        let resolved = if let Some(ref_str) = choice_schema.get("$ref").and_then(Value::as_str) {
+            self.resolve_ref(ref_str, root_schema)?
+        } else if let Some(ref_str) = choice_schema
+            .get("type")
+            .and_then(Value::as_object)
+            .and_then(|type_obj| type_obj.get("$ref"))
+            .and_then(Value::as_str)
+        {
+            self.resolve_ref(ref_str, root_schema)?
+        } else {
+            choice_schema
+        };
+
+        let schema_obj = resolved.as_object()?;
+        let materialized = if schema_obj.contains_key("$extends") {
+            self.merge_extends(schema_obj, root_schema)?
+        } else {
+            schema_obj.clone()
+        };
+
+        match materialized.get("type").and_then(Value::as_str) {
+            Some("object") => Some(materialized),
+            _ => None,
         }
     }
 
@@ -2407,7 +2697,10 @@ mod tests {
             },
             "required": ["name"]
         });
-        let result = validator.validate(r#"{"name": "test"}"#, &schema);
+        let result = validator.validate(
+            r#"{"$schema":"https://example.com/test","name":"test"}"#,
+            &schema,
+        );
         assert!(result.is_valid());
     }
 
