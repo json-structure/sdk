@@ -1,12 +1,12 @@
 # JSON Structure Editor Implementation Status
 
-Updated: 2026-08-31 (Phase 1 milestone: Relations identity blocker repair)
+Updated: 2026-08-31 (Phase 1 milestone: host-neutral reference resolution)
 Branch: `editor-autopilot`
 Worktree: `C:\git\json-structure-sdk-editor`
 
-Blocking findings in this milestone: 0 remaining (independent `CodeReviewer`: PASS)
+Blocking findings in this milestone: 0 remaining.
 
-Repair summary: `relations.identity` now has an explicit ordered field in `DefinitionProjection` for valid object and tuple declarations. Schema-owned traversal projects and diagnoses each identity once at the document root and nested schema positions without recursing into literal defaults or other payloads. Diagnostics reject invalid placement, empty or non-string values, missing properties, duplicate identity names, and ambiguous duplicate source keys. Identity removal scans relations only on schema declarations reached by that parser traversal, ignores literal default, example, and semantic payloads, and conservatively rejects duplicate `targettype` or nested `$ref` source keys within real relations. Set/remove commands retain direct byte-identical inverse tests that preserve unknown source. Instance-level uniqueness remains runtime data semantics and is not claimed by this editor-model milestone.
+Milestone summary: the editor now exposes a pure, host-neutral resolution pass for Core `$root`, `$ref`, and `$extends`, plus Relations `targettype` and `qualifiertype`. Callers supply immutable normalized documents or snapshots explicitly; the resolver performs no I/O. It distinguishes resolved, unresolved, and indeterminate outcomes, expands only reusable declarations from `$import` and `$importdefs` into effective local namespaces, recursively prefixes imported declarations and their internal references, and preserves source-document and import-chain provenance. It permits ordinary recursive `$ref` graphs while diagnosing `$extends` inheritance cycles, import cycles, malformed fragments, missing and ambiguous declarations, imported declaration collisions, duplicate supplied documents, stale or incomplete snapshots, and relation targets without identities. Unavailable imports yield indeterminate facts rather than false hard errors. Resolver integration suppresses only diagnostics at exact pointers already owned by parser errors, retaining resolution facts and external-only failures.
 
 ## Current milestone
 
@@ -33,6 +33,11 @@ Implemented:
 - Typed normalized projections for Core declaration forms, `$extends`, relation fields (`targettype`, `cardinality`, `scope`, `qualifiertype`), strict `$import`/`$importdefs` absolute-URI provenance, Units keywords, Validation structures (including type-aware numeric-string handling), conditional composition operators, and all 20 semantic annotation keywords.
 - Ordered `identity` inspection and single-pass diagnostics for valid object and tuple schemas across root and nested schema traversal, excluding literal instance and annotation payloads.
 - Explicit reference inventory including `$root`, `$ref`, `$extends`, and normative `type: {"$ref":"#..."}` declarations.
+- Host-neutral `resolveReferences` and immutable `resolveDocumentReferences` APIs over explicit normalized-document/snapshot inputs, with no host callbacks or I/O.
+- Effective local/imported namespace resolution for Core and Relations references, including explicit reusable-declaration classification, recursive import-chain prefixing, provenance, RFC 6901 escaping, URI-fragment decoding, tri-state outcomes, duplicate/stale input handling, imported collision attribution, and inheritance/import cycle detection.
+- Recursive self and mutual type references remain resolved; cyclic `$extends` edges, including array members, are unresolved without rejecting unrelated inheritance edges.
+- Resolver integration retains parser-owned local relation target and qualifier diagnostics without duplicating same-pointer errors, still records unresolved reference facts, and preserves external-only failures at their distinct pointers.
+- Schema-owned reference traversal excludes `$ref`-shaped literal defaults, examples, and semantic payloads; diagnostics point to the exact reference value.
 - Semantic annotation placement projection indexed by schema pointer for every detected placement.
 - Relation diagnostics pinpoint unsupported member/value pointers directly.
 - Semantic annotation projections validate normative scalar, object, array, and union shapes, plus local tensor/frame rank and symmetry constraints; cross-document and deep semantic consistency checks remain partial.
@@ -48,9 +53,9 @@ Implemented:
 
 ## Validation
 
-Last validation on 2026-08-31 (Relations identity blocker repair and evidence closure):
+Last validation on 2026-08-31 (host-neutral reference resolution):
 
-- `npm test`: passed (2 files, 63 tests).
+- `npm test`: passed (3 files, 77 tests).
 - `npm run typecheck`: passed.
 - `npm run build`: passed (ESM, CJS, DTS).
 - `npm run coverage:check`: passed with 86 feature records.
@@ -75,10 +80,11 @@ Phase 0 ADRs:
 
 Next steps for Phase 1:
 
-1. Add external/import-aware reference resolution; local `$ref` support remains intentionally partial in the ledger.
-2. Tighten diagnostics from partial to complete coverage for definition/root invariants and typed projection validation semantics.
-3. Add a dedicated identity reorder command before claiming complete `relations.identity` editing coverage; runtime instance uniqueness belongs to instance validation rather than normalized schema inspection.
-4. Keep Phase 2 UI work blocked until the remaining Phase 1 command slices pass review.
+1. Decide whether imported declarations that reference `#` through `$importdefs` are invalid by specification or require a distinct root binding; the resolver currently reports them unresolved because `$importdefs` imports definitions only.
+2. Decide whether external documents with equivalent canonical `$id` and retrieval URIs may be supplied more than once; the resolver currently rejects multiple matches as ambiguous.
+3. Tighten diagnostics from partial to complete coverage for definition/root invariants and typed projection validation semantics.
+4. Add a dedicated identity reorder command before claiming complete `relations.identity` editing coverage; runtime instance uniqueness belongs to instance validation rather than normalized schema inspection.
+5. Keep Phase 2 UI work blocked until the remaining Phase 1 command slices pass review.
 
 ## Repository state
 

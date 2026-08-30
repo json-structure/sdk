@@ -134,6 +134,8 @@ export function parseDocument(uri: string, text: string): ParseResult {
   const diagnostics = [...parsed.diagnostics, ...duplicateDiagnostics, ...projectionDiagnostics];
   const model: NormalizedDocument = {
     uri,
+    documentId: typeof root?.$id === 'string' ? root.$id : undefined,
+    name: typeof root?.name === 'string' ? root.name : undefined,
     recovery: 'valid',
     nodes,
     rootPointer: typeof root?.$root === 'string' ? root.$root : undefined,
@@ -191,10 +193,10 @@ function buildProjections(
   const references: ReferenceProjection[] = [];
   const semanticPlacements: SemanticPlacementProjection[] = [];
   const semanticByPointer = new Map<string, SemanticAnnotationsProjection>();
-  collectReferenceProjections(root, '', references);
   collectSemanticPlacements(root, '', uri, text, diagnostics, semanticPlacements, semanticByPointer);
   collectDefinitions(root, root, '', uri, text, definitions, imports, diagnostics, semanticByPointer, nodes);
   collectSchemaProjections(root, uri, text, definitions, diagnostics, semanticByPointer, nodes);
+  collectReferenceProjections(root, references);
   collectStructuralDiagnostics(root, root, '', uri, text, diagnostics, nodes);
   return { definitions, imports, references, semanticPlacements };
 }
@@ -215,13 +217,13 @@ function collectSchemaProjections(
     if (!isRecord(candidate)) return;
     if (diagnosed.has(pointer)) return;
     diagnosed.add(pointer);
-    localTypeReferenceDiagnostics(root, pointer, candidate, uri, text, diagnostics, nodes);
+    localTypeReferenceDiagnostics(pointer, candidate, uri, text, diagnostics);
     relationAndIdentityLocalDiagnostics(root, pointer, candidate, uri, text, diagnostics, nodes);
     if (!visited.has(pointer) && isSchemaDeclaration(candidate)) {
       const split = pointer.lastIndexOf('/');
       const name = pointer === '' ? '$root' : pointer.slice(split + 1).replace(/~1/g, '/').replace(/~0/g, '~');
       const namespacePointer = pointer === '' ? '' : pointer.slice(0, split);
-      const projection = definitionProjection(name, namespacePointer, pointer, candidate, uri, text, diagnostics, semanticByPointer.get(pointer), nodes);
+      const projection = definitionProjection(name, namespacePointer, pointer, candidate, false, uri, text, diagnostics, semanticByPointer.get(pointer), nodes);
       if (projection) definitions.push(projection);
       visited.add(pointer);
     }
@@ -297,7 +299,7 @@ function collectDefinitions(
       if (name === '$import' || name === '$importdefs') continue;
       const encoded = pointerPart(name);
       const declarationPointer = `${pointer}/definitions/${encoded}`;
-      const projection = definitionProjection(name, pointer, declarationPointer, declaration, uri, text, diagnostics, semanticByPointer.get(declarationPointer), nodes);
+      const projection = definitionProjection(name, pointer, declarationPointer, declaration, true, uri, text, diagnostics, semanticByPointer.get(declarationPointer), nodes);
       if (projection) definitions.push(projection);
       else collectNamespaceMembers(root, declaration, declarationPointer, uri, text, definitions, imports, diagnostics, semanticByPointer, nodes);
       collectDefinitions(root, declaration, declarationPointer, uri, text, definitions, imports, diagnostics, semanticByPointer, nodes);
@@ -321,7 +323,7 @@ function collectNamespaceMembers(
   for (const [name, declaration] of Object.entries(value)) {
     if (name === '$import' || name === '$importdefs' || name === 'definitions') continue;
     const declarationPointer = `${pointer}/${pointerPart(name)}`;
-    const projection = definitionProjection(name, pointer, declarationPointer, declaration, uri, text, diagnostics, semanticByPointer.get(declarationPointer), nodes);
+    const projection = definitionProjection(name, pointer, declarationPointer, declaration, true, uri, text, diagnostics, semanticByPointer.get(declarationPointer), nodes);
     if (projection) definitions.push(projection);
     else collectNamespaceMembers(root, declaration, declarationPointer, uri, text, definitions, imports, diagnostics, semanticByPointer, nodes);
     collectDefinitions(root, declaration, declarationPointer, uri, text, definitions, imports, diagnostics, semanticByPointer, nodes);
@@ -333,6 +335,7 @@ function definitionProjection(
   namespacePointer: string,
   pointer: string,
   declaration: unknown,
+  reusable: boolean,
   uri: string,
   text: string,
   diagnostics: Diagnostic[],
@@ -363,6 +366,7 @@ function definitionProjection(
     pointer,
     name,
     namespacePointer,
+    reusable,
     type,
     coreForm: declarationCore,
     extends: extendsProjection(value.$extends),
@@ -599,12 +603,12 @@ function mediaType(value: string): boolean {
   return /^[!#$%&'*+.^_`|~0-9A-Za-z-]+\/[!#$%&'*+.^_`|~0-9A-Za-z-]+(?:\s*;\s*[!#$%&'*+.^_`|~0-9A-Za-z-]+=(?:[!#$%&'*+.^_`|~0-9A-Za-z-]+|"[^"]*"))*$/.test(value);
 }
 
-function localTypeReferenceDiagnostics(root: Record<string, unknown>, pointer: string, value: Record<string, unknown>, uri: string, text: string, diagnostics: Diagnostic[], nodes: readonly ModelNode[]): void {
+function localTypeReferenceDiagnostics(pointer: string, value: Record<string, unknown>, uri: string, text: string, diagnostics: Diagnostic[]): void {
   const validate = (candidate: unknown, typePointer: string): void => {
     if (!isRecord(candidate) || !Object.prototype.hasOwnProperty.call(candidate, '$ref')) return;
     const reference = typeReference(candidate);
-    if (reference === undefined || !reference.startsWith('#/') || !reusableTypePointer(root, reference.slice(1), nodes)) {
-      pushKeywordDiagnostic(diagnostics, uri, `${typePointer}/$ref`, '$ref is permitted in a type value with an optional string description and must resolve to a reusable local declaration.', text);
+    if (reference === undefined || !validPointerFragment(reference)) {
+      pushKeywordDiagnostic(diagnostics, uri, `${typePointer}/$ref`, '$ref is permitted in a type value with an optional string description and must be a valid JSON Pointer URI fragment.', text);
     }
   };
   if (Array.isArray(value.type)) {
@@ -688,16 +692,15 @@ function relationAndIdentityLocalDiagnostics(
       if (typeof targetRef === 'string' && targetRef.startsWith('#/')) {
         const targetPointer = targetRef.slice(1);
         const target = pointerAtRoot(root, targetPointer);
-        if (target === undefined || !uniquePointerPath(nodes, targetPointer)) {
-          pushKeywordDiagnostic(diagnostics, uri, `${relationPointer}/targettype/$ref`, 'targettype references a local declaration path that does not resolve.', text);
-        } else if (!reusableTypePointer(root, targetPointer, nodes) || !localIdentityValid(target, targetPointer, nodes)) {
+        if (target !== undefined && uniquePointerPath(nodes, targetPointer) &&
+            (!reusableTypePointer(root, targetPointer, nodes) || !localIdentityValid(target, targetPointer, nodes))) {
           pushKeywordDiagnostic(diagnostics, uri, `${relationPointer}/targettype/$ref`, 'targettype must reference a reusable object or tuple declaration with a locally valid identity.', text);
         }
       }
       const qualifierRef = relation.qualifiertype === undefined ? undefined : typeReference(relation.qualifiertype);
       if (typeof qualifierRef === 'string' && qualifierRef.startsWith('#/')) {
         const qualifier = pointerAtRoot(root, qualifierRef.slice(1));
-        if (qualifier === undefined || !reusableTypePointer(root, qualifierRef.slice(1), nodes)) {
+        if (qualifier !== undefined && !reusableTypePointer(root, qualifierRef.slice(1), nodes)) {
           pushKeywordDiagnostic(diagnostics, uri, `${relationPointer}/qualifiertype/$ref`, 'qualifiertype references a local declaration path that does not resolve.', text);
         }
       }
@@ -812,6 +815,15 @@ function namespacePointer(root: Record<string, unknown>, pointer: string, nodes:
 function typeReference(value: unknown): string | undefined {
   return isRecord(value) && hasOnlyKeys(value, ['$ref', 'description']) && typeof value.$ref === 'string' &&
     (value.description === undefined || typeof value.description === 'string') ? value.$ref : undefined;
+}
+function validPointerFragment(value: string): boolean {
+  if (!value.startsWith('#/')) return false;
+  try {
+    const decoded = decodeURIComponent(value.slice(1));
+    return decoded.startsWith('/') && !/~(?:[^01]|$)/.test(decoded);
+  } catch {
+    return false;
+  }
 }
 function isSchemaFragmentPointer(value: unknown): value is string { return typeof value === 'string' && (value === '#' || value.startsWith('#/')); }
 function validScope(value: unknown): boolean { return value === undefined || isSchemaFragmentPointer(value) || (Array.isArray(value) && value.length > 0 && value.every(isSchemaFragmentPointer)); }
@@ -1307,8 +1319,8 @@ function declarationKind(value: unknown): ModelNode['kind'] {
   return 'unknown';
 }
 
-function collectReferenceProjections(value: unknown, pointer: string, references: ReferenceProjection[]): void {
-  const seen = new Set(references.map((entry) => `${entry.kind}|${entry.pointer}|${entry.target}`));
+function collectReferenceProjections(root: Record<string, unknown>, references: ReferenceProjection[]): void {
+  const seen = new Set<string>();
   const push = (entry: ReferenceProjection): void => {
     const key = `${entry.kind}|${entry.pointer}|${entry.target}`;
     if (seen.has(key)) return;
@@ -1316,18 +1328,11 @@ function collectReferenceProjections(value: unknown, pointer: string, references
     references.push(entry);
   };
 
-  const visit = (candidate: unknown, currentPointer: string): void => {
-    if (Array.isArray(candidate)) {
-      candidate.forEach((entry, index) => visit(entry, `${currentPointer}/${index}`));
-      return;
-    }
+  const visitSchema = (candidate: unknown, currentPointer: string): void => {
     if (!isRecord(candidate)) return;
 
     if (typeof candidate.$root === 'string' && currentPointer === '') {
       push({ pointer: '/$root', target: candidate.$root, kind: 'root' });
-    }
-    if (typeof candidate.$ref === 'string') {
-      push({ pointer: `${currentPointer}/$ref`, target: candidate.$ref, kind: 'ref' });
     }
     if (typeof candidate.$extends === 'string') {
       push({ pointer: `${currentPointer}/$extends`, target: candidate.$extends, kind: 'extends' });
@@ -1337,13 +1342,65 @@ function collectReferenceProjections(value: unknown, pointer: string, references
       });
     }
     if (typeReference(candidate.type) !== undefined) {
-      push({ pointer: `${currentPointer}/type`, target: (candidate.type as Record<string, unknown>).$ref as string, kind: 'ref' });
+      push({ pointer: `${currentPointer}/type/$ref`, target: (candidate.type as Record<string, unknown>).$ref as string, kind: 'ref' });
+    } else if (Array.isArray(candidate.type)) {
+      candidate.type.forEach((member, index) => {
+        const reference = typeReference(member);
+        if (reference !== undefined) push({ pointer: `${currentPointer}/type/${index}/$ref`, target: reference, kind: 'ref' });
+        else if (isRecord(member)) visitSchema(member, `${currentPointer}/type/${index}`);
+      });
     }
-
-    for (const [key, entry] of Object.entries(candidate)) visit(entry, `${currentPointer}/${pointerPart(key)}`);
+    if (isRecord(candidate.relations)) {
+      for (const [name, relation] of Object.entries(candidate.relations)) {
+        if (!isRecord(relation)) continue;
+        const relationPointer = `${currentPointer}/relations/${pointerPart(name)}`;
+        const target = typeReference(relation.targettype);
+        const qualifier = typeReference(relation.qualifiertype);
+        if (target !== undefined) push({ pointer: `${relationPointer}/targettype/$ref`, target, kind: 'ref' });
+        if (qualifier !== undefined) push({ pointer: `${relationPointer}/qualifiertype/$ref`, target: qualifier, kind: 'ref' });
+      }
+    }
+    visitDefinitions(candidate.definitions, `${currentPointer}/definitions`);
+    visitSchemaMap(candidate.properties, `${currentPointer}/properties`);
+    if (isRecord(candidate.additionalProperties)) visitSchema(candidate.additionalProperties, `${currentPointer}/additionalProperties`);
+    visitSchemaValue(candidate.items, `${currentPointer}/items`);
+    visitSchemaValue(candidate.values, `${currentPointer}/values`);
+    visitSchemaMap(candidate.choices, `${currentPointer}/choices`);
+    visitSchemaValue(candidate.contains, `${currentPointer}/contains`);
+    visitSchemaValue(candidate.propertyNames, `${currentPointer}/propertyNames`);
+    visitSchemaValue(candidate.keyNames, `${currentPointer}/keyNames`);
+    visitSchemaValue(candidate.has, `${currentPointer}/has`);
+    visitSchemaMap(candidate.patternProperties, `${currentPointer}/patternProperties`);
+    visitSchemaMap(candidate.patternKeys, `${currentPointer}/patternKeys`);
+    visitSchemaArray(candidate.allOf, `${currentPointer}/allOf`);
+    visitSchemaArray(candidate.anyOf, `${currentPointer}/anyOf`);
+    visitSchemaArray(candidate.oneOf, `${currentPointer}/oneOf`);
+    visitSchemaValue(candidate.not, `${currentPointer}/not`);
+    visitSchemaValue(candidate.if, `${currentPointer}/if`);
+    visitSchemaValue(candidate.then, `${currentPointer}/then`);
+    visitSchemaValue(candidate.else, `${currentPointer}/else`);
   };
-
-  visit(value, pointer);
+  const visitDefinitions = (candidate: unknown, pointer: string): void => {
+    if (!isRecord(candidate)) return;
+    for (const [key, entry] of Object.entries(candidate)) {
+      if (key === '$import' || key === '$importdefs' || !isRecord(entry)) continue;
+      const entryPointer = `${pointer}/${pointerPart(key)}`;
+      if (looksLikeSchemaObject(entry)) visitSchema(entry, entryPointer);
+      else visitDefinitions(entry, entryPointer);
+    }
+  };
+  const visitSchemaMap = (candidate: unknown, pointer: string): void => {
+    if (!isRecord(candidate)) return;
+    for (const [key, entry] of Object.entries(candidate)) visitSchema(entry, `${pointer}/${pointerPart(key)}`);
+  };
+  const visitSchemaArray = (candidate: unknown, pointer: string): void => {
+    if (Array.isArray(candidate)) candidate.forEach((entry, index) => visitSchema(entry, `${pointer}/${index}`));
+  };
+  const visitSchemaValue = (candidate: unknown, pointer: string): void => {
+    if (Array.isArray(candidate)) visitSchemaArray(candidate, pointer);
+    else visitSchema(candidate, pointer);
+  };
+  visitSchema(root, '');
 }
 
 function collectSemanticPlacements(

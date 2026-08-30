@@ -134,20 +134,20 @@
           "reference": "src/commands.ts"
         },
         "inspection": {
-          "status": "partial",
-          "reference": "src/parser.ts"
+          "status": "complete",
+          "reference": "src/resolver.ts"
         },
         "diagnostics": {
-          "status": "partial",
-          "reference": "src/parser.ts"
+          "status": "complete",
+          "reference": "src/resolver.ts"
         },
         "roundtrip": {
           "status": "complete",
           "reference": "tests/phase1.test.ts"
         },
         "tests": {
-          "status": "partial",
-          "reference": "tests/phase1.test.ts"
+          "status": "complete",
+          "reference": "tests/resolver.test.ts"
         }
       }
     },
@@ -718,16 +718,16 @@
           "reference": "src/parser.ts"
         },
         "diagnostics": {
-          "status": "partial",
-          "reference": "src/parser.ts"
+          "status": "complete",
+          "reference": "src/resolver.ts"
         },
         "roundtrip": {
           "status": "gap",
           "reference": "coverage/gaps.json"
         },
         "tests": {
-          "status": "partial",
-          "reference": "tests/phase1.test.ts"
+          "status": "complete",
+          "reference": "tests/resolver.test.ts"
         }
       }
     },
@@ -950,16 +950,16 @@
           "reference": "src/parser.ts"
         },
         "diagnostics": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "complete",
+          "reference": "src/resolver.ts"
         },
         "roundtrip": {
           "status": "gap",
           "reference": "coverage/gaps.json"
         },
         "tests": {
-          "status": "partial",
-          "reference": "tests/phase1.test.ts"
+          "status": "complete",
+          "reference": "tests/resolver.test.ts"
         }
       }
     },
@@ -979,16 +979,16 @@
           "reference": "src/parser.ts"
         },
         "diagnostics": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "complete",
+          "reference": "src/resolver.ts"
         },
         "roundtrip": {
           "status": "gap",
           "reference": "coverage/gaps.json"
         },
         "tests": {
-          "status": "partial",
-          "reference": "tests/phase1.test.ts"
+          "status": "complete",
+          "reference": "tests/resolver.test.ts"
         }
       }
     },
@@ -1008,16 +1008,16 @@
           "reference": "src/parser.ts"
         },
         "diagnostics": {
-          "status": "partial",
-          "reference": "src/parser.ts"
+          "status": "complete",
+          "reference": "src/resolver.ts"
         },
         "roundtrip": {
           "status": "gap",
           "reference": "coverage/gaps.json"
         },
         "tests": {
-          "status": "partial",
-          "reference": "tests/phase1.test.ts"
+          "status": "complete",
+          "reference": "tests/resolver.test.ts"
         }
       }
     },

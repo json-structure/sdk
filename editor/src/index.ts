@@ -4,6 +4,7 @@ export * from './selection.js';
 export * from './graph.js';
 export * from './coverage.js';
 export * from './parser.js';
+export * from './resolver.js';
 export * from './session.js';
 export * from './capabilities.js';
 export * from './commands.js';

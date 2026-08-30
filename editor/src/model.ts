@@ -55,6 +55,41 @@ export interface ReferenceProjection {
 	readonly kind: 'root' | 'ref' | 'extends';
 }
 
+export type ResolutionStatus = 'resolved' | 'unresolved' | 'indeterminate';
+export type ResolvedReferenceKind = 'root' | 'ref' | 'extends' | 'relation-target' | 'relation-qualifier';
+export interface ImportOrigin {
+	readonly documentUri: string;
+	readonly pointer: JsonPointer;
+	readonly importSource: string;
+	readonly importPointer: JsonPointer;
+	readonly provenance: 'import' | 'importdefs';
+}
+export interface ReferenceResolutionFact {
+	readonly pointer: JsonPointer;
+	readonly target: string;
+	readonly normalizedTarget?: JsonPointer;
+	readonly kind: ResolvedReferenceKind;
+	readonly status: ResolutionStatus;
+	readonly targetPointer?: JsonPointer;
+	readonly targetDocumentUri?: string;
+	readonly importOrigins: readonly ImportOrigin[];
+	readonly reason?: string;
+}
+export interface ImportResolutionFact {
+	readonly pointer: JsonPointer;
+	readonly namespacePointer: JsonPointer;
+	readonly source: string;
+	readonly documentUri?: string;
+	readonly provenance: 'import' | 'importdefs';
+	readonly status: ResolutionStatus;
+	readonly importedPointers: readonly JsonPointer[];
+	readonly reason?: string;
+}
+export interface ReferenceResolutionProjection {
+	readonly references: readonly ReferenceResolutionFact[];
+	readonly imports: readonly ImportResolutionFact[];
+}
+
 export interface SemanticPlacementProjection {
 	readonly pointer: JsonPointer;
 	readonly annotations: SemanticAnnotationsProjection;
@@ -95,6 +130,7 @@ export interface DefinitionProjection {
 	readonly pointer: JsonPointer;
 	readonly name: string;
 	readonly namespacePointer: JsonPointer;
+	readonly reusable: boolean;
 	readonly type?: string;
 	readonly coreForm: 'typed' | 'ref' | 'composed' | 'unknown';
 	readonly extends?: string | readonly string[];
@@ -137,10 +173,11 @@ export interface NormalizedProjections {
 	readonly definitions: readonly DefinitionProjection[];
 	readonly imports: readonly ImportProjection[];
 	readonly references: readonly ReferenceProjection[];
+	readonly resolution?: ReferenceResolutionProjection;
 	readonly semanticPlacements: readonly SemanticPlacementProjection[];
 	readonly diagnostics: readonly DiagnosticsProjection[];
 }
-export interface NormalizedDocument { readonly uri: string; readonly recovery: RecoveryState; readonly nodes: readonly ModelNode[]; readonly rootPointer?: JsonPointer; readonly unknownKeysPreserved: boolean; readonly projections: NormalizedProjections; }
+export interface NormalizedDocument { readonly uri: string; readonly documentId?: string; readonly name?: string; readonly recovery: RecoveryState; readonly nodes: readonly ModelNode[]; readonly rootPointer?: JsonPointer; readonly unknownKeysPreserved: boolean; readonly projections: NormalizedProjections; }
 export function nodeId(value: string): NodeId { return value as NodeId; }
 export interface SerializationGuarantees { readonly preservesUnknownKeys: true; readonly preservesUnrelatedKeyOrder: true; readonly stableNodeIds: true; readonly editsAreMinimal: true; }
 export const SERIALIZATION_GUARANTEES: SerializationGuarantees = { preservesUnknownKeys: true, preservesUnrelatedKeyOrder: true, stableNodeIds: true, editsAreMinimal: true };

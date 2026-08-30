@@ -29,6 +29,7 @@ import {
   SetTupleMembersCommand,
   SetTypeReferenceCommand,
   parseDocument,
+  resolveReferences,
   resolveSelection,
   sameSelection,
   selectionForMode
@@ -219,7 +220,7 @@ describe('Phase 1 vertical slice', () => {
     expect(importEntries.every((entry) => typeof entry.source === 'string')).toBe(true);
     expect(importEntries.every((entry) => !('targetPointer' in (entry as unknown as Record<string, unknown>)))).toBe(true);
     const refs = projections?.references ?? [];
-    expect(refs.some((entry) => entry.pointer === '/definitions/Nested/definitions/Inner/type' && entry.target === '#/definitions/Meta')).toBe(true);
+    expect(refs.some((entry) => entry.pointer === '/definitions/Nested/definitions/Inner/type/$ref' && entry.target === '#/definitions/Meta')).toBe(true);
     expect(refs.some((entry) => entry.pointer === '/definitions/Thing/relations/owner/targettype/$ref' && entry.target === '#/definitions/Meta')).toBe(true);
     const semanticPlacements = projections?.semanticPlacements ?? [];
     expect(semanticPlacements.some((entry) => entry.pointer === '/definitions/Thing')).toBe(true);
@@ -354,7 +355,7 @@ describe('Phase 1 vertical slice', () => {
     expect(pointers.has('/definitions/Thing/identity')).toBe(true);
     expect(pointers.has('/definitions/Thing/relations')).toBe(true);
     expect(pointers.has('/definitions/Thing/relations/id')).toBe(true);
-    expect(pointers.has('/definitions/Thing/relations/id/targettype/$ref')).toBe(true);
+    expect(resolveReferences(result.model!).diagnostics.some((diagnostic) => diagnostic.location?.pointer === '/definitions/Thing/relations/id/targettype/$ref')).toBe(true);
     expect(pointers.has('/definitions/Thing/relations/id/scope')).toBe(true);
     expect(pointers.has('')).toBe(true);
   });
@@ -1218,7 +1219,7 @@ describe('Phase 1 vertical slice', () => {
     expect(Object.prototype.hasOwnProperty.call(JSON.parse(defaultBinarySource).definitions.Bin, 'contentEncoding')).toBe(false);
     expect(parsed.model?.projections.references.some((entry) => entry.target === '#/definitions/Target')).toBe(true);
     expect(parsed.diagnostics.some((entry) => entry.location?.pointer === '/definitions/Set')).toBe(true);
-    expect(parsed.diagnostics.some((entry) => entry.location?.pointer === '/definitions/Bad/type/$ref')).toBe(true);
+    expect(resolveReferences(parsed.model!).diagnostics.some((entry) => entry.location?.pointer === '/definitions/Bad/type/$ref')).toBe(true);
 
     const malformed = parseDocument('memory://core-invalid', '{"definitions":{"O":{"type":"string","required":["x"],"description":1},"A":{"type":"array","values":{"type":"string"}},"T":{"type":"tuple","properties":{"x":{"type":"string"}},"tuple":["x","x"]},"B":{"type":"string","contentEncoding":"base64"},"R":{"$ref":"#/definitions/O"}}}');
     for (const pointer of ['/definitions/O/required', '/definitions/O/description', '/definitions/A/values', '/definitions/T/tuple', '/definitions/B/contentEncoding']) {
@@ -1260,8 +1261,8 @@ describe('Phase 1 vertical slice', () => {
       }
     });
     const parsed = parseDocument('memory://schema-owned-refs', source);
-    const referenceDiagnostics = parsed.diagnostics.filter((entry) =>
-      entry.code === 'json.keyword-invalid' && entry.message.startsWith('$ref is permitted in a type value'));
+    const referenceDiagnostics = resolveReferences(parsed.model!).diagnostics.filter((entry) =>
+      entry.code === 'resolution.reference-unresolved');
     expect(referenceDiagnostics.map((entry) => entry.location?.pointer).sort()).toEqual([
       '/definitions/ArrayUse/items/type/$ref',
       '/definitions/CompositionUse/allOf/0/type/$ref',
@@ -1290,10 +1291,8 @@ describe('Phase 1 vertical slice', () => {
       }
     }));
     const pointer = '/properties/dictionary/additionalProperties/type/$ref';
-    expect(parsed.diagnostics.filter((entry) =>
-      entry.code === 'json.keyword-invalid'
-      && entry.message.startsWith('$ref is permitted in a type value')
-      && entry.location?.pointer === pointer
+    expect(resolveReferences(parsed.model!).diagnostics.filter((entry) =>
+      entry.code === 'resolution.reference-unresolved' && entry.location?.pointer === pointer
     )).toHaveLength(1);
     expect(parsed.model?.projections.references.filter((entry) => entry.pointer === pointer)).toHaveLength(1);
     expect(parsed.model?.projections.definitions.some((entry) => entry.pointer === '/properties/closed/additionalProperties')).toBe(false);
