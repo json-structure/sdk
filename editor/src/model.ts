@@ -103,6 +103,22 @@ export interface DefinitionProjection {
 	readonly validation?: ValidationProjection;
 	readonly composition?: ConditionalCompositionProjection;
 	readonly semantic?: SemanticAnnotationsProjection;
+	readonly required?: readonly string[] | readonly (readonly string[])[];
+	readonly properties?: Readonly<Record<string, Record<string, unknown>>>;
+	readonly items?: Record<string, unknown>;
+	readonly values?: Record<string, unknown>;
+	readonly tuple?: readonly string[];
+	readonly description?: string;
+	readonly binary?: BinaryAnnotationsProjection;
+}
+export interface BinaryAnnotationsProjection {
+	readonly contentEncoding: EffectiveAnnotationValue<string>;
+	readonly contentCompression?: string;
+	readonly contentMediaType?: string;
+}
+export interface EffectiveAnnotationValue<T> {
+	readonly explicit?: T;
+	readonly effective: T;
 }
 export interface ImportProjection {
 	readonly pointer: JsonPointer;

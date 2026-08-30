@@ -18,10 +18,16 @@ import {
   RenamePropertyCommand,
   SetIdentityCommand,
   SetImportCommand,
+  SetBinaryAnnotationsCommand,
+  SetCollectionMemberCommand,
+  SetDescriptionCommand,
   SetRelationCardinalityCommand,
   SetRelationQualifierCommand,
   SetRelationScopeCommand,
   SetRootCommand,
+  SetRequiredCommand,
+  SetTupleMembersCommand,
+  SetTypeReferenceCommand,
   parseDocument,
   resolveSelection,
   sameSelection,
@@ -483,7 +489,7 @@ describe('Phase 1 vertical slice', () => {
     ).toBe(false);
   });
   it('requires relation scopes to be compatible collections and validates root collection scope', async () => {
-    const original = '{"$root":"#/definitions/RootItems","definitions":{"Target":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Other":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"RootItems":{"type":"array","items":{"$ref":"#/definitions/Target"}},"TargetSet":{"type":"set","items":{"type":{"$ref":"#/definitions/Target"}}},"TargetMap":{"type":"map","values":{"$ref":"#/definitions/Target"}},"Wrong":{"type":"array","items":{"$ref":"#/definitions/Other"}},"Source":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]}}}';
+    const original = '{"$root":"#/definitions/RootItems","definitions":{"Target":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Other":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"RootItems":{"type":"array","items":{"type":{"$ref":"#/definitions/Target"}}},"TargetSet":{"type":"set","items":{"type":{"$ref":"#/definitions/Target"}}},"TargetMap":{"type":"map","values":{"type":{"$ref":"#/definitions/Target"}}},"Wrong":{"type":"array","items":{"type":{"$ref":"#/definitions/Other"}}},"Source":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]}}}';
     const session = new DocumentSession('memory://compatible-scopes', original);
     const context = { session, documentVersion: 1 };
     for (const scope of ['#', '#/definitions/RootItems', '#/definitions/TargetSet', '#/definitions/TargetMap']) {
@@ -501,9 +507,9 @@ describe('Phase 1 vertical slice', () => {
     const inlineRoot = new DocumentSession('memory://inline-root-scope', '{"type":"array","items":{"$ref":"#/definitions/Target"},"definitions":{"Target":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Source":{"type":"object"}}}');
     expect(new AddRelationCommand('/definitions/Source', 'target', { targetTypeRef: '#/definitions/Target', cardinality: 'single', scope: '#' }).canExecute({ session: inlineRoot, documentVersion: 1 })).toBe(false);
 
-    const parsed = parseDocument('memory://scope-diagnostics', original.replace('#/definitions/Target\"}},\"TargetSet', '#/definitions/Other\"}},\"TargetSet'));
+    const parsed = parseDocument('memory://scope-diagnostics', original.replace('#/definitions/Target\"}}},\"TargetSet', '#/definitions/Other\"}}},\"TargetSet'));
     expect(parsed.diagnostics.some((item) => item.location?.pointer === '/definitions/RootItems/items')).toBe(false);
-    const badScope = parseDocument('memory://scope-diagnostics-bad', '{"$root":"#/definitions/Wrong","definitions":{"Target":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Other":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Wrong":{"type":"array","items":{"$ref":"#/definitions/Other"}},"Source":{"type":"object","relations":{"target":{"targettype":{"$ref":"#/definitions/Target"},"cardinality":"single","scope":"#"}}}}}');
+    const badScope = parseDocument('memory://scope-diagnostics-bad', '{"$root":"#/definitions/Wrong","definitions":{"Target":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Other":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Wrong":{"type":"array","items":{"type":{"$ref":"#/definitions/Other"}}},"Source":{"type":"object","relations":{"target":{"targettype":{"$ref":"#/definitions/Target"},"cardinality":"single","scope":"#"}}}}}');
     expect(badScope.diagnostics.some((item) => item.location?.pointer === '/definitions/Source/relations/target/scope')).toBe(true);
   });
   it('requires unique object relations, reusable valid targets, and reusable qualifiers', () => {
@@ -983,6 +989,275 @@ describe('Phase 1 vertical slice', () => {
     const response = await host.applyTextEdits({ protocolVersion: PROTOCOL_VERSION, requestId: 'stale', documentVersion: 99, edits: [] });
     expect(response.applied).toBe(false);
     expect(response.requestId).toBe('stale');
+  });
+  it('edits required names and alternative sets with exact inverse edits', async () => {
+    const original = '{"type":"object","properties":{"a/b":{"type":"string"},"other":{"type":"string"}},"unknown": {"keep":true}}';
+    const host = new InMemoryEditorHost('memory://required', original);
+    const session = new DocumentSession('memory://required', original);
+    const set = new SetRequiredCommand('', [['a/b'], ['other']]);
+    expect(set.canExecute({ session, documentVersion: 1 })).toBe(true);
+    const result = set.execute({ session, documentVersion: 1 });
+    await host.applyTextEdits({ protocolVersion: PROTOCOL_VERSION, requestId: 'required-set', documentVersion: 1, edits: result.edits });
+    const changed = await host.readDocument();
+    expect(JSON.parse(changed.text).required).toEqual([['a/b'], ['other']]);
+    expect(changed.text).toContain('"unknown": {"keep":true}');
+    await host.applyTextEdits({ protocolVersion: PROTOCOL_VERSION, requestId: 'required-inverse', documentVersion: 2, edits: result.inverseEdits });
+    expect((await host.readDocument()).text).toBe(original);
+
+    expect(new SetRequiredCommand('', ['missing']).canExecute({ session, documentVersion: 1 })).toBe(false);
+    expect(new SetRequiredCommand('', [[]]).canExecute({ session, documentVersion: 1 })).toBe(false);
+    expect(new SetRequiredCommand('', [['other'], ['other', 'other']]).canExecute({ session, documentVersion: 1 })).toBe(false);
+    expect(new SetRequiredCommand('', ['other']).canExecute({ session, documentVersion: 2 })).toBe(false);
+    const duplicate = new DocumentSession('memory://required-duplicate', '{"type":"object","properties":{"x":{"type":"string"}},"required":["x"],"required":["x"]}');
+    expect(new SetRequiredCommand('', ['x']).canExecute({ session: duplicate, documentVersion: 1 })).toBe(false);
+    const incomplete = new DocumentSession('memory://required-incomplete', '{"type":"object","properties":{');
+    expect(new SetRequiredCommand('', ['x']).canExecute({ session: incomplete, documentVersion: 1 })).toBe(false);
+  });
+  it('edits array, set, map, and tuple members while preserving unrelated source', async () => {
+    const original = '{"definitions":{"Target":{"type":"string"},"A":{"type":"array","items":{"type":"string"},"x":1},"S":{"type":"set","items":{"type":"string"}},"M":{"type":"map","values":{"type":"string"}},"T":{"type":"tuple","properties":{"old":{"type":"string"}},"tuple":["old"],"unknown":true}}}';
+    let current = original;
+    const operations = [
+      new SetCollectionMemberCommand('/definitions/A', { type: { $ref: '#/definitions/Target' } }),
+      new SetCollectionMemberCommand('/definitions/S', { type: 'int32' }),
+      new SetCollectionMemberCommand('/definitions/M', { type: 'boolean' })
+    ];
+    for (const [index, command] of operations.entries()) {
+      const session = new DocumentSession(`memory://collection-${index}`, current);
+      const result = command.execute({ session, documentVersion: 1 });
+      const host = new InMemoryEditorHost(`memory://collection-${index}`, current);
+      await host.applyTextEdits({ protocolVersion: PROTOCOL_VERSION, requestId: `collection-${index}`, documentVersion: 1, edits: result.edits });
+      const changed = (await host.readDocument()).text;
+      await host.applyTextEdits({ protocolVersion: PROTOCOL_VERSION, requestId: `collection-inverse-${index}`, documentVersion: 2, edits: result.inverseEdits });
+      expect((await host.readDocument()).text).toBe(current);
+      current = changed;
+    }
+    const tupleSession = new DocumentSession('memory://tuple', current);
+    const tuple = new SetTupleMembersCommand('/definitions/T', { first: { type: 'string' }, second: { type: { $ref: '#/definitions/Target' } } }, ['first', 'second']);
+    const tupleResult = tuple.execute({ session: tupleSession, documentVersion: 1 });
+    const tupleHost = new InMemoryEditorHost('memory://tuple', current);
+    await tupleHost.applyTextEdits({ protocolVersion: PROTOCOL_VERSION, requestId: 'tuple', documentVersion: 1, edits: tupleResult.edits });
+    const tupleChanged = await tupleHost.readDocument();
+    expect(JSON.parse(tupleChanged.text).definitions.T.tuple).toEqual(['first', 'second']);
+    expect(tupleChanged.text).toContain('"unknown":true');
+    await tupleHost.applyTextEdits({ protocolVersion: PROTOCOL_VERSION, requestId: 'tuple-inverse', documentVersion: 2, edits: tupleResult.inverseEdits });
+    expect((await tupleHost.readDocument()).text).toBe(current);
+
+    expect(new SetCollectionMemberCommand('/definitions/A', { $ref: '#/definitions/Target' }).canExecute({ session: tupleSession, documentVersion: 1 })).toBe(false);
+    expect(new SetCollectionMemberCommand('/definitions/A', { type: { $ref: '#/definitions/Missing' } }).canExecute({ session: tupleSession, documentVersion: 1 })).toBe(false);
+    expect(new SetTupleMembersCommand('/definitions/T', { first: { type: 'string' } }, ['missing']).canExecute({ session: tupleSession, documentVersion: 1 })).toBe(false);
+    const duplicate = new DocumentSession('memory://collection-duplicate', '{"type":"array","items":{"type":"string"},"items":{"type":"number"}}');
+    expect(new SetCollectionMemberCommand('', { type: 'boolean' }).canExecute({ session: duplicate, documentVersion: 1 })).toBe(false);
+  });
+  it('edits description and binary annotations with direct byte-identical inverses', async () => {
+    const original = '{"definitions":{"Data":{"type":"binary","description":"old","contentEncoding":"base64","unknown":1}}}';
+    const commands = [
+      new SetDescriptionCommand('/definitions/Data', 'new description'),
+      new SetBinaryAnnotationsCommand('/definitions/Data', 'contentCompression', 'gzip'),
+      new SetBinaryAnnotationsCommand('/definitions/Data', 'contentMediaType', 'application/octet-stream')
+    ];
+    let current = original;
+    for (const [index, command] of commands.entries()) {
+      const session = new DocumentSession(`memory://annotation-${index}`, current);
+      expect(command.canExecute({ session, documentVersion: 1 })).toBe(true);
+      const result = command.execute({ session, documentVersion: 1 });
+      const host = new InMemoryEditorHost(`memory://annotation-${index}`, current);
+      await host.applyTextEdits({ protocolVersion: PROTOCOL_VERSION, requestId: `annotation-${index}`, documentVersion: 1, edits: result.edits });
+      const changed = (await host.readDocument()).text;
+      expect(changed).toContain('"unknown":1');
+      await host.applyTextEdits({ protocolVersion: PROTOCOL_VERSION, requestId: `annotation-inverse-${index}`, documentVersion: 2, edits: result.inverseEdits });
+      expect((await host.readDocument()).text).toBe(current);
+      current = changed;
+    }
+    const session = new DocumentSession('memory://annotation-invalid', current);
+    expect(new SetBinaryAnnotationsCommand('/definitions/Data', 'contentEncoding', 'hex').canExecute({ session, documentVersion: 1 })).toBe(false);
+    expect(new SetBinaryAnnotationsCommand('/definitions/Data', 'contentMediaType', 'not a media type').canExecute({ session, documentVersion: 1 })).toBe(false);
+    expect(new SetDescriptionCommand('/definitions/Data', 'stale').canExecute({ session, documentVersion: 2 })).toBe(false);
+    const duplicate = new DocumentSession('memory://annotation-duplicate', '{"type":"binary","description":"a","description":"b"}');
+    expect(new SetDescriptionCommand('', 'c').canExecute({ session: duplicate, documentVersion: 1 })).toBe(false);
+  });
+  it('edits and diagnoses local type references with normalized resolution facts', async () => {
+    const original = '{"definitions":{"A/B":{"type":"string"},"Use":{"type":"string","description":"keep"}}}';
+    const session = new DocumentSession('memory://refs', original);
+    const command = new SetTypeReferenceCommand('/definitions/Use', '#/definitions/A~1B');
+    expect(command.canExecute({ session, documentVersion: 1 })).toBe(true);
+    const result = command.execute({ session, documentVersion: 1 });
+    const host = new InMemoryEditorHost('memory://refs', original);
+    await host.applyTextEdits({ protocolVersion: PROTOCOL_VERSION, requestId: 'ref-set', documentVersion: 1, edits: result.edits });
+    const changed = await host.readDocument();
+    expect(JSON.parse(changed.text).definitions.Use.type).toEqual({ $ref: '#/definitions/A~1B' });
+    expect(changed.text).toContain('"description":"keep"');
+    await host.applyTextEdits({ protocolVersion: PROTOCOL_VERSION, requestId: 'ref-inverse', documentVersion: 2, edits: result.inverseEdits });
+    expect((await host.readDocument()).text).toBe(original);
+    expect(new SetTypeReferenceCommand('/definitions/Use', '#/definitions/Missing').canExecute({ session, documentVersion: 1 })).toBe(false);
+    expect(new SetTypeReferenceCommand('', '#/definitions/A~1B').canExecute({ session, documentVersion: 1 })).toBe(false);
+
+    const parsed = parseDocument('memory://core-inspection', '{"definitions":{"Target":{"type":"string"},"Obj":{"type":"object","properties":{"x":{"type":"string"}},"required":["x"],"description":"object"},"Arr":{"type":"array","items":{"type":{"$ref":"#/definitions/Target"}}},"Set":{"type":"set"},"Map":{"type":"map","values":{"type":"string"}},"Tuple":{"type":"tuple","properties":{"x":{"type":"string"}},"tuple":["x"]},"Bin":{"type":"binary","contentEncoding":"base64url","contentCompression":"brotli","contentMediaType":"image/png"},"Bad":{"type":{"$ref":"#/definitions/Missing"}}}}');
+    const obj = parsed.model?.projections.definitions.find((entry) => entry.name === 'Obj');
+    expect(obj?.required).toEqual(['x']);
+    expect(obj?.description).toBe('object');
+    expect(parsed.model?.projections.definitions.find((entry) => entry.name === 'Bin')?.binary).toEqual({ contentEncoding: { explicit: 'base64url', effective: 'base64url' }, contentCompression: 'brotli', contentMediaType: 'image/png' });
+    const defaultBinarySource = '{"definitions":{"Bin":{"type":"binary"}}}';
+    const defaultBinary = parseDocument('memory://core-default-binary', defaultBinarySource);
+    expect(defaultBinary.model?.projections.definitions[0]?.binary).toEqual({ contentEncoding: { effective: 'base64' } });
+    expect(Object.prototype.hasOwnProperty.call(JSON.parse(defaultBinarySource).definitions.Bin, 'contentEncoding')).toBe(false);
+    expect(parsed.model?.projections.references.some((entry) => entry.target === '#/definitions/Target')).toBe(true);
+    expect(parsed.diagnostics.some((entry) => entry.location?.pointer === '/definitions/Set')).toBe(true);
+    expect(parsed.diagnostics.some((entry) => entry.location?.pointer === '/definitions/Bad/type/$ref')).toBe(true);
+
+    const malformed = parseDocument('memory://core-invalid', '{"definitions":{"O":{"type":"string","required":["x"],"description":1},"A":{"type":"array","values":{"type":"string"}},"T":{"type":"tuple","properties":{"x":{"type":"string"}},"tuple":["x","x"]},"B":{"type":"string","contentEncoding":"base64"},"R":{"$ref":"#/definitions/O"}}}');
+    for (const pointer of ['/definitions/O/required', '/definitions/O/description', '/definitions/A/values', '/definitions/T/tuple', '/definitions/B/contentEncoding']) {
+      expect(malformed.diagnostics.some((entry) => entry.code === 'json.keyword-invalid' && entry.location?.pointer === pointer), pointer).toBe(true);
+    }
+    expect(malformed.diagnostics.some((entry) => entry.location?.pointer === '/definitions/R/$ref')).toBe(false);
+    expect(parseDocument('memory://core-incomplete', '{"definitions":').recovery).toBe('incomplete');
+  });
+  it('diagnoses local references only in schema-owned type positions', () => {
+    const source = JSON.stringify({
+      type: 'object',
+      properties: {
+        rootProperty: { type: { $ref: '#/definitions/MissingRootProperty' } },
+        literalData: {
+          type: 'string',
+          default: { $ref: '#/definitions/MissingDefault' },
+          examples: [{ $ref: '#/definitions/MissingExample' }]
+        }
+      },
+      definitions: {
+        Target: { type: 'object', properties: { id: { type: 'string' } }, identity: ['id'] },
+        Qualifier: { type: 'string' },
+        Related: {
+          type: 'object',
+          properties: { id: { type: 'string' } },
+          identity: ['id'],
+          relations: {
+            target: {
+              targettype: { $ref: '#/definitions/Target' },
+              cardinality: 'single',
+              qualifiertype: { $ref: '#/definitions/Qualifier' }
+            }
+          }
+        },
+        ArrayUse: { type: 'array', items: { type: { $ref: '#/definitions/MissingItem' } } },
+        MapUse: { type: 'map', values: { type: { $ref: '#/definitions/MissingValue' } } },
+        UnionUse: { type: ['string', { $ref: '#/definitions/MissingUnion' }] },
+        CompositionUse: { type: 'string', allOf: [{ type: { $ref: '#/definitions/MissingComposition' } }] }
+      }
+    });
+    const parsed = parseDocument('memory://schema-owned-refs', source);
+    const referenceDiagnostics = parsed.diagnostics.filter((entry) =>
+      entry.code === 'json.keyword-invalid' && entry.message.startsWith('$ref is permitted in a type value'));
+    expect(referenceDiagnostics.map((entry) => entry.location?.pointer).sort()).toEqual([
+      '/definitions/ArrayUse/items/type/$ref',
+      '/definitions/CompositionUse/allOf/0/type/$ref',
+      '/definitions/MapUse/values/type/$ref',
+      '/definitions/UnionUse/type/1/$ref',
+      '/properties/rootProperty/type/$ref'
+    ]);
+    for (const pointer of [
+      '/definitions/Related/relations/target/targettype/$ref',
+      '/definitions/Related/relations/target/qualifiertype/$ref',
+      '/properties/literalData/default/$ref',
+      '/properties/literalData/examples/0/$ref'
+    ]) {
+      expect(parsed.diagnostics.some((entry) => entry.location?.pointer === pointer), pointer).toBe(false);
+    }
+  });
+  it('traverses object-valued additionalProperties as one schema while ignoring boolean forms', () => {
+    const parsed = parseDocument('memory://additional-properties-refs', JSON.stringify({
+      type: 'object',
+      properties: {
+        dictionary: {
+          type: 'object',
+          additionalProperties: { type: { $ref: '#/definitions/MissingAdditionalProperty' } }
+        },
+        closed: { type: 'object', additionalProperties: false }
+      }
+    }));
+    const pointer = '/properties/dictionary/additionalProperties/type/$ref';
+    expect(parsed.diagnostics.filter((entry) =>
+      entry.code === 'json.keyword-invalid'
+      && entry.message.startsWith('$ref is permitted in a type value')
+      && entry.location?.pointer === pointer
+    )).toHaveLength(1);
+    expect(parsed.model?.projections.references.filter((entry) => entry.pointer === pointer)).toHaveLength(1);
+    expect(parsed.model?.projections.definitions.some((entry) => entry.pointer === '/properties/closed/additionalProperties')).toBe(false);
+  });
+  it('accepts union references and inline collections while rejecting prohibited inline compound members', () => {
+    const valid = parseDocument('memory://union-ref', '{"definitions":{"Target":{"type":"string"},"Small":{"type":"int8"},"Half":{"type":"float8"},"Use":{"type":["null",{"$ref":"#/definitions/Target","description":"when present"},{"type":"array","items":{"type":"string"}},{"type":"set","items":{"type":"int32"}},{"type":"map","values":{"type":{"$ref":"#/definitions/Target"}}}]}}}');
+    expect(valid.diagnostics.some((entry) => entry.location?.pointer === '/definitions/Use/type/1/$ref')).toBe(false);
+    expect(valid.diagnostics.some((entry) => entry.location?.pointer === '/definitions/Use/type')).toBe(false);
+    expect(valid.diagnostics.some((entry) => entry.location?.pointer === '/definitions/Small/type')).toBe(false);
+    expect(valid.diagnostics.some((entry) => entry.location?.pointer === '/definitions/Half/type')).toBe(false);
+    expect(valid.model?.projections.references.some((entry) => entry.pointer === '/definitions/Use/type/1/$ref' && entry.target === '#/definitions/Target')).toBe(true);
+
+    for (const [label, member] of [
+      ['object', { type: 'object', properties: { value: { type: 'string' } } }],
+      ['tuple', { type: 'tuple', properties: { value: { type: 'string' } }, tuple: ['value'] }],
+      ['choice', { type: 'choice', choices: { value: { type: 'string' } } }],
+      ['array-without-items', { type: 'array' }],
+      ['map-with-invalid-values', { type: 'map', values: { type: 'not-a-core-type' } }]
+    ] as const) {
+      const source = JSON.stringify({ definitions: { Use: { type: ['string', member] } } });
+      const parsed = parseDocument(`memory://union-${label}`, source);
+      expect(parsed.diagnostics.some((entry) => entry.location?.pointer === '/definitions/Use/type'), label).toBe(true);
+      const session = new DocumentSession(`memory://union-command-${label}`, '{"type":"object","properties":{}}');
+      expect(new AddPropertyCommand('', 'value', { type: ['string', member] }).canExecute({ session, documentVersion: 1 }), label).toBe(false);
+    }
+
+    const commandSession = new DocumentSession('memory://union-command-valid', '{"type":"object","properties":{},"definitions":{"Target":{"type":"string"}}}');
+    for (const member of [
+      { type: 'array', items: { type: 'string' } },
+      { type: 'set', items: { type: 'int32' } },
+      { type: 'map', values: { type: { $ref: '#/definitions/Target' } } }
+    ]) {
+      expect(new AddPropertyCommand('', 'value', { type: ['null', member] }).canExecute({ session: commandSession, documentVersion: 1 })).toBe(true);
+    }
+
+    const invalid = parseDocument('memory://unknown-types', '{"type":"not-a-core-type","properties":{"child":{"type":["string","also-unknown"]}}}');
+    expect(invalid.diagnostics.some((entry) => entry.location?.pointer === '/type')).toBe(true);
+    expect(invalid.diagnostics.some((entry) => entry.location?.pointer === '/properties/child/type')).toBe(true);
+  });
+  it('projects and diagnoses root and nested schemas once without traversing annotation payloads', () => {
+    const parsed = parseDocument('memory://all-schema-declarations', JSON.stringify({
+      type: 'object',
+      properties: {
+        child: { type: 'object', properties: { leaf: { type: 'unknown-leaf' } } }
+      },
+      codedValues: { type: 'unknown-annotation', payload: { type: 'unknown-payload' } }
+    }));
+    const pointers = parsed.model?.projections.definitions.map((entry) => entry.pointer) ?? [];
+    expect(pointers.filter((pointer) => pointer === '')).toHaveLength(1);
+    expect(pointers.filter((pointer) => pointer === '/properties/child')).toHaveLength(1);
+    expect(pointers.filter((pointer) => pointer === '/properties/child/properties/leaf')).toHaveLength(1);
+    expect(parsed.diagnostics.filter((entry) => entry.location?.pointer === '/properties/child/properties/leaf/type')).toHaveLength(1);
+    expect(pointers.some((pointer) => pointer.startsWith('/codedValues'))).toBe(false);
+    expect(parsed.diagnostics.some((entry) => entry.location?.pointer?.startsWith('/codedValues/type'))).toBe(false);
+  });
+  it('accepts empty simple required and empty tuples while preserving strict alternative sets', () => {
+    const parsed = parseDocument('memory://empty-core-members', '{"definitions":{"O":{"type":"object","properties":{},"required":[]},"T":{"type":"tuple","properties":{},"tuple":[]}}}');
+    expect(parsed.diagnostics.some((entry) => entry.location?.pointer === '/definitions/O/required')).toBe(false);
+    expect(parsed.diagnostics.some((entry) => entry.location?.pointer === '/definitions/T/tuple')).toBe(false);
+    expect(parsed.model?.projections.definitions.find((entry) => entry.name === 'O')?.required).toEqual([]);
+    expect(parsed.model?.projections.definitions.find((entry) => entry.name === 'T')?.tuple).toEqual([]);
+
+    const objectSession = new DocumentSession('memory://empty-required', '{"type":"object","properties":{"x":{"type":"string"}}}');
+    expect(new SetRequiredCommand('', []).canExecute({ session: objectSession, documentVersion: 1 })).toBe(true);
+    expect(new SetRequiredCommand('', [[]]).canExecute({ session: objectSession, documentVersion: 1 })).toBe(false);
+    const tupleSession = new DocumentSession('memory://empty-tuple', '{"type":"tuple","properties":{"x":{"type":"string"}},"tuple":["x"],"unknown":true}');
+    const emptyTuple = new SetTupleMembersCommand('', {}, []);
+    expect(emptyTuple.canExecute({ session: tupleSession, documentVersion: 1 })).toBe(true);
+    const result = emptyTuple.execute({ session: tupleSession, documentVersion: 1 });
+    const changed = result.edits.reduce((source, edit) => source.slice(0, edit.range.startOffset) + edit.newText + source.slice(edit.range.endOffset), tupleSession.snapshot().text);
+    expect(JSON.parse(changed)).toEqual({ type: 'tuple', properties: {}, tuple: [], unknown: true });
+  });
+  it('accepts legal union member schemas in collection and tuple commands and rejects unknown types', () => {
+    const source = '{"definitions":{"Target":{"type":"string"},"A":{"type":"array","items":{"type":"string"}},"T":{"type":"tuple","properties":{},"tuple":[]}}}';
+    const session = new DocumentSession('memory://union-command-members', source);
+    const union = { type: ['null', { $ref: '#/definitions/Target', description: 'present' }] };
+    expect(new SetCollectionMemberCommand('/definitions/A', union).canExecute({ session, documentVersion: 1 })).toBe(true);
+    expect(new SetTupleMembersCommand('/definitions/T', { value: union }, ['value']).canExecute({ session, documentVersion: 1 })).toBe(true);
+    expect(new SetCollectionMemberCommand('/definitions/A', { type: 'not-a-core-type' }).canExecute({ session, documentVersion: 1 })).toBe(false);
+    expect(new SetTupleMembersCommand('/definitions/T', { value: { type: ['string', 'unknown'] } }, ['value']).canExecute({ session, documentVersion: 1 })).toBe(false);
   });
   it('requires an object declaration and rejects relation-name collisions', () => {
     const scalar = new DocumentSession('memory://scalar', '{"type":"string","properties":{}}');

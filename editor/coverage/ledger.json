@@ -98,27 +98,27 @@
       "spec": "Core",
       "feature": "required property names",
       "owner": "editor-model",
-      "status": "gap",
+      "status": "partial",
       "evidence": {
         "editing": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "partial",
+          "reference": "src/commands.ts"
         },
         "inspection": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "partial",
+          "reference": "src/parser.ts"
         },
         "diagnostics": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "partial",
+          "reference": "src/parser.ts"
         },
         "roundtrip": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
         },
         "tests": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
         }
       }
     },
@@ -127,27 +127,27 @@
       "spec": "Core",
       "feature": "$ref resolution",
       "owner": "language-service",
-      "status": "gap",
+      "status": "partial",
       "evidence": {
         "editing": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "partial",
+          "reference": "src/commands.ts"
         },
         "inspection": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "partial",
+          "reference": "src/parser.ts"
         },
         "diagnostics": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "partial",
+          "reference": "src/parser.ts"
         },
         "roundtrip": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "complete",
+          "reference": "tests/phase1.test.ts"
         },
         "tests": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
         }
       }
     },
@@ -156,27 +156,27 @@
       "spec": "Core",
       "feature": "array declaration",
       "owner": "editor-model",
-      "status": "gap",
+      "status": "partial",
       "evidence": {
         "editing": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "partial",
+          "reference": "src/commands.ts"
         },
         "inspection": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "partial",
+          "reference": "src/parser.ts"
         },
         "diagnostics": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "partial",
+          "reference": "src/parser.ts"
         },
         "roundtrip": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
         },
         "tests": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
         }
       }
     },
@@ -185,27 +185,27 @@
       "spec": "Core",
       "feature": "set declaration",
       "owner": "editor-model",
-      "status": "gap",
+      "status": "partial",
       "evidence": {
         "editing": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "partial",
+          "reference": "src/commands.ts"
         },
         "inspection": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "partial",
+          "reference": "src/parser.ts"
         },
         "diagnostics": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "partial",
+          "reference": "src/parser.ts"
         },
         "roundtrip": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
         },
         "tests": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
         }
       }
     },
@@ -214,27 +214,27 @@
       "spec": "Core",
       "feature": "map declaration",
       "owner": "editor-model",
-      "status": "gap",
+      "status": "partial",
       "evidence": {
         "editing": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "partial",
+          "reference": "src/commands.ts"
         },
         "inspection": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "partial",
+          "reference": "src/parser.ts"
         },
         "diagnostics": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "partial",
+          "reference": "src/parser.ts"
         },
         "roundtrip": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
         },
         "tests": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
         }
       }
     },
@@ -243,27 +243,27 @@
       "spec": "Core",
       "feature": "tuple declaration",
       "owner": "editor-model",
-      "status": "gap",
+      "status": "partial",
       "evidence": {
         "editing": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "partial",
+          "reference": "src/commands.ts"
         },
         "inspection": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "partial",
+          "reference": "src/parser.ts"
         },
         "diagnostics": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "partial",
+          "reference": "src/parser.ts"
         },
         "roundtrip": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
         },
         "tests": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
         }
       }
     },
@@ -272,27 +272,27 @@
       "spec": "Core",
       "feature": "description annotation",
       "owner": "editor-model",
-      "status": "gap",
+      "status": "partial",
       "evidence": {
         "editing": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "partial",
+          "reference": "src/commands.ts"
         },
         "inspection": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "partial",
+          "reference": "src/parser.ts"
         },
         "diagnostics": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "partial",
+          "reference": "src/parser.ts"
         },
         "roundtrip": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
         },
         "tests": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
         }
       }
     },
@@ -301,27 +301,27 @@
       "spec": "Core",
       "feature": "binary annotation",
       "owner": "editor-model",
-      "status": "gap",
+      "status": "complete",
       "evidence": {
         "editing": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "complete",
+          "reference": "src/commands.ts"
         },
         "inspection": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "complete",
+          "reference": "src/parser.ts"
         },
         "diagnostics": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "complete",
+          "reference": "src/parser.ts"
         },
         "roundtrip": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "complete",
+          "reference": "tests/phase1.test.ts"
         },
         "tests": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "complete",
+          "reference": "tests/phase1.test.ts"
         }
       }
     },

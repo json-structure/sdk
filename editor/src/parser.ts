@@ -194,8 +194,79 @@ function buildProjections(
   collectReferenceProjections(root, '', references);
   collectSemanticPlacements(root, '', uri, text, diagnostics, semanticPlacements, semanticByPointer);
   collectDefinitions(root, root, '', uri, text, definitions, imports, diagnostics, semanticByPointer, nodes);
+  collectSchemaProjections(root, uri, text, definitions, diagnostics, semanticByPointer, nodes);
   collectStructuralDiagnostics(root, root, '', uri, text, diagnostics, nodes);
   return { definitions, imports, references, semanticPlacements };
+}
+
+function collectSchemaProjections(
+  root: Record<string, unknown>,
+  uri: string,
+  text: string,
+  definitions: DefinitionProjection[],
+  diagnostics: Diagnostic[],
+  semanticByPointer: ReadonlyMap<string, SemanticAnnotationsProjection>,
+  nodes: readonly ModelNode[]
+): void {
+  const visited = new Set(definitions.map((definition) => definition.pointer));
+
+  const visitSchema = (candidate: unknown, pointer: string): void => {
+    if (!isRecord(candidate)) return;
+    localTypeReferenceDiagnostics(root, pointer, candidate, uri, text, diagnostics, nodes);
+    if (!visited.has(pointer) && isSchemaDeclaration(candidate)) {
+      const split = pointer.lastIndexOf('/');
+      const name = pointer === '' ? '$root' : pointer.slice(split + 1).replace(/~1/g, '/').replace(/~0/g, '~');
+      const namespacePointer = pointer === '' ? '' : pointer.slice(0, split);
+      const projection = definitionProjection(name, namespacePointer, pointer, candidate, uri, text, diagnostics, semanticByPointer.get(pointer));
+      if (projection) definitions.push(projection);
+      visited.add(pointer);
+    }
+
+    visitDefinitions(candidate.definitions, `${pointer}/definitions`);
+    visitSchemaMap(candidate.properties, `${pointer}/properties`);
+    if (isRecord(candidate.additionalProperties)) visitSchema(candidate.additionalProperties, `${pointer}/additionalProperties`);
+    visitSchemaValue(candidate.items, `${pointer}/items`);
+    visitSchemaValue(candidate.values, `${pointer}/values`);
+    visitSchemaMap(candidate.choices, `${pointer}/choices`);
+    visitSchemaValue(candidate.contains, `${pointer}/contains`);
+    visitSchemaValue(candidate.propertyNames, `${pointer}/propertyNames`);
+    visitSchemaValue(candidate.keyNames, `${pointer}/keyNames`);
+    visitSchemaValue(candidate.has, `${pointer}/has`);
+    visitSchemaMap(candidate.patternProperties, `${pointer}/patternProperties`);
+    visitSchemaMap(candidate.patternKeys, `${pointer}/patternKeys`);
+    visitSchemaArray(candidate.allOf, `${pointer}/allOf`);
+    visitSchemaArray(candidate.anyOf, `${pointer}/anyOf`);
+    visitSchemaArray(candidate.oneOf, `${pointer}/oneOf`);
+    visitSchemaValue(candidate.not, `${pointer}/not`);
+    visitSchemaValue(candidate.if, `${pointer}/if`);
+    visitSchemaValue(candidate.then, `${pointer}/then`);
+    visitSchemaValue(candidate.else, `${pointer}/else`);
+    if (Array.isArray(candidate.type)) visitSchemaArray(candidate.type, `${pointer}/type`);
+  };
+
+  const visitDefinitions = (candidate: unknown, pointer: string): void => {
+    if (!isRecord(candidate)) return;
+    for (const [key, entry] of Object.entries(candidate)) {
+      if (key === '$import' || key === '$importdefs' || !isRecord(entry)) continue;
+      const entryPointer = `${pointer}/${pointerPart(key)}`;
+      if (looksLikeSchemaObject(entry)) visitSchema(entry, entryPointer);
+      else visitDefinitions(entry, entryPointer);
+    }
+  };
+  const visitSchemaMap = (candidate: unknown, pointer: string): void => {
+    if (!isRecord(candidate)) return;
+    for (const [key, entry] of Object.entries(candidate)) visitSchema(entry, `${pointer}/${pointerPart(key)}`);
+  };
+  const visitSchemaArray = (candidate: unknown, pointer: string): void => {
+    if (!Array.isArray(candidate)) return;
+    candidate.forEach((entry, index) => visitSchema(entry, `${pointer}/${index}`));
+  };
+  const visitSchemaValue = (candidate: unknown, pointer: string): void => {
+    if (Array.isArray(candidate)) visitSchemaArray(candidate, pointer);
+    else visitSchema(candidate, pointer);
+  };
+
+  visitSchema(root, '');
 }
 
 function collectDefinitions(
@@ -268,10 +339,20 @@ function definitionProjection(
   const declarationCore = coreForm(value);
   if (declarationCore === 'unknown') return undefined;
   const type = declarationType(value);
+  if (value.type !== undefined && !validCoreTypeValue(value.type)) {
+    pushKeywordDiagnostic(diagnostics, uri, `${pointer}/type`, 'type must name a known Core type, be a local type reference, or be an array of those forms.', text);
+  }
   const relationItems = relationProjections(pointer, value.relations, uri, text, diagnostics);
   const units = unitsProjection(pointer, value, uri, text, diagnostics);
   const validation = validationProjection(pointer, value, type, uri, text, diagnostics);
   const composition = compositionProjection(pointer, value, uri, text, diagnostics);
+  const required = requiredProjection(pointer, value, type, uri, text, diagnostics);
+  const properties = schemaObjectMap(value.properties, `${pointer}/properties`, 'properties', uri, text, diagnostics);
+  const items = collectionMemberProjection(pointer, value, type, 'items', uri, text, diagnostics);
+  const values = collectionMemberProjection(pointer, value, type, 'values', uri, text, diagnostics);
+  const tuple = tupleProjection(pointer, value, type, properties, uri, text, diagnostics);
+  const description = asString(value.description, `${pointer}/description`, 'description', uri, text, diagnostics);
+  const binary = binaryAnnotationsProjection(pointer, value, type, uri, text, diagnostics);
   return {
     pointer,
     name,
@@ -283,7 +364,14 @@ function definitionProjection(
     units,
     validation,
     composition,
-    semantic
+    semantic,
+    required,
+    properties,
+    items,
+    values,
+    tuple,
+    description,
+    binary
   };
 }
 
@@ -378,6 +466,132 @@ function collectStructuralDiagnostics(
   importPlacementDiagnostics(root, pointer, value, uri, text, diagnostics, nodes);
   for (const [key, entry] of Object.entries(value)) {
     collectStructuralDiagnostics(root, entry, `${pointer}/${pointerPart(key)}`, uri, text, diagnostics, nodes);
+  }
+}
+
+function requiredProjection(
+  pointer: string,
+  value: Record<string, unknown>,
+  type: string | undefined,
+  uri: string,
+  text: string,
+  diagnostics: Diagnostic[]
+): readonly string[] | readonly (readonly string[])[] | undefined {
+  if (value.required === undefined) return undefined;
+  const properties = value.properties;
+  const required = value.required;
+  const simple = Array.isArray(required) && required.every((entry) => typeof entry === 'string');
+  const alternatives = Array.isArray(required) && required.length > 0 && required.every((entry) => Array.isArray(entry) && entry.length > 0 && entry.every((name) => typeof name === 'string'));
+  const sets = simple ? [required as string[]] : alternatives ? required as string[][] : [];
+  const valid = type === 'object' && isRecord(properties) && sets.length > 0 && sets.every((set) =>
+    new Set(set).size === set.length && set.every((name) => Object.prototype.hasOwnProperty.call(properties, name)));
+  if (!valid) {
+    pushKeywordDiagnostic(diagnostics, uri, `${pointer}/required`, 'required must be a string array or non-empty array of non-empty string arrays naming object properties.', text);
+    return undefined;
+  }
+  return required as string[] | string[][];
+}
+
+function collectionMemberProjection(
+  pointer: string,
+  value: Record<string, unknown>,
+  type: string | undefined,
+  keyword: 'items' | 'values',
+  uri: string,
+  text: string,
+  diagnostics: Diagnostic[]
+): Record<string, unknown> | undefined {
+  const candidate = value[keyword];
+  const expected = keyword === 'items' ? type === 'array' || type === 'set' : type === 'map';
+  if (candidate === undefined) {
+    if (expected) pushKeywordDiagnostic(diagnostics, uri, pointer, `${keyword} is required for ${type} declarations.`, text);
+    return undefined;
+  }
+  if (!expected || !isRecord(candidate) || !isSchemaDeclaration(candidate)) {
+    pushKeywordDiagnostic(diagnostics, uri, `${pointer}/${keyword}`, `${keyword} must be a schema on the applicable collection declaration.`, text);
+    return undefined;
+  }
+  return candidate;
+}
+
+function tupleProjection(
+  pointer: string,
+  value: Record<string, unknown>,
+  type: string | undefined,
+  properties: Readonly<Record<string, Record<string, unknown>>> | undefined,
+  uri: string,
+  text: string,
+  diagnostics: Diagnostic[]
+): readonly string[] | undefined {
+  if (value.tuple === undefined) {
+    if (type === 'tuple') pushKeywordDiagnostic(diagnostics, uri, pointer, 'tuple is required for tuple declarations.', text);
+    return undefined;
+  }
+  const order = value.tuple;
+  const valid = type === 'tuple' && Array.isArray(order) && order.every((entry) => typeof entry === 'string') &&
+    new Set(order).size === order.length && properties !== undefined && order.length === Object.keys(properties).length &&
+    order.every((name) => Object.prototype.hasOwnProperty.call(properties, name));
+  if (!valid) {
+    pushKeywordDiagnostic(diagnostics, uri, `${pointer}/tuple`, 'tuple must list every tuple property exactly once.', text);
+    return undefined;
+  }
+  return order as string[];
+}
+
+function binaryAnnotationsProjection(pointer: string, value: Record<string, unknown>, type: string | undefined, uri: string, text: string, diagnostics: Diagnostic[]) {
+  if (type !== 'binary') {
+    for (const keyword of ['contentEncoding', 'contentCompression', 'contentMediaType'] as const) {
+      if (value[keyword] !== undefined) pushKeywordDiagnostic(diagnostics, uri, `${pointer}/${keyword}`, `${keyword} has an invalid value or placement.`, text);
+    }
+    return undefined;
+  }
+  const projection: { contentEncoding: { explicit?: string; effective: string }; contentCompression?: string; contentMediaType?: string } = {
+    contentEncoding: { effective: 'base64' }
+  };
+  const read = (keyword: 'contentCompression' | 'contentMediaType', valid: (candidate: unknown) => candidate is string): void => {
+    const candidate = value[keyword];
+    if (candidate === undefined) return;
+    if (valid(candidate)) projection[keyword] = candidate;
+    else pushKeywordDiagnostic(diagnostics, uri, `${pointer}/${keyword}`, `${keyword} has an invalid value or placement.`, text);
+  };
+  const contentEncoding = value.contentEncoding;
+  if (contentEncoding !== undefined) {
+    if (typeof contentEncoding === 'string' && ['base64', 'base64url', 'base16', 'base32', 'base32hex'].includes(contentEncoding)) {
+      projection.contentEncoding = { explicit: contentEncoding, effective: contentEncoding };
+    } else {
+      pushKeywordDiagnostic(diagnostics, uri, `${pointer}/contentEncoding`, 'contentEncoding has an invalid value or placement.', text);
+    }
+  }
+  read('contentCompression', (candidate): candidate is string => typeof candidate === 'string' && ['gzip', 'deflate', 'zlib', 'brotli'].includes(candidate));
+  read('contentMediaType', (candidate): candidate is string => typeof candidate === 'string' && mediaType(candidate));
+  return projection;
+}
+
+function isSchemaDeclaration(value: Record<string, unknown>): boolean {
+  if (typeof value.type === 'string') return true;
+  if (Array.isArray(value.type)) return true;
+  return typeReference(value.type) !== undefined;
+}
+
+function mediaType(value: string): boolean {
+  return /^[!#$%&'*+.^_`|~0-9A-Za-z-]+\/[!#$%&'*+.^_`|~0-9A-Za-z-]+(?:\s*;\s*[!#$%&'*+.^_`|~0-9A-Za-z-]+=(?:[!#$%&'*+.^_`|~0-9A-Za-z-]+|"[^"]*"))*$/.test(value);
+}
+
+function localTypeReferenceDiagnostics(root: Record<string, unknown>, pointer: string, value: Record<string, unknown>, uri: string, text: string, diagnostics: Diagnostic[], nodes: readonly ModelNode[]): void {
+  const validate = (candidate: unknown, typePointer: string): void => {
+    if (!isRecord(candidate) || !Object.prototype.hasOwnProperty.call(candidate, '$ref')) return;
+    const reference = typeReference(candidate);
+    if (reference === undefined || !reference.startsWith('#/') || !reusableTypePointer(root, reference.slice(1), nodes)) {
+      pushKeywordDiagnostic(diagnostics, uri, `${typePointer}/$ref`, '$ref is permitted in a type value with an optional string description and must resolve to a reusable local declaration.', text);
+    }
+  };
+  if (Array.isArray(value.type)) {
+    value.type.forEach((member, index) => validate(member, `${pointer}/type/${index}`));
+  } else {
+    validate(value.type, `${pointer}/type`);
+  }
+  if (pointer === '' && typeReference(value.type) !== undefined) {
+    pushKeywordDiagnostic(diagnostics, uri, '/type', '$ref is not permitted inside the type of the root object.', text);
   }
 }
 
@@ -574,7 +788,8 @@ function namespacePointer(root: Record<string, unknown>, pointer: string, nodes:
   return true;
 }
 function typeReference(value: unknown): string | undefined {
-  return isRecord(value) && hasOnlyKeys(value, ['$ref']) && typeof value.$ref === 'string' ? value.$ref : undefined;
+  return isRecord(value) && hasOnlyKeys(value, ['$ref', 'description']) && typeof value.$ref === 'string' &&
+    (value.description === undefined || typeof value.description === 'string') ? value.$ref : undefined;
 }
 function isSchemaFragmentPointer(value: unknown): value is string { return typeof value === 'string' && (value === '#' || value.startsWith('#/')); }
 function validScope(value: unknown): boolean { return value === undefined || isSchemaFragmentPointer(value) || (Array.isArray(value) && value.length > 0 && value.every(isSchemaFragmentPointer)); }
@@ -935,10 +1150,31 @@ function hasAnyKey<T extends object>(value: T): boolean {
 const NUMERIC_TYPES = new Set(['integer', 'number', 'int8', 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32', 'uint64', 'float32', 'float64', 'decimal']);
 const EXTENDED_NUMERIC_TYPES = new Set(['int64', 'uint64', 'int128', 'uint128', 'decimal', 'decimal128']);
 const NUMERIC_STRING = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/;
+const CORE_TYPES = new Set([
+  'string', 'number', 'integer', 'boolean', 'null',
+  'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32', 'int64', 'uint64', 'int128', 'uint128',
+  'float8', 'float', 'double', 'decimal', 'date', 'datetime', 'time', 'duration', 'uuid', 'uri', 'binary', 'jsonpointer',
+  'object', 'array', 'map', 'set', 'tuple', 'any', 'choice'
+]);
+
+function validCoreTypeValue(value: unknown): boolean {
+  if (typeof value === 'string') return CORE_TYPES.has(value);
+  if (typeReference(value) !== undefined) return true;
+  return Array.isArray(value) && value.length > 0 && value.every((member) =>
+    typeof member === 'string' ? CORE_TYPES.has(member) : validCoreUnionObjectMember(member));
+}
+
+function validCoreUnionObjectMember(value: unknown): boolean {
+  if (typeReference(value) !== undefined) return true;
+  if (!isRecord(value) || typeof value.type !== 'string') return false;
+  if ((value.type === 'array' || value.type === 'set') && isRecord(value.items)) return validCoreTypeValue(value.items.type);
+  return value.type === 'map' && isRecord(value.values) && validCoreTypeValue(value.values.type);
+}
 
 function declarationType(value: Record<string, unknown>): string | undefined {
   if (typeof value.type === 'string') return value.type;
   if (typeReference(value.type) !== undefined) return '$ref';
+  if (Array.isArray(value.type)) return '$union';
   return undefined;
 }
 
@@ -1017,7 +1253,7 @@ function pushKeywordDiagnostic(
 }
 
 function coreForm(value: Record<string, unknown>): 'typed' | 'ref' | 'composed' | 'unknown' {
-  if (typeof value.type === 'string' || typeReference(value.type) !== undefined) return 'typed';
+  if (typeof value.type === 'string' || Array.isArray(value.type) || typeReference(value.type) !== undefined) return 'typed';
   if (typeof value.$ref === 'string') return 'ref';
   if (COMPOSITION_KEYWORDS.some((keyword) => Object.prototype.hasOwnProperty.call(value, keyword))) return 'composed';
   return 'unknown';
@@ -1035,6 +1271,7 @@ function declarationKind(value: unknown): ModelNode['kind'] {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return 'unknown';
   const type = (value as Record<string, unknown>).type;
   if (typeReference(type) !== undefined) return 'primitive';
+  if (Array.isArray(type)) return 'union';
   if (typeof type !== 'string') return 'unknown';
   if (type === 'object') return 'object';
   if (type === 'array') return 'array';

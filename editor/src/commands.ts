@@ -2,7 +2,15 @@ import type { DocumentVersion, TextEdit, TextRange } from './contracts.js';
 import type { DocumentSession } from './session.js';
 import { rangeFor } from './parser.js';
 
-export interface PropertySchema { readonly type: string; readonly [keyword: string]: unknown; }
+export type SchemaTypeValue = string | Readonly<Record<string, unknown>> | readonly (string | Readonly<Record<string, unknown>>)[];
+export interface PropertySchema { readonly type: SchemaTypeValue; readonly [keyword: string]: unknown; }
+export type RequiredProperties = readonly string[] | readonly (readonly string[])[];
+export interface BinaryAnnotations {
+  readonly contentEncoding?: 'base64' | 'base64url' | 'base16' | 'base32' | 'base32hex';
+  readonly contentCompression?: 'gzip' | 'deflate' | 'zlib' | 'brotli';
+  readonly contentMediaType?: string;
+}
+export type BinaryAnnotationKeyword = keyof BinaryAnnotations;
 export type RelationCardinality = 'single' | 'multiple';
 export type RelationScope = string | readonly string[];
 export type ImportKeyword = '$import' | '$importdefs';
@@ -146,10 +154,34 @@ function isObjectOrTupleDeclaration(value: Record<string, unknown>): boolean {
   return value.type === 'object' || value.type === 'tuple';
 }
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const CORE_TYPES = new Set([
+  'string', 'number', 'integer', 'boolean', 'null',
+  'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32', 'int64', 'uint64', 'int128', 'uint128',
+  'float8', 'float', 'double', 'decimal', 'date', 'datetime', 'time', 'duration', 'uuid', 'uri', 'binary', 'jsonpointer',
+  'object', 'array', 'map', 'set', 'tuple', 'any', 'choice'
+]);
 
 function isTypeDeclaration(value: unknown): value is Record<string, unknown> {
-  return isObjectLike(value) && (typeof value.type === 'string' ||
-    (isObjectLike(value.type) && Object.keys(value.type).length === 1 && typeof value.type.$ref === 'string'));
+  return isObjectLike(value) && validTypeValue(value.type);
+}
+
+function typeReferenceValue(value: unknown): string | undefined {
+  return isObjectLike(value) && Object.keys(value).every((key) => key === '$ref' || key === 'description') &&
+    typeof value.$ref === 'string' && (value.description === undefined || typeof value.description === 'string') ? value.$ref : undefined;
+}
+
+function validTypeValue(value: unknown): boolean {
+  if (typeof value === 'string') return CORE_TYPES.has(value);
+  if (typeReferenceValue(value) !== undefined) return true;
+  return Array.isArray(value) && value.length > 0 && value.every((member) =>
+    typeof member === 'string' ? CORE_TYPES.has(member) : validUnionObjectMember(member));
+}
+
+function validUnionObjectMember(value: unknown): boolean {
+  if (typeReferenceValue(value) !== undefined) return true;
+  if (!isObjectLike(value) || typeof value.type !== 'string') return false;
+  if ((value.type === 'array' || value.type === 'set') && isObjectLike(value.items)) return validTypeValue(value.items.type);
+  return value.type === 'map' && isObjectLike(value.values) && validTypeValue(value.values.type);
 }
 
 function reusableDeclarationPointer(session: DocumentSession, pointer: string): boolean {
@@ -384,6 +416,225 @@ function addMemberCommandResult(source: string, containerRange: TextRange, key: 
   const inverse: TextEdit = { range: rangeFor(editedSource, close, close + insertion.length), newText: '' };
   return { edits: [edit], inverseEdits: [inverse] };
 }
+function addMembersCommandResult(source: string, containerRange: TextRange, members: Readonly<Record<string, unknown>>): CommandResult {
+  const offsets = sourceOffsets(containerRange, 'Container source range is unavailable.');
+  const close = offsets.end - 1;
+  const body = source.slice(offsets.start + 1, close);
+  const multiline = body.includes('\n');
+  const indent = multiline ? (body.match(/\n([ \t]*)\S/)?.[1] ?? '  ') : '';
+  const entries = Object.entries(members).map(([key, value]) => `"${escapeJson(key)}":${multiline ? ' ' : ''}${JSON.stringify(value)}`);
+  const joined = entries.join(multiline ? `,\n${indent}` : ',');
+  const insertion = body.trim() === ''
+    ? (multiline ? `\n${indent}${joined}\n${indent.slice(0, Math.max(0, indent.length - 2))}` : joined)
+    : (multiline ? `,\n${indent}${joined}` : `,${joined}`);
+  const edit: TextEdit = { range: rangeFor(source, close, close), newText: insertion };
+  const editedSource = source.slice(0, close) + insertion + source.slice(close);
+  const inverse: TextEdit = { range: rangeFor(editedSource, close, close + insertion.length), newText: '' };
+  return { edits: [edit], inverseEdits: [inverse] };
+}
+function replaceMemberCommandResult(source: string, valueRange: TextRange, value: unknown): CommandResult {
+  const offsets = sourceOffsets(valueRange, 'Member source range is unavailable.');
+  const oldText = source.slice(offsets.start, offsets.end);
+  const newText = JSON.stringify(value);
+  const edit: TextEdit = { range: valueRange, newText };
+  const editedSource = source.slice(0, offsets.start) + newText + source.slice(offsets.end);
+  const inverse: TextEdit = { range: rangeFor(editedSource, offsets.start, offsets.start + newText.length), newText: oldText };
+  return { edits: [edit], inverseEdits: [inverse] };
+}
+function setMemberCommandResult(session: DocumentSession, targetPointer: string, keyword: string, value: unknown): CommandResult {
+  const source = session.snapshot().text;
+  const member = objectMemberContext(session, targetPointer, keyword);
+  if (member) return replaceMemberCommandResult(source, member.valueRange, value);
+  const targetRange = objectRange(session, targetPointer);
+  if (!targetRange) throw new Error('Target source range is unavailable.');
+  return addMemberCommandResult(source, targetRange, keyword, value);
+}
+function removeMemberCommandResult(session: DocumentSession, targetPointer: string, keyword: string): CommandResult {
+  const source = session.snapshot().text;
+  const member = objectMemberContext(session, targetPointer, keyword);
+  if (!member) return { edits: [], inverseEdits: [] };
+  const targetRange = objectRange(session, targetPointer);
+  if (!targetRange) throw new Error('Target source range is unavailable.');
+  return deleteMemberCommandResult(source, targetRange, member.keyRange, member.valueRange);
+}
+function editableDeclaration(session: DocumentSession, pointer: string): Record<string, unknown> | undefined {
+  const value = pointerValue(session.value, pointer);
+  return isObjectLike(value) && hasUniquePointerPath(session, pointer) && !hasDuplicatePointerDiagnostic(session, pointer) &&
+    isTypeDeclaration(value) ? value : undefined;
+}
+function validSchemaValue(session: DocumentSession, value: unknown): boolean {
+  if (!isObjectLike(value) || !validTypeValue(value.type)) return false;
+  const references: string[] = [];
+  const collect = (candidate: unknown): void => {
+    const reference = typeReferenceValue(candidate);
+    if (reference !== undefined) references.push(reference);
+    else if (Array.isArray(candidate)) candidate.forEach(collect);
+    else if (isObjectLike(candidate) && candidate.type !== undefined) collect(candidate.type);
+  };
+  collect(value.type);
+  return references.every((reference) => referenceResolvesLocally(session, reference) &&
+    (!isLocalPointerRef(reference) || reusableDeclarationPointer(session, reference.slice(1))));
+}
+function validRequired(properties: Record<string, unknown>, required: RequiredProperties): boolean {
+  if (!Array.isArray(required)) return false;
+  const alternatives = required.every((entry) => Array.isArray(entry));
+  const simple = required.every((entry) => typeof entry === 'string');
+  if (!alternatives && !simple) return false;
+  const sets = alternatives ? required as readonly (readonly string[])[] : [required as readonly string[]];
+  return (simple || required.length > 0) && sets.every((set) => (simple || set.length > 0) && new Set(set).size === set.length &&
+    set.every((name) => typeof name === 'string' && Object.prototype.hasOwnProperty.call(properties, name)));
+}
+function mediaType(value: string): boolean {
+  return /^[!#$%&'*+.^_`|~0-9A-Za-z-]+\/[!#$%&'*+.^_`|~0-9A-Za-z-]+(?:\s*;\s*[!#$%&'*+.^_`|~0-9A-Za-z-]+=(?:[!#$%&'*+.^_`|~0-9A-Za-z-]+|"[^"]*"))*$/.test(value);
+}
+
+export class SetRequiredCommand implements EditorCommand {
+  constructor(readonly targetPointer: string, readonly required: RequiredProperties | undefined) {}
+
+  canExecute({ session, documentVersion }: CommandContext): boolean {
+    if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid') return false;
+    const declaration = editableDeclaration(session, this.targetPointer);
+    if (!declaration || declaration.type !== 'object' || !isObjectLike(declaration.properties)) return false;
+    if (Object.prototype.hasOwnProperty.call(declaration, 'required') && !objectMemberContext(session, this.targetPointer, 'required')) return false;
+    return this.required === undefined ? Object.prototype.hasOwnProperty.call(declaration, 'required') : validRequired(declaration.properties, this.required);
+  }
+
+  execute(context: CommandContext): CommandResult {
+    if (!this.canExecute(context)) throw new Error('SetRequired command preconditions are not satisfied.');
+    return this.required === undefined
+      ? removeMemberCommandResult(context.session, this.targetPointer, 'required')
+      : setMemberCommandResult(context.session, this.targetPointer, 'required', this.required);
+  }
+}
+
+export class SetCollectionMemberCommand implements EditorCommand {
+  constructor(readonly targetPointer: string, readonly schema: Readonly<Record<string, unknown>>) {}
+
+  canExecute({ session, documentVersion }: CommandContext): boolean {
+    if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid') return false;
+    const declaration = editableDeclaration(session, this.targetPointer);
+    if (!declaration || !['array', 'set', 'map'].includes(String(declaration.type)) || !validSchemaValue(session, this.schema)) return false;
+    const keyword = declaration.type === 'map' ? 'values' : 'items';
+    return !Object.prototype.hasOwnProperty.call(declaration, keyword) || objectMemberContext(session, this.targetPointer, keyword) !== undefined;
+  }
+
+  execute(context: CommandContext): CommandResult {
+    if (!this.canExecute(context)) throw new Error('SetCollectionMember command preconditions are not satisfied.');
+    const declaration = editableDeclaration(context.session, this.targetPointer)!;
+    return setMemberCommandResult(context.session, this.targetPointer, declaration.type === 'map' ? 'values' : 'items', this.schema);
+  }
+}
+
+export class SetTupleMembersCommand implements EditorCommand {
+  constructor(readonly targetPointer: string, readonly properties: Readonly<Record<string, Readonly<Record<string, unknown>>>>, readonly order: readonly string[]) {}
+
+  canExecute({ session, documentVersion }: CommandContext): boolean {
+    if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid') return false;
+    const declaration = editableDeclaration(session, this.targetPointer);
+    if (!declaration || declaration.type !== 'tuple' || !isObjectLike(this.properties)) return false;
+    if (new Set(this.order).size !== this.order.length || this.order.length !== Object.keys(this.properties).length) return false;
+    if (!this.order.every((name) => Object.prototype.hasOwnProperty.call(this.properties, name)) || !Object.values(this.properties).every((schema) => validSchemaValue(session, schema))) return false;
+    return ['properties', 'tuple'].every((keyword) => !Object.prototype.hasOwnProperty.call(declaration, keyword) || objectMemberContext(session, this.targetPointer, keyword) !== undefined);
+  }
+
+  execute(context: CommandContext): CommandResult {
+    if (!this.canExecute(context)) throw new Error('SetTupleMembers command preconditions are not satisfied.');
+    const source = context.session.snapshot().text;
+    const declaration = editableDeclaration(context.session, this.targetPointer)!;
+    const propertiesMember = objectMemberContext(context.session, this.targetPointer, 'properties');
+    const tupleMember = objectMemberContext(context.session, this.targetPointer, 'tuple');
+    if (propertiesMember && tupleMember) {
+      const replacements = [
+        { member: propertiesMember, value: this.properties },
+        { member: tupleMember, value: this.order }
+      ].sort((left, right) => (right.member.valueRange.startOffset ?? 0) - (left.member.valueRange.startOffset ?? 0));
+      const edits = replacements.map(({ member, value }) => ({ range: member.valueRange, newText: JSON.stringify(value) }));
+      let editedSource = source;
+      for (const edit of edits) {
+        const offsets = sourceOffsets(edit.range, 'Tuple member source range is unavailable.');
+        editedSource = editedSource.slice(0, offsets.start) + edit.newText + editedSource.slice(offsets.end);
+      }
+      const inverseEdits = replacements.map(({ member }) => {
+        const offsets = sourceOffsets(member.valueRange, 'Tuple member source range is unavailable.');
+        const replacement = edits.find((edit) => edit.range === member.valueRange)!;
+        const shift = replacements.reduce((total, candidate) => {
+          const candidateOffsets = sourceOffsets(candidate.member.valueRange, 'Tuple member source range is unavailable.');
+          if (candidateOffsets.start >= offsets.start) return total;
+          const candidateEdit = edits.find((edit) => edit.range === candidate.member.valueRange)!;
+          return total + candidateEdit.newText.length - (candidateOffsets.end - candidateOffsets.start);
+        }, 0);
+        const start = offsets.start + shift;
+        return { range: rangeFor(editedSource, start, start + replacement.newText.length), newText: source.slice(offsets.start, offsets.end) };
+      });
+      return { edits, inverseEdits };
+    }
+    if (Object.prototype.hasOwnProperty.call(declaration, 'properties') || Object.prototype.hasOwnProperty.call(declaration, 'tuple')) {
+      throw new Error('Tuple member source ranges are unavailable.');
+    }
+    const targetRange = objectRange(context.session, this.targetPointer);
+    if (!targetRange) throw new Error('Tuple source range is unavailable.');
+    return addMembersCommandResult(source, targetRange, { properties: this.properties, tuple: this.order });
+  }
+}
+
+export class SetDescriptionCommand implements EditorCommand {
+  constructor(readonly targetPointer: string, readonly description: string | undefined) {}
+
+  canExecute({ session, documentVersion }: CommandContext): boolean {
+    if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid') return false;
+    const declaration = editableDeclaration(session, this.targetPointer);
+    if (!declaration || (this.description !== undefined && typeof this.description !== 'string')) return false;
+    if (Object.prototype.hasOwnProperty.call(declaration, 'description') && !objectMemberContext(session, this.targetPointer, 'description')) return false;
+    return this.description !== undefined || Object.prototype.hasOwnProperty.call(declaration, 'description');
+  }
+
+  execute(context: CommandContext): CommandResult {
+    if (!this.canExecute(context)) throw new Error('SetDescription command preconditions are not satisfied.');
+    return this.description === undefined
+      ? removeMemberCommandResult(context.session, this.targetPointer, 'description')
+      : setMemberCommandResult(context.session, this.targetPointer, 'description', this.description);
+  }
+}
+
+export class SetBinaryAnnotationsCommand implements EditorCommand {
+  constructor(readonly targetPointer: string, readonly keyword: BinaryAnnotationKeyword, readonly value: string | undefined) {}
+
+  canExecute({ session, documentVersion }: CommandContext): boolean {
+    if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid') return false;
+    const declaration = editableDeclaration(session, this.targetPointer);
+    if (!declaration || declaration.type !== 'binary') return false;
+    if (this.value !== undefined) {
+      if (this.keyword === 'contentEncoding' && !['base64', 'base64url', 'base16', 'base32', 'base32hex'].includes(this.value)) return false;
+      if (this.keyword === 'contentCompression' && !['gzip', 'deflate', 'zlib', 'brotli'].includes(this.value)) return false;
+      if (this.keyword === 'contentMediaType' && !mediaType(this.value)) return false;
+    }
+    if (Object.prototype.hasOwnProperty.call(declaration, this.keyword) && !objectMemberContext(session, this.targetPointer, this.keyword)) return false;
+    return this.value !== undefined || Object.prototype.hasOwnProperty.call(declaration, this.keyword);
+  }
+
+  execute(context: CommandContext): CommandResult {
+    if (!this.canExecute(context)) throw new Error('SetBinaryAnnotations command preconditions are not satisfied.');
+    return this.value === undefined
+      ? removeMemberCommandResult(context.session, this.targetPointer, this.keyword)
+      : setMemberCommandResult(context.session, this.targetPointer, this.keyword, this.value);
+  }
+}
+
+export class SetTypeReferenceCommand implements EditorCommand {
+  constructor(readonly targetPointer: string, readonly reference: string) {}
+
+  canExecute({ session, documentVersion }: CommandContext): boolean {
+    if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid' || this.targetPointer === '') return false;
+    const declaration = editableDeclaration(session, this.targetPointer);
+    if (!declaration || !isLocalPointerRef(this.reference) || !reusableDeclarationPointer(session, this.reference.slice(1))) return false;
+    return objectMemberContext(session, this.targetPointer, 'type') !== undefined;
+  }
+
+  execute(context: CommandContext): CommandResult {
+    if (!this.canExecute(context)) throw new Error('SetTypeReference command preconditions are not satisfied.');
+    return setMemberCommandResult(context.session, this.targetPointer, 'type', { $ref: this.reference });
+  }
+}
 
 export class AddDefinitionCommand implements EditorCommand {
   constructor(readonly namespacePointer: string, readonly definitionName: string, readonly schema: PropertySchema) {}
@@ -546,7 +797,7 @@ export class AddPropertyCommand implements EditorCommand {
       (target as Record<string, unknown>).type === 'object' && this.propertyName.length > 0 &&
       (!namespace || (typeof namespace === 'object' && !Array.isArray(namespace) && !Object.prototype.hasOwnProperty.call(namespace, this.propertyName))) &&
       (!relations || (typeof relations === 'object' && !Array.isArray(relations) && !Object.prototype.hasOwnProperty.call(relations, this.propertyName))) &&
-      this.schema !== undefined && typeof this.schema.type === 'string';
+      validSchemaValue(session, this.schema);
   }
   execute(context: CommandContext): CommandResult {
     if (!this.canExecute(context)) throw new Error('AddProperty command preconditions are not satisfied.');
@@ -579,7 +830,7 @@ export class EditPropertyCommand implements EditorCommand {
 
   canExecute({ session, documentVersion }: CommandContext): boolean {
     if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid') return false;
-    return propertyContext(session, this.propertyPointer) !== undefined && typeof this.schema.type === 'string';
+    return propertyContext(session, this.propertyPointer) !== undefined && validSchemaValue(session, this.schema);
   }
 
   execute(context: CommandContext): CommandResult {
