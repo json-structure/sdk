@@ -8,4 +8,5 @@ export * from './resolver.js';
 export * from './session.js';
 export * from './capabilities.js';
 export * from './commands.js';
+export * from './validation.js';
 export * from './host.js';

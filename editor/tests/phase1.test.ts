@@ -58,7 +58,8 @@ describe('Phase 1 vertical slice', () => {
   });
   it('projects typed definitions, imports, relation semantics, units, validation, composition, and semantic annotations', () => {
     const fixture = `{
-  "$schema": "https://json-structure.org/schema/",
+  "$schema": "https://json-structure.org/meta/extended/v0/#",
+  "$uses": ["JSONSchemaValidation"],
   "$import": "https://example.org/root.struct.json",
   "$importdefs": "https://example.org/common.struct.json",
   "definitions": {
@@ -164,27 +165,27 @@ describe('Phase 1 vertical slice', () => {
     expect(thing?.validation?.exclusiveMinimum).toBeUndefined();
     expect(thing?.validation?.exclusiveMaximum).toBeUndefined();
     expect(thing?.validation?.multipleOf).toBeUndefined();
-    expect(thing?.validation?.minLength).toBe(1);
-    expect(thing?.validation?.maxLength).toBe(32);
-    expect(thing?.validation?.pattern).toBe('^[a-z]+$');
-    expect(thing?.validation?.format).toBe('text');
-    expect(thing?.validation?.minItems).toBe(0);
-    expect(thing?.validation?.maxItems).toBe(5);
-    expect(thing?.validation?.uniqueItems).toBe(true);
-    expect(thing?.validation?.minContains).toBe(1);
-    expect(thing?.validation?.maxContains).toBe(2);
+    expect(thing?.validation?.minLength).toBeUndefined();
+    expect(thing?.validation?.maxLength).toBeUndefined();
+    expect(thing?.validation?.pattern).toBeUndefined();
+    expect(thing?.validation?.format).toBeUndefined();
+    expect(thing?.validation?.minItems).toBeUndefined();
+    expect(thing?.validation?.maxItems).toBeUndefined();
+    expect(thing?.validation?.uniqueItems).toBeUndefined();
+    expect(thing?.validation?.minContains).toBeUndefined();
+    expect(thing?.validation?.maxContains).toBeUndefined();
     expect(thing?.validation?.minProperties).toBe(1);
     expect(thing?.validation?.maxProperties).toBe(5);
-    expect(thing?.validation?.minEntries).toBe(0);
-    expect(thing?.validation?.maxEntries).toBe(5);
+    expect(thing?.validation?.minEntries).toBeUndefined();
+    expect(thing?.validation?.maxEntries).toBeUndefined();
     expect(thing?.validation?.default).toBe('abc');
-    expect(thing?.validation?.contains).toEqual({ type: 'string' });
-    expect(thing?.validation?.propertyNames).toEqual({ pattern: '^[a-z]+$' });
-    expect(thing?.validation?.keyNames).toEqual({ pattern: '^[a-z]+$' });
-    expect(thing?.validation?.has).toEqual({ id: true });
+    expect(thing?.validation?.contains).toBeUndefined();
+    expect(thing?.validation?.propertyNames).toBeUndefined();
+    expect(thing?.validation?.keyNames).toBeUndefined();
+    expect(thing?.validation?.has).toBeUndefined();
     expect(thing?.validation?.dependentRequired).toEqual({ id: ['name'] });
     expect(thing?.validation?.patternProperties).toEqual({ '^x': { type: 'string' } });
-    expect(thing?.validation?.patternKeys).toEqual({ '^x': { type: 'string' } });
+    expect(thing?.validation?.patternKeys).toBeUndefined();
     expect(thing?.composition?.allOf).toEqual([{ type: 'object' }]);
     expect(thing?.composition?.anyOf).toEqual([{ type: 'object' }]);
     expect(thing?.composition?.oneOf).toEqual([{ type: 'object' }]);
@@ -271,9 +272,12 @@ describe('Phase 1 vertical slice', () => {
       { label: 'semantic.spectralBands', body: '"spectralBands":[1]', pointer: '/definitions/Thing/spectralBands', assertDefinition: (d) => expect(d.semantic?.spectralBands).toBeUndefined() }
     ];
     for (const testCase of cases) {
+      const schema = testCase.label.startsWith('validation.')
+        ? 'https://json-structure.org/meta/validation/v0/#'
+        : 'https://json-structure.org/schema/';
       const fixture = testCase.scope === 'root'
-        ? `{"$schema":"https://json-structure.org/schema/",${testCase.body},"definitions":{"Thing":{"type":"object"}}}`
-        : `{"$schema":"https://json-structure.org/schema/","definitions":{"Thing":{"type":"object",${testCase.body}}}}`;
+        ? `{"$schema":"${schema}",${testCase.body},"definitions":{"Thing":{"type":"object"}}}`
+        : `{"$schema":"${schema}","definitions":{"Thing":{"type":"object",${testCase.body}}}}`;
       const result = parseDocument(`memory://malformed-${testCase.label}`, fixture);
       expect(result.recovery).toBe('valid');
       const diagnostic = result.diagnostics.find((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === testCase.pointer);
@@ -710,32 +714,32 @@ describe('Phase 1 vertical slice', () => {
     expect(parsed.diagnostics.some((item) => item.location?.pointer === '/definitions/S/relations/bad-name')).toBe(true);
   });
   it('supports numeric validation strings only for extended numeric declaration types with positive multipleOf', () => {
-    const validExtended = parseDocument('memory://numeric-extended', '{"definitions":{"D":{"type":"decimal","minimum":"0","maximum":"10.5","exclusiveMinimum":"0","exclusiveMaximum":"11","multipleOf":"0.5"}}}');
+    const validExtended = parseDocument('memory://numeric-extended', '{"$schema":"https://json-structure.org/meta/validation/v0/#","definitions":{"D":{"type":"decimal","minimum":"0.0","maximum":"10.5","exclusiveMinimum":"0.0","exclusiveMaximum":"11.0","multipleOf":"0.5"}}}');
     const d = validExtended.model?.projections.definitions[0];
-    expect(d?.validation?.minimum).toBe('0');
+    expect(d?.validation?.minimum).toBe('0.0');
     expect(d?.validation?.multipleOf).toBe('0.5');
 
-    const invalidNonExtended = parseDocument('memory://numeric-non-extended', '{"definitions":{"N":{"type":"number","minimum":"0"}}}');
+    const invalidNonExtended = parseDocument('memory://numeric-non-extended', '{"$schema":"https://json-structure.org/meta/validation/v0/#","definitions":{"N":{"type":"number","minimum":"0"}}}');
     expect(invalidNonExtended.diagnostics.some((item) => item.location?.pointer === '/definitions/N/minimum' && item.code === 'json.keyword-invalid')).toBe(true);
 
-    const invalidMultiple = parseDocument('memory://numeric-multipleof', '{"definitions":{"D":{"type":"decimal","multipleOf":"0"}}}');
+    const invalidMultiple = parseDocument('memory://numeric-multipleof', '{"$schema":"https://json-structure.org/meta/validation/v0/#","definitions":{"D":{"type":"decimal","multipleOf":"0.0"}}}');
     expect(invalidMultiple.diagnostics.some((item) => item.location?.pointer === '/definitions/D/multipleOf' && item.code === 'json.keyword-invalid')).toBe(true);
   });
   it('enforces numeric keyword applicability and normative scalar representation by declaration type', () => {
     const extendedValid = parseDocument(
       'memory://numeric-extended-valid',
-      '{"definitions":{"D":{"type":"decimal","minimum":"0","maximum":"10.5","exclusiveMinimum":"0.001","exclusiveMaximum":"1000","multipleOf":"0.25"}}}'
+      '{"$schema":"https://json-structure.org/meta/validation/v0/#","definitions":{"D":{"type":"decimal","minimum":"0.0","maximum":"10.5","exclusiveMinimum":"0.001","exclusiveMaximum":"1000.0","multipleOf":"0.25"}}}'
     );
     const extended = extendedValid.model?.projections.definitions[0]?.validation;
-    expect(extended?.minimum).toBe('0');
+    expect(extended?.minimum).toBe('0.0');
     expect(extended?.maximum).toBe('10.5');
     expect(extended?.exclusiveMinimum).toBe('0.001');
-    expect(extended?.exclusiveMaximum).toBe('1000');
+    expect(extended?.exclusiveMaximum).toBe('1000.0');
     expect(extended?.multipleOf).toBe('0.25');
 
     const extendedInvalidNumber = parseDocument(
       'memory://numeric-extended-invalid-number',
-      '{"definitions":{"D":{"type":"decimal","minimum":0,"maximum":10,"exclusiveMinimum":1,"exclusiveMaximum":2,"multipleOf":0.5}}}'
+      '{"$schema":"https://json-structure.org/meta/validation/v0/#","definitions":{"D":{"type":"decimal","minimum":0,"maximum":10,"exclusiveMinimum":1,"exclusiveMaximum":2,"multipleOf":0.5}}}'
     );
     for (const pointer of [
       '/definitions/D/minimum',
@@ -749,7 +753,7 @@ describe('Phase 1 vertical slice', () => {
 
     const nonExtendedValid = parseDocument(
       'memory://numeric-nonextended-valid',
-      '{"definitions":{"N":{"type":"number","minimum":0,"maximum":10.5,"exclusiveMinimum":0.1,"exclusiveMaximum":11,"multipleOf":0.5}}}'
+      '{"$schema":"https://json-structure.org/meta/validation/v0/#","definitions":{"N":{"type":"number","minimum":0,"maximum":10.5,"exclusiveMinimum":0.1,"exclusiveMaximum":11,"multipleOf":0.5}}}'
     );
     const nonExtended = nonExtendedValid.model?.projections.definitions[0]?.validation;
     expect(nonExtended?.minimum).toBe(0);
@@ -760,7 +764,7 @@ describe('Phase 1 vertical slice', () => {
 
     const nonExtendedInvalidString = parseDocument(
       'memory://numeric-nonextended-invalid-string',
-      '{"definitions":{"N":{"type":"number","minimum":"0","maximum":"10","exclusiveMinimum":"0.1","exclusiveMaximum":"11","multipleOf":"0.5"}}}'
+      '{"$schema":"https://json-structure.org/meta/validation/v0/#","definitions":{"N":{"type":"number","minimum":"0","maximum":"10","exclusiveMinimum":"0.1","exclusiveMaximum":"11","multipleOf":"0.5"}}}'
     );
     for (const pointer of [
       '/definitions/N/minimum',
@@ -774,7 +778,7 @@ describe('Phase 1 vertical slice', () => {
 
     const nonNumericInvalid = parseDocument(
       'memory://numeric-nonnumeric-applicability',
-      '{"definitions":{"S":{"type":"string","minimum":0,"maximum":10,"exclusiveMinimum":1,"exclusiveMaximum":11,"multipleOf":1}}}'
+      '{"$schema":"https://json-structure.org/meta/validation/v0/#","definitions":{"S":{"type":"string","minimum":0,"maximum":10,"exclusiveMinimum":1,"exclusiveMaximum":11,"multipleOf":1}}}'
     );
     for (const pointer of [
       '/definitions/S/minimum',
@@ -794,7 +798,7 @@ describe('Phase 1 vertical slice', () => {
 
     const invalidNonPositive = parseDocument(
       'memory://numeric-multiple-nonpositive',
-      '{"definitions":{"D":{"type":"decimal","multipleOf":"0"},"N":{"type":"number","multipleOf":0}}}'
+      '{"$schema":"https://json-structure.org/meta/validation/v0/#","definitions":{"D":{"type":"decimal","multipleOf":"0.0"},"N":{"type":"number","multipleOf":0}}}'
     );
     expect(invalidNonPositive.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/D/multipleOf')).toBe(true);
     expect(invalidNonPositive.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/N/multipleOf')).toBe(true);

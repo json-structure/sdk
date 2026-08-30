@@ -1,12 +1,12 @@
 # JSON Structure Editor Implementation Status
 
-Updated: 2026-08-31 (Phase 1 milestone: declaration grammar and command guard repair)
+Updated: 2026-08-31 (Phase 1 milestone: Validation companion editing and diagnostics)
 Branch: `editor-autopilot`
 Worktree: `C:\git\json-structure-sdk-editor`
 
-Blocking findings in this milestone: 0 remaining.
+Blocking findings in this milestone: 1 specification decision remains unresolved (ADR-014 `has` schema shape). ADR-007 capability activation is accepted.
 
-Milestone summary: the parser now enforces required root `$schema`, `$id`, and `name` metadata, Core typed declaration forms, decoded `$root` placement, root `definitions` shape/placement, reusable declarations versus nested namespaces, malformed declaration type forms, and object property placement/shape/name/schema requirements. Direct `{ "$ref": ... }` objects are rejected in schema/declaration positions; Core references use `type: { "$ref": ... }`, while Relations `targettype` and `qualifiertype` retain their normative direct reference objects. Diagnostics preserve unknown content, recover without speculative model errors on incomplete JSON, and leave missing or ambiguous reusable targets to the resolver.
+Milestone summary: all 26 ledger Validation keywords share one typed edit command family and one parser rule set, but their ledger records remain partial where direct per-keyword round-trip and test evidence is absent. Validation activates directly through the Validation meta-schema or through `JSONSchemaValidation` in `$uses` only under the Extended meta-schema; Core, arbitrary, and missing `$schema` values do not honor that use declaration. Parser diagnostics/projections and editing commands consume the same capability result. Numeric constraints use exact Core syntax, signedness, and ranges, including string-backed 64-bit and 128-bit integers. Locally resolvable type references and inheritance inform applicability; unions and unresolved external types avoid false hard errors and keep editing disabled. Nested Validation schema payloads recurse while `default` remains opaque. Contradictory bounds are not reported as malformed schemas.
 
 ## Current milestone
 
@@ -31,6 +31,9 @@ Implemented:
 - Rejection of dangling locally-decidable relation pointers (targettype, qualifiertype, scope), relation-target identity absences, and dual import-keyword collisions at one namespace.
 - Exact source-key editing for escaped JSON key spellings.
 - Typed normalized projections for Core declaration forms, `$extends`, relation fields (`targettype`, `cardinality`, `scope`, `qualifiertype`), strict `$import`/`$importdefs` absolute-URI provenance, Units keywords, Validation structures (including type-aware numeric-string handling), conditional composition operators, and all 20 semantic annotation keywords.
+- `SetValidationKeywordCommand` with a generic keyword/value map for every Validation keyword, including duplicate/stale/incomplete guards and post-edit cross-key validation.
+- Validation projections distinguish authored `minContains` from its effective default of 1 when `contains` is present.
+- Exact Core numeric value-space checks for integer syntax, signedness, fixed-width ranges, string-backed 64-bit and 128-bit integers, decimal syntax, and normative floating ranges.
 - Ordered `identity` inspection and single-pass diagnostics for valid object and tuple schemas across root and nested schema traversal, excluding literal instance and annotation payloads.
 - Explicit reference inventory including `$root`, `$ref`, `$extends`, and normative `type: {"$ref":"#..."}` declarations.
 - Host-neutral `resolveReferences` and immutable `resolveDocumentReferences` APIs over explicit normalized-document/snapshot inputs, with no host callbacks or I/O.
@@ -60,9 +63,9 @@ Implemented:
 
 ## Validation
 
-Last validation on 2026-08-31 (declaration grammar and command guard repair):
+Last validation on 2026-08-31 (Validation companion editing and diagnostics):
 
-- `npm test`: passed (4 files, 89 tests).
+- `npm test`: passed (5 files, 104 tests).
 - `npm run typecheck`: passed.
 - `npm run build`: passed (ESM, CJS, DTS).
 - `npm run coverage:generate`: passed; coverage statuses remain partial where editing or round-trip coverage is incomplete.
@@ -81,8 +84,8 @@ The coverage gate verifies ledger integrity and explicit ownership; it does not 
 
 Phase 0 ADRs:
 
-- Accepted: 2
-- Pending: 18
+- Accepted: 3
+- Pending: 17
 
 ## Next work
 
@@ -96,4 +99,4 @@ Next steps for Phase 1:
 
 ## Repository state
 
-Validated milestones are committed locally on `editor-autopilot` as rollback checkpoints. Checkpoints are not pushed without separate explicit approval.
+These repairs are unstaged and uncommitted on `editor-autopilot`. Nothing was pushed.

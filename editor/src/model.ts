@@ -16,6 +16,7 @@ export interface ValidationProjection {
 	readonly maxItems?: number;
 	readonly uniqueItems?: boolean;
 	readonly minContains?: number;
+	readonly effectiveMinContains?: EffectiveAnnotationValue<number>;
 	readonly maxContains?: number;
 	readonly minProperties?: number;
 	readonly maxProperties?: number;

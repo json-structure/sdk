@@ -14,6 +14,8 @@ import {
   type UnitsProjection,
   type ValidationProjection
 } from './model.js';
+import { VALIDATION_KEYWORDS, effectiveValidationTypes, validationIssues, type ValidationKeyword } from './validation.js';
+import { resolveCapabilities } from './capabilities.js';
 
 interface ParsedValue { value: unknown; start: number; end: number; pointer: string; keyStart?: number; keyEnd?: number; }
 interface ParseOutput { value: unknown; values: ParsedValue[]; diagnostics: Diagnostic[]; recovery: RecoveryState; }
@@ -193,6 +195,7 @@ function collectCoreDeclarationDiagnostics(
   diagnostics: Diagnostic[],
   nodes: readonly ModelNode[]
 ): void {
+  const { validationActive } = resolveCapabilities(root);
   const diagnoseName = (pointer: string, kind: 'type' | 'namespace' | 'property', name: string): void => {
     if (IDENTIFIER.test(name)) return;
     const node = nodes.find((candidate) => candidate.pointer === pointer);
@@ -298,10 +301,16 @@ function collectCoreDeclarationDiagnostics(
       for (const [name, property] of Object.entries(schema.properties)) visitSchema(property, `${pointer}/properties/${pointerPart(name)}`);
     }
     if (isRecord(schema.additionalProperties)) visitSchema(schema.additionalProperties, `${pointer}/additionalProperties`);
-    for (const keyword of ['items', 'values', 'contains', 'propertyNames', 'keyNames', 'has', 'not', 'if', 'then', 'else'] as const) {
+    for (const keyword of ['items', 'values', 'not', 'if', 'then', 'else'] as const) {
       visitSchema(schema[keyword], `${pointer}/${keyword}`);
     }
-    for (const keyword of ['choices', 'patternProperties', 'patternKeys'] as const) {
+    if (validationActive) {
+      for (const keyword of ['contains', 'propertyNames', 'keyNames', 'has'] as const) visitSchema(schema[keyword], `${pointer}/${keyword}`);
+      for (const keyword of ['patternProperties', 'patternKeys'] as const) {
+        if (isRecord(schema[keyword])) for (const [name, value] of Object.entries(schema[keyword])) visitSchema(value, `${pointer}/${keyword}/${pointerPart(name)}`);
+      }
+    }
+    for (const keyword of ['choices'] as const) {
       if (isRecord(schema[keyword])) for (const [name, value] of Object.entries(schema[keyword])) visitSchema(value, `${pointer}/${keyword}/${pointerPart(name)}`);
     }
     for (const keyword of ['allOf', 'anyOf', 'oneOf'] as const) {
@@ -327,10 +336,11 @@ function buildProjections(
   const imports: ImportProjection[] = [];
   const references: ReferenceProjection[] = [];
   const semanticPlacements: SemanticPlacementProjection[] = [];
+  const { validationActive } = resolveCapabilities(root);
   const semanticByPointer = new Map<string, SemanticAnnotationsProjection>();
   collectSemanticPlacements(root, '', uri, text, diagnostics, semanticPlacements, semanticByPointer);
-  collectDefinitions(root, root, '', uri, text, definitions, imports, diagnostics, semanticByPointer, nodes);
-  collectSchemaProjections(root, uri, text, definitions, diagnostics, semanticByPointer, nodes);
+  collectDefinitions(root, root, '', uri, text, definitions, imports, diagnostics, semanticByPointer, nodes, validationActive);
+  collectSchemaProjections(root, uri, text, definitions, diagnostics, semanticByPointer, nodes, validationActive);
   collectReferenceProjections(root, references);
   collectStructuralDiagnostics(root, root, '', uri, text, diagnostics, nodes);
   return { definitions, imports, references, semanticPlacements };
@@ -343,7 +353,8 @@ function collectSchemaProjections(
   definitions: DefinitionProjection[],
   diagnostics: Diagnostic[],
   semanticByPointer: ReadonlyMap<string, SemanticAnnotationsProjection>,
-  nodes: readonly ModelNode[]
+  nodes: readonly ModelNode[],
+  validationActive: boolean
 ): void {
   const visited = new Set(definitions.map((definition) => definition.pointer));
   const diagnosed = new Set<string>();
@@ -358,7 +369,7 @@ function collectSchemaProjections(
       const split = pointer.lastIndexOf('/');
       const name = pointer === '' ? '$root' : pointer.slice(split + 1).replace(/~1/g, '/').replace(/~0/g, '~');
       const namespacePointer = pointer === '' ? '' : pointer.slice(0, split);
-      const projection = definitionProjection(name, namespacePointer, pointer, candidate, false, uri, text, diagnostics, semanticByPointer.get(pointer), nodes);
+      const projection = definitionProjection(root, name, namespacePointer, pointer, candidate, false, uri, text, diagnostics, semanticByPointer.get(pointer), nodes, validationActive);
       if (projection) definitions.push(projection);
       visited.add(pointer);
     }
@@ -369,12 +380,14 @@ function collectSchemaProjections(
     visitSchemaValue(candidate.items, `${pointer}/items`);
     visitSchemaValue(candidate.values, `${pointer}/values`);
     visitSchemaMap(candidate.choices, `${pointer}/choices`);
-    visitSchemaValue(candidate.contains, `${pointer}/contains`);
-    visitSchemaValue(candidate.propertyNames, `${pointer}/propertyNames`);
-    visitSchemaValue(candidate.keyNames, `${pointer}/keyNames`);
-    visitSchemaValue(candidate.has, `${pointer}/has`);
-    visitSchemaMap(candidate.patternProperties, `${pointer}/patternProperties`);
-    visitSchemaMap(candidate.patternKeys, `${pointer}/patternKeys`);
+    if (validationActive) {
+      visitSchemaValue(candidate.contains, `${pointer}/contains`);
+      visitSchemaValue(candidate.propertyNames, `${pointer}/propertyNames`);
+      visitSchemaValue(candidate.keyNames, `${pointer}/keyNames`);
+      visitSchemaValue(candidate.has, `${pointer}/has`);
+      visitSchemaMap(candidate.patternProperties, `${pointer}/patternProperties`);
+      visitSchemaMap(candidate.patternKeys, `${pointer}/patternKeys`);
+    }
     visitSchemaArray(candidate.allOf, `${pointer}/allOf`);
     visitSchemaArray(candidate.anyOf, `${pointer}/anyOf`);
     visitSchemaArray(candidate.oneOf, `${pointer}/oneOf`);
@@ -420,7 +433,8 @@ function collectDefinitions(
   imports: ImportProjection[],
   diagnostics: Diagnostic[],
   semanticByPointer: ReadonlyMap<string, SemanticAnnotationsProjection>,
-  nodes: readonly ModelNode[]
+  nodes: readonly ModelNode[],
+  validationActive: boolean
 ): void {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return;
   const object = value as Record<string, unknown>;
@@ -434,10 +448,10 @@ function collectDefinitions(
       if (name === '$import' || name === '$importdefs') continue;
       const encoded = pointerPart(name);
       const declarationPointer = `${pointer}/definitions/${encoded}`;
-      const projection = definitionProjection(name, pointer, declarationPointer, declaration, true, uri, text, diagnostics, semanticByPointer.get(declarationPointer), nodes);
+      const projection = definitionProjection(root, name, pointer, declarationPointer, declaration, true, uri, text, diagnostics, semanticByPointer.get(declarationPointer), nodes, validationActive);
       if (projection) definitions.push(projection);
-      else collectNamespaceMembers(root, declaration, declarationPointer, uri, text, definitions, imports, diagnostics, semanticByPointer, nodes);
-      collectDefinitions(root, declaration, declarationPointer, uri, text, definitions, imports, diagnostics, semanticByPointer, nodes);
+      else collectNamespaceMembers(root, declaration, declarationPointer, uri, text, definitions, imports, diagnostics, semanticByPointer, nodes, validationActive);
+      collectDefinitions(root, declaration, declarationPointer, uri, text, definitions, imports, diagnostics, semanticByPointer, nodes, validationActive);
     }
   }
 }
@@ -452,20 +466,22 @@ function collectNamespaceMembers(
   imports: ImportProjection[],
   diagnostics: Diagnostic[],
   semanticByPointer: ReadonlyMap<string, SemanticAnnotationsProjection>,
-  nodes: readonly ModelNode[]
+  nodes: readonly ModelNode[],
+  validationActive: boolean
 ): void {
   if (!isRecord(value) || !namespacePointer(root, pointer, nodes)) return;
   for (const [name, declaration] of Object.entries(value)) {
     if (name === '$import' || name === '$importdefs' || name === 'definitions') continue;
     const declarationPointer = `${pointer}/${pointerPart(name)}`;
-    const projection = definitionProjection(name, pointer, declarationPointer, declaration, true, uri, text, diagnostics, semanticByPointer.get(declarationPointer), nodes);
+    const projection = definitionProjection(root, name, pointer, declarationPointer, declaration, true, uri, text, diagnostics, semanticByPointer.get(declarationPointer), nodes, validationActive);
     if (projection) definitions.push(projection);
-    else collectNamespaceMembers(root, declaration, declarationPointer, uri, text, definitions, imports, diagnostics, semanticByPointer, nodes);
-    collectDefinitions(root, declaration, declarationPointer, uri, text, definitions, imports, diagnostics, semanticByPointer, nodes);
+    else collectNamespaceMembers(root, declaration, declarationPointer, uri, text, definitions, imports, diagnostics, semanticByPointer, nodes, validationActive);
+    collectDefinitions(root, declaration, declarationPointer, uri, text, definitions, imports, diagnostics, semanticByPointer, nodes, validationActive);
   }
 }
 
 function definitionProjection(
+  root: Record<string, unknown>,
   name: string,
   namespacePointer: string,
   pointer: string,
@@ -475,7 +491,8 @@ function definitionProjection(
   text: string,
   diagnostics: Diagnostic[],
   semantic: SemanticAnnotationsProjection | undefined,
-  nodes: readonly ModelNode[]
+  nodes: readonly ModelNode[],
+  validationActive: boolean
 ): DefinitionProjection | undefined {
   if (!declaration || typeof declaration !== 'object' || Array.isArray(declaration)) return undefined;
   const value = declaration as Record<string, unknown>;
@@ -487,7 +504,7 @@ function definitionProjection(
   }
   const relationItems = relationProjections(pointer, value.relations, uri, text, diagnostics);
   const units = unitsProjection(pointer, value, uri, text, diagnostics);
-  const validation = validationProjection(pointer, value, type, uri, text, diagnostics);
+  const validation = validationActive ? validationProjection(root, pointer, value, uri, text, diagnostics, nodes) : undefined;
   const composition = compositionProjection(pointer, value, uri, text, diagnostics);
   const required = requiredProjection(pointer, value, type, uri, text, diagnostics);
   const properties = schemaObjectMap(value.properties, `${pointer}/properties`, 'properties', uri, text, diagnostics);
@@ -979,42 +996,31 @@ function unitsProjection(
 }
 
 function validationProjection(
+  root: Record<string, unknown>,
   pointer: string,
   value: Record<string, unknown>,
-  typeName: string | undefined,
   uri: string,
   text: string,
-  diagnostics: Diagnostic[]
+  diagnostics: Diagnostic[],
+  nodes: readonly ModelNode[]
 ): ValidationProjection | undefined {
-  const multipleOf = numericConstraint(value.multipleOf, typeName, `${pointer}/multipleOf`, 'multipleOf', uri, text, diagnostics, true);
-  const projection: ValidationProjection = {
-    minimum: numericConstraint(value.minimum, typeName, `${pointer}/minimum`, 'minimum', uri, text, diagnostics),
-    maximum: numericConstraint(value.maximum, typeName, `${pointer}/maximum`, 'maximum', uri, text, diagnostics),
-    exclusiveMinimum: numericConstraint(value.exclusiveMinimum, typeName, `${pointer}/exclusiveMinimum`, 'exclusiveMinimum', uri, text, diagnostics),
-    exclusiveMaximum: numericConstraint(value.exclusiveMaximum, typeName, `${pointer}/exclusiveMaximum`, 'exclusiveMaximum', uri, text, diagnostics),
-    multipleOf,
-    minLength: asInteger(value.minLength, `${pointer}/minLength`, 'minLength', uri, text, diagnostics),
-    maxLength: asInteger(value.maxLength, `${pointer}/maxLength`, 'maxLength', uri, text, diagnostics),
-    pattern: asString(value.pattern, `${pointer}/pattern`, 'pattern', uri, text, diagnostics),
-    format: asString(value.format, `${pointer}/format`, 'format', uri, text, diagnostics),
-    minItems: asInteger(value.minItems, `${pointer}/minItems`, 'minItems', uri, text, diagnostics),
-    maxItems: asInteger(value.maxItems, `${pointer}/maxItems`, 'maxItems', uri, text, diagnostics),
-    uniqueItems: asBoolean(value.uniqueItems, `${pointer}/uniqueItems`, 'uniqueItems', uri, text, diagnostics),
-    minContains: asInteger(value.minContains, `${pointer}/minContains`, 'minContains', uri, text, diagnostics),
-    maxContains: asInteger(value.maxContains, `${pointer}/maxContains`, 'maxContains', uri, text, diagnostics),
-    minProperties: asInteger(value.minProperties, `${pointer}/minProperties`, 'minProperties', uri, text, diagnostics),
-    maxProperties: asInteger(value.maxProperties, `${pointer}/maxProperties`, 'maxProperties', uri, text, diagnostics),
-    minEntries: asInteger(value.minEntries, `${pointer}/minEntries`, 'minEntries', uri, text, diagnostics),
-    maxEntries: asInteger(value.maxEntries, `${pointer}/maxEntries`, 'maxEntries', uri, text, diagnostics),
-    default: value.default,
-    contains: asSchemaObject(value.contains, `${pointer}/contains`, 'contains', uri, text, diagnostics),
-    propertyNames: asSchemaObject(value.propertyNames, `${pointer}/propertyNames`, 'propertyNames', uri, text, diagnostics),
-    keyNames: asSchemaObject(value.keyNames, `${pointer}/keyNames`, 'keyNames', uri, text, diagnostics),
-    has: asSchemaObject(value.has, `${pointer}/has`, 'has', uri, text, diagnostics),
-    dependentRequired: dependentRequiredProjection(value.dependentRequired, `${pointer}/dependentRequired`, uri, text, diagnostics),
-    patternProperties: schemaObjectMap(value.patternProperties, `${pointer}/patternProperties`, 'patternProperties', uri, text, diagnostics),
-    patternKeys: schemaObjectMap(value.patternKeys, `${pointer}/patternKeys`, 'patternKeys', uri, text, diagnostics)
-  };
+  const invalid = new Set<ValidationKeyword>();
+  for (const issue of validationIssues(value, effectiveValidationTypes(root, value))) {
+    invalid.add(issue.keyword);
+    pushKeywordDiagnostic(diagnostics, uri, `${pointer}/${pointerPart(issue.keyword)}`, issue.message, text);
+  }
+  const projection: Record<string, unknown> = {};
+  for (const keyword of VALIDATION_KEYWORDS) {
+    const keywordPointer = `${pointer}/${pointerPart(keyword)}`;
+    if (nodes.filter((node) => node.pointer === keywordPointer).length > 1) invalid.add(keyword);
+    if (!invalid.has(keyword) && Object.prototype.hasOwnProperty.call(value, keyword)) projection[keyword] = value[keyword];
+  }
+  if (!invalid.has('contains') && Object.prototype.hasOwnProperty.call(value, 'contains')) {
+    projection.effectiveMinContains = {
+      ...(Object.prototype.hasOwnProperty.call(value, 'minContains') && !invalid.has('minContains') ? { explicit: value.minContains as number } : {}),
+      effective: !invalid.has('minContains') && typeof value.minContains === 'number' ? value.minContains : 1
+    };
+  }
   return hasAnyKey(projection) ? projection : undefined;
 }
 
@@ -1201,29 +1207,11 @@ function isAudioChannels(value: unknown): value is Record<string, unknown>[] { r
 function isSpectralBand(value: unknown): value is Record<string, unknown> { return isRecord(value) && isReferencedBase(value) && hasOnlyKeys(value, ['reference','kind','bands','calibration']) && distinctStrings(value.bands) && optionalString(value.calibration); }
 function isSpectralBands(value: unknown): value is Record<string, unknown>[] { return Array.isArray(value) && value.length > 0 && value.every(isSpectralBand); }
 function isMeasurementConditioning(value: unknown): value is Record<string, unknown> { return isRecord(value) && Object.keys(value).length > 0 && hasOnlyKeys(value, ['weighting','timeWeighting','levelReference']) && optionalString(value.weighting) && optionalString(value.timeWeighting) && optionalString(value.levelReference); }
-function asBoolean(value: unknown, pointer: string, keyword: string, uri: string, text: string, diagnostics: Diagnostic[]): boolean | undefined {
-  if (value === undefined) return undefined;
-  if (typeof value === 'boolean') return value;
-  pushKeywordDiagnostic(diagnostics, uri, pointer, `${keyword} must be a boolean.`, text);
-  return undefined;
-}
-
-function asInteger(value: unknown, pointer: string, keyword: string, uri: string, text: string, diagnostics: Diagnostic[]): number | undefined {
-  if (value === undefined) return undefined;
-  if (typeof value === 'number' && Number.isInteger(value) && value >= 0) return value;
-  pushKeywordDiagnostic(diagnostics, uri, pointer, `${keyword} must be a non-negative integer.`, text);
-  return undefined;
-}
-
 function asString(value: unknown, pointer: string, keyword: string, uri: string, text: string, diagnostics: Diagnostic[]): string | undefined {
   if (value === undefined) return undefined;
   if (typeof value === 'string') return value;
   pushKeywordDiagnostic(diagnostics, uri, pointer, `${keyword} must be a string.`, text);
   return undefined;
-}
-
-function isStringArray(value: unknown): value is readonly string[] {
-  return Array.isArray(value) && value.every((entry) => typeof entry === 'string');
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1292,33 +1280,14 @@ function schemaObjectMap(
   return value as Readonly<Record<string, Record<string, unknown>>>;
 }
 
-function dependentRequiredProjection(
-  value: unknown,
-  pointer: string,
-  uri: string,
-  text: string,
-  diagnostics: Diagnostic[]
-): Readonly<Record<string, readonly string[]>> | undefined {
-  if (value === undefined) return undefined;
-  if (!isRecord(value)) {
-    pushKeywordDiagnostic(diagnostics, uri, pointer, 'dependentRequired must be an object map of string arrays.', text);
-    return undefined;
-  }
-  const entries = Object.entries(value);
-  if (!entries.every(([, entry]) => isStringArray(entry))) {
-    pushKeywordDiagnostic(diagnostics, uri, pointer, 'dependentRequired must map each key to a string array.', text);
-    return undefined;
-  }
-  return Object.fromEntries(entries) as Readonly<Record<string, readonly string[]>>;
-}
-
 function hasAnyKey<T extends object>(value: T): boolean {
   return Object.values(value).some((entry) => entry !== undefined);
 }
 
-const NUMERIC_TYPES = new Set(['integer', 'number', 'int8', 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32', 'uint64', 'float32', 'float64', 'decimal']);
-const EXTENDED_NUMERIC_TYPES = new Set(['int64', 'uint64', 'int128', 'uint128', 'decimal', 'decimal128']);
-const NUMERIC_STRING = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/;
+const NUMERIC_TYPES = new Set([
+  'number', 'integer', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32',
+  'int64', 'uint64', 'int128', 'uint128', 'float8', 'float', 'double', 'decimal'
+]);
 const CORE_TYPES = new Set([
   'string', 'number', 'integer', 'boolean', 'null',
   'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32', 'int64', 'uint64', 'int128', 'uint128',
@@ -1345,57 +1314,6 @@ function declarationType(value: Record<string, unknown>): string | undefined {
   if (typeReference(value.type) !== undefined) return '$ref';
   if (Array.isArray(value.type)) return '$union';
   return undefined;
-}
-
-function numericConstraint(
-  value: unknown,
-  typeName: string | undefined,
-  pointer: string,
-  keyword: string,
-  uri: string,
-  text: string,
-  diagnostics: Diagnostic[],
-  requirePositive = false
-): number | string | undefined {
-  if (value === undefined) return undefined;
-  const declarationTypeName = typeName ?? '';
-  const isNumericDeclaration = NUMERIC_TYPES.has(declarationTypeName);
-  const isExtendedNumericDeclaration = EXTENDED_NUMERIC_TYPES.has(declarationTypeName);
-
-  if (!isNumericDeclaration) {
-    pushKeywordDiagnostic(diagnostics, uri, pointer, `${keyword} applies only to numeric declaration types.`, text);
-    return undefined;
-  }
-
-  if (isExtendedNumericDeclaration) {
-    if (typeof value !== 'string' || !NUMERIC_STRING.test(value)) {
-      pushKeywordDiagnostic(diagnostics, uri, pointer, `${keyword} must be a numeric string for extended numeric types.`, text);
-      return undefined;
-    }
-    if (requirePositive && !isPositiveNumericString(value)) {
-      pushKeywordDiagnostic(diagnostics, uri, pointer, `${keyword} must be greater than 0.`, text);
-      return undefined;
-    }
-    return value;
-  }
-
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    pushKeywordDiagnostic(diagnostics, uri, pointer, `${keyword} must be a finite number for non-extended numeric types.`, text);
-    return undefined;
-  }
-  if (requirePositive && value <= 0) {
-    pushKeywordDiagnostic(diagnostics, uri, pointer, `${keyword} must be greater than 0.`, text);
-    return undefined;
-  }
-  return value;
-}
-
-function isPositiveNumericString(value: string): boolean {
-  if (value.startsWith('-')) return false;
-  const numeric = Number(value);
-  if (Number.isFinite(numeric)) return numeric > 0;
-  const normalized = value.replace(/[+\-.eE]/g, '');
-  return /[1-9]/.test(normalized);
 }
 
 function keywordRange(text: string, pointer: string): TextRange {

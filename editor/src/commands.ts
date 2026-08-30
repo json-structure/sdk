@@ -1,6 +1,7 @@
 import type { DocumentVersion, TextEdit, TextRange } from './contracts.js';
 import type { DocumentSession } from './session.js';
 import { rangeFor } from './parser.js';
+import { effectiveValidationTypes, validationIssues, validationValueIsSchemaBacked, type ValidationKeyword, type ValidationKeywordMap } from './validation.js';
 
 export type SchemaTypeValue = string | Readonly<Record<string, unknown>> | readonly (string | Readonly<Record<string, unknown>>)[];
 export interface PropertySchema { readonly type: SchemaTypeValue; readonly [keyword: string]: unknown; }
@@ -488,18 +489,40 @@ function editableDeclaration(session: DocumentSession, pointer: string): Record<
     isTypeDeclaration(value) ? value : undefined;
 }
 function validSchemaValue(session: DocumentSession, value: unknown): boolean {
-  if (!isObjectLike(value) || !validTypeValue(value.type)) return false;
-  const references: string[] = [];
-  const collect = (candidate: unknown): void => {
-    const reference = typeReferenceValue(candidate);
-    if (reference !== undefined) references.push(reference);
-    else if (Array.isArray(candidate)) candidate.forEach(collect);
-    else if (isObjectLike(candidate) && candidate.type !== undefined) collect(candidate.type);
+  const root = pointerValue(session.value, '');
+  const visited = new Set<Record<string, unknown>>();
+  const validate = (schema: unknown): boolean => {
+    if (!isObjectLike(schema) || !validTypeValue(schema.type) || visited.has(schema)) return false;
+    visited.add(schema);
+    const references: string[] = [];
+    const collect = (candidate: unknown): void => {
+      const reference = typeReferenceValue(candidate);
+      if (reference !== undefined) references.push(reference);
+      else if (Array.isArray(candidate)) candidate.forEach(collect);
+      else if (isObjectLike(candidate) && candidate.type !== undefined) collect(candidate.type);
+    };
+    collect(schema.type);
+    if (!references.every((reference) => referenceResolvesLocally(session, reference) &&
+      (!isLocalPointerRef(reference) || reusableDeclarationPointer(session, reference.slice(1))))) return false;
+    const hasValidationKeywords = Object.keys(schema).some((key) => VALIDATION_KEYWORDS_FOR_COMMANDS.has(key));
+    const effectiveTypes = effectiveValidationTypes(root, schema);
+    if (hasValidationKeywords && (!effectiveTypes.determinate || effectiveTypes.types.length !== 1 || validationIssues(schema, effectiveTypes).length !== 0)) return false;
+    for (const keyword of ['contains', 'propertyNames', 'keyNames', 'has'] as const) {
+      if (Object.prototype.hasOwnProperty.call(schema, keyword) && !validate(schema[keyword])) return false;
+    }
+    for (const keyword of ['patternProperties', 'patternKeys'] as const) {
+      const map = schema[keyword];
+      if (map !== undefined && (!isObjectLike(map) || !Object.values(map).every(validate))) return false;
+    }
+    return true;
   };
-  collect(value.type);
-  return references.every((reference) => referenceResolvesLocally(session, reference) &&
-    (!isLocalPointerRef(reference) || reusableDeclarationPointer(session, reference.slice(1))));
+  return validate(value);
 }
+const VALIDATION_KEYWORDS_FOR_COMMANDS = new Set<string>([
+  'minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf', 'minLength', 'maxLength', 'pattern', 'format',
+  'minItems', 'maxItems', 'uniqueItems', 'minContains', 'maxContains', 'minProperties', 'maxProperties', 'minEntries', 'maxEntries',
+  'contains', 'propertyNames', 'keyNames', 'has', 'dependentRequired', 'patternProperties', 'patternKeys'
+]);
 function validRequired(properties: Record<string, unknown>, required: RequiredProperties): boolean {
   if (!Array.isArray(required)) return false;
   const alternatives = required.every((entry) => Array.isArray(entry));
@@ -618,6 +641,44 @@ export class SetDescriptionCommand implements EditorCommand {
     return this.description === undefined
       ? removeMemberCommandResult(context.session, this.targetPointer, 'description')
       : setMemberCommandResult(context.session, this.targetPointer, 'description', this.description);
+  }
+}
+
+export class SetValidationKeywordCommand<K extends ValidationKeyword> implements EditorCommand {
+  constructor(readonly targetPointer: string, readonly keyword: K, readonly value: ValidationKeywordMap[K] | undefined) {}
+
+  canExecute({ session, documentVersion }: CommandContext): boolean {
+    if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid') return false;
+    if (!session.capabilities.validationActive) return false;
+    const declaration = editableDeclaration(session, this.targetPointer);
+    if (!declaration) return false;
+    const root = pointerValue(session.value, '');
+    const effectiveTypes = effectiveValidationTypes(root, declaration);
+    if (!effectiveTypes.determinate || effectiveTypes.types.length !== 1) return false;
+    const authored = Object.prototype.hasOwnProperty.call(declaration, this.keyword);
+    if (authored && !objectMemberContext(session, this.targetPointer, this.keyword)) return false;
+    if (this.value === undefined) {
+      if (!authored) return false;
+      const candidate = { ...declaration };
+      delete candidate[this.keyword];
+      return validationIssues(candidate, effectiveTypes).length === 0;
+    }
+    if (!validationValueIsSchemaBacked(this.keyword, this.value)) return false;
+    const candidate = { ...declaration, [this.keyword]: this.value };
+    if (validationIssues(candidate, effectiveTypes).length !== 0) return false;
+    const schemas = this.keyword === 'patternProperties' || this.keyword === 'patternKeys'
+      ? Object.values(this.value as Readonly<Record<string, Readonly<Record<string, unknown>>>>)
+      : ['contains', 'propertyNames', 'keyNames', 'has'].includes(this.keyword)
+        ? [this.value as Readonly<Record<string, unknown>>]
+        : [];
+    return schemas.every((schema) => validSchemaValue(session, schema));
+  }
+
+  execute(context: CommandContext): CommandResult {
+    if (!this.canExecute(context)) throw new Error('SetValidationKeyword command preconditions are not satisfied.');
+    return this.value === undefined
+      ? removeMemberCommandResult(context.session, this.targetPointer, this.keyword)
+      : setMemberCommandResult(context.session, this.targetPointer, this.keyword, this.value);
   }
 }
 
