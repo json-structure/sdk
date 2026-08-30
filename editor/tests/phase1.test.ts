@@ -1,15 +1,26 @@
 import { describe, expect, it } from 'vitest';
 import {
   AddDefinitionCommand,
+  AddRelationCommand,
   AddPropertyCommand,
+  DeleteImportCommand,
   DeleteDefinitionCommand,
+  DeleteRelationCommand,
   DeletePropertyCommand,
   DocumentSession,
+  EditRelationCommand,
   EditPropertyCommand,
   InMemoryEditorHost,
   PROTOCOL_VERSION,
+  RemoveIdentityCommand,
+  RenameRelationCommand,
   RenameDefinitionCommand,
   RenamePropertyCommand,
+  SetIdentityCommand,
+  SetImportCommand,
+  SetRelationCardinalityCommand,
+  SetRelationQualifierCommand,
+  SetRelationScopeCommand,
   SetRootCommand,
   parseDocument,
   resolveSelection,
@@ -119,7 +130,6 @@ describe('Phase 1 vertical slice', () => {
       "spectralBands": [{"reference":"urn:spectral:vis","kind":"custom-spectral","bands":["red","green","blue"],"calibration":"custom-calibration"}]
     },
     "Nested": {
-      "type": "object",
       "$import": "https://example.org/nested.struct.json",
       "$importdefs": "https://example.org/nested-defs.struct.json",
       "definitions": {
@@ -131,7 +141,7 @@ describe('Phase 1 vertical slice', () => {
     const result = parseDocument('memory://typed', fixture);
     expect(result.recovery).toBe('valid');
     const projections = result.model?.projections;
-    expect(projections?.definitions.length).toBeGreaterThanOrEqual(4);
+    expect(projections?.definitions.length).toBeGreaterThanOrEqual(3);
     const thing = projections?.definitions.find((item) => item.pointer === '/definitions/Thing');
     expect(thing?.coreForm).toBe('typed');
     expect(thing?.extends).toEqual(['#/definitions/Meta']);
@@ -293,6 +303,285 @@ describe('Phase 1 vertical slice', () => {
     const invalid = parseDocument('memory://imports-invalid', '{"$import":"/relative.json","$importdefs":["https://example.org/defs.json"],"definitions":{"Thing":{"type":"object"}}}');
     expect(invalid.diagnostics.some((item) => item.location?.pointer === '/$import' && item.code === 'json.keyword-invalid')).toBe(true);
     expect(invalid.diagnostics.some((item) => item.location?.pointer === '/$importdefs' && item.code === 'json.keyword-invalid')).toBe(true);
+  });
+  it('diagnoses forbidden import placement without projecting it as an effective import', () => {
+    const result = parseDocument('memory://import-placement', '{"definitions":{"Thing":{"type":"object","$import":"https://example.org/invalid.json"}}}');
+    expect(result.diagnostics.some((item) => item.location?.pointer === '/definitions/Thing/$import' && item.code === 'json.keyword-invalid')).toBe(true);
+    expect(result.model?.projections.imports).toHaveLength(0);
+  });
+  it('projects direct definitions and imports nested under namespace objects', () => {
+    const result = parseDocument('memory://nested-namespace', '{"definitions":{"$import":"https://example.org/root-definitions.json","Domain":{"$import":"https://example.org/domain.json","Entity":{"type":"object"},"Nested":{"$importdefs":"https://example.org/nested.json","Value":{"type":"string"}}}}}');
+    const definitions = result.model?.projections.definitions ?? [];
+    expect(definitions.some((item) => item.pointer === '/definitions/Domain/Entity' && item.namespacePointer === '/definitions/Domain')).toBe(true);
+    expect(definitions.some((item) => item.pointer === '/definitions/Domain/Nested/Value' && item.namespacePointer === '/definitions/Domain/Nested')).toBe(true);
+    const imports = result.model?.projections.imports ?? [];
+    expect(imports.some((item) => item.pointer === '/definitions/Domain/$import')).toBe(true);
+    expect(imports.some((item) => item.pointer === '/definitions/Domain/Nested/$importdefs')).toBe(true);
+    expect(imports.some((item) => item.pointer === '/definitions/$import')).toBe(true);
+  });
+  it('diagnoses relation/identity local invariants with exact source pointers', () => {
+    const source = JSON.stringify({
+      definitions: {
+        Thing: {
+          type: 'string',
+          identity: ['id', 'id'],
+          relations: {
+            id: { targettype: { $ref: '#/definitions/Missing' }, cardinality: 'single', scope: '#/definitions/Missing' }
+          },
+          properties: { id: { type: 'string' } }
+        },
+        Target: { type: 'object' },
+        Nest: {
+          type: 'object',
+          properties: {
+            wrong: {
+              type: 'object'
+            }
+          }
+        }
+      },
+      $import: 'https://example.org/a.json',
+      $importdefs: 'https://example.org/b.json'
+    });
+    const result = parseDocument('memory://relation-identity-diag', source);
+    const pointers = new Set(result.diagnostics.filter((d) => d.code === 'json.keyword-invalid').map((d) => d.location?.pointer));
+    expect(pointers.has('/definitions/Thing/identity')).toBe(true);
+    expect(pointers.has('/definitions/Thing/relations')).toBe(true);
+    expect(pointers.has('/definitions/Thing/relations/id')).toBe(true);
+    expect(pointers.has('/definitions/Thing/relations/id/targettype/$ref')).toBe(true);
+    expect(pointers.has('/definitions/Thing/relations/id/scope')).toBe(true);
+    expect(pointers.has('')).toBe(true);
+  });
+  it('supports identity set/edit/remove with byte-identical undo and rejects invalid identity paths', async () => {
+    const original = '{"definitions":{"Person":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"}}}},"unknown":1}';
+    const host = new InMemoryEditorHost('memory://identity', original);
+    const session = new DocumentSession('memory://identity', original);
+    const set = new SetIdentityCommand('/definitions/Person', ['id']);
+    expect(set.canExecute({ session, documentVersion: 1 })).toBe(true);
+    const setResult = set.execute({ session, documentVersion: 1 });
+    await host.applyTextEdits({ protocolVersion: PROTOCOL_VERSION, requestId: 'identity-set', documentVersion: 1, edits: setResult.edits });
+    const changed = await host.readDocument();
+    expect(JSON.parse(changed.text).definitions.Person.identity).toEqual(['id']);
+    const setInverse = setResult.inverseEdits[0];
+    expect(changed.text.slice(0, setInverse.range.startOffset) + setInverse.newText + changed.text.slice(setInverse.range.endOffset)).toBe(original);
+
+    const session2 = new DocumentSession('memory://identity2', changed.text);
+    const edit = new SetIdentityCommand('/definitions/Person', ['id', 'name']);
+    expect(edit.canExecute({ session: session2, documentVersion: 1 })).toBe(true);
+    const editResult = edit.execute({ session: session2, documentVersion: 1 });
+    await host.applyTextEdits({ protocolVersion: PROTOCOL_VERSION, requestId: 'identity-edit', documentVersion: 2, edits: editResult.edits });
+    expect(JSON.parse((await host.readDocument()).text).definitions.Person.identity).toEqual(['id', 'name']);
+
+    const session3 = new DocumentSession('memory://identity3', (await host.readDocument()).text);
+    const remove = new RemoveIdentityCommand('/definitions/Person');
+    expect(remove.canExecute({ session: session3, documentVersion: 1 })).toBe(true);
+    const removeResult = remove.execute({ session: session3, documentVersion: 1 });
+    await host.applyTextEdits({ protocolVersion: PROTOCOL_VERSION, requestId: 'identity-remove', documentVersion: 3, edits: removeResult.edits });
+    expect(JSON.parse((await host.readDocument()).text).definitions.Person.identity).toBeUndefined();
+    expect((await host.undo()).text).toContain('"identity"');
+
+    const invalid = new DocumentSession('memory://identity-invalid', '{"definitions":{"Person":{"type":"object","properties":{"id":{"type":"string"}}}}}');
+    expect(new SetIdentityCommand('/definitions/Person', ['missing']).canExecute({ session: invalid, documentVersion: 1 })).toBe(false);
+    expect(new SetIdentityCommand('/definitions/Person', ['id', 'id']).canExecute({ session: invalid, documentVersion: 1 })).toBe(false);
+    expect(new RemoveIdentityCommand('/definitions/Person').canExecute({ session: invalid, documentVersion: 1 })).toBe(false);
+  });
+  it('supports relation add/edit/rename/delete plus typed cardinality/scope/qualifier mutation APIs', async () => {
+    const withLibrary = '{"definitions":{"Person":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Book":{"type":"object","properties":{"isbn":{"type":"string"}},"identity":["isbn"]},"Library":{"type":"array","items":{"$ref":"#/definitions/Person"}}}}';
+    const host2 = new InMemoryEditorHost('memory://relations2', withLibrary);
+    const sessionOk = new DocumentSession('memory://relations2', withLibrary);
+    const addOk = new AddRelationCommand('/definitions/Book', 'author', {
+      targetTypeRef: '#/definitions/Person',
+      cardinality: 'single',
+      scope: '#/definitions/Library',
+      qualifierTypeRef: '#/definitions/Person'
+    });
+    expect(addOk.canExecute({ session: sessionOk, documentVersion: 1 })).toBe(true);
+    const addResult = addOk.execute({ session: sessionOk, documentVersion: 1 });
+    await host2.applyTextEdits({ protocolVersion: PROTOCOL_VERSION, requestId: 'relation-add', documentVersion: 1, edits: addResult.edits });
+    const added = await host2.readDocument();
+    expect(JSON.parse(added.text).definitions.Book.relations.author.cardinality).toBe('single');
+    const addInverse = addResult.inverseEdits[0];
+    expect(added.text.slice(0, addInverse.range.startOffset) + addInverse.newText + added.text.slice(addInverse.range.endOffset)).toBe(withLibrary);
+
+    const editSession = new DocumentSession('memory://relations2-edit', added.text);
+    const edit = new EditRelationCommand('/definitions/Book/relations/author', {
+      targetTypeRef: '#/definitions/Person',
+      cardinality: 'multiple',
+      scope: ['#/definitions/Library'],
+      qualifierTypeRef: '#/definitions/Person'
+    });
+    expect(edit.canExecute({ session: editSession, documentVersion: 1 })).toBe(true);
+    await host2.applyTextEdits({ protocolVersion: PROTOCOL_VERSION, requestId: 'relation-edit', documentVersion: 2, edits: edit.execute({ session: editSession, documentVersion: 1 }).edits });
+
+    const renameSession = new DocumentSession('memory://relations2-rename', (await host2.readDocument()).text);
+    const rename = new RenameRelationCommand('/definitions/Book/relations/author', 'contributors');
+    expect(rename.canExecute({ session: renameSession, documentVersion: 1 })).toBe(true);
+    await host2.applyTextEdits({ protocolVersion: PROTOCOL_VERSION, requestId: 'relation-rename', documentVersion: 3, edits: rename.execute({ session: renameSession, documentVersion: 1 }).edits });
+    expect(JSON.parse((await host2.readDocument()).text).definitions.Book.relations.contributors).toBeDefined();
+
+    const typedSession = new DocumentSession('memory://relations2-typed', (await host2.readDocument()).text);
+    const setCardinality = new SetRelationCardinalityCommand('/definitions/Book/relations/contributors', 'single');
+    expect(setCardinality.canExecute({ session: typedSession, documentVersion: 1 })).toBe(true);
+    await host2.applyTextEdits({ protocolVersion: PROTOCOL_VERSION, requestId: 'relation-cardinality', documentVersion: 4, edits: setCardinality.execute({ session: typedSession, documentVersion: 1 }).edits });
+
+    const typedSession2 = new DocumentSession('memory://relations2-typed2', (await host2.readDocument()).text);
+    const setScope = new SetRelationScopeCommand('/definitions/Book/relations/contributors', undefined);
+    expect(setScope.canExecute({ session: typedSession2, documentVersion: 1 })).toBe(true);
+    await host2.applyTextEdits({ protocolVersion: PROTOCOL_VERSION, requestId: 'relation-scope', documentVersion: 5, edits: setScope.execute({ session: typedSession2, documentVersion: 1 }).edits });
+
+    const typedSession3 = new DocumentSession('memory://relations2-typed3', (await host2.readDocument()).text);
+    const setQualifier = new SetRelationQualifierCommand('/definitions/Book/relations/contributors', undefined);
+    expect(setQualifier.canExecute({ session: typedSession3, documentVersion: 1 })).toBe(true);
+    await host2.applyTextEdits({ protocolVersion: PROTOCOL_VERSION, requestId: 'relation-qualifier', documentVersion: 6, edits: setQualifier.execute({ session: typedSession3, documentVersion: 1 }).edits });
+
+    const deleteSession = new DocumentSession('memory://relations2-delete', (await host2.readDocument()).text);
+    const remove = new DeleteRelationCommand('/definitions/Book/relations/contributors');
+    expect(remove.canExecute({ session: deleteSession, documentVersion: 1 })).toBe(true);
+    const removeResult = remove.execute({ session: deleteSession, documentVersion: 1 });
+    await host2.applyTextEdits({ protocolVersion: PROTOCOL_VERSION, requestId: 'relation-delete', documentVersion: 7, edits: removeResult.edits });
+    expect(JSON.parse((await host2.readDocument()).text).definitions.Book.relations?.contributors).toBeUndefined();
+
+    const collision = new DocumentSession('memory://relation-collision', '{"type":"object","properties":{"owner":{"type":"string"}},"relations":{"existing":{"targettype":{"$ref":"#/definitions/T"},"cardinality":"single"}}}');
+    expect(new AddRelationCommand('', 'owner', { targetTypeRef: '#/definitions/T', cardinality: 'single' }).canExecute({ session: collision, documentVersion: 1 })).toBe(false);
+    expect(new RenameRelationCommand('/relations/existing', 'owner').canExecute({ session: collision, documentVersion: 1 })).toBe(false);
+  });
+  it('supports import add/edit/delete at normative placements and rejects invalid placements/forms', async () => {
+    const original = '{"$schema":"https://json-structure.org/schema/","definitions":{"People":{}},"unknown":1}';
+    const host = new InMemoryEditorHost('memory://imports', original);
+    const session = new DocumentSession('memory://imports', original);
+
+    const setRootImport = new SetImportCommand('', '$import', 'https://example.org/root.struct.json');
+    expect(setRootImport.canExecute({ session, documentVersion: 1 })).toBe(true);
+    const rootResult = setRootImport.execute({ session, documentVersion: 1 });
+    await host.applyTextEdits({ protocolVersion: PROTOCOL_VERSION, requestId: 'import-root', documentVersion: 1, edits: rootResult.edits });
+
+    const s2 = new DocumentSession('memory://imports-2', (await host.readDocument()).text);
+    const setDefsImport = new SetImportCommand('/definitions/People', '$importdefs', 'https://example.org/people.struct.json');
+    expect(setDefsImport.canExecute({ session: s2, documentVersion: 1 })).toBe(true);
+    await host.applyTextEdits({ protocolVersion: PROTOCOL_VERSION, requestId: 'import-defs', documentVersion: 2, edits: setDefsImport.execute({ session: s2, documentVersion: 1 }).edits });
+    const parsed = JSON.parse((await host.readDocument()).text);
+    expect(parsed.$import).toBe('https://example.org/root.struct.json');
+    expect(parsed.definitions.People.$importdefs).toBe('https://example.org/people.struct.json');
+
+    const s3 = new DocumentSession('memory://imports-3', (await host.readDocument()).text);
+    const delDefs = new DeleteImportCommand('/definitions/People', '$importdefs');
+    expect(delDefs.canExecute({ session: s3, documentVersion: 1 })).toBe(true);
+    await host.applyTextEdits({ protocolVersion: PROTOCOL_VERSION, requestId: 'import-delete', documentVersion: 3, edits: delDefs.execute({ session: s3, documentVersion: 1 }).edits });
+    expect(JSON.parse((await host.readDocument()).text).definitions.People.$importdefs).toBeUndefined();
+
+    const invalidPlacement = new DocumentSession('memory://import-invalid-placement', '{"type":"object","properties":{"x":{"type":"string"}}}');
+    expect(new SetImportCommand('/properties/x', '$import', 'https://example.org/x').canExecute({ session: invalidPlacement, documentVersion: 1 })).toBe(false);
+    expect(new SetImportCommand('', '$import', '/relative').canExecute({ session: invalidPlacement, documentVersion: 1 })).toBe(false);
+
+    const bothKeywords = new DocumentSession('memory://import-both', '{"definitions":{"Ns":{"$import":"https://example.org/a","$importdefs":"https://example.org/b"}}}');
+    expect(new SetImportCommand('/definitions/Ns', '$import', 'https://example.org/c').canExecute({ session: bothKeywords, documentVersion: 1 })).toBe(false);
+
+    const danglingScope = new DocumentSession('memory://relation-dangling-scope', '{"definitions":{"Person":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Book":{"type":"object","properties":{"isbn":{"type":"string"}},"identity":["isbn"]}}}');
+    expect(
+      new AddRelationCommand('/definitions/Book', 'author', { targetTypeRef: '#/definitions/Person', cardinality: 'single', scope: '#/definitions/Missing' })
+        .canExecute({ session: danglingScope, documentVersion: 1 })
+    ).toBe(false);
+  });
+  it('requires relation scopes to be compatible collections and validates root collection scope', async () => {
+    const original = '{"$root":"#/definitions/RootItems","definitions":{"Target":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Other":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"RootItems":{"type":"array","items":{"$ref":"#/definitions/Target"}},"TargetSet":{"type":"set","items":{"type":{"$ref":"#/definitions/Target"}}},"TargetMap":{"type":"map","values":{"$ref":"#/definitions/Target"}},"Wrong":{"type":"array","items":{"$ref":"#/definitions/Other"}},"Source":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]}}}';
+    const session = new DocumentSession('memory://compatible-scopes', original);
+    const context = { session, documentVersion: 1 };
+    for (const scope of ['#', '#/definitions/RootItems', '#/definitions/TargetSet', '#/definitions/TargetMap']) {
+      expect(new AddRelationCommand('/definitions/Source', `rel_${scope.length}`, { targetTypeRef: '#/definitions/Target', cardinality: 'single', scope }).canExecute(context)).toBe(true);
+    }
+    expect(new AddRelationCommand('/definitions/Source', 'wrong', { targetTypeRef: '#/definitions/Target', cardinality: 'single', scope: '#/definitions/Wrong' }).canExecute(context)).toBe(false);
+    expect(new AddRelationCommand('/definitions/Source', 'not_collection', { targetTypeRef: '#/definitions/Target', cardinality: 'single', scope: '#/definitions/Target' }).canExecute(context)).toBe(false);
+
+    const add = new AddRelationCommand('/definitions/Source', 'target', { targetTypeRef: '#/definitions/Target', cardinality: 'single', scope: '#' });
+    const result = add.execute(context);
+    const changed = original.slice(0, result.edits[0].range.startOffset) + result.edits[0].newText + original.slice(result.edits[0].range.endOffset);
+    const inverse = result.inverseEdits[0];
+    expect(changed.slice(0, inverse.range.startOffset) + inverse.newText + changed.slice(inverse.range.endOffset)).toBe(original);
+
+    const inlineRoot = new DocumentSession('memory://inline-root-scope', '{"type":"array","items":{"$ref":"#/definitions/Target"},"definitions":{"Target":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Source":{"type":"object"}}}');
+    expect(new AddRelationCommand('/definitions/Source', 'target', { targetTypeRef: '#/definitions/Target', cardinality: 'single', scope: '#' }).canExecute({ session: inlineRoot, documentVersion: 1 })).toBe(false);
+
+    const parsed = parseDocument('memory://scope-diagnostics', original.replace('#/definitions/Target\"}},\"TargetSet', '#/definitions/Other\"}},\"TargetSet'));
+    expect(parsed.diagnostics.some((item) => item.location?.pointer === '/definitions/RootItems/items')).toBe(false);
+    const badScope = parseDocument('memory://scope-diagnostics-bad', '{"$root":"#/definitions/Wrong","definitions":{"Target":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Other":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Wrong":{"type":"array","items":{"$ref":"#/definitions/Other"}},"Source":{"type":"object","relations":{"target":{"targettype":{"$ref":"#/definitions/Target"},"cardinality":"single","scope":"#"}}}}}');
+    expect(badScope.diagnostics.some((item) => item.location?.pointer === '/definitions/Source/relations/target/scope')).toBe(true);
+  });
+  it('requires unique object relations, reusable valid targets, and reusable qualifiers', () => {
+    const malformed = new DocumentSession('memory://malformed-relation-command', '{"definitions":{"Target":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Source":{"type":"object","relations":{"bad":1}}}}');
+    expect(new DeleteRelationCommand('/definitions/Source/relations/bad').canExecute({ session: malformed, documentVersion: 1 })).toBe(false);
+    const duplicate = new DocumentSession('memory://duplicate-relation-command', '{"definitions":{"Target":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Source":{"type":"object","relations":{"bad":{"targettype":{"$ref":"#/definitions/Target"},"cardinality":"single"},"bad":{"targettype":{"$ref":"#/definitions/Target"},"cardinality":"multiple"}}}}}');
+    expect(new DeleteRelationCommand('/definitions/Source/relations/bad').canExecute({ session: duplicate, documentVersion: 1 })).toBe(false);
+
+    const targets = new DocumentSession('memory://relation-targets', '{"definitions":{"Good":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"BadIdentity":{"type":"object","properties":{"id":{"type":"string"}},"identity":["missing"]},"Primitive":{"type":"string","identity":["id"]},"Qualifier":{"type":"string"},"Holder":{"type":"object","properties":{"inline":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]}}},"Source":{"type":"object"}}}');
+    const targetContext = { session: targets, documentVersion: 1 };
+    expect(new AddRelationCommand('/definitions/Source', 'good', { targetTypeRef: '#/definitions/Good', cardinality: 'single', qualifierTypeRef: '#/definitions/Qualifier' }).canExecute(targetContext)).toBe(true);
+    expect(new AddRelationCommand('/definitions/Source', 'bad_identity', { targetTypeRef: '#/definitions/BadIdentity', cardinality: 'single' }).canExecute(targetContext)).toBe(false);
+    expect(new AddRelationCommand('/definitions/Source', 'primitive', { targetTypeRef: '#/definitions/Primitive', cardinality: 'single' }).canExecute(targetContext)).toBe(false);
+    expect(new AddRelationCommand('/definitions/Source', 'inline', { targetTypeRef: '#/definitions/Holder/properties/inline', cardinality: 'single' }).canExecute(targetContext)).toBe(false);
+    expect(new AddRelationCommand('/definitions/Source', 'inline_qualifier', { targetTypeRef: '#/definitions/Good', cardinality: 'single', qualifierTypeRef: '#/definitions/Holder/properties/inline' }).canExecute(targetContext)).toBe(false);
+
+    const diagnostics = parseDocument('memory://relation-shapes', '{"definitions":{"Good":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"BadIdentity":{"type":"object","properties":{"id":{"type":"string"}},"identity":["missing"]},"Qualifier":{"type":"string"},"Holder":{"type":"object","properties":{"inline":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]}}},"Source":{"type":"object","relations":{"bad-name":{"targettype":{"$ref":"#/definitions/BadIdentity"},"cardinality":"single","qualifiertype":{"$ref":"#/definitions/Holder/properties/inline"}}}},"Broken":{"type":"object","relations":[]}}}');
+    for (const pointer of ['/definitions/Source/relations/bad-name', '/definitions/Source/relations/bad-name/targettype/$ref', '/definitions/Source/relations/bad-name/qualifiertype/$ref', '/definitions/Broken/relations']) {
+      expect(diagnostics.diagnostics.some((item) => item.location?.pointer === pointer), pointer).toBe(true);
+    }
+  });
+  it('protects identities used by inbound relation targets', () => {
+    const used = new DocumentSession('memory://identity-inbound', '{"definitions":{"Target":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Source":{"type":"object","relations":{"target":{"targettype":{"$ref":"#/definitions/Target"},"cardinality":"single"}}}}}');
+    expect(new RemoveIdentityCommand('/definitions/Target').canExecute({ session: used, documentVersion: 1 })).toBe(false);
+    const unused = new DocumentSession('memory://identity-unused', '{"definitions":{"Target":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]}}}');
+    expect(new RemoveIdentityCommand('/definitions/Target').canExecute({ session: unused, documentVersion: 1 })).toBe(true);
+  });
+  it('uses structural namespace placement for imports and reusable hierarchy for SetRoot', () => {
+    const original = '{"definitions":{"Ns":{"Nested":{},"Type":{"type":"object","properties":{"child":{"type":"object"}}}}}}';
+    const session = new DocumentSession('memory://structural-placement', original);
+    expect(new SetImportCommand('', '$import', 'https://example.org/root').canExecute({ session, documentVersion: 1 })).toBe(true);
+    expect(new SetImportCommand('/definitions', '$importdefs', 'https://example.org/defs').canExecute({ session, documentVersion: 1 })).toBe(true);
+    expect(new SetImportCommand('/definitions/Ns/Nested', '$import', 'https://example.org/nested').canExecute({ session, documentVersion: 1 })).toBe(true);
+    expect(new SetImportCommand('/definitions/Ns/Type', '$import', 'https://example.org/type').canExecute({ session, documentVersion: 1 })).toBe(false);
+    expect(new SetImportCommand('/definitions/Ns/Type/properties/child', '$import', 'https://example.org/property').canExecute({ session, documentVersion: 1 })).toBe(false);
+    expect(new SetRootCommand('/definitions/Ns/Type/properties/child').canExecute({ session, documentVersion: 1 })).toBe(false);
+
+    const root = new SetRootCommand('/definitions/Ns/Type');
+    const result = root.execute({ session, documentVersion: 1 });
+    const changed = original.slice(0, result.edits[0].range.startOffset) + result.edits[0].newText + original.slice(result.edits[0].range.endOffset);
+    const inverse = result.inverseEdits[0];
+    expect(changed.slice(0, inverse.range.startOffset) + inverse.newText + changed.slice(inverse.range.endOffset)).toBe(original);
+
+    const inline = new DocumentSession('memory://inline-set-root', '{"type":"object","definitions":{"Type":{"type":"object"}}}');
+    expect(new SetRootCommand('/definitions/Type').canExecute({ session: inline, documentVersion: 1 })).toBe(false);
+
+    const parsed = parseDocument('memory://import-structural-diagnostics', '{"definitions":{"Ns":{"$import":"https://example.org/ns","Type":{"type":"object","$import":"https://example.org/type","properties":{"child":{"type":"object","$importdefs":"https://example.org/child"}}}}}}');
+    expect(parsed.diagnostics.some((item) => item.location?.pointer === '/definitions/Ns/$import')).toBe(false);
+    expect(parsed.diagnostics.some((item) => item.location?.pointer === '/definitions/Ns/Type/$import')).toBe(true);
+    expect(parsed.diagnostics.some((item) => item.location?.pointer === '/definitions/Ns/Type/properties/child/$importdefs')).toBe(true);
+  });
+  it('rejects duplicate ambiguity on identity, relation members, root, and imports', () => {
+    const duplicateIdentity = new DocumentSession('memory://duplicate-identity-edit', '{"definitions":{"T":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"],"identity":["id"]}}}');
+    expect(new SetIdentityCommand('/definitions/T', ['id']).canExecute({ session: duplicateIdentity, documentVersion: 1 })).toBe(false);
+    expect(new RemoveIdentityCommand('/definitions/T').canExecute({ session: duplicateIdentity, documentVersion: 1 })).toBe(false);
+    const duplicateIdentityProperty = new DocumentSession('memory://duplicate-identity-property', '{"definitions":{"T":{"type":"object","properties":{"id":{"type":"string"},"id":{"type":"uuid"}}}}}');
+    expect(new SetIdentityCommand('/definitions/T', ['id']).canExecute({ session: duplicateIdentityProperty, documentVersion: 1 })).toBe(false);
+
+    const duplicateMembers = new DocumentSession('memory://duplicate-relation-members', '{"definitions":{"T":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"S":{"type":"object","relations":{"r":{"targettype":{"$ref":"#/definitions/T"},"cardinality":"single","cardinality":"multiple","scope":"#/definitions/C","scope":"#/definitions/C","qualifiertype":{"$ref":"#/definitions/T"},"qualifiertype":{"$ref":"#/definitions/T"}}}},"C":{"type":"array","items":{"$ref":"#/definitions/T"}}}}');
+    const memberContext = { session: duplicateMembers, documentVersion: 1 };
+    expect(new SetRelationCardinalityCommand('/definitions/S/relations/r', 'single').canExecute(memberContext)).toBe(false);
+    expect(new SetRelationScopeCommand('/definitions/S/relations/r', '#/definitions/C').canExecute(memberContext)).toBe(false);
+    expect(new SetRelationQualifierCommand('/definitions/S/relations/r', '#/definitions/T').canExecute(memberContext)).toBe(false);
+
+    const duplicateRoot = new DocumentSession('memory://duplicate-root', '{"$root":"#/definitions/A","$root":"#/definitions/B","definitions":{"A":{"type":"object"},"B":{"type":"object"}}}');
+    expect(new SetRootCommand('/definitions/A').canExecute({ session: duplicateRoot, documentVersion: 1 })).toBe(false);
+    const duplicateImport = new DocumentSession('memory://duplicate-import', '{"$import":"https://example.org/a","$import":"https://example.org/b"}');
+    expect(new SetImportCommand('', '$import', 'https://example.org/c').canExecute({ session: duplicateImport, documentVersion: 1 })).toBe(false);
+    expect(new DeleteImportCommand('', '$import').canExecute({ session: duplicateImport, documentVersion: 1 })).toBe(false);
+  });
+  it('enforces relation identifier grammar in commands and diagnostics', () => {
+    const source = '{"definitions":{"T":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"S":{"type":"object","relations":{"valid_name":{"targettype":{"$ref":"#/definitions/T"},"cardinality":"single"}}}}}';
+    const session = new DocumentSession('memory://relation-names', source);
+    expect(new AddRelationCommand('/definitions/S', '_alsoValid2', { targetTypeRef: '#/definitions/T', cardinality: 'single' }).canExecute({ session, documentVersion: 1 })).toBe(true);
+    expect(new AddRelationCommand('/definitions/S', 'bad-name', { targetTypeRef: '#/definitions/T', cardinality: 'single' }).canExecute({ session, documentVersion: 1 })).toBe(false);
+    expect(new RenameRelationCommand('/definitions/S/relations/valid_name', '2bad').canExecute({ session, documentVersion: 1 })).toBe(false);
+    const parsed = parseDocument('memory://relation-name-diagnostic', source.replace('valid_name', 'bad-name'));
+    expect(parsed.diagnostics.some((item) => item.location?.pointer === '/definitions/S/relations/bad-name')).toBe(true);
   });
   it('supports numeric validation strings only for extended numeric declaration types with positive multipleOf', () => {
     const validExtended = parseDocument('memory://numeric-extended', '{"definitions":{"D":{"type":"decimal","minimum":"0","maximum":"10.5","exclusiveMinimum":"0","exclusiveMaximum":"11","multipleOf":"0.5"}}}');
