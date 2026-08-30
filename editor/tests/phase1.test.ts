@@ -1,5 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { AddPropertyCommand, DeletePropertyCommand, DocumentSession, EditPropertyCommand, InMemoryEditorHost, PROTOCOL_VERSION, RenamePropertyCommand, parseDocument, resolveSelection, sameSelection, selectionForMode } from '../src/index.js';
+import {
+  AddDefinitionCommand,
+  AddPropertyCommand,
+  DeleteDefinitionCommand,
+  DeletePropertyCommand,
+  DocumentSession,
+  EditPropertyCommand,
+  InMemoryEditorHost,
+  PROTOCOL_VERSION,
+  RenameDefinitionCommand,
+  RenamePropertyCommand,
+  SetRootCommand,
+  parseDocument,
+  resolveSelection,
+  sameSelection,
+  selectionForMode
+} from '../src/index.js';
 
 const text = `{
   "$schema": "https://json-structure.org/schema/",
@@ -21,6 +37,537 @@ describe('Phase 1 vertical slice', () => {
     expect(person?.range?.startOffset).toBe(text.indexOf('"Person"') + '"Person"'.length + 2);
     expect(text.slice(property!.range!.startOffset!, property!.range!.endOffset!)).toBe('{"type": "string"}');
     expect(property?.location?.pointer).toBe('/definitions/Person/properties/id');
+  });
+  it('projects typed definitions, imports, relation semantics, units, validation, composition, and semantic annotations', () => {
+    const fixture = `{
+  "$schema": "https://json-structure.org/schema/",
+  "$import": "https://example.org/root.struct.json",
+  "$importdefs": "https://example.org/common.struct.json",
+  "definitions": {
+    "Meta": {"type":"string"},
+    "Thing": {
+      "type": "object",
+      "$extends": ["#/definitions/Meta"],
+      "properties": {"id": {"type": "string"}},
+      "identity": ["id"],
+      "relations": {
+        "owner": {
+
+          "targettype": {"$ref": "#/definitions/Meta"},
+          "cardinality": "single",
+          "scope": ["#/items"],
+          "qualifiertype": {"$ref": "#/definitions/Meta"}
+        }
+      },
+      "symbol": "kg",
+      "symbols": {"display": "kg", "lang:en": "kilogram"},
+      "unit": "kilogram",
+      "ucumUnit": "kg",
+      "currency": "EUR",
+      "minimum": 0,
+      "maximum": 100,
+      "exclusiveMinimum": 0,
+      "exclusiveMaximum": 100,
+      "multipleOf": 0.5,
+      "minLength": 1,
+      "maxLength": 32,
+      "pattern": "^[a-z]+$",
+      "format": "text",
+      "minItems": 0,
+      "maxItems": 5,
+      "uniqueItems": true,
+      "minContains": 1,
+      "maxContains": 2,
+      "minProperties": 1,
+      "maxProperties": 5,
+      "minEntries": 0,
+      "maxEntries": 5,
+      "default": "abc",
+      "contains": {"type":"string"},
+      "propertyNames": {"pattern":"^[a-z]+$"},
+      "keyNames": {"pattern":"^[a-z]+$"},
+      "has": {"id": true},
+      "dependentRequired": {"id": ["name"]},
+      "patternProperties": {"^x": {"type":"string"}},
+      "patternKeys": {"^x": {"type":"string"}},
+      "allOf": [{"type":"object"}],
+      "anyOf": [{"type":"object"}],
+      "oneOf": [{"type":"object"}],
+      "not": {"type":"null"},
+      "if": {"type":"object"},
+      "then": {"type":"object"},
+      "else": {"type":"object"},
+      "concepts": [{"reference":"urn:concept:thing","kind":"custom-concept"}],
+      "observedProperty": {"reference":"urn:obs:mass","kind":"custom-observable"},
+      "semanticRole": "observationValue",
+      "derivation": "statistic",
+      "statistic": {"function":"percentile","percentile":95},
+      "codedValues": {"reference":"urn:codes","kind":"custom-code-list"},
+      "measurementConditioning": {"weighting":"custom-weighting"},
+      "referenceRole": "position",
+      "phenomenonTimeRelation": "interval",
+      "supportPeriod": {"length":"PT10S","anchor":"end"},
+      "temporalReferenceSystem": {"reference":"urn:trs:iso8601","kind":"custom-trs","position":"time","sortOrder":"forward"},
+      "cadence": {"kind":"fixed","period":"PT1S"},
+      "coordinateReferenceSystem": {"reference":"urn:ogc:def:crs:EPSG::4326","kind":"custom-crs","coordinates":["x","y"]},
+      "vectorReferenceFrames": [{"reference":"urn:frame:enu","kind":"custom-frame","components":["vx","vy"],"variance":"contravariant"}],
+      "tensorReferenceFrames": [{"frames":[{"reference":"urn:frame:a","kind":"custom-frame"},{"reference":"urn:frame:a","kind":"custom-frame"}],"components":[{"index":[0,0],"property":"xx"}],"symmetry":"none"}],
+      "frameTransforms": [{"from":{"reference":"urn:frame:a","kind":"custom-frame"},"to":{"reference":"urn:frame:b","kind":"custom-frame"},"encoding":"eulerAngles","components":["roll","pitch","yaw"],"rotationSequence":"XYZ","translation":["tx","ty","tz"]}],
+      "linearReferenceSystem": {"reference":"urn:lrs:1","kind":"custom-lrs","linearElement":"road","measure":"distance"},
+      "colorSpaces": [{"reference":"urn:color:srgb","kind":"custom-color","channels":["red","green","blue"],"transfer":"asDefined"}],
+      "audioChannels": [{"reference":"urn:audio:stereo","kind":"custom-audio","channels":["left","right"],"encoding":"urn:encoding:custom"}],
+      "spectralBands": [{"reference":"urn:spectral:vis","kind":"custom-spectral","bands":["red","green","blue"],"calibration":"custom-calibration"}]
+    },
+    "Nested": {
+      "type": "object",
+      "$import": "https://example.org/nested.struct.json",
+      "$importdefs": "https://example.org/nested-defs.struct.json",
+      "definitions": {
+        "Inner": {"type":{"$ref":"#/definitions/Meta"}}
+      }
+    }
+  }
+}`;
+    const result = parseDocument('memory://typed', fixture);
+    expect(result.recovery).toBe('valid');
+    const projections = result.model?.projections;
+    expect(projections?.definitions.length).toBeGreaterThanOrEqual(4);
+    const thing = projections?.definitions.find((item) => item.pointer === '/definitions/Thing');
+    expect(thing?.coreForm).toBe('typed');
+    expect(thing?.extends).toEqual(['#/definitions/Meta']);
+    expect(thing?.relations[0]?.name).toBe('owner');
+
+    expect(thing?.relations[0]?.targetTypeRef).toBe('#/definitions/Meta');
+    expect(thing?.relations[0]?.cardinality).toBe('single');
+    expect(thing?.relations[0]?.scope).toEqual(['#/items']);
+    expect(thing?.relations[0]?.qualifierTypeRef).toBe('#/definitions/Meta');
+    expect(thing?.units).toEqual({ symbol: 'kg', symbols: { display: 'kg', 'lang:en': 'kilogram' }, unit: 'kilogram', ucumUnit: 'kg', currency: 'EUR' });
+    expect(thing?.validation?.minimum).toBeUndefined();
+    expect(thing?.validation?.maximum).toBeUndefined();
+    expect(thing?.validation?.exclusiveMinimum).toBeUndefined();
+    expect(thing?.validation?.exclusiveMaximum).toBeUndefined();
+    expect(thing?.validation?.multipleOf).toBeUndefined();
+    expect(thing?.validation?.minLength).toBe(1);
+    expect(thing?.validation?.maxLength).toBe(32);
+    expect(thing?.validation?.pattern).toBe('^[a-z]+$');
+    expect(thing?.validation?.format).toBe('text');
+    expect(thing?.validation?.minItems).toBe(0);
+    expect(thing?.validation?.maxItems).toBe(5);
+    expect(thing?.validation?.uniqueItems).toBe(true);
+    expect(thing?.validation?.minContains).toBe(1);
+    expect(thing?.validation?.maxContains).toBe(2);
+    expect(thing?.validation?.minProperties).toBe(1);
+    expect(thing?.validation?.maxProperties).toBe(5);
+    expect(thing?.validation?.minEntries).toBe(0);
+    expect(thing?.validation?.maxEntries).toBe(5);
+    expect(thing?.validation?.default).toBe('abc');
+    expect(thing?.validation?.contains).toEqual({ type: 'string' });
+    expect(thing?.validation?.propertyNames).toEqual({ pattern: '^[a-z]+$' });
+    expect(thing?.validation?.keyNames).toEqual({ pattern: '^[a-z]+$' });
+    expect(thing?.validation?.has).toEqual({ id: true });
+    expect(thing?.validation?.dependentRequired).toEqual({ id: ['name'] });
+    expect(thing?.validation?.patternProperties).toEqual({ '^x': { type: 'string' } });
+    expect(thing?.validation?.patternKeys).toEqual({ '^x': { type: 'string' } });
+    expect(thing?.composition?.allOf).toEqual([{ type: 'object' }]);
+    expect(thing?.composition?.anyOf).toEqual([{ type: 'object' }]);
+    expect(thing?.composition?.oneOf).toEqual([{ type: 'object' }]);
+    expect(thing?.composition?.not).toEqual({ type: 'null' });
+    expect(thing?.composition?.if).toEqual({ type: 'object' });
+    expect(thing?.composition?.then).toEqual({ type: 'object' });
+    expect(thing?.composition?.else).toEqual({ type: 'object' });
+    expect(thing?.semantic?.concepts).toEqual([{ reference: 'urn:concept:thing', kind: 'custom-concept' }]);
+    expect(thing?.semantic?.observedProperty).toEqual({ reference: 'urn:obs:mass', kind: 'custom-observable' });
+    expect(thing?.semantic?.semanticRole).toBe('observationValue');
+    expect(thing?.semantic?.derivation).toBe('statistic');
+    expect(thing?.semantic?.statistic).toEqual({ function: 'percentile', percentile: 95 });
+    expect(thing?.semantic?.codedValues).toEqual({ reference: 'urn:codes', kind: 'custom-code-list' });
+    expect(thing?.semantic?.measurementConditioning).toEqual({ weighting: 'custom-weighting' });
+    expect(thing?.semantic?.referenceRole).toBe('position');
+    expect(thing?.semantic?.phenomenonTimeRelation).toBe('interval');
+    expect(thing?.semantic?.supportPeriod).toEqual({ length: 'PT10S', anchor: 'end' });
+    expect(thing?.semantic?.temporalReferenceSystem).toEqual({ reference: 'urn:trs:iso8601', kind: 'custom-trs', position: 'time', sortOrder: 'forward' });
+    expect(thing?.semantic?.cadence).toEqual({ kind: 'fixed', period: 'PT1S' });
+    expect(thing?.semantic?.coordinateReferenceSystem).toEqual({ reference: 'urn:ogc:def:crs:EPSG::4326', kind: 'custom-crs', coordinates: ['x', 'y'] });
+    expect(thing?.semantic?.vectorReferenceFrames?.[0]?.variance).toBe('contravariant');
+    expect(thing?.semantic?.tensorReferenceFrames?.[0]?.symmetry).toBe('none');
+    expect(thing?.semantic?.frameTransforms?.[0]?.encoding).toBe('eulerAngles');
+    expect(thing?.semantic?.linearReferenceSystem?.measure).toBe('distance');
+    expect(thing?.semantic?.colorSpaces?.[0]?.channels).toEqual(['red', 'green', 'blue']);
+    expect(thing?.semantic?.audioChannels?.[0]?.channels).toEqual(['left', 'right']);
+    expect(thing?.semantic?.spectralBands?.[0]?.bands).toEqual(['red', 'green', 'blue']);
+    const importEntries = projections?.imports ?? [];
+    expect(importEntries.some((entry) => entry.pointer === '/$import' && entry.provenance === 'import')).toBe(true);
+    expect(importEntries.some((entry) => entry.pointer === '/$importdefs' && entry.provenance === 'importdefs')).toBe(true);
+    expect(importEntries.some((entry) => entry.pointer === '/definitions/Nested/$import')).toBe(true);
+    expect(importEntries.some((entry) => entry.pointer === '/definitions/Nested/$importdefs')).toBe(true);
+    expect(importEntries.every((entry) => typeof entry.source === 'string')).toBe(true);
+    expect(importEntries.every((entry) => !('targetPointer' in (entry as unknown as Record<string, unknown>)))).toBe(true);
+    const refs = projections?.references ?? [];
+    expect(refs.some((entry) => entry.pointer === '/definitions/Nested/definitions/Inner/type' && entry.target === '#/definitions/Meta')).toBe(true);
+    expect(refs.some((entry) => entry.pointer === '/definitions/Thing/relations/owner/targettype/$ref' && entry.target === '#/definitions/Meta')).toBe(true);
+    const semanticPlacements = projections?.semanticPlacements ?? [];
+    expect(semanticPlacements.some((entry) => entry.pointer === '/definitions/Thing')).toBe(true);
+  });
+  it('emits per-keyword diagnostics for malformed companion values and excludes invalid projections', () => {
+    const cases: ReadonlyArray<{
+      readonly label: string;
+      readonly body: string;
+      readonly pointer: string;
+      readonly scope?: 'root' | 'definition';
+      readonly assertDefinition?: (definition: NonNullable<ReturnType<typeof parseDocument>['model']>['projections']['definitions'][number]) => void;
+      readonly assertImports?: (imports: NonNullable<ReturnType<typeof parseDocument>['model']>['projections']['imports']) => void;
+    }> = [
+      { label: 'validation.minimum', body: '"minimum":"zero"', pointer: '/definitions/Thing/minimum', assertDefinition: (d) => expect(d.validation?.minimum).toBeUndefined() },
+      { label: 'validation.maxLength', body: '"maxLength":-1', pointer: '/definitions/Thing/maxLength', assertDefinition: (d) => expect(d.validation?.maxLength).toBeUndefined() },
+      { label: 'validation.dependentRequired', body: '"dependentRequired":{"id":[1]}', pointer: '/definitions/Thing/dependentRequired', assertDefinition: (d) => expect(d.validation?.dependentRequired).toBeUndefined() },
+      { label: 'validation.patternProperties', body: '"patternProperties":{"^x":1}', pointer: '/definitions/Thing/patternProperties', assertDefinition: (d) => expect(d.validation?.patternProperties).toBeUndefined() },
+      { label: 'composition.allOf', body: '"allOf":[1]', pointer: '/definitions/Thing/allOf', assertDefinition: (d) => expect(d.composition?.allOf).toBeUndefined() },
+      { label: 'composition.not', body: '"not":[1]', pointer: '/definitions/Thing/not', assertDefinition: (d) => expect(d.composition?.not).toBeUndefined() },
+      { label: 'units.symbol', body: '"symbol":1', pointer: '/definitions/Thing/symbol', assertDefinition: (d) => expect(d.units?.symbol).toBeUndefined() },
+      { label: 'units.symbols', body: '"symbols":{"display":1}', pointer: '/definitions/Thing/symbols', assertDefinition: (d) => expect(d.units?.symbols).toBeUndefined() },
+      { label: 'relations.members', body: '"relations":{"owner":{"identity":["id"],"targettype":{"$ref":"#/definitions/Thing"},"cardinality":"single"}}', pointer: '/definitions/Thing/relations/owner/identity', assertDefinition: (d) => expect(d.relations).toHaveLength(0) },
+      { label: 'relations.target', body: '"relations":{"owner":{"targettype":{"$ref":1},"cardinality":"single"}}', pointer: '/definitions/Thing/relations/owner/targettype', assertDefinition: (d) => expect(d.relations).toHaveLength(0) },
+      { label: 'relations.qualifier', body: '"relations":{"owner":{"targettype":{"$ref":"#/definitions/Thing"},"cardinality":"single","qualifiertype":{"$ref":1}}}', pointer: '/definitions/Thing/relations/owner/qualifiertype', assertDefinition: (d) => expect(d.relations[0]?.qualifierTypeRef).toBeUndefined() },
+      { label: 'relations.cardinality', body: '"relations":{"owner":{"targettype":{"$ref":"#/definitions/Thing"},"cardinality":"one"}}', pointer: '/definitions/Thing/relations/owner/cardinality', assertDefinition: (d) => expect(d.relations).toHaveLength(0) },
+      { label: 'relations.scope', body: '"relations":{"owner":{"targettype":{"$ref":"#/definitions/Thing"},"cardinality":"single","scope":["/not-a-fragment"]}}', pointer: '/definitions/Thing/relations/owner/scope', assertDefinition: (d) => expect(d.relations[0]?.scope).toBeUndefined() },
+      { label: 'imports.import', body: '"$import":["x"]', pointer: '/$import', scope: 'root', assertImports: (imports) => expect(imports.find((item) => item.pointer === '/$import')).toBeUndefined() },
+      { label: 'imports.importdefs', body: '"$importdefs":["https://example.org/a"]', pointer: '/$importdefs', scope: 'root', assertImports: (imports) => expect(imports.find((item) => item.pointer === '/$importdefs')).toBeUndefined() },
+      { label: 'semantic.concepts', body: '"concepts":[1]', pointer: '/definitions/Thing/concepts', assertDefinition: (d) => expect(d.semantic?.concepts).toBeUndefined() },
+      { label: 'semantic.observedProperty', body: '"observedProperty":1', pointer: '/definitions/Thing/observedProperty', assertDefinition: (d) => expect(d.semantic?.observedProperty).toBeUndefined() },
+      { label: 'semantic.semanticRole', body: '"semanticRole":"measurement"', pointer: '/definitions/Thing/semanticRole', assertDefinition: (d) => expect(d.semantic?.semanticRole).toBeUndefined() },
+      { label: 'semantic.derivation', body: '"derivation":"observed"', pointer: '/definitions/Thing/derivation', assertDefinition: (d) => expect(d.semantic?.derivation).toBeUndefined() },
+      { label: 'semantic.statistic', body: '"statistic":{"function":"percentile","percentile":100}', pointer: '/definitions/Thing/statistic', assertDefinition: (d) => expect(d.semantic?.statistic).toBeUndefined() },
+      { label: 'semantic.codedValues', body: '"codedValues":{"A":1}', pointer: '/definitions/Thing/codedValues', assertDefinition: (d) => expect(d.semantic?.codedValues).toBeUndefined() },
+      { label: 'semantic.measurementConditioning', body: '"measurementConditioning":1', pointer: '/definitions/Thing/measurementConditioning', assertDefinition: (d) => expect(d.semantic?.measurementConditioning).toBeUndefined() },
+      { label: 'semantic.referenceRole', body: '"referenceRole":"baseline"', pointer: '/definitions/Thing/referenceRole', assertDefinition: (d) => expect(d.semantic?.referenceRole).toBeUndefined() },
+      { label: 'semantic.phenomenonTimeRelation', body: '"phenomenonTimeRelation":"period"', pointer: '/definitions/Thing/phenomenonTimeRelation', assertDefinition: (d) => expect(d.semantic?.phenomenonTimeRelation).toBeUndefined() },
+      { label: 'semantic.supportPeriod', body: '"supportPeriod":{"length":"PT1S","anchor":"middle"}', pointer: '/definitions/Thing/supportPeriod', assertDefinition: (d) => expect(d.semantic?.supportPeriod).toBeUndefined() },
+      { label: 'semantic.temporalReferenceSystem', body: '"temporalReferenceSystem":1', pointer: '/definitions/Thing/temporalReferenceSystem', assertDefinition: (d) => expect(d.semantic?.temporalReferenceSystem).toBeUndefined() },
+      { label: 'semantic.cadence', body: '"cadence":{"kind":"fixed"}', pointer: '/definitions/Thing/cadence', assertDefinition: (d) => expect(d.semantic?.cadence).toBeUndefined() },
+      { label: 'semantic.coordinateReferenceSystem', body: '"coordinateReferenceSystem":1', pointer: '/definitions/Thing/coordinateReferenceSystem', assertDefinition: (d) => expect(d.semantic?.coordinateReferenceSystem).toBeUndefined() },
+      { label: 'semantic.vectorReferenceFrames', body: '"vectorReferenceFrames":[1]', pointer: '/definitions/Thing/vectorReferenceFrames', assertDefinition: (d) => expect(d.semantic?.vectorReferenceFrames).toBeUndefined() },
+      { label: 'semantic.tensorReferenceFrames', body: '"tensorReferenceFrames":[1]', pointer: '/definitions/Thing/tensorReferenceFrames', assertDefinition: (d) => expect(d.semantic?.tensorReferenceFrames).toBeUndefined() },
+      { label: 'semantic.frameTransforms', body: '"frameTransforms":[{"from":{"reference":"urn:a","kind":"frame"},"to":{"reference":"urn:b","kind":"frame"},"encoding":"eulerAngles","components":["x","y","z"],"rotationSequence":"ABC"}]', pointer: '/definitions/Thing/frameTransforms', assertDefinition: (d) => expect(d.semantic?.frameTransforms).toBeUndefined() },
+      { label: 'semantic.linearReferenceSystem', body: '"linearReferenceSystem":1', pointer: '/definitions/Thing/linearReferenceSystem', assertDefinition: (d) => expect(d.semantic?.linearReferenceSystem).toBeUndefined() },
+      { label: 'semantic.colorSpaces', body: '"colorSpaces":[1]', pointer: '/definitions/Thing/colorSpaces', assertDefinition: (d) => expect(d.semantic?.colorSpaces).toBeUndefined() },
+      { label: 'semantic.audioChannels', body: '"audioChannels":[1]', pointer: '/definitions/Thing/audioChannels', assertDefinition: (d) => expect(d.semantic?.audioChannels).toBeUndefined() },
+      { label: 'semantic.spectralBands', body: '"spectralBands":[1]', pointer: '/definitions/Thing/spectralBands', assertDefinition: (d) => expect(d.semantic?.spectralBands).toBeUndefined() }
+    ];
+    for (const testCase of cases) {
+      const fixture = testCase.scope === 'root'
+        ? `{"$schema":"https://json-structure.org/schema/",${testCase.body},"definitions":{"Thing":{"type":"object"}}}`
+        : `{"$schema":"https://json-structure.org/schema/","definitions":{"Thing":{"type":"object",${testCase.body}}}}`;
+      const result = parseDocument(`memory://malformed-${testCase.label}`, fixture);
+      expect(result.recovery).toBe('valid');
+      const diagnostic = result.diagnostics.find((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === testCase.pointer);
+      expect(diagnostic, `missing json.keyword-invalid for ${testCase.label} at ${testCase.pointer}`).toBeDefined();
+      const offendingNode = result.model?.nodes.find((node) => node.pointer === testCase.pointer);
+      expect(diagnostic?.location?.range).toEqual(offendingNode?.range);
+      const diagnosticRange = diagnostic?.location?.range;
+      expect(diagnosticRange).toBeDefined();
+      expect(diagnosticRange!.startOffset).not.toBe(0);
+      expect(fixture.slice(diagnosticRange!.startOffset, diagnosticRange!.endOffset)).toBe(
+        fixture.slice(offendingNode!.range!.startOffset, offendingNode!.range!.endOffset)
+      );
+      const definition = result.model?.projections.definitions.find((item) => item.pointer === '/definitions/Thing');
+      if (testCase.assertDefinition) {
+        expect(definition).toBeDefined();
+        testCase.assertDefinition(definition!);
+      }
+      if (testCase.assertImports) testCase.assertImports(result.model?.projections.imports ?? []);
+    }
+  });
+  it('accepts normative relation scope fragments only', () => {
+    const valid = parseDocument('memory://scope-valid', '{"definitions":{"Thing":{"type":"object","relations":{"owner":{"targettype":{"$ref":"#/definitions/Thing"},"cardinality":"single","scope":["#","#/definitions/Thing"]}}}}}');
+    const relation = valid.model?.projections.definitions[0]?.relations[0];
+    expect(relation?.scope).toEqual(['#', '#/definitions/Thing']);
+
+    const invalid = parseDocument('memory://scope-invalid', '{"definitions":{"Thing":{"type":"object","relations":{"owner":{"targettype":{"$ref":"#/definitions/Thing"},"cardinality":"single","scope":"/definitions/Thing"}}}}}');
+    const diagnostic = invalid.diagnostics.find((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/Thing/relations/owner/scope');
+    expect(diagnostic).toBeDefined();
+  });
+  it('accepts singular absolute URI strings for $import and $importdefs only', () => {
+    const valid = parseDocument('memory://imports-valid', '{"$import":"https://example.org/root.json","$importdefs":"https://example.org/defs.json","definitions":{"Thing":{"type":"object"}}}');
+    expect(valid.model?.projections.imports).toHaveLength(2);
+
+    const invalid = parseDocument('memory://imports-invalid', '{"$import":"/relative.json","$importdefs":["https://example.org/defs.json"],"definitions":{"Thing":{"type":"object"}}}');
+    expect(invalid.diagnostics.some((item) => item.location?.pointer === '/$import' && item.code === 'json.keyword-invalid')).toBe(true);
+    expect(invalid.diagnostics.some((item) => item.location?.pointer === '/$importdefs' && item.code === 'json.keyword-invalid')).toBe(true);
+  });
+  it('supports numeric validation strings only for extended numeric declaration types with positive multipleOf', () => {
+    const validExtended = parseDocument('memory://numeric-extended', '{"definitions":{"D":{"type":"decimal","minimum":"0","maximum":"10.5","exclusiveMinimum":"0","exclusiveMaximum":"11","multipleOf":"0.5"}}}');
+    const d = validExtended.model?.projections.definitions[0];
+    expect(d?.validation?.minimum).toBe('0');
+    expect(d?.validation?.multipleOf).toBe('0.5');
+
+    const invalidNonExtended = parseDocument('memory://numeric-non-extended', '{"definitions":{"N":{"type":"number","minimum":"0"}}}');
+    expect(invalidNonExtended.diagnostics.some((item) => item.location?.pointer === '/definitions/N/minimum' && item.code === 'json.keyword-invalid')).toBe(true);
+
+    const invalidMultiple = parseDocument('memory://numeric-multipleof', '{"definitions":{"D":{"type":"decimal","multipleOf":"0"}}}');
+    expect(invalidMultiple.diagnostics.some((item) => item.location?.pointer === '/definitions/D/multipleOf' && item.code === 'json.keyword-invalid')).toBe(true);
+  });
+  it('enforces numeric keyword applicability and normative scalar representation by declaration type', () => {
+    const extendedValid = parseDocument(
+      'memory://numeric-extended-valid',
+      '{"definitions":{"D":{"type":"decimal","minimum":"0","maximum":"10.5","exclusiveMinimum":"0.001","exclusiveMaximum":"1000","multipleOf":"0.25"}}}'
+    );
+    const extended = extendedValid.model?.projections.definitions[0]?.validation;
+    expect(extended?.minimum).toBe('0');
+    expect(extended?.maximum).toBe('10.5');
+    expect(extended?.exclusiveMinimum).toBe('0.001');
+    expect(extended?.exclusiveMaximum).toBe('1000');
+    expect(extended?.multipleOf).toBe('0.25');
+
+    const extendedInvalidNumber = parseDocument(
+      'memory://numeric-extended-invalid-number',
+      '{"definitions":{"D":{"type":"decimal","minimum":0,"maximum":10,"exclusiveMinimum":1,"exclusiveMaximum":2,"multipleOf":0.5}}}'
+    );
+    for (const pointer of [
+      '/definitions/D/minimum',
+      '/definitions/D/maximum',
+      '/definitions/D/exclusiveMinimum',
+      '/definitions/D/exclusiveMaximum',
+      '/definitions/D/multipleOf'
+    ]) {
+      expect(extendedInvalidNumber.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === pointer)).toBe(true);
+    }
+
+    const nonExtendedValid = parseDocument(
+      'memory://numeric-nonextended-valid',
+      '{"definitions":{"N":{"type":"number","minimum":0,"maximum":10.5,"exclusiveMinimum":0.1,"exclusiveMaximum":11,"multipleOf":0.5}}}'
+    );
+    const nonExtended = nonExtendedValid.model?.projections.definitions[0]?.validation;
+    expect(nonExtended?.minimum).toBe(0);
+    expect(nonExtended?.maximum).toBe(10.5);
+    expect(nonExtended?.exclusiveMinimum).toBe(0.1);
+    expect(nonExtended?.exclusiveMaximum).toBe(11);
+    expect(nonExtended?.multipleOf).toBe(0.5);
+
+    const nonExtendedInvalidString = parseDocument(
+      'memory://numeric-nonextended-invalid-string',
+      '{"definitions":{"N":{"type":"number","minimum":"0","maximum":"10","exclusiveMinimum":"0.1","exclusiveMaximum":"11","multipleOf":"0.5"}}}'
+    );
+    for (const pointer of [
+      '/definitions/N/minimum',
+      '/definitions/N/maximum',
+      '/definitions/N/exclusiveMinimum',
+      '/definitions/N/exclusiveMaximum',
+      '/definitions/N/multipleOf'
+    ]) {
+      expect(nonExtendedInvalidString.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === pointer)).toBe(true);
+    }
+
+    const nonNumericInvalid = parseDocument(
+      'memory://numeric-nonnumeric-applicability',
+      '{"definitions":{"S":{"type":"string","minimum":0,"maximum":10,"exclusiveMinimum":1,"exclusiveMaximum":11,"multipleOf":1}}}'
+    );
+    for (const pointer of [
+      '/definitions/S/minimum',
+      '/definitions/S/maximum',
+      '/definitions/S/exclusiveMinimum',
+      '/definitions/S/exclusiveMaximum',
+      '/definitions/S/multipleOf'
+    ]) {
+      expect(nonNumericInvalid.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === pointer)).toBe(true);
+    }
+    const projected = nonNumericInvalid.model?.projections.definitions[0]?.validation;
+    expect(projected?.minimum).toBeUndefined();
+    expect(projected?.maximum).toBeUndefined();
+    expect(projected?.exclusiveMinimum).toBeUndefined();
+    expect(projected?.exclusiveMaximum).toBeUndefined();
+    expect(projected?.multipleOf).toBeUndefined();
+
+    const invalidNonPositive = parseDocument(
+      'memory://numeric-multiple-nonpositive',
+      '{"definitions":{"D":{"type":"decimal","multipleOf":"0"},"N":{"type":"number","multipleOf":0}}}'
+    );
+    expect(invalidNonPositive.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/D/multipleOf')).toBe(true);
+    expect(invalidNonPositive.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/N/multipleOf')).toBe(true);
+  });
+  it('rejects empty allOf, anyOf, and oneOf arrays', () => {
+    const result = parseDocument('memory://composition-empty', '{"definitions":{"Thing":{"type":"object","allOf":[],"anyOf":[],"oneOf":[]}}}');
+    expect(result.diagnostics.some((item) => item.location?.pointer === '/definitions/Thing/allOf' && item.code === 'json.keyword-invalid')).toBe(true);
+    expect(result.diagnostics.some((item) => item.location?.pointer === '/definitions/Thing/anyOf' && item.code === 'json.keyword-invalid')).toBe(true);
+    expect(result.diagnostics.some((item) => item.location?.pointer === '/definitions/Thing/oneOf' && item.code === 'json.keyword-invalid')).toBe(true);
+  });
+  it('enforces tensor/frame local constraints for rank and symmetry', () => {
+    const valid = parseDocument('memory://tensor-valid', '{"definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom"},{"reference":"urn:frame:a","kind":"custom"}],"components":[{"index":[0,1],"property":"ab"}],"symmetry":"symmetric"}]}}}');
+    expect(valid.diagnostics.some((item) => item.location?.pointer === '/definitions/Thing/tensorReferenceFrames' && item.code === 'json.keyword-invalid')).toBe(false);
+
+    const invalidRank = parseDocument('memory://tensor-rank', '{"definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom"},{"reference":"urn:frame:b","kind":"custom"},{"reference":"urn:frame:c","kind":"custom"}],"components":[{"index":[0,1],"property":"ab"}],"symmetry":"none"}]}}}');
+    expect(invalidRank.diagnostics.some((item) => item.location?.pointer === '/definitions/Thing/tensorReferenceFrames' && item.code === 'json.keyword-invalid')).toBe(true);
+
+    const invalidSymmetry = parseDocument('memory://tensor-symmetry', '{"definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom"},{"reference":"urn:frame:b","kind":"custom"}],"components":[{"index":[0,1],"property":"ab"}],"symmetry":"symmetric"}]}}}');
+    expect(invalidSymmetry.diagnostics.some((item) => item.location?.pointer === '/definitions/Thing/tensorReferenceFrames' && item.code === 'json.keyword-invalid')).toBe(true);
+  });
+  it('requires rank-two same-frame tensor symmetry even when symmetry is none', () => {
+    const validNone = parseDocument(
+      'memory://tensor-symmetry-none-valid',
+      '{"definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom"},{"reference":"urn:frame:a","kind":"custom"}],"components":[{"index":[0,0],"property":"aa"}],"symmetry":"none"}]}}}'
+    );
+    expect(validNone.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/Thing/tensorReferenceFrames')).toBe(false);
+
+    const invalidNoneDifferentFrames = parseDocument(
+      'memory://tensor-symmetry-none-different-frames',
+      '{"definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom"},{"reference":"urn:frame:b","kind":"custom"}],"components":[{"index":[0,0],"property":"aa"}],"symmetry":"none"}]}}}'
+    );
+    expect(invalidNoneDifferentFrames.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/Thing/tensorReferenceFrames')).toBe(true);
+
+    const invalidNoneWrongRank = parseDocument(
+      'memory://tensor-symmetry-none-wrong-rank',
+      '{"definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom"},{"reference":"urn:frame:a","kind":"custom"},{"reference":"urn:frame:a","kind":"custom"}],"components":[{"index":[0,0,0],"property":"aaa"}],"symmetry":"none"}]}}}'
+    );
+    expect(invalidNoneWrongRank.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/Thing/tensorReferenceFrames')).toBe(true);
+  });
+  it('accepts symmetry when kind:type frame refs are structurally equal but parsed as separate objects', () => {
+    const valid = parseDocument(
+      'memory://tensor-symmetry-type-ref-structural-equal',
+      '{"definitions":{"Frame":{"type":"object"},"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":{"$ref":"#/definitions/Frame"},"kind":"type"},{"reference":{"$ref":"#/definitions/Frame"},"kind":"type"}],"components":[{"index":[0,0],"property":"aa"}],"symmetry":"none"}]}}}'
+    );
+    expect(valid.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/Thing/tensorReferenceFrames')).toBe(false);
+
+    const invalidDifferentRef = parseDocument(
+      'memory://tensor-symmetry-type-ref-structural-unequal',
+      '{"definitions":{"FrameA":{"type":"object"},"FrameB":{"type":"object"},"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":{"$ref":"#/definitions/FrameA"},"kind":"type"},{"reference":{"$ref":"#/definitions/FrameB"},"kind":"type"}],"components":[{"index":[0,0],"property":"aa"}],"symmetry":"none"}]}}}'
+    );
+    expect(invalidDifferentRef.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/Thing/tensorReferenceFrames')).toBe(true);
+  });
+  it('requires equal variance (or both omitted) for symmetric tensor frames including explicit symmetry none', () => {
+    const validSameVariance = parseDocument(
+      'memory://tensor-symmetry-variance-same',
+      '{"definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom","variance":"covariant"},{"reference":"urn:frame:a","kind":"custom","variance":"covariant"}],"components":[{"index":[0,0],"property":"aa"}],"symmetry":"none"}]}}}'
+    );
+    expect(validSameVariance.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/Thing/tensorReferenceFrames')).toBe(false);
+
+    const validBothOmitted = parseDocument(
+      'memory://tensor-symmetry-variance-both-omitted',
+      '{"definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom"},{"reference":"urn:frame:a","kind":"custom"}],"components":[{"index":[0,0],"property":"aa"}],"symmetry":"none"}]}}}'
+    );
+    expect(validBothOmitted.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/Thing/tensorReferenceFrames')).toBe(false);
+
+    const invalidDifferentVariance = parseDocument(
+      'memory://tensor-symmetry-variance-different',
+      '{"definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom","variance":"covariant"},{"reference":"urn:frame:a","kind":"custom","variance":"contravariant"}],"components":[{"index":[0,0],"property":"aa"}],"symmetry":"none"}]}}}'
+    );
+    expect(invalidDifferentVariance.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/Thing/tensorReferenceFrames')).toBe(true);
+
+    const invalidOneOmitted = parseDocument(
+      'memory://tensor-symmetry-variance-one-omitted',
+      '{"definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom","variance":"covariant"},{"reference":"urn:frame:a","kind":"custom"}],"components":[{"index":[0,0],"property":"aa"}],"symmetry":"none"}]}}}'
+    );
+    expect(invalidOneOmitted.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/Thing/tensorReferenceFrames')).toBe(true);
+  });
+  it('requires exactly two indices for indexed matrix components in frame transforms', () => {
+    const validRotationIndexed = parseDocument(
+      'memory://frame-transform-rotation-indexed-valid',
+      '{"definitions":{"Thing":{"type":"object","frameTransforms":[{"from":{"reference":"urn:frame:a","kind":"custom"},"to":{"reference":"urn:frame:b","kind":"custom"},"encoding":"rotationMatrix","components":[{"index":[0,0],"property":"m00"},{"index":[0,1],"property":"m01"},{"index":[0,2],"property":"m02"},{"index":[1,0],"property":"m10"},{"index":[1,1],"property":"m11"},{"index":[1,2],"property":"m12"},{"index":[2,0],"property":"m20"},{"index":[2,1],"property":"m21"},{"index":[2,2],"property":"m22"}]}]}}}'
+    );
+    expect(validRotationIndexed.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/Thing/frameTransforms')).toBe(false);
+
+    const validHomogeneousIndexed = parseDocument(
+      'memory://frame-transform-homogeneous-indexed-valid',
+      '{"definitions":{"Thing":{"type":"object","frameTransforms":[{"from":{"reference":"urn:frame:a","kind":"custom"},"to":{"reference":"urn:frame:b","kind":"custom"},"encoding":"homogeneousMatrix","components":[{"index":[0,0],"property":"h00"},{"index":[0,1],"property":"h01"},{"index":[0,2],"property":"h02"},{"index":[0,3],"property":"h03"},{"index":[1,0],"property":"h10"},{"index":[1,1],"property":"h11"},{"index":[1,2],"property":"h12"},{"index":[1,3],"property":"h13"},{"index":[2,0],"property":"h20"},{"index":[2,1],"property":"h21"},{"index":[2,2],"property":"h22"},{"index":[2,3],"property":"h23"},{"index":[3,0],"property":"h30"},{"index":[3,1],"property":"h31"},{"index":[3,2],"property":"h32"},{"index":[3,3],"property":"h33"}]}]}}}'
+    );
+    expect(validHomogeneousIndexed.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/Thing/frameTransforms')).toBe(false);
+
+    const invalidOneIndex = parseDocument(
+      'memory://frame-transform-indexed-one-index',
+      '{"definitions":{"Thing":{"type":"object","frameTransforms":[{"from":{"reference":"urn:frame:a","kind":"custom"},"to":{"reference":"urn:frame:b","kind":"custom"},"encoding":"rotationMatrix","components":[{"index":[0],"property":"m00"}]}]}}}'
+    );
+    expect(invalidOneIndex.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/Thing/frameTransforms')).toBe(true);
+
+    const invalidThreeIndices = parseDocument(
+      'memory://frame-transform-indexed-three-indices',
+      '{"definitions":{"Thing":{"type":"object","frameTransforms":[{"from":{"reference":"urn:frame:a","kind":"custom"},"to":{"reference":"urn:frame:b","kind":"custom"},"encoding":"homogeneousMatrix","components":[{"index":[0,0,0],"property":"h000"}]}]}}}'
+    );
+    expect(invalidThreeIndices.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/Thing/frameTransforms')).toBe(true);
+  });
+  it('collects semantic placements only at normative schema attachment positions', () => {
+    const result = parseDocument(
+      'memory://semantic-placement-scope',
+      JSON.stringify({
+        definitions: {
+          Thing: {
+            type: 'object',
+            concepts: [{ reference: 'urn:concept:thing', kind: 'custom-concept' }],
+            unknownPayload: {
+              concepts: [{ reference: 'urn:concept:ignore', kind: 'custom-concept' }],
+              semanticRole: 'observationValue'
+            },
+            properties: {
+              id: {
+                type: 'string',
+                concepts: [{ reference: 'urn:concept:id', kind: 'custom-concept' }],
+                semanticRole: 'status'
+              }
+            },
+            values: {
+              type: 'number',
+              semanticRole: 'resultQuality'
+            },
+            items: {
+              type: 'number',
+              semanticRole: 'resultQuality'
+            },
+            choices: {
+              scalar: {
+                type: 'number',
+                semanticRole: 'resultQuality'
+              }
+            },
+            anyOf: [
+              { type: 'number', semanticRole: 'resultQuality' },
+              { type: 'string', semanticRole: 'status' }
+            ]
+          }
+        }
+      })
+    );
+    expect(result.recovery).toBe('valid');
+    const placements = result.model?.projections.semanticPlacements ?? [];
+    expect(placements.some((entry) => entry.pointer === '/definitions/Thing')).toBe(true);
+    expect(placements.some((entry) => entry.pointer === '/definitions/Thing/properties/id')).toBe(true);
+    expect(placements.some((entry) => entry.pointer === '/definitions/Thing/items')).toBe(true);
+    expect(placements.some((entry) => entry.pointer === '/definitions/Thing/values')).toBe(true);
+    expect(placements.some((entry) => entry.pointer === '/definitions/Thing/choices/scalar')).toBe(true);
+    expect(placements.some((entry) => entry.pointer === '/definitions/Thing/anyOf/0')).toBe(true);
+    expect(placements.some((entry) => entry.pointer === '/definitions/Thing/anyOf/1')).toBe(true);
+    expect(placements.some((entry) => entry.pointer === '/definitions/Thing/unknownPayload')).toBe(false);
+  });
+  it('validates relation declarations and semantic unions against closed and open vocabularies', () => {
+    const valid = parseDocument('memory://normative-forms', JSON.stringify({ definitions: { Thing: {
+      type: 'object',
+      relations: {
+        owner: { targettype: { $ref: '#/definitions/Thing' }, cardinality: 'single' },
+        peers: { targettype: { $ref: '#/definitions/Thing' }, cardinality: 'multiple', scope: ['#/items'] }
+      },
+      semanticRole: 'status', derivation: 'statistic', statistic: { function: 'nthHighest', rank: 2 },
+      phenomenonTimeRelation: 'accumulation', supportPeriod: { length: 'PT1M', anchor: 'start' },
+      cadence: { kind: 'onChange' }, codedValues: { reference: 'urn:codes:custom', kind: 'vendor-private' },
+      temporalReferenceSystem: { reference: 'urn:trs:custom', kind: 'vendor-private', position: 'time' }
+    } } }));
+    const thing = valid.model?.projections.definitions[0];
+    expect(thing?.relations.map((relation) => relation.cardinality)).toEqual(['single', 'multiple']);
+    expect(thing?.semantic?.statistic).toEqual({ function: 'nthHighest', rank: 2 });
+    expect(thing?.semantic?.cadence).toEqual({ kind: 'onChange' });
+    expect(thing?.semantic?.codedValues?.kind).toBe('vendor-private');
+
+    const invalidCases = [
+      ['missing targettype', '"relations":{"owner":{"cardinality":"single"}}', '/definitions/Thing/relations/owner'],
+      ['missing cardinality', '"relations":{"owner":{"targettype":{"$ref":"#/definitions/Thing"}}}', '/definitions/Thing/relations/owner'],
+      ['closed semantic role', '"semanticRole":"measurement"', '/definitions/Thing/semanticRole'],
+      ['statistic sibling', '"derivation":"measured","statistic":"mean"', '/definitions/Thing/statistic'],
+      ['support period sibling', '"phenomenonTimeRelation":"instant","supportPeriod":{"length":"PT1S","anchor":"end"}', '/definitions/Thing/supportPeriod'],
+      ['type reference form', '"codedValues":{"reference":"urn:codes","kind":"type"}', '/definitions/Thing/codedValues']
+    ] as const;
+    for (const [label, body, pointer] of invalidCases) {
+      const source = `{"definitions":{"Thing":{"type":"object",${body}}}}`;
+      const result = parseDocument(`memory://${label}`, source);
+      const diagnostic = result.diagnostics.find((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === pointer);
+      expect(diagnostic, label).toBeDefined();
+      expect(diagnostic?.location?.range).toBeDefined();
+      expect(diagnostic!.location!.range!.startOffset).toBeGreaterThan(0);
+    }
   });
   it('adds one property with a local edit and restores byte-identical text', async () => {
     const host = new InMemoryEditorHost('memory://fixture', text);
@@ -175,6 +722,158 @@ describe('Phase 1 vertical slice', () => {
       const changed = await host.readDocument();
       expect(() => JSON.parse(changed.text)).not.toThrow();
       expect((await host.undo()).text).toBe(original);
+    }
+  });
+  it('adds, renames, and deletes definitions with inverse edits and minimal source changes', async () => {
+    const original = '{"definitions":{"User":{"type":"object"}},"unknown":1}';
+    const addHost = new InMemoryEditorHost('memory://defs', original);
+    const addSession = new DocumentSession('memory://defs', original);
+    const add = new AddDefinitionCommand('', 'Team', { type: 'object', properties: { id: { type: 'string' } } });
+    expect(add.canExecute({ session: addSession, documentVersion: 1 })).toBe(true);
+    const addResult = add.execute({ session: addSession, documentVersion: 1 });
+    const addApplied = await addHost.applyTextEdits({ protocolVersion: PROTOCOL_VERSION, requestId: 'add-def', documentVersion: 1, edits: addResult.edits });
+    expect(addApplied.applied).toBe(true);
+    const added = await addHost.readDocument();
+    expect(JSON.parse(added.text).definitions.Team).toEqual({ type: 'object', properties: { id: { type: 'string' } } });
+    const addInverse = addResult.inverseEdits[0];
+    expect(added.text.slice(0, addInverse.range.startOffset) + addInverse.newText + added.text.slice(addInverse.range.endOffset)).toBe(original);
+    expect((await addHost.undo()).text).toBe(original);
+
+    const renameHost = new InMemoryEditorHost('memory://defs', original);
+    const renameSession = new DocumentSession('memory://defs', original);
+    const rename = new RenameDefinitionCommand('/definitions/User', 'Profile');
+    expect(rename.canExecute({ session: renameSession, documentVersion: 1 })).toBe(true);
+    const renameResult = rename.execute({ session: renameSession, documentVersion: 1 });
+    const renameApplied = await renameHost.applyTextEdits({ protocolVersion: PROTOCOL_VERSION, requestId: 'rename-def', documentVersion: 1, edits: renameResult.edits });
+    expect(renameApplied.applied).toBe(true);
+    const renamed = await renameHost.readDocument();
+    expect(JSON.parse(renamed.text).definitions.Profile).toEqual({ type: 'object' });
+    const renameInverse = renameResult.inverseEdits[0];
+    expect(renamed.text.slice(0, renameInverse.range.startOffset) + renameInverse.newText + renamed.text.slice(renameInverse.range.endOffset)).toBe(original);
+    expect((await renameHost.undo()).text).toBe(original);
+
+    const deleteOriginal = '{"definitions":{"User":{"type":"object"},"Team":{"type":"object"}},"unknown":1}';
+    const deleteHost = new InMemoryEditorHost('memory://defs', deleteOriginal);
+    const deleteSession = new DocumentSession('memory://defs', deleteOriginal);
+    const remove = new DeleteDefinitionCommand('/definitions/Team');
+    expect(remove.canExecute({ session: deleteSession, documentVersion: 1 })).toBe(true);
+    const removeResult = remove.execute({ session: deleteSession, documentVersion: 1 });
+    const removeApplied = await deleteHost.applyTextEdits({ protocolVersion: PROTOCOL_VERSION, requestId: 'delete-def', documentVersion: 1, edits: removeResult.edits });
+    expect(removeApplied.applied).toBe(true);
+    const removed = await deleteHost.readDocument();
+    expect(JSON.parse(removed.text).definitions.Team).toBeUndefined();
+    const inverseApplied = await deleteHost.applyTextEdits({ protocolVersion: PROTOCOL_VERSION, requestId: 'delete-def-inverse', documentVersion: 2, edits: removeResult.inverseEdits });
+    expect(inverseApplied.applied).toBe(true);
+    const restored = await deleteHost.readDocument();
+    expect(restored.text).toBe(deleteOriginal);
+    expect((await deleteHost.undo()).text).toBe(removed.text);
+    expect((await deleteHost.undo()).text).toBe(deleteOriginal);
+  });
+  it('sets root with namespace-aware invariants and byte-identical inverse edits', async () => {
+    const original = '{"definitions":{"User":{"type":"object"}},"unknown":1}';
+    const host = new InMemoryEditorHost('memory://root', original);
+    const session = new DocumentSession('memory://root', original);
+    const command = new SetRootCommand('/definitions/User');
+    expect(command.canExecute({ session, documentVersion: 1 })).toBe(true);
+    const result = command.execute({ session, documentVersion: 1 });
+    const applied = await host.applyTextEdits({ protocolVersion: PROTOCOL_VERSION, requestId: 'set-root', documentVersion: 1, edits: result.edits });
+    expect(applied.applied).toBe(true);
+    const changed = await host.readDocument();
+    expect(JSON.parse(changed.text).$root).toBe('#/definitions/User');
+    const inverse = result.inverseEdits[0];
+    expect(changed.text.slice(0, inverse.range.startOffset) + inverse.newText + changed.text.slice(inverse.range.endOffset)).toBe(original);
+    expect((await host.undo()).text).toBe(original);
+
+    const existing = '{"$root":"#/definitions/User","definitions":{"User":{"type":"object"},"Order":{"type":"object"}}}';
+    const host2 = new InMemoryEditorHost('memory://root-existing', existing);
+    const session2 = new DocumentSession('memory://root-existing', existing);
+    const command2 = new SetRootCommand('/definitions/Order');
+    const result2 = command2.execute({ session: session2, documentVersion: 1 });
+    const applied2 = await host2.applyTextEdits({ protocolVersion: PROTOCOL_VERSION, requestId: 'set-root-existing', documentVersion: 1, edits: result2.edits });
+    expect(applied2.applied).toBe(true);
+    expect(JSON.parse((await host2.readDocument()).text).$root).toBe('#/definitions/Order');
+    expect((await host2.undo()).text).toBe(existing);
+
+    const namespaceRoot = new DocumentSession('memory://namespace-root', '{"definitions":{"Ns":{"definitions":{"Type":{"type":"object"}}}}}');
+    expect(new SetRootCommand('/definitions/Ns').canExecute({ session: namespaceRoot, documentVersion: 1 })).toBe(false);
+
+    const typeRefRoot = new DocumentSession('memory://typeref-root', '{"definitions":{"Alias":{"type":{"$ref":"#/definitions/Target"}},"Target":{"type":"object"}}}');
+    expect(new SetRootCommand('/definitions/Alias').canExecute({ session: typeRefRoot, documentVersion: 1 })).toBe(true);
+  });
+  it('rejects stale, invalid, ambiguous, and reference-breaking definition and root writes', () => {
+    const stale = new DocumentSession('memory://stale', '{"definitions":{"User":{"type":"object"}}}');
+    expect(new AddDefinitionCommand('', 'Team', { type: 'object' }).canExecute({ session: stale, documentVersion: 2 })).toBe(false);
+
+    const invalid = new DocumentSession('memory://invalid', '{"definitions":{"User":{"type":"object"}}');
+    expect(new AddDefinitionCommand('', 'Team', { type: 'object' }).canExecute({ session: invalid, documentVersion: 1 })).toBe(false);
+
+    const duplicate = new DocumentSession('memory://dup-def', '{"definitions":{"User":{"type":"object"},"User":{"type":"string"}}}');
+    expect(new RenameDefinitionCommand('/definitions/User', 'Profile').canExecute({ session: duplicate, documentVersion: 1 })).toBe(false);
+    expect(new DeleteDefinitionCommand('/definitions/User').canExecute({ session: duplicate, documentVersion: 1 })).toBe(false);
+
+    const collision = new DocumentSession('memory://collision', '{"definitions":{"User":{"type":"object"},"Profile":{"type":"object"}}}');
+    expect(new RenameDefinitionCommand('/definitions/User', 'Profile').canExecute({ session: collision, documentVersion: 1 })).toBe(false);
+
+    const referenced = new DocumentSession('memory://referenced-def', '{"definitions":{"User":{"type":"object"},"Team":{"$ref":"#/definitions/User"}}}');
+    expect(new RenameDefinitionCommand('/definitions/User', 'Profile').canExecute({ session: referenced, documentVersion: 1 })).toBe(false);
+    expect(new DeleteDefinitionCommand('/definitions/User').canExecute({ session: referenced, documentVersion: 1 })).toBe(false);
+
+    const extendsRef = new DocumentSession('memory://extends-def', '{"definitions":{"User":{"type":"object"},"Team":{"$extends":["#/definitions/User"]}}}');
+    expect(new RenameDefinitionCommand('/definitions/User', 'Profile').canExecute({ session: extendsRef, documentVersion: 1 })).toBe(false);
+    expect(new DeleteDefinitionCommand('/definitions/User').canExecute({ session: extendsRef, documentVersion: 1 })).toBe(false);
+
+    const targetTypeRef = new DocumentSession('memory://targettype-def', '{"definitions":{"User":{"type":"object"},"Team":{"type":"object","relations":{"owner":{"targettype":{"$ref":"#/definitions/User"}}}}}}');
+    expect(new RenameDefinitionCommand('/definitions/User', 'Profile').canExecute({ session: targetTypeRef, documentVersion: 1 })).toBe(false);
+    expect(new DeleteDefinitionCommand('/definitions/User').canExecute({ session: targetTypeRef, documentVersion: 1 })).toBe(false);
+
+    const qualifierTypeRef = new DocumentSession('memory://qualifiertype-def', '{"definitions":{"User":{"type":"object"},"Team":{"type":"object","relations":{"owner":{"qualifiertype":{"$ref":"#/definitions/User"}}}}}}');
+    expect(new RenameDefinitionCommand('/definitions/User', 'Profile').canExecute({ session: qualifierTypeRef, documentVersion: 1 })).toBe(false);
+    expect(new DeleteDefinitionCommand('/definitions/User').canExecute({ session: qualifierTypeRef, documentVersion: 1 })).toBe(false);
+
+    const rootRef = new DocumentSession('memory://root-ref', '{"$root":"#/definitions/User","definitions":{"User":{"type":"object"}}}');
+    expect(new RenameDefinitionCommand('/definitions/User', 'Profile').canExecute({ session: rootRef, documentVersion: 1 })).toBe(false);
+    expect(new DeleteDefinitionCommand('/definitions/User').canExecute({ session: rootRef, documentVersion: 1 })).toBe(false);
+
+    const nestedNamespaceRef = new DocumentSession('memory://nested-ref', '{"definitions":{"Container":{"type":"object","definitions":{"Inner":{"type":"object"},"Use":{"$ref":"#/definitions/Container/definitions/Inner"}}}}}');
+    expect(new RenameDefinitionCommand('/definitions/Container/definitions/Inner', 'Renamed').canExecute({ session: nestedNamespaceRef, documentVersion: 1 })).toBe(false);
+    expect(new DeleteDefinitionCommand('/definitions/Container/definitions/Inner').canExecute({ session: nestedNamespaceRef, documentVersion: 1 })).toBe(false);
+
+    const nestedNamespace = new DocumentSession('memory://nested-ns', '{"definitions":{"Container":{"type":"object","definitions":{"Inner":{"type":"object"}}}}}');
+    expect(new AddDefinitionCommand('/definitions/Container', 'Leaf', { type: 'object' }).canExecute({ session: nestedNamespace, documentVersion: 1 })).toBe(true);
+    expect(new RenameDefinitionCommand('/definitions/Container/definitions/Inner', 'Leaf').canExecute({ session: nestedNamespace, documentVersion: 1 })).toBe(true);
+    expect(new DeleteDefinitionCommand('/definitions/Container/definitions/Inner').canExecute({ session: nestedNamespace, documentVersion: 1 })).toBe(true);
+
+    const escaped = new DocumentSession('memory://escaped-def', '{"definitions":{"\u0055\/ser":{"type":"object"}}}');
+    expect(new RenameDefinitionCommand('/definitions/U~1ser', 'User').canExecute({ session: escaped, documentVersion: 1 })).toBe(true);
+    expect(new DeleteDefinitionCommand('/definitions/U~1ser').canExecute({ session: escaped, documentVersion: 1 })).toBe(true);
+
+    const invalidRoot = new DocumentSession('memory://invalid-root', '{"definitions":{"User":{"type":"object"}}}');
+    expect(new SetRootCommand('/definitions/Missing').canExecute({ session: invalidRoot, documentVersion: 1 })).toBe(false);
+    expect(new SetRootCommand('/properties/id').canExecute({ session: invalidRoot, documentVersion: 1 })).toBe(false);
+  });
+  it('preserves RFC 6901 escaping when constructing and matching definition references', async () => {
+    const definitionPointer = '/definitions/A~1B~0C';
+    const reference = '#/definitions/A~1B~0C';
+    const source = JSON.stringify({ definitions: { 'A/B~C': { type: 'object' } } });
+    const rootHost = new InMemoryEditorHost('memory://escaped-root', source);
+    const rootSession = new DocumentSession('memory://escaped-root', source);
+    const rootResult = new SetRootCommand(definitionPointer).execute({ session: rootSession, documentVersion: 1 });
+    await rootHost.applyTextEdits({ protocolVersion: PROTOCOL_VERSION, requestId: 'escaped-root', documentVersion: 1, edits: rootResult.edits });
+    expect(JSON.parse((await rootHost.readDocument()).text).$root).toBe(reference);
+
+    const sites = [
+      { $root: reference },
+      { definitions: { Use: { $ref: reference } } },
+      { definitions: { Use: { $extends: reference } } },
+      { definitions: { Use: { type: { $ref: reference } } } },
+      { definitions: { Use: { type: 'object', relations: { target: { targettype: { $ref: reference } } } } } },
+      { definitions: { Use: { type: 'object', relations: { target: { qualifiertype: { $ref: reference } } } } } }
+    ];
+    for (const site of sites) {
+      const document = JSON.stringify({ ...site, definitions: { 'A/B~C': { type: 'object' }, ...(site.definitions ?? {}) } });
+      const session = new DocumentSession('memory://escaped-reference', document);
+      expect(new RenameDefinitionCommand(definitionPointer, 'Renamed').canExecute({ session, documentVersion: 1 })).toBe(false);
+      expect(new DeleteDefinitionCommand(definitionPointer).canExecute({ session, documentVersion: 1 })).toBe(false);
     }
   });
   it('rejects malformed, overlapping, out-of-range, and invalid-state writes with echoed IDs', async () => {

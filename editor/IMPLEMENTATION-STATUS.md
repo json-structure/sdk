@@ -1,12 +1,14 @@
 # JSON Structure Editor Implementation Status
 
-Updated: 2026-08-30
+Updated: 2026-08-30 (Phase 1 repair continued)
 Branch: `editor-autopilot`
 Worktree: `C:\git\json-structure-sdk-editor`
 
+Blocking findings in this repair batch: 0 remaining (6 resolved)
+
 ## Current milestone
 
-Phase 1 shared-model foundation is in progress. The property-command vertical slice is complete and has passed adversarial review.
+Phase 1 shared-model foundation is in progress. The property, definition, root, and typed projection milestone passed independent adversarial review and is ready for checkpoint.
 
 Implemented:
 
@@ -15,20 +17,28 @@ Implemented:
 - Versioned serializable host contracts and an in-memory host.
 - Capability, selection, graph, and coverage contracts.
 - `AddPropertyCommand`, `EditPropertyCommand`, `DeletePropertyCommand`, and `RenamePropertyCommand`.
+- `AddDefinitionCommand`, `RenameDefinitionCommand`, and `DeleteDefinitionCommand` for root and nested namespaces.
+- `SetRootCommand` with namespace-aware preconditions.
 - Minimal source edits and returned inverse edits for byte-identical restoration.
-- Property/relation namespace collision checks.
-- Rejection of stale versions, invalid documents, ambiguous duplicate-key paths, nested non-property pointers, invalid `properties` values, and rename/delete operations that would leave `required` or `identity` references dangling.
+- Property/relation and definition namespace collision checks.
+- Rejection of stale versions, invalid documents, ambiguous duplicate-key paths, invalid namespace/definitions containers, missing root targets, and rename/delete operations that would leave root or external `$ref`/`$extends` references dangling.
 - Exact source-key editing for escaped JSON key spellings.
+- Typed normalized projections for Core declaration forms, `$extends`, relation fields (`targettype`, `cardinality`, `scope`, `qualifiertype`), strict `$import`/`$importdefs` absolute-URI provenance, Units keywords, Validation structures (including type-aware numeric-string handling), conditional composition operators, and all 20 semantic annotation keywords.
+- Explicit reference inventory including `$root`, `$ref`, `$extends`, and normative `type: {"$ref":"#..."}` declarations.
+- Semantic annotation placement projection indexed by schema pointer for every detected placement.
+- Relation diagnostics pinpoint unsupported member/value pointers directly.
+- Semantic annotation projections validate normative scalar, object, array, and union shapes, plus local tensor/frame rank and symmetry constraints; cross-document and deep semantic consistency checks remain partial.
+- Diagnostics projection from parser diagnostics, including duplicate-pointer ambiguity diagnostics used by command precondition checks.
 
 ## Validation
 
-Last full validation on 2026-08-30:
+Last validation on 2026-08-30 (this run):
 
-- `npm test`: 2 files passed, 16 tests passed.
+- `npm test`: passed (2 files, 34 tests).
 - `npm run typecheck`: passed.
-- `npm run build`: ESM, CJS, and declarations built successfully.
+- `npm run build`: passed (ESM, CJS, DTS).
 - `npm run coverage:check`: passed with 86 feature records.
-- Final independent `CodeReviewer` verdict for the property-command milestone: PASS.
+- Independent `CodeReviewer` verdict for this expanded Phase 1 milestone: PASS.
 
 The VS Code test runner does not discover this standalone worktree package from the parent workspace. Validation therefore uses the package's declared Vitest command.
 
@@ -36,9 +46,9 @@ The VS Code test runner does not discover this standalone worktree package from 
 
 The coverage gate verifies ledger integrity and explicit ownership; it does not claim feature completion.
 
-- Partial: 3
-- Gap: 19
-- Pending: 61
+- Partial: 74
+- Gap: 9
+- Pending: 0
 - Unsupported: 3
 - Complete: 0
 
@@ -49,16 +59,11 @@ Phase 0 ADRs:
 
 ## Next work
 
-Continue Phase 1 with the type-command vertical slice:
+Next steps for Phase 1:
 
-1. Implement add, rename, and delete type commands.
-2. Preserve namespace structure, root references, `$ref`, `$extends`, relation targets, and import provenance invariants.
-3. Require unique source paths and minimal edits with byte-identical inverse edits.
-4. Add positive, collision, stale-version, invalid-state, referenced-type, escaped-key, duplicate-key, and direct inverse-edit tests.
-5. Run test, typecheck, build, and coverage gates.
-6. Run a separate read-only adversarial `CodeReviewer` pass and resolve all blocking findings.
-
-After type commands, continue with root/namespace commands and typed projections for Core forms, inheritance, relations, imports, Units, Validation, conditional composition, and semantic annotations before starting Phase 2 UI work.
+1. Add follow-up command slices for relations/import mutation and projection-driven language-service validation.
+2. Tighten diagnostics from partial to complete coverage for definition/root invariants and typed projection validation semantics.
+3. Keep Phase 2 UI work blocked until the remaining Phase 1 command slices pass review.
 
 ## Repository state
 

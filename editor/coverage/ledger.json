@@ -1,91 +1,2504 @@
 {
-  "policy": { "version": 2, "allowsExplicitGaps": true, "minimumSeededCore": 5, "forbidAggregateRecords": true },
+  "policy": {
+    "version": 2,
+    "allowsExplicitGaps": true,
+    "minimumSeededCore": 5,
+    "forbidAggregateRecords": true
+  },
   "features": [
-    { "id": "core.document-root", "spec": "Core", "feature": "document root and $root", "owner": "editor-model", "status": "partial", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "complete", "reference": "src/parser.ts" }, "diagnostics": { "status": "partial", "reference": "src/parser.ts" }, "roundtrip": { "status": "partial", "reference": "tests/phase1.test.ts" }, "tests": { "status": "complete", "reference": "tests/phase1.test.ts" } } },
-    { "id": "core.definitions", "spec": "Core", "feature": "named definitions", "owner": "editor-model", "status": "partial", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "complete", "reference": "src/parser.ts" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "partial", "reference": "tests/phase1.test.ts" }, "tests": { "status": "complete", "reference": "tests/phase1.test.ts" } } },
-    { "id": "core.object-properties", "spec": "Core", "feature": "object properties", "owner": "editor-model", "status": "partial", "evidence": { "editing": { "status": "partial", "reference": "src/commands.ts" }, "inspection": { "status": "complete", "reference": "src/parser.ts" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "partial", "reference": "tests/phase1.test.ts" }, "tests": { "status": "complete", "reference": "tests/phase1.test.ts" } } },
-    { "id": "core.required", "spec": "Core", "feature": "required property names", "owner": "editor-model", "status": "gap", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "core.references", "spec": "Core", "feature": "$ref resolution", "owner": "language-service", "status": "gap", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "core.array", "spec": "Core", "feature": "array declaration", "owner": "editor-model", "status": "gap", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "core.set", "spec": "Core", "feature": "set declaration", "owner": "editor-model", "status": "gap", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "core.map", "spec": "Core", "feature": "map declaration", "owner": "editor-model", "status": "gap", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "core.tuple", "spec": "Core", "feature": "tuple declaration", "owner": "editor-model", "status": "gap", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "core.annotations-description", "spec": "Core", "feature": "description annotation", "owner": "editor-model", "status": "gap", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "core.annotations-binary", "spec": "Core", "feature": "binary annotation", "owner": "editor-model", "status": "gap", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "validation.minimum", "spec": "Validation", "feature": "minimum", "owner": "language-service", "status": "gap", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "validation.maximum", "spec": "Validation", "feature": "maximum", "owner": "language-service", "status": "gap", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "validation.minLength", "spec": "Validation", "feature": "minLength", "owner": "language-service", "status": "gap", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "validation.maxLength", "spec": "Validation", "feature": "maxLength", "owner": "language-service", "status": "gap", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "alternate-names.altnames", "spec": "Alternate Names", "feature": "altnames", "owner": "language-service", "status": "unsupported", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "alternate-names.altenums", "spec": "Alternate Names", "feature": "altenums", "owner": "language-service", "status": "unsupported", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "alternate-names.descriptions", "spec": "Alternate Names", "feature": "localized descriptions", "owner": "language-service", "status": "unsupported", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "units.symbol", "spec": "Units", "feature": "symbol", "owner": "catalogs", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "units.symbols", "spec": "Units", "feature": "symbols", "owner": "catalogs", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "units.unit", "spec": "Units", "feature": "unit", "owner": "catalogs", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "units.ucumUnit", "spec": "Units", "feature": "ucumUnit", "owner": "catalogs", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "units.currency", "spec": "Units", "feature": "currency", "owner": "catalogs", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "relations.identity", "spec": "Relations", "feature": "identity", "owner": "graph", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "relations.target", "spec": "Relations", "feature": "target", "owner": "graph", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "relations.cardinality", "spec": "Relations", "feature": "cardinality", "owner": "graph", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "relations.scope", "spec": "Relations", "feature": "scope", "owner": "graph", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "composition.allOf", "spec": "Conditional Composition", "feature": "allOf", "owner": "language-service", "status": "gap", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "composition.anyOf", "spec": "Conditional Composition", "feature": "anyOf", "owner": "language-service", "status": "gap", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "composition.oneOf", "spec": "Conditional Composition", "feature": "oneOf", "owner": "language-service", "status": "gap", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "composition.not", "spec": "Conditional Composition", "feature": "not", "owner": "language-service", "status": "gap", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "composition.conditional", "spec": "Conditional Composition", "feature": "if/then/else", "owner": "language-service", "status": "gap", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "imports.import", "spec": "Import", "feature": "$import placement", "owner": "registry", "status": "gap", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "imports.importdefs", "spec": "Import", "feature": "$importdefs placement", "owner": "registry", "status": "gap", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "relations.qualifier", "spec": "Relations", "feature": "qualifier", "owner": "graph", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "validation.exclusiveMinimum", "spec": "Validation", "feature": "exclusiveMinimum", "owner": "language-service", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "validation.exclusiveMaximum", "spec": "Validation", "feature": "exclusiveMaximum", "owner": "language-service", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "validation.multipleOf", "spec": "Validation", "feature": "multipleOf", "owner": "language-service", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "validation.pattern", "spec": "Validation", "feature": "pattern", "owner": "language-service", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "validation.format", "spec": "Validation", "feature": "format", "owner": "language-service", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "validation.minItems", "spec": "Validation", "feature": "minItems", "owner": "language-service", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "validation.maxItems", "spec": "Validation", "feature": "maxItems", "owner": "language-service", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "validation.uniqueItems", "spec": "Validation", "feature": "uniqueItems", "owner": "language-service", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "validation.minContains", "spec": "Validation", "feature": "minContains", "owner": "language-service", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "validation.maxContains", "spec": "Validation", "feature": "maxContains", "owner": "language-service", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "validation.minProperties", "spec": "Validation", "feature": "minProperties", "owner": "language-service", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "validation.maxProperties", "spec": "Validation", "feature": "maxProperties", "owner": "language-service", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "validation.minEntries", "spec": "Validation", "feature": "minEntries", "owner": "language-service", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "validation.maxEntries", "spec": "Validation", "feature": "maxEntries", "owner": "language-service", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "validation.default", "spec": "Validation", "feature": "default", "owner": "language-service", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "validation.contains", "spec": "Validation", "feature": "contains", "owner": "language-service", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "validation.propertyNames", "spec": "Validation", "feature": "propertyNames", "owner": "language-service", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "validation.keyNames", "spec": "Validation", "feature": "keyNames", "owner": "language-service", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "validation.has", "spec": "Validation", "feature": "has", "owner": "language-service", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "validation.dependentRequired", "spec": "Validation", "feature": "dependentRequired", "owner": "language-service", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "validation.patternProperties", "spec": "Validation", "feature": "patternProperties", "owner": "language-service", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "validation.patternKeys", "spec": "Validation", "feature": "patternKeys", "owner": "language-service", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "composition.if", "spec": "Conditional Composition", "feature": "if", "owner": "language-service", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "composition.then", "spec": "Conditional Composition", "feature": "then", "owner": "language-service", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "composition.else", "spec": "Conditional Composition", "feature": "else", "owner": "language-service", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "imports.import.root", "spec": "Import", "feature": "$import at document root", "owner": "registry", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "imports.import.definitions", "spec": "Import", "feature": "$import under definitions", "owner": "registry", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "imports.import.namespace", "spec": "Import", "feature": "$import in nested namespace", "owner": "registry", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "imports.importdefs.root", "spec": "Import", "feature": "$importdefs at document root", "owner": "registry", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "imports.importdefs.definitions", "spec": "Import", "feature": "$importdefs under definitions", "owner": "registry", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "imports.importdefs.namespace", "spec": "Import", "feature": "$importdefs in nested namespace", "owner": "registry", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "semantic.concepts", "spec": "Semantic Annotations", "feature": "concepts", "owner": "language-service", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "semantic.observedProperty", "spec": "Semantic Annotations", "feature": "observedProperty", "owner": "language-service", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "semantic.semanticRole", "spec": "Semantic Annotations", "feature": "semanticRole", "owner": "language-service", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "semantic.derivation", "spec": "Semantic Annotations", "feature": "derivation", "owner": "language-service", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "semantic.statistic", "spec": "Semantic Annotations", "feature": "statistic", "owner": "language-service", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "semantic.codedValues", "spec": "Semantic Annotations", "feature": "codedValues", "owner": "language-service", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "semantic.measurementConditioning", "spec": "Semantic Annotations", "feature": "measurementConditioning", "owner": "language-service", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "semantic.referenceRole", "spec": "Semantic Annotations", "feature": "referenceRole", "owner": "language-service", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "semantic.phenomenonTimeRelation", "spec": "Semantic Annotations", "feature": "phenomenonTimeRelation", "owner": "language-service", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "semantic.supportPeriod", "spec": "Semantic Annotations", "feature": "supportPeriod", "owner": "language-service", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "semantic.temporalReferenceSystem", "spec": "Semantic Annotations", "feature": "temporalReferenceSystem", "owner": "language-service", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "semantic.cadence", "spec": "Semantic Annotations", "feature": "cadence", "owner": "language-service", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "semantic.coordinateReferenceSystem", "spec": "Semantic Annotations", "feature": "coordinateReferenceSystem", "owner": "language-service", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "semantic.vectorReferenceFrames", "spec": "Semantic Annotations", "feature": "vectorReferenceFrames", "owner": "language-service", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "semantic.tensorReferenceFrames", "spec": "Semantic Annotations", "feature": "tensorReferenceFrames", "owner": "language-service", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "semantic.frameTransforms", "spec": "Semantic Annotations", "feature": "frameTransforms", "owner": "language-service", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "semantic.linearReferenceSystem", "spec": "Semantic Annotations", "feature": "linearReferenceSystem", "owner": "language-service", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "semantic.colorSpaces", "spec": "Semantic Annotations", "feature": "colorSpaces", "owner": "language-service", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "semantic.audioChannels", "spec": "Semantic Annotations", "feature": "audioChannels", "owner": "language-service", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } },
-    { "id": "semantic.spectralBands", "spec": "Semantic Annotations", "feature": "spectralBands", "owner": "language-service", "status": "pending", "evidence": { "editing": { "status": "gap", "reference": "coverage/gaps.json" }, "inspection": { "status": "gap", "reference": "coverage/gaps.json" }, "diagnostics": { "status": "gap", "reference": "coverage/gaps.json" }, "roundtrip": { "status": "gap", "reference": "coverage/gaps.json" }, "tests": { "status": "gap", "reference": "coverage/gaps.json" } } }
+    {
+      "id": "core.document-root",
+      "spec": "Core",
+      "feature": "document root and $root",
+      "owner": "editor-model",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "partial",
+          "reference": "src/commands.ts"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "partial",
+          "reference": "src/parser.ts"
+        },
+        "roundtrip": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "core.definitions",
+      "spec": "Core",
+      "feature": "named definitions",
+      "owner": "editor-model",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "partial",
+          "reference": "src/commands.ts"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "partial",
+          "reference": "src/parser.ts"
+        },
+        "roundtrip": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "core.object-properties",
+      "spec": "Core",
+      "feature": "object properties",
+      "owner": "editor-model",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "partial",
+          "reference": "src/commands.ts"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        },
+        "tests": {
+          "status": "complete",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "core.required",
+      "spec": "Core",
+      "feature": "required property names",
+      "owner": "editor-model",
+      "status": "gap",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        }
+      }
+    },
+    {
+      "id": "core.references",
+      "spec": "Core",
+      "feature": "$ref resolution",
+      "owner": "language-service",
+      "status": "gap",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        }
+      }
+    },
+    {
+      "id": "core.array",
+      "spec": "Core",
+      "feature": "array declaration",
+      "owner": "editor-model",
+      "status": "gap",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        }
+      }
+    },
+    {
+      "id": "core.set",
+      "spec": "Core",
+      "feature": "set declaration",
+      "owner": "editor-model",
+      "status": "gap",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        }
+      }
+    },
+    {
+      "id": "core.map",
+      "spec": "Core",
+      "feature": "map declaration",
+      "owner": "editor-model",
+      "status": "gap",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        }
+      }
+    },
+    {
+      "id": "core.tuple",
+      "spec": "Core",
+      "feature": "tuple declaration",
+      "owner": "editor-model",
+      "status": "gap",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        }
+      }
+    },
+    {
+      "id": "core.annotations-description",
+      "spec": "Core",
+      "feature": "description annotation",
+      "owner": "editor-model",
+      "status": "gap",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        }
+      }
+    },
+    {
+      "id": "core.annotations-binary",
+      "spec": "Core",
+      "feature": "binary annotation",
+      "owner": "editor-model",
+      "status": "gap",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        }
+      }
+    },
+    {
+      "id": "validation.minimum",
+      "spec": "Validation",
+      "feature": "minimum",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "validation.maximum",
+      "spec": "Validation",
+      "feature": "maximum",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "validation.minLength",
+      "spec": "Validation",
+      "feature": "minLength",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "validation.maxLength",
+      "spec": "Validation",
+      "feature": "maxLength",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "alternate-names.altnames",
+      "spec": "Alternate Names",
+      "feature": "altnames",
+      "owner": "language-service",
+      "status": "unsupported",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        }
+      }
+    },
+    {
+      "id": "alternate-names.altenums",
+      "spec": "Alternate Names",
+      "feature": "altenums",
+      "owner": "language-service",
+      "status": "unsupported",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        }
+      }
+    },
+    {
+      "id": "alternate-names.descriptions",
+      "spec": "Alternate Names",
+      "feature": "localized descriptions",
+      "owner": "language-service",
+      "status": "unsupported",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        }
+      }
+    },
+    {
+      "id": "units.symbol",
+      "spec": "Units",
+      "feature": "symbol",
+      "owner": "catalogs",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "units.symbols",
+      "spec": "Units",
+      "feature": "symbols",
+      "owner": "catalogs",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "units.unit",
+      "spec": "Units",
+      "feature": "unit",
+      "owner": "catalogs",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "units.ucumUnit",
+      "spec": "Units",
+      "feature": "ucumUnit",
+      "owner": "catalogs",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "units.currency",
+      "spec": "Units",
+      "feature": "currency",
+      "owner": "catalogs",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "relations.identity",
+      "spec": "Relations",
+      "feature": "identity",
+      "owner": "graph",
+      "status": "gap",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        }
+      }
+    },
+    {
+      "id": "relations.target",
+      "spec": "Relations",
+      "feature": "target",
+      "owner": "graph",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "partial",
+          "reference": "src/parser.ts"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "relations.cardinality",
+      "spec": "Relations",
+      "feature": "cardinality",
+      "owner": "graph",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "partial",
+          "reference": "src/parser.ts"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "relations.scope",
+      "spec": "Relations",
+      "feature": "scope",
+      "owner": "graph",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "partial",
+          "reference": "src/parser.ts"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "composition.allOf",
+      "spec": "Conditional Composition",
+      "feature": "allOf",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "composition.anyOf",
+      "spec": "Conditional Composition",
+      "feature": "anyOf",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "composition.oneOf",
+      "spec": "Conditional Composition",
+      "feature": "oneOf",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "composition.not",
+      "spec": "Conditional Composition",
+      "feature": "not",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "composition.conditional",
+      "spec": "Conditional Composition",
+      "feature": "if/then/else",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "imports.import",
+      "spec": "Import",
+      "feature": "$import placement",
+      "owner": "registry",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "imports.importdefs",
+      "spec": "Import",
+      "feature": "$importdefs placement",
+      "owner": "registry",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "relations.qualifier",
+      "spec": "Relations",
+      "feature": "qualifier",
+      "owner": "graph",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "partial",
+          "reference": "src/parser.ts"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "validation.exclusiveMinimum",
+      "spec": "Validation",
+      "feature": "exclusiveMinimum",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "validation.exclusiveMaximum",
+      "spec": "Validation",
+      "feature": "exclusiveMaximum",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "validation.multipleOf",
+      "spec": "Validation",
+      "feature": "multipleOf",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "validation.pattern",
+      "spec": "Validation",
+      "feature": "pattern",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "validation.format",
+      "spec": "Validation",
+      "feature": "format",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "validation.minItems",
+      "spec": "Validation",
+      "feature": "minItems",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "validation.maxItems",
+      "spec": "Validation",
+      "feature": "maxItems",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "validation.uniqueItems",
+      "spec": "Validation",
+      "feature": "uniqueItems",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "validation.minContains",
+      "spec": "Validation",
+      "feature": "minContains",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "validation.maxContains",
+      "spec": "Validation",
+      "feature": "maxContains",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "validation.minProperties",
+      "spec": "Validation",
+      "feature": "minProperties",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "validation.maxProperties",
+      "spec": "Validation",
+      "feature": "maxProperties",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "validation.minEntries",
+      "spec": "Validation",
+      "feature": "minEntries",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "validation.maxEntries",
+      "spec": "Validation",
+      "feature": "maxEntries",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "validation.default",
+      "spec": "Validation",
+      "feature": "default",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "validation.contains",
+      "spec": "Validation",
+      "feature": "contains",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "validation.propertyNames",
+      "spec": "Validation",
+      "feature": "propertyNames",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "validation.keyNames",
+      "spec": "Validation",
+      "feature": "keyNames",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "validation.has",
+      "spec": "Validation",
+      "feature": "has",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "validation.dependentRequired",
+      "spec": "Validation",
+      "feature": "dependentRequired",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "validation.patternProperties",
+      "spec": "Validation",
+      "feature": "patternProperties",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "validation.patternKeys",
+      "spec": "Validation",
+      "feature": "patternKeys",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "composition.if",
+      "spec": "Conditional Composition",
+      "feature": "if",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "composition.then",
+      "spec": "Conditional Composition",
+      "feature": "then",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "composition.else",
+      "spec": "Conditional Composition",
+      "feature": "else",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "imports.import.root",
+      "spec": "Import",
+      "feature": "$import at document root",
+      "owner": "registry",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "imports.import.definitions",
+      "spec": "Import",
+      "feature": "$import under definitions",
+      "owner": "registry",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "imports.import.namespace",
+      "spec": "Import",
+      "feature": "$import in nested namespace",
+      "owner": "registry",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "imports.importdefs.root",
+      "spec": "Import",
+      "feature": "$importdefs at document root",
+      "owner": "registry",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "imports.importdefs.definitions",
+      "spec": "Import",
+      "feature": "$importdefs under definitions",
+      "owner": "registry",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "imports.importdefs.namespace",
+      "spec": "Import",
+      "feature": "$importdefs in nested namespace",
+      "owner": "registry",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "semantic.concepts",
+      "spec": "Semantic Annotations",
+      "feature": "concepts",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "partial",
+          "reference": "src/parser.ts"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "semantic.observedProperty",
+      "spec": "Semantic Annotations",
+      "feature": "observedProperty",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "partial",
+          "reference": "src/parser.ts"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "semantic.semanticRole",
+      "spec": "Semantic Annotations",
+      "feature": "semanticRole",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "partial",
+          "reference": "src/parser.ts"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "semantic.derivation",
+      "spec": "Semantic Annotations",
+      "feature": "derivation",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "partial",
+          "reference": "src/parser.ts"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "semantic.statistic",
+      "spec": "Semantic Annotations",
+      "feature": "statistic",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "partial",
+          "reference": "src/parser.ts"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "semantic.codedValues",
+      "spec": "Semantic Annotations",
+      "feature": "codedValues",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "partial",
+          "reference": "src/parser.ts"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "semantic.measurementConditioning",
+      "spec": "Semantic Annotations",
+      "feature": "measurementConditioning",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "partial",
+          "reference": "src/parser.ts"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "semantic.referenceRole",
+      "spec": "Semantic Annotations",
+      "feature": "referenceRole",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "partial",
+          "reference": "src/parser.ts"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "semantic.phenomenonTimeRelation",
+      "spec": "Semantic Annotations",
+      "feature": "phenomenonTimeRelation",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "partial",
+          "reference": "src/parser.ts"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "semantic.supportPeriod",
+      "spec": "Semantic Annotations",
+      "feature": "supportPeriod",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "partial",
+          "reference": "src/parser.ts"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "semantic.temporalReferenceSystem",
+      "spec": "Semantic Annotations",
+      "feature": "temporalReferenceSystem",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "partial",
+          "reference": "src/parser.ts"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "semantic.cadence",
+      "spec": "Semantic Annotations",
+      "feature": "cadence",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "partial",
+          "reference": "src/parser.ts"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "semantic.coordinateReferenceSystem",
+      "spec": "Semantic Annotations",
+      "feature": "coordinateReferenceSystem",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "partial",
+          "reference": "src/parser.ts"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "semantic.vectorReferenceFrames",
+      "spec": "Semantic Annotations",
+      "feature": "vectorReferenceFrames",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "partial",
+          "reference": "src/parser.ts"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "semantic.tensorReferenceFrames",
+      "spec": "Semantic Annotations",
+      "feature": "tensorReferenceFrames",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "partial",
+          "reference": "src/parser.ts"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "semantic.frameTransforms",
+      "spec": "Semantic Annotations",
+      "feature": "frameTransforms",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "partial",
+          "reference": "src/parser.ts"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "semantic.linearReferenceSystem",
+      "spec": "Semantic Annotations",
+      "feature": "linearReferenceSystem",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "partial",
+          "reference": "src/parser.ts"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "semantic.colorSpaces",
+      "spec": "Semantic Annotations",
+      "feature": "colorSpaces",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "partial",
+          "reference": "src/parser.ts"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "semantic.audioChannels",
+      "spec": "Semantic Annotations",
+      "feature": "audioChannels",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "partial",
+          "reference": "src/parser.ts"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    },
+    {
+      "id": "semantic.spectralBands",
+      "spec": "Semantic Annotations",
+      "feature": "spectralBands",
+      "owner": "language-service",
+      "status": "partial",
+      "evidence": {
+        "editing": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "inspection": {
+          "status": "complete",
+          "reference": "src/parser.ts"
+        },
+        "diagnostics": {
+          "status": "partial",
+          "reference": "src/parser.ts"
+        },
+        "roundtrip": {
+          "status": "gap",
+          "reference": "coverage/gaps.json"
+        },
+        "tests": {
+          "status": "partial",
+          "reference": "tests/phase1.test.ts"
+        }
+      }
+    }
   ]
 }
