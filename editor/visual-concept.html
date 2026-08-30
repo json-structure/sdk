@@ -1,0 +1,942 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>JSON Structure Editor - Visual Concept</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #151719;
+      --chrome: #1d2023;
+      --panel: #24282c;
+      --panel-raised: #2b3035;
+      --line: #3c4248;
+      --line-strong: #59616a;
+      --text: #eef1f3;
+      --muted: #aab2b9;
+      --quiet: #7e8790;
+      --accent: #59b6d6;
+      --accent-strong: #85d8f3;
+      --green: #63c08a;
+      --amber: #e6b85c;
+      --red: #ef7474;
+      --violet: #b99bea;
+      --focus: #f2cf72;
+      --row: 36px;
+      --rail: 46px;
+      --sidebar: 238px;
+      --inspector: 284px;
+      --problems: 174px;
+      font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+      font-size: 13px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body { width: 100%; min-width: 940px; height: 100%; margin: 0; overflow: hidden; }
+
+    body { color: var(--text); background: var(--bg); }
+
+    button, input, select, textarea { font: inherit; color: inherit; }
+
+    button { cursor: pointer; }
+
+    button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
+      outline: 2px solid var(--focus);
+      outline-offset: -2px;
+    }
+
+    .app {
+      display: grid;
+      grid-template-rows: 34px 36px minmax(0, 1fr) 22px;
+      height: 100vh;
+      background:
+        linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px) 0 0 / 24px 24px,
+        var(--bg);
+    }
+
+    .titlebar, .toolbar, .statusbar { display: flex; align-items: center; background: var(--chrome); }
+
+    .titlebar { border-bottom: 1px solid #0e0f10; padding: 0 10px; gap: 18px; user-select: none; }
+
+    .brand { display: flex; align-items: center; gap: 9px; font-weight: 650; }
+
+    .brand-mark { width: 17px; height: 17px; border: 2px solid var(--accent); position: relative; transform: rotate(45deg); }
+    .brand-mark::after { content: ""; position: absolute; inset: 3px; border: 1px solid var(--accent-strong); }
+
+    .menus { display: flex; gap: 3px; color: var(--muted); }
+    .menus span { padding: 4px 7px; }
+    .document-title { margin-left: auto; margin-right: auto; color: var(--muted); }
+    .window-actions { display: flex; gap: 14px; color: var(--quiet); }
+
+    .toolbar { padding: 0 8px 0 52px; border-bottom: 1px solid var(--line); gap: 5px; }
+    .tool-button, .icon-button {
+      height: 26px; border: 1px solid transparent; border-radius: 3px; background: transparent; color: var(--muted);
+    }
+    .tool-button { padding: 0 8px; display: inline-flex; gap: 6px; align-items: center; }
+    .icon-button { width: 28px; font-family: "Cascadia Code", monospace; }
+    .tool-button:hover, .icon-button:hover { color: var(--text); background: var(--panel-raised); border-color: var(--line); }
+    .tool-button.primary { color: #081114; background: var(--accent); border-color: var(--accent); font-weight: 700; }
+    .divider { width: 1px; height: 18px; background: var(--line); margin: 0 5px; }
+    .toolbar-spacer { flex: 1; }
+    .mode-switch { display: flex; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+    .mode-switch button { height: 25px; padding: 0 10px; border: 0; border-right: 1px solid var(--line); background: transparent; color: var(--muted); }
+    .mode-switch button:last-child { border-right: 0; }
+    .mode-switch button.active { color: var(--text); background: var(--panel-raised); box-shadow: inset 0 -2px var(--accent); }
+
+    .workbench {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: var(--rail) var(--sidebar) minmax(420px, 1fr) var(--inspector);
+      grid-template-rows: minmax(0, 1fr) var(--problems);
+    }
+
+    .rail { grid-row: 1 / 3; background: #181b1e; border-right: 1px solid var(--line); padding-top: 5px; }
+    .rail button { width: 45px; height: 43px; border: 0; border-left: 2px solid transparent; background: transparent; color: var(--quiet); font: 17px "Cascadia Code", monospace; }
+    .rail button:hover { color: var(--text); }
+    .rail button.active { color: var(--text); border-left-color: var(--accent); background: rgba(89,182,214,.08); }
+
+    .sidebar { grid-row: 1 / 3; display: flex; min-width: 0; flex-direction: column; background: var(--chrome); border-right: 1px solid var(--line); }
+    .panel-heading { height: 34px; flex: 0 0 auto; display: flex; align-items: center; padding: 0 10px; letter-spacing: .06em; font-size: 11px; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--line); }
+    .panel-heading button { margin-left: auto; border: 0; background: transparent; color: var(--muted); }
+    .filter { margin: 8px; height: 28px; border: 1px solid var(--line); border-radius: 3px; background: #17191b; padding: 0 8px; width: calc(100% - 16px); }
+    .tree { overflow: auto; padding: 3px 0 12px; }
+    .tree-group { color: var(--quiet); font-size: 11px; text-transform: uppercase; padding: 12px 9px 5px; letter-spacing: .05em; }
+    .tree-item { height: 28px; display: flex; align-items: center; gap: 7px; padding: 0 8px 0 13px; color: var(--muted); border-left: 2px solid transparent; }
+    .tree-item:hover { background: rgba(255,255,255,.035); color: var(--text); }
+    .tree-item.active { background: rgba(89,182,214,.11); color: var(--text); border-left-color: var(--accent); }
+    .kind { width: 16px; color: var(--accent); text-align: center; font: 11px "Cascadia Code", monospace; }
+    .tree-badge { margin-left: auto; font-size: 10px; color: var(--quiet); }
+    .library-state { margin-top: auto; padding: 8px; border-top: 1px solid var(--line); color: var(--quiet); font-size: 11px; }
+
+    .editor { min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+    .tabstrip { height: 34px; flex: 0 0 auto; display: flex; background: var(--chrome); border-bottom: 1px solid var(--line); }
+    .tab { min-width: 180px; max-width: 260px; display: flex; align-items: center; gap: 7px; padding: 0 10px; color: var(--muted); border-right: 1px solid var(--line); }
+    .tab.active { color: var(--text); background: var(--bg); border-top: 1px solid var(--accent); }
+    .dirty { color: var(--accent); margin-left: auto; }
+    .breadcrumbs { height: 30px; flex: 0 0 auto; display: flex; align-items: center; gap: 7px; padding: 0 12px; color: var(--quiet); border-bottom: 1px solid var(--line); }
+    .breadcrumbs strong { color: var(--muted); font-weight: 500; }
+
+    .canvas { flex: 1; min-height: 0; overflow: auto; padding: 20px 24px 60px; }
+    .type-sheet { max-width: 980px; margin: 0 auto; }
+    .type-head { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--line-strong); }
+    .eyebrow { font: 11px "Cascadia Code", monospace; color: var(--accent); text-transform: uppercase; }
+    h1 { margin: 4px 0 5px; font-size: 26px; line-height: 1.15; letter-spacing: 0; font-weight: 650; }
+    .description { color: var(--muted); max-width: 700px; line-height: 1.45; }
+    .description.warning { color: var(--amber); }
+    .type-meta { display: flex; align-items: flex-start; gap: 5px; }
+    .chip { display: inline-flex; align-items: center; min-height: 23px; padding: 0 7px; border: 1px solid var(--line); border-radius: 3px; color: var(--muted); background: var(--panel); font: 11px "Cascadia Code", monospace; }
+    .chip.green { color: var(--green); border-color: rgba(99,192,138,.5); }
+    .chip.violet { color: var(--violet); border-color: rgba(185,155,234,.5); }
+
+    .section-title { display: flex; align-items: center; margin: 20px 0 7px; }
+    .section-title h2 { margin: 0; font-size: 13px; letter-spacing: 0; }
+    .section-title .count { margin-left: 7px; color: var(--quiet); }
+    .section-title button { margin-left: auto; }
+
+    .property-grid { border: 1px solid var(--line); background: rgba(36,40,44,.82); }
+    .property-row { display: grid; grid-template-columns: 28px minmax(115px, 1.15fr) minmax(150px, 1.3fr) 78px minmax(120px, 1.5fr) 32px; min-height: var(--row); border-bottom: 1px solid var(--line); align-items: center; }
+    .property-row:last-child { border-bottom: 0; }
+    .property-row.header { min-height: 29px; color: var(--quiet); font-size: 10px; text-transform: uppercase; letter-spacing: .05em; background: var(--panel); }
+    .property-row.selected { background: rgba(89,182,214,.09); box-shadow: inset 2px 0 var(--accent); }
+    .cell { min-width: 0; padding: 0 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .drag { text-align: center; color: var(--quiet); padding: 0; }
+    .prop-name { font-family: "Cascadia Code", monospace; color: var(--text); }
+    .prop-type { font-family: "Cascadia Code", monospace; color: var(--accent-strong); }
+    .required { color: var(--green); }
+    .optional { color: var(--quiet); }
+    .desc-missing { color: var(--amber); }
+    .row-action { border: 0; background: transparent; color: var(--quiet); width: 100%; height: var(--row); }
+    .add-row { color: var(--muted); cursor: text; }
+    .add-row .prop-name { color: var(--quiet); }
+    .kbd { margin-left: 5px; padding: 1px 4px; border: 1px solid var(--line); border-bottom-color: var(--line-strong); border-radius: 2px; color: var(--quiet); font: 10px "Cascadia Code", monospace; }
+
+    .composition { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .composition-block { border-left: 2px solid var(--violet); padding: 9px 11px; background: rgba(185,155,234,.06); }
+    .composition-block strong { display: block; margin-bottom: 4px; }
+    .composition-block span { color: var(--muted); }
+
+    .inspector { min-width: 0; min-height: 0; overflow: auto; background: var(--chrome); border-left: 1px solid var(--line); }
+    .inspector-section { padding: 12px 10px; border-bottom: 1px solid var(--line); }
+    .inspector-title { display: flex; align-items: center; margin-bottom: 10px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+    .field { margin-bottom: 10px; }
+    .field:last-child { margin-bottom: 0; }
+    .field label { display: block; margin-bottom: 4px; color: var(--muted); font-size: 11px; }
+    .field input, .field select, .field textarea { width: 100%; border: 1px solid var(--line); border-radius: 3px; background: #17191b; padding: 6px 7px; }
+    .field textarea { min-height: 64px; resize: vertical; line-height: 1.35; }
+    .field .invalid { border-color: var(--amber); }
+    .field-note { display: flex; align-items: flex-start; gap: 5px; margin-top: 4px; color: var(--amber); font-size: 11px; line-height: 1.3; }
+    .toggle-row { display: flex; align-items: center; justify-content: space-between; min-height: 28px; color: var(--muted); }
+    .toggle { width: 30px; height: 16px; padding: 2px; border: 1px solid var(--line-strong); border-radius: 8px; background: #16181a; }
+    .toggle::after { content: ""; display: block; width: 10px; height: 10px; border-radius: 50%; background: var(--quiet); }
+    .toggle.on { background: rgba(89,182,214,.25); border-color: var(--accent); }
+    .toggle.on::after { margin-left: 14px; background: var(--accent-strong); }
+
+    .annotation-grid { display: grid; gap: 7px; }
+    .annotation-value { display: grid; grid-template-columns: minmax(0,1fr) 28px; gap: 4px; }
+    .annotation-value button { border: 1px solid var(--line); border-radius: 3px; background: var(--panel-raised); color: var(--accent); }
+    .annotation-summary { margin-top: 8px; padding: 8px; border-left: 2px solid var(--violet); background: rgba(185,155,234,.06); }
+    .annotation-summary code { display: block; overflow: hidden; color: var(--muted); font: 10px/1.55 "Cascadia Code", monospace; text-overflow: ellipsis; white-space: nowrap; }
+    .catalog-drawer { position: fixed; top: 70px; right: 0; bottom: 22px; z-index: 8; display: none; width: min(440px, calc(100vw - 80px)); grid-template-columns: 142px minmax(0,1fr); border-left: 1px solid var(--line-strong); background: var(--chrome); box-shadow: -14px 0 34px rgba(0,0,0,.38); }
+    .catalog-drawer.open { display: grid; }
+    .catalog-providers { overflow: auto; border-right: 1px solid var(--line); padding: 7px 0; }
+    .catalog-provider { width: 100%; min-height: 45px; border: 0; border-left: 2px solid transparent; padding: 6px 8px; background: transparent; color: var(--muted); text-align: left; }
+    .catalog-provider:hover { background: rgba(255,255,255,.035); }
+    .catalog-provider.active { border-left-color: var(--accent); background: rgba(89,182,214,.09); color: var(--text); }
+    .catalog-provider strong, .catalog-provider small { display: block; }
+    .catalog-provider strong { font-size: 11px; }
+    .catalog-provider small { margin-top: 2px; color: var(--quiet); font-size: 9px; }
+    .catalog-provider-add { margin: 8px; width: calc(100% - 16px); min-height: 30px; border: 1px dashed var(--line-strong); border-radius: 3px; background: transparent; color: var(--muted); font-size: 10px; }
+    .catalog-content { min-width: 0; display: flex; flex-direction: column; }
+    .catalog-head { min-height: 48px; display: flex; align-items: center; gap: 8px; padding: 7px 9px; border-bottom: 1px solid var(--line); }
+    .catalog-head div { min-width: 0; }
+    .catalog-head strong, .catalog-head small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .catalog-head small { color: var(--quiet); font-size: 9px; }
+    .catalog-head button { margin-left: auto; }
+    .catalog-search { margin: 8px; height: 29px; border: 1px solid var(--line); border-radius: 3px; background: #17191b; padding: 0 8px; }
+    .catalog-results { min-height: 0; overflow: auto; padding: 0 8px 8px; }
+    .catalog-result { width: 100%; display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px; align-items: center; min-height: 48px; border: 0; border-bottom: 1px solid var(--line); padding: 6px; background: transparent; color: var(--muted); text-align: left; }
+    .catalog-result:hover, .catalog-result.active { background: rgba(89,182,214,.07); color: var(--text); }
+    .catalog-result strong, .catalog-result small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .catalog-result strong { color: var(--text); font-size: 11px; }
+    .catalog-result small { margin-top: 2px; color: var(--quiet); font: 9px "Cascadia Code", monospace; }
+    .catalog-origin { padding: 2px 4px; border: 1px solid var(--line); border-radius: 2px; color: var(--quiet); font-size: 8px; text-transform: uppercase; }
+    .catalog-custom { margin-top: auto; padding: 9px; border-top: 1px solid var(--line); }
+    .catalog-custom p { margin: 0 0 7px; color: var(--quiet); font-size: 10px; line-height: 1.35; }
+    .catalog-custom-row { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 5px; }
+    .catalog-custom input { min-width: 0; border: 1px solid var(--line); border-radius: 3px; background: #17191b; padding: 6px 7px; }
+    .catalog-custom button { border: 1px solid var(--accent); border-radius: 3px; background: var(--accent); color: #081114; font-weight: 700; }
+
+    .problems { grid-column: 3 / 5; grid-row: 2; min-width: 0; background: var(--chrome); border-top: 1px solid var(--line); display: flex; flex-direction: column; }
+    .problem-tabs { height: 31px; display: flex; align-items: center; gap: 18px; padding: 0 11px; border-bottom: 1px solid var(--line); color: var(--quiet); }
+    .problem-tabs button { height: 31px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); padding: 0 2px; }
+    .problem-tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
+    .problem-list { overflow: auto; }
+    .problem { min-height: 30px; display: grid; grid-template-columns: 24px minmax(0,1fr) auto; align-items: center; padding: 0 10px; border-bottom: 1px solid rgba(60,66,72,.5); }
+    .problem:hover { background: rgba(255,255,255,.025); }
+    .problem-icon.error { color: var(--red); }
+    .problem-icon.warning { color: var(--amber); }
+    .problem-location { color: var(--quiet); font: 11px "Cascadia Code", monospace; }
+
+    .statusbar { padding: 0 8px; gap: 14px; border-top: 1px solid #0d0e0f; color: #0a171b; background: var(--accent); font-size: 11px; }
+    .statusbar .right { margin-left: auto; display: flex; gap: 14px; }
+
+    .modal-backdrop { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(5,7,8,.72); z-index: 10; }
+    .modal-backdrop.open { display: flex; }
+    .modal { width: min(620px, calc(100vw - 80px)); max-height: calc(100vh - 80px); overflow: auto; border: 1px solid var(--line-strong); border-radius: 5px; background: var(--panel); box-shadow: 0 18px 60px rgba(0,0,0,.55); }
+    .modal-head { display: flex; align-items: flex-start; padding: 16px 18px; border-bottom: 1px solid var(--line); }
+    .modal-head h2 { margin: 0 0 3px; font-size: 17px; }
+    .modal-head p { margin: 0; color: var(--muted); }
+    .modal-head button { margin-left: auto; }
+    .modal-body { padding: 16px 18px; }
+    .format-line { display: flex; gap: 8px; margin-bottom: 15px; }
+    .format-box { flex: 1; border: 1px solid var(--line); padding: 10px; background: #1b1e21; }
+    .format-box span { display: block; color: var(--quiet); font-size: 10px; text-transform: uppercase; margin-bottom: 4px; }
+    .arrow { align-self: center; color: var(--accent); font-size: 18px; }
+    .option-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .wide { grid-column: 1 / -1; }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 7px; padding: 12px 18px; border-top: 1px solid var(--line); }
+    .button { height: 30px; padding: 0 13px; border: 1px solid var(--line-strong); border-radius: 3px; background: var(--panel-raised); }
+    .button.primary { background: var(--accent); border-color: var(--accent); color: #081114; font-weight: 700; }
+    .spinner { display: none; width: 13px; height: 13px; margin-right: 7px; border: 2px solid rgba(8,17,20,.3); border-top-color: #081114; border-radius: 50%; animation: spin .75s linear infinite; vertical-align: -2px; }
+    .busy .spinner { display: inline-block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .source-view { display: none; flex: 1; min-height: 0; background: #111416; font: 12px/1.55 "Cascadia Code", monospace; padding: 16px 20px; overflow: auto; white-space: pre; }
+    .source-view .key { color: #8ed0e6; }
+    .source-view .string { color: #c6df96; }
+    .source-view .punct { color: #9ba2a8; }
+    .source-view .error-line { display: inline-block; width: 100%; background: rgba(239,116,116,.12); border-bottom: 1px wavy var(--red); }
+    .show-source .canvas { display: none; }
+    .show-source .source-view { display: block; }
+
+    .graph-view { display: none; flex: 1; min-height: 0; position: relative; overflow: hidden; background: #111416; }
+    .show-graph .canvas, .show-graph .source-view { display: none; }
+    .show-graph .graph-view { display: grid; grid-template-rows: 40px minmax(0, 1fr); }
+    .graph-tools { display: flex; align-items: center; gap: 6px; padding: 0 9px; border-bottom: 1px solid var(--line); background: var(--chrome); }
+    .graph-tools .filter { width: 190px; margin: 0; }
+    .graph-stage { min-height: 0; position: relative; overflow: hidden; touch-action: none; cursor: grab; background: radial-gradient(circle at 45% 42%, rgba(89,182,214,.055), transparent 42%), #111416; }
+    .graph-stage.dragging { cursor: grabbing; }
+    .graph-world { position: absolute; inset: 0; min-width: 760px; min-height: 470px; transform-origin: 0 0; }
+    .graph-edge { position: absolute; height: 1px; transform-origin: 0 50%; background: rgba(89,182,214,.42); pointer-events: none; }
+    .graph-edge::after { content: ""; position: absolute; right: -1px; top: -3px; border-left: 6px solid var(--accent); border-top: 3px solid transparent; border-bottom: 3px solid transparent; }
+    .graph-edge.inheritance { height: 0; border-top: 1px dashed rgba(185,155,234,.7); background: transparent; }
+    .graph-edge.inheritance::after { border-left-color: var(--violet); }
+    .edge-label { position: absolute; padding: 2px 5px; border: 1px solid var(--line); border-radius: 2px; background: rgba(17,20,22,.94); color: var(--muted); font: 9px "Cascadia Code", monospace; white-space: nowrap; z-index: 2; cursor: pointer; }
+    .edge-label.active { border-color: var(--focus); color: var(--text); }
+    .graph-group { position: absolute; border: 1px solid rgba(89,182,214,.35); background: rgba(29,32,35,.56); cursor: pointer; }
+    .graph-group.active { border-color: var(--focus); }
+    .graph-group.selected-group { border-color: rgba(89,182,214,.72); background: rgba(89,182,214,.035); }
+    .group-label { position: absolute; top: -20px; left: 0; color: var(--accent); font: 10px "Cascadia Code", monospace; text-transform: uppercase; }
+    .group-count { color: var(--quiet); margin-left: 5px; }
+    .graph-node { position: absolute; width: 126px; min-height: 44px; padding: 7px 8px; border: 1px solid var(--line-strong); border-radius: 3px; background: #252a2e; box-shadow: 0 4px 12px rgba(0,0,0,.25); z-index: 3; text-align: left; }
+    .graph-node:hover { border-color: var(--accent); }
+    .graph-node.active { border: 2px solid var(--focus); padding: 6px 7px; box-shadow: 0 0 0 3px rgba(242,207,114,.12); }
+    .graph-node strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 11px "Cascadia Code", monospace; }
+    .graph-node span { display: block; margin-top: 3px; color: var(--quiet); font-size: 10px; }
+    .graph-node.qualifier { border-color: rgba(185,155,234,.55); background: #292631; }
+    .graph-node.external { border-style: dashed; }
+    .graph-overview { position: absolute; left: 12px; bottom: 12px; width: 174px; padding: 9px; border: 1px solid var(--line-strong); border-radius: 3px; background: rgba(29,32,35,.96); z-index: 5; }
+    .graph-overview strong { display: block; margin-bottom: 6px; font-size: 11px; }
+    .minimap { height: 74px; position: relative; border: 1px solid var(--line); background: #111416; overflow: hidden; }
+    .mini-cluster { position: absolute; border: 1px solid rgba(89,182,214,.55); background: rgba(89,182,214,.18); }
+    .mini-viewport { position: absolute; left: 44px; top: 16px; width: 84px; height: 42px; border: 1px solid var(--focus); background: rgba(242,207,114,.06); }
+    .overview-meta { display: flex; justify-content: space-between; margin-top: 6px; color: var(--quiet); font: 9px "Cascadia Code", monospace; }
+    .graph-legend { position: absolute; right: 12px; bottom: 12px; display: flex; gap: 10px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 3px; background: rgba(29,32,35,.94); color: var(--muted); font-size: 10px; z-index: 5; }
+    .gesture-legend { position: absolute; left: 12px; top: 12px; padding: 5px 7px; border: 1px solid var(--line); border-radius: 3px; background: rgba(29,32,35,.94); color: var(--quiet); font-size: 9px; z-index: 6; pointer-events: none; }
+    .legend-line { display: inline-block; width: 16px; height: 1px; margin-right: 4px; vertical-align: 3px; background: var(--accent); }
+    .legend-line.dashed { height: 0; border-top: 1px dashed var(--violet); background: transparent; }
+    .graph-inspector { display: none; }
+    .graph-inspector .relation-card { margin: 8px 0; padding: 8px; border-left: 2px solid var(--accent); background: rgba(89,182,214,.06); }
+    .graph-inspector .relation-card strong { display: block; font: 11px "Cascadia Code", monospace; }
+    .graph-inspector .relation-card span { color: var(--muted); font-size: 11px; }
+    body.graph-mode .property-inspector { display: none; }
+    body.graph-mode .graph-inspector { display: block; }
+
+    @media (max-width: 1120px) {
+      :root { --sidebar: 205px; --inspector: 250px; }
+      .property-row { grid-template-columns: 25px minmax(100px,1fr) minmax(125px,1.1fr) 67px minmax(90px,1fr) 28px; }
+      .menus { display: none; }
+      .graph-tools { gap: 3px; }
+      .graph-tools .filter { width: 108px; }
+      .graph-tools .chip { padding: 0 5px; }
+      .graph-tools .divider, .graph-tools .toolbar-spacer { display: none; }
+      .graph-tools button:nth-last-child(2), .graph-tools button:last-child { display: none; }
+      .graph-legend { left: 198px; right: auto; }
+    }
+
+    @media (prefers-reduced-motion: reduce) { .spinner { animation: none; border-top-color: transparent; } }
+  </style>
+</head>
+<body>
+  <main class="app" aria-label="JSON Structure Editor visual concept">
+    <header class="titlebar">
+      <div class="brand"><span class="brand-mark" aria-hidden="true"></span> JSON Structure</div>
+      <nav class="menus" aria-label="Application menu"><span>File</span><span>Edit</span><span>Navigate</span><span>Schema</span><span>Convert</span><span>Help</span></nav>
+      <div class="document-title">customer.struct.json - Schema Workspace</div>
+      <div class="window-actions" aria-hidden="true"><span>_</span><span>□</span><span>×</span></div>
+    </header>
+
+    <div class="toolbar" role="toolbar" aria-label="Document actions">
+      <button class="icon-button" title="Undo" aria-label="Undo">↶</button>
+      <button class="icon-button" title="Redo" aria-label="Redo">↷</button>
+      <span class="divider"></span>
+      <button class="tool-button"><span aria-hidden="true">＋</span> Type</button>
+      <button class="tool-button" id="convertButton"><span aria-hidden="true">⇄</span> Convert</button>
+      <button class="tool-button"><span aria-hidden="true">✓</span> Validate samples</button>
+      <span class="toolbar-spacer"></span>
+      <span class="chip green">Core v0</span>
+      <span class="chip violet">3 extensions</span>
+      <span class="divider"></span>
+      <div class="mode-switch" aria-label="Editor view">
+        <button class="active" data-mode="design">Design</button>
+        <button data-mode="graph">Graph</button>
+        <button data-mode="source">Source</button>
+        <button data-mode="split">Split</button>
+      </div>
+    </div>
+
+    <section class="workbench">
+      <nav class="rail" aria-label="Primary views">
+        <button title="Explorer">⌑</button>
+        <button class="active" title="Types">T</button>
+        <button title="Libraries">≡</button>
+        <button title="Conversions">⇄</button>
+        <button title="Validation">✓</button>
+      </nav>
+
+      <aside class="sidebar" aria-label="Types">
+        <div class="panel-heading">Types <button title="New type" aria-label="New type">＋</button></div>
+        <input class="filter" type="search" placeholder="Filter types" aria-label="Filter types">
+        <div class="tree" role="tree">
+          <div class="tree-group">Document root</div>
+          <div class="tree-item active" role="treeitem" aria-selected="true"><span class="kind">{ }</span> Customer <span class="tree-badge">8</span></div>
+          <div class="tree-group">Definitions</div>
+          <div class="tree-item" role="treeitem"><span class="kind">{ }</span> Address <span class="tree-badge">5</span></div>
+          <div class="tree-item" role="treeitem"><span class="kind">◇</span> ContactMethod <span class="tree-badge">3</span></div>
+          <div class="tree-item" role="treeitem"><span class="kind">#</span> CustomerId</div>
+          <div class="tree-item" role="treeitem"><span class="kind">[ ]</span> Tags</div>
+          <div class="tree-group">Imported · Common</div>
+          <div class="tree-item" role="treeitem"><span class="kind">↗</span> PostalCode <span class="tree-badge">v7</span></div>
+          <div class="tree-item" role="treeitem"><span class="kind">↗</span> CountryCode <span class="tree-badge">v7</span></div>
+        </div>
+        <div class="library-state">Library cache current · 2 providers</div>
+      </aside>
+
+      <article class="editor" id="editorArea">
+        <div class="tabstrip" role="tablist">
+          <div class="tab active" role="tab" aria-selected="true"><span class="kind">{ }</span> customer.struct.json <span class="dirty">●</span></div>
+          <div class="tab" role="tab" aria-selected="false">sample-customer.json</div>
+        </div>
+        <div class="breadcrumbs"><span>customer.struct.json</span><span>›</span><span>definitions</span><span>›</span><strong id="breadcrumbSelection">Customer</strong></div>
+
+        <div class="canvas">
+          <div class="type-sheet">
+            <header class="type-head">
+              <div>
+                <div class="eyebrow">Object type · local definition</div>
+                <h1>Customer</h1>
+                <div class="description">A customer account and its preferred contact details.</div>
+              </div>
+              <div class="type-meta"><span class="chip">object</span><span class="chip green">valid</span></div>
+            </header>
+
+            <div class="section-title"><h2>Properties</h2><span class="count">9 total · 5 required</span><button class="tool-button"><span aria-hidden="true">＋</span> Add property</button></div>
+            <div class="property-grid" role="grid" aria-label="Customer properties">
+              <div class="property-row header" role="row"><div></div><div class="cell">Name</div><div class="cell">Type</div><div class="cell">Presence</div><div class="cell">Description</div><div></div></div>
+              <div class="property-row" role="row"><div class="drag">⠿</div><div class="cell prop-name">id</div><div class="cell prop-type">CustomerId</div><div class="cell required">required</div><div class="cell">Stable customer identifier</div><button class="row-action" aria-label="More actions for id">⋯</button></div>
+              <div class="property-row selected" role="row" aria-selected="true" data-property="displayName"><div class="drag">⠿</div><div class="cell prop-name">displayName</div><div class="cell prop-type">string</div><div class="cell required">required</div><div class="cell desc-missing">Description needed</div><button class="row-action" aria-label="More actions for displayName">⋯</button></div>
+              <div class="property-row" role="row"><div class="drag">⠿</div><div class="cell prop-name">email</div><div class="cell prop-type">string</div><div class="cell optional">optional</div><div class="cell">Primary email address</div><button class="row-action" aria-label="More actions for email">⋯</button></div>
+              <div class="property-row" role="row"><div class="drag">⠿</div><div class="cell prop-name">contact</div><div class="cell prop-type">ContactMethod</div><div class="cell required">required</div><div class="cell">Preferred contact channel</div><button class="row-action" aria-label="More actions for contact">⋯</button></div>
+              <div class="property-row" role="row"><div class="drag">⠿</div><div class="cell prop-name">address</div><div class="cell prop-type">Address</div><div class="cell required">required</div><div class="cell">Billing address</div><button class="row-action" aria-label="More actions for address">⋯</button></div>
+              <div class="property-row" role="row"><div class="drag">⠿</div><div class="cell prop-name">country</div><div class="cell prop-type">Common/CountryCode</div><div class="cell required">required</div><div class="cell">ISO country code</div><button class="row-action" aria-label="More actions for country">⋯</button></div>
+              <div class="property-row" role="row"><div class="drag">⠿</div><div class="cell prop-name">tags</div><div class="cell prop-type">set&lt;string&gt;</div><div class="cell optional">optional</div><div class="cell">Search and segment labels</div><button class="row-action" aria-label="More actions for tags">⋯</button></div>
+              <div class="property-row" role="row" data-property="tripDistance"><div class="drag">⠿</div><div class="cell prop-name">tripDistance</div><div class="cell prop-type">decimal</div><div class="cell optional">optional</div><div class="cell">Distance travelled <span class="chip">km · UCUM</span></div><button class="row-action" aria-label="More actions for tripDistance">⋯</button></div>
+              <div class="property-row" role="row" data-property="accountBalance"><div class="drag">⠿</div><div class="cell prop-name">accountBalance</div><div class="cell prop-type">decimal</div><div class="cell optional">optional</div><div class="cell">Current balance <span class="chip green">USD</span></div><button class="row-action" aria-label="More actions for accountBalance">⋯</button></div>
+              <div class="property-row add-row" role="row"><div class="drag">＋</div><div class="cell prop-name">Add a property <span class="kbd">Enter</span></div><div class="cell">Choose type</div><div class="cell"></div><div class="cell"></div><div></div></div>
+            </div>
+
+            <div class="section-title"><h2>Composition</h2><span class="count">2 sources</span></div>
+            <div class="composition">
+              <div class="composition-block"><strong>Extends · Entity</strong><span>id, createdAt, updatedAt</span></div>
+              <div class="composition-block"><strong>Add-in · Auditable</strong><span>audit · imported from Common v7</span></div>
+            </div>
+          </div>
+        </div>
+
+        <code class="source-view" aria-label="Source preview"><span class="punct">{</span>
+  <span class="key">"$schema"</span><span class="punct">:</span> <span class="string">"https://json-structure.org/meta/core/v0"</span><span class="punct">,</span>
+  <span class="key">"$id"</span><span class="punct">:</span> <span class="string">"https://schemas.example/customer"</span><span class="punct">,</span>
+  <span class="key">"name"</span><span class="punct">:</span> <span class="string">"Customer"</span><span class="punct">,</span>
+  <span class="key">"type"</span><span class="punct">:</span> <span class="string">"object"</span><span class="punct">,</span>
+  <span class="key">"properties"</span><span class="punct">:</span> <span class="punct">{</span>
+    <span class="key">"id"</span><span class="punct">:</span> <span class="punct">{</span> <span class="key">"$ref"</span><span class="punct">:</span> <span class="string">"#/definitions/CustomerId"</span> <span class="punct">},</span>
+    <span class="key">"displayName"</span><span class="punct">:</span> <span class="punct">{</span> <span class="key">"type"</span><span class="punct">:</span> <span class="string">"string"</span> <span class="punct">},</span>
+    <span class="key">"country"</span><span class="punct">:</span> <span class="punct">{</span> <span class="key">"$ref"</span><span class="punct">:</span> <span class="string">"#/definitions/Common/CountryCode"</span> <span class="punct">}</span>
+  <span class="punct">}</span>
+<span class="punct">}</span></code>
+
+        <section class="graph-view" aria-label="Schema graph">
+          <div class="graph-tools" role="toolbar" aria-label="Graph controls">
+            <input class="filter" type="search" value="Place" aria-label="Find type or relation">
+            <button class="tool-button primary">Reveal selection</button>
+            <button class="tool-button">Fit all</button>
+            <span class="divider"></span>
+            <button class="chip green" aria-pressed="true">Relations · 233</button>
+            <button class="chip violet" aria-pressed="true">Inheritance · 67</button>
+            <button class="chip" aria-pressed="false">References · 517</button>
+            <span class="toolbar-spacer"></span>
+            <button class="tool-button">Neighborhood · 1 hop</button>
+            <button class="tool-button">Matrix</button>
+          </div>
+          <div class="graph-stage" tabindex="0" aria-label="Type relation graph. Place selected. 24 outgoing and 18 incoming relations.">
+            <div class="graph-world">
+              <div class="graph-group selected-group" tabindex="0" data-graph-role="namespace" data-name="Nodes" style="left:18%;top:15%;width:56%;height:66%"><span class="group-label">Nodes <span class="group-count">31 types · 233 relations</span></span></div>
+              <div class="graph-group" tabindex="0" data-graph-role="namespace" data-name="EdgeQualifiers" style="left:77%;top:18%;width:20%;height:31%;border-color:rgba(185,155,234,.38)"><span class="group-label" style="color:var(--violet)">EdgeQualifiers <span class="group-count">38</span></span></div>
+              <div class="graph-group" tabindex="0" data-graph-role="namespace" data-name="Base" style="left:3%;top:21%;width:12%;height:24%;border-color:rgba(185,155,234,.38)"><span class="group-label" style="color:var(--violet)">Base <span class="group-count">2</span></span></div>
+              <div class="graph-group" tabindex="0" data-graph-role="namespace" data-name="Payloads" style="left:77%;top:58%;width:20%;height:25%;border-color:rgba(99,192,138,.38)"><span class="group-label" style="color:var(--green)">Payloads <span class="group-count">21</span></span></div>
+
+              <div class="graph-edge inheritance" style="left:12%;top:37%;width:195px;transform:rotate(-3deg)"></div>
+              <div class="graph-edge" style="left:39%;top:46%;width:178px;transform:rotate(-28deg)"></div>
+              <div class="edge-label" tabindex="0" data-graph-role="relation" data-name="located_in" style="left:48%;top:31%">located_in · multiple</div>
+              <div class="graph-edge" style="left:39%;top:47%;width:210px;transform:rotate(19deg)"></div>
+              <div class="edge-label" tabindex="0" data-graph-role="relation" data-name="near" style="left:49%;top:57%">near · multiple</div>
+              <div class="graph-edge" style="left:39%;top:48%;width:310px;transform:rotate(-3deg)"></div>
+              <div class="edge-label" tabindex="0" data-graph-role="relation" data-name="recorded_in" style="left:57%;top:45%">recorded_in · multiple</div>
+              <div class="graph-edge" style="left:34%;top:63%;width:196px;transform:rotate(-57deg)"></div>
+              <div class="edge-label" tabindex="0" data-graph-role="relation" data-name="hosted_by" style="left:39%;top:49%">hosted_by</div>
+              <div class="graph-edge" style="left:61%;top:30%;width:180px;transform:rotate(51deg)"></div>
+              <div class="graph-edge" style="left:57%;top:68%;width:170px;transform:rotate(-25deg)"></div>
+
+              <button class="graph-node external" data-graph-role="type" style="left:4%;top:29%"><strong>AbstractGraphNode</strong><span>base · identity node_id</span></button>
+              <button class="graph-node active" data-graph-role="type" style="left:30%;top:40%"><strong>Place</strong><span>3 local · 24 relations</span></button>
+              <button class="graph-node" style="left:53%;top:20%"><strong>Venue</strong><span>3 local · 20 relations</span></button>
+              <button class="graph-node" style="left:57%;top:62%"><strong>neighborhoods</strong><span>3 local · 5 relations</span></button>
+              <button class="graph-node" style="left:33%;top:68%"><strong>parks</strong><span>3 local · 10 relations</span></button>
+              <button class="graph-node" style="left:64%;top:42%"><strong>Dataset</strong><span>4 local · 3 relations</span></button>
+              <button class="graph-node" style="left:22%;top:20%"><strong>Activity</strong><span>3 local · 22 relations</span></button>
+              <button class="graph-node qualifier" style="left:80%;top:25%"><strong>located_in</strong><span>edge qualifier</span></button>
+              <button class="graph-node qualifier" style="left:80%;top:37%"><strong>near</strong><span>edge qualifier</span></button>
+              <button class="graph-node" style="left:80%;top:64%;border-color:rgba(99,192,138,.55)"><strong>SystemicPlace</strong><span>payload · 13 properties</span></button>
+            </div>
+            <aside class="graph-overview" aria-label="Graph minimap">
+              <strong>Puget Sound ontology</strong>
+              <div class="minimap" tabindex="0" data-graph-role="minimap" title="Click to recenter; double-click to fit all">
+                <span class="mini-cluster" style="left:8px;top:23px;width:18px;height:20px"></span>
+                <span class="mini-cluster" style="left:34px;top:8px;width:80px;height:56px"></span>
+                <span class="mini-cluster" style="left:121px;top:11px;width:34px;height:23px"></span>
+                <span class="mini-cluster" style="left:121px;top:41px;width:34px;height:23px"></span>
+                <span class="mini-viewport"></span>
+              </div>
+              <div class="overview-meta"><span>101 types</span><span>300 edges</span><span>11 namespaces</span></div>
+            </aside>
+            <div class="gesture-legend">tap selects · double-tap opens · drag pans · pinch/wheel zooms</div>
+            <div class="graph-legend"><span><i class="legend-line"></i>relation</span><span><i class="legend-line dashed"></i>extends</span><span>◇ qualifier</span><span>⇧ multiple</span></div>
+          </div>
+        </section>
+      </article>
+
+      <aside class="inspector" aria-label="Property inspector">
+        <div class="panel-heading">Inspector <button title="Close inspector" aria-label="Close inspector">×</button></div>
+        <div class="property-inspector">
+        <section class="inspector-section">
+          <div class="inspector-title">Property</div>
+          <div class="field"><label for="propName">Name</label><input id="propName" value="displayName"></div>
+          <div class="field"><label for="propType">Type</label><select id="propType"><option>string</option><option>boolean</option><option>CustomerId</option><option>Address</option></select></div>
+          <div class="toggle-row"><span>Required</span><button class="toggle on" aria-label="Required" aria-pressed="true"></button></div>
+        </section>
+        <section class="inspector-section">
+          <div class="inspector-title">Documentation</div>
+          <div class="field"><label for="propDescription">Description</label><textarea id="propDescription" class="invalid" placeholder="Describe this property"></textarea><div class="field-note"><span>△</span><span>Public properties should explain meaning, not repeat the name.</span></div></div>
+        </section>
+        <section class="inspector-section">
+          <div class="inspector-title">Constraints</div>
+          <div class="field"><label for="minLength">Minimum length</label><input id="minLength" type="number" min="0" value="1"></div>
+          <div class="field"><label for="maxLength">Maximum length</label><input id="maxLength" type="number" min="1" value="120"></div>
+          <div class="field"><label for="pattern">Pattern</label><input id="pattern" value="\S.*"></div>
+        </section>
+        <section class="inspector-section">
+          <div class="inspector-title">Annotations</div>
+          <div class="annotation-grid">
+            <div class="field"><label for="unitValue">Display unit · <code>unit</code></label><div class="annotation-value"><input id="unitValue" placeholder="e.g. m/s^2"><button data-catalog="units" title="Browse unit catalog" aria-label="Browse unit catalog">…</button></div></div>
+            <div class="field"><label for="ucumValue">UCUM unit · <code>ucumUnit</code></label><div class="annotation-value"><input id="ucumValue" placeholder="e.g. m/s2"><button data-catalog="ucum" title="Browse UCUM catalog" aria-label="Browse UCUM catalog">…</button></div></div>
+            <div class="field"><label for="currencyValue">Currency · <code>currency</code></label><div class="annotation-value"><input id="currencyValue" placeholder="e.g. USD"><button data-catalog="currencies" title="Browse currency catalog" aria-label="Browse currency catalog">…</button></div></div>
+            <div class="field"><label for="semanticRole">Semantic role · <code>semanticRole</code></label><select id="semanticRole"><option value="">None</option><option>featureOfInterest</option><option>observingProcedure</option><option>observationValue</option><option>resultQuality</option><option>phenomenonTime</option><option>phenomenonTimeStart</option><option>phenomenonTimeEnd</option><option>resultTime</option><option>status</option></select></div>
+            <div class="field"><label for="semanticKeyword">Reference annotation</label><select id="semanticKeyword"><option value="concepts">concepts · one or more vocabulary terms</option><option value="observedProperty">observedProperty · measured phenomenon</option></select></div>
+            <div class="field"><label for="semanticReference">Concept or observed property</label><div class="annotation-value"><input id="semanticReference" placeholder="Absolute term URI"><button data-catalog="semantics" title="Browse semantic catalogs" aria-label="Browse semantic catalogs">…</button></div></div>
+            <div class="field"><label for="semanticKind">Binding kind</label><input id="semanticKind" placeholder="e.g. qudt-quantity-kind"></div>
+          </div>
+          <div class="annotation-summary" id="annotationPreview" aria-live="polite"></div>
+        </section>
+        </div>
+        <div class="graph-inspector">
+          <section class="inspector-section">
+            <div class="inspector-title">Selected type</div>
+            <div class="eyebrow">Nodes namespace</div>
+            <h2 id="graphInspectorTitle" style="margin:5px 0 4px">Place</h2>
+            <div class="description" id="graphInspectorSummary">3 local properties · 11 inherited · identity node_id</div>
+          </section>
+          <section class="inspector-section">
+            <div class="inspector-title">Relation traffic</div>
+            <div class="toggle-row"><span>Outgoing</span><strong>24</strong></div>
+            <div class="toggle-row"><span>Incoming</span><strong>18</strong></div>
+            <div class="toggle-row"><span>Self relations</span><strong>2</strong></div>
+          </section>
+          <section class="inspector-section">
+            <div class="inspector-title">Selected relation</div>
+            <div class="relation-card"><strong>located_in__Place</strong><span>Place → Place · multiple · qualified</span></div>
+            <div class="field"><label for="relationTarget">Target type</label><select id="relationTarget"><option>Nodes/Place</option><option>Nodes/Venue</option><option>Nodes/neighborhoods</option></select></div>
+            <div class="field"><label for="relationQualifier">Qualifier type</label><select id="relationQualifier"><option>EdgeQualifiers/located_in</option></select></div>
+            <div class="toggle-row"><span>External scope</span><span class="chip">no scope</span></div>
+            <button class="tool-button primary" style="margin-top:8px">Open declaration</button>
+          </section>
+        </div>
+      </aside>
+
+      <section class="problems" aria-label="Problems panel">
+        <div class="problem-tabs"><button class="active">Problems <span class="chip">3</span></button><button>Validation</button><button>Output</button><span class="toolbar-spacer"></span><span>Filter</span><span>×</span></div>
+        <div class="problem-list">
+          <div class="problem"><span class="problem-icon warning">△</span><span>Property “displayName” has no description. <span class="problem-location">DOC001</span></span><span class="problem-location">Customer › displayName</span></div>
+          <div class="problem"><span class="problem-icon error">×</span><span>Reference “Common/PostalCode2” cannot be resolved. <span class="problem-location">REF004</span></span><span class="problem-location">Address › postalCode</span></div>
+          <div class="problem"><span class="problem-icon warning">△</span><span>Imported default version can move; pin version 7 for reproducibility. <span class="problem-location">IMP011</span></span><span class="problem-location">$import › Common</span></div>
+        </div>
+      </section>
+    </section>
+
+    <footer class="statusbar"><span>main*</span><span>× 1</span><span>△ 2</span><span>JSON Structure Core v0</span><span class="right"><span>UTF-8</span><span>Spaces: 2</span><span>Ln 18, Col 22</span></span></footer>
+  </main>
+
+  <aside class="catalog-drawer" id="catalogDrawer" aria-label="Annotation catalog browser">
+    <nav class="catalog-providers" aria-label="Catalog providers"><div id="catalogProviders"></div><button class="catalog-provider-add" id="addCatalogProvider">＋ Catalog plugin</button></nav>
+    <section class="catalog-content">
+      <header class="catalog-head"><div><strong id="catalogTitle">Catalog</strong><small id="catalogSource">Provider source</small></div><button class="icon-button" id="closeCatalog" aria-label="Close catalog">×</button></header>
+      <input class="catalog-search" id="catalogSearch" type="search" placeholder="Search this catalog" aria-label="Search catalog">
+      <div class="catalog-results" id="catalogResults"></div>
+      <div class="catalog-custom"><p>Catalogs provide well-known values, not a closed list. Enter a custom symbol, code, kind, or absolute URI when your domain uses another authority.</p><div class="catalog-custom-row"><input id="customCatalogValue" placeholder="Custom value"><button id="applyCustomCatalog">Apply custom</button></div></div>
+    </section>
+  </aside>
+
+  <div class="modal-backdrop" id="conversionModal" role="presentation">
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="conversionTitle">
+      <header class="modal-head"><div><h2 id="conversionTitle">Export schema</h2><p>Options are provided by the bundled Avrotize capability catalog.</p></div><button class="icon-button" id="closeModal" aria-label="Close">×</button></header>
+      <div class="modal-body">
+        <div class="format-line"><div class="format-box"><span>From</span><strong>JSON Structure</strong></div><div class="arrow">→</div><div class="format-box"><span>To</span><strong>TypeScript classes</strong></div></div>
+        <div class="option-grid">
+          <div class="field"><label for="packageName">Package name</label><input id="packageName" value="customer-model"></div>
+          <div class="field"><label for="destination">Destination</label><input id="destination" value="./generated/customer-model"></div>
+          <div class="field wide"><label for="target">Generator</label><select id="target"><option>TypeScript classes</option><option>JSON Schema</option><option>Protocol Buffers</option><option>Markdown documentation</option></select></div>
+          <div class="toggle-row"><span>TypedJSON annotations</span><button class="toggle on" aria-label="TypedJSON annotations" aria-pressed="true"></button></div>
+          <div class="toggle-row"><span>XML mappings</span><button class="toggle" aria-label="XML mappings" aria-pressed="false"></button></div>
+          <div class="toggle-row wide"><span>Open generated output</span><button class="toggle on" id="autoOpenOutput" aria-label="Open generated output" aria-pressed="true"></button></div>
+          <div class="field wide"><label for="outputApplication">Open with</label><select id="outputApplication"><option>Visual Studio Code (default)</option><option>System default application</option><option>Choose application...</option></select></div>
+        </div>
+      </div>
+      <footer class="modal-actions"><button class="button" id="cancelModal">Cancel</button><button class="button">Preview</button><button class="button primary" id="runConversion"><span class="spinner" aria-hidden="true"></span><span class="button-label">Export</span></button></footer>
+    </section>
+  </div>
+
+  <script>
+    const modal = document.getElementById('conversionModal');
+    const editorArea = document.getElementById('editorArea');
+    const catalogDrawer = document.getElementById('catalogDrawer');
+    const propertyAnnotations = {
+      displayName: { type: 'string', semanticKeyword: 'concepts', semanticReference: 'https://schema.org/name', semanticKind: 'rdf-property', semanticRole: '' },
+      tripDistance: { type: 'decimal', unit: 'km', ucumUnit: 'km', currency: '', semanticKeyword: 'observedProperty', semanticReference: 'http://qudt.org/vocab/quantitykind/Length', semanticKind: 'qudt-quantity-kind', semanticRole: 'observationValue' },
+      accountBalance: { type: 'decimal', unit: '', ucumUnit: '', currency: 'USD', semanticKeyword: 'observedProperty', semanticReference: 'http://qudt.org/vocab/quantitykind/Currency', semanticKind: 'qudt-quantity-kind', semanticRole: 'observationValue' }
+    };
+    const catalogPlugins = [
+      { id: 'si-nist', family: 'units', name: 'SI + NIST units', source: 'Built in · json-structure.org/units', entries: [
+        ['m','metre · length'],['km','kilometre · length'],['mm','millimetre · length'],['m/s','metres per second · velocity'],['m/s^2','metres per second squared · acceleration'],['kg','kilogram · mass'],['s','second · time'],['K','kelvin · temperature'],['L','litre · volume'],['psi','pounds per square inch · pressure'],['J','joule · energy'],['W','watt · power'],['Ω','ohm · resistance'],['A','ampere · current'],['cd','candela · luminous intensity'],['m^2','square metre · area'],['m^3','cubic metre · volume'],['ft','foot · length'],['gal','gallon · volume'],['bar','bar · pressure'],['B','byte · digital storage'],['bit/s','bits per second · data rate']
+      ]},
+      { id: 'ucum', family: 'ucum', name: 'UCUM case-sensitive', source: 'Plugin · https://ucum.org/ucum', entries: [
+        ['m','metre'],['km','kilometre'],['mm','millimetre'],['m/s','velocity'],['m/s2','acceleration'],['kg','kilogram'],['s','second'],['ms','millisecond'],['Cel','degree Celsius'],['K','kelvin'],['L','litre'],['[psi]','pounds per square inch'],['J','joule'],['W','watt'],['Ohm','ohm'],['A','ampere'],['m2','square metre'],['m3','cubic metre'],['[ft_i]','international foot'],['[gal_us]','US gallon'],['bar','bar'],['By','byte'],['bit/s','data rate'],['mm[Hg]','millimetres mercury']
+      ]},
+      { id: 'iso4217', family: 'currencies', name: 'ISO 4217 currencies', source: 'Plugin · https://www.iso.org/iso-4217-currency-codes.html', entries: [
+        ['USD','US dollar'],['EUR','euro'],['GBP','pound sterling'],['JPY','Japanese yen'],['CAD','Canadian dollar'],['AUD','Australian dollar'],['CHF','Swiss franc'],['CNY','renminbi'],['SEK','Swedish krona'],['NOK','Norwegian krone'],['DKK','Danish krone'],['NZD','New Zealand dollar'],['SGD','Singapore dollar'],['HKD','Hong Kong dollar'],['INR','Indian rupee'],['BRL','Brazilian real'],['MXN','Mexican peso'],['ZAR','South African rand'],['KRW','South Korean won'],['AED','UAE dirham']
+      ]},
+      { id: 'qudt', family: 'semantics', name: 'QUDT quantity kinds', source: 'Plugin · http://qudt.org/vocab/quantitykind/', kind: 'qudt-quantity-kind', entries: [
+        ['http://qudt.org/vocab/quantitykind/Length','Length'],['http://qudt.org/vocab/quantitykind/Speed','Speed'],['http://qudt.org/vocab/quantitykind/Acceleration','Acceleration'],['http://qudt.org/vocab/quantitykind/Temperature','Temperature'],['http://qudt.org/vocab/quantitykind/Power','Power'],['http://qudt.org/vocab/quantitykind/Energy','Energy'],['http://qudt.org/vocab/quantitykind/Pressure','Pressure'],['http://qudt.org/vocab/quantitykind/ElectricCurrent','Electric current'],['http://qudt.org/vocab/quantitykind/ElectrolyticConductivity','Electrolytic conductivity'],['http://qudt.org/vocab/quantitykind/MagneticFluxDensity','Magnetic flux density'],['http://qudt.org/vocab/quantitykind/PowerPerArea','Power per area'],['http://qudt.org/vocab/quantitykind/DimensionlessRatio','Dimensionless ratio'],['http://qudt.org/vocab/quantitykind/Currency','Currency']
+      ]},
+      { id: 'cf', family: 'semantics', name: 'CF Standard Names', source: 'Plugin · https://cfconventions.org/Data/cf-standard-names/', kind: 'cf-standard-name', entries: [
+        ['https://cfconventions.org/Data/cf-standard-names/current/build/cf-standard-name-table.html#water_surface_height_above_reference_datum','Water surface height above datum'],['https://cfconventions.org/Data/cf-standard-names/current/build/cf-standard-name-table.html#sea_water_temperature','Sea water temperature'],['https://cfconventions.org/Data/cf-standard-names/current/build/cf-standard-name-table.html#sea_water_electrical_conductivity','Sea water electrical conductivity'],['https://cfconventions.org/Data/cf-standard-names/current/build/cf-standard-name-table.html#air_temperature','Air temperature'],['https://cfconventions.org/Data/cf-standard-names/current/build/cf-standard-name-table.html#wind_speed','Wind speed'],['https://cfconventions.org/Data/cf-standard-names/current/build/cf-standard-name-table.html#air_pressure','Air pressure']
+      ]},
+      { id: 'sosa', family: 'semantics', name: 'SOSA / SSN', source: 'Plugin · http://www.w3.org/ns/sosa/', kind: 'owl-class', entries: [
+        ['http://www.w3.org/ns/sosa/Observation','Observation'],['http://www.w3.org/ns/sosa/ObservationCollection','Observation collection'],['http://www.w3.org/ns/sosa/Sensor','Sensor'],['http://www.w3.org/ns/sosa/FeatureOfInterest','Feature of interest'],['http://www.w3.org/ns/sosa/ObservableProperty','Observable property'],['http://www.w3.org/ns/sosa/Sample','Sample'],['http://www.w3.org/ns/sosa/Platform','Platform']
+      ]},
+      { id: 'schemaorg', family: 'semantics', name: 'Schema.org', source: 'Plugin · https://schema.org/', kind: 'rdf-property', entries: [
+        ['https://schema.org/name','name'],['https://schema.org/identifier','identifier'],['https://schema.org/email','email'],['https://schema.org/address','address'],['https://schema.org/latitude','latitude'],['https://schema.org/longitude','longitude'],['https://schema.org/dateCreated','dateCreated'],['https://schema.org/dateModified','dateModified'],['https://schema.org/SpecialAnnouncement','SpecialAnnouncement']
+      ]},
+      { id: 'dcterms', family: 'semantics', name: 'Dublin Core Terms', source: 'Plugin · http://purl.org/dc/terms/', kind: 'dcterms-property', entries: [
+        ['http://purl.org/dc/terms/title','title'],['http://purl.org/dc/terms/identifier','identifier'],['http://purl.org/dc/terms/created','created'],['http://purl.org/dc/terms/modified','modified'],['http://purl.org/dc/terms/source','source'],['http://purl.org/dc/terms/spatial','spatial'],['http://purl.org/dc/terms/temporal','temporal'],['http://purl.org/dc/terms/type','type']
+      ]},
+      { id: 'skos-prov', family: 'semantics', name: 'SKOS + PROV-O', source: 'Plugin · https://www.w3.org/ns/prov + /2004/02/skos/core', kind: 'skos-concept', entries: [
+        ['http://www.w3.org/2004/02/skos/core#Concept','SKOS Concept'],['http://www.w3.org/2004/02/skos/core#prefLabel','preferred label'],['http://www.w3.org/2004/02/skos/core#broader','broader concept'],['http://www.w3.org/2004/02/skos/core#narrower','narrower concept'],['http://www.w3.org/ns/prov#Entity','PROV Entity'],['http://www.w3.org/ns/prov#generatedAtTime','generated at time'],['http://www.w3.org/ns/prov#wasDerivedFrom','was derived from']
+      ]},
+      { id: 'workspace', family: 'semantics', name: 'Workspace catalog', source: 'Document plugin · ./customer-catalog.json', kind: 'example-catalog', entries: [
+        ['https://schemas.example/customer/concepts/CustomerDisplayName','Customer display name'],['https://schemas.example/customer/concepts/AccountBalance','Account balance'],['https://schemas.example/customer/concepts/TripDistance','Trip distance']
+      ]}
+    ];
+    let selectedProperty = 'displayName';
+    let activeCatalogFamily = 'semantics';
+    let activeCatalogId = 'schemaorg';
+    const openModal = () => { modal.classList.add('open'); document.getElementById('packageName').focus(); };
+    const closeModal = () => { modal.classList.remove('open'); document.getElementById('convertButton').focus(); };
+
+    function annotationJson(annotation) {
+      const output = {};
+      if (annotation.unit) output.unit = annotation.unit;
+      if (annotation.ucumUnit) output.ucumUnit = annotation.ucumUnit;
+      if (annotation.currency) output.currency = annotation.currency;
+      if (annotation.semanticRole) output.semanticRole = annotation.semanticRole;
+      if (annotation.semanticReference && annotation.semanticKind) {
+        const binding = { reference: annotation.semanticReference, kind: annotation.semanticKind };
+        output[annotation.semanticKeyword || 'concepts'] = annotation.semanticKeyword === 'observedProperty' ? binding : [binding];
+      }
+      return JSON.stringify(output, null, 2);
+    }
+
+    function updateAnnotationPreview() {
+      const annotation = propertyAnnotations[selectedProperty];
+      document.getElementById('annotationPreview').innerHTML = annotationJson(annotation).split('\n').map(line => `<code>${line.replaceAll('&','&amp;').replaceAll('<','&lt;')}</code>`).join('');
+    }
+
+    function loadPropertyAnnotations() {
+      const annotation = propertyAnnotations[selectedProperty];
+      document.getElementById('propName').value = selectedProperty;
+      document.getElementById('propType').innerHTML = `<option>${annotation.type}</option><option>string</option><option>decimal</option><option>double</option>`;
+      document.getElementById('unitValue').value = annotation.unit || '';
+      document.getElementById('ucumValue').value = annotation.ucumUnit || '';
+      document.getElementById('currencyValue').value = annotation.currency || '';
+      document.getElementById('semanticRole').value = annotation.semanticRole || '';
+      document.getElementById('semanticKeyword').value = annotation.semanticKeyword || 'concepts';
+      document.getElementById('semanticReference').value = annotation.semanticReference || '';
+      document.getElementById('semanticKind').value = annotation.semanticKind || '';
+      const numeric = ['number','int32','uint32','int64','uint64','int128','uint128','float','double','decimal'].includes(annotation.type);
+      ['unitValue','ucumValue','currencyValue'].forEach(id => {
+        document.getElementById(id).disabled = !numeric;
+        document.querySelector(`[data-catalog="${id === 'unitValue' ? 'units' : id === 'ucumValue' ? 'ucum' : 'currencies'}"]`).disabled = !numeric;
+      });
+      updateAnnotationPreview();
+    }
+
+    function commitAnnotationFields() {
+      const annotation = propertyAnnotations[selectedProperty];
+      annotation.unit = document.getElementById('unitValue').value.trim();
+      annotation.ucumUnit = document.getElementById('ucumValue').value.trim();
+      annotation.currency = document.getElementById('currencyValue').value.trim().toUpperCase();
+      annotation.semanticRole = document.getElementById('semanticRole').value;
+      annotation.semanticKeyword = document.getElementById('semanticKeyword').value;
+      annotation.semanticReference = document.getElementById('semanticReference').value.trim();
+      annotation.semanticKind = document.getElementById('semanticKind').value.trim();
+      updateAnnotationPreview();
+    }
+
+    function familyPlugins() { return catalogPlugins.filter(plugin => plugin.family === activeCatalogFamily); }
+
+    function renderCatalogProviders() {
+      const providers = familyPlugins();
+      if (!providers.some(plugin => plugin.id === activeCatalogId)) activeCatalogId = providers[0].id;
+      document.getElementById('catalogProviders').innerHTML = providers.map(plugin => `<button class="catalog-provider ${plugin.id === activeCatalogId ? 'active' : ''}" data-provider="${plugin.id}"><strong>${plugin.name}</strong><small>${plugin.entries.length} entries</small></button>`).join('');
+      document.querySelectorAll('[data-provider]').forEach(button => button.addEventListener('click', () => { activeCatalogId = button.dataset.provider; renderCatalogProviders(); renderCatalogResults(); }));
+    }
+
+    function renderCatalogResults() {
+      const plugin = catalogPlugins.find(item => item.id === activeCatalogId);
+      const query = document.getElementById('catalogSearch').value.trim().toLowerCase();
+      document.getElementById('catalogTitle').textContent = plugin.name;
+      document.getElementById('catalogSource').textContent = `${plugin.source} · ${plugin.entries.length} well-known options`;
+      document.getElementById('catalogResults').innerHTML = plugin.entries.filter(([value,label]) => !query || `${value} ${label}`.toLowerCase().includes(query)).map(([value,label]) => `<button class="catalog-result" data-catalog-value="${value}"><span><strong>${label}</strong><small>${value}</small></span><span class="catalog-origin">${plugin.id}</span></button>`).join('');
+      document.querySelectorAll('[data-catalog-value]').forEach(button => button.addEventListener('click', () => applyCatalogValue(button.dataset.catalogValue, plugin)));
+    }
+
+    function openCatalog(family) {
+      activeCatalogFamily = family;
+      activeCatalogId = familyPlugins()[0].id;
+      catalogDrawer.dataset.mode = 'browse';
+      document.getElementById('catalogSearch').value = '';
+      document.getElementById('customCatalogValue').value = '';
+      document.getElementById('customCatalogValue').placeholder = 'Custom value';
+      document.getElementById('applyCustomCatalog').textContent = 'Apply custom';
+      renderCatalogProviders();
+      renderCatalogResults();
+      catalogDrawer.classList.add('open');
+      document.getElementById('catalogSearch').focus();
+    }
+
+    function applyCatalogValue(value, plugin) {
+      if (activeCatalogFamily === 'units') document.getElementById('unitValue').value = value;
+      if (activeCatalogFamily === 'ucum') document.getElementById('ucumValue').value = value;
+      if (activeCatalogFamily === 'currencies') document.getElementById('currencyValue').value = value;
+      if (activeCatalogFamily === 'semantics') {
+        document.getElementById('semanticReference').value = value;
+        document.getElementById('semanticKind').value = plugin.kind || 'custom';
+      }
+      commitAnnotationFields();
+      catalogDrawer.classList.remove('open');
+    }
+
+    document.getElementById('convertButton').addEventListener('click', openModal);
+    document.getElementById('closeModal').addEventListener('click', closeModal);
+    document.getElementById('cancelModal').addEventListener('click', closeModal);
+    modal.addEventListener('click', event => { if (event.target === modal) closeModal(); });
+    document.addEventListener('keydown', event => {
+      if (event.key !== 'Escape') return;
+      if (catalogDrawer.classList.contains('open')) catalogDrawer.classList.remove('open');
+      else if (modal.classList.contains('open')) closeModal();
+    });
+
+    document.querySelectorAll('[data-property]').forEach(row => row.addEventListener('click', () => {
+      document.querySelectorAll('[data-property]').forEach(item => { item.classList.remove('selected'); item.setAttribute('aria-selected', 'false'); });
+      row.classList.add('selected');
+      row.setAttribute('aria-selected', 'true');
+      selectedProperty = row.dataset.property;
+      document.getElementById('breadcrumbSelection').textContent = `Customer › ${selectedProperty}`;
+      loadPropertyAnnotations();
+    }));
+    document.querySelectorAll('[data-catalog]').forEach(button => button.addEventListener('click', () => openCatalog(button.dataset.catalog)));
+    ['unitValue','ucumValue','currencyValue','semanticRole','semanticKeyword','semanticReference','semanticKind'].forEach(id => document.getElementById(id).addEventListener('input', commitAnnotationFields));
+    document.getElementById('catalogSearch').addEventListener('input', renderCatalogResults);
+    document.getElementById('closeCatalog').addEventListener('click', () => catalogDrawer.classList.remove('open'));
+    document.getElementById('applyCustomCatalog').addEventListener('click', () => {
+      const value = document.getElementById('customCatalogValue').value.trim();
+      if (!value) return;
+      if (catalogDrawer.dataset.mode === 'install') {
+        let label = 'Custom catalog';
+        try { label = new URL(value).hostname || label; } catch { label = value.split(/[\\/]/).pop() || label; }
+        const id = `custom-${catalogPlugins.length}`;
+        catalogPlugins.push({ id, family: activeCatalogFamily, name: label, source: `Workspace-approved · ${value}`, kind: 'custom', entries: [] });
+        activeCatalogId = id;
+        catalogDrawer.dataset.mode = 'browse';
+        document.getElementById('customCatalogValue').value = '';
+        document.getElementById('customCatalogValue').placeholder = 'Custom value';
+        document.getElementById('applyCustomCatalog').textContent = 'Apply custom';
+        renderCatalogProviders();
+        renderCatalogResults();
+        return;
+      }
+      const plugin = catalogPlugins.find(item => item.id === activeCatalogId);
+      applyCatalogValue(value, plugin);
+    });
+    document.getElementById('addCatalogProvider').addEventListener('click', () => {
+      catalogDrawer.dataset.mode = 'install';
+      document.getElementById('catalogTitle').textContent = 'Install catalog plugin';
+      document.getElementById('catalogSource').textContent = 'Workspace file, HTTPS manifest, or host-provided extension';
+      document.getElementById('catalogResults').innerHTML = '<div class="annotation-summary"><code>catalog.manifest.json</code><code>id · label · families · source</code><code>entries or search endpoint</code><code>trust · cache · version</code></div>';
+      document.getElementById('customCatalogValue').placeholder = 'Manifest path or HTTPS URL';
+      document.getElementById('applyCustomCatalog').textContent = 'Install provider';
+    });
+
+    document.querySelectorAll('.mode-switch button').forEach(button => {
+      button.addEventListener('click', () => {
+        document.querySelectorAll('.mode-switch button').forEach(item => item.classList.remove('active'));
+        button.classList.add('active');
+        const mode = button.dataset.mode;
+        editorArea.classList.toggle('show-source', mode === 'source');
+        editorArea.classList.toggle('show-graph', mode === 'graph');
+        document.body.classList.toggle('graph-mode', mode === 'graph');
+      });
+    });
+
+    document.querySelectorAll('.toggle').forEach(toggle => {
+      toggle.addEventListener('click', () => {
+        const enabled = toggle.classList.toggle('on');
+        toggle.setAttribute('aria-pressed', String(enabled));
+        if (toggle.id === 'autoOpenOutput') {
+          document.getElementById('outputApplication').disabled = !enabled;
+        }
+      });
+    });
+
+    const graphStage = document.querySelector('.graph-stage');
+    const graphWorld = document.querySelector('.graph-world');
+    const graphCamera = { scale: 1, x: 0, y: 0 };
+    const graphPointers = new Map();
+    let graphDrag = null;
+    let graphPinchDistance = null;
+    let graphLastTap = null;
+
+    function renderGraphCamera() {
+      graphWorld.style.transform = `translate(${graphCamera.x}px, ${graphCamera.y}px) scale(${graphCamera.scale})`;
+      graphStage.dataset.zoom = `${Math.round(graphCamera.scale * 100)}%`;
+    }
+
+    function graphElementName(element) {
+      return element.dataset.name || element.querySelector('strong')?.textContent || 'Graph';
+    }
+
+    function selectGraphElement(element) {
+      document.querySelectorAll('[data-graph-role]').forEach(item => item.classList.remove('active'));
+      element.classList.add('active');
+      const role = element.dataset.graphRole || (element.classList.contains('qualifier') ? 'qualifier' : 'type');
+      const name = graphElementName(element);
+      const summary = element.querySelector('span')?.textContent || `${role} in the current graph projection`;
+      document.getElementById('graphInspectorTitle').textContent = name;
+      document.getElementById('graphInspectorSummary').textContent = summary;
+      document.getElementById('breadcrumbSelection').textContent = `Graph › ${name}`;
+      graphStage.setAttribute('aria-label', `${name} ${role} selected. Double activate to open.`);
+    }
+
+    function openGraphElement(element) {
+      const role = element.dataset.graphRole || (element.classList.contains('qualifier') ? 'qualifier' : 'type');
+      const name = graphElementName(element);
+      selectGraphElement(element);
+      const actions = {
+        namespace: `Namespace isolated · ${name}`,
+        type: `Type neighborhood opened · ${name}`,
+        relation: `Relation details opened · ${name}`,
+        qualifier: `Qualifier payload opened · ${name}`
+      };
+      document.getElementById('graphInspectorSummary').textContent = actions[role] || `Opened ${name}`;
+      graphStage.setAttribute('aria-label', actions[role] || `Opened ${name}`);
+    }
+
+    function zoomGraph(delta, clientX, clientY) {
+      const rect = graphStage.getBoundingClientRect();
+      const next = Math.max(.5, Math.min(1.8, Math.round((graphCamera.scale + delta) * 10) / 10));
+      const anchorX = clientX - rect.left;
+      const anchorY = clientY - rect.top;
+      graphCamera.x = anchorX - (anchorX - graphCamera.x) * next / graphCamera.scale;
+      graphCamera.y = anchorY - (anchorY - graphCamera.y) * next / graphCamera.scale;
+      graphCamera.scale = next;
+      renderGraphCamera();
+    }
+
+    document.querySelectorAll('.graph-node').forEach(node => {
+      if (!node.dataset.graphRole) node.dataset.graphRole = node.classList.contains('qualifier') ? 'qualifier' : 'type';
+    });
+    document.querySelectorAll('[data-graph-role]:not(.minimap)').forEach(element => {
+      element.addEventListener('click', event => { event.stopPropagation(); if (!graphDrag?.moved) selectGraphElement(element); });
+      element.addEventListener('dblclick', event => { event.stopPropagation(); openGraphElement(element); });
+      element.addEventListener('pointerup', event => {
+        if (event.pointerType === 'mouse') return;
+        event.preventDefault();
+        event.stopPropagation();
+        const now = performance.now();
+        const roleKey = `${element.dataset.graphRole}:${graphElementName(element)}`;
+        if (graphLastTap?.key === roleKey && now - graphLastTap.time < 360) {
+          openGraphElement(element);
+          graphLastTap = null;
+        } else {
+          selectGraphElement(element);
+          graphLastTap = { key: roleKey, time: now };
+        }
+      });
+      element.addEventListener('keydown', event => { if (event.key === 'Enter') openGraphElement(element); });
+    });
+    graphStage.addEventListener('wheel', event => {
+      event.preventDefault();
+      zoomGraph(event.deltaY < 0 ? .1 : -.1, event.clientX, event.clientY);
+    }, { passive: false });
+    graphStage.addEventListener('pointerdown', event => {
+      if (event.target.closest('button, [data-graph-role]')) return;
+      graphStage.setPointerCapture(event.pointerId);
+      graphPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (graphPointers.size === 1) graphDrag = { x: event.clientX, y: event.clientY, cameraX: graphCamera.x, cameraY: graphCamera.y, moved: false };
+      if (graphPointers.size === 2) {
+        const [first, second] = [...graphPointers.values()];
+        graphPinchDistance = Math.hypot(second.x - first.x, second.y - first.y);
+      }
+    });
+    graphStage.addEventListener('pointermove', event => {
+      if (!graphPointers.has(event.pointerId)) return;
+      graphPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (graphPointers.size === 2 && graphPinchDistance) {
+        const [first, second] = [...graphPointers.values()];
+        const distance = Math.hypot(second.x - first.x, second.y - first.y);
+        if (Math.abs(distance - graphPinchDistance) >= 18) {
+          zoomGraph(distance > graphPinchDistance ? .1 : -.1, (first.x + second.x) / 2, (first.y + second.y) / 2);
+          graphPinchDistance = distance;
+        }
+      } else if (graphDrag) {
+        const dx = event.clientX - graphDrag.x;
+        const dy = event.clientY - graphDrag.y;
+        graphDrag.moved ||= Math.hypot(dx, dy) > 4;
+        if (graphDrag.moved) {
+          graphStage.classList.add('dragging');
+          graphCamera.x = graphDrag.cameraX + dx;
+          graphCamera.y = graphDrag.cameraY + dy;
+          renderGraphCamera();
+        }
+      }
+    });
+    const endGraphPointer = event => {
+      graphPointers.delete(event.pointerId);
+      if (graphPointers.size < 2) graphPinchDistance = null;
+      graphStage.classList.remove('dragging');
+      window.setTimeout(() => { graphDrag = null; }, 0);
+    };
+    graphStage.addEventListener('pointerup', endGraphPointer);
+    graphStage.addEventListener('pointercancel', endGraphPointer);
+    document.querySelector('.minimap').addEventListener('click', event => {
+      event.stopPropagation();
+      graphCamera.x = 0;
+      graphCamera.y = 0;
+      renderGraphCamera();
+    });
+    document.querySelector('.minimap').addEventListener('dblclick', event => {
+      event.stopPropagation();
+      graphCamera.scale = 1;
+      graphCamera.x = 0;
+      graphCamera.y = 0;
+      renderGraphCamera();
+    });
+
+    document.getElementById('runConversion').addEventListener('click', event => {
+      const button = event.currentTarget;
+      button.classList.add('busy');
+      button.disabled = true;
+      button.querySelector('.button-label').textContent = 'Exporting…';
+      window.setTimeout(() => {
+        const shouldOpen = document.getElementById('autoOpenOutput').getAttribute('aria-pressed') === 'true';
+        button.classList.remove('busy');
+        button.disabled = false;
+        button.querySelector('.button-label').textContent = shouldOpen ? 'Opened in VS Code' : 'Exported';
+        closeModal();
+        window.setTimeout(() => { button.querySelector('.button-label').textContent = 'Export'; }, 500);
+      }, 1400);
+    });
+    loadPropertyAnnotations();
+  </script>
+</body>
+</html>

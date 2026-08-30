@@ -1,0 +1,7 @@
+{
+  "backlog": [
+    { "id": "gap.phase0-host-adapters", "owner": "hosts", "status": "explicit-gap", "reason": "Electron and VS Code adapters are later phases." },
+    { "id": "gap.validation.remaining-keywords", "owner": "language-service", "status": "explicit-gap", "reason": "Validation keywords beyond the Phase 1 parser/edit slice remain pending in the ledger." },
+    { "id": "gap.semantic-annotations.keywords", "owner": "language-service", "status": "explicit-gap", "reason": "Semantic annotation keywords remain pending and are individually tracked in the ledger." }
+  ]
+}

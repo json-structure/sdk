@@ -1,0 +1,1487 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Puget Sound Graph - Zoom and Navigation Prototype</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #111416;
+      --chrome: #1c2023;
+      --panel: #24292d;
+      --panel-2: #2a3035;
+      --line: #3b4349;
+      --line-strong: #69747c;
+      --text: #f0f3f4;
+      --muted: #aab4ba;
+      --quiet: #76828a;
+      --cyan: #59b6d6;
+      --cyan-bright: #8bdcf5;
+      --gold: #f2cf72;
+      --green: #65c690;
+      --violet: #b99bea;
+      --orange: #e99a5c;
+      --red: #ef7474;
+      font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+      font-size: 13px;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { width: 100%; min-width: 980px; height: 100%; margin: 0; overflow: hidden; }
+    body { color: var(--text); background: var(--bg); }
+    button, input, select { color: inherit; font: inherit; }
+    button { cursor: pointer; }
+    button:focus-visible, input:focus-visible, select:focus-visible, canvas:focus-visible {
+      outline: 2px solid var(--gold);
+      outline-offset: -2px;
+    }
+
+    .app { display: grid; grid-template-rows: 38px 42px minmax(0, 1fr) 24px; height: 100vh; }
+    .titlebar, .toolbar, .statusbar { display: flex; align-items: center; background: var(--chrome); }
+    .titlebar { padding: 0 12px; border-bottom: 1px solid #090b0c; gap: 10px; }
+    .brand-mark { width: 18px; height: 18px; border: 2px solid var(--cyan); transform: rotate(45deg); position: relative; }
+    .brand-mark::after { content: ""; position: absolute; inset: 3px; border: 1px solid var(--cyan-bright); }
+    .brand { font-weight: 700; }
+    .file { margin-left: 14px; color: var(--muted); font-family: "Cascadia Code", monospace; }
+    .prototype-tag { margin-left: auto; padding: 3px 7px; border: 1px solid var(--orange); border-radius: 3px; color: var(--orange); font-size: 10px; text-transform: uppercase; }
+
+    .toolbar { min-width: 0; padding: 0 10px; border-bottom: 1px solid var(--line); gap: 5px; }
+    .icon-button, .tool-button { height: 28px; border: 1px solid transparent; border-radius: 3px; background: transparent; color: var(--muted); }
+    .icon-button { width: 29px; font-family: "Cascadia Code", monospace; }
+    .tool-button { padding: 0 9px; }
+    .icon-button:hover:not(:disabled), .tool-button:hover:not(:disabled) { color: var(--text); border-color: var(--line); background: var(--panel-2); }
+    button:disabled { opacity: .35; cursor: default; }
+    .divider { width: 1px; height: 20px; margin: 0 4px; background: var(--line); }
+    .breadcrumbs { min-width: 0; display: flex; align-items: center; color: var(--quiet); white-space: nowrap; }
+    .crumb { border: 0; padding: 5px 4px; color: var(--muted); background: transparent; }
+    .crumb.active { color: var(--text); font-weight: 650; }
+    .crumb-separator { margin: 0 2px; color: var(--quiet); }
+    .toolbar-spacer { flex: 1; }
+    .search { width: 220px; height: 28px; border: 1px solid var(--line); border-radius: 3px; background: #121517; padding: 0 9px; }
+    .zoom-readout { min-width: 48px; color: var(--muted); text-align: center; font: 11px "Cascadia Code", monospace; }
+
+    .workspace { min-height: 0; display: grid; grid-template-columns: 210px minmax(470px, 1fr) 286px; }
+    .navigator, .inspector { min-height: 0; background: var(--chrome); overflow: auto; font-size: 11px; }
+    .navigator { border-right: 1px solid var(--line); }
+    .inspector { border-left: 1px solid var(--line); }
+    .panel-title { height: 30px; display: flex; align-items: center; padding: 0 9px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 9px; letter-spacing: .07em; text-transform: uppercase; }
+    .panel-title span { margin-left: auto; color: var(--quiet); letter-spacing: 0; }
+    .section { padding: 8px 9px; border-bottom: 1px solid var(--line); }
+    .section-label { margin-bottom: 6px; color: var(--quiet); font-size: 9px; letter-spacing: .06em; text-transform: uppercase; }
+    .level-step { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 6px; padding: 5px 4px; border-left: 2px solid var(--line); color: var(--quiet); }
+    .level-step.complete { border-left-color: var(--cyan); color: var(--muted); }
+    .level-step.active { border-left-color: var(--gold); color: var(--text); background: rgba(242,207,114,.06); }
+    .level-number { font: 9px "Cascadia Code", monospace; }
+    .level-step strong { display: block; font-size: 10px; }
+    .level-step small { display: block; margin-top: 2px; color: var(--quiet); line-height: 1.3; }
+    .history-item { width: 100%; min-height: 27px; display: flex; align-items: center; gap: 6px; border: 0; padding: 0 5px; background: transparent; color: var(--muted); text-align: left; }
+    .history-item > span:nth-child(2) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .history-item:hover { background: rgba(255,255,255,.035); color: var(--text); }
+    .history-dot { width: 6px; height: 6px; border: 1px solid var(--cyan); transform: rotate(45deg); }
+    .shortcut { margin-left: auto; color: var(--quiet); font: 9px "Cascadia Code", monospace; }
+
+    .viewport { min-width: 0; min-height: 0; position: relative; overflow: hidden; background-color: #101315; background-image: linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px); background-size: 24px 24px; }
+    #graphCanvas { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+    #graphCanvas.dragging { cursor: grabbing; }
+    .level-banner { position: absolute; left: 14px; top: 13px; pointer-events: none; }
+    .level-banner .eyebrow { color: var(--cyan); font: 10px "Cascadia Code", monospace; letter-spacing: .08em; text-transform: uppercase; }
+    .level-banner h1 { margin: 3px 0 2px; font-size: 20px; letter-spacing: 0; }
+    .level-banner p { margin: 0; color: var(--muted); }
+    .hint { position: absolute; left: 50%; bottom: 15px; transform: translateX(-50%); padding: 6px 9px; border: 1px solid var(--line); border-radius: 3px; background: rgba(28,32,35,.94); color: var(--muted); font-size: 11px; pointer-events: none; }
+    .minimap-wrap { position: absolute; right: 12px; bottom: 12px; width: 190px; padding: 8px; border: 1px solid var(--line-strong); border-radius: 3px; background: rgba(28,32,35,.96); }
+    .minimap-head { display: flex; justify-content: space-between; margin-bottom: 5px; color: var(--muted); font-size: 10px; }
+    #minimap { width: 172px; height: 92px; display: block; border: 1px solid var(--line); background: #0d1012; cursor: crosshair; touch-action: none; }
+    .lens-bar { position: absolute; top: 12px; right: 12px; display: flex; border: 1px solid var(--line); border-radius: 3px; overflow: hidden; background: rgba(28,32,35,.96); }
+    .lens-bar button { height: 27px; border: 0; border-right: 1px solid var(--line); padding: 0 8px; background: transparent; color: var(--muted); font-size: 10px; }
+    .lens-bar button:last-child { border-right: 0; }
+    .lens-bar button.active { color: var(--text); background: var(--panel-2); box-shadow: inset 0 -2px var(--cyan); }
+    .command-bar { position: absolute; top: 47px; right: 12px; display: flex; gap: 4px; }
+    .command-bar button { height: 26px; border: 1px solid var(--line); border-radius: 3px; padding: 0 7px; background: rgba(28,32,35,.96); color: var(--muted); font-size: 9px; }
+    .command-bar button:hover { border-color: var(--cyan); color: var(--text); }
+
+    dialog { width: min(520px, calc(100vw - 40px)); padding: 0; border: 1px solid var(--line-strong); border-radius: 4px; color: var(--text); background: var(--chrome); box-shadow: 0 18px 60px rgba(0,0,0,.6); }
+    dialog::backdrop { background: rgba(4,6,7,.72); }
+    .dialog-head { display: flex; align-items: center; min-height: 38px; padding: 0 12px; border-bottom: 1px solid var(--line); }
+    .dialog-head strong { font-size: 13px; }
+    .dialog-head button { margin-left: auto; border: 0; background: transparent; color: var(--muted); }
+    .dialog-body { display: grid; gap: 10px; padding: 12px; }
+    .field { display: grid; gap: 4px; }
+    .field label { color: var(--quiet); font-size: 9px; text-transform: uppercase; }
+    .field input, .field select { width: 100%; height: 30px; border: 1px solid var(--line); border-radius: 2px; padding: 0 7px; background: #121517; }
+    .dialog-actions { display: flex; justify-content: flex-end; gap: 6px; padding: 10px 12px; border-top: 1px solid var(--line); }
+    .dialog-actions button { min-height: 30px; border: 1px solid var(--line); border-radius: 3px; padding: 0 12px; background: var(--panel-2); color: var(--muted); }
+    .dialog-actions .primary { border-color: var(--cyan); background: var(--cyan); color: #071115; font-weight: 700; }
+
+    .inspector-head { padding: 10px 10px; border-bottom: 1px solid var(--line); }
+    .inspector-head .eyebrow { color: var(--cyan); font: 9px "Cascadia Code", monospace; text-transform: uppercase; }
+    .inspector-head h2 { margin: 3px 0; font-size: 15px; line-height: 1.2; letter-spacing: 0; overflow-wrap: anywhere; }
+    .inspector-head p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.35; }
+    .metric-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+    .metric { min-width: 0; padding: 6px; border: 1px solid var(--line); background: var(--panel); }
+    .metric strong { display: block; overflow-wrap: anywhere; font: 600 13px/1.2 "Cascadia Code", monospace; }
+    .metric span { color: var(--quiet); font-size: 9px; }
+    .relation-list { max-height: 235px; overflow: auto; }
+    .relation { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px; border: 0; border-bottom: 1px solid rgba(59,67,73,.65); padding: 5px 2px; background: transparent; color: var(--muted); text-align: left; }
+    .relation:hover { color: var(--text); background: rgba(255,255,255,.025); }
+    .relation > span:first-child { min-width: 0; }
+    .relation strong { display: block; overflow: hidden; text-overflow: ellipsis; font: 9px "Cascadia Code", monospace; }
+    .relation small { display: block; overflow: hidden; color: var(--quiet); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+    .badge { align-self: center; padding: 2px 3px; border: 1px solid var(--line); border-radius: 2px; color: var(--quiet); font: 8px "Cascadia Code", monospace; }
+    .badge.qualifier { border-color: var(--violet); color: #c9b8ff; }
+    .relation-row { display: grid; grid-template-columns: minmax(0, 1fr) 34px; border-bottom: 1px solid rgba(59,67,73,.65); }
+    .relation-row .relation { border-bottom: 0; }
+    .cardinality-toggle { margin: 4px 2px; border: 1px solid var(--cyan); border-radius: 2px; background: #16272d; color: var(--cyan); font: 700 12px "Cascadia Code", monospace; }
+    .cardinality-editor { padding: 6px 2px 8px; border-bottom: 1px solid rgba(59,67,73,.65); }
+    .cardinality-editor > span { display: block; margin-bottom: 5px; color: var(--quiet); font-size: 9px; text-transform: uppercase; }
+    .cardinality-segments { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--line-strong); }
+    .cardinality-segments button { min-height: 30px; border: 0; background: var(--panel); color: var(--muted); font: 10px "Cascadia Code", monospace; }
+    .cardinality-segments button + button { border-left: 1px solid var(--line-strong); }
+    .cardinality-segments button.active { background: var(--cyan); color: #071115; font-weight: 700; }
+    .action-row { display: flex; gap: 5px; margin-top: 8px; }
+    .action-row button { flex: 1; min-height: 28px; border: 1px solid var(--line); border-radius: 3px; background: var(--panel-2); color: var(--muted); font-size: 10px; }
+    .action-row button.primary { border-color: var(--cyan); background: var(--cyan); color: #071115; font-weight: 700; }
+
+    .statusbar { padding: 0 8px; gap: 14px; color: #071115; background: var(--cyan); font-size: 11px; }
+    .statusbar .right { display: flex; gap: 14px; margin-left: auto; }
+
+    @media (max-width: 1120px) {
+      .workspace { grid-template-columns: 175px minmax(430px, 1fr) 248px; }
+      .search { width: 145px; }
+      .file { display: none; }
+      .minimap-wrap { width: 154px; }
+      #minimap { width: 136px; }
+      .lens-bar button { padding: 0 5px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header class="titlebar">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span class="brand">JSON Structure Graph</span>
+      <span class="file">puget-sound-graph.struct.json</span>
+      <span class="prototype-tag">Navigation prototype</span>
+    </header>
+
+    <div class="toolbar" role="toolbar" aria-label="Graph navigation">
+      <button class="icon-button" id="backButton" title="Back" aria-label="Back">←</button>
+      <button class="icon-button" id="forwardButton" title="Forward" aria-label="Forward">→</button>
+      <button class="icon-button" id="homeButton" title="Atlas" aria-label="Return to atlas">⌂</button>
+      <span class="divider"></span>
+      <nav class="breadcrumbs" id="breadcrumbs" aria-label="Graph location"></nav>
+      <span class="toolbar-spacer"></span>
+      <input class="search" id="searchInput" type="search" placeholder="Find type or relation" aria-label="Find type or relation">
+      <span class="divider"></span>
+      <button class="icon-button" id="zoomOut" title="Zoom out" aria-label="Zoom out">−</button>
+      <span class="zoom-readout" id="zoomReadout">35%</span>
+      <button class="icon-button" id="zoomIn" title="Zoom in" aria-label="Zoom in">＋</button>
+      <button class="tool-button" id="fitButton">Fit level</button>
+    </div>
+
+    <section class="workspace">
+      <aside class="navigator" aria-label="Navigation context">
+        <div class="panel-title">Semantic zoom <span>3 levels</span></div>
+        <div class="section" id="levelSteps"></div>
+        <div class="panel-title">Recent path <span id="historyCount">1</span></div>
+        <div class="section" id="historyList"></div>
+        <div class="panel-title">Keyboard</div>
+        <div class="section">
+          <div class="history-item"><span>Drill in</span><span class="shortcut">Enter</span></div>
+          <div class="history-item"><span>Back out</span><span class="shortcut">Esc</span></div>
+          <div class="history-item"><span>Follow relation</span><span class="shortcut">Alt →</span></div>
+          <div class="history-item"><span>Fit level</span><span class="shortcut">0</span></div>
+        </div>
+        <div class="panel-title">Pointer & touch</div>
+        <div class="section">
+          <div class="history-item"><span>Select / inspect</span><span class="shortcut">click · tap</span></div>
+          <div class="history-item"><span>Open / follow</span><span class="shortcut">double</span></div>
+          <div class="history-item"><span>Zoom at pointer</span><span class="shortcut">wheel · pinch</span></div>
+          <div class="history-item"><span>Move viewport</span><span class="shortcut">drag</span></div>
+        </div>
+      </aside>
+
+      <section class="viewport" id="viewport" aria-label="Interactive schema graph">
+        <canvas id="graphCanvas" tabindex="0" aria-label="Puget Sound schema graph"></canvas>
+        <div class="level-banner">
+          <div class="eyebrow" id="levelEyebrow">Level 1 · Atlas</div>
+          <h1 id="levelTitle">Puget Sound ontology</h1>
+          <p id="levelDescription">126 types across 10 domains</p>
+        </div>
+        <div class="lens-bar" aria-label="Graph lens">
+          <button data-lens="namespaces">Namespaces</button>
+          <button class="active" data-lens="relations">Relations</button>
+          <button data-lens="inheritance">Extends</button>
+          <button data-lens="imports">Imports</button>
+        </div>
+        <div class="command-bar" aria-label="Schema authoring commands">
+          <button data-command="relation">+ Relation</button>
+          <button data-command="extends">Set extends</button>
+          <button data-command="move">Move type</button>
+          <button data-command="import">Import types</button>
+        </div>
+        <div class="hint" id="hint">Double-click Nodes to open it; wheel or pinch zooms toward the next semantic level</div>
+        <aside class="minimap-wrap" aria-label="Graph minimap">
+          <div class="minimap-head"><span>Whole document</span><span id="miniLevel">Atlas</span></div>
+          <canvas id="minimap" width="344" height="184"></canvas>
+        </aside>
+      </section>
+
+      <aside class="inspector" aria-label="Selection details">
+        <div class="panel-title">Details <span id="selectionKind">Document</span></div>
+        <header class="inspector-head">
+          <div class="eyebrow" id="inspectorEyebrow">Schema atlas</div>
+          <h2 id="inspectorTitle">PugetSoundGraphOntology</h2>
+          <p id="inspectorDescription">The complete supplied schema, including ontology declarations and nested provider data contracts.</p>
+        </header>
+        <section class="section">
+          <div class="section-label">Visible context</div>
+          <div class="metric-grid" id="metrics"></div>
+        </section>
+        <section class="section" id="relationSection">
+          <div class="section-label" id="relationTitle">Largest domains</div>
+          <div class="relation-list" id="relationList"></div>
+        </section>
+        <section class="section">
+          <div class="section-label">Navigation</div>
+          <div class="action-row">
+            <button id="focusButton" class="primary">Drill into selection</button>
+            <button id="pinButton">Pin</button>
+          </div>
+        </section>
+      </aside>
+    </section>
+
+    <footer class="statusbar"><span>Graph model ready</span><span>126 types</span><span>233 relations</span><span>67 inheritance edges</span><span class="right"><span id="statusSelection">Atlas</span><span id="statusPosition">Fit</span></span></footer>
+  </main>
+
+  <dialog id="commandDialog" aria-labelledby="dialogTitle">
+    <div class="dialog-head"><strong id="dialogTitle">Schema command</strong><button type="button" id="dialogClose" aria-label="Close">×</button></div>
+    <form id="commandForm">
+      <div class="dialog-body" id="dialogBody"></div>
+      <div class="dialog-actions"><button type="button" id="dialogCancel">Cancel</button><button class="primary" type="submit" id="dialogSubmit">Apply</button></div>
+    </form>
+  </dialog>
+
+  <script>
+    const palette = {
+      cyan: '#59b6d6', cyanBright: '#8bdcf5', gold: '#f2cf72', green: '#65c690',
+      violet: '#b99bea', orange: '#e99a5c', red: '#ef7474', panel: '#252b2f',
+      panel2: '#30373c', line: '#566169', text: '#f0f3f4', muted: '#aab4ba', quiet: '#76828a'
+    };
+
+    const domains = [
+      { id: 'Nodes', types: 29, properties: 97, relations: 233, x: 49, y: 47, w: 31, h: 36, color: palette.cyan },
+      { id: 'EdgeQualifiers', types: 38, properties: 114, relations: 0, x: 20, y: 32, w: 25, h: 27, color: palette.violet },
+      { id: 'Microsoft', types: 16, properties: 112, relations: 0, x: 68, y: 18, w: 22, h: 22, color: palette.green },
+      { id: 'US', types: 13, properties: 184, relations: 0, x: 74, y: 69, w: 19, h: 22, color: palette.orange },
+      { id: 'QualifierPayloads', types: 12, properties: 31, relations: 0, x: 20, y: 68, w: 22, h: 20, color: palette.violet },
+      { id: 'StudyPayloads', types: 10, properties: 74, relations: 0, x: 45, y: 17, w: 19, h: 19, color: palette.green },
+      { id: 'Bindings', types: 3, properties: 32, relations: 0, x: 6, y: 59, w: 12, h: 15, color: palette.cyan },
+      { id: 'Base', types: 2, properties: 26, relations: 0, x: 5, y: 17, w: 11, h: 14, color: palette.gold },
+      { id: 'Support', types: 2, properties: 2, relations: 0, x: 83, y: 46, w: 11, h: 14, color: palette.quiet },
+      { id: 'Manifest', types: 1, properties: 5, relations: 0, x: 7, y: 40, w: 10, h: 12, color: palette.quiet }
+    ];
+
+    const nodeTypes = [
+      ['Concept',43],['Place',24],['Activity',22],['Venue',20],['events',18],['QueryableConcept',13],
+      ['parks',10],['procedure',8],['FerryVessel',7],['ferries',6],['TideStation',6],['Cuisine',6],
+      ['CurriculumTopic',5],['places',5],['neighborhoods',5],['FerryRoute',5],['Route',4],['venues',4],
+      ['Person',3],['Dataset',3],['user',3],['WeatherZone',3],['AirQualityZone',2],['CivicIncident',2],
+      ['MarineForecastZone',2],['User',2],['weather_zones',2],['AdvisorAnchor',0],['source_document',0]
+    ].map(([id, relations], index) => ({ id, relations, properties: /Zone|Route|Vessel|Dataset|Queryable/.test(id) ? 4 : 3, index }));
+
+    const nodeEdgeData = 'Activity>Activity:5,Activity>Concept:1,Activity>events:2,Activity>parks:1,Activity>Person:2,Activity>Place:3,Activity>places:1,Activity>source_document:1,Activity>Venue:5,Activity>venues:1,AirQualityZone>Dataset:1,AirQualityZone>Place:1,CivicIncident>Dataset:1,CivicIncident>Place:1,Concept>Concept:12,Concept>events:1,Concept>ferries:2,Concept>neighborhoods:2,Concept>parks:6,Concept>Place:4,Concept>places:3,Concept>source_document:1,Concept>Venue:9,Concept>weather_zones:3,Cuisine>Concept:1,Cuisine>Cuisine:1,Cuisine>Place:2,Cuisine>source_document:1,Cuisine>Venue:1,CurriculumTopic>Concept:1,CurriculumTopic>neighborhoods:1,CurriculumTopic>parks:1,CurriculumTopic>Place:1,CurriculumTopic>Venue:1,Dataset>AdvisorAnchor:1,Dataset>Concept:1,Dataset>CurriculumTopic:1,events>Activity:1,events>Concept:1,events>events:3,events>neighborhoods:1,events>parks:3,events>Person:2,events>Place:2,events>source_document:1,events>Venue:3,events>weather_zones:1,ferries>Concept:1,ferries>Place:2,ferries>source_document:1,ferries>Venue:2,FerryRoute>Dataset:1,FerryRoute>FerryRoute:1,FerryRoute>FerryVessel:1,FerryRoute>Place:1,FerryRoute>TideStation:1,FerryVessel>Dataset:1,FerryVessel>FerryRoute:2,FerryVessel>FerryVessel:1,FerryVessel>Place:2,FerryVessel>TideStation:1,MarineForecastZone>Dataset:1,MarineForecastZone>Place:1,neighborhoods>neighborhoods:1,neighborhoods>Place:2,neighborhoods>source_document:1,neighborhoods>Venue:1,parks>Activity:1,parks>Concept:1,parks>parks:4,parks>Place:3,parks>source_document:1,Person>events:1,Person>Place:1,Person>source_document:1,Place>Concept:5,Place>Cuisine:1,Place>events:1,Place>ferries:3,Place>neighborhoods:1,Place>Place:6,Place>source_document:1,Place>user:1,Place>Venue:5,places>Concept:1,places>places:3,places>source_document:1,procedure>AdvisorAnchor:1,procedure>Concept:1,procedure>Cuisine:1,procedure>neighborhoods:1,procedure>parks:1,procedure>Place:1,procedure>procedure:1,procedure>Venue:1,QueryableConcept>AdvisorAnchor:1,QueryableConcept>AirQualityZone:1,QueryableConcept>CivicIncident:1,QueryableConcept>Concept:1,QueryableConcept>Dataset:1,QueryableConcept>FerryRoute:1,QueryableConcept>FerryVessel:1,QueryableConcept>MarineForecastZone:1,QueryableConcept>Place:2,QueryableConcept>Route:1,QueryableConcept>TideStation:1,QueryableConcept>WeatherZone:1,Route>Dataset:1,Route>Place:2,Route>Route:1,TideStation>Dataset:1,TideStation>FerryRoute:1,TideStation>Place:2,TideStation>Route:1,TideStation>TideStation:1,User>AdvisorAnchor:1,user>Place:1,User>procedure:3,Venue>Concept:4,Venue>Cuisine:1,Venue>events:2,Venue>ferries:2,Venue>neighborhoods:1,Venue>Place:4,Venue>places:1,Venue>source_document:1,Venue>Venue:4,venues>Activity:1,venues>parks:1,venues>Place:1,venues>source_document:1,weather_zones>source_document:1,weather_zones>weather_zones:1,WeatherZone>Dataset:1,WeatherZone>MarineForecastZone:1,WeatherZone>Place:1';
+    const nodeEdges = nodeEdgeData.split(',').map(entry => {
+      const [pair, weight] = entry.split(':');
+      const [source, target] = pair.split('>');
+      return { source, target, weight: Number(weight) };
+    });
+
+    const placeRelations = [
+      ['accessible_via','ferries'],['accessible_via','Place'],['category_of','Concept'],['category_of','Cuisine'],
+      ['contrasts_with','Concept'],['derived_from_source_document','source_document'],['hosts','Concept'],['hosts','events'],
+      ['located_in','neighborhoods'],['located_in','Place'],['located_in','Venue'],['near','Place'],['near','Venue'],
+      ['operated_by','Venue'],['part_of','ferries'],['part_of','Place'],['part_of','Venue'],['references','Concept'],
+      ['references','Place'],['references','user'],['related_to','Concept'],['related_to','Place'],['served_by','Venue'],['serves','ferries']
+    ].map(([name, target], index) => ({
+      id: `${name}__${target}`,
+      name,
+      target,
+      cardinality: 'multiple',
+      qualifier: name,
+      qualifierRef: `#/definitions/EdgeQualifiers/${name}`,
+      qualifierProperties: ['relationship_type', 'relationship_scope', 'properties'],
+      scope: 'external',
+      index
+    }));
+
+    const rootType = { id: 'GraphManifest', namespace: 'Manifest', pointer: '#/definitions/Manifest/GraphManifest' };
+    const namespaceAssignments = Object.fromEntries(nodeTypes.map(type => [type.id, 'Nodes']));
+    const extendsAssignments = Object.fromEntries(nodeTypes.map(type => [type.id, 'AbstractGraphNode']));
+    const importSources = [
+      { id: 'person-library', label: 'Person library', source: 'person-library/schema.struct.json', namespace: 'People', mode: 'linked', types: ['Person', 'Address', 'ContactInfo'], selected: new Set(['Person', 'Address']) },
+      { id: 'financial-library', label: 'Financial library', source: 'financial-library/schema.struct.json', namespace: 'Finance', mode: 'linked', types: ['Money', 'PaymentMethod', 'Transaction'], selected: new Set(['Money', 'Transaction']) }
+    ];
+
+    const levelConfig = {
+      atlas: { zoom: 35, eyebrow: 'Level 1 · Atlas', title: 'Puget Sound ontology', description: '126 types across 10 domains', hint: 'Double-click Nodes to open it; wheel or pinch zooms toward the next semantic level' },
+      types: { zoom: 70, eyebrow: 'Level 2 · Type topology', title: 'Nodes namespace', description: '29 graph node types · 233 declared relations', hint: 'Double-click Place to open its neighborhood; wheel or pinch crosses levels at the zoom limit' },
+      neighborhood: { zoom: 120, eyebrow: 'Level 3 · Neighborhood', title: 'Place', description: '24 outgoing relation declarations · one-hop context', hint: 'Click an edge target to follow it; Back preserves this exact view' }
+    };
+
+    const canvas = document.getElementById('graphCanvas');
+    const ctx = canvas.getContext('2d');
+    const minimap = document.getElementById('minimap');
+    const miniCtx = minimap.getContext('2d');
+    let state = { level: 'atlas', selected: 'Nodes', lens: 'relations', panX: 0, panY: 0, viewScale: null, detail: null };
+    let history = [{ level: 'atlas', selected: 'Nodes', label: 'Atlas' }];
+    let historyIndex = 0;
+    let hitAreas = [];
+    let dragging = false;
+    let dragStart = null;
+    let lastTap = null;
+    let pinchStart = null;
+    const activePointers = new Map();
+    let typeLayoutCache;
+
+    function resizeCanvas() {
+      const rect = canvas.getBoundingClientRect();
+      const ratio = window.devicePixelRatio || 1;
+      canvas.width = Math.round(rect.width * ratio);
+      canvas.height = Math.round(rect.height * ratio);
+      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+      render();
+    }
+
+    function roundRect(context, x, y, width, height, radius) {
+      context.beginPath();
+      context.roundRect(x, y, width, height, radius);
+    }
+
+    function drawNode(x, y, width, height, item, options = {}) {
+      const selected = item.id === state.selected;
+      const fontCompensation = 1 / Math.sqrt(options.viewScale || 1);
+      ctx.save();
+      ctx.shadowColor = 'rgba(0,0,0,.38)';
+      ctx.shadowBlur = 10;
+      ctx.shadowOffsetY = 4;
+      roundRect(ctx, x, y, width, height, 4);
+      ctx.fillStyle = options.fill || palette.panel;
+      ctx.fill();
+      ctx.shadowColor = 'transparent';
+      ctx.lineWidth = selected ? 2 : 1;
+      ctx.strokeStyle = selected ? palette.gold : (options.color || palette.line);
+      ctx.stroke();
+      ctx.fillStyle = options.color || palette.cyan;
+      ctx.fillRect(x, y, 3, height);
+      ctx.fillStyle = palette.text;
+      ctx.font = `${selected ? '600' : '500'} ${12 * fontCompensation}px "Cascadia Code", monospace`;
+      ctx.fillText(item.id, x + 11, y + 20, width - 18);
+      ctx.fillStyle = palette.quiet;
+      ctx.font = `${10 * fontCompensation}px "IBM Plex Sans", sans-serif`;
+      ctx.fillText(options.subtitle || '', x + 11, y + 38, width - 18);
+      ctx.restore();
+      hitAreas.push({ x, y, width, height, id: item.id, item, role: options.role || 'node', ariaLabel: options.ariaLabel || `${item.id} ${options.role || 'node'}` });
+    }
+
+    function drawEdge(fromX, fromY, toX, toY, color = palette.cyan, alpha = .38, label = '', interaction = null) {
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(fromX, fromY);
+      const midX = (fromX + toX) / 2;
+      ctx.bezierCurveTo(midX, fromY, midX, toY, toX, toY);
+      ctx.stroke();
+      const angle = Math.atan2(toY - ((fromY + toY) / 2), toX - midX);
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(toX, toY);
+      ctx.lineTo(toX - 7 * Math.cos(angle - .45), toY - 7 * Math.sin(angle - .45));
+      ctx.lineTo(toX - 7 * Math.cos(angle + .45), toY - 7 * Math.sin(angle + .45));
+      ctx.closePath();
+      ctx.fill();
+      if (label) {
+        ctx.globalAlpha = .9;
+        ctx.font = '9px "Cascadia Code", monospace';
+        const measure = ctx.measureText(label).width;
+        ctx.fillStyle = '#111416';
+        ctx.fillRect(midX - measure / 2 - 4, (fromY + toY) / 2 - 8, measure + 8, 15);
+        ctx.fillStyle = palette.muted;
+        ctx.fillText(label, midX - measure / 2, (fromY + toY) / 2 + 3);
+        if (interaction) hitAreas.push({
+          x: midX - measure / 2 - 8,
+          y: (fromY + toY) / 2 - 12,
+          width: measure + 16,
+          height: 23,
+          role: 'relation',
+          ariaLabel: label,
+          ...interaction
+        });
+      }
+      ctx.restore();
+    }
+
+    function drawQualifierMarker(x, y, target) {
+      const radius = target.count > 1 ? 8 : 6;
+      ctx.save();
+      ctx.fillStyle = '#332b4c';
+      ctx.strokeStyle = palette.violet;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      if (target.count > 1) {
+        ctx.fillStyle = '#d8ccff';
+        ctx.font = '700 8px "Cascadia Code", monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(String(target.count), x, y + 3);
+      }
+      ctx.restore();
+      const relation = placeRelations.find(item => item.target === target.id);
+      hitAreas.push({ x: x - 11, y: y - 11, width: 22, height: 22, id: target.id, item: target, action: 'relation', relationId: relation.id, ariaLabel: `${target.count} qualified relation${target.count === 1 ? '' : 's'} to ${target.id}` });
+    }
+
+    function clearCanvas() {
+      const rect = canvas.getBoundingClientRect();
+      ctx.clearRect(0, 0, rect.width, rect.height);
+      hitAreas = [];
+      return rect;
+    }
+
+    function beginCamera() {
+      ctx.save();
+      ctx.translate(state.panX, state.panY);
+      ctx.scale(activeViewScale(), activeViewScale());
+    }
+
+    function endCamera() { ctx.restore(); }
+
+    function renderAtlas() {
+      const rect = clearCanvas();
+      beginCamera();
+      const left = 18;
+      const top = 58;
+      const width = Math.max(680, rect.width - 36);
+      const height = Math.max(430, rect.height - 82);
+      const nodes = domains.map(domain => ({
+        ...domain,
+        px: left + width * domain.x / 100,
+        py: top + height * domain.y / 100,
+        pw: Math.max(92, width * domain.w / 100),
+        ph: Math.max(55, height * domain.h / 100)
+      }));
+      const byId = Object.fromEntries(nodes.map(node => [node.id, node]));
+      [['Manifest','Nodes'],['Base','Nodes'],['Nodes','EdgeQualifiers'],['Nodes','QualifierPayloads'],['Nodes','StudyPayloads'],['Nodes','Microsoft'],['Nodes','US'],['Bindings','Nodes']].forEach(([from,to]) => {
+        const a = byId[from], b = byId[to];
+        drawEdge(a.px + a.pw, a.py + a.ph / 2, b.px, b.py + b.ph / 2, to === 'EdgeQualifiers' ? palette.violet : palette.cyan, .24);
+      });
+      nodes.forEach(node => drawNode(node.px, node.py, node.pw, node.ph, node, { color: node.color, subtitle: `${node.types} types · ${node.properties} properties` }));
+      endCamera();
+    }
+
+    function relationAwareLayout(rect) {
+      const metrics = typeNodeMetrics(rect);
+      const key = `${Math.round(rect.width)}x${Math.round(rect.height)}:${metrics.width}x${metrics.height}`;
+      if (typeLayoutCache?.key === key) return typeLayoutCache.positions;
+
+      const width = Math.max(640, rect.width - 100);
+      const height = Math.max(480, rect.height - 150);
+      const centerX = width / 2;
+      const centerY = height / 2;
+      const degree = Object.fromEntries(nodeTypes.map(node => [node.id, 0]));
+      nodeEdges.forEach(edge => {
+        degree[edge.source] += edge.weight;
+        degree[edge.target] += edge.weight;
+      });
+      const ranked = nodeTypes.slice().sort((a, b) => degree[b.id] - degree[a.id] || a.id.localeCompare(b.id));
+      const points = Object.fromEntries(ranked.map((node, rank) => {
+        const angle = rank * 2.399963229728653;
+        const radius = 22 + Math.sqrt(rank) * 52;
+        return [node.id, { x: centerX + Math.cos(angle) * radius, y: centerY + Math.sin(angle) * radius, vx: 0, vy: 0 }];
+      }));
+      const activeEdges = nodeEdges.filter(edge => edge.source !== edge.target);
+
+      for (let iteration = 0; iteration < 360; iteration += 1) {
+        const cooling = 1 - iteration / 430;
+        for (let first = 0; first < nodeTypes.length; first += 1) {
+          for (let second = first + 1; second < nodeTypes.length; second += 1) {
+            const a = points[nodeTypes[first].id];
+            const b = points[nodeTypes[second].id];
+            let dx = b.x - a.x;
+            let dy = b.y - a.y;
+            const distanceSquared = Math.max(36, dx * dx + dy * dy);
+            const distance = Math.sqrt(distanceSquared);
+            const force = 5200 / distanceSquared;
+            dx /= distance;
+            dy /= distance;
+            a.vx -= dx * force;
+            a.vy -= dy * force;
+            b.vx += dx * force;
+            b.vy += dy * force;
+            if (distance < 76) {
+              const collision = (76 - distance) * .075;
+              a.vx -= dx * collision;
+              a.vy -= dy * collision;
+              b.vx += dx * collision;
+              b.vy += dy * collision;
+            }
+          }
+        }
+        activeEdges.forEach(edge => {
+          const source = points[edge.source];
+          const target = points[edge.target];
+          const dx = target.x - source.x;
+          const dy = target.y - source.y;
+          const distance = Math.max(1, Math.hypot(dx, dy));
+          const desired = 118 + 22 / Math.sqrt(edge.weight);
+          const force = (distance - desired) * (.0018 + Math.log2(edge.weight + 1) * .0007);
+          source.vx += dx / distance * force;
+          source.vy += dy / distance * force;
+          target.vx -= dx / distance * force;
+          target.vy -= dy / distance * force;
+        });
+        nodeTypes.forEach(node => {
+          const point = points[node.id];
+          point.vx += (centerX - point.x) * .0008;
+          point.vy += (centerY - point.y) * .0008;
+          point.vx *= .82;
+          point.vy *= .82;
+          point.x += point.vx * cooling;
+          point.y += point.vy * cooling;
+        });
+      }
+
+      const values = Object.values(points);
+      const minX = Math.min(...values.map(point => point.x));
+      const maxX = Math.max(...values.map(point => point.x));
+      const minY = Math.min(...values.map(point => point.y));
+      const maxY = Math.max(...values.map(point => point.y));
+      const positions = Object.fromEntries(Object.entries(points).map(([id, point]) => [id, {
+        x: 42 + (point.x - minX) / Math.max(1, maxX - minX) * (width - 126),
+        y: 145 + (point.y - minY) / Math.max(1, maxY - minY) * (height - 213)
+      }]));
+      const positionValues = Object.values(positions);
+      for (let iteration = 0; iteration < 120; iteration += 1) {
+        for (let first = 0; first < positionValues.length; first += 1) {
+          for (let second = first + 1; second < positionValues.length; second += 1) {
+            const a = positionValues[first];
+            const b = positionValues[second];
+            const dx = b.x - a.x || .01;
+            const dy = b.y - a.y || .01;
+            const overlapX = metrics.width + metrics.gapX - Math.abs(dx);
+            const overlapY = metrics.height + metrics.gapY - Math.abs(dy);
+            if (overlapX <= 0 || overlapY <= 0) continue;
+            if (overlapX / (metrics.width + metrics.gapX) < overlapY / (metrics.height + metrics.gapY)) {
+              const shift = overlapX / 2 + 1;
+              a.x -= Math.sign(dx) * shift;
+              b.x += Math.sign(dx) * shift;
+            } else {
+              const shift = overlapY / 2 + 1;
+              a.y -= Math.sign(dy) * shift;
+              b.y += Math.sign(dy) * shift;
+            }
+          }
+        }
+        positionValues.forEach(point => {
+          point.x = Math.max(18, Math.min(rect.width - metrics.width - 18, point.x));
+          point.y = Math.max(143, Math.min(rect.height - metrics.height - 18, point.y));
+        });
+      }
+      typeLayoutCache = { key, positions };
+      return positions;
+    }
+
+    function typeNodeMetrics(rect) {
+      return { width: 122, height: 50, gapX: 10, gapY: 10 };
+    }
+
+    function fittedTypeScale() {
+      const rect = canvas.getBoundingClientRect();
+      return Math.min(1, rect.width / 840, rect.height / 700);
+    }
+
+    function activeViewScale() {
+      if (state.viewScale) return state.viewScale;
+      return state.level === 'types' ? fittedTypeScale() : 1;
+    }
+
+    function renderTypes() {
+      const viewport = clearCanvas();
+      const scale = activeViewScale();
+      const rect = { width: Math.max(840, viewport.width / scale), height: Math.max(700, viewport.height / scale) };
+      const metrics = typeNodeMetrics(rect);
+      const positions = relationAwareLayout(rect);
+      ctx.save();
+      ctx.translate(state.panX, state.panY);
+      ctx.scale(scale, scale);
+      nodeEdges.filter(edge => edge.source !== edge.target && (edge.weight >= 2 || edge.source === state.selected || edge.target === state.selected)).forEach(edge => {
+        const source = positions[edge.source];
+        const target = positions[edge.target];
+        const selected = edge.source === state.selected || edge.target === state.selected;
+        drawEdge(source.x + metrics.width / 2, source.y + metrics.height / 2, target.x + metrics.width / 2, target.y + metrics.height / 2, selected ? palette.gold : palette.cyan, selected ? .72 : Math.min(.3, .1 + edge.weight / 35));
+      });
+      const renderOrder = nodeTypes.filter(node => node.id !== state.selected).concat(nodeTypes.filter(node => node.id === state.selected));
+      renderOrder.forEach(node => {
+        const p = positions[node.id];
+        const found = searchMatch(node.id);
+        ctx.globalAlpha = found ? 1 : .18;
+        drawNode(p.x, p.y, metrics.width, metrics.height, node, { color: node.relations > 15 ? palette.cyanBright : palette.cyan, subtitle: `${node.relations} rel · ${node.properties} local`, viewScale: scale });
+        ctx.globalAlpha = 1;
+      });
+      const values = Object.values(positions);
+      let overlaps = 0;
+      for (let first = 0; first < values.length; first += 1) {
+        for (let second = first + 1; second < values.length; second += 1) {
+          if (Math.abs(values[first].x - values[second].x) < metrics.width && Math.abs(values[first].y - values[second].y) < metrics.height) overlaps += 1;
+        }
+      }
+      canvas.dataset.layoutOverlaps = String(overlaps);
+      canvas.dataset.viewScale = String(scale);
+      ctx.restore();
+    }
+
+    function aggregateTargets() {
+      const map = new Map();
+      placeRelations.forEach(relation => {
+        const item = map.get(relation.target) || { id: relation.target, count: 0, names: [], cardinalities: new Set() };
+        item.count += 1;
+        item.names.push(relation.name);
+        item.cardinalities.add(relation.cardinality);
+        map.set(relation.target, item);
+      });
+      return [...map.values()].sort((a, b) => b.count - a.count || a.id.localeCompare(b.id));
+    }
+
+    function cardinalitySymbol(value) {
+      if (value instanceof Set) return value.size > 1 ? '1/*' : value.has('single') ? '1' : '*';
+      return value === 'single' ? '1' : '*';
+    }
+
+    function renderNeighborhood() {
+      const rect = clearCanvas();
+      beginCamera();
+      const center = { x: rect.width * .47, y: rect.height * .48 };
+      const targets = aggregateTargets();
+      const qualifierMarkers = [];
+      const labelBounds = [];
+      targets.forEach((target, index) => {
+        const angle = -Math.PI * .82 + (Math.PI * 1.64 * index / Math.max(1, targets.length - 1));
+        const radiusX = Math.min(310, rect.width * .32);
+        const radiusY = Math.min(235, rect.height * .35);
+        target.x = center.x + Math.cos(angle) * radiusX;
+        target.y = center.y + Math.sin(angle) * radiusY;
+        const label = target.count > 1 ? `${target.count} rel · ${cardinalitySymbol(target.cardinalities)}` : `${target.names[0]} · ${cardinalitySymbol(target.cardinalities)}`;
+        const representative = placeRelations.find(relation => relation.target === target.id);
+        drawEdge(center.x, center.y, target.x, target.y, palette.cyan, target.count > 2 ? .68 : .34, label, { id: target.id, action: 'edge', relationId: representative.id });
+        const midX = (center.x + target.x) / 2;
+        const midY = (center.y + target.y) / 2;
+        ctx.save();
+        ctx.font = '9px "Cascadia Code", monospace';
+        const labelWidth = ctx.measureText(label).width + 8;
+        ctx.restore();
+        labelBounds.push({ x: midX - labelWidth / 2, y: midY - 8, width: labelWidth, height: 15 });
+        const dx = target.x - center.x;
+        const dy = target.y - center.y;
+        const length = Math.max(1, Math.hypot(dx, dy));
+        qualifierMarkers.push({
+          x: center.x + dx * .68 - dy / length * 25,
+          y: center.y + dy * .68 + dx / length * 25,
+          normalX: -dy / length,
+          normalY: dx / length,
+          target
+        });
+      });
+      qualifierMarkers.forEach(marker => {
+        let attempts = 0;
+        while (attempts < 6 && labelBounds.some(label => marker.x + 11 >= label.x && marker.x - 11 <= label.x + label.width && marker.y + 11 >= label.y && marker.y - 11 <= label.y + label.height)) {
+          marker.x += marker.normalX * 12;
+          marker.y += marker.normalY * 12;
+          attempts += 1;
+        }
+      });
+      targets.forEach(target => {
+        const found = searchMatch(target.id) || target.names.some(searchMatch);
+        ctx.globalAlpha = found ? 1 : .18;
+        drawNode(target.x - 59, target.y - 24, 118, 48, target, { color: target.id === 'source_document' ? palette.orange : palette.cyan, subtitle: `${target.count} from Place` });
+        ctx.globalAlpha = 1;
+      });
+      drawNode(center.x - 70, center.y - 31, 140, 62, { id: 'Place', relations: 24, properties: 3 }, { color: palette.gold, fill: '#343126', subtitle: '24 outgoing · 18 incoming' });
+      qualifierMarkers.forEach(marker => drawQualifierMarker(marker.x, marker.y, marker.target));
+      const markerOverlaps = qualifierMarkers.filter(marker => labelBounds.some(label => marker.x + 11 >= label.x && marker.x - 11 <= label.x + label.width && marker.y + 11 >= label.y && marker.y - 11 <= label.y + label.height)).length;
+      canvas.dataset.markerLabelOverlaps = String(markerOverlaps);
+      endCamera();
+    }
+
+    function drawCanvasLabel(text, x, y, color = palette.quiet, size = 9) {
+      ctx.fillStyle = color;
+      ctx.font = `600 ${size}px "IBM Plex Sans", sans-serif`;
+      ctx.fillText(text, x, y);
+    }
+
+    function renderNamespaces() {
+      const rect = clearCanvas();
+      beginCamera();
+      const knownNamespaces = new Set(domains.map(domain => domain.id));
+      const extraNamespaces = [...new Set(Object.values(namespaceAssignments))].filter(namespace => !knownNamespaces.has(namespace));
+      const allNamespaceNames = new Set([...knownNamespaces, ...extraNamespaces]);
+      const selectedNamespace = allNamespaceNames.has(state.selected) ? state.selected : namespaceAssignments[state.selected] || rootType.namespace;
+      const namespaceNodes = domains.concat(extraNamespaces.map((id, index) => ({
+        id,
+        types: Object.values(namespaceAssignments).filter(namespace => namespace === id).length,
+        properties: 0,
+        relations: 0,
+        color: palette.green,
+        index: domains.length + index
+      })));
+      const rootX = Math.max(20, rect.width / 2 - 105);
+      drawCanvasLabel('DOCUMENT ROOT', rootX, 55, palette.gold);
+      drawNode(rootX, 66, 210, 56, rootType, { color: palette.gold, fill: '#343126', subtitle: rootType.pointer });
+
+      const namespaceTop = 166;
+      const namespaceWidth = 154;
+      const gap = 12;
+      const columns = Math.max(2, Math.min(5, Math.floor((rect.width - 34) / (namespaceWidth + gap))));
+      namespaceNodes.forEach((domain, index) => {
+        const row = Math.floor(index / columns);
+        const column = index % columns;
+        const x = 18 + column * ((rect.width - 36) / columns);
+        const y = namespaceTop + row * 70;
+        const width = Math.min(namespaceWidth, (rect.width - 36) / columns - gap);
+        drawEdge(rootX + 105, 122, x + width / 2, y, palette.quiet, .16);
+        drawNode(x, y, width, 52, domain, { color: domain.id === selectedNamespace ? palette.gold : domain.color, subtitle: `${domain.types} types · namespace` });
+      });
+
+      const types = selectedNamespace === 'Manifest'
+        ? [rootType]
+        : nodeTypes.filter(type => namespaceAssignments[type.id] === selectedNamespace && searchMatch(type.id));
+      const listTop = namespaceTop + Math.ceil(namespaceNodes.length / columns) * 70 + 34;
+      drawCanvasLabel(`${selectedNamespace.toUpperCase()} · ${types.length} VISIBLE TYPE${types.length === 1 ? '' : 'S'}`, 18, listTop - 12, palette.cyanBright);
+      const typeWidth = 118;
+      const typeColumns = Math.max(2, Math.floor((rect.width - 36) / (typeWidth + 8)));
+      types.forEach((type, index) => {
+        const x = 18 + (index % typeColumns) * ((rect.width - 36) / typeColumns);
+        const y = listTop + Math.floor(index / typeColumns) * 48;
+        drawNode(x, y, Math.min(typeWidth, (rect.width - 36) / typeColumns - 8), 38, type, {
+          color: type.id === rootType.id ? palette.gold : palette.cyan,
+          subtitle: type.id === rootType.id ? 'ROOT · object' : `${type.properties || 0} local · object`
+        });
+      });
+      canvas.dataset.namespace = selectedNamespace;
+      canvas.dataset.visibleTypes = String(types.length);
+      endCamera();
+    }
+
+    function renderInheritance() {
+      const rect = clearCanvas();
+      beginCamera();
+      const base = { id: 'AbstractGraphNode', properties: 23 };
+      const baseX = Math.max(20, rect.width / 2 - 92);
+      drawCanvasLabel('ABSTRACT BASE', baseX, 55, palette.violet);
+      drawNode(baseX, 66, 184, 58, base, { color: palette.violet, fill: '#302a3a', subtitle: 'Base · 23 inherited properties' });
+      const visible = nodeTypes.filter(type => searchMatch(type.id));
+      const direct = visible.filter(type => extendsAssignments[type.id] === base.id);
+      const nested = visible.filter(type => extendsAssignments[type.id] && extendsAssignments[type.id] !== base.id);
+      const derived = direct.concat(nested);
+      const width = 122;
+      const columns = Math.max(2, Math.floor((rect.width - 42) / (width + 18)));
+      derived.forEach((type, index) => {
+        const x = 22 + (index % columns) * ((rect.width - 44) / columns);
+        const y = 188 + Math.floor(index / columns) * 74;
+        const nodeWidth = Math.min(width, (rect.width - 44) / columns - 12);
+        const parent = extendsAssignments[type.id];
+        const parentIndex = derived.findIndex(item => item.id === parent);
+        if (parentIndex >= 0) {
+          const parentX = 22 + (parentIndex % columns) * ((rect.width - 44) / columns);
+          const parentY = 188 + Math.floor(parentIndex / columns) * 74;
+          drawEdge(parentX + nodeWidth / 2, parentY + 46, x + nodeWidth / 2, y, palette.gold, type.id === state.selected ? .85 : .45, '$extends');
+        } else {
+          drawEdge(baseX + 92, 124, x + nodeWidth / 2, y, palette.violet, type.id === state.selected ? .75 : .2);
+        }
+        drawNode(x, y, nodeWidth, 46, type, { color: type.id === state.selected ? palette.gold : parent === base.id ? palette.cyan : palette.green, subtitle: `${type.properties} local · extends ${parent}` });
+      });
+      drawCanvasLabel(`${direct.length} DIRECT · ${nested.length} NESTED DESCENDANTS · $extends`, 22, 159, palette.quiet);
+      canvas.dataset.extendsEdges = String(direct.length + nested.length);
+      endCamera();
+    }
+
+    function renderImports() {
+      const rect = clearCanvas();
+      beginCamera();
+      drawCanvasLabel('IMPORT PREVIEW · CANONICAL SAMPLE LIBRARIES', 22, 52, palette.orange);
+      importSources.forEach((source, sourceIndex) => {
+        const y = 78 + sourceIndex * 230;
+        const sourceNode = { id: source.label };
+        drawNode(22, y, 180, 54, sourceNode, { color: palette.orange, subtitle: source.source });
+        source.types.forEach((typeName, typeIndex) => {
+          const selected = source.selected.has(typeName);
+          const type = { id: typeName };
+          const x = 234;
+          const typeY = y - 8 + typeIndex * 60;
+          drawEdge(202, y + 27, x, typeY + 22, selected ? palette.green : palette.quiet, selected ? .7 : .18, selected ? 'selected' : 'skip');
+          drawNode(x, typeY, 132, 44, type, { color: selected ? palette.green : palette.quiet, subtitle: selected ? 'linked import' : 'not selected' });
+        });
+        const targetX = Math.max(420, rect.width - 214);
+        const target = { id: source.namespace };
+        drawEdge(366, y + 52, targetX, y + 52, palette.cyan, .65, `$import → ${source.namespace}`);
+        drawNode(targetX, y + 23, 180, 58, target, { color: palette.cyan, fill: '#233139', subtitle: `${source.selected.size} mapped types` });
+      });
+      drawCanvasLabel('Select source types, choose a target namespace, then apply as linked imports or local copies.', 22, Math.min(rect.height - 22, 552), palette.muted, 10);
+      canvas.dataset.importMappings = String(importSources.length);
+      endCamera();
+    }
+
+    function searchMatch(value) {
+      const query = document.getElementById('searchInput').value.trim().toLowerCase();
+      return !query || value.toLowerCase().includes(query);
+    }
+
+    function renderMinimap() {
+      miniCtx.clearRect(0, 0, minimap.width, minimap.height);
+      const sx = minimap.width / 100;
+      const sy = minimap.height / 100;
+      domains.forEach(domain => {
+        miniCtx.globalAlpha = state.level === 'atlas' || domain.id === 'Nodes' ? .8 : .25;
+        miniCtx.fillStyle = domain.color;
+        miniCtx.fillRect(domain.x * sx, domain.y * sy, Math.max(8, domain.w * sx), Math.max(7, domain.h * sy));
+      });
+      miniCtx.globalAlpha = 1;
+      miniCtx.strokeStyle = palette.gold;
+      miniCtx.lineWidth = 3;
+      if (state.level === 'atlas') miniCtx.strokeRect(3, 3, minimap.width - 6, minimap.height - 6);
+      if (state.level === 'types') miniCtx.strokeRect(45 * sx, 42 * sy, 39 * sx, 45 * sy);
+      if (state.level === 'neighborhood') miniCtx.strokeRect(54 * sx, 48 * sy, 17 * sx, 20 * sy);
+    }
+
+    function render() {
+      if (state.lens === 'namespaces') renderNamespaces();
+      else if (state.lens === 'inheritance') renderInheritance();
+      else if (state.lens === 'imports') renderImports();
+      else if (state.level === 'atlas') renderAtlas();
+      else if (state.level === 'types') renderTypes();
+      else if (state.level === 'neighborhood') renderNeighborhood();
+      renderMinimap();
+      updateChrome();
+    }
+
+    function selectedData() {
+      if (state.detail?.kind === 'relation') return placeRelations.find(item => item.id === state.detail.id);
+      if (state.detail?.kind === 'qualifier') return state.detail.relation;
+      if (state.lens === 'namespaces') {
+        if (state.selected === rootType.id) return rootType;
+        const localTypeCount = Object.values(namespaceAssignments).filter(namespace => namespace === state.selected).length;
+        return domains.find(item => item.id === state.selected) || nodeTypes.find(item => item.id === state.selected) || (localTypeCount ? { id: state.selected, types: localTypeCount, properties: 0, relations: 0 } : null) || domains.find(item => item.id === namespaceAssignments[state.selected]) || domains[0];
+      }
+      if (state.lens === 'inheritance') return state.selected === 'AbstractGraphNode' ? { id: 'AbstractGraphNode', properties: 23, abstract: true } : nodeTypes.find(item => item.id === state.selected) || nodeTypes[0];
+      if (state.lens === 'imports') return importSources.find(item => item.id === state.selected || item.label === state.selected || item.namespace === state.selected) || importSources.find(item => item.types.includes(state.selected)) || importSources[0];
+      if (state.level === 'atlas') return domains.find(item => item.id === state.selected) || domains[0];
+      if (state.level === 'types') return nodeTypes.find(item => item.id === state.selected) || nodeTypes[0];
+      if (state.selected === 'Place') return { id: 'Place', properties: 3, relations: 24 };
+      const target = aggregateTargets().find(item => item.id === state.selected);
+      return target || { id: state.selected, count: 0 };
+    }
+
+    function updateChrome() {
+      const lensConfig = {
+        namespaces: { eyebrow: 'Structure · Namespaces', title: 'Namespace and type map', description: '126 types · 10 namespaces · 1 document root', hint: 'Select a namespace to reveal its types; search keeps large namespaces manageable.' },
+        inheritance: { eyebrow: 'Structure · $extends', title: 'Abstract and derived types', description: 'AbstractGraphNode · 29 direct descendants · 67 total inheritance edges', hint: 'Select a type, then use Set extends to change or remove its base.' },
+        imports: { eyebrow: 'Structure · Imports', title: 'Import namespace mapping', description: 'Preview external types before adding them to this document', hint: 'Choose source types and map each library into a local namespace.' }
+      };
+      const config = lensConfig[state.lens] || levelConfig[state.level];
+      const selected = selectedData();
+      document.getElementById('levelEyebrow').textContent = config.eyebrow;
+      document.getElementById('levelTitle').textContent = config.title;
+      document.getElementById('levelDescription').textContent = config.description;
+      document.getElementById('hint').textContent = config.hint;
+      document.getElementById('zoomReadout').textContent = `${Math.round(activeViewScale() * 100)}%`;
+      document.getElementById('miniLevel').textContent = state.lens === 'relations' ? (state.level === 'atlas' ? 'Atlas' : state.level === 'types' ? 'Nodes' : 'Place') : config.title;
+      document.getElementById('statusSelection').textContent = `${state.lens} · ${state.selected}`;
+      document.getElementById('statusPosition').textContent = state.panX || state.panY ? `Pan ${Math.round(state.panX)}, ${Math.round(state.panY)} · ${Math.round(activeViewScale() * 100)}%` : `Fit · ${Math.round(activeViewScale() * 100)}%`;
+      document.getElementById('backButton').disabled = historyIndex <= 0;
+      document.getElementById('forwardButton').disabled = historyIndex >= history.length - 1;
+      updateBreadcrumbs();
+      updateLevelSteps();
+      updateHistory();
+      updateInspector(selected);
+    }
+
+    function updateBreadcrumbs() {
+      const parts = [{ label: 'Puget Sound', level: 'atlas', selected: 'Nodes' }];
+      if (state.lens === 'namespaces') {
+        const namespace = domains.some(domain => domain.id === state.selected) ? state.selected : namespaceAssignments[state.selected] || rootType.namespace;
+        parts.push({ label: namespace, level: state.level, selected: namespace });
+        if (!domains.some(domain => domain.id === state.selected)) parts.push({ label: state.selected, level: state.level, selected: state.selected });
+      } else if (state.lens === 'inheritance') {
+        parts.push({ label: 'Base', level: state.level, selected: 'AbstractGraphNode' });
+        parts.push({ label: state.selected, level: state.level, selected: state.selected });
+      } else if (state.lens === 'imports') {
+        parts.push({ label: 'Imports', level: state.level, selected: state.selected });
+        parts.push({ label: state.selected, level: state.level, selected: state.selected });
+      } else {
+        if (state.level !== 'atlas') parts.push({ label: 'Nodes', level: 'types', selected: state.level === 'types' ? state.selected : 'Place' });
+        if (state.level === 'neighborhood') parts.push({ label: 'Place', level: 'neighborhood', selected: state.detail ? 'Place' : state.selected });
+        if (state.detail?.kind === 'relation' || state.detail?.kind === 'qualifier') parts.push({ label: selectedData().name, detail: { kind: 'relation', id: selectedData().id } });
+        if (state.detail?.kind === 'qualifier') parts.push({ label: 'qualifier', detail: state.detail });
+      }
+      const container = document.getElementById('breadcrumbs');
+      container.innerHTML = '';
+      parts.forEach((part, index) => {
+        if (index) {
+          const separator = document.createElement('span');
+          separator.className = 'crumb-separator';
+          separator.textContent = '›';
+          container.appendChild(separator);
+        }
+        const button = document.createElement('button');
+        button.className = `crumb${index === parts.length - 1 ? ' active' : ''}`;
+        button.textContent = part.label;
+        button.addEventListener('click', () => part.detail ? setDetail(part.detail, part.label, false) : navigate(part.level, part.selected, part.label));
+        container.appendChild(button);
+      });
+    }
+
+    function updateLevelSteps() {
+      const perspectiveSteps = {
+        namespaces: [['atlas','01','Document root','Manifest/GraphManifest'],['types','02','Namespace','10 nested groups'],['neighborhood','03','Types','Searchable declarations']],
+        inheritance: [['atlas','01','Abstract base','AbstractGraphNode'],['types','02','Derived types','29 direct descendants'],['neighborhood','03','Members','Local + inherited']],
+        imports: [['atlas','01','Source','Inspect libraries'],['types','02','Selection','Choose imported types'],['neighborhood','03','Mapping','Assign namespaces']]
+      };
+      const levels = perspectiveSteps[state.lens] || [
+        ['atlas','01','Domain atlas','10 domains · 126 types'],
+        ['types','02','Type topology','Nodes · 29 types'],
+        ['neighborhood','03','Neighborhood','Place · 24 relations']
+      ];
+      const current = state.lens === 'relations' ? levels.findIndex(item => item[0] === state.level) : 2;
+      document.getElementById('levelSteps').innerHTML = levels.map((item,index) => `<div class="level-step ${index < current ? 'complete' : ''} ${index === current ? 'active' : ''}"><span class="level-number">${item[1]}</span><span><strong>${item[2]}</strong><small>${item[3]}</small></span></div>`).join('');
+    }
+
+    function updateHistory() {
+      document.getElementById('historyCount').textContent = history.length;
+      const list = document.getElementById('historyList');
+      list.innerHTML = '';
+      history.slice().reverse().slice(0, 6).forEach((entry, reverseIndex) => {
+        const originalIndex = history.length - 1 - reverseIndex;
+        const button = document.createElement('button');
+        button.className = 'history-item';
+        button.innerHTML = `<span class="history-dot"></span><span>${entry.label}</span>${originalIndex === historyIndex ? '<span class="shortcut">current</span>' : ''}`;
+        button.addEventListener('click', () => restoreHistory(originalIndex));
+        list.appendChild(button);
+      });
+    }
+
+    function updateInspector(selected) {
+      if (state.lens === 'namespaces') return updateNamespaceInspector(selected);
+      if (state.lens === 'inheritance') return updateInheritanceInspector(selected);
+      if (state.lens === 'imports') return updateImportInspector(selected);
+      const atlas = state.level === 'atlas';
+      const types = state.level === 'types';
+      const relationDetail = state.detail?.kind === 'relation';
+      const qualifierDetail = state.detail?.kind === 'qualifier';
+      document.getElementById('selectionKind').textContent = qualifierDetail ? 'Qualifier type' : relationDetail ? 'Relation' : atlas ? 'Domain' : types ? 'Type' : selected.id === 'Place' ? 'Focus type' : 'Related type';
+      document.getElementById('inspectorEyebrow').textContent = qualifierDetail ? 'EdgeQualifiers namespace' : relationDetail ? 'Place relation declaration' : atlas ? 'Definition domain' : types ? 'Nodes namespace' : 'One-hop relation context';
+      document.getElementById('inspectorTitle').textContent = qualifierDetail ? selected.qualifier : relationDetail ? selected.name : selected.id;
+      document.getElementById('inspectorDescription').textContent = qualifierDetail
+        ? `Reusable edge payload for Place.${selected.name} → ${selected.target}. It describes the relationship, not the target node.`
+        : relationDetail ? `Place.${selected.name} targets ${selected.target} with ${selected.cardinality} cardinality and a typed qualifier.`
+        : atlas
+        ? `${selected.types} recursively discovered types in this domain.`
+        : types ? `Graph node declaration with ${selected.properties} local properties and ${selected.relations} outgoing relations.`
+        : selected.id === 'Place' ? 'Selected focus remains fixed while related types and bundled relation edges expand around it.' : `Reached from Place through ${selected.count} named relation${selected.count === 1 ? '' : 's'}.`;
+      const metricValues = qualifierDetail
+        ? [[selected.qualifierProperties.length,'properties'],[selected.qualifierProperties.length,'required'],['reusable','type'],['edge','payload']]
+        : relationDetail ? [[selected.cardinality,'cardinality'],[selected.target,'target'],[selected.scope,'scope'],['yes','qualifier']]
+        : atlas
+        ? [[selected.types,'types'],[selected.properties,'properties'],[selected.relations,'relations'],[selected.id === 'Nodes' ? 67 : 0,'extends']]
+        : types ? [[selected.properties,'local props'],[selected.relations,'outgoing'],[selected.id === 'Place' ? 18 : '—','incoming'],[selected.relations ? 'yes' : 'no','connected']]
+        : [[selected.id === 'Place' ? 24 : selected.count,'outgoing'],[selected.id === 'Place' ? 18 : '—','incoming'],[selected.id === 'Place' ? 11 : '1 hop','visible types'],['multiple','cardinality']];
+      document.getElementById('metrics').innerHTML = metricValues.map(([value,label]) => `<div class="metric"><strong>${value}</strong><span>${label}</span></div>`).join('');
+
+      const relationTitle = document.getElementById('relationTitle');
+      const relationList = document.getElementById('relationList');
+      if (qualifierDetail) {
+        relationTitle.textContent = 'Qualifier fields';
+        relationList.innerHTML = selected.qualifierProperties.map(property => `<div class="relation"><span><strong>${property}</strong><small>required property</small></span><span class="badge qualifier">field</span></div>`).join('');
+      } else if (relationDetail) {
+        relationTitle.textContent = 'Relation structure';
+        relationList.innerHTML = `<div class="cardinality-editor"><span>Edge cardinality</span><div class="cardinality-segments" role="group" aria-label="Edge cardinality"><button data-cardinality="single" class="${selected.cardinality === 'single' ? 'active' : ''}">1 · single</button><button data-cardinality="multiple" class="${selected.cardinality === 'multiple' ? 'active' : ''}">* · multiple</button></div></div><button class="relation" data-select="${selected.target}"><span><strong>Target type</strong><small>${selected.target}</small></span><span class="badge">open</span></button><button class="relation" data-qualifier="${selected.id}"><span><strong>Qualifier type</strong><small>${selected.qualifierRef}</small></span><span class="badge qualifier">open fields</span></button><div class="relation"><span><strong>Scope</strong><small>No local scope pointer</small></span><span class="badge">external</span></div>`;
+      } else if (atlas) {
+        relationTitle.textContent = 'Largest domains';
+        relationList.innerHTML = domains.slice().sort((a,b) => b.types-a.types).slice(0,7).map(item => `<button class="relation" data-select="${item.id}"><span><strong>${item.id}</strong><small>${item.properties} properties</small></span><span class="badge">${item.types} types</span></button>`).join('');
+      } else if (types) {
+        relationTitle.textContent = 'Most connected types';
+        relationList.innerHTML = nodeTypes.slice().sort((a,b) => b.relations-a.relations).slice(0,9).map(item => `<button class="relation" data-select="${item.id}"><span><strong>${item.id}</strong><small>${item.properties} local properties</small></span><span class="badge">${item.relations} rel</span></button>`).join('');
+      } else {
+        relationTitle.textContent = 'Place declarations';
+        relationList.innerHTML = placeRelations.map(item => `<div class="relation-row"><button class="relation" data-relation="${item.id}"><span><strong>${item.name}</strong><small>→ ${item.target}</small></span><span class="badge qualifier">edge fields</span></button><button class="cardinality-toggle" data-toggle-cardinality="${item.id}" title="Change to ${item.cardinality === 'multiple' ? 'single' : 'multiple'}" aria-label="${item.name} to ${item.target}: ${item.cardinality}; change cardinality">${cardinalitySymbol(item.cardinality)}</button></div>`).join('');
+      }
+      relationList.querySelectorAll('[data-select]').forEach(button => button.addEventListener('click', () => selectItem(button.dataset.select)));
+      relationList.querySelectorAll('[data-relation]').forEach(button => button.addEventListener('click', () => selectRelation(button.dataset.relation)));
+      relationList.querySelectorAll('[data-qualifier]').forEach(button => button.addEventListener('click', () => openQualifier(button.dataset.qualifier)));
+      relationList.querySelectorAll('[data-cardinality]').forEach(button => button.addEventListener('click', () => setCardinality(selected.id, button.dataset.cardinality)));
+      relationList.querySelectorAll('[data-toggle-cardinality]').forEach(button => button.addEventListener('click', () => toggleCardinality(button.dataset.toggleCardinality)));
+      const canDrill = (state.level === 'atlas' && state.selected === 'Nodes') || (state.level === 'types' && state.selected === 'Place');
+      const focusButton = document.getElementById('focusButton');
+      focusButton.disabled = !(canDrill || relationDetail || qualifierDetail);
+      focusButton.textContent = qualifierDetail ? 'Return to relation' : relationDetail ? 'Open qualifier fields' : state.level === 'atlas' ? 'Reveal types' : state.level === 'types' ? 'Focus neighborhood' : 'Select a relation';
+    }
+
+    function bindInspectorSelection() {
+      document.getElementById('relationList').querySelectorAll('[data-select]').forEach(button => button.addEventListener('click', () => selectItem(button.dataset.select)));
+    }
+
+    function setInspector(kind, eyebrow, title, description, metrics, sectionTitle, content, primaryLabel, primaryCommand) {
+      document.getElementById('selectionKind').textContent = kind;
+      document.getElementById('inspectorEyebrow').textContent = eyebrow;
+      document.getElementById('inspectorTitle').textContent = title;
+      document.getElementById('inspectorDescription').textContent = description;
+      document.getElementById('metrics').innerHTML = metrics.map(([value,label]) => `<div class="metric"><strong>${value}</strong><span>${label}</span></div>`).join('');
+      document.getElementById('relationTitle').textContent = sectionTitle;
+      document.getElementById('relationList').innerHTML = content;
+      const focusButton = document.getElementById('focusButton');
+      focusButton.disabled = false;
+      focusButton.textContent = primaryLabel;
+      focusButton.dataset.command = primaryCommand;
+      bindInspectorSelection();
+    }
+
+    function updateNamespaceInspector(selected) {
+      const isRoot = selected.id === rootType.id;
+      const isNamespace = domains.some(domain => domain.id === selected.id) || Object.values(namespaceAssignments).includes(selected.id);
+      const namespace = isRoot ? rootType.namespace : isNamespace ? selected.id : namespaceAssignments[selected.id] || 'Nodes';
+      const types = namespace === 'Manifest' ? [rootType] : nodeTypes.filter(type => namespaceAssignments[type.id] === namespace);
+      setInspector(
+        isRoot ? 'Document root' : isNamespace ? 'Namespace' : 'Local type',
+        isRoot ? rootType.pointer : `${namespace} namespace`,
+        selected.id,
+        isRoot ? 'The schema entry point. Designating another root updates the document-level $root pointer.' : isNamespace ? `${types.length} declarations are grouped here. Search and the compact list remain usable for hundreds of types.` : `Local object declaration in ${namespace}. Moving it previews every pointer that must be rewritten.`,
+        isRoot ? [['ROOT','role'],[rootType.namespace,'namespace'],['object','kind'],['1','entry point']] : [[types.length,'types'],[selected.properties || '—','properties'],[selected.relations || '—','relations'],[namespace,'namespace']],
+        isNamespace ? 'Types in namespace' : 'Structure',
+        isNamespace ? types.slice(0, 12).map(type => `<button class="relation" data-select="${type.id}"><span><strong>${type.id}</strong><small>${type.properties || 0} local properties</small></span><span class="badge">type</span></button>`).join('') : `<div class="relation"><span><strong>$root</strong><small>${rootType.pointer}</small></span><span class="badge ${isRoot ? 'qualifier' : ''}">${isRoot ? 'current' : 'other'}</span></div><div class="relation"><span><strong>Namespace</strong><small>${namespace}</small></span><span class="badge">local</span></div>`,
+        isNamespace ? 'Open selected type' : isRoot ? 'Root is selected' : 'Designate as root',
+        isNamespace ? '' : isRoot ? '' : 'root'
+      );
+    }
+
+    function updateInheritanceInspector(selected) {
+      const isBase = selected.id === 'AbstractGraphNode';
+      const currentBase = extendsAssignments[selected.id] || 'None';
+      const directChildren = nodeTypes.filter(type => extendsAssignments[type.id] === 'AbstractGraphNode').length;
+      setInspector(
+        isBase ? 'Abstract type' : 'Derived type',
+        isBase ? 'Base namespace' : 'Nodes namespace',
+        selected.id,
+        isBase ? 'Abstract base for graph nodes. It contributes identity, provenance, and shared graph fields.' : `${selected.id} extends ${currentBase} and combines ${selected.properties} local properties with inherited members.`,
+        isBase ? [[directChildren,'direct children'],[23,'local members'],[67,'total edges'],['abstract','role']] : [[selected.properties,'local'],[23,'inherited'],[currentBase,'base'],['concrete','role']],
+        isBase ? 'Direct descendants' : 'Inheritance structure',
+        isBase ? nodeTypes.filter(type => extendsAssignments[type.id] === 'AbstractGraphNode').slice(0, 12).map(type => `<button class="relation" data-select="${type.id}"><span><strong>${type.id}</strong><small>$extends AbstractGraphNode</small></span><span class="badge">derived</span></button>`).join('') : `<button class="relation" data-select="${currentBase}"><span><strong>Base type</strong><small>${currentBase === 'AbstractGraphNode' ? '#/definitions/Base/AbstractGraphNode' : `#/definitions/Nodes/${currentBase}`}</small></span><span class="badge qualifier">open</span></button><div class="relation"><span><strong>Effective members</strong><small>${selected.properties} local + inherited members</small></span><span class="badge">combined</span></div>`,
+        isBase ? 'Select a descendant' : 'Change base type',
+        isBase ? '' : 'extends'
+      );
+    }
+
+    function updateImportInspector(selected) {
+      const source = selected.types ? selected : importSources.find(item => item.types.includes(state.selected)) || importSources[0];
+      setInspector(
+        'Import mapping',
+        source.source,
+        source.label,
+        `Choose definitions from this external schema and map them into the local ${source.namespace} namespace. The source has not been added to the Puget schema.`,
+        [[source.types.length,'available'],[source.selected.size,'selected'],[source.namespace,'target'],['linked','mode']],
+        'Imported definitions',
+        source.types.map(type => `<button class="relation" data-import-type="${source.id}:${type}"><span><strong>${type}</strong><small>${source.selected.has(type) ? `maps to ${source.namespace}/${type}` : 'not selected'}</small></span><span class="badge ${source.selected.has(type) ? 'qualifier' : ''}">${source.selected.has(type) ? 'selected' : 'skip'}</span></button>`).join(''),
+        'Configure import mapping',
+        'import'
+      );
+      document.getElementById('relationList').querySelectorAll('[data-import-type]').forEach(button => button.addEventListener('click', () => toggleImportedType(button.dataset.importType)));
+    }
+
+    function navigate(level, selected, label, addHistory = true) {
+      state = { ...state, level, selected, panX: 0, panY: 0, viewScale: null, detail: null };
+      if (addHistory) {
+        const current = history[historyIndex];
+        if (!current || current.level !== level || current.selected !== selected || current.detail) {
+          history = history.slice(0, historyIndex + 1);
+          history.push({ level, selected, label, detail: null });
+          historyIndex = history.length - 1;
+        }
+      }
+      render();
+    }
+
+    function restoreHistory(index) {
+      historyIndex = index;
+      const entry = history[index];
+      state = { ...state, level: entry.level, selected: entry.selected, panX: 0, panY: 0, viewScale: null, detail: entry.detail || null };
+      render();
+    }
+
+    function selectItem(id) {
+      state.selected = id;
+      state.detail = null;
+      render();
+    }
+
+    function setDetail(detail, label, addHistory = true) {
+      state = { ...state, level: 'neighborhood', selected: 'Place', detail };
+      if (addHistory) {
+        const current = history[historyIndex];
+        const unchanged = current?.detail?.kind === detail.kind
+          && (current.detail.id || current.detail.relationId) === (detail.id || detail.relationId);
+        if (!unchanged) {
+          history = history.slice(0, historyIndex + 1);
+          history.push({ level: 'neighborhood', selected: 'Place', label, detail: { ...detail } });
+          historyIndex = history.length - 1;
+        }
+      }
+      render();
+    }
+
+    function selectRelation(id) {
+      const relation = placeRelations.find(item => item.id === id);
+      if (relation) setDetail({ kind: 'relation', id }, `Relation: ${relation.name}`);
+    }
+
+    function openQualifier(relationId) {
+      const relation = placeRelations.find(item => item.id === relationId);
+      if (relation) setDetail({ kind: 'qualifier', relationId, relation: { ...relation } }, `Qualifier: ${relation.qualifier}`);
+    }
+
+    function setCardinality(relationId, cardinality) {
+      const relation = placeRelations.find(item => item.id === relationId);
+      if (!relation || relation.cardinality === cardinality) return;
+      relation.cardinality = cardinality;
+      render();
+    }
+
+    function toggleCardinality(relationId) {
+      const relation = placeRelations.find(item => item.id === relationId);
+      if (relation) setCardinality(relationId, relation.cardinality === 'multiple' ? 'single' : 'multiple');
+    }
+
+    function field(label, name, content) {
+      return `<div class="field"><label for="command-${name}">${label}</label>${content}</div>`;
+    }
+
+    function options(items, selected) {
+      return items.map(item => `<option value="${item}" ${item === selected ? 'selected' : ''}>${item}</option>`).join('');
+    }
+
+    function openCommand(command) {
+      const dialog = document.getElementById('commandDialog');
+      const title = document.getElementById('dialogTitle');
+      const body = document.getElementById('dialogBody');
+      const submit = document.getElementById('dialogSubmit');
+      const selectedType = nodeTypes.some(type => type.id === state.selected) ? state.selected : 'Place';
+      dialog.dataset.command = command;
+      if (command === 'relation') {
+        title.textContent = 'Add relation';
+        body.innerHTML = field('Source type', 'source', `<select id="command-source" name="source">${options(nodeTypes.map(type => type.id), selectedType)}</select>`)
+          + field('Relation name', 'name', '<input id="command-name" name="name" value="related_to" required>')
+          + field('Target type', 'target', `<select id="command-target" name="target">${options(nodeTypes.map(type => type.id), 'Concept')}</select>`)
+          + field('Cardinality', 'cardinality', '<select id="command-cardinality" name="cardinality"><option value="single">1 · single</option><option value="multiple" selected>* · multiple</option></select>')
+          + field('Qualifier type (optional)', 'qualifier', '<select id="command-qualifier" name="qualifier"><option value="">None</option><option value="related_to" selected>EdgeQualifiers/related_to</option><option value="references">EdgeQualifiers/references</option><option value="located_in">EdgeQualifiers/located_in</option></select>');
+        submit.textContent = 'Add relation';
+      } else if (command === 'extends') {
+        title.textContent = 'Set base type';
+        body.innerHTML = field('Derived type', 'derived', `<select id="command-derived" name="derived">${options(nodeTypes.map(type => type.id), selectedType)}</select>`)
+          + field('Base type', 'base', `<select id="command-base" name="base"><option value="">No base type</option><option value="AbstractGraphNode" selected>Base/AbstractGraphNode · abstract</option>${options(nodeTypes.filter(type => type.id !== selectedType).map(type => `Nodes/${type.id}`), '')}</select>`)
+          + '<div class="relation"><span><strong>Cycle check</strong><small>The command is rejected if the selected base reaches the derived type.</small></span><span class="badge qualifier">valid</span></div>';
+        submit.textContent = 'Set extends';
+      } else if (command === 'move') {
+        const currentNamespace = namespaceAssignments[selectedType] || 'Nodes';
+        title.textContent = 'Move type';
+        body.innerHTML = field('Type', 'type', `<select id="command-type" name="type">${options(nodeTypes.map(type => type.id), selectedType)}</select>`)
+          + field('Destination namespace', 'namespace', `<select id="command-namespace" name="namespace">${options(domains.map(domain => domain.id), currentNamespace)}<option value="Geo/Local">Geo / Local · new nested namespace</option></select>`)
+          + '<div class="relation"><span><strong>Impact preview</strong><small>24 relation targets · 1 $extends pointer · 0 root pointers will be rewritten.</small></span><span class="badge">25 edits</span></div>';
+        submit.textContent = 'Move and rewrite';
+      } else if (command === 'root') {
+        title.textContent = 'Designate document root';
+        body.innerHTML = `<div class="relation"><span><strong>Current root</strong><small>${rootType.pointer}</small></span><span class="badge">$root</span></div>`
+          + field('New root type', 'root', `<select id="command-root" name="root">${options(nodeTypes.map(type => `${namespaceAssignments[type.id]}/${type.id}`), `${namespaceAssignments[selectedType]}/${selectedType}`)}</select>`)
+          + '<div class="relation"><span><strong>Result</strong><small>The document entry point changes; the type itself is not moved.</small></span><span class="badge qualifier">1 edit</span></div>';
+        submit.textContent = 'Set root';
+      } else {
+        const source = importSources.find(item => item.id === state.selected || item.namespace === state.selected || item.types.includes(state.selected)) || importSources[0];
+        title.textContent = 'Import and map types';
+        body.innerHTML = field('Source document', 'source', `<select id="command-source" name="source">${importSources.map(item => `<option value="${item.id}" ${item.id === source.id ? 'selected' : ''}>${item.source}</option>`).join('')}</select>`)
+          + field('Target namespace', 'namespace', `<input id="command-namespace" name="namespace" value="${source.namespace}" required>`)
+          + field('Import behavior', 'mode', `<select id="command-mode" name="mode"><option value="linked" ${source.mode === 'linked' ? 'selected' : ''}>Linked · emit $import</option><option value="copy" ${source.mode === 'copy' ? 'selected' : ''}>Copy definitions locally</option></select>`)
+          + `<div class="relation"><span><strong>Selected definitions</strong><small>${[...source.selected].join(', ') || 'None'}</small></span><span class="badge qualifier">${source.selected.size}</span></div>`
+          + '<div class="relation"><span><strong>Collision preview</strong><small>No local names conflict in the selected target namespace.</small></span><span class="badge">clear</span></div>';
+        submit.textContent = 'Apply import mapping';
+      }
+      dialog.showModal();
+    }
+
+    function applyCommand(form) {
+      const data = new FormData(form);
+      const command = document.getElementById('commandDialog').dataset.command;
+      if (command === 'relation') {
+        const source = data.get('source');
+        const name = String(data.get('name')).trim();
+        const target = data.get('target');
+        const qualifier = data.get('qualifier');
+        if (source === 'Place' && name) placeRelations.push({ id: `${name}__${target}__${placeRelations.length}`, name, target, cardinality: data.get('cardinality'), qualifier: qualifier || '', qualifierRef: qualifier ? `#/definitions/EdgeQualifiers/${qualifier}` : '', qualifierProperties: qualifier ? ['relationship_type', 'relationship_scope', 'properties'] : [], scope: 'external', index: placeRelations.length });
+        const sourceType = nodeTypes.find(type => type.id === source);
+        if (sourceType) sourceType.relations += 1;
+        state = { ...state, lens: 'relations', level: source === 'Place' ? 'neighborhood' : 'types', selected: source, detail: null };
+      } else if (command === 'extends') {
+        const derived = data.get('derived');
+        const base = String(data.get('base')).replace(/^Nodes\//, '');
+        if (base) extendsAssignments[derived] = base; else delete extendsAssignments[derived];
+        state = { ...state, lens: 'inheritance', selected: derived, detail: null };
+      } else if (command === 'move') {
+        const type = data.get('type');
+        namespaceAssignments[type] = data.get('namespace');
+        state = { ...state, lens: 'namespaces', selected: type, detail: null };
+      } else if (command === 'root') {
+        const parts = String(data.get('root')).split('/');
+        rootType.id = parts.pop();
+        rootType.namespace = parts.join('/');
+        rootType.pointer = `#/definitions/${namespace}/${rootType.id}`;
+        state = { ...state, lens: 'namespaces', selected: rootType.id, detail: null };
+      } else if (command === 'import') {
+        const source = importSources.find(item => item.id === data.get('source'));
+        source.namespace = String(data.get('namespace')).trim() || source.namespace;
+        source.mode = data.get('mode');
+        state = { ...state, lens: 'imports', selected: source.id, detail: null };
+      }
+      document.getElementById('commandDialog').close();
+      syncLensButtons();
+      render();
+    }
+
+    function toggleImportedType(value) {
+      const [sourceId, type] = value.split(':');
+      const source = importSources.find(item => item.id === sourceId);
+      if (!source) return;
+      if (source.selected.has(type)) source.selected.delete(type); else source.selected.add(type);
+      state.selected = source.id;
+      render();
+    }
+
+    function syncLensButtons() {
+      document.querySelectorAll('.lens-bar button').forEach(item => item.classList.toggle('active', item.dataset.lens === state.lens));
+    }
+
+    function drillIn() {
+      if (state.lens !== 'relations') return;
+      if (state.level === 'atlas' && state.selected === 'Nodes') navigate('types', 'Place', 'Nodes');
+      else if (state.level === 'types' && state.selected === 'Place') navigate('neighborhood', 'Place', 'Place neighborhood');
+    }
+
+    function drillOut() {
+      if (state.lens !== 'relations') return;
+      if (state.level === 'neighborhood') navigate('types', 'Place', 'Nodes');
+      else if (state.level === 'types') navigate('atlas', 'Nodes', 'Atlas');
+    }
+
+    function activateHit(hit) {
+      if (!hit) return;
+      if (hit.action === 'relation') {
+        openQualifier(hit.relationId);
+        return;
+      }
+      if (hit.action === 'edge') {
+        selectRelation(hit.relationId);
+        document.getElementById('statusSelection').textContent = `Relation details · ${selectedData().name}`;
+        return;
+      }
+      if (state.lens === 'relations') {
+        if (state.level === 'atlas') {
+          if (hit.id === 'Nodes') navigate('types', 'Place', 'Nodes');
+          else { state.lens = 'namespaces'; state.selected = hit.id; syncLensButtons(); render(); }
+        } else if (state.level === 'types') {
+          if (hit.id === 'Place') navigate('neighborhood', 'Place', 'Place neighborhood');
+          else { selectItem(hit.id); document.getElementById('statusSelection').textContent = `Open declaration · ${hit.id}`; }
+        } else {
+          state.level = 'types';
+          state.selected = hit.id;
+          state.detail = null;
+          render();
+        }
+        return;
+      }
+      if (state.lens === 'namespaces') {
+        const isNamespace = domains.some(domain => domain.id === hit.id) || Object.values(namespaceAssignments).includes(hit.id);
+        if (isNamespace) { state.selected = hit.id; state.level = 'types'; render(); }
+        else { state.lens = 'relations'; state.level = 'types'; state.selected = hit.id; syncLensButtons(); render(); }
+        return;
+      }
+      if (state.lens === 'inheritance') {
+        selectItem(hit.id);
+        document.getElementById('statusSelection').textContent = `Open declaration · ${hit.id}`;
+        return;
+      }
+      if (state.lens === 'imports') openCommand('import');
+    }
+
+    function hitTest(event) {
+      const rect = canvas.getBoundingClientRect();
+      const scale = activeViewScale();
+      const x = (event.clientX - rect.left - state.panX) / scale;
+      const y = (event.clientY - rect.top - state.panY) / scale;
+      return hitAreas.slice().reverse().find(area => x >= area.x && x <= area.x + area.width && y >= area.y && y <= area.y + area.height);
+    }
+
+    function adjustViewScale(delta, clientX, clientY) {
+      const oldScale = activeViewScale();
+      const proposedScale = Math.round((oldScale + delta) * 10) / 10;
+      if (proposedScale > 1.6) { drillIn(); return; }
+      if (proposedScale < .6) { drillOut(); return; }
+      const newScale = Math.max(.6, Math.min(1.6, proposedScale));
+      const rect = canvas.getBoundingClientRect();
+      const anchorX = clientX == null ? rect.width / 2 : clientX - rect.left;
+      const anchorY = clientY == null ? rect.height / 2 : clientY - rect.top;
+      if (state.level === 'types' && newScale <= fittedTypeScale()) {
+        state.panX = 0;
+        state.panY = 0;
+      } else {
+        state.panX = anchorX - (anchorX - state.panX) * newScale / oldScale;
+        state.panY = anchorY - (anchorY - state.panY) * newScale / oldScale;
+      }
+      state.viewScale = newScale;
+      render();
+    }
+
+    canvas.addEventListener('click', event => {
+      if (canvas.dataset.suppressClick === 'true') { canvas.dataset.suppressClick = 'false'; return; }
+      const hit = hitTest(event);
+      if (hit?.action === 'relation' || hit?.action === 'edge') selectRelation(hit.relationId);
+      else if (hit) selectItem(hit.id);
+    });
+    canvas.addEventListener('dblclick', event => activateHit(hitTest(event)));
+    canvas.addEventListener('wheel', event => {
+      event.preventDefault();
+      adjustViewScale(event.deltaY < 0 ? .1 : -.1, event.clientX, event.clientY);
+    }, { passive: false });
+    canvas.addEventListener('mousedown', event => { dragging = true; dragStart = { x: event.clientX, y: event.clientY, panX: state.panX, panY: state.panY }; canvas.classList.add('dragging'); });
+    canvas.addEventListener('mousemove', event => {
+      if (dragging) return;
+      const hit = hitTest(event);
+      canvas.title = hit?.ariaLabel || '';
+      canvas.style.cursor = hit ? 'pointer' : 'grab';
+    });
+    window.addEventListener('mousemove', event => {
+      if (!dragging) return;
+      state.panX = dragStart.panX + event.clientX - dragStart.x;
+      state.panY = dragStart.panY + event.clientY - dragStart.y;
+      render();
+    });
+    window.addEventListener('mouseup', () => { dragging = false; canvas.classList.remove('dragging'); });
+    canvas.addEventListener('pointerdown', event => {
+      if (event.pointerType === 'mouse') return;
+      activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (activePointers.size === 1) {
+        dragging = true;
+        dragStart = { x: event.clientX, y: event.clientY, panX: state.panX, panY: state.panY, moved: false };
+      }
+      if (activePointers.size === 2) {
+        const [first, second] = [...activePointers.values()];
+        pinchStart = Math.hypot(second.x - first.x, second.y - first.y);
+      }
+    });
+    canvas.addEventListener('pointermove', event => {
+      if (!activePointers.has(event.pointerId)) return;
+      activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (activePointers.size === 2 && pinchStart) {
+        const [first, second] = [...activePointers.values()];
+        const distance = Math.hypot(second.x - first.x, second.y - first.y);
+        if (Math.abs(distance - pinchStart) >= 18) {
+          adjustViewScale(distance > pinchStart ? .1 : -.1, (first.x + second.x) / 2, (first.y + second.y) / 2);
+          pinchStart = distance;
+        }
+      } else if (activePointers.size === 1 && dragStart) {
+        const dx = event.clientX - dragStart.x;
+        const dy = event.clientY - dragStart.y;
+        dragStart.moved ||= Math.hypot(dx, dy) > 4;
+        if (dragStart.moved) {
+          canvas.classList.add('dragging');
+          state.panX = dragStart.panX + dx;
+          state.panY = dragStart.panY + dy;
+          render();
+        }
+      }
+    });
+    canvas.addEventListener('pointerup', event => {
+      if (event.pointerType === 'mouse') return;
+      const hit = hitTest(event);
+      const now = performance.now();
+      if (hit && lastTap && lastTap.id === hit.id && now - lastTap.time < 360) {
+        activateHit(hit);
+        lastTap = null;
+      } else if (hit && !dragStart?.moved) {
+        if (hit.action === 'relation' || hit.action === 'edge') selectRelation(hit.relationId); else selectItem(hit.id);
+        lastTap = { id: hit.id, time: now };
+      }
+      if (dragStart?.moved) canvas.dataset.suppressClick = 'true';
+      else if (hit) canvas.dataset.suppressClick = 'true';
+      activePointers.delete(event.pointerId);
+      if (activePointers.size < 2) pinchStart = null;
+      if (!activePointers.size) { dragging = false; dragStart = null; canvas.classList.remove('dragging'); }
+    });
+    canvas.addEventListener('pointercancel', event => { activePointers.delete(event.pointerId); if (activePointers.size < 2) pinchStart = null; });
+    canvas.addEventListener('keydown', event => {
+      if (event.key === 'Enter') drillIn();
+      if (event.key === 'Escape') drillOut();
+      if (event.key === '0') { state.panX = 0; state.panY = 0; render(); }
+    });
+    minimap.addEventListener('click', event => {
+      const rect = minimap.getBoundingClientRect();
+      state.panX = (rect.width / 2 - (event.clientX - rect.left)) * 3;
+      state.panY = (rect.height / 2 - (event.clientY - rect.top)) * 3;
+      render();
+    });
+    minimap.addEventListener('dblclick', event => {
+      event.preventDefault();
+      state.panX = 0;
+      state.panY = 0;
+      state.viewScale = null;
+      render();
+    });
+    minimap.addEventListener('wheel', event => {
+      event.preventDefault();
+      adjustViewScale(event.deltaY < 0 ? .1 : -.1);
+    }, { passive: false });
+
+    document.getElementById('backButton').addEventListener('click', () => { if (historyIndex > 0) restoreHistory(historyIndex - 1); });
+    document.getElementById('forwardButton').addEventListener('click', () => { if (historyIndex < history.length - 1) restoreHistory(historyIndex + 1); });
+    document.getElementById('homeButton').addEventListener('click', () => navigate('atlas', 'Nodes', 'Atlas'));
+    document.getElementById('zoomIn').addEventListener('click', () => adjustViewScale(.1));
+    document.getElementById('zoomOut').addEventListener('click', () => adjustViewScale(-.1));
+    document.getElementById('fitButton').addEventListener('click', () => { state.panX = 0; state.panY = 0; state.viewScale = null; render(); });
+    document.getElementById('focusButton').addEventListener('click', () => {
+      const command = document.getElementById('focusButton').dataset.command;
+      if (command) { openCommand(command); return; }
+      if (state.detail?.kind === 'qualifier') setDetail({ kind: 'relation', id: state.detail.relationId }, `Relation: ${selectedData().name}`, false);
+      else if (state.detail?.kind === 'relation') openQualifier(state.detail.id);
+      else drillIn();
+    });
+    document.getElementById('pinButton').addEventListener('click', event => { event.currentTarget.textContent = event.currentTarget.textContent === 'Pin' ? 'Pinned' : 'Pin'; });
+    document.getElementById('searchInput').addEventListener('input', render);
+    document.querySelectorAll('.lens-bar button').forEach(button => button.addEventListener('click', () => {
+      state.lens = button.dataset.lens;
+      state.detail = null;
+      document.getElementById('focusButton').dataset.command = '';
+      if (state.lens === 'namespaces' && !domains.some(domain => domain.id === state.selected) && !nodeTypes.some(type => type.id === state.selected) && state.selected !== rootType.id) state.selected = 'Nodes';
+      if (state.lens === 'inheritance' && !nodeTypes.some(type => type.id === state.selected) && state.selected !== 'AbstractGraphNode') state.selected = 'Place';
+      if (state.lens === 'imports') state.selected = importSources[0].id;
+      if (state.lens === 'relations') state.selected = state.level === 'atlas' ? 'Nodes' : 'Place';
+      syncLensButtons();
+      render();
+    }));
+    document.querySelectorAll('[data-command]').forEach(button => button.addEventListener('click', event => {
+      event.stopPropagation();
+      if (button.dataset.command) openCommand(button.dataset.command);
+    }));
+    document.getElementById('commandForm').addEventListener('submit', event => { event.preventDefault(); applyCommand(event.currentTarget); });
+    document.getElementById('dialogClose').addEventListener('click', () => document.getElementById('commandDialog').close());
+    document.getElementById('dialogCancel').addEventListener('click', () => document.getElementById('commandDialog').close());
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+  </script>
+</body>
+</html>

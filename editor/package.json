@@ -1,0 +1,21 @@
+{
+  "name": "@json-structure/editor-foundation",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20.0.0" },
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "coverage:check": "node scripts/coverage-check.mjs",
+    "coverage:generate": "node scripts/generate-coverage.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^25.0.10",
+    "@vitest/coverage-v8": "^4.0.18",
+    "tsup": "^8.0.1",
+    "typescript": "^5.3.2",
+    "vitest": "^4.0.18"
+  }
+}
