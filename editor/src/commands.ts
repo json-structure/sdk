@@ -329,8 +329,23 @@ function relationScopeCompatible(session: DocumentSession, scope: RelationScope 
 }
 function identityHasInboundRelation(session: DocumentSession, targetPointer: string): boolean {
   const targetRef = `#${targetPointer}`;
-  return (session.model?.nodes ?? []).some((node) => node.pointer.endsWith('/targettype/$ref') &&
-    pointerValue(session.value, node.pointer) === targetRef);
+  for (const schema of session.model?.projections.definitions ?? []) {
+    const declaration = pointerValue(session.value, schema.pointer);
+    if (!isObjectLike(declaration) || !isObjectOrTupleDeclaration(declaration) || !isObjectLike(declaration.relations)) continue;
+    const relationsPointer = `${schema.pointer}/relations`;
+    for (const [relationName, relation] of Object.entries(declaration.relations)) {
+      if (!isObjectLike(relation)) continue;
+      const targetTypePointer = `${relationsPointer}/${encodePointerPart(relationName)}/targettype`;
+      if (!Object.prototype.hasOwnProperty.call(relation, 'targettype')) continue;
+      if (!hasUniquePointerPath(session, targetTypePointer) || hasDuplicatePointerDiagnostic(session, targetTypePointer)) return true;
+      const targetType = relation.targettype;
+      if (!isObjectLike(targetType) || !Object.prototype.hasOwnProperty.call(targetType, '$ref')) continue;
+      const referencePointer = `${targetTypePointer}/$ref`;
+      if (!hasUniquePointerPath(session, referencePointer) || hasDuplicatePointerDiagnostic(session, referencePointer)) return true;
+      if (pointerValue(session.value, referencePointer) === targetRef) return true;
+    }
+  }
+  return false;
 }
 function relationOwnerContext(session: DocumentSession, ownerPointer: string): {
   owner: Record<string, unknown>;

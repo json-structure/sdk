@@ -1,12 +1,12 @@
 # JSON Structure Editor Implementation Status
 
-Updated: 2026-08-30 (Phase 1 milestone: Core typed member commands)
+Updated: 2026-08-31 (Phase 1 milestone: Relations identity blocker repair)
 Branch: `editor-autopilot`
 Worktree: `C:\git\json-structure-sdk-editor`
 
 Blocking findings in this milestone: 0 remaining (independent `CodeReviewer`: PASS)
 
-Repair summary: Core type validation previously accepted arbitrary strings and prohibited inline compound schemas in unions, `$ref` placement recognized only direct `type` objects with no description, generic `$ref` diagnostics traversed Relations and literal data payloads, and binary inspection omitted the default `contentEncoding`. Schema-owned traversal now owns Core reference diagnostics across root, property, object-valued `additionalProperties`, collection, union, and composition type positions while relation-specific diagnostics remain independent. Known Core type classification, normative union references and inline collection members, empty simple `required`, empty tuples, and explicit-versus-effective binary encoding are covered by focused regressions without traversing boolean `additionalProperties`, default, example-like, or annotation payloads.
+Repair summary: `relations.identity` now has an explicit ordered field in `DefinitionProjection` for valid object and tuple declarations. Schema-owned traversal projects and diagnoses each identity once at the document root and nested schema positions without recursing into literal defaults or other payloads. Diagnostics reject invalid placement, empty or non-string values, missing properties, duplicate identity names, and ambiguous duplicate source keys. Identity removal scans relations only on schema declarations reached by that parser traversal, ignores literal default, example, and semantic payloads, and conservatively rejects duplicate `targettype` or nested `$ref` source keys within real relations. Set/remove commands retain direct byte-identical inverse tests that preserve unknown source. Instance-level uniqueness remains runtime data semantics and is not claimed by this editor-model milestone.
 
 ## Current milestone
 
@@ -23,7 +23,7 @@ Implemented:
 - `SetRootCommand` with namespace-aware preconditions.
 - `AddRelationCommand`, `EditRelationCommand`, `RenameRelationCommand`, and `DeleteRelationCommand`.
 - `SetRelationCardinalityCommand`, `SetRelationScopeCommand`, and `SetRelationQualifierCommand` typed mutation APIs.
-- `SetIdentityCommand` and `RemoveIdentityCommand` with property existence and duplicate-order checks.
+- `SetIdentityCommand` and `RemoveIdentityCommand` with property existence, duplicate-order checks, and conservative source-ambiguous inbound relation protection.
 - `SetImportCommand` and `DeleteImportCommand` for `$import` and `$importdefs` at normative namespace placements.
 - Minimal source edits and returned inverse edits for byte-identical restoration.
 - Property/relation and definition namespace collision checks.
@@ -31,6 +31,7 @@ Implemented:
 - Rejection of dangling locally-decidable relation pointers (targettype, qualifiertype, scope), relation-target identity absences, and dual import-keyword collisions at one namespace.
 - Exact source-key editing for escaped JSON key spellings.
 - Typed normalized projections for Core declaration forms, `$extends`, relation fields (`targettype`, `cardinality`, `scope`, `qualifiertype`), strict `$import`/`$importdefs` absolute-URI provenance, Units keywords, Validation structures (including type-aware numeric-string handling), conditional composition operators, and all 20 semantic annotation keywords.
+- Ordered `identity` inspection and single-pass diagnostics for valid object and tuple schemas across root and nested schema traversal, excluding literal instance and annotation payloads.
 - Explicit reference inventory including `$root`, `$ref`, `$extends`, and normative `type: {"$ref":"#..."}` declarations.
 - Semantic annotation placement projection indexed by schema pointer for every detected placement.
 - Relation diagnostics pinpoint unsupported member/value pointers directly.
@@ -47,22 +48,20 @@ Implemented:
 
 ## Validation
 
-Last validation on 2026-08-30 (object-valued `additionalProperties` local-reference traversal repair):
+Last validation on 2026-08-31 (Relations identity blocker repair and evidence closure):
 
-- `npm test`: passed (2 files, 56 tests).
+- `npm test`: passed (2 files, 63 tests).
 - `npm run typecheck`: passed.
 - `npm run build`: passed (ESM, CJS, DTS).
 - `npm run coverage:check`: passed with 86 feature records.
 - `git diff --check`: passed.
 
-The VS Code test runner does not discover this standalone worktree package from the parent workspace. Validation therefore uses the package's declared Vitest command.
-
 ## Specification coverage
 
 The coverage gate verifies ledger integrity and explicit ownership; it does not claim feature completion.
 
-- Partial: 81
-- Gap: 1
+- Partial: 82
+- Gap: 0
 - Pending: 0
 - Unsupported: 3
 - Complete: 1
@@ -78,7 +77,8 @@ Next steps for Phase 1:
 
 1. Add external/import-aware reference resolution; local `$ref` support remains intentionally partial in the ledger.
 2. Tighten diagnostics from partial to complete coverage for definition/root invariants and typed projection validation semantics.
-3. Keep Phase 2 UI work blocked until the remaining Phase 1 command slices pass review.
+3. Add a dedicated identity reorder command before claiming complete `relations.identity` editing coverage; runtime instance uniqueness belongs to instance validation rather than normalized schema inspection.
+4. Keep Phase 2 UI work blocked until the remaining Phase 1 command slices pass review.
 
 ## Repository state
 

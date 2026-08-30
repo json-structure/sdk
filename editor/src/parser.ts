@@ -209,15 +209,19 @@ function collectSchemaProjections(
   nodes: readonly ModelNode[]
 ): void {
   const visited = new Set(definitions.map((definition) => definition.pointer));
+  const diagnosed = new Set<string>();
 
   const visitSchema = (candidate: unknown, pointer: string): void => {
     if (!isRecord(candidate)) return;
+    if (diagnosed.has(pointer)) return;
+    diagnosed.add(pointer);
     localTypeReferenceDiagnostics(root, pointer, candidate, uri, text, diagnostics, nodes);
+    relationAndIdentityLocalDiagnostics(root, pointer, candidate, uri, text, diagnostics, nodes);
     if (!visited.has(pointer) && isSchemaDeclaration(candidate)) {
       const split = pointer.lastIndexOf('/');
       const name = pointer === '' ? '$root' : pointer.slice(split + 1).replace(/~1/g, '/').replace(/~0/g, '~');
       const namespacePointer = pointer === '' ? '' : pointer.slice(0, split);
-      const projection = definitionProjection(name, namespacePointer, pointer, candidate, uri, text, diagnostics, semanticByPointer.get(pointer));
+      const projection = definitionProjection(name, namespacePointer, pointer, candidate, uri, text, diagnostics, semanticByPointer.get(pointer), nodes);
       if (projection) definitions.push(projection);
       visited.add(pointer);
     }
@@ -293,7 +297,7 @@ function collectDefinitions(
       if (name === '$import' || name === '$importdefs') continue;
       const encoded = pointerPart(name);
       const declarationPointer = `${pointer}/definitions/${encoded}`;
-      const projection = definitionProjection(name, pointer, declarationPointer, declaration, uri, text, diagnostics, semanticByPointer.get(declarationPointer));
+      const projection = definitionProjection(name, pointer, declarationPointer, declaration, uri, text, diagnostics, semanticByPointer.get(declarationPointer), nodes);
       if (projection) definitions.push(projection);
       else collectNamespaceMembers(root, declaration, declarationPointer, uri, text, definitions, imports, diagnostics, semanticByPointer, nodes);
       collectDefinitions(root, declaration, declarationPointer, uri, text, definitions, imports, diagnostics, semanticByPointer, nodes);
@@ -317,7 +321,7 @@ function collectNamespaceMembers(
   for (const [name, declaration] of Object.entries(value)) {
     if (name === '$import' || name === '$importdefs' || name === 'definitions') continue;
     const declarationPointer = `${pointer}/${pointerPart(name)}`;
-    const projection = definitionProjection(name, pointer, declarationPointer, declaration, uri, text, diagnostics, semanticByPointer.get(declarationPointer));
+    const projection = definitionProjection(name, pointer, declarationPointer, declaration, uri, text, diagnostics, semanticByPointer.get(declarationPointer), nodes);
     if (projection) definitions.push(projection);
     else collectNamespaceMembers(root, declaration, declarationPointer, uri, text, definitions, imports, diagnostics, semanticByPointer, nodes);
     collectDefinitions(root, declaration, declarationPointer, uri, text, definitions, imports, diagnostics, semanticByPointer, nodes);
@@ -332,7 +336,8 @@ function definitionProjection(
   uri: string,
   text: string,
   diagnostics: Diagnostic[],
-  semantic: SemanticAnnotationsProjection | undefined
+  semantic: SemanticAnnotationsProjection | undefined,
+  nodes: readonly ModelNode[]
 ): DefinitionProjection | undefined {
   if (!declaration || typeof declaration !== 'object' || Array.isArray(declaration)) return undefined;
   const value = declaration as Record<string, unknown>;
@@ -348,6 +353,7 @@ function definitionProjection(
   const composition = compositionProjection(pointer, value, uri, text, diagnostics);
   const required = requiredProjection(pointer, value, type, uri, text, diagnostics);
   const properties = schemaObjectMap(value.properties, `${pointer}/properties`, 'properties', uri, text, diagnostics);
+  const identity = identityProjection(pointer, value, type, properties, nodes);
   const items = collectionMemberProjection(pointer, value, type, 'items', uri, text, diagnostics);
   const values = collectionMemberProjection(pointer, value, type, 'values', uri, text, diagnostics);
   const tuple = tupleProjection(pointer, value, type, properties, uri, text, diagnostics);
@@ -360,6 +366,7 @@ function definitionProjection(
     type,
     coreForm: declarationCore,
     extends: extendsProjection(value.$extends),
+    identity,
     relations: relationItems,
     units,
     validation,
@@ -373,6 +380,22 @@ function definitionProjection(
     description,
     binary
   };
+}
+
+function identityProjection(
+  pointer: string,
+  value: Record<string, unknown>,
+  type: string | undefined,
+  properties: Readonly<Record<string, Record<string, unknown>>> | undefined,
+  nodes: readonly ModelNode[]
+): readonly string[] | undefined {
+  const identity = value.identity;
+  if ((type !== 'object' && type !== 'tuple') || !Array.isArray(identity) || identity.length === 0 ||
+      !identity.every((entry) => typeof entry === 'string' && entry.length > 0) ||
+      new Set(identity).size !== identity.length || properties === undefined ||
+      !uniquePointer(nodes, `${pointer}/identity`)) return undefined;
+  return identity.every((name) => Object.prototype.hasOwnProperty.call(properties, name) &&
+    uniquePointerPath(nodes, `${pointer}/properties/${pointerPart(name)}`)) ? identity as string[] : undefined;
 }
 
 function pushImportProjection(
@@ -462,7 +485,6 @@ function collectStructuralDiagnostics(
     return;
   }
   if (!isRecord(value)) return;
-  relationAndIdentityLocalDiagnostics(root, pointer, value, uri, text, diagnostics, nodes);
   importPlacementDiagnostics(root, pointer, value, uri, text, diagnostics, nodes);
   for (const [key, entry] of Object.entries(value)) {
     collectStructuralDiagnostics(root, entry, `${pointer}/${pointerPart(key)}`, uri, text, diagnostics, nodes);
@@ -619,9 +641,9 @@ function relationAndIdentityLocalDiagnostics(
     pushKeywordDiagnostic(diagnostics, uri, `${pointer}/relations`, 'relations must be an object map of relation declarations.', text);
   }
 
-  if (hasIdentity) {
+  if (hasIdentity && objectOrTuple) {
     const identity = declaration.identity;
-    if (!uniquePointer(nodes, `${pointer}/identity`) || !Array.isArray(identity) || identity.length === 0 || !identity.every((entry) => typeof entry === 'string')) {
+    if (!uniquePointer(nodes, `${pointer}/identity`) || !Array.isArray(identity) || identity.length === 0 || !identity.every((entry) => typeof entry === 'string' && entry.length > 0)) {
       pushKeywordDiagnostic(diagnostics, uri, `${pointer}/identity`, 'identity must be a non-empty array of property names.', text);
     } else {
       if (new Set(identity).size !== identity.length) {

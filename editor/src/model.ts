@@ -98,6 +98,7 @@ export interface DefinitionProjection {
 	readonly type?: string;
 	readonly coreForm: 'typed' | 'ref' | 'composed' | 'unknown';
 	readonly extends?: string | readonly string[];
+	readonly identity?: readonly string[];
 	readonly relations: readonly RelationProjection[];
 	readonly units?: UnitsProjection;
 	readonly validation?: ValidationProjection;

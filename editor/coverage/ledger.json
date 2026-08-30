@@ -678,27 +678,27 @@
       "spec": "Relations",
       "feature": "identity",
       "owner": "graph",
-      "status": "gap",
+      "status": "partial",
       "evidence": {
         "editing": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "partial",
+          "reference": "src/commands.ts"
         },
         "inspection": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "complete",
+          "reference": "src/parser.ts"
         },
         "diagnostics": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "complete",
+          "reference": "src/parser.ts"
         },
         "roundtrip": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "complete",
+          "reference": "tests/phase1.test.ts"
         },
         "tests": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "complete",
+          "reference": "tests/phase1.test.ts"
         }
       }
     },

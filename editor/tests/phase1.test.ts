@@ -358,6 +358,76 @@ describe('Phase 1 vertical slice', () => {
     expect(pointers.has('/definitions/Thing/relations/id/scope')).toBe(true);
     expect(pointers.has('')).toBe(true);
   });
+  it('projects ordered object, composite, tuple, root, and nested identities', () => {
+    const source = JSON.stringify({
+      type: 'object',
+      properties: {
+        tenant: { type: 'string' },
+        id: { type: 'string' },
+        nested: {
+          type: 'object',
+          properties: { localId: { type: 'uuid' } },
+          identity: ['localId']
+        }
+      },
+      identity: ['tenant', 'id'],
+      definitions: {
+        Coordinate: {
+          type: 'tuple',
+          properties: { x: { type: 'double' }, y: { type: 'double' } },
+          tuple: ['x', 'y'],
+          identity: ['y', 'x']
+        }
+      }
+    });
+    const result = parseDocument('memory://identity-inspection', source);
+    expect(result.diagnostics.filter((item) => item.code === 'json.keyword-invalid')).toEqual([]);
+    const definitions = result.model?.projections.definitions ?? [];
+    expect(definitions.find((item) => item.pointer === '')?.identity).toEqual(['tenant', 'id']);
+    expect(definitions.find((item) => item.pointer === '/properties/nested')?.identity).toEqual(['localId']);
+    expect(definitions.find((item) => item.pointer === '/definitions/Coordinate')?.identity).toEqual(['y', 'x']);
+  });
+  it('diagnoses invalid identity placement, values, properties, duplicates, and ambiguous source keys', () => {
+    const cases = [
+      ['placement', '{"type":"string","identity":["id"]}', '/identity'],
+      ['empty-array', '{"type":"object","properties":{"id":{"type":"string"}},"identity":[]}', '/identity'],
+      ['non-string', '{"type":"object","properties":{"id":{"type":"string"}},"identity":[1]}', '/identity'],
+      ['empty-name', '{"type":"object","properties":{"id":{"type":"string"}},"identity":[""]}', '/identity'],
+      ['missing-properties', '{"type":"object","identity":["id"]}', '/identity'],
+      ['missing-property', '{"type":"object","properties":{"id":{"type":"string"}},"identity":["missing"]}', '/identity/0'],
+      ['duplicate-name', '{"type":"object","properties":{"id":{"type":"string"}},"identity":["id","id"]}', '/identity'],
+      ['duplicate-source-property', '{"type":"object","properties":{"id":{"type":"string"},"id":{"type":"uuid"}},"identity":["id"]}', '/identity/0'],
+      ['duplicate-source-identity', '{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"],"identity":["id"]}', '/identity']
+    ] as const;
+    for (const [label, source, pointer] of cases) {
+      const result = parseDocument(`memory://identity-${label}`, source);
+      expect(result.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === pointer), label).toBe(true);
+      expect(result.model?.projections.definitions.find((item) => item.pointer === '')?.identity, label).toBeUndefined();
+    }
+
+    const incomplete = parseDocument('memory://identity-incomplete', '{"type":"object","identity":["id"');
+    expect(incomplete.recovery).toBe('incomplete');
+    expect(incomplete.model).toBeUndefined();
+  });
+  it('validates identity only in schema-owned locations, not literal instance payloads', () => {
+    const source = JSON.stringify({
+      type: 'object',
+      properties: {
+        valid: { type: 'object', properties: { id: { type: 'string' } }, identity: ['id'] },
+        unresolved: { type: 'object', properties: { id: { type: 'string' } }, identity: ['missing'] },
+        invalid: { type: 'string', identity: ['id'] }
+      },
+      default: { type: 'object', identity: ['missing'] }
+    });
+    const result = parseDocument('memory://identity-schema-traversal', source);
+    const identityDiagnostics = result.diagnostics.filter((item) =>
+      item.code === 'json.keyword-invalid' && item.message.includes('identity'));
+    expect(identityDiagnostics.map((item) => item.location?.pointer).sort()).toEqual([
+      '/properties/invalid/identity',
+      '/properties/unresolved/identity/0'
+    ]);
+    expect(result.model?.projections.definitions.find((item) => item.pointer === '/properties/valid')?.identity).toEqual(['id']);
+  });
   it('supports identity set/edit/remove with byte-identical undo and rejects invalid identity paths', async () => {
     const original = '{"definitions":{"Person":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"}}}},"unknown":1}';
     const host = new InMemoryEditorHost('memory://identity', original);
@@ -390,6 +460,52 @@ describe('Phase 1 vertical slice', () => {
     expect(new SetIdentityCommand('/definitions/Person', ['missing']).canExecute({ session: invalid, documentVersion: 1 })).toBe(false);
     expect(new SetIdentityCommand('/definitions/Person', ['id', 'id']).canExecute({ session: invalid, documentVersion: 1 })).toBe(false);
     expect(new RemoveIdentityCommand('/definitions/Person').canExecute({ session: invalid, documentVersion: 1 })).toBe(false);
+  });
+  it('enforces identity command state and returns direct byte-identical set/remove inverses', () => {
+    const withoutIdentity = '{\n  "definitions": {\n    "Person": {"type":"object","properties":{"id":{"type":"string"},"tenant":{"type":"string"}},"x-unknown":{"keep":true}}\n  },\n  "unknown": 7\n}';
+    const setSession = new DocumentSession('memory://identity-direct-set', withoutIdentity);
+    const set = new SetIdentityCommand('/definitions/Person', ['tenant', 'id']);
+    const setContext = { session: setSession, documentVersion: 1 };
+    expect(set.canExecute(setContext)).toBe(true);
+    expect(set.canExecute({ session: setSession, documentVersion: 2 })).toBe(false);
+    const setResult = set.execute(setContext);
+    const withIdentity = withoutIdentity.slice(0, setResult.edits[0].range.startOffset) + setResult.edits[0].newText + withoutIdentity.slice(setResult.edits[0].range.endOffset);
+    const setInverse = setResult.inverseEdits[0];
+    expect(withIdentity.slice(0, setInverse.range.startOffset) + setInverse.newText + withIdentity.slice(setInverse.range.endOffset)).toBe(withoutIdentity);
+    expect(JSON.parse(withIdentity).definitions.Person['x-unknown']).toEqual({ keep: true });
+
+    const removeSession = new DocumentSession('memory://identity-direct-remove', withIdentity);
+    const remove = new RemoveIdentityCommand('/definitions/Person');
+    const removeResult = remove.execute({ session: removeSession, documentVersion: 1 });
+    const removed = withIdentity.slice(0, removeResult.edits[0].range.startOffset) + removeResult.edits[0].newText + withIdentity.slice(removeResult.edits[0].range.endOffset);
+    const removeInverse = removeResult.inverseEdits[0];
+    expect(removed.slice(0, removeInverse.range.startOffset) + removeInverse.newText + removed.slice(removeInverse.range.endOffset)).toBe(withIdentity);
+    expect(JSON.parse(removed).definitions.Person['x-unknown']).toEqual({ keep: true });
+
+    const tuple = new DocumentSession('memory://identity-tuple-command', '{"type":"tuple","properties":{"x":{"type":"double"}},"tuple":["x"]}');
+    expect(new SetIdentityCommand('', ['x']).canExecute({ session: tuple, documentVersion: 1 })).toBe(true);
+    const primitive = new DocumentSession('memory://identity-primitive-command', '{"type":"string","properties":{"id":{"type":"string"}}}');
+    expect(new SetIdentityCommand('', ['id']).canExecute({ session: primitive, documentVersion: 1 })).toBe(false);
+    const invalid = new DocumentSession('memory://identity-invalid-command', '{"type":');
+    expect(new SetIdentityCommand('', ['id']).canExecute({ session: invalid, documentVersion: 1 })).toBe(false);
+    expect(new RemoveIdentityCommand('').canExecute({ session: invalid, documentVersion: 1 })).toBe(false);
+    const duplicate = new DocumentSession('memory://identity-duplicate-command', '{"type":"object","properties":{"id":{"type":"string"},"id":{"type":"uuid"}}}');
+    expect(new SetIdentityCommand('', ['id']).canExecute({ session: duplicate, documentVersion: 1 })).toBe(false);
+  });
+  it('does not treat default or example targettype payloads as inbound relations', () => {
+    const literalPayload = new DocumentSession('memory://identity-literal-targettype', '{"definitions":{"Person":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]}},"default":{"targettype":{"$ref":"#/definitions/Person"}},"examples":[{"targettype":{"$ref":"#/definitions/Person"}}]}');
+    expect(new RemoveIdentityCommand('/definitions/Person').canExecute({ session: literalPayload, documentVersion: 1 })).toBe(true);
+  });
+  it('treats a schema-owned relation target as an inbound identity dependency', () => {
+    const inbound = new DocumentSession('memory://identity-inbound-targettype', '{"definitions":{"Person":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Book":{"type":"object","relations":{"owner":{"targettype":{"$ref":"#/definitions/Person"},"cardinality":"single"}}}}}');
+    expect(new RemoveIdentityCommand('/definitions/Person').canExecute({ session: inbound, documentVersion: 1 })).toBe(false);
+  });
+  it('conservatively blocks ambiguous targettype source within a schema-owned relation', () => {
+    const duplicate = new DocumentSession('memory://identity-duplicate-targettype', '{"definitions":{"Person":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Book":{"type":"object","relations":{"owner":{"targettype":{"$ref":"#/definitions/Book"},"targettype":{"$ref":"#/definitions/Person"},"cardinality":"single"}}}}}');
+    expect(new RemoveIdentityCommand('/definitions/Person').canExecute({ session: duplicate, documentVersion: 1 })).toBe(false);
+
+    const duplicateReference = new DocumentSession('memory://identity-duplicate-targettype-ref', '{"definitions":{"Person":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Book":{"type":"object","relations":{"owner":{"targettype":{"$ref":"#/definitions/Book","$ref":"#/definitions/Person"},"cardinality":"single"}}}}}');
+    expect(new RemoveIdentityCommand('/definitions/Person').canExecute({ session: duplicateReference, documentVersion: 1 })).toBe(false);
   });
   it('supports relation add/edit/rename/delete plus typed cardinality/scope/qualifier mutation APIs', async () => {
     const withLibrary = '{"definitions":{"Person":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Book":{"type":"object","properties":{"isbn":{"type":"string"}},"identity":["isbn"]},"Library":{"type":"array","items":{"$ref":"#/definitions/Person"}}}}';
