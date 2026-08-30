@@ -366,12 +366,12 @@ function resolveSite(
 }
 
 function parsePointerFragment(value: string): { pointer?: JsonPointer; reason?: string } {
-  if (value === '#') return { pointer: '' };
-  if (!value.startsWith('#/')) return { reason: 'Reference must be a JSON Pointer URI fragment beginning with #/.' };
+  if (!value.startsWith('#')) return { reason: 'Reference must be a JSON Pointer URI fragment beginning with #/.' };
   let decoded: string;
   try { decoded = decodeURIComponent(value.slice(1)); }
   catch { return { reason: 'Reference contains malformed URI percent-encoding.' }; }
-  if (!decoded.startsWith('/') || /~(?:[^01]|$)/.test(decoded)) return { reason: 'Reference contains malformed JSON Pointer escaping.' };
+  if (decoded !== '' && !decoded.startsWith('/')) return { reason: 'Reference must be a JSON Pointer URI fragment beginning with #/.' };
+  if (/~(?:[^01]|$)/.test(decoded)) return { reason: 'Reference contains malformed JSON Pointer escaping.' };
   return { pointer: decoded };
 }
 

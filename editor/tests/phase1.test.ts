@@ -509,7 +509,7 @@ describe('Phase 1 vertical slice', () => {
     expect(new RemoveIdentityCommand('/definitions/Person').canExecute({ session: duplicateReference, documentVersion: 1 })).toBe(false);
   });
   it('supports relation add/edit/rename/delete plus typed cardinality/scope/qualifier mutation APIs', async () => {
-    const withLibrary = '{"definitions":{"Person":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Book":{"type":"object","properties":{"isbn":{"type":"string"}},"identity":["isbn"]},"Library":{"type":"array","items":{"$ref":"#/definitions/Person"}}}}';
+    const withLibrary = '{"definitions":{"Person":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Book":{"type":"object","properties":{"isbn":{"type":"string"}},"identity":["isbn"]},"Library":{"type":"array","items":{"type":{"$ref":"#/definitions/Person"}}}}}';
     const host2 = new InMemoryEditorHost('memory://relations2', withLibrary);
     const sessionOk = new DocumentSession('memory://relations2', withLibrary);
     const addOk = new AddRelationCommand('/definitions/Book', 'author', {
@@ -621,8 +621,11 @@ describe('Phase 1 vertical slice', () => {
     const inverse = result.inverseEdits[0];
     expect(changed.slice(0, inverse.range.startOffset) + inverse.newText + changed.slice(inverse.range.endOffset)).toBe(original);
 
-    const inlineRoot = new DocumentSession('memory://inline-root-scope', '{"type":"array","items":{"$ref":"#/definitions/Target"},"definitions":{"Target":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Source":{"type":"object"}}}');
+    const inlineRoot = new DocumentSession('memory://inline-root-scope', '{"type":"array","items":{"type":{"$ref":"#/definitions/Target"}},"definitions":{"Target":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Source":{"type":"object"}}}');
     expect(new AddRelationCommand('/definitions/Source', 'target', { targetTypeRef: '#/definitions/Target', cardinality: 'single', scope: '#' }).canExecute({ session: inlineRoot, documentVersion: 1 })).toBe(false);
+
+    const encodedRoot = new DocumentSession('memory://encoded-root-scope', original.replace('#/definitions/RootItems', '#%2Fdefinitions%2FRootItems'));
+    expect(new AddRelationCommand('/definitions/Source', 'encoded_root', { targetTypeRef: '#/definitions/Target', cardinality: 'single', scope: '#' }).canExecute({ session: encodedRoot, documentVersion: 1 })).toBe(true);
 
     const parsed = parseDocument('memory://scope-diagnostics', original.replace('#/definitions/Target\"}}},\"TargetSet', '#/definitions/Other\"}}},\"TargetSet'));
     expect(parsed.diagnostics.some((item) => item.location?.pointer === '/definitions/RootItems/items')).toBe(false);
@@ -1225,7 +1228,7 @@ describe('Phase 1 vertical slice', () => {
     for (const pointer of ['/definitions/O/required', '/definitions/O/description', '/definitions/A/values', '/definitions/T/tuple', '/definitions/B/contentEncoding']) {
       expect(malformed.diagnostics.some((entry) => entry.code === 'json.keyword-invalid' && entry.location?.pointer === pointer), pointer).toBe(true);
     }
-    expect(malformed.diagnostics.some((entry) => entry.location?.pointer === '/definitions/R/$ref')).toBe(false);
+    expect(malformed.diagnostics.some((entry) => entry.code === 'core.declaration-invalid' && entry.location?.pointer === '/definitions/R')).toBe(true);
     expect(parseDocument('memory://core-incomplete', '{"definitions":').recovery).toBe('incomplete');
   });
   it('diagnoses local references only in schema-owned type positions', () => {
@@ -1493,7 +1496,7 @@ describe('Phase 1 vertical slice', () => {
     const collision = new DocumentSession('memory://collision', '{"definitions":{"User":{"type":"object"},"Profile":{"type":"object"}}}');
     expect(new RenameDefinitionCommand('/definitions/User', 'Profile').canExecute({ session: collision, documentVersion: 1 })).toBe(false);
 
-    const referenced = new DocumentSession('memory://referenced-def', '{"definitions":{"User":{"type":"object"},"Team":{"$ref":"#/definitions/User"}}}');
+    const referenced = new DocumentSession('memory://referenced-def', '{"definitions":{"User":{"type":"object"},"Team":{"type":{"$ref":"#/definitions/User"}}}}');
     expect(new RenameDefinitionCommand('/definitions/User', 'Profile').canExecute({ session: referenced, documentVersion: 1 })).toBe(false);
     expect(new DeleteDefinitionCommand('/definitions/User').canExecute({ session: referenced, documentVersion: 1 })).toBe(false);
 
@@ -1513,7 +1516,17 @@ describe('Phase 1 vertical slice', () => {
     expect(new RenameDefinitionCommand('/definitions/User', 'Profile').canExecute({ session: rootRef, documentVersion: 1 })).toBe(false);
     expect(new DeleteDefinitionCommand('/definitions/User').canExecute({ session: rootRef, documentVersion: 1 })).toBe(false);
 
-    const nestedNamespaceRef = new DocumentSession('memory://nested-ref', '{"definitions":{"Container":{"type":"object","definitions":{"Inner":{"type":"object"},"Use":{"$ref":"#/definitions/Container/definitions/Inner"}}}}}');
+    const encodedRootRef = new DocumentSession('memory://encoded-root-ref', '{"$root":"#%2Fdefinitions%2FUser","definitions":{"User":{"type":"object"},"Team":{"type":"object"}}}');
+    expect(new RenameDefinitionCommand('/definitions/User', 'Profile').canExecute({ session: encodedRootRef, documentVersion: 1 })).toBe(false);
+    expect(new DeleteDefinitionCommand('/definitions/User').canExecute({ session: encodedRootRef, documentVersion: 1 })).toBe(false);
+    expect(new RenameDefinitionCommand('/definitions/Team', 'Group').canExecute({ session: encodedRootRef, documentVersion: 1 })).toBe(true);
+    expect(new DeleteDefinitionCommand('/definitions/Team').canExecute({ session: encodedRootRef, documentVersion: 1 })).toBe(true);
+
+    const malformedRootRef = new DocumentSession('memory://malformed-root-ref', '{"$root":"#%ZZ","definitions":{"User":{"type":"object"}}}');
+    expect(() => new RenameDefinitionCommand('/definitions/User', 'Profile').canExecute({ session: malformedRootRef, documentVersion: 1 })).not.toThrow();
+    expect(() => new DeleteDefinitionCommand('/definitions/User').canExecute({ session: malformedRootRef, documentVersion: 1 })).not.toThrow();
+
+    const nestedNamespaceRef = new DocumentSession('memory://nested-ref', '{"definitions":{"Container":{"type":"object","definitions":{"Inner":{"type":"object"},"Use":{"type":{"$ref":"#/definitions/Container/definitions/Inner"}}}}}}');
     expect(new RenameDefinitionCommand('/definitions/Container/definitions/Inner', 'Renamed').canExecute({ session: nestedNamespaceRef, documentVersion: 1 })).toBe(false);
     expect(new DeleteDefinitionCommand('/definitions/Container/definitions/Inner').canExecute({ session: nestedNamespaceRef, documentVersion: 1 })).toBe(false);
 
@@ -1542,7 +1555,6 @@ describe('Phase 1 vertical slice', () => {
 
     const sites = [
       { $root: reference },
-      { definitions: { Use: { $ref: reference } } },
       { definitions: { Use: { $extends: reference } } },
       { definitions: { Use: { type: { $ref: reference } } } },
       { definitions: { Use: { type: 'object', relations: { target: { targettype: { $ref: reference } } } } } },

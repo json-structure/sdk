@@ -22,7 +22,7 @@
           "reference": "src/parser.ts"
         },
         "diagnostics": {
-          "status": "partial",
+          "status": "complete",
           "reference": "src/parser.ts"
         },
         "roundtrip": {
@@ -30,8 +30,8 @@
           "reference": "tests/phase1.test.ts"
         },
         "tests": {
-          "status": "partial",
-          "reference": "tests/phase1.test.ts"
+          "status": "complete",
+          "reference": "tests/core-declarations.test.ts"
         }
       }
     },
@@ -51,7 +51,7 @@
           "reference": "src/parser.ts"
         },
         "diagnostics": {
-          "status": "partial",
+          "status": "complete",
           "reference": "src/parser.ts"
         },
         "roundtrip": {
@@ -59,8 +59,8 @@
           "reference": "tests/phase1.test.ts"
         },
         "tests": {
-          "status": "partial",
-          "reference": "tests/phase1.test.ts"
+          "status": "complete",
+          "reference": "tests/core-declarations.test.ts"
         }
       }
     },
@@ -80,8 +80,8 @@
           "reference": "src/parser.ts"
         },
         "diagnostics": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "complete",
+          "reference": "src/parser.ts"
         },
         "roundtrip": {
           "status": "partial",
@@ -89,7 +89,7 @@
         },
         "tests": {
           "status": "complete",
-          "reference": "tests/phase1.test.ts"
+          "reference": "tests/core-declarations.test.ts"
         }
       }
     },

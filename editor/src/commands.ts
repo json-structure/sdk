@@ -107,8 +107,7 @@ function definitionReferenceSites(session: DocumentSession, definitionPointer: s
     const outsideDeletedSubtree = !(pointer === definitionPointer || pointer.startsWith(subtree));
 
     if (pointer === '/$root' && outsideDeletedSubtree) {
-      const rootValue = pointerValue(session.value, pointer);
-      if (typeof rootValue === 'string' && (rootValue === definitionRef || rootValue === definitionPointer)) sites.add(pointer);
+      if (session.model?.rootPointer === definitionPointer) sites.add(pointer);
     }
 
     if (pointer.endsWith('/$ref') && outsideDeletedSubtree) {
@@ -263,6 +262,15 @@ function absoluteUri(value: string): boolean {
 function isLocalPointerRef(value: string): boolean {
   return value.startsWith('#/');
 }
+function decodeLocalPointerFragment(value: string): string | undefined {
+  if (!value.startsWith('#')) return undefined;
+  try {
+    const decoded = decodeURIComponent(value.slice(1));
+    return decoded.startsWith('/') && !/~(?:[^01]|$)/.test(decoded) ? decoded : undefined;
+  } catch {
+    return undefined;
+  }
+}
 function resolvesUniquePointer(session: DocumentSession, pointer: string): boolean {
   const direct = session.model?.nodes.filter((candidate) => candidate.pointer === pointer).length ?? 0;
   return direct === 1 && hasUniquePointerPath(session, pointer) && !hasDuplicatePointerDiagnostic(session, pointer);
@@ -295,8 +303,10 @@ function localQualifierIsReusable(session: DocumentSession, reference: string): 
 }
 function schemaReference(value: unknown): string | undefined {
   if (!isObjectLike(value)) return undefined;
-  if (Object.keys(value).length === 1 && typeof value.$ref === 'string') return value.$ref;
   return isObjectLike(value.type) && Object.keys(value.type).length === 1 && typeof value.type.$ref === 'string' ? value.type.$ref : undefined;
+}
+function relationTypeReference(value: unknown): string | undefined {
+  return isObjectLike(value) && Object.keys(value).length === 1 && typeof value.$ref === 'string' ? value.$ref : undefined;
 }
 function referenceCompatible(session: DocumentSession, candidate: string, target: string, seen = new Set<string>()): boolean {
   if (candidate === target) return true;
@@ -319,8 +329,8 @@ function relationScopeCompatible(session: DocumentSession, scope: RelationScope 
   return entries.every((entry) => {
     if (entry === '#') {
       const root = pointerValue(session.value, '');
-      if (!isObjectLike(root) || Object.prototype.hasOwnProperty.call(root, 'type') || typeof root.$root !== 'string' || !isLocalPointerRef(root.$root)) return false;
-      const rootPointer = root.$root.slice(1);
+      const rootPointer = isObjectLike(root) && typeof root.$root === 'string' ? decodeLocalPointerFragment(root.$root) : undefined;
+      if (!isObjectLike(root) || Object.prototype.hasOwnProperty.call(root, 'type') || rootPointer === undefined) return false;
       return reusableDeclarationPointer(session, rootPointer) && compatibleCollection(session, pointerValue(session.value, rootPointer), targetRef);
     }
     if (!isLocalPointerRef(entry) || !resolvesUniquePointer(session, entry.slice(1))) return false;
@@ -1137,7 +1147,7 @@ export class SetRelationScopeCommand implements EditorCommand {
     const relation = relationContext(session, this.relationPointer);
     if (!relation) return false;
     const value = relation.relations[relation.relationName] as Record<string, unknown>;
-    const targetRef = schemaReference(value.targettype);
+    const targetRef = relationTypeReference(value.targettype);
     if (targetRef === undefined || !scopeResolvesLocally(session, this.scope) || !relationScopeCompatible(session, this.scope, targetRef)) return false;
     return (!Object.prototype.hasOwnProperty.call(value, 'scope') && this.scope !== undefined) ||
       objectMemberContext(session, this.relationPointer, 'scope') !== undefined ||

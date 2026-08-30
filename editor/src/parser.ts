@@ -117,7 +117,6 @@ export interface ParseResult { readonly model?: NormalizedDocument; readonly val
 export function parseDocument(uri: string, text: string): ParseResult {
   const parsed = new StrictParser(text, uri).parse();
   if (parsed.recovery !== 'valid') return { diagnostics: parsed.diagnostics, recovery: parsed.recovery };
-  const root = parsed.value as Record<string, unknown>;
   const nodes: ModelNode[] = [];
   for (const entry of parsed.values) {
     const kind = declarationKind(entry.value);
@@ -129,7 +128,18 @@ export function parseDocument(uri: string, text: string): ParseResult {
     });
   }
   const duplicateDiagnostics = duplicatePointerDiagnostics(uri, text, nodes);
+  if (!isRecord(parsed.value)) {
+    const diagnostics = [...parsed.diagnostics, ...duplicateDiagnostics, {
+      code: 'core.document-root-invalid',
+      message: 'A JSON Structure document root must be an object.',
+      severity: 'error' as const,
+      location: location(uri, '', nodes.find((node) => node.pointer === '')?.range ?? rangeFor(text, 0, text.length))
+    }];
+    return { value: parsed.value, diagnostics, recovery: 'valid' };
+  }
+  const root = parsed.value;
   const projectionDiagnostics: Diagnostic[] = [];
+  collectCoreDeclarationDiagnostics(root, uri, text, projectionDiagnostics, nodes);
   const projections = buildProjections(root, uri, text, projectionDiagnostics, nodes);
   const diagnostics = [...parsed.diagnostics, ...duplicateDiagnostics, ...projectionDiagnostics];
   const model: NormalizedDocument = {
@@ -138,7 +148,7 @@ export function parseDocument(uri: string, text: string): ParseResult {
     name: typeof root?.name === 'string' ? root.name : undefined,
     recovery: 'valid',
     nodes,
-    rootPointer: typeof root?.$root === 'string' ? root.$root : undefined,
+    rootPointer: typeof root?.$root === 'string' ? decodePointerFragment(root.$root) : undefined,
     unknownKeysPreserved: true,
     projections: {
       definitions: projections.definitions,
@@ -169,11 +179,136 @@ function duplicatePointerDiagnostics(uri: string, text: string, nodes: readonly 
       code: 'json.duplicate-pointer',
       message: `Ambiguous duplicate key for pointer ${pointer}.`,
       severity: 'error',
-      location: location(uri, pointer, list[0].range ?? rangeFor(text, 0, 0)),
-      related: list.slice(1).map((node) => location(uri, pointer, node.range ?? rangeFor(text, 0, 0)))
+      location: location(uri, pointer, list[0].keyRange ?? list[0].range ?? rangeFor(text, 0, 0)),
+      related: list.slice(1).map((node) => location(uri, pointer, node.keyRange ?? node.range ?? rangeFor(text, 0, 0)))
     });
   }
   return duplicates;
+}
+
+function collectCoreDeclarationDiagnostics(
+  root: Record<string, unknown>,
+  uri: string,
+  text: string,
+  diagnostics: Diagnostic[],
+  nodes: readonly ModelNode[]
+): void {
+  const diagnoseName = (pointer: string, kind: 'type' | 'namespace' | 'property', name: string): void => {
+    if (IDENTIFIER.test(name)) return;
+    const node = nodes.find((candidate) => candidate.pointer === pointer);
+    diagnostics.push({
+      code: 'core.identifier-invalid',
+      message: `${kind} name '${name}' must match ${IDENTIFIER.source}.`,
+      severity: 'error',
+      location: location(uri, pointer, node?.keyRange ?? node?.range ?? keywordRange(text, pointer))
+    });
+  };
+  const diagnose = (pointer: string, message: string): void => {
+    diagnostics.push({
+      code: 'core.declaration-invalid',
+      message,
+      severity: 'error',
+      location: location(uri, pointer, keywordRange(text, pointer))
+    });
+  };
+  const requireHeader = (keyword: '$schema' | '$id' | 'name', valid: (value: unknown) => boolean, message: string): void => {
+    if (!Object.prototype.hasOwnProperty.call(root, keyword) || !valid(root[keyword])) diagnose(`/${keyword}`, message);
+  };
+  const validateSchema = (schema: Record<string, unknown>, pointer: string): void => {
+    if (typeof schema.$ref === 'string' && !Object.prototype.hasOwnProperty.call(schema, 'type')) {
+      diagnose(pointer, 'A schema declaration must use type: {"$ref": ...}; a direct $ref object is not a schema declaration.');
+      return;
+    }
+    if (!Object.prototype.hasOwnProperty.call(schema, 'type')) {
+      diagnose(pointer, 'A schema declaration must contain type.');
+      return;
+    }
+    if (!validCoreTypeValue(schema.type) && coreForm(schema) === 'unknown') {
+      diagnose(`${pointer}/type`, 'type must name a known Core type, be a local type reference, or be a non-empty array of those forms.');
+    }
+    const propertiesPresent = Object.prototype.hasOwnProperty.call(schema, 'properties');
+    const propertiesApplicable = schema.type === 'object' || schema.type === 'tuple';
+    if (schema.type === 'object' && !propertiesPresent) {
+      diagnose(pointer, 'An object declaration must contain properties.');
+    }
+    if (propertiesPresent && !propertiesApplicable) {
+      diagnose(`${pointer}/properties`, 'properties is permitted only on object and tuple declarations.');
+      return;
+    }
+    if (!propertiesPresent) return;
+    if (!isRecord(schema.properties)) {
+      diagnose(`${pointer}/properties`, 'properties must be an object map of property schema declarations.');
+      return;
+    }
+    if (schema.type === 'object' && Object.keys(schema.properties).length === 0) {
+      diagnose(`${pointer}/properties`, 'An object declaration must contain at least one property.');
+    }
+    const propertiesPointer = `${pointer}/properties`;
+    for (const [name, property] of Object.entries(schema.properties)) {
+      const propertyPointer = `${propertiesPointer}/${pointerPart(name)}`;
+      diagnoseName(propertyPointer, 'property', name);
+      if (!isRecord(property)) {
+        diagnose(propertyPointer, `Property '${name}' must be a schema object.`);
+        continue;
+      }
+      validateSchema(property, propertyPointer);
+    }
+  };
+  const validateNamespace = (namespace: Record<string, unknown>, pointer: string): void => {
+    for (const [name, member] of Object.entries(namespace)) {
+      if (name === '$import' || name === '$importdefs') continue;
+      const memberPointer = `${pointer}/${pointerPart(name)}`;
+      if (name === 'definitions') diagnose(memberPointer, 'definitions is permitted only at document root.');
+      if (!isRecord(member)) {
+        diagnose(memberPointer, `Definition or namespace '${name}' must be an object.`);
+        continue;
+      }
+      const declaration = Object.prototype.hasOwnProperty.call(member, 'type') ||
+        Object.prototype.hasOwnProperty.call(member, '$ref') ||
+        COMPOSITION_KEYWORDS.some((keyword) => Object.prototype.hasOwnProperty.call(member, keyword));
+      if (declaration) {
+        diagnoseName(memberPointer, 'type', name);
+        validateSchema(member, memberPointer);
+      } else validateNamespace(member, memberPointer);
+    }
+  };
+
+  requireHeader('$schema', (value) => typeof value === 'string' && absoluteUri(value), '$schema is required and must be an absolute URI.');
+  requireHeader('$id', (value) => typeof value === 'string' && absoluteUri(value), '$id is required and must be an absolute URI.');
+  requireHeader('name', (value) => typeof value === 'string' && IDENTIFIER.test(value), `name is required and must match ${IDENTIFIER.source}.`);
+
+  if (Object.prototype.hasOwnProperty.call(root, '$root')) {
+    const rootPointer = typeof root.$root === 'string' ? decodePointerFragment(root.$root) : undefined;
+    if (rootPointer === undefined || !rootPointer.startsWith('/definitions/')) {
+      diagnose('/$root', '$root must be a JSON Pointer URI fragment into the local definitions namespace.');
+    }
+    if (Object.prototype.hasOwnProperty.call(root, 'type')) diagnose('', '$root and an inline root type are mutually exclusive.');
+  }
+  if (Object.prototype.hasOwnProperty.call(root, 'definitions')) {
+    if (!isRecord(root.definitions)) diagnose('/definitions', 'definitions must be an object map of reusable types and namespaces.');
+    else validateNamespace(root.definitions, '/definitions');
+  }
+  if (Object.prototype.hasOwnProperty.call(root, 'type')) validateSchema(root, '');
+
+  const visitSchema = (schema: unknown, pointer: string): void => {
+    if (!isRecord(schema)) return;
+    if (pointer !== '' && Object.prototype.hasOwnProperty.call(schema, '$root')) diagnose(`${pointer}/$root`, '$root is permitted only at document root.');
+    if (pointer !== '' && Object.prototype.hasOwnProperty.call(schema, 'definitions')) diagnose(`${pointer}/definitions`, 'definitions is permitted only at document root.');
+    if (isRecord(schema.properties)) {
+      for (const [name, property] of Object.entries(schema.properties)) visitSchema(property, `${pointer}/properties/${pointerPart(name)}`);
+    }
+    if (isRecord(schema.additionalProperties)) visitSchema(schema.additionalProperties, `${pointer}/additionalProperties`);
+    for (const keyword of ['items', 'values', 'contains', 'propertyNames', 'keyNames', 'has', 'not', 'if', 'then', 'else'] as const) {
+      visitSchema(schema[keyword], `${pointer}/${keyword}`);
+    }
+    for (const keyword of ['choices', 'patternProperties', 'patternKeys'] as const) {
+      if (isRecord(schema[keyword])) for (const [name, value] of Object.entries(schema[keyword])) visitSchema(value, `${pointer}/${keyword}/${pointerPart(name)}`);
+    }
+    for (const keyword of ['allOf', 'anyOf', 'oneOf'] as const) {
+      if (Array.isArray(schema[keyword])) schema[keyword].forEach((value, index) => visitSchema(value, `${pointer}/${keyword}/${index}`));
+    }
+  };
+  visitSchema(root, '');
 }
 
 function buildProjections(
@@ -756,7 +891,7 @@ function localIdentityValid(value: unknown, pointer: string, nodes: readonly Mod
 }
 function schemaReference(value: unknown): string | undefined {
   if (!isRecord(value)) return undefined;
-  return typeReference(value) ?? typeReference(value.type);
+  return typeReference(value.type);
 }
 function referenceCompatible(root: Record<string, unknown>, candidate: string, target: string, seen = new Set<string>()): boolean {
   if (candidate === target) return true;
@@ -774,8 +909,8 @@ function collectionCompatible(root: Record<string, unknown>, value: unknown, tar
 }
 function scopeCollectionCompatible(root: Record<string, unknown>, scope: string, targetRef: string, nodes: readonly ModelNode[]): boolean {
   if (scope === '#') {
-    if (Object.prototype.hasOwnProperty.call(root, 'type') || typeof root.$root !== 'string' || !root.$root.startsWith('#/')) return false;
-    const rootPointer = root.$root.slice(1);
+    const rootPointer = typeof root.$root === 'string' ? decodePointerFragment(root.$root) : undefined;
+    if (Object.prototype.hasOwnProperty.call(root, 'type') || rootPointer === undefined) return false;
     return reusableTypePointer(root, rootPointer, nodes) && collectionCompatible(root, pointerAtRoot(root, rootPointer), targetRef);
   }
   if (!scope.startsWith('#/') || !uniquePointerPath(nodes, scope.slice(1))) return false;
@@ -1286,10 +1421,8 @@ function pushKeywordDiagnostic(
   });
 }
 
-function coreForm(value: Record<string, unknown>): 'typed' | 'ref' | 'composed' | 'unknown' {
+function coreForm(value: Record<string, unknown>): 'typed' | 'unknown' {
   if (typeof value.type === 'string' || Array.isArray(value.type) || typeReference(value.type) !== undefined) return 'typed';
-  if (typeof value.$ref === 'string') return 'ref';
-  if (COMPOSITION_KEYWORDS.some((keyword) => Object.prototype.hasOwnProperty.call(value, keyword))) return 'composed';
   return 'unknown';
 }
 
@@ -1487,4 +1620,15 @@ function looksLikeSchemaObject(value: Record<string, unknown>): boolean {
     'contains', 'propertyNames', 'keyNames', 'has', 'patternProperties', 'patternKeys'
   ];
   return schemaBearingKeys.some((key) => Object.prototype.hasOwnProperty.call(value, key));
+}
+
+function decodePointerFragment(value: string): string | undefined {
+  if (value === '#') return '';
+  if (!value.startsWith('#')) return undefined;
+  try {
+    const decoded = decodeURIComponent(value.slice(1));
+    return decoded.startsWith('/') && !/~(?:[^01]|$)/.test(decoded) ? decoded : undefined;
+  } catch {
+    return undefined;
+  }
 }

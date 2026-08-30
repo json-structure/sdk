@@ -2,8 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { parseDocument, resolveDocumentReferences, resolveReferences } from '../src/index.js';
 
 function model(uri: string, value: unknown) {
-  const parsed = parseDocument(uri, JSON.stringify(value));
+  const parsed = parseDocument(uri, JSON.stringify({
+    $schema: 'https://json-structure.org/meta/core/v0/#',
+    $id: uri,
+    name: 'TestDocument',
+    ...(value as Record<string, unknown>)
+  }));
   expect(parsed.model).toBeDefined();
+  expect(parsed.diagnostics.filter((entry) => ['/$schema', '/$id', '/name'].includes(entry.location?.pointer ?? ''))).toEqual([]);
   return parsed.model!;
 }
 
@@ -176,13 +182,36 @@ describe('host-neutral reference resolution', () => {
     expect(missing.diagnostics.some((diagnostic) => diagnostic.severity === 'error')).toBe(true);
   });
 
-  it('decodes URI fragments while preserving RFC 6901 pointer escaping', () => {
+  it('parses and resolves a percent-encoded $root without double decoding', () => {
     const document = model('memory://fragment', {
+      $root: '#%2Fdefinitions%2FT',
+      definitions: {
+        T: { type: 'string' },
+        '%25': { type: 'string' },
+        EncodedPercent: { type: { $ref: '#%2Fdefinitions%2F%2525' } }
+      }
+    });
+    expect(document.rootPointer).toBe('/definitions/T');
+    const resolution = resolveReferences(document);
+    expect(resolution.references.find((fact) => fact.kind === 'root')).toEqual(expect.objectContaining({
+      target: '#%2Fdefinitions%2FT',
+      normalizedTarget: '/definitions/T',
+      status: 'resolved'
+    }));
+    expect(resolution.references.find((fact) => fact.pointer.includes('/EncodedPercent/'))).toEqual(expect.objectContaining({
+      normalizedTarget: '/definitions/%25',
+      status: 'resolved'
+    }));
+  });
+
+  it('rejects malformed URI fragments while preserving RFC 6901 pointer escaping', () => {
+    const document = model('memory://fragment-controls', {
       definitions: {
         'A/B~C': { type: 'string' },
         Use: { type: { $ref: '#/definitions/A%7E1B%7E0C' } },
         BadPercent: { type: { $ref: '#/definitions/%ZZ' } },
         BadPointer: { type: { $ref: '#/definitions/A~2B' } },
+        BadDecodedShape: { type: { $ref: '#definitions%2FT' } },
         Absolute: { type: { $ref: 'https://example.org/types.json#/definitions/A' } }
       }
     });
@@ -191,7 +220,7 @@ describe('host-neutral reference resolution', () => {
       normalizedTarget: '/definitions/A~1B~0C',
       status: 'resolved'
     }));
-    for (const name of ['BadPercent', 'BadPointer', 'Absolute']) {
+    for (const name of ['BadPercent', 'BadPointer', 'BadDecodedShape', 'Absolute']) {
       expect(resolution.references.find((fact) => fact.pointer.includes(`/${name}/`))?.status).toBe('unresolved');
     }
   });
