@@ -2,6 +2,9 @@ import { isApplyTextEditsRequest, PROTOCOL_VERSION, type ApplyResult, type Docum
 import { DocumentSession } from './session.js';
 import type { TextEdit } from './contracts.js';
 
+/**
+ * API for in memory editor host.
+ */
 export class InMemoryEditorHost implements EditorHost {
   readonly kind = 'memory' as const;
   private readonly session: DocumentSession;

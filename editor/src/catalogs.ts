@@ -1,13 +1,25 @@
 import { PROTOCOL_VERSION, type DocumentVersion, type ProtocolEnvelope } from './contracts.js';
 
+/**
+ * Type alias for catalog family.
+ */
 export type CatalogFamily = 'symbol' | 'unit' | 'ucumUnit' | 'currency' |
   'semanticConcept' | 'observedProperty' | 'semanticRole' | 'derivation' | 'statistic' |
   'codedValues' | 'measurementConditioning' | 'referenceRole' | 'phenomenonTimeRelation' |
   'temporalReferenceSystem' | 'cadence' | 'coordinateReferenceSystem' | 'vectorReferenceFrame' |
   'tensorReferenceFrame' | 'frameTransform' | 'linearReferenceSystem' | 'colorSpace' |
   'audioChannelLayout' | 'spectralBandSet';
+/**
+ * Type alias for catalog json value.
+ */
 export type CatalogJsonValue = null | boolean | number | string | readonly CatalogJsonValue[] | { readonly [key: string]: CatalogJsonValue };
+/**
+ * Type alias for catalog provider kind.
+ */
 export type CatalogProviderKind = 'bundled' | 'workspace' | 'https' | 'host';
+/**
+ * Defines the catalog provider manifest shape.
+ */
 export interface CatalogProviderManifest {
   readonly id: string;
   readonly label: string;
@@ -19,6 +31,9 @@ export interface CatalogProviderManifest {
   readonly trusted?: boolean;
   readonly endpoint?: string;
 }
+/**
+ * Defines the catalog entry shape.
+ */
 export interface CatalogEntry {
   readonly family: CatalogFamily;
   readonly value: CatalogJsonValue;
@@ -26,6 +41,9 @@ export interface CatalogEntry {
   readonly description?: string;
   readonly aliases?: readonly string[];
 }
+/**
+ * Defines the catalog search request shape.
+ */
 export interface CatalogSearchRequest extends ProtocolEnvelope {
   readonly kind: 'catalog-search';
   readonly invocationId: string;
@@ -35,6 +53,9 @@ export interface CatalogSearchRequest extends ProtocolEnvelope {
   readonly query: string;
   readonly limit: number;
 }
+/**
+ * Defines the catalog provider result shape.
+ */
 export interface CatalogProviderResult extends ProtocolEnvelope {
   readonly kind: 'catalog-results';
   readonly invocationId: string;
@@ -45,6 +66,9 @@ export interface CatalogProviderResult extends ProtocolEnvelope {
   readonly stale?: boolean;
   readonly continuation?: string;
 }
+/**
+ * Defines the catalog provenance shape.
+ */
 export interface CatalogProvenance {
   readonly providerId: string;
   readonly providerLabel: string;
@@ -54,22 +78,37 @@ export interface CatalogProvenance {
   readonly stale: boolean;
   readonly trusted: boolean;
 }
+/**
+ * Defines the catalog suggestion shape.
+ */
 export interface CatalogSuggestion extends CatalogEntry {
   readonly emittedJson: string;
   readonly score: number;
   readonly advisory: true;
   readonly provenance: readonly CatalogProvenance[];
 }
+/**
+ * Type alias for catalog provider issue code.
+ */
 export type CatalogProviderIssueCode = 'provider-threw' | 'invalid-envelope' | 'request-mismatch' | 'unknown-provider' | 'unsupported-family';
+/**
+ * Defines the catalog provider issue shape.
+ */
 export interface CatalogProviderIssue {
   readonly providerId: string;
   readonly code: CatalogProviderIssueCode;
   readonly message: string;
 }
+/**
+ * Defines the catalog provider shape.
+ */
 export interface CatalogProvider {
   readonly providerId: string;
   search(request: CatalogSearchRequest): unknown | Promise<unknown>;
 }
+/**
+ * Defines the catalog merge result shape.
+ */
 export interface CatalogMergeResult extends ProtocolEnvelope {
   readonly kind: 'catalog-merge';
   readonly documentVersion: DocumentVersion;
@@ -148,6 +187,9 @@ function rank(entry: CatalogEntry, query: string, priority: number): number {
   return -1;
 }
 
+/**
+ * API for catalog registry.
+ */
 export class CatalogRegistry {
   private readonly providers = new Map<string, CatalogProviderManifest>();
   private readonly cancelled = new Set<string>();
@@ -256,6 +298,7 @@ export class CatalogRegistry {
 
     const canonicalCandidates = new Map<string, typeof candidates[number]>();
     for (const candidate of candidates) {
+      // Keep one candidate per provider/value pair first, then merge provenance across providers afterward.
       const key = `${candidate.entry.family}\u0000${JSON.stringify(candidate.entry.value)}\u0000${candidate.provenance.providerId}`;
       const existing = canonicalCandidates.get(key);
       const candidateScore = rank(candidate.entry, request.query, candidate.priority);
@@ -287,6 +330,9 @@ export class CatalogRegistry {
 }
 
 const ucum = (value: string, label: string, aliases: readonly string[] = []): CatalogEntry => ({ family: 'ucumUnit', value, label, aliases });
+/**
+ * Constant for bundled ucum entries.
+ */
 export const BUNDLED_UCUM_ENTRIES: readonly CatalogEntry[] = [
   ucum('1','one'), ucum('%','percent'), ucum('m','metre',['meter']), ucum('cm','centimetre'), ucum('mm','millimetre'), ucum('um','micrometre'), ucum('nm','nanometre'), ucum('km','kilometre'),
   ucum('[in_i]','international inch'), ucum('[ft_i]','international foot'), ucum('[yd_i]','international yard'), ucum('[mi_i]','international mile'), ucum('[nmi_i]','nautical mile'),
@@ -306,6 +352,9 @@ export const BUNDLED_UCUM_ENTRIES: readonly CatalogEntry[] = [
 ];
 
 const currency = (value: string, label: string): CatalogEntry => ({ family: 'currency', value, label });
+/**
+ * Constant for bundled iso 4217 entries.
+ */
 export const BUNDLED_ISO_4217_ENTRIES: readonly CatalogEntry[] = [
   currency('AED','UAE dirham'), currency('AFN','Afghani'), currency('ALL','Lek'), currency('AMD','Armenian dram'), currency('ANG','Netherlands Antillean guilder'), currency('AOA','Kwanza'), currency('ARS','Argentine peso'), currency('AUD','Australian dollar'), currency('AWG','Aruban florin'), currency('AZN','Azerbaijan manat'),
   currency('BAM','Convertible mark'), currency('BBD','Barbados dollar'), currency('BDT','Taka'), currency('BGN','Bulgarian lev'), currency('BHD','Bahraini dinar'), currency('BIF','Burundi franc'), currency('BMD','Bermudian dollar'), currency('BND','Brunei dollar'), currency('BOB','Boliviano'), currency('BOV','Mvdol'), currency('BRL','Brazilian real'), currency('BSD','Bahamian dollar'), currency('BTN','Ngultrum'), currency('BWP','Pula'), currency('BYN','Belarusian ruble'), currency('BZD','Belize dollar'),
@@ -320,14 +369,23 @@ export const BUNDLED_ISO_4217_ENTRIES: readonly CatalogEntry[] = [
   currency('VED','Bolivar soberano'), currency('VES','Bolivar soberano'), currency('VND','Dong'), currency('VUV','Vatu'), currency('WST','Tala'), currency('XAF','CFA franc BEAC'), currency('XAG','Silver'), currency('XAU','Gold'), currency('XBA','European Composite Unit'), currency('XBB','European Monetary Unit'), currency('XBC','European Unit of Account 9'), currency('XBD','European Unit of Account 17'), currency('XCD','East Caribbean dollar'), currency('XCG','Caribbean guilder'), currency('XDR','Special drawing rights'), currency('XOF','CFA franc BCEAO'), currency('XPD','Palladium'), currency('XPF','CFP franc'), currency('XPT','Platinum'), currency('XSU','SUCRE'), currency('XTS','Testing code'), currency('XUA','ADB Unit of Account'), currency('XXX','No currency'), currency('YER','Yemeni rial'), currency('ZAR','Rand'), currency('ZMW','Zambian kwacha'), currency('ZWG','Zimbabwe Gold')
 ];
 
+/**
+ * Constant for bundled ucum provider.
+ */
 export const BUNDLED_UCUM_PROVIDER: CatalogProviderManifest = {
   id: 'bundled.ucum', label: 'UCUM', kind: 'bundled', families: ['ucumUnit'], source: 'https://ucum.org/ucum', version: '2017-11-21', priority: 100, trusted: true
 };
+/**
+ * Constant for bundled iso 4217 provider.
+ */
 export const BUNDLED_ISO_4217_PROVIDER: CatalogProviderManifest = {
   id: 'bundled.iso-4217', label: 'ISO 4217', kind: 'bundled', families: ['currency'], source: 'https://www.iso.org/iso-4217-currency-codes.html', version: 'seed-2026-08-31', priority: 100, trusted: true
 };
 const semanticEntry = (family: CatalogFamily, value: CatalogJsonValue, label: string, aliases: readonly string[] = []): CatalogEntry => ({ family, value, label, aliases });
 const referenced = (reference: string, kind: string): CatalogJsonValue => ({ reference, kind });
+/**
+ * Constant for bundled semantic entries.
+ */
 export const BUNDLED_SEMANTIC_ENTRIES: readonly CatalogEntry[] = [
   semanticEntry('semanticConcept', referenced('https://www.w3.org/2006/time#Instant', 'owl-class'), 'Time instant', ['instant']),
   semanticEntry('semanticConcept', referenced('https://www.w3.org/2006/time#Interval', 'owl-class'), 'Time interval', ['interval']),
@@ -366,11 +424,17 @@ export const BUNDLED_SEMANTIC_ENTRIES: readonly CatalogEntry[] = [
   semanticEntry('spectralBandSet', [{ reference: 'urn:json-structure:spectral:rgb', kind: 'spectral-band-set', bands: ['red', 'green', 'blue'] }], 'Visible RGB bands'),
   semanticEntry('spectralBandSet', [{ reference: 'urn:json-structure:spectral:sentinel-2', kind: 'spectral-band-set', bands: ['B2', 'B3', 'B4', 'B8'] }], 'Sentinel-2 visible and near infrared')
 ];
+/**
+ * Constant for bundled semantic provider.
+ */
 export const BUNDLED_SEMANTIC_PROVIDER: CatalogProviderManifest = {
   id: 'bundled.semantic-annotations', label: 'Semantic Annotations', kind: 'bundled',
   families: [...new Set(BUNDLED_SEMANTIC_ENTRIES.map((entry) => entry.family))],
   source: 'https://json-structure.org/semantic-annotations/', version: 'seed-2026-08-31', priority: 100, trusted: false
 };
+/**
+ * Performs bundled catalog result logic.
+ */
 export function bundledCatalogResult(request: CatalogSearchRequest, providerId: string): CatalogProviderResult {
   const entries = providerId === BUNDLED_UCUM_PROVIDER.id ? BUNDLED_UCUM_ENTRIES :
     providerId === BUNDLED_ISO_4217_PROVIDER.id ? BUNDLED_ISO_4217_ENTRIES :

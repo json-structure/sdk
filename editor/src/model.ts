@@ -1,7 +1,16 @@
 import type { JsonPointer, NodeId, RecoveryState, SourceLocation, TextRange } from './contracts.js';
+/**
+ * Type alias for declaration kind.
+ */
 export type DeclarationKind = 'primitive' | 'object' | 'array' | 'set' | 'map' | 'tuple' | 'choice' | 'union' | 'any' | 'unknown';
+/**
+ * Defines the model node shape.
+ */
 export interface ModelNode { readonly id: NodeId; readonly pointer: JsonPointer; readonly kind: DeclarationKind; readonly location?: SourceLocation; readonly range?: TextRange; readonly keyRange?: TextRange; }
 
+/**
+ * Defines the validation projection shape.
+ */
 export interface ValidationProjection {
 	readonly minimum?: number | string;
 	readonly maximum?: number | string;
@@ -32,6 +41,9 @@ export interface ValidationProjection {
 	readonly patternKeys?: Readonly<Record<string, Record<string, unknown>>>;
 }
 
+/**
+ * Defines the conditional composition projection shape.
+ */
 export interface ConditionalCompositionProjection {
 	readonly allOf?: readonly Record<string, unknown>[];
 	readonly anyOf?: readonly Record<string, unknown>[];
@@ -43,6 +55,9 @@ export interface ConditionalCompositionProjection {
 	readonly inspection: readonly ConditionalCompositionInspection[];
 }
 
+/**
+ * Defines the conditional composition inspection shape.
+ */
 export interface ConditionalCompositionInspection {
 	readonly keyword: 'allOf' | 'anyOf' | 'oneOf' | 'not' | 'if' | 'then' | 'else';
 	readonly authored: unknown;
@@ -50,6 +65,9 @@ export interface ConditionalCompositionInspection {
 	readonly emittedJson: string;
 }
 
+/**
+ * Defines the units projection shape.
+ */
 export interface UnitsProjection {
 	readonly symbol?: string;
 	readonly symbols?: Readonly<Record<string, string>>;
@@ -59,6 +77,9 @@ export interface UnitsProjection {
 	readonly preferredComputationalUnit?: EffectiveAnnotationValue<string>;
 }
 
+/**
+ * Defines the alternate names inspection shape.
+ */
 export interface AlternateNamesInspection {
 	readonly keyword: keyof AlternateNamesProjection;
 	readonly authored: unknown;
@@ -66,6 +87,9 @@ export interface AlternateNamesInspection {
 	readonly emittedJson: string;
 }
 
+/**
+ * Defines the alternate names projection shape.
+ */
 export interface AlternateNamesProjection {
 	readonly altnames?: Readonly<Record<string, string>>;
 	readonly altenums?: Readonly<Record<string, Readonly<Record<string, string>>>>;
@@ -73,14 +97,26 @@ export interface AlternateNamesProjection {
 	readonly inspection: readonly AlternateNamesInspection[];
 }
 
+/**
+ * Defines the reference projection shape.
+ */
 export interface ReferenceProjection {
 	readonly pointer: JsonPointer;
 	readonly target: string;
 	readonly kind: 'root' | 'ref' | 'extends';
 }
 
+/**
+ * Type alias for resolution status.
+ */
 export type ResolutionStatus = 'resolved' | 'unresolved' | 'indeterminate';
+/**
+ * Type alias for resolved reference kind.
+ */
 export type ResolvedReferenceKind = 'root' | 'ref' | 'extends' | 'relation-target' | 'relation-qualifier';
+/**
+ * Defines the import origin shape.
+ */
 export interface ImportOrigin {
 	readonly documentUri: string;
 	readonly pointer: JsonPointer;
@@ -88,6 +124,9 @@ export interface ImportOrigin {
 	readonly importPointer: JsonPointer;
 	readonly provenance: 'import' | 'importdefs';
 }
+/**
+ * Defines the reference resolution fact shape.
+ */
 export interface ReferenceResolutionFact {
 	readonly pointer: JsonPointer;
 	readonly target: string;
@@ -99,6 +138,9 @@ export interface ReferenceResolutionFact {
 	readonly importOrigins: readonly ImportOrigin[];
 	readonly reason?: string;
 }
+/**
+ * Defines the import resolution fact shape.
+ */
 export interface ImportResolutionFact {
 	readonly pointer: JsonPointer;
 	readonly namespacePointer: JsonPointer;
@@ -109,17 +151,26 @@ export interface ImportResolutionFact {
 	readonly importedPointers: readonly JsonPointer[];
 	readonly reason?: string;
 }
+/**
+ * Defines the reference resolution projection shape.
+ */
 export interface ReferenceResolutionProjection {
 	readonly references: readonly ReferenceResolutionFact[];
 	readonly imports: readonly ImportResolutionFact[];
 }
 
+/**
+ * Defines the semantic placement projection shape.
+ */
 export interface SemanticPlacementProjection {
 	readonly pointer: JsonPointer;
 	readonly annotations: SemanticAnnotationsProjection;
 	readonly inspection: readonly SemanticAnnotationInspection[];
 }
 
+/**
+ * Defines the semantic annotation inspection shape.
+ */
 export interface SemanticAnnotationInspection {
 	readonly keyword: keyof SemanticAnnotationsProjection;
 	readonly authored: unknown;
@@ -130,6 +181,9 @@ export interface SemanticAnnotationInspection {
 	readonly advisory: boolean;
 }
 
+/**
+ * Defines the relation projection shape.
+ */
 export interface RelationProjection {
 	readonly pointer: JsonPointer;
 	readonly name: string;
@@ -139,6 +193,9 @@ export interface RelationProjection {
 	readonly qualifierTypeRef?: string;
 }
 
+/**
+ * Defines the semantic annotations projection shape.
+ */
 export interface SemanticAnnotationsProjection {
 	readonly concepts?: readonly Record<string, unknown>[];
 	readonly observedProperty?: Record<string, unknown>;
@@ -161,6 +218,9 @@ export interface SemanticAnnotationsProjection {
 	readonly audioChannels?: readonly Record<string, unknown>[];
 	readonly spectralBands?: readonly Record<string, unknown>[];
 }
+/**
+ * Defines the definition projection shape.
+ */
 export interface DefinitionProjection {
 	readonly pointer: JsonPointer;
 	readonly name: string;
@@ -184,15 +244,24 @@ export interface DefinitionProjection {
 	readonly description?: string;
 	readonly binary?: BinaryAnnotationsProjection;
 }
+/**
+ * Defines the binary annotations projection shape.
+ */
 export interface BinaryAnnotationsProjection {
 	readonly contentEncoding: EffectiveAnnotationValue<string>;
 	readonly contentCompression?: string;
 	readonly contentMediaType?: string;
 }
+/**
+ * Defines the effective annotation value shape.
+ */
 export interface EffectiveAnnotationValue<T> {
 	readonly explicit?: T;
 	readonly effective: T;
 }
+/**
+ * Defines the import projection shape.
+ */
 export interface ImportProjection {
 	readonly pointer: JsonPointer;
 	readonly namespacePointer: JsonPointer;
@@ -200,11 +269,17 @@ export interface ImportProjection {
 	readonly source: string;
 	readonly provenance: 'import' | 'importdefs';
 }
+/**
+ * Defines the diagnostics projection shape.
+ */
 export interface DiagnosticsProjection {
 	readonly code: string;
 	readonly severity: 'error' | 'warning' | 'info' | 'indeterminate';
 	readonly pointer?: JsonPointer;
 }
+/**
+ * Defines the normalized projections shape.
+ */
 export interface NormalizedProjections {
 	readonly definitions: readonly DefinitionProjection[];
 	readonly imports: readonly ImportProjection[];
@@ -213,7 +288,19 @@ export interface NormalizedProjections {
 	readonly semanticPlacements: readonly SemanticPlacementProjection[];
 	readonly diagnostics: readonly DiagnosticsProjection[];
 }
+/**
+ * Defines the normalized document shape.
+ */
 export interface NormalizedDocument { readonly uri: string; readonly documentId?: string; readonly name?: string; readonly recovery: RecoveryState; readonly nodes: readonly ModelNode[]; readonly rootPointer?: JsonPointer; readonly unknownKeysPreserved: boolean; readonly projections: NormalizedProjections; }
+/**
+ * Casts a stable node identifier string to the branded node ID type.
+ */
 export function nodeId(value: string): NodeId { return value as NodeId; }
+/**
+ * Defines the serialization guarantees shape.
+ */
 export interface SerializationGuarantees { readonly preservesUnknownKeys: true; readonly preservesUnrelatedKeyOrder: true; readonly stableNodeIds: true; readonly editsAreMinimal: true; }
+/**
+ * Constant for serialization guarantees.
+ */
 export const SERIALIZATION_GUARANTEES: SerializationGuarantees = { preservesUnknownKeys: true, preservesUnrelatedKeyOrder: true, stableNodeIds: true, editsAreMinimal: true };

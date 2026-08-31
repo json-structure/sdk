@@ -14,7 +14,7 @@ describe('Phase 0 contracts', () => {
     expect(sameSelection({ kind: 'type', pointer: '#/definitions/A' }, { kind: 'type', pointer: '#/definitions/A' })).toBe(true);
   });
   it('rejects duplicate IDs and false completed claims', () => {
-    const feature = { id: 'x', spec: 'Core', feature: 'x', owner: 'owner', status: 'complete', evidence: { editing: { status: 'gap', reference: 'fixture' } } };
+    const feature = { id: 'x', spec: 'Core', requirement: 'x', status: 'complete', evidence: { editing: { status: 'gap', ids: ['rationale.x'] } } };
     const errors = coverageErrors([feature, feature], 1);
     expect(errors.some((error) => error.includes('duplicate'))).toBe(true);
     expect(errors.some((error) => error.includes('false') || error.includes('lacks complete'))).toBe(true);

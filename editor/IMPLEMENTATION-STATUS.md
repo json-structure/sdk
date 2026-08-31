@@ -1,10 +1,16 @@
 # JSON Structure Editor Implementation Status
 
-Updated: 2026-08-31 (Phase 1 milestone: Alternate Names authoring)
+Updated: 2026-08-31 (Phase 1 milestone: exhaustive specification inventory)
 Branch: `editor-autopilot`
 Worktree: `C:\git\json-structure-sdk-editor`
 
-Blocking findings in this milestone: none. Alternate Names authoring is implemented for the actionable draft vocabulary. Full support remains partial because the Extended meta-schema exposes `altsymbols` instead of draft keywords `altenums` and `descriptions`, the draft does not define non-string enum key conversion or enum-value description representation, and the bounded language-tag validator is not registry-aware. These ambiguities are recorded in ADR-018 and `coverage/gaps.json` rather than resolved by editor-specific syntax.
+Blocking findings in this milestone: none. The Phase 1 coverage inventory now contains 742 atomic draft-derived records. Every record has a stable ID, normative source, owning section, requirement, implementation owner, five evidence dimensions, and positive/negative/incomplete/host-parity test facets. All records remain partial: future Electron and VS Code parity is pending, and no record is allowed to appear complete while any dimension or applicable test facet is incomplete.
+
+The checked-in `coverage/inventory.json` is the authoritative deterministic baseline. `coverage/ledger.json`, `coverage/gaps.json`, and `coverage/COVERAGE.md` are generated from it. The gate compares exact expanded ID sets and rejects omissions, undeclared extras, duplicate or malformed IDs, unknown specifications, malformed statuses or facets, stale evidence paths, missing normative sources, false completion claims, and stale generated artifacts. It does not scrape draft prose at runtime.
+
+The old 87-record ledger was replaced rather than extended. Broad Core records were split into 156 separately testable keyword, value-form, placement, default, prohibition, resolution, and interaction records. Characteristics and Semantic Annotations each have 209 records generated from parallel normative rule families while retaining separate IDs and source ownership. Relations and Import evidence now points to implemented typed commands and direct inverse tests instead of stale editing and round-trip gaps. Those records remain partial because instance behavior, graphical surfaces, and production-host parity are not complete.
+
+Interpretation questions remain visible in generated gaps instead of being silently resolved by editor behavior. They include contradictory Core reference/name/union/extends/uses language, undefined `$addins`, Validation `has` and `contains` questions, Alternate Names vocabulary mismatch, Import collision/depth policy, Relations scope and identity ambiguities, Units applicability and engine selection, and divergence between the Characteristics and Semantic Annotations drafts.
 
 Milestone summary: `altnames`, `altenums`, and `descriptions` now have canonical capability activation, typed add/replace/remove commands, schema-owned placement and value diagnostics, sparse normalized inspection, exact JSON previews, and direct byte-identical inverses. `altnames` ownership is structural: it applies to explicitly named inline roots, reusable declarations in root or nested namespaces, and direct properties, but not anonymous descendants. `altenums` applies independently to any enum-bearing schema, including roots, properties, and anonymous collection items, and requires exact per-purpose coverage of a distinct string enum. `descriptions` remains independent of Core `description`. Custom purpose keys and values are preserved, and no language/locale catalog was added because the companion defines no advisory vocabulary.
 
@@ -84,26 +90,37 @@ Implemented:
 
 ## Validation
 
-Last validation on 2026-08-31 (Alternate Names authoring milestone):
+Last validation on 2026-08-31 (exhaustive specification inventory milestone):
 
-- `npm test`: passed (10 files, 162 tests).
+- `npm test`: passed (11 files, 166 tests), including four coverage-gate regression tests.
 - `npm run typecheck`: passed.
 - `npm run build`: passed (ESM, CJS, DTS).
-- `npm test -- --coverage`: passed; 90.22% statements, 86.65% branches, 97.80% functions, and 95.77% lines. The report output collides with tracked `coverage/` specification artifacts, so generated HTML/XML/JSON files were removed and the tracked artifacts were restored before regeneration.
-- `npm run coverage:generate`: passed; Alternate Names records are partial because full RFC 5646 registry validation and draft/meta-schema alignment remain unresolved.
-- `npm run coverage:check`: passed with 87 feature records.
+- `npm run coverage:generate`: passed; regenerated the ledger, gaps, and Markdown from the checked-in inventory.
+- `npm run coverage:check`: passed with 742 exact inventory records.
 - `git diff --check`: passed.
 - Scope check: passed; all changed paths are under `editor/`.
 
 ## Specification coverage
 
-The coverage gate verifies ledger integrity and explicit ownership; it does not claim feature completion.
+The coverage gate verifies exhaustive inventory integrity and completion-sensitive evidence; it does not claim feature completion.
 
-- Partial: 86
+- Partial: 742
 - Gap: 0
 - Pending: 0
 - Unsupported: 0
-- Complete: 1
+- Complete: 0
+
+Records by specification:
+
+- Core: 156 partial.
+- Alternate Names: 18 partial.
+- Characteristics: 209 partial.
+- Conditional Composition: 18 partial.
+- Import: 23 partial.
+- Relations: 35 partial.
+- Semantic Annotations: 209 partial.
+- Units: 27 partial.
+- Validation: 47 partial.
 
 Phase 0 ADRs:
 
@@ -114,13 +131,11 @@ Phase 0 ADRs:
 
 Next steps for Phase 1:
 
-1. Define runtime instance-evaluation ownership and semantics for active composition operators.
-2. Specify whether and how the editor detects globally unsatisfiable `allOf` combinations.
-3. Establish executable composition-depth budgets before adding unbounded evaluator or analysis traversal.
-4. Align the Alternate Names draft and Extended meta-schema vocabulary, define non-string `altenums` keys and enum-value descriptions, and replace bounded language-tag checks with registry-aware RFC 5646 validation.
-5. Add host-driven external ontology and catalog resolution without converting unavailable, stale, or untrusted meaning into local validation failures.
-6. Replace the bounded common-form RFC 5646 and UCUM validators with dedicated complete engines before claiming full Units diagnostics coverage.
-7. Keep Phase 2 UI work blocked until the remaining Phase 1 command slices pass review.
+1. Resolve or formally defer the interpretation questions in `coverage/gaps.json` and link each resolution to an ADR or draft correction.
+2. Replace profile-level partial evidence with record-specific complete, partial, gap, unsupported, or pending evidence as implementation and tests prove each dimension.
+3. Define runtime instance-evaluation ownership and semantics for composition, relations, defaults, and semantic external checks.
+4. Add production Electron and VS Code contract suites before marking any host-parity facet complete.
+5. Keep Phase 2 UI work blocked until the remaining Phase 1 command and diagnostic slices satisfy their atomic records.
 
 ## Repository state
 

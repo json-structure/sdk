@@ -1,11 +1,23 @@
+/**
+ * Defines the alternate names keyword map shape.
+ */
 export interface AlternateNamesKeywordMap {
   readonly altnames: Readonly<Record<string, string>>;
   readonly altenums: Readonly<Record<string, Readonly<Record<string, string>>>>;
   readonly descriptions: Readonly<Record<string, string>>;
 }
+/**
+ * Type alias for alternate names keyword.
+ */
 export type AlternateNamesKeyword = keyof AlternateNamesKeywordMap;
+/**
+ * Defines the alternate names issue shape.
+ */
 export interface AlternateNamesIssue { readonly keyword: AlternateNamesKeyword; readonly path: readonly string[]; readonly message: string; }
 
+/**
+ * Constant for alternate names keywords.
+ */
 export const ALTERNATE_NAMES_KEYWORDS = ['altnames', 'altenums', 'descriptions'] as const satisfies readonly AlternateNamesKeyword[];
 
 const GRANDFATHERED_LANGUAGE_TAGS = new Set([
@@ -66,11 +78,17 @@ function validAlternateEnumMap(value: unknown, enumValues: unknown): value is Re
     Object.values(symbols).every((symbol) => typeof symbol === 'string'));
 }
 
+/**
+ * Validates alternate names placement valid and narrows the value type when applicable.
+ */
 export function alternateNamesPlacementValid(declaration: Readonly<Record<string, unknown>>, keyword: AlternateNamesKeyword, namedElement: boolean): boolean {
   if (keyword === 'altenums') return Array.isArray(declaration.enum);
   if (keyword === 'descriptions') return true;
   return namedElement;
 }
+/**
+ * Performs alternate names issues logic.
+ */
 export function alternateNamesIssues(declaration: Readonly<Record<string, unknown>>, namedElement: boolean): readonly AlternateNamesIssue[] {
   const issues: AlternateNamesIssue[] = [];
   for (const keyword of ALTERNATE_NAMES_KEYWORDS) {
@@ -107,6 +125,9 @@ export function alternateNamesIssues(declaration: Readonly<Record<string, unknow
   }
   return issues;
 }
+/**
+ * Validates alternate names value valid and narrows the value type when applicable.
+ */
 export function alternateNamesValueValid(
   declaration: Readonly<Record<string, unknown>>,
   keyword: AlternateNamesKeyword,

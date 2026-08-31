@@ -3,6 +3,9 @@ import type { NormalizedDocument } from './model.js';
 import { parseDocument, type ParseResult } from './parser.js';
 import { resolveCapabilities, type CapabilityResolution } from './capabilities.js';
 
+/**
+ * API for document session.
+ */
 export class DocumentSession {
   private lastValid?: { model: NormalizedDocument; value: unknown };
   private current: DocumentSnapshot;

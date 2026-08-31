@@ -1,5 +1,8 @@
 import { effectiveValidationTypes } from './validation.js';
 
+/**
+ * Defines the units keyword map shape.
+ */
 export interface UnitsKeywordMap {
   readonly symbol: string;
   readonly symbols: Readonly<Record<string, string>>;
@@ -7,9 +10,18 @@ export interface UnitsKeywordMap {
   readonly ucumUnit: string;
   readonly currency: string;
 }
+/**
+ * Type alias for units keyword.
+ */
 export type UnitsKeyword = keyof UnitsKeywordMap;
+/**
+ * Defines the units issue shape.
+ */
 export interface UnitsIssue { readonly keyword: UnitsKeyword; readonly message: string; readonly severity: 'error' | 'warning'; }
 
+/**
+ * Constant for units keywords.
+ */
 export const UNITS_KEYWORDS = ['symbol', 'symbols', 'unit', 'ucumUnit', 'currency'] as const satisfies readonly UnitsKeyword[];
 const NUMERIC_TYPES = new Set([
   'number', 'integer', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32',
@@ -27,16 +39,28 @@ const EQUIVALENT_UNITS = new Map<string, string>([
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
+/**
+ * Validates valid symbols and narrows the value type when applicable.
+ */
 export function validSymbols(value: unknown): value is Readonly<Record<string, string>> {
   return isRecord(value) && Object.entries(value).every(([purpose, symbol]) =>
     typeof symbol === 'string' && (!purpose.startsWith('lang:') || LANGUAGE_TAG.test(purpose.slice(5))));
 }
+/**
+ * Validates valid unit expression and narrows the value type when applicable.
+ */
 export function validUnitExpression(value: unknown): value is string {
   return typeof value === 'string' && UNIT_EXPRESSION.test(value);
 }
+/**
+ * Validates valid ucum expression and narrows the value type when applicable.
+ */
 export function validUcumExpression(value: unknown): value is string {
   return typeof value === 'string' && UCUM_EXPRESSION.test(value);
 }
+/**
+ * Performs units issues logic.
+ */
 export function unitsIssues(root: unknown, declaration: Readonly<Record<string, unknown>>): readonly UnitsIssue[] {
   const effective = effectiveValidationTypes(root, declaration);
   const numeric = effective.determinate && effective.types.length === 1 && NUMERIC_TYPES.has(effective.types[0]);
@@ -64,6 +88,9 @@ export function unitsIssues(root: unknown, declaration: Readonly<Record<string, 
   }
   return issues;
 }
+/**
+ * Validates units value valid and narrows the value type when applicable.
+ */
 export function unitsValueValid(root: unknown, declaration: Readonly<Record<string, unknown>>, keyword: UnitsKeyword, value: unknown): boolean {
   const candidate = { ...declaration, [keyword]: value };
   return unitsIssues(root, candidate).every((issue) => issue.severity !== 'error');

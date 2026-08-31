@@ -29,6 +29,9 @@ function position(text: string, offset: number): TextPosition {
   const lineStart = before.lastIndexOf('\n') + 1;
   return { line: (before.match(/\n/g) ?? []).length, column: offset - lineStart, offset };
 }
+/**
+ * Builds a source range from byte offsets in the current document text.
+ */
 export function rangeFor(text: string, start: number, end: number): TextRange {
   return { start: position(text, start), end: position(text, end), startOffset: start, endOffset: end };
 }
@@ -119,7 +122,13 @@ class StrictParser {
   }
 }
 
+/**
+ * Defines the parse result shape.
+ */
 export interface ParseResult { readonly model?: NormalizedDocument; readonly value?: unknown; readonly diagnostics: readonly Diagnostic[]; readonly recovery: RecoveryState; }
+/**
+ * Parses input into document data.
+ */
 export function parseDocument(uri: string, text: string): ParseResult {
   const parsed = new StrictParser(text, uri).parse();
   if (parsed.recovery !== 'valid') return { diagnostics: parsed.diagnostics, recovery: parsed.recovery };
@@ -181,6 +190,7 @@ function duplicatePointerDiagnostics(uri: string, text: string, nodes: readonly 
   const duplicates: Diagnostic[] = [];
   for (const [pointer, list] of byPointer.entries()) {
     if (pointer === '' || list.length < 2) continue;
+    // Duplicate JSON object keys collapse at runtime, so keep all source locations to preserve ambiguity evidence.
     duplicates.push({
       code: 'json.duplicate-pointer',
       message: `Ambiguous duplicate key for pointer ${pointer}.`,
@@ -396,6 +406,7 @@ function collectSchemaProjections(
   const visitSchema = (candidate: unknown, pointer: string, namedElement = false): void => {
     if (!isRecord(candidate)) return;
     if (diagnosed.has(pointer)) return;
+    // Diagnose each schema location once even if multiple traversal paths can reach it.
     diagnosed.add(pointer);
     localTypeReferenceDiagnostics(pointer, candidate, uri, text, diagnostics);
     relationAndIdentityLocalDiagnostics(root, pointer, candidate, uri, text, diagnostics, nodes);
@@ -439,6 +450,7 @@ function collectSchemaProjections(
     for (const [key, entry] of Object.entries(candidate)) {
       if (key === '$import' || key === '$importdefs' || !isRecord(entry)) continue;
       const entryPointer = `${pointer}/${pointerPart(key)}`;
+      // Non-schema definition objects are namespaces and must keep traversal ownership semantics.
       if (looksLikeSchemaObject(entry)) visitSchema(entry, entryPointer, true);
       else visitDefinitions(entry, entryPointer);
     }
@@ -1477,6 +1489,9 @@ function isAudioChannels(value: unknown): value is Record<string, unknown>[] { r
 function isSpectralBand(value: unknown): value is Record<string, unknown> { return isRecord(value) && isReferencedBase(value) && hasOnlyKeys(value, ['reference','kind','bands','calibration']) && distinctStrings(value.bands) && optionalString(value.calibration); }
 function isSpectralBands(value: unknown): value is Record<string, unknown>[] { return Array.isArray(value) && value.length > 0 && value.every(isSpectralBand); }
 function isMeasurementConditioning(value: unknown): value is Record<string, unknown> { return isRecord(value) && Object.keys(value).length > 0 && hasOnlyKeys(value, ['weighting','timeWeighting','levelReference']) && optionalString(value.weighting) && optionalString(value.timeWeighting) && optionalString(value.levelReference); }
+/**
+ * Constant for semantic annotation keywords.
+ */
 export const SEMANTIC_ANNOTATION_KEYWORDS = [
   'concepts', 'observedProperty', 'semanticRole', 'derivation', 'statistic', 'codedValues',
   'measurementConditioning', 'referenceRole', 'phenomenonTimeRelation', 'supportPeriod',
@@ -1484,7 +1499,13 @@ export const SEMANTIC_ANNOTATION_KEYWORDS = [
   'tensorReferenceFrames', 'frameTransforms', 'linearReferenceSystem', 'colorSpaces',
   'audioChannels', 'spectralBands'
 ] as const;
+/**
+ * Type alias for semantic annotation keyword.
+ */
 export type SemanticAnnotationKeyword = typeof SEMANTIC_ANNOTATION_KEYWORDS[number];
+/**
+ * Defines the semantic annotation keyword map shape.
+ */
 export interface SemanticAnnotationKeywordMap {
   readonly concepts: readonly Record<string, unknown>[];
   readonly observedProperty: Record<string, unknown>;
@@ -1529,6 +1550,9 @@ const semanticValueValidators: { readonly [K in SemanticAnnotationKeyword]: (val
   audioChannels: isAudioChannels,
   spectralBands: isSpectralBands
 };
+/**
+ * Validates semantic annotation candidate valid and narrows the value type when applicable.
+ */
 export function semanticAnnotationCandidateValid(
   declaration: Readonly<Record<string, unknown>>,
   keyword: SemanticAnnotationKeyword,
@@ -1540,6 +1564,9 @@ export function semanticAnnotationCandidateValid(
   const candidate = { ...declaration, [keyword]: candidateValue };
   return semanticAnnotationSetValid(candidate, root, pointer, keyword);
 }
+/**
+ * Validates semantic annotation set valid and narrows the value type when applicable.
+ */
 export function semanticAnnotationSetValid(
   candidate: Readonly<Record<string, unknown>>,
   root?: Readonly<Record<string, unknown>>,

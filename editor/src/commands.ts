@@ -12,26 +12,62 @@ import { effectiveValidationTypes, validationIssues, validationValueIsSchemaBack
 import { unitsValueValid, type UnitsKeyword, type UnitsKeywordMap } from './units.js';
 import { alternateNamesPlacementValid, alternateNamesValueValid, type AlternateNamesKeyword, type AlternateNamesKeywordMap } from './alternate-names.js';
 
+/**
+ * Type alias for schema type value.
+ */
 export type SchemaTypeValue = string | Readonly<Record<string, unknown>> | readonly (string | Readonly<Record<string, unknown>>)[];
+/**
+ * Defines the property schema shape.
+ */
 export interface PropertySchema { readonly type: SchemaTypeValue; readonly [keyword: string]: unknown; }
+/**
+ * Type alias for required properties.
+ */
 export type RequiredProperties = readonly string[] | readonly (readonly string[])[];
+/**
+ * Defines the binary annotations shape.
+ */
 export interface BinaryAnnotations {
   readonly contentEncoding?: 'base64' | 'base64url' | 'base16' | 'base32' | 'base32hex';
   readonly contentCompression?: 'gzip' | 'deflate' | 'zlib' | 'brotli';
   readonly contentMediaType?: string;
 }
+/**
+ * Type alias for binary annotation keyword.
+ */
 export type BinaryAnnotationKeyword = keyof BinaryAnnotations;
+/**
+ * Type alias for relation cardinality.
+ */
 export type RelationCardinality = 'single' | 'multiple';
+/**
+ * Type alias for relation scope.
+ */
 export type RelationScope = string | readonly string[];
+/**
+ * Type alias for import keyword.
+ */
 export type ImportKeyword = '$import' | '$importdefs';
+/**
+ * Defines the relation schema shape.
+ */
 export interface RelationSchema {
   readonly targetTypeRef: string;
   readonly cardinality: RelationCardinality;
   readonly scope?: RelationScope;
   readonly qualifierTypeRef?: string;
 }
+/**
+ * Defines the command result shape.
+ */
 export interface CommandResult { readonly edits: readonly TextEdit[]; readonly inverseEdits: readonly TextEdit[]; }
+/**
+ * Defines the command context shape.
+ */
 export interface CommandContext { readonly session: DocumentSession; readonly documentVersion: DocumentVersion; }
+/**
+ * Defines the editor command shape.
+ */
 export interface EditorCommand { canExecute(context: CommandContext): boolean; execute(context: CommandContext): CommandResult; }
 function pointerValue(root: unknown, pointer: string): unknown {
   if (pointer === '') return root;
@@ -656,6 +692,9 @@ function mediaType(value: string): boolean {
   return /^[!#$%&'*+.^_`|~0-9A-Za-z-]+\/[!#$%&'*+.^_`|~0-9A-Za-z-]+(?:\s*;\s*[!#$%&'*+.^_`|~0-9A-Za-z-]+=(?:[!#$%&'*+.^_`|~0-9A-Za-z-]+|"[^"]*"))*$/.test(value);
 }
 
+/**
+ * Command that updates required on a schema declaration.
+ */
 export class SetRequiredCommand implements EditorCommand {
   constructor(readonly targetPointer: string, readonly required: RequiredProperties | undefined) {}
 
@@ -675,6 +714,9 @@ export class SetRequiredCommand implements EditorCommand {
   }
 }
 
+/**
+ * Command that updates collection member on a schema declaration.
+ */
 export class SetCollectionMemberCommand implements EditorCommand {
   constructor(readonly targetPointer: string, readonly schema: Readonly<Record<string, unknown>>) {}
 
@@ -693,6 +735,9 @@ export class SetCollectionMemberCommand implements EditorCommand {
   }
 }
 
+/**
+ * Command that updates tuple members on a schema declaration.
+ */
 export class SetTupleMembersCommand implements EditorCommand {
   constructor(readonly targetPointer: string, readonly properties: Readonly<Record<string, Readonly<Record<string, unknown>>>>, readonly order: readonly string[]) {}
 
@@ -712,6 +757,7 @@ export class SetTupleMembersCommand implements EditorCommand {
     const propertiesMember = objectMemberContext(context.session, this.targetPointer, 'properties');
     const tupleMember = objectMemberContext(context.session, this.targetPointer, 'tuple');
     if (propertiesMember && tupleMember) {
+      // Apply replacements from the end of the document backward so source offsets remain valid.
       const replacements = [
         { member: propertiesMember, value: this.properties },
         { member: tupleMember, value: this.order }
@@ -722,6 +768,7 @@ export class SetTupleMembersCommand implements EditorCommand {
         const offsets = sourceOffsets(edit.range, 'Tuple member source range is unavailable.');
         editedSource = editedSource.slice(0, offsets.start) + edit.newText + editedSource.slice(offsets.end);
       }
+      // Rebase inverse ranges to the edited buffer so undo remains byte-accurate after both replacements.
       const inverseEdits = replacements.map(({ member }) => {
         const offsets = sourceOffsets(member.valueRange, 'Tuple member source range is unavailable.');
         const replacement = edits.find((edit) => edit.range === member.valueRange)!;
@@ -745,6 +792,9 @@ export class SetTupleMembersCommand implements EditorCommand {
   }
 }
 
+/**
+ * Command that updates description on a schema declaration.
+ */
 export class SetDescriptionCommand implements EditorCommand {
   constructor(readonly targetPointer: string, readonly description: string | undefined) {}
 
@@ -764,6 +814,9 @@ export class SetDescriptionCommand implements EditorCommand {
   }
 }
 
+/**
+ * Command that updates validation keyword on a schema declaration.
+ */
 export class SetValidationKeywordCommand<K extends ValidationKeyword> implements EditorCommand {
   constructor(readonly targetPointer: string, readonly keyword: K, readonly value: ValidationKeywordMap[K] | undefined) {}
 
@@ -802,6 +855,9 @@ export class SetValidationKeywordCommand<K extends ValidationKeyword> implements
   }
 }
 
+/**
+ * Command that updates composition keyword on a schema declaration.
+ */
 export class SetCompositionKeywordCommand<K extends keyof CompositionKeywordMap> implements EditorCommand {
   constructor(readonly targetPointer: string, readonly keyword: K, readonly value: CompositionKeywordMap[K] | undefined) {}
 
@@ -825,19 +881,34 @@ export class SetCompositionKeywordCommand<K extends keyof CompositionKeywordMap>
   }
 }
 
+/**
+ * Command that updates all of on a schema declaration.
+ */
 export class SetAllOfCommand extends SetCompositionKeywordCommand<'allOf'> {
   constructor(targetPointer: string, value: CompositionKeywordMap['allOf'] | undefined) { super(targetPointer, 'allOf', value); }
 }
+/**
+ * Command that updates any of on a schema declaration.
+ */
 export class SetAnyOfCommand extends SetCompositionKeywordCommand<'anyOf'> {
   constructor(targetPointer: string, value: CompositionKeywordMap['anyOf'] | undefined) { super(targetPointer, 'anyOf', value); }
 }
+/**
+ * Command that updates one of on a schema declaration.
+ */
 export class SetOneOfCommand extends SetCompositionKeywordCommand<'oneOf'> {
   constructor(targetPointer: string, value: CompositionKeywordMap['oneOf'] | undefined) { super(targetPointer, 'oneOf', value); }
 }
+/**
+ * Command that updates not on a schema declaration.
+ */
 export class SetNotCommand extends SetCompositionKeywordCommand<'not'> {
   constructor(targetPointer: string, value: CompositionKeywordMap['not'] | undefined) { super(targetPointer, 'not', value); }
 }
 
+/**
+ * Command that updates conditional composition on a schema declaration.
+ */
 export class SetConditionalCompositionCommand implements EditorCommand {
   constructor(readonly targetPointer: string, readonly value: ConditionalCompositionGroup | undefined) {}
 
@@ -879,6 +950,9 @@ export class SetConditionalCompositionCommand implements EditorCommand {
   }
 }
 
+/**
+ * Command that updates units keyword on a schema declaration.
+ */
 export class SetUnitsKeywordCommand<K extends UnitsKeyword> implements EditorCommand {
   constructor(readonly targetPointer: string, readonly keyword: K, readonly value: UnitsKeywordMap[K] | undefined) {}
 
@@ -904,22 +978,40 @@ export class SetUnitsKeywordCommand<K extends UnitsKeyword> implements EditorCom
   }
 }
 
+/**
+ * Command that updates symbol on a schema declaration.
+ */
 export class SetSymbolCommand extends SetUnitsKeywordCommand<'symbol'> {
   constructor(targetPointer: string, value: string | undefined) { super(targetPointer, 'symbol', value); }
 }
+/**
+ * Command that updates symbols on a schema declaration.
+ */
 export class SetSymbolsCommand extends SetUnitsKeywordCommand<'symbols'> {
   constructor(targetPointer: string, value: Readonly<Record<string, string>> | undefined) { super(targetPointer, 'symbols', value); }
 }
+/**
+ * Command that updates unit on a schema declaration.
+ */
 export class SetUnitCommand extends SetUnitsKeywordCommand<'unit'> {
   constructor(targetPointer: string, value: string | undefined) { super(targetPointer, 'unit', value); }
 }
+/**
+ * Command that updates ucum unit on a schema declaration.
+ */
 export class SetUcumUnitCommand extends SetUnitsKeywordCommand<'ucumUnit'> {
   constructor(targetPointer: string, value: string | undefined) { super(targetPointer, 'ucumUnit', value); }
 }
+/**
+ * Command that updates currency on a schema declaration.
+ */
 export class SetCurrencyCommand extends SetUnitsKeywordCommand<'currency'> {
   constructor(targetPointer: string, value: string | undefined) { super(targetPointer, 'currency', value); }
 }
 
+/**
+ * Command that updates alternate names keyword on a schema declaration.
+ */
 export class SetAlternateNamesKeywordCommand<K extends AlternateNamesKeyword> implements EditorCommand {
   constructor(readonly targetPointer: string, readonly keyword: K, readonly value: AlternateNamesKeywordMap[K] | undefined) {}
 
@@ -943,12 +1035,21 @@ export class SetAlternateNamesKeywordCommand<K extends AlternateNamesKeyword> im
   }
 }
 
+/**
+ * Command that updates alt names on a schema declaration.
+ */
 export class SetAltNamesCommand extends SetAlternateNamesKeywordCommand<'altnames'> {
   constructor(targetPointer: string, value: AlternateNamesKeywordMap['altnames'] | undefined) { super(targetPointer, 'altnames', value); }
 }
+/**
+ * Command that updates alt enums on a schema declaration.
+ */
 export class SetAltEnumsCommand extends SetAlternateNamesKeywordCommand<'altenums'> {
   constructor(targetPointer: string, value: AlternateNamesKeywordMap['altenums'] | undefined) { super(targetPointer, 'altenums', value); }
 }
+/**
+ * Command that updates localized descriptions on a schema declaration.
+ */
 export class SetLocalizedDescriptionsCommand extends SetAlternateNamesKeywordCommand<'descriptions'> {
   constructor(targetPointer: string, value: AlternateNamesKeywordMap['descriptions'] | undefined) { super(targetPointer, 'descriptions', value); }
 }
@@ -976,6 +1077,9 @@ function semanticPlacementValid(pointer: string, declaration: Record<string, unk
   return SEMANTIC_RECORD_ONLY.has(keyword) && (declaration.type === 'object' || declaration.type === 'tuple');
 }
 
+/**
+ * Command that updates semantic annotation on a schema declaration.
+ */
 export class SetSemanticAnnotationCommand<K extends SemanticAnnotationKeyword> implements EditorCommand {
   constructor(readonly targetPointer: string, readonly keyword: K, readonly value: SemanticAnnotationKeywordMap[K] | undefined) {}
 
@@ -1002,25 +1106,85 @@ export class SetSemanticAnnotationCommand<K extends SemanticAnnotationKeyword> i
   }
 }
 
+/**
+ * Command that updates concepts on a schema declaration.
+ */
 export class SetConceptsCommand extends SetSemanticAnnotationCommand<'concepts'> { constructor(pointer: string, value: SemanticAnnotationKeywordMap['concepts'] | undefined) { super(pointer, 'concepts', value); } }
+/**
+ * Command that updates observed property on a schema declaration.
+ */
 export class SetObservedPropertyCommand extends SetSemanticAnnotationCommand<'observedProperty'> { constructor(pointer: string, value: SemanticAnnotationKeywordMap['observedProperty'] | undefined) { super(pointer, 'observedProperty', value); } }
+/**
+ * Command that updates semantic role on a schema declaration.
+ */
 export class SetSemanticRoleCommand extends SetSemanticAnnotationCommand<'semanticRole'> { constructor(pointer: string, value: string | undefined) { super(pointer, 'semanticRole', value); } }
+/**
+ * Command that updates derivation on a schema declaration.
+ */
 export class SetDerivationCommand extends SetSemanticAnnotationCommand<'derivation'> { constructor(pointer: string, value: string | undefined) { super(pointer, 'derivation', value); } }
+/**
+ * Command that updates statistic on a schema declaration.
+ */
 export class SetStatisticCommand extends SetSemanticAnnotationCommand<'statistic'> { constructor(pointer: string, value: SemanticAnnotationKeywordMap['statistic'] | undefined) { super(pointer, 'statistic', value); } }
+/**
+ * Command that updates coded values on a schema declaration.
+ */
 export class SetCodedValuesCommand extends SetSemanticAnnotationCommand<'codedValues'> { constructor(pointer: string, value: SemanticAnnotationKeywordMap['codedValues'] | undefined) { super(pointer, 'codedValues', value); } }
+/**
+ * Command that updates measurement conditioning on a schema declaration.
+ */
 export class SetMeasurementConditioningCommand extends SetSemanticAnnotationCommand<'measurementConditioning'> { constructor(pointer: string, value: SemanticAnnotationKeywordMap['measurementConditioning'] | undefined) { super(pointer, 'measurementConditioning', value); } }
+/**
+ * Command that updates reference role on a schema declaration.
+ */
 export class SetReferenceRoleCommand extends SetSemanticAnnotationCommand<'referenceRole'> { constructor(pointer: string, value: string | undefined) { super(pointer, 'referenceRole', value); } }
+/**
+ * Command that updates phenomenon time relation on a schema declaration.
+ */
 export class SetPhenomenonTimeRelationCommand extends SetSemanticAnnotationCommand<'phenomenonTimeRelation'> { constructor(pointer: string, value: string | undefined) { super(pointer, 'phenomenonTimeRelation', value); } }
+/**
+ * Command that updates support period on a schema declaration.
+ */
 export class SetSupportPeriodCommand extends SetSemanticAnnotationCommand<'supportPeriod'> { constructor(pointer: string, value: SemanticAnnotationKeywordMap['supportPeriod'] | undefined) { super(pointer, 'supportPeriod', value); } }
+/**
+ * Command that updates temporal reference system on a schema declaration.
+ */
 export class SetTemporalReferenceSystemCommand extends SetSemanticAnnotationCommand<'temporalReferenceSystem'> { constructor(pointer: string, value: SemanticAnnotationKeywordMap['temporalReferenceSystem'] | undefined) { super(pointer, 'temporalReferenceSystem', value); } }
+/**
+ * Command that updates cadence on a schema declaration.
+ */
 export class SetCadenceCommand extends SetSemanticAnnotationCommand<'cadence'> { constructor(pointer: string, value: SemanticAnnotationKeywordMap['cadence'] | undefined) { super(pointer, 'cadence', value); } }
+/**
+ * Command that updates coordinate reference system on a schema declaration.
+ */
 export class SetCoordinateReferenceSystemCommand extends SetSemanticAnnotationCommand<'coordinateReferenceSystem'> { constructor(pointer: string, value: SemanticAnnotationKeywordMap['coordinateReferenceSystem'] | undefined) { super(pointer, 'coordinateReferenceSystem', value); } }
+/**
+ * Command that updates vector reference frames on a schema declaration.
+ */
 export class SetVectorReferenceFramesCommand extends SetSemanticAnnotationCommand<'vectorReferenceFrames'> { constructor(pointer: string, value: SemanticAnnotationKeywordMap['vectorReferenceFrames'] | undefined) { super(pointer, 'vectorReferenceFrames', value); } }
+/**
+ * Command that updates tensor reference frames on a schema declaration.
+ */
 export class SetTensorReferenceFramesCommand extends SetSemanticAnnotationCommand<'tensorReferenceFrames'> { constructor(pointer: string, value: SemanticAnnotationKeywordMap['tensorReferenceFrames'] | undefined) { super(pointer, 'tensorReferenceFrames', value); } }
+/**
+ * Command that updates frame transforms on a schema declaration.
+ */
 export class SetFrameTransformsCommand extends SetSemanticAnnotationCommand<'frameTransforms'> { constructor(pointer: string, value: SemanticAnnotationKeywordMap['frameTransforms'] | undefined) { super(pointer, 'frameTransforms', value); } }
+/**
+ * Command that updates linear reference system on a schema declaration.
+ */
 export class SetLinearReferenceSystemCommand extends SetSemanticAnnotationCommand<'linearReferenceSystem'> { constructor(pointer: string, value: SemanticAnnotationKeywordMap['linearReferenceSystem'] | undefined) { super(pointer, 'linearReferenceSystem', value); } }
+/**
+ * Command that updates color spaces on a schema declaration.
+ */
 export class SetColorSpacesCommand extends SetSemanticAnnotationCommand<'colorSpaces'> { constructor(pointer: string, value: SemanticAnnotationKeywordMap['colorSpaces'] | undefined) { super(pointer, 'colorSpaces', value); } }
+/**
+ * Command that updates audio channels on a schema declaration.
+ */
 export class SetAudioChannelsCommand extends SetSemanticAnnotationCommand<'audioChannels'> { constructor(pointer: string, value: SemanticAnnotationKeywordMap['audioChannels'] | undefined) { super(pointer, 'audioChannels', value); } }
+/**
+ * Command that updates spectral bands on a schema declaration.
+ */
 export class SetSpectralBandsCommand extends SetSemanticAnnotationCommand<'spectralBands'> { constructor(pointer: string, value: SemanticAnnotationKeywordMap['spectralBands'] | undefined) { super(pointer, 'spectralBands', value); } }
 
 const NUMERIC_TYPES_FOR_UNITS = new Set([
@@ -1028,6 +1192,9 @@ const NUMERIC_TYPES_FOR_UNITS = new Set([
   'int64', 'uint64', 'int128', 'uint128', 'float8', 'float', 'double', 'decimal'
 ]);
 
+/**
+ * Command that updates binary annotations on a schema declaration.
+ */
 export class SetBinaryAnnotationsCommand implements EditorCommand {
   constructor(readonly targetPointer: string, readonly keyword: BinaryAnnotationKeyword, readonly value: string | undefined) {}
 
@@ -1052,6 +1219,9 @@ export class SetBinaryAnnotationsCommand implements EditorCommand {
   }
 }
 
+/**
+ * Command that updates type reference on a schema declaration.
+ */
 export class SetTypeReferenceCommand implements EditorCommand {
   constructor(readonly targetPointer: string, readonly reference: string) {}
 
@@ -1068,6 +1238,9 @@ export class SetTypeReferenceCommand implements EditorCommand {
   }
 }
 
+/**
+ * Command that adds definition to a schema declaration.
+ */
 export class AddDefinitionCommand implements EditorCommand {
   constructor(readonly namespacePointer: string, readonly definitionName: string, readonly schema: PropertySchema) {}
 
@@ -1108,6 +1281,9 @@ export class AddDefinitionCommand implements EditorCommand {
   }
 }
 
+/**
+ * Command that renames definition in a schema declaration.
+ */
 export class RenameDefinitionCommand implements EditorCommand {
   constructor(readonly definitionPointer: string, readonly newName: string) {}
 
@@ -1136,6 +1312,9 @@ export class RenameDefinitionCommand implements EditorCommand {
   }
 }
 
+/**
+ * Command that deletes definition from a schema declaration.
+ */
 export class DeleteDefinitionCommand implements EditorCommand {
   constructor(readonly definitionPointer: string) {}
 
@@ -1161,6 +1340,7 @@ export class DeleteDefinitionCommand implements EditorCommand {
     let start = keyStart;
     let end = valueOffsets.end;
     let before = keyStart - 1;
+    // Remove either the leading or trailing comma to keep object member syntax valid after deletion.
     while (before > definitionsOffsets.start && /\s/.test(source[before] ?? '')) before--;
     if (source[before] === ',') start = before;
     else {
@@ -1177,6 +1357,9 @@ export class DeleteDefinitionCommand implements EditorCommand {
   }
 }
 
+/**
+ * Command that updates root on a schema declaration.
+ */
 export class SetRootCommand implements EditorCommand {
   constructor(readonly rootPointer: string) {}
 
@@ -1215,6 +1398,9 @@ export class SetRootCommand implements EditorCommand {
   }
 }
 
+/**
+ * Command that adds property to a schema declaration.
+ */
 export class AddPropertyCommand implements EditorCommand {
   constructor(readonly targetPointer: string, readonly propertyName: string, readonly schema: PropertySchema) {}
   canExecute({ session, documentVersion }: CommandContext): boolean {
@@ -1257,6 +1443,9 @@ export class AddPropertyCommand implements EditorCommand {
   }
 }
 
+/**
+ * Command that edits property on a schema declaration.
+ */
 export class EditPropertyCommand implements EditorCommand {
   constructor(readonly propertyPointer: string, readonly schema: PropertySchema) {}
 
@@ -1282,6 +1471,9 @@ export class EditPropertyCommand implements EditorCommand {
   }
 }
 
+/**
+ * Command that deletes property from a schema declaration.
+ */
 export class DeletePropertyCommand implements EditorCommand {
   constructor(readonly propertyPointer: string) {}
 
@@ -1307,6 +1499,7 @@ export class DeletePropertyCommand implements EditorCommand {
     let start = keyStart;
     let end = valueOffsets.end;
     let before = keyStart - 1;
+    // Remove either the leading or trailing comma to keep object member syntax valid after deletion.
     while (before > propertiesOffsets.start && /\s/.test(source[before] ?? '')) before--;
     if (source[before] === ',') start = before;
     else {
@@ -1323,6 +1516,9 @@ export class DeletePropertyCommand implements EditorCommand {
   }
 }
 
+/**
+ * Command that renames property in a schema declaration.
+ */
 export class RenamePropertyCommand implements EditorCommand {
   constructor(readonly propertyPointer: string, readonly newName: string) {}
 
@@ -1350,6 +1546,9 @@ export class RenamePropertyCommand implements EditorCommand {
   }
 }
 
+/**
+ * Command that updates identity on a schema declaration.
+ */
 export class SetIdentityCommand implements EditorCommand {
   constructor(readonly targetPointer: string, readonly identity: readonly string[]) {}
 
@@ -1384,6 +1583,9 @@ export class SetIdentityCommand implements EditorCommand {
   }
 }
 
+/**
+ * Command that removes identity from a schema declaration.
+ */
 export class RemoveIdentityCommand implements EditorCommand {
   constructor(readonly targetPointer: string) {}
 
@@ -1404,6 +1606,9 @@ export class RemoveIdentityCommand implements EditorCommand {
   }
 }
 
+/**
+ * Command that adds relation to a schema declaration.
+ */
 export class AddRelationCommand implements EditorCommand {
   constructor(readonly targetPointer: string, readonly relationName: string, readonly schema: RelationSchema) {}
 
@@ -1437,6 +1642,9 @@ export class AddRelationCommand implements EditorCommand {
   }
 }
 
+/**
+ * Command that edits relation on a schema declaration.
+ */
 export class EditRelationCommand implements EditorCommand {
   constructor(readonly relationPointer: string, readonly schema: RelationSchema) {}
 
@@ -1466,6 +1674,9 @@ export class EditRelationCommand implements EditorCommand {
   }
 }
 
+/**
+ * Command that renames relation in a schema declaration.
+ */
 export class RenameRelationCommand implements EditorCommand {
   constructor(readonly relationPointer: string, readonly newName: string) {}
 
@@ -1493,6 +1704,9 @@ export class RenameRelationCommand implements EditorCommand {
   }
 }
 
+/**
+ * Command that deletes relation from a schema declaration.
+ */
 export class DeleteRelationCommand implements EditorCommand {
   constructor(readonly relationPointer: string) {}
 
@@ -1512,6 +1726,9 @@ export class DeleteRelationCommand implements EditorCommand {
   }
 }
 
+/**
+ * Command that updates relation cardinality on a schema declaration.
+ */
 export class SetRelationCardinalityCommand implements EditorCommand {
   constructor(readonly relationPointer: string, readonly cardinality: RelationCardinality) {}
 
@@ -1545,6 +1762,9 @@ export class SetRelationCardinalityCommand implements EditorCommand {
   }
 }
 
+/**
+ * Command that updates relation scope on a schema declaration.
+ */
 export class SetRelationScopeCommand implements EditorCommand {
   constructor(readonly relationPointer: string, readonly scope: RelationScope | undefined) {}
 
@@ -1586,6 +1806,9 @@ export class SetRelationScopeCommand implements EditorCommand {
   }
 }
 
+/**
+ * Command that updates relation qualifier on a schema declaration.
+ */
 export class SetRelationQualifierCommand implements EditorCommand {
   constructor(readonly relationPointer: string, readonly qualifierTypeRef: string | undefined) {}
 
@@ -1625,6 +1848,9 @@ export class SetRelationQualifierCommand implements EditorCommand {
   }
 }
 
+/**
+ * Command that updates import on a schema declaration.
+ */
 export class SetImportCommand implements EditorCommand {
   constructor(readonly namespacePointer: string, readonly keyword: ImportKeyword, readonly sourceUri: string) {}
 
@@ -1657,6 +1883,9 @@ export class SetImportCommand implements EditorCommand {
   }
 }
 
+/**
+ * Command that deletes import from a schema declaration.
+ */
 export class DeleteImportCommand implements EditorCommand {
   constructor(readonly namespacePointer: string, readonly keyword: ImportKeyword) {}
 

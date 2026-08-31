@@ -10,17 +10,29 @@ import type {
   ResolutionStatus
 } from './model.js';
 
+/**
+ * Defines the external document descriptor shape.
+ */
 export interface ExternalDocumentDescriptor {
   readonly uri: string;
   readonly model?: NormalizedDocument;
   readonly snapshot?: DocumentSnapshot;
   readonly availability?: 'available' | 'unavailable' | 'stale';
 }
+/**
+ * Type alias for external document input.
+ */
 export type ExternalDocumentInput = NormalizedDocument | DocumentSnapshot | ExternalDocumentDescriptor;
+/**
+ * Defines the resolve references result shape.
+ */
 export interface ResolveReferencesResult extends ReferenceResolutionProjection {
   readonly diagnostics: readonly Diagnostic[];
 }
 
+/**
+ * Resolves document references for the current document.
+ */
 export function resolveDocumentReferences(document: NormalizedDocument, externalDocuments: readonly ExternalDocumentInput[] = []): NormalizedDocument {
   const resolution = resolveReferences(document, externalDocuments);
   const resolverDiagnostics = resolution.diagnostics.filter((diagnostic) => {
@@ -70,6 +82,9 @@ interface EffectiveReferenceSite {
   readonly reason?: string;
 }
 
+/**
+ * Resolves references for the current document.
+ */
 export function resolveReferences(document: NormalizedDocument, externalDocuments: readonly ExternalDocumentInput[] = []): ResolveReferencesResult {
   const supplied = suppliedDocuments(externalDocuments);
   const cache = new Map<string, EffectiveDocument>();
@@ -126,6 +141,7 @@ function buildEffectiveDocument(
 ): EffectiveDocument {
   const cached = cache.get(document.uri);
   if (cached) return cached;
+  // Track active import stack separately from memoization so cycles become unresolved facts, not recursion faults.
   if (stack.includes(document.uri)) return { declarations: new Map(), references: [], imports: [], status: 'unresolved', reason: 'Import cycle detected.' };
 
   const declarations = new Map<JsonPointer, EffectiveDeclaration[]>();
@@ -156,6 +172,7 @@ function buildEffectiveDocument(
     let external: SuppliedDocument | undefined;
 
     const distinctCandidates = [...new Set(candidates)];
+    // Multiple supplied matches are an ambiguity, while missing or stale matches are indeterminate availability.
     if (distinctCandidates.length > 1) {
       status = 'unresolved';
       reason = 'Multiple supplied external documents match this import URI.';
@@ -208,6 +225,7 @@ function buildEffectiveDocument(
 
   for (const [pointer, entries] of declarations) {
     if (entries.length > 1) {
+      // Surface declaration collisions at import facts so hosts can attribute ambiguity back to the import site.
       documentStatus = 'unresolved';
       documentReason ??= `Ambiguous duplicate effective declaration at ${pointer}.`;
       const implicatedImports = new Set(entries.flatMap((entry) => entry.importOrigins.map((origin) => origin.importPointer)));

@@ -1,3 +1,6 @@
+/**
+ * Defines the validation keyword map shape.
+ */
 export interface ValidationKeywordMap {
   readonly minimum: number | string;
   readonly maximum: number | string;
@@ -27,9 +30,18 @@ export interface ValidationKeywordMap {
   readonly patternKeys: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
 }
 
+/**
+ * Type alias for validation keyword.
+ */
 export type ValidationKeyword = keyof ValidationKeywordMap;
+/**
+ * Defines the validation issue shape.
+ */
 export interface ValidationIssue { readonly keyword: ValidationKeyword; readonly message: string; }
 
+/**
+ * Constant for validation keywords.
+ */
 export const VALIDATION_KEYWORDS = [
   'minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf',
   'minLength', 'maxLength', 'pattern', 'format',
@@ -107,6 +119,9 @@ function numericValueInCoreSpace(value: unknown, typeName: string): boolean {
   }
 }
 
+/**
+ * Defines the effective validation types shape.
+ */
 export interface EffectiveValidationTypes {
   readonly types: readonly string[];
   readonly determinate: boolean;
@@ -116,6 +131,9 @@ function pointerValue(root: unknown, pointer: string): unknown {
   return pointer.slice(1).split('/').map((part) => part.replace(/~1/g, '/').replace(/~0/g, '~')).reduce<unknown>((current, part) =>
     isRecord(current) ? current[part] : undefined, root);
 }
+/**
+ * Computes the effective validation types for the declaration.
+ */
 export function effectiveValidationTypes(root: unknown, declaration: Readonly<Record<string, unknown>>): EffectiveValidationTypes {
   const types = new Set<string>();
   let determinate = true;
@@ -146,6 +164,9 @@ export function effectiveValidationTypes(root: unknown, declaration: Readonly<Re
   return { types: [...types], determinate };
 }
 
+/**
+ * Validates validation keyword issue and narrows the value type when applicable.
+ */
 export function validationKeywordIssue(
   keyword: ValidationKeyword,
   value: unknown,
@@ -173,6 +194,9 @@ export function validationKeywordIssue(
   return 'Unsupported Validation keyword.';
 }
 
+/**
+ * Validates validation issues and narrows the value type when applicable.
+ */
 export function validationIssues(declaration: Readonly<Record<string, unknown>>, effectiveTypes?: EffectiveValidationTypes): readonly ValidationIssue[] {
   const resolved = effectiveTypes ?? { types: typeof declaration.type === 'string' ? [declaration.type] : [], determinate: typeof declaration.type === 'string' };
   const typeName = resolved.determinate && resolved.types.length === 1 ? resolved.types[0] : undefined;
@@ -191,6 +215,9 @@ export function validationIssues(declaration: Readonly<Record<string, unknown>>,
   return issues;
 }
 
+/**
+ * Validates validation value is schema backed and narrows the value type when applicable.
+ */
 export function validationValueIsSchemaBacked(keyword: ValidationKeyword, value: unknown): boolean {
   if (keyword === 'contains' || keyword === 'propertyNames' || keyword === 'keyNames' || keyword === 'has') return validSchema(value);
   if (keyword === 'patternProperties' || keyword === 'patternKeys') return validSchemaMap(value);

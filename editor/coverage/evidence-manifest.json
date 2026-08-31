@@ -1,0 +1,157 @@
+{
+  "version": 5,
+  "rules": [
+    {
+      "idPrefix": "rationale.unimplemented.editing",
+      "kind": "rationale",
+      "requirementPrefixes": ["core.", "alternate-names.", "characteristics.delta.", "semantic-annotations.delta.", "conditional-composition.", "import.", "relations.", "units.", "validation.", "model.", "concepts.", "observation.", "binding.", "temporal.", "spatial.", "media.", "processing."],
+      "dimensions": ["editing"],
+      "description": "No requirement-specific editor command is claimed without an explicit implementation rule."
+    },
+    {
+      "idPrefix": "rationale.unimplemented.inspection",
+      "kind": "rationale",
+      "requirementPrefixes": ["core.", "alternate-names.", "characteristics.delta.", "semantic-annotations.delta.", "conditional-composition.", "import.", "relations.", "units.", "validation.", "model.", "concepts.", "observation.", "binding.", "temporal.", "spatial.", "media.", "processing."],
+      "dimensions": ["inspection"],
+      "description": "No requirement-specific inspection behavior is claimed without an explicit implementation rule."
+    },
+    {
+      "idPrefix": "rationale.unimplemented.diagnostics",
+      "kind": "rationale",
+      "requirementPrefixes": ["core.", "alternate-names.", "characteristics.delta.", "semantic-annotations.delta.", "conditional-composition.", "import.", "relations.", "units.", "validation.", "model.", "concepts.", "observation.", "binding.", "temporal.", "spatial.", "media.", "processing."],
+      "dimensions": ["diagnostics"],
+      "description": "No requirement-specific diagnostic is claimed without an explicit implementation rule."
+    },
+    {
+      "idPrefix": "rationale.unimplemented.roundtrip",
+      "kind": "rationale",
+      "requirementPrefixes": ["core.", "alternate-names.", "characteristics.delta.", "semantic-annotations.delta.", "conditional-composition.", "import.", "relations.", "units.", "validation.", "model.", "concepts.", "observation.", "binding.", "temporal.", "spatial.", "media.", "processing."],
+      "dimensions": ["roundtrip"],
+      "description": "No requirement-specific byte-identical command inverse is claimed without an explicit test rule."
+    },
+    {
+      "idPrefix": "rationale.unimplemented.tests",
+      "kind": "rationale",
+      "requirementPrefixes": ["core.", "alternate-names.", "characteristics.delta.", "semantic-annotations.delta.", "conditional-composition.", "import.", "relations.", "units.", "validation.", "model.", "concepts.", "observation.", "binding.", "temporal.", "spatial.", "media.", "processing."],
+      "dimensions": ["tests"],
+      "description": "No requirement-specific executable test is claimed without an explicit test rule."
+    },
+    {
+      "idPrefix": "case.host-parity.gap",
+      "kind": "rationale",
+      "requirementPrefixes": ["core.", "alternate-names.", "characteristics.delta.", "semantic-annotations.delta.", "conditional-composition.", "import.", "relations.", "units.", "validation.", "model.", "concepts.", "observation.", "binding.", "temporal.", "spatial.", "media.", "processing."],
+      "dimensions": ["tests"],
+      "facet": "hostParity",
+      "description": "Electron and VS Code production host parity is not implemented."
+    },
+    {
+      "idPrefix": "case.positive.gap",
+      "kind": "rationale",
+      "requirementPrefixes": ["core.", "alternate-names.", "characteristics.delta.", "semantic-annotations.delta.", "conditional-composition.", "import.", "relations.", "units.", "validation.", "model.", "concepts.", "observation.", "binding.", "temporal.", "spatial.", "media.", "processing."],
+      "dimensions": ["tests"],
+      "facet": "positive",
+      "description": "No stable requirement-specific positive executable case is registered."
+    },
+    {
+      "idPrefix": "case.negative.gap",
+      "kind": "rationale",
+      "requirementPrefixes": ["core.", "alternate-names.", "characteristics.delta.", "semantic-annotations.delta.", "conditional-composition.", "import.", "relations.", "units.", "validation.", "model.", "concepts.", "observation.", "binding.", "temporal.", "spatial.", "media.", "processing."],
+      "dimensions": ["tests"],
+      "facet": "negative",
+      "description": "No stable requirement-specific negative executable case is registered."
+    },
+    {
+      "idPrefix": "case.incomplete.gap",
+      "kind": "rationale",
+      "requirementPrefixes": ["core.", "alternate-names.", "characteristics.delta.", "semantic-annotations.delta.", "conditional-composition.", "import.", "relations.", "units.", "validation.", "model.", "concepts.", "observation.", "binding.", "temporal.", "spatial.", "media.", "processing."],
+      "dimensions": ["tests"],
+      "facet": "incomplete",
+      "description": "No stable requirement-specific incomplete-while-typing executable case is registered."
+    },
+    {
+      "idPrefix": "impl.alternate-names.command",
+      "kind": "implementation",
+      "requirementPrefixes": ["alternate-names.altnames", "alternate-names.altenums", "alternate-names.descriptions"],
+      "dimensions": ["editing"],
+      "file": "src/commands.ts",
+      "symbol": "SetAlternateNamesKeywordCommand"
+    },
+    {
+      "idPrefix": "case.alternate-names.roundtrip",
+      "kind": "test",
+      "requirementPrefixes": ["alternate-names.altnames", "alternate-names.altenums", "alternate-names.descriptions"],
+      "dimensions": ["roundtrip", "tests"],
+      "facet": "positive",
+      "file": "tests/alternate-names.test.ts",
+      "test": "provides typed add, replace, and remove with byte-identical inverses"
+    },
+    {
+      "idPrefix": "impl.composition.command",
+      "kind": "implementation",
+      "requirementPrefixes": ["conditional-composition."],
+      "dimensions": ["editing"],
+      "file": "src/commands.ts",
+      "symbol": "SetCompositionKeywordCommand"
+    },
+    {
+      "idPrefix": "case.composition.negative",
+      "kind": "test",
+      "requirementPrefixes": ["conditional-composition."],
+      "dimensions": ["tests"],
+      "facet": "negative",
+      "file": "tests/conditional-composition.test.ts",
+      "test": "diagnoses activation, shapes, dependencies, nested declarations, and ignores literal data"
+    },
+    {
+      "idPrefix": "impl.units.command",
+      "kind": "implementation",
+      "requirementPrefixes": ["units.symbol", "units.symbols", "units.unit", "units.ucum", "units.currency"],
+      "dimensions": ["editing"],
+      "file": "src/commands.ts",
+      "symbol": "SetUnitsKeywordCommand"
+    },
+    {
+      "idPrefix": "case.units.positive",
+      "kind": "test",
+      "requirementPrefixes": ["units.symbol", "units.symbols", "units.unit", "units.ucum", "units.currency"],
+      "dimensions": ["tests"],
+      "facet": "positive",
+      "file": "tests/units.test.ts",
+      "test": "provides typed add, replace, and remove commands for every keyword with byte-identical inverses"
+    },
+    {
+      "idPrefix": "impl.validation.command",
+      "kind": "implementation",
+      "requirementPrefixes": ["validation."],
+      "dimensions": ["editing"],
+      "file": "src/commands.ts",
+      "symbol": "SetValidationKeywordCommand"
+    },
+    {
+      "idPrefix": "case.validation.negative",
+      "kind": "test",
+      "requirementPrefixes": ["validation."],
+      "dimensions": ["tests"],
+      "facet": "negative",
+      "file": "tests/validation.test.ts",
+      "test": "enforces placements, domains, schema forms, and cross-key constraints"
+    },
+    {
+      "idPrefix": "impl.semantic.command",
+      "kind": "implementation",
+      "requirementPrefixes": ["concepts.", "observation.", "binding.", "temporal.", "spatial.", "media."],
+      "dimensions": ["editing"],
+      "file": "src/commands.ts",
+      "symbol": "SetSemanticAnnotationCommand"
+    },
+    {
+      "idPrefix": "case.semantic.positive",
+      "kind": "test",
+      "requirementPrefixes": ["concepts.", "observation.", "binding.", "temporal.", "spatial.", "media."],
+      "dimensions": ["tests"],
+      "facet": "positive",
+      "file": "tests/semantic-annotations.test.ts",
+      "test": "provides typed add, replace, and remove commands for all 20 keywords"
+    }
+  ]
+}
