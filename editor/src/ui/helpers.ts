@@ -33,6 +33,7 @@ export interface GraphEdge {
   readonly id: string;
   readonly from: string;
   readonly to: string;
+  readonly pointer?: JsonPointer;
   readonly label: string;
   readonly kind: 'root' | 'inheritance' | 'reference' | 'relation' | 'relation-qualifier' | 'import';
   readonly status?: GraphResolutionStatus;
@@ -41,6 +42,7 @@ export interface GraphEdge {
   readonly documentUri?: string;
   readonly provenance?: 'import' | 'importdefs';
   readonly reason?: string;
+  readonly selectable?: boolean;
 }
 
 export interface GraphProjection { readonly nodes: readonly GraphNode[]; readonly edges: readonly GraphEdge[]; }
@@ -113,7 +115,7 @@ function projectReferenceFact(snapshot: DocumentSnapshot, definitions: readonly 
   const targetId = targetNode(fact, status, nodes, nodeIds);
   edges.push({
     id: `${owner}:${edgeKind(fact.kind)}:${fact.pointer}:${targetId}`,
-    from: owner, to: targetId, label: referenceLabel(fact), kind: edgeKind(fact.kind), status,
+    from: owner, to: targetId, pointer: edgePointer(fact), label: referenceLabel(fact), kind: edgeKind(fact.kind), status,
     target: fact.target, targetPointer: fact.targetPointer, documentUri: fact.targetDocumentUri,
     provenance: fact.importOrigins.at(-1)?.provenance, reason: fact.reason
   });
@@ -139,7 +141,7 @@ function projectImportFact(snapshot: DocumentSnapshot, fact: ImportResolutionFac
     }
     edges.push({
       id: `${namespace}:import:${fact.pointer}:${target}`, from: namespace, to: target,
-      label: fact.provenance === 'import' ? '$import' : '$importdefs', kind: 'import', status,
+      pointer: fact.pointer, label: fact.provenance === 'import' ? '$import' : '$importdefs', kind: 'import', status,
       target: fact.source, documentUri: fact.documentUri, provenance: fact.provenance, reason: fact.reason
     });
   }
@@ -244,6 +246,11 @@ function referenceLabel(fact: ReferenceResolutionFact): string {
   if (family === 'patternProperties' || family === 'patternKeys') return `${family}:${leaf}`;
   if (family === 'allOf' || family === 'anyOf' || family === 'oneOf') return `${family}[${leaf}]`;
   return leaf;
+}
+
+function edgePointer(fact: ReferenceResolutionFact): JsonPointer {
+  if (fact.kind === 'relation-target' || fact.kind === 'relation-qualifier') return fact.pointer.replace(/\/(?:targettype|qualifiertype)\/\$ref$/, '') as JsonPointer;
+  return fact.pointer;
 }
 
 function importDestination(pointer: JsonPointer): JsonPointer {

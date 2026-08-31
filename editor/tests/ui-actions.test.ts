@@ -32,6 +32,10 @@ describe('UI command action registry', () => {
     expect(actionById('reference.type')).toMatchObject({ control: { kind: 'reference-picker' } });
     expect(actionById('relation.add')).toMatchObject({ control: { kind: 'relation-editor' }, capability: 'relations' });
     expect(actionById('relation.edit')).toMatchObject({ control: { kind: 'relation-editor' }, capability: 'relations' });
+    expect(actionById('relation.identity')).toMatchObject({ control: { kind: 'property-multi-select' }, keyword: 'identity' });
+    expect(actionById('relation.cardinality')).toMatchObject({ control: { kind: 'select' }, keyword: 'cardinality' });
+    expect(actionById('relation.scope')).toMatchObject({ control: { kind: 'structured-list', item: 'reference' }, keyword: 'scope' });
+    expect(actionById('relation.qualifier')).toMatchObject({ control: { kind: 'reference-picker' }, keyword: 'qualifiertype' });
     expect(actionById('units.ucumUnit')).toMatchObject({ control: { kind: 'catalog', family: 'ucumUnit' }, capability: 'units', operation: 'set', removesActionId: 'units.ucumUnit.remove' });
     expect(actionById('units.unit.remove')).toMatchObject({ requiresValue: false, capability: 'units', operation: 'remove' });
     expect(commandActions.filter((action) => action.operation === 'set').every((action) => action.control || action.id === 'root.set')).toBe(true);

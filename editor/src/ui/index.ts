@@ -7,6 +7,7 @@ import { actionAvailability, catalogFamilyForAction, parseActionValue, valueAtPo
 import { diagnosticsForPointer, isInlineRootSchema, pointerLabel, projectGraph, projectInspectorSections, projectProperties, projectSchemaInspectorSections, type InspectorSection, type PropertyRow } from './helpers.js';
 import { GraphNavigationController } from './graph-navigation.js';
 import { ForceGraphLayout, graphEdgePath, type ForceGraphPosition } from './force-graph-layout.js';
+import { SemanticGraphController, type SemanticGraphView } from './semantic-graph.js';
 import { editorStyles } from './prototype-styles.js';
 import { InstanceWorkspace, type InstanceValidationResult } from '../phase4/instance-workspace.js';
 import { resolveEffectiveMembers } from '../phase4/effective-members.js';
@@ -132,6 +133,7 @@ type LibraryOperation = 'import' | 'copy' | 'materialize';
 type GraphResizeObserver = { observe(target: SVGElement): void; disconnect(): void };
 const graphNavigationBySnapshot = new WeakMap<DocumentSnapshot, GraphNavigationController>();
 const forceGraphLayoutBySnapshot = new WeakMap<DocumentSnapshot, ForceGraphLayout>();
+const semanticGraphBySnapshot = new WeakMap<DocumentSnapshot, SemanticGraphController>();
 
 /**
  * Mounts the ALPHA JSON Structure workbench into a browser container.
@@ -187,6 +189,9 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
   let drawerReturnFocus: HTMLElement | undefined;
   const graphNavigation = new GraphNavigationController();
   const graphLayout = new ForceGraphLayout();
+  const semanticGraph = new SemanticGraphController();
+  let fitGraphAfterRender = false;
+  let lastGraphActivation: { readonly nodeId: string; readonly time: number } | undefined;
   const catalogRegistry = createCatalogRegistry();
   const services = options.services ?? options.host;
   const unsubscribeConversionProgress = services?.onConversionProgress?.((progress) => {
@@ -274,15 +279,17 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     const snapshot = session.snapshot();
     const definitions = (snapshot.model?.projections.definitions ?? []).filter((definition) => definition.reusable);
     selectedPointer = selectFallback(snapshot, selectedPointer);
-    const selectedDefinition = selectedPointer === '' ? undefined : definitions.find((definition) => definition.pointer === selectedPointer) ?? definitions.find((definition) => selectedPointer?.startsWith(`${definition.pointer}/properties/`));
+    const selectedDefinition = selectedPointer === '' ? undefined : definitions.find((definition) => definition.pointer === selectedPointer) ?? definitions.find((definition) => selectedPointer?.startsWith(`${definition.pointer}/`));
     const definitionPointer = selectedDefinition?.pointer ?? (isInlineRootSchema(session.value) ? '' : undefined);
     const rows = definitionPointer === '' ? projectRootProperties(session.value) : projectProperties(selectedDefinition);
     const graph = projectGraph(snapshot);
     graphNavigation.reconcileSelection(graph.nodes);
     graphNavigationBySnapshot.set(snapshot, graphNavigation);
-    graphLayout.reconcile(graph.nodes, graph.edges);
+    const semanticGraphView = semanticGraph.setSource(graph);
+    semanticGraphBySnapshot.set(snapshot, semanticGraph);
+    graphLayout.reconcile(semanticGraphView.projection.nodes, semanticGraphView.projection.edges);
     forceGraphLayoutBySnapshot.set(snapshot, graphLayout);
-    root.innerHTML = workbenchShell(snapshot, documentTitle, definitions.map((item) => ({ name: item.name, pointer: item.pointer, namespace: item.namespacePointer })), definitionPointer, rows, selectedPointer, mode, problemsOpen);
+    root.innerHTML = structuredWorkbenchShell(snapshot, documentTitle, definitions.map((item) => ({ name: item.name, pointer: item.pointer, namespace: item.namespacePointer })), definitionPointer, rows, selectedPointer, mode, problemsOpen);
     mountAdvancedViews(root, snapshot, definitionPointer, graph, mode, instanceText, instanceResult, impactDirection, selectedAddIns, refactoringPlan, refactoringStatus, services, conversionManifest, conversionCommandId, conversionResult, conversionStatus, conversionProgress, conversionRequestId, libraryEntries, librarySelector, libraryDocument, librarySelection, libraryOperation, libraryPlan, libraryStatus, { providers: libraryProviders, catalog: libraryCatalog, resolution: libraryResolution, offline: libraryOffline, publishDraft: libraryPublishDraft, publishPreview: libraryPublishPreviewState, publishedEpoch: libraryPublishedEpoch, documentValid: snapshot.recovery === 'valid' });
     root.dataset.theme = themeName;
     const nextSource = root.querySelector('[data-source]');
@@ -296,7 +303,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       panel?.setAttribute('role', 'tabpanel');
       panel?.setAttribute('aria-labelledby', `js-tab-${item}`);
     });
-    wire(definitionPointer, rows, graph);
+    wire(definitionPointer, rows, mode === 'graph' ? semanticGraphView.projection : graph);
     if (sourceHadFocus && sourceEditor) sourceEditor.focus();
     else restoreWorkbenchFocus(root, focusAnchor);
     if (sourceEditor) revealPendingDiagnostic();
@@ -382,9 +389,13 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     root.querySelector('[data-show-commands]')?.addEventListener('click', () => showCommandPalette());
     root.querySelectorAll('[data-command="definition.add"]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => openAction('definition.add', '')));
     root.querySelector('[data-command="add"]')?.addEventListener('click', () => openAction('property.add', definitionPointer));
-    root.querySelector('[data-command="rename"]')?.addEventListener('click', () => openAction('property.rename', selectedPointer));
-    root.querySelector('[data-command="edit"]')?.addEventListener('click', () => openAction('property.edit', selectedPointer));
-    root.querySelector('[data-command="delete"]')?.addEventListener('click', () => openAction('property.delete', selectedPointer));
+    root.querySelectorAll('[data-action-id]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => openAction(button.dataset.actionId!, button.dataset.actionPointer ?? selectedPointer)));
+    root.querySelectorAll('[data-relation-cardinality]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
+      const action = actionById('relation.cardinality');
+      const pointer = button.dataset.actionPointer;
+      if (!action || !pointer) return;
+      void applyCommand(action.create(pointer, button.dataset.relationCardinality));
+    }));
     root.querySelector('[data-action-apply]')?.addEventListener('click', () => {
       const select = root.querySelector('[data-action-select]') as HTMLInputElement;
       const action = actionById(select.value);
@@ -618,21 +629,72 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       const activate = (): void => {
         const nodeId = target.dataset.graphNode;
         if (nodeId && suppressNodeClick === nodeId) { suppressNodeClick = undefined; return; }
-        const pointer = target.dataset.graphSelect;
-        if (!pointer) return;
-        selectedPointer = pointer;
-        graphNavigation.navigate({ kind: 'type', nodeId: nodeId ?? pointer, pointer }, 'graph');
+        if (!nodeId) return;
+        const view = semanticGraph.selectNode(nodeId);
+        if (view.selection?.pointer) selectedPointer = view.selection.pointer;
+        render();
+      };
+      target.addEventListener('click', () => {
+        const nodeId = target.dataset.graphNode;
+        if (!nodeId) return;
+        const now = performance.now();
+        const priorActivation = lastGraphActivation;
+        if (priorActivation !== undefined && priorActivation.nodeId === nodeId && now - priorActivation.time < 360) {
+          lastGraphActivation = undefined;
+          semanticGraph.openNode(nodeId);
+          fitGraphAfterRender = true;
+          render();
+        } else {
+          lastGraphActivation = { nodeId, time: now };
+          activate();
+        }
+      });
+      target.addEventListener('keydown', (event: KeyboardEvent) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          const nodeId = target.dataset.graphNode;
+          if (!nodeId) return;
+          semanticGraph.openNode(nodeId);
+          fitGraphAfterRender = true;
+          render();
+        } else if (event.key === ' ') { event.preventDefault(); activate(); }
+      });
+    });
+    root.querySelectorAll('[data-graph-edge-select]').forEach((target: SVGElement) => {
+      const activate = (): void => {
+        const edgeId = target.dataset.graphEdgeSelect;
+        if (!edgeId) return;
+        const view = semanticGraph.selectEdge(edgeId);
+        if (view.selection?.pointer) selectedPointer = view.selection.pointer;
         render();
       };
       target.addEventListener('click', activate);
       target.addEventListener('keydown', (event: KeyboardEvent) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); activate(); } });
     });
+    root.querySelectorAll('[data-graph-lens]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
+      semanticGraph.setLens(button.dataset.graphLens as import('../graph.js').ProjectionId);
+      fitGraphAfterRender = true;
+      render();
+    }));
+    root.querySelector('[data-graph-search]')?.addEventListener('input', (event: Event) => {
+      semanticGraph.setSearch((event.currentTarget as HTMLInputElement).value);
+      render();
+    });
+    root.querySelectorAll('[data-graph-breadcrumb]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
+      const level = button.dataset.graphBreadcrumb;
+      if (level === 'atlas') semanticGraph.home();
+      else if (level === 'types' && semanticGraph.view().location.level === 'neighborhood') semanticGraph.drillOut();
+      fitGraphAfterRender = true;
+      render();
+    }));
     root.querySelector('[data-graph-fit]')?.addEventListener('click', () => { graphNavigation.fit(); updateGraphCamera(); });
     root.querySelector('[data-graph-zoom-out]')?.addEventListener('click', () => zoomGraphAtCenter(180));
     root.querySelector('[data-graph-zoom-in]')?.addEventListener('click', () => zoomGraphAtCenter(-180));
     root.querySelector('[data-graph-relayout]')?.addEventListener('click', () => { graphLayout.relayout(); });
-    root.querySelector('[data-graph-back]')?.addEventListener('click', () => { selectedPointer = graphNavigation.back().selection?.pointer; render(); });
-    root.querySelector('[data-graph-forward]')?.addEventListener('click', () => { selectedPointer = graphNavigation.forward().selection?.pointer; render(); });
+    root.querySelector('[data-graph-back]')?.addEventListener('click', () => { const view = semanticGraph.back(); if (view.selection?.pointer) selectedPointer = view.selection.pointer; fitGraphAfterRender = true; render(); });
+    root.querySelector('[data-graph-forward]')?.addEventListener('click', () => { const view = semanticGraph.forward(); if (view.selection?.pointer) selectedPointer = view.selection.pointer; fitGraphAfterRender = true; render(); });
+    root.querySelector('[data-graph-home]')?.addEventListener('click', () => { semanticGraph.home(); fitGraphAfterRender = true; render(); });
+    root.querySelector('[data-graph-out]')?.addEventListener('click', () => { semanticGraph.drillOut(); fitGraphAfterRender = true; render(); });
     const canvas = root.querySelector('[data-graph-canvas]') as SVGElement | null;
     if (!canvas) return;
     const graphWorld = canvas.querySelector('[data-graph-world]') as SVGElement | null;
@@ -688,7 +750,24 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     const zoomGraphAtCenter = (deltaY: number): void => {
       const bounds = syncViewport();
       graphNavigation.wheelZoom({ x: bounds.width / 2, y: bounds.height / 2 }, deltaY);
-      updateGraphCamera();
+      if (!transitionSemanticLevel()) updateGraphCamera();
+    };
+    const transitionSemanticLevel = (): boolean => {
+      const camera = graphNavigation.snapshot().camera;
+      const semantic = semanticGraph.view();
+      if (camera.zoom > 1.6 && semantic.location.level !== 'neighborhood' && semantic.selection?.nodeId) {
+        semanticGraph.openSelection();
+        fitGraphAfterRender = true;
+        render();
+        return true;
+      }
+      if (camera.zoom < 0.6 && semantic.location.level !== 'atlas') {
+        semanticGraph.drillOut();
+        fitGraphAfterRender = true;
+        render();
+        return true;
+      }
+      return false;
     };
     syncViewport();
     const ResizeObserverConstructor = (globalThis as unknown as { ResizeObserver?: new (callback: () => void) => GraphResizeObserver }).ResizeObserver;
@@ -696,7 +775,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       graphResizeObserver = new ResizeObserverConstructor(() => { if (!disposed && canvas.isConnected) syncViewport(); });
       graphResizeObserver.observe(canvas);
     }
-    canvas.addEventListener('wheel', (event: WheelEvent) => { event.preventDefault(); const bounds = syncViewport(); graphNavigation.wheelZoom({ x: event.clientX - bounds.left, y: event.clientY - bounds.top }, event.deltaY); updateGraphCamera(); }, { passive: false });
+    canvas.addEventListener('wheel', (event: WheelEvent) => { event.preventDefault(); const bounds = syncViewport(); graphNavigation.wheelZoom({ x: event.clientX - bounds.left, y: event.clientY - bounds.top }, event.deltaY); if (!transitionSemanticLevel()) updateGraphCamera(); }, { passive: false });
     let lastPoint: { x: number; y: number } | undefined;
     let nodeDrag: { readonly id: string; readonly offsetX: number; readonly offsetY: number; readonly startX: number; readonly startY: number; moved: boolean } | undefined;
     const activePointers = new Map<number, { readonly x: number; readonly y: number }>();
@@ -742,7 +821,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
           const midpoint = { x: (first!.x + second!.x) / 2 - bounds.left, y: (first!.y + second!.y) / 2 - bounds.top };
           graphNavigation.wheelZoom(midpoint, -Math.log(nextDistance / Math.max(1, pinchDistance)) / 0.0015);
           pinchDistance = nextDistance;
-          updateGraphCamera();
+          if (!transitionSemanticLevel()) updateGraphCamera();
           return;
         }
       }
@@ -775,8 +854,13 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       if (event.key === '+' || event.key === '=') { event.preventDefault(); zoomGraphAtCenter(-180); }
       else if (event.key === '-') { event.preventDefault(); zoomGraphAtCenter(180); }
       else if (event.key === '0' || event.key === 'Home') { event.preventDefault(); graphNavigation.fit(); updateGraphCamera(); }
+      else if (event.key === 'Escape' && semanticGraph.view().canDrillOut) { event.preventDefault(); semanticGraph.drillOut(); fitGraphAfterRender = true; render(); }
     });
     root.querySelector('[data-minimap]')?.addEventListener('click', (event: Event) => { const target = event.currentTarget as SVGElement; const bounds = target.getBoundingClientRect(); const pointer = event as PointerEvent; graphNavigation.navigateMinimap({ x: ((pointer.clientX - bounds.left) / Math.max(1, bounds.width)) * 180, y: ((pointer.clientY - bounds.top) / Math.max(1, bounds.height)) * 120 }, { x: 0, y: 0, width: 180, height: 120 }); updateGraphCamera(); });
+    if (fitGraphAfterRender) {
+      fitGraphAfterRender = false;
+      graphNavigation.fit();
+    }
     updateGraphGeometry();
   };
   const showCommandPalette = (): void => {
@@ -1027,7 +1111,43 @@ function pointerTokens(pointer: string): string[] {
 
 function formatPointer(tokens: readonly string[]): string { return tokens.length ? `/${tokens.map((token) => token.replace(/~/g, '~0').replace(/\//g, '~1')).join('/')}` : ''; }
 
-function workbenchShell(snapshot: DocumentSnapshot, title: string, definitions: readonly { readonly name: string; readonly pointer: string; readonly namespace: string }[], definitionPointer: string | undefined, rows: readonly PropertyRow[], selectedPointer: string | undefined, mode: Mode, problemsOpen: boolean): string {
+function structuredWorkbenchShell(snapshot: DocumentSnapshot, title: string, definitions: readonly { readonly name: string; readonly pointer: string; readonly namespace: string }[], definitionPointer: string | undefined, rows: readonly PropertyRow[], selectedPointer: string | undefined, mode: Mode, problemsOpen: boolean): string {
+  const definition = snapshot.model?.projections.definitions.find((item) => item.pointer === definitionPointer);
+  const selectedProperty = rows.find((row) => row.pointer === selectedPointer);
+  const selectedRelation = definition?.relations.find((relation) => relation.pointer === selectedPointer);
+  const selectedDiagnostics = diagnosticsForPointer(snapshot.diagnostics, selectedPointer);
+  const errors = snapshot.diagnostics.filter((diagnostic) => diagnostic.severity === 'error').length;
+  const warnings = snapshot.diagnostics.filter((diagnostic) => diagnostic.severity === 'warning').length;
+  const documentStatus = snapshot.recovery !== 'valid' || errors ? 'invalid' : warnings ? 'warnings' : 'valid';
+  const documentValue = snapshot.recovery === 'valid' ? JSON.parse(snapshot.text) : {};
+  const profile = detectMetaSchemaMode(documentValue);
+  const activeCompanions = Object.entries(profile.capabilities).filter(([name, active]) => name !== 'core' && name !== 'unknownUses' && active === true).length;
+  const advancedModes: readonly { readonly mode: Extract<Mode, 'analysis' | 'instance' | 'conversion' | 'libraries'>; readonly icon: string; readonly label: string }[] = [
+    { mode: 'analysis', icon: 'i', label: 'Analysis' },
+    { mode: 'instance', icon: '✓', label: 'Validate instance' },
+    { mode: 'conversion', icon: '⇄', label: 'Conversions' },
+    { mode: 'libraries', icon: '≡', label: 'Libraries' },
+  ];
+  const representationModes: readonly Extract<Mode, 'design' | 'graph' | 'source'>[] = ['design', 'graph', 'source'];
+  const typeTree = definitions.map((item) => `<button role="treeitem" class="js-tree-item" data-select="${escapeAttribute(item.pointer)}" aria-current="${item.pointer === definitionPointer}"><span class="js-kind" aria-hidden="true">{ }</span><span>${escapeHtml(item.name)}</span></button>`).join('') || '<div class="js-empty js-tree-empty">No definitions yet.</div>';
+  const representations = representationModes.map((item) => `<button role="tab" data-mode="${item}" aria-selected="${mode === item}">${item[0]!.toUpperCase()}${item.slice(1)}</button>`).join('');
+  const activities = advancedModes.map((item) => `<button class="js-activity-button" data-mode="${item.mode}" aria-label="${item.label}" title="${item.label}" aria-pressed="${mode === item.mode}">${item.icon}</button>`).join('');
+  const breadcrumbs = `<span data-document-title>${escapeHtml(title)}</span>${definition ? `<span aria-hidden="true">›</span><strong>${escapeHtml(definition.name)}</strong>` : ''}${selectedProperty ? `<span aria-hidden="true">›</span><strong>${escapeHtml(selectedProperty.name)}</strong>` : ''}${selectedRelation ? `<span aria-hidden="true">›</span><strong>${escapeHtml(selectedRelation.name)}</strong>` : ''}`;
+  return `<div class="js-shell">
+    <header class="js-title"><span class="js-mark" aria-hidden="true"></span><strong>JSON Structure</strong><span class="js-file" data-document-title>${escapeHtml(title)}</span><button class="js-command-trigger" data-show-commands title="Show Commands (Ctrl+Shift+P)" aria-label="Show Commands">&gt;_</button><label class="js-theme-label"><span class="js-sr-only">Color theme</span><select class="js-theme" data-theme-select aria-label="Color theme"><option value="dark">Dark</option><option value="light">Light</option><option value="contrast">High contrast</option></select></label></header>
+    <div class="js-document-toolbar" role="toolbar" aria-label="Document actions"><button class="js-mobile-toggle" data-mobile-drawer="types" aria-controls="js-outline" aria-expanded="false">Types</button><button data-command="definition.add" title="New type">＋ Type</button><button data-mode="conversion" title="Convert this structure">⇄ Convert</button><button data-mode="instance" title="Validate an instance">✓ Validate</button><span class="js-spacer"></span><span class="js-chip">${escapeHtml(profile.mode)}</span>${activeCompanions ? `<span class="js-chip">${activeCompanions} companions</span>` : ''}<div class="js-tabs" role="tablist" aria-label="Document representation">${representations}</div><button class="js-mobile-toggle" data-mobile-drawer="inspector" aria-controls="js-inspector" aria-expanded="false">Inspector</button></div>
+    <div class="js-workbench" data-problems-open="${problemsOpen}">
+      <nav class="js-activity" aria-label="Workbench views"><button class="js-activity-button js-activity-primary" data-mobile-drawer="types" aria-label="Schema explorer" title="Schema explorer">T</button>${activities}</nav>
+      <aside class="js-outline" id="js-outline" data-drawer-panel="types" aria-label="Schema explorer"><div class="js-panel-head"><span>Types</span><span class="js-spacer"></span><button data-command="definition.add" title="New type" aria-label="New type">＋</button><button class="js-drawer-close" data-mobile-drawer-close aria-label="Close Types">×</button></div><input class="js-filter" type="search" placeholder="Filter types" aria-label="Filter types"><div class="js-tree" role="tree" aria-label="Types and namespaces"><div class="js-tree-group">Definitions · ${definitions.length}</div>${typeTree}</div></aside>
+      <section class="js-center"><div class="js-editor-tab"><span class="js-kind" aria-hidden="true">{ }</span><span data-document-title>${escapeHtml(title)}</span></div><div class="js-breadcrumbs">${breadcrumbs}</div><section class="js-view" ${mode === 'design' ? '' : 'hidden'}>${designView(definition?.name, definition?.type, definition?.description, rows, selectedPointer, definition?.identity, definition?.relations)}</section><section class="js-view js-graph" ${mode === 'graph' ? '' : 'hidden'}>${graphView(snapshot, selectedPointer)}</section><section class="js-view js-source-view" ${mode === 'source' ? '' : 'hidden'}><div class="js-source" data-source aria-label="JSON source editor"></div></section></section>
+      <aside class="js-inspector" id="js-inspector" data-drawer-panel="inspector" aria-label="Inspector"><div class="js-panel-head"><span>Inspector</span><span class="js-spacer"></span><button class="js-drawer-close" data-mobile-drawer-close aria-label="Close Inspector">×</button></div>${inspector(selectedProperty, definition, selectedDiagnostics, selectedRelation)}</aside>
+      <section class="js-problems" aria-label="Problems panel"><div class="js-problems-head"><button class="js-problems-tab" data-problems-toggle aria-expanded="${problemsOpen}">Problems <span class="js-count">${snapshot.diagnostics.length}</span></button><span class="js-spacer"></span><button data-problems-toggle aria-label="Close Problems">×</button></div><div class="js-problem-list" role="list">${problems(snapshot.diagnostics)}</div></section>
+    </div>
+    <footer class="js-status"><button data-problems-toggle aria-expanded="${problemsOpen}" title="Toggle Problems"><span>× ${errors}</span><span>△ ${warnings}</span></button><span>JSON Structure ${escapeHtml(profile.mode)}</span><span class="js-spacer"></span><span>${definitions.length} type${definitions.length === 1 ? '' : 's'}</span><span>${documentStatus}</span></footer>
+  </div>`;
+}
+
+export function workbenchShell(snapshot: DocumentSnapshot, title: string, definitions: readonly { readonly name: string; readonly pointer: string; readonly namespace: string }[], definitionPointer: string | undefined, rows: readonly PropertyRow[], selectedPointer: string | undefined, mode: Mode, problemsOpen: boolean): string {
   const definition = snapshot.model?.projections.definitions.find((item) => item.pointer === definitionPointer);
   const selectedProperty = rows.find((row) => row.pointer === selectedPointer);
   const selectedDiagnostics = diagnosticsForPointer(snapshot.diagnostics, selectedPointer);
@@ -1095,18 +1215,29 @@ function instanceView(text: string, result: InstanceValidationResult | undefined
   return `<div class="js-sheet"><header class="js-type-head"><div><div class="js-eyebrow">Instance workspace</div><h1>Validate sample</h1><p class="js-description">Diagnostics link instance locations to exact schema locations.</p></div><span class="js-chip">${result?.status ?? 'not run'}</span></header><label class="js-instance-label">Instance JSON<textarea data-instance-input spellcheck="false">${escapeHtml(text)}</textarea></label><div class="js-section-head"><h2>Diagnostics (${result?.diagnostics.length ?? 0})</h2><button data-instance-validate>Validate</button></div>${result?.diagnostics.map((diagnostic) => `<button class="js-problem" data-instance-schema="${escapeAttribute(diagnostic.schemaPointer)}"><span class="js-problem-${diagnostic.severity}">${diagnostic.severity === 'error' ? 'x' : '!'}</span><span>${escapeHtml(diagnostic.message)}</span><span class="js-location">${escapeHtml(diagnostic.instancePointer)} -> ${escapeHtml(diagnostic.schemaPointer)}</span></button>`).join('') || '<div class="js-empty">Enter an instance and validate it against the focused schema.</div>'}</div>`;
 }
 
-export function designView(name: string | undefined, type: string | undefined, description: string | undefined, rows: readonly PropertyRow[], selectedPointer: string | undefined): string {
+export function designView(name: string | undefined, type: string | undefined, description: string | undefined, rows: readonly PropertyRow[], selectedPointer: string | undefined, identity: readonly string[] = [], relations: readonly import('../model.js').RelationProjection[] = []): string {
   if (!name && !type) return '<div class="js-empty-state"><span class="js-empty-mark" aria-hidden="true"></span><div class="js-eyebrow">Untitled structure</div><h1>Create your first type</h1><p>Start with a reusable declaration, or switch to Source to author the document directly.</p><div class="js-empty-actions"><button class="js-primary" data-command="definition.add">＋ New type</button><button data-mode="source">Open Source</button></div></div>';
   const propertyRows = rows.map((row) => `<div class="js-row" role="row" aria-current="${row.pointer === selectedPointer}"><div class="js-cell" role="cell"><button class="js-property-link js-code" data-select="${escapeAttribute(row.pointer)}">${escapeHtml(row.name)}</button></div><div class="js-cell js-code" role="cell">${escapeHtml(row.type)}</div><div class="js-cell ${row.required ? 'js-required' : 'js-optional'}" role="cell">${row.required ? 'required' : 'optional'}</div><div class="js-cell js-description-cell" role="cell">${escapeHtml(row.description ?? 'Description needed')}</div><div class="js-cell js-action-cell" role="cell"><button class="js-row-action" data-select="${escapeAttribute(row.pointer)}" aria-label="Inspect ${escapeAttribute(row.name)}">⋯</button></div></div>`).join('');
-  return `<div class="js-sheet"><header class="js-type-head"><div><div class="js-eyebrow">${name ? 'Local definition' : 'Document root'}</div><h1>${escapeHtml(name ?? 'Document root')}</h1><p class="js-description">${escapeHtml(description ?? 'No description yet.')}</p></div><span class="js-chip">${escapeHtml(type ?? 'untyped')}</span></header><div class="js-section-head"><div><h2>Properties</h2><span class="js-section-meta">${rows.length} total · ${rows.filter((row) => row.required).length} required</span></div><button data-command="add">＋ Add property</button></div><div class="js-grid" role="table" aria-label="Properties"><div class="js-row js-header" role="row"><div class="js-cell" role="columnheader">Name</div><div class="js-cell" role="columnheader">Type</div><div class="js-cell" role="columnheader">Presence</div><div class="js-cell js-description-cell" role="columnheader">Description</div><div class="js-cell" role="columnheader"><span class="js-sr-only">Actions</span></div></div>${propertyRows || '<button class="js-add-row" data-command="add">＋ <span>Add a property</span></button>'}</div></div>`;
+  const definitionPointer = relations[0]?.pointer.replace(/\/relations\/[^/]+$/, '') ?? selectedPointer?.replace(/\/(?:properties|relations)\/[^/]+$/, '') ?? '';
+  const identityView = `<section class="js-design-section"><div class="js-section-head"><div><h2>Identity</h2><span class="js-section-meta">ordered key</span></div><button data-action-id="relation.identity" data-action-pointer="${escapeAttribute(definitionPointer)}">Edit identity</button></div>${identity.length ? `<ol class="js-identity-list">${identity.map((property, index) => `<li><span class="js-order">${index + 1}</span><span class="js-code">${escapeHtml(property)}</span></li>`).join('')}</ol>` : '<p class="js-description">No identity is declared. Relations cannot target this type until it has an identity.</p>'}</section>`;
+  const relationRows = relations.map((relation) => `<button class="js-relation-row" data-select="${escapeAttribute(relation.pointer)}" aria-current="${relation.pointer === selectedPointer}"><span><strong>${escapeHtml(relation.name)}</strong><small>${escapeHtml(relation.targetTypeRef ?? 'No target')}</small></span><span class="js-chip">${escapeHtml(relation.cardinality ?? 'single')}</span><span class="js-relation-scope">${escapeHtml(formatRelationScope(relation.scope))}</span><span aria-hidden="true">›</span></button>`).join('');
+  const relationsView = `<section class="js-design-section"><div class="js-section-head"><div><h2>Relations</h2><span class="js-section-meta">${relations.length}</span></div><button data-action-id="relation.add" data-action-pointer="${escapeAttribute(definitionPointer)}">＋ Add relation</button></div><div class="js-relation-list">${relationRows || '<p class="js-description">No relations declared.</p>'}</div></section>`;
+  return `<div class="js-sheet"><header class="js-type-head"><div><div class="js-eyebrow">${name ? 'Local definition' : 'Document root'}</div><h1>${escapeHtml(name ?? 'Document root')}</h1><p class="js-description">${escapeHtml(description ?? 'No description yet.')}</p></div><span class="js-chip">${escapeHtml(type ?? 'untyped')}</span></header><div class="js-section-head"><div><h2>Properties</h2><span class="js-section-meta">${rows.length} total · ${rows.filter((row) => row.required).length} required</span></div><button data-command="add">＋ Add property</button></div><div class="js-grid" role="table" aria-label="Properties"><div class="js-row js-header" role="row"><div class="js-cell" role="columnheader">Name</div><div class="js-cell" role="columnheader">Type</div><div class="js-cell" role="columnheader">Presence</div><div class="js-cell js-description-cell" role="columnheader">Description</div><div class="js-cell" role="columnheader"><span class="js-sr-only">Actions</span></div></div>${propertyRows || '<button class="js-add-row" data-command="add">＋ <span>Add a property</span></button>'}</div>${identityView}${relationsView}</div>`;
+}
+
+function formatRelationScope(scope: string | readonly string[] | undefined): string {
+  if (scope === undefined) return 'unscoped';
+  return typeof scope === 'string' ? pointerLabel(scope) : `${scope.length} scopes`;
 }
 
 export function graphView(graphOrSnapshot: ReturnType<typeof projectGraph> | DocumentSnapshot, navigationOrSelected: GraphNavigationController | string | undefined, selectedPointerOverride?: string | undefined): string {
   const isSnapshot = 'model' in graphOrSnapshot;
-  const graph: ReturnType<typeof projectGraph> = isSnapshot ? projectGraph(graphOrSnapshot as DocumentSnapshot) : graphOrSnapshot as ReturnType<typeof projectGraph>;
+  const sourceGraph: ReturnType<typeof projectGraph> = isSnapshot ? projectGraph(graphOrSnapshot as DocumentSnapshot) : graphOrSnapshot as ReturnType<typeof projectGraph>;
+  const semanticView: SemanticGraphView | undefined = isSnapshot ? semanticGraphBySnapshot.get(graphOrSnapshot as DocumentSnapshot)?.view() : undefined;
+  const graph = semanticView?.projection ?? sourceGraph;
   const navigation: GraphNavigationController = isSnapshot ? graphNavigationBySnapshot.get(graphOrSnapshot as DocumentSnapshot) ?? new GraphNavigationController() : navigationOrSelected as GraphNavigationController;
   const layout = isSnapshot ? forceGraphLayoutBySnapshot.get(graphOrSnapshot as DocumentSnapshot) ?? new ForceGraphLayout() : new ForceGraphLayout();
-  const selectedPointer = isSnapshot ? navigationOrSelected as string | undefined : selectedPointerOverride;
+  const selectedPointer = semanticView?.selection?.pointer ?? (isSnapshot ? navigationOrSelected as string | undefined : selectedPointerOverride);
   const layoutPositions = layout.reconcile(graph.nodes, graph.edges);
   const graphNodes = new Map(graph.nodes.map((node) => [node.id, node]));
   const positions = layoutPositions.map((position) => ({ ...graphNodes.get(position.id)!, ...position }));
@@ -1114,31 +1245,50 @@ export function graphView(graphOrSnapshot: ReturnType<typeof projectGraph> | Doc
   const bounds = layout.contentBounds();
   const width = bounds.width; const height = bounds.height; navigation.setContent({ x: 0, y: 0, width, height }); const state = navigation.snapshot(); const minimap = navigation.minimap(positions); const transform = `translate(${state.camera.x} ${state.camera.y}) scale(${state.camera.zoom})`;
   const minimapViewport = clampMinimapViewport(minimap.viewport, width, height);
-  const edges = graph.edges.map((edge) => renderGraphEdge(edge, position)).join('');
-  const nodes = positions.map((node) => renderGraphNode(node, selectedPointer, state.semanticZoom)).join('') || '<text x="30" y="50">No types to graph.</text>';
+  const labelRuntime = new GraphRuntime({
+    nodes: positions.map((node) => ({ id: node.id, position: { x: node.x + node.width / 2, y: node.y + node.height / 2 }, width: node.width, height: node.height })),
+    edges: graph.edges.filter((edge) => position.has(edge.from) && position.has(edge.to)).map((edge) => ({ id: edge.id, source: edge.from, target: edge.to, label: edge.label })),
+  });
+  const labelLanes = new Map(labelRuntime.assignEdgeLabelLanes().map((lane) => [lane.edgeId, lane.lane]));
+  const selectedNodeId = semanticView?.selection?.kind !== 'relation' ? semanticView?.selection?.nodeId as string | undefined : undefined;
+  const selectedEdgeId = semanticView?.selection?.kind === 'relation' || semanticView?.selection?.kind === 'source' ? semanticView.selection.nodeId as string | undefined : undefined;
+  const searchMatches = new Set(semanticView?.searchMatches ?? []);
+  const edges = graph.edges.map((edge) => renderGraphEdge(edge, position, labelLanes.get(edge.id) ?? 0, edge.id === selectedEdgeId)).join('');
+  const nodes = positions.map((node) => renderGraphNode(node, selectedPointer, state.semanticZoom, node.id === selectedNodeId, searchMatches.has(node.id))).join('') || '<text x="30" y="50">No types to graph.</text>';
   if (!isSnapshot) layout.dispose();
-  return `<div class="js-graph-toolbar"><button data-graph-back title="Back" aria-label="Back" ${state.historyIndex > 0 ? '' : 'disabled'}>←</button><button data-graph-forward title="Forward" aria-label="Forward" ${state.historyIndex < state.history.length - 1 ? '' : 'disabled'}>→</button><button data-graph-fit title="Fit graph">Fit</button><button data-graph-relayout title="Release pinned nodes and run the force layout again">Relayout</button><span class="js-spacer"></span><button data-graph-zoom-out title="Zoom out" aria-label="Zoom out">−</button><span data-semantic-zoom="${state.semanticZoom}">${Math.round(state.camera.zoom * 100)}% · ${state.semanticZoom}</span><button data-graph-zoom-in title="Zoom in" aria-label="Zoom in">＋</button></div><svg class="js-graph-canvas" data-graph-canvas viewBox="0 0 ${width} ${height}" tabindex="0" role="group" aria-label="Interactive type relationship graph with ${graph.nodes.length} nodes and ${graph.edges.length} edges. Use plus and minus to zoom, zero to fit, and Tab to reach graph nodes."><defs><marker id="js-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8Z" fill="currentColor"></path></marker></defs><g data-graph-world transform="${transform}"><g data-graph-edges>${edges}</g><g data-graph-nodes>${nodes}</g></g><g class="js-minimap" transform="translate(12 12)"><rect width="180" height="120" data-minimap></rect><g data-minimap-nodes>${minimap.nodes.map((node, index) => `<rect data-minimap-node="${escapeAttribute(positions[index]?.id ?? '')}" x="${node.x / width * 180}" y="${node.y / height * 120}" width="${Math.max(3, node.width / width * 180)}" height="${Math.max(3, node.height / height * 120)}"></rect>`).join('')}</g><rect class="js-minimap-viewport" x="${minimapViewport.x}" y="${minimapViewport.y}" width="${minimapViewport.width}" height="${minimapViewport.height}"></rect></g></svg>`;
+  const semanticToolbar = semanticView ? renderSemanticGraphToolbar(semanticView) : '';
+  const graphLabel = semanticView ? `${semanticView.title}. ${semanticView.description}` : `Type relationship graph with ${graph.nodes.length} nodes and ${graph.edges.length} edges`;
+  return `<div class="js-graph-toolbar"><button data-graph-back title="Back" aria-label="Back" ${semanticView?.canBack || state.historyIndex > 0 ? '' : 'disabled'}>←</button><button data-graph-forward title="Forward" aria-label="Forward" ${semanticView?.canForward || state.historyIndex < state.history.length - 1 ? '' : 'disabled'}>→</button><button data-graph-home title="Schema atlas" aria-label="Schema atlas">⌂</button>${semanticView?.canDrillOut ? '<button data-graph-out title="Drill out" aria-label="Drill out">↑</button>' : ''}<button data-graph-fit title="Fit graph">Fit</button><button data-graph-relayout title="Release pinned nodes and run the force layout again">Relayout</button><span class="js-spacer"></span><button data-graph-zoom-out title="Zoom out" aria-label="Zoom out">−</button><span data-semantic-zoom="${state.semanticZoom}">${Math.round(state.camera.zoom * 100)}% · ${state.semanticZoom}</span><button data-graph-zoom-in title="Zoom in" aria-label="Zoom in">＋</button></div>${semanticToolbar}<svg class="js-graph-canvas" data-graph-canvas viewBox="0 0 ${width} ${height}" tabindex="0" role="group" aria-label="${escapeAttribute(graphLabel)}. Use plus and minus to zoom, zero to fit, Escape to drill out, and Tab to reach graph nodes and edges."><defs><marker id="js-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8Z" fill="currentColor"></path></marker></defs><g data-graph-world transform="${transform}"><g data-graph-edges>${edges}</g><g data-graph-nodes>${nodes}</g></g><g class="js-minimap" transform="translate(12 12)"><rect width="180" height="120" data-minimap></rect><g data-minimap-nodes>${minimap.nodes.map((node, index) => `<rect data-minimap-node="${escapeAttribute(positions[index]?.id ?? '')}" x="${node.x / width * 180}" y="${node.y / height * 120}" width="${Math.max(3, node.width / width * 180)}" height="${Math.max(3, node.height / height * 120)}"></rect>`).join('')}</g><rect class="js-minimap-viewport" x="${minimapViewport.x}" y="${minimapViewport.y}" width="${minimapViewport.width}" height="${minimapViewport.height}"></rect></g></svg>`;
+}
+
+function renderSemanticGraphToolbar(view: SemanticGraphView): string {
+  const lenses: readonly { readonly id: import('../graph.js').ProjectionId; readonly label: string }[] = [
+    { id: 'namespaces', label: 'Namespaces' }, { id: 'relations', label: 'Relations' }, { id: 'extends', label: 'Extends' }, { id: 'imports', label: 'Imports' },
+  ];
+  const breadcrumbs = view.breadcrumbs.map((crumb, index) => `<button data-graph-breadcrumb="${crumb.level}" ${index === view.breadcrumbs.length - 1 ? 'aria-current="page"' : ''}>${escapeHtml(crumb.label)}</button>${index < view.breadcrumbs.length - 1 ? '<span aria-hidden="true">›</span>' : ''}`).join('');
+  return `<div class="js-graph-context"><div class="js-graph-location"><div class="js-graph-crumbs" aria-label="Graph location">${breadcrumbs}</div><strong>${escapeHtml(view.title)}</strong><span>${escapeHtml(view.description)}</span></div><label class="js-graph-search"><span class="js-sr-only">Find type or relation</span><input type="search" data-graph-search value="${escapeAttribute(view.searchQuery)}" placeholder="Find type or relation"></label><div class="js-graph-lenses" role="group" aria-label="Graph lens">${lenses.map((lens) => `<button data-graph-lens="${lens.id}" aria-pressed="${view.location.lens === lens.id}">${lens.label}</button>`).join('')}</div></div>`;
 }
 
 type PositionedGraphNode = ReturnType<typeof projectGraph>['nodes'][number] & ForceGraphPosition;
 
-function renderGraphEdge(edge: ReturnType<typeof projectGraph>['edges'][number], positions: ReadonlyMap<string, PositionedGraphNode>): string {
+function renderGraphEdge(edge: ReturnType<typeof projectGraph>['edges'][number], positions: ReadonlyMap<string, PositionedGraphNode>, labelLane = 0, selected = false): string {
   const from = positions.get(edge.from);
   const to = positions.get(edge.to);
   if (!from || !to) return '';
   const geometry = graphEdgePath(from, to);
   const description = [edge.label, edge.status, edge.target, edge.documentUri, edge.provenance, edge.reason].filter(Boolean).join(' | ');
-  return `<g class="js-edge-group js-edge-${edge.kind} js-status-${edge.status ?? 'resolved'}" data-graph-edge="${escapeAttribute(edge.id)}" data-graph-from="${escapeAttribute(edge.from)}" data-graph-to="${escapeAttribute(edge.to)}" role="img" aria-label="${escapeAttribute(description)}"><path class="js-edge" d="${geometry.path}" marker-end="url(#js-arrow)"><title>${escapeHtml(description)}</title></path><text class="js-edge-label" x="${geometry.labelX}" y="${geometry.labelY}">${escapeHtml(edge.label)}</text></g>`;
+  const interaction = edge.pointer && edge.selectable !== false ? `role="button" tabindex="0" data-graph-edge-select="${escapeAttribute(edge.id)}"` : 'role="img"';
+  return `<g class="js-edge-group js-edge-${edge.kind} js-status-${edge.status ?? 'resolved'}" data-graph-edge="${escapeAttribute(edge.id)}" data-graph-from="${escapeAttribute(edge.from)}" data-graph-to="${escapeAttribute(edge.to)}" ${interaction} aria-current="${selected}" aria-label="${escapeAttribute(description)}"><path class="js-edge" d="${geometry.path}" marker-end="url(#js-arrow)"><title>${escapeHtml(description)}</title></path><text class="js-edge-label" x="${geometry.labelX}" y="${geometry.labelY + labelLane * 14}">${escapeHtml(edge.label)}</text></g>`;
 }
 
-function renderGraphNode(node: PositionedGraphNode, selectedPointer: string | undefined, semanticZoom: string): string {
+function renderGraphNode(node: PositionedGraphNode, selectedPointer: string | undefined, semanticZoom: string, selectedById = false, searchMatch = false): string {
   const status = node.status ?? 'resolved';
   const description = [node.label, node.kind, status, node.documentUri, node.provenance].filter(Boolean).join(' | ');
   const interaction = node.selectable === false
     ? `role="img" aria-label="${escapeAttribute(description)}"`
     : `role="button" tabindex="0" data-graph-select="${escapeAttribute(node.pointer)}" aria-label="${escapeAttribute(description)}" aria-current="${node.pointer === selectedPointer}"`;
   const metadata = status === 'resolved' ? node.namespace : `${status}${node.provenance ? ` | ${node.provenance}` : ''}`;
-  return `<g class="js-node js-node-${node.kind} js-status-${status}" data-graph-node="${escapeAttribute(node.id)}" data-graph-pinned="${node.pinned}" ${interaction} transform="translate(${node.x} ${node.y})"><title>${escapeHtml(description)}</title><rect width="150" height="50"></rect><text x="12" y="22">${semanticZoom === 'overview' ? '' : escapeHtml(node.label)}</text><text class="js-node-meta" x="12" y="39">${semanticZoom === 'detail' || status !== 'resolved' ? escapeHtml(metadata) : ''}</text></g>`;
+  return `<g class="js-node js-node-${node.kind} js-status-${status}" data-graph-node="${escapeAttribute(node.id)}" data-graph-pinned="${node.pinned}" data-search-match="${searchMatch}" ${interaction} aria-current="${selectedById || (!selectedById && node.pointer === selectedPointer)}" transform="translate(${node.x} ${node.y})"><title>${escapeHtml(description)}</title><rect width="150" height="50"></rect><text x="12" y="22">${semanticZoom === 'overview' ? '' : escapeHtml(node.label)}</text><text class="js-node-meta" x="12" y="39">${semanticZoom === 'detail' || status !== 'resolved' ? escapeHtml(metadata) : ''}</text></g>`;
 }
 
 function clampMinimapViewport(viewport: { readonly x: number; readonly y: number; readonly width: number; readonly height: number }, contentWidth: number, contentHeight: number): { readonly x: number; readonly y: number; readonly width: number; readonly height: number } {
@@ -1152,12 +1302,20 @@ function clientToGraphPoint(graphWorld: SVGElement, clientX: number, clientY: nu
   return { x: inverse.a * clientX + inverse.c * clientY + inverse.e, y: inverse.b * clientX + inverse.d * clientY + inverse.f };
 }
 
-function inspector(property: PropertyRow | undefined, definition: import('../model.js').DefinitionProjection | undefined, diagnostics: readonly Diagnostic[]): string {
+function inspector(property: PropertyRow | undefined, definition: import('../model.js').DefinitionProjection | undefined, diagnostics: readonly Diagnostic[], relation?: import('../model.js').RelationProjection): string {
+  if (relation) return relationInspector(relation, diagnostics);
   const sections = property ? projectSchemaInspectorSections(property.schema) : projectInspectorSections(definition);
   const heading = property?.name ?? definition?.name ?? 'No selection';
   const kind = property ? 'Property' : definition?.type ?? 'Document';
-  const propertyActions = property ? `<div class="js-actions"><button data-command="rename">Rename</button><button data-command="edit">Change type</button><button class="js-danger" data-command="delete">Delete</button></div>` : '';
+  const propertyActions = property ? `<div class="js-actions"><button data-action-id="property.rename">Rename</button><button data-action-id="property.edit">Change type</button><button class="js-danger" data-action-id="property.delete">Delete</button></div>` : '';
   return `<section><div class="js-eyebrow">${escapeHtml(kind)}</div><h2>${escapeHtml(heading)}</h2>${property?.description ? `<p class="js-description">${escapeHtml(property.description)}</p>` : ''}${propertyActions}</section>${sections.map(inspectorSection).join('') || '<section><p class="js-description">No normalized fields are available for this selection.</p></section>'}<section><div class="js-eyebrow">Diagnostics</div><p class="js-description">${diagnostics.length} for this selection.</p></section>`;
+}
+
+function relationInspector(relation: import('../model.js').RelationProjection, diagnostics: readonly Diagnostic[]): string {
+  const pointer = escapeAttribute(relation.pointer);
+  const cardinality = relation.cardinality ?? 'single';
+  const scope = typeof relation.scope === 'string' ? [relation.scope] : relation.scope ?? [];
+  return `<section><div class="js-eyebrow">Relation</div><h2>${escapeHtml(relation.name)}</h2><p class="js-description">${escapeHtml(pointerLabel(relation.targetTypeRef ?? 'Unresolved target'))}</p><div class="js-actions"><button data-action-id="relation.rename" data-action-pointer="${pointer}">Rename</button><button data-action-id="relation.edit" data-action-pointer="${pointer}">Edit</button><button class="js-danger" data-action-id="relation.delete" data-action-pointer="${pointer}">Delete</button></div></section><section class="js-inspector-section"><div class="js-eyebrow">Target</div><dl><div class="js-inspector-row"><dt>Type</dt><dd class="js-code">${escapeHtml(relation.targetTypeRef ?? 'not set')}</dd></div><div class="js-inspector-row"><dt>Qualifier</dt><dd class="js-code">${escapeHtml(relation.qualifierTypeRef ?? 'none')}</dd></div></dl><button class="js-inspector-action" data-action-id="relation.qualifier" data-action-pointer="${pointer}">Change qualifier</button></section><section class="js-inspector-section"><div class="js-eyebrow">Cardinality</div><div class="js-cardinality" role="group" aria-label="Relation cardinality"><button data-relation-cardinality="single" data-action-pointer="${pointer}" aria-pressed="${cardinality === 'single'}">single</button><button data-relation-cardinality="multiple" data-action-pointer="${pointer}" aria-pressed="${cardinality === 'multiple'}">multiple</button></div></section><section class="js-inspector-section"><div class="js-section-head"><h2>Scope</h2><button data-action-id="relation.scope" data-action-pointer="${pointer}">Edit</button></div>${scope.length ? `<ul class="js-scope-list">${scope.map((entry) => `<li class="js-code">${escapeHtml(entry)}</li>`).join('')}</ul>` : '<p class="js-description">No scope. Resolution uses the surrounding instance context.</p>'}</section><section><div class="js-eyebrow">Diagnostics</div><p class="js-description">${diagnostics.length} for this relation.</p></section>`;
 }
 
 function inspectorSection(section: InspectorSection): string {
@@ -1247,11 +1405,31 @@ function showActionEditor(root: HTMLElement, action: CommandAction, pointer: str
   releaseTrap = trapFocus(panel, close);
   form.querySelectorAll('[data-cancel]').forEach((button: HTMLElement) => button.addEventListener('click', close));
   const valueList = panel.querySelector('[data-value-list]');
-  valueList?.querySelectorAll('input[type="checkbox"]').forEach((checkbox: HTMLInputElement) => checkbox.addEventListener('change', () => {
-    const selected = [...valueList.querySelectorAll('input[type="checkbox"]')].filter((item) => (item as HTMLInputElement).checked).map((item) => (item as HTMLInputElement).value);
+  const syncValueList = (): void => {
+    if (!valueList) return;
+    const selected = [...valueList.querySelectorAll('[data-value-item] input[type="checkbox"]')].filter((item) => (item as HTMLInputElement).checked).map((item) => (item as HTMLInputElement).value);
     const hidden = form.elements.namedItem('value') as HTMLInputElement;
     hidden.value = JSON.stringify(selected);
+    valueList.querySelectorAll('[data-value-item]').forEach((item: HTMLElement, index: number) => {
+      const selectedIndex = selected.indexOf((item.querySelector('input') as HTMLInputElement).value);
+      const order = item.querySelector('[data-value-order]');
+      if (order) order.textContent = selectedIndex >= 0 ? String(selectedIndex + 1) : '';
+      item.classList.toggle('js-value-selected', selectedIndex >= 0);
+      void index;
+    });
+  };
+  valueList?.querySelectorAll('input[type="checkbox"]').forEach((checkbox: HTMLInputElement) => checkbox.addEventListener('change', syncValueList));
+  valueList?.querySelectorAll('[data-value-move]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
+    const item = button.closest('[data-value-item]') as HTMLElement | null;
+    const direction = button.dataset.valueMove === 'up' ? -1 : 1;
+    const sibling = direction < 0 ? item?.previousElementSibling : item?.nextElementSibling;
+    if (!item || !sibling?.hasAttribute('data-value-item')) return;
+    if (direction < 0) item.parentElement?.insertBefore(item, sibling);
+    else item.parentElement?.insertBefore(sibling, item);
+    syncValueList();
+    button.focus();
   }));
+  syncValueList();
   const relationEditor = panel.querySelector('[data-relation-editor]');
   const syncRelationValue = (): void => {
     if (!relationEditor) return;
@@ -1327,7 +1505,10 @@ function actionControlHtml(action: CommandAction, pointer: string, session: Docu
   if (control.kind === 'property-multi-select') {
     const target = valueAtPointer(session.value, pointer) as Record<string, unknown> | undefined;
     const properties = target && typeof target.properties === 'object' && target.properties ? Object.keys(target.properties) : [];
-    return `<fieldset data-value-list><legend>${label}</legend>${properties.map((property) => `<label class="js-check"><input type="checkbox" value="${escapeAttribute(property)}">${escapeHtml(property)}</label>`).join('') || '<p class="js-description">No properties are available.</p>'}<input name="value" type="hidden" value="[]"></fieldset>`;
+    const current = action.id === 'relation.identity' ? target?.identity : action.id === 'core.tuple' ? target?.tuple : target?.required;
+    const selected = Array.isArray(current) ? current.flat().filter((entry): entry is string => typeof entry === 'string' && properties.includes(entry)) : [];
+    const orderedProperties = [...selected, ...properties.filter((property) => !selected.includes(property))];
+    return `<fieldset data-value-list><legend>${label}</legend>${orderedProperties.map((property) => `<div class="js-value-item" data-value-item><span class="js-value-order" data-value-order></span><label class="js-check"><input type="checkbox" value="${escapeAttribute(property)}" ${selected.includes(property) ? 'checked' : ''}>${escapeHtml(property)}</label><span class="js-value-actions"><button type="button" data-value-move="up" aria-label="Move ${escapeAttribute(property)} up">↑</button><button type="button" data-value-move="down" aria-label="Move ${escapeAttribute(property)} down">↓</button></span></div>`).join('') || '<p class="js-description">No properties are available.</p>'}<input name="value" type="hidden" value="${escapeAttribute(JSON.stringify(selected))}"></fieldset>`;
   }
   if (control.kind === 'relation-editor') return relationControlHtml(pointer, session);
   if (control.kind === 'structured-list') return `<label>${label}<textarea name="value" required placeholder='[ ]' aria-describedby="action-help"></textarea></label>`;
@@ -1416,7 +1597,7 @@ interface WorkbenchFocusAnchor {
 
 const focusIdentityAttributes = [
   'data-select', 'data-mode', 'data-graph-select', 'data-problem', 'data-problems-toggle',
-  'data-mobile-mode', 'data-conversion-command', 'data-conversion-option', 'data-addin',
+  'data-mobile-mode', 'data-graph-search', 'data-graph-lens', 'data-graph-edge-select', 'data-conversion-command', 'data-conversion-option', 'data-addin',
   'data-impact-direction', 'data-command', 'data-action-select', 'data-library-read',
   'data-library-operation', 'data-library-selector', 'data-library-declaration',
 ] as const;
