@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 const projectRoot = resolve(fileURLToPath(import.meta.url), '..');
 
 export default defineConfig({
+  base: './',
   root: resolve(projectRoot, 'src/ui'),
   build: {
     outDir: resolve(projectRoot, 'dist/renderer'),

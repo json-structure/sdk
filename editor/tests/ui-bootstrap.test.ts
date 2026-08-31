@@ -1,11 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { createAlphaEditorController, type AlphaEditorSurface, type FileBridge } from '../src/ui/bootstrap.js';
+import { createAlphaEditorController, defaultUntitledDocument, type AlphaEditorSurface, type FileBridge } from '../src/ui/bootstrap.js';
 
 function editor(): AlphaEditorSurface & { text: string } {
   return { text: '{"version":1}', getText() { return this.text; }, setText(text) { this.text = text; } };
 }
 
 describe('ALPHA UI bootstrap', () => {
+  it('starts with a minimal valid untitled document', () => {
+    expect(JSON.parse(defaultUntitledDocument)).toEqual({
+      $schema: 'https://json-structure.org/meta/core/v0/#',
+      definitions: {},
+    });
+  });
+
   it('opens, saves, and saves as through the bridge while tracking lifecycle state', async () => {
     const surface = editor();
     const calls: string[] = [];

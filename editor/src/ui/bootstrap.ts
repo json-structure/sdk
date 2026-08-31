@@ -1,6 +1,11 @@
 import { mountJsonStructureEditor, type JsonStructureEditorHandle } from './index.js';
 import type { EditorHost } from '../contracts.js';
 
+export const defaultUntitledDocument = JSON.stringify({
+  $schema: 'https://json-structure.org/meta/core/v0/#',
+  definitions: {},
+}, null, 2);
+
 export type HostCommand = 'open' | 'save' | 'save-as' | 'show-commands';
 
 /** Renderer-safe file bridge shape consumed by the shared UI bootstrap. */

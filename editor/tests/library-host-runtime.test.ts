@@ -158,12 +158,15 @@ describe('library host runtime', () => {
 
   it('completes failed secret rollback before the next concurrent mutation', async () => {
     const state = host();
-    state.options.httpTransport = async (request) => {
-      if (request.url.startsWith('https://failing.test')) throw new Error('discovery failed');
-      if (request.url.endsWith('/model')) return { status: 200, body: { links: [{ href: 'https://working.test/groups/schemas' }] } };
-      return { status: 200, body: { links: [] } };
+    const options: LibraryHostRuntimeOptions = {
+      ...state.options,
+      httpTransport: async (request) => {
+        if (request.url.startsWith('https://failing.test')) throw new Error('discovery failed');
+        if (request.url.endsWith('/model')) return { status: 200, body: { links: [{ href: 'https://working.test/groups/schemas' }] } };
+        return { status: 200, body: { links: [] } };
+      },
     };
-    const runtime = await createLibraryHostRuntime(state.options);
+    const runtime = await createLibraryHostRuntime(options);
     const failed = runtime.configureProvider({
       id: 'failing', kind: 'xregistry', baseUrl: 'https://failing.test', credentialId: 'shared-token', trusted: true,
     }, 'first-secret');
@@ -195,7 +198,7 @@ describe('library host runtime', () => {
 
 describe('bounded HTTPS transport', () => {
   it('follows only exact same-origin HTTPS redirects with manual redirect handling', async () => {
-    const requests: Array<{ url: string; redirect?: RequestRedirect; authorization: string | null }> = [];
+    const requests: Array<{ url: string; redirect?: RequestInit['redirect']; authorization: string | null }> = [];
     const fetcher: typeof fetch = async (input, init) => {
       const url = String(input);
       requests.push({ url, redirect: init?.redirect, authorization: new Headers(init?.headers).get('authorization') });

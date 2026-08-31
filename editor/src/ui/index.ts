@@ -59,9 +59,9 @@ export async function resolveLibrarySelection<T>(libraryRequest: NonNullable<Edi
 
 export function libraryPublishPreview(draft: LibraryPublishDraft, providers: readonly LibraryProviderSummary[], catalog: readonly LibraryCatalogEntry[], documentValid: boolean): LibraryPublishPreview {
   const provider = providers.find((candidate) => candidate.id === draft.providerId);
-  const entry = catalog.find((candidate) => candidate.providerId === draft.providerId && candidate.id === draft.entryId);
+  const versionExists = catalog.some((entry) => entry.id === draft.entryId && entry.versions.some((candidate) => candidate.version === draft.version));
   const collisionRisks = [
-    ...(entry?.versions.some((candidate) => candidate.version === draft.version) ? [`${draft.entryId}@${draft.version} already exists.`] : []),
+    ...(versionExists ? [`${draft.entryId}@${draft.version} already exists.`] : []),
     ...(draft.promoteDefault ? [`Default version will move to ${draft.version}.`] : []),
   ];
   const valid = documentValid && Boolean(draft.entryId.trim() && draft.version.trim() && validLibrarySourceUri(draft.sourceUri) && provider?.publishSupported);

@@ -2,8 +2,13 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { deniedWindowOpen, isAllowedRendererNavigation, isTrustedIpcSender, selectDevelopmentUrl } from '../src/electron/security';
+import viteConfig from '../vite.config';
 
 describe('Electron renderer security boundary', () => {
+  it('builds file-relative renderer assets for Electron', () => {
+    expect(viteConfig.base).toBe('./');
+  });
+
   it('ignores the development environment URL in packaged builds', () => {
     expect(selectDevelopmentUrl(true, 'http://127.0.0.1:5173/')).toBeUndefined();
   });
