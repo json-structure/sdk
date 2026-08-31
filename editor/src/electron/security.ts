@@ -31,3 +31,7 @@ export function isTrustedIpcSender(facts: IpcSenderFacts): boolean {
   return facts.senderId === facts.expectedSenderId && !facts.senderDestroyed && facts.isMainFrame &&
     facts.frameUrl === facts.expectedUrl;
 }
+
+export function selectInitialDocumentArgument(arguments_: readonly string[]): string | undefined {
+  return arguments_.find((argument) => !argument.startsWith('-') && /\.json$/i.test(argument));
+}

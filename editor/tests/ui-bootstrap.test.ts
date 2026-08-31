@@ -9,6 +9,8 @@ describe('ALPHA UI bootstrap', () => {
   it('starts with a minimal valid untitled document', () => {
     expect(JSON.parse(defaultUntitledDocument)).toEqual({
       $schema: 'https://json-structure.org/meta/core/v0/#',
+      $id: 'urn:json-structure:untitled',
+      name: 'UntitledStructure',
       definitions: {},
     });
   });

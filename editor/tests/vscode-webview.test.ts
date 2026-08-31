@@ -20,7 +20,7 @@ describe('VS Code webview client', () => {
       vscode: { postMessage: vi.fn() },
       window: { addEventListener: vi.fn(), removeEventListener: vi.fn() },
       document: { visibilityState: 'visible', addEventListener: vi.fn(), removeEventListener: vi.fn() },
-      mount: () => ({ setText: vi.fn(), getText: () => 'abc', showCommandPalette, dispose: vi.fn() })
+      mount: () => ({ setText: vi.fn(), setTitle: vi.fn(), getText: () => 'abc', showCommandPalette, dispose: vi.fn() })
     });
     client.receive({ type: 'init', protocolVersion: 1, uri: 'file:///test.struct.json', title: 'Test', text: 'abc', documentVersion: 1 });
     client.receive({ type: 'showCommands', protocolVersion: 1 });
@@ -106,7 +106,7 @@ describe('VS Code webview client', () => {
       vscode: { postMessage: (message) => messages.push(message) },
       window: { addEventListener: vi.fn(), removeEventListener: vi.fn() },
       document: { visibilityState: 'visible', addEventListener: vi.fn(), removeEventListener: vi.fn() },
-      mount: () => ({ setText, getText: () => 'abc', showCommandPalette: vi.fn(), dispose: vi.fn() }),
+      mount: () => ({ setText, setTitle: vi.fn(), getText: () => 'abc', showCommandPalette: vi.fn(), dispose: vi.fn() }),
       requestTimeoutMs: 50,
       sourceReplaceDelayMs: 300
     });

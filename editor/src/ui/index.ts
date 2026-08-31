@@ -6,7 +6,8 @@ import { actionById, commandActions, type CommandAction } from './actions.js';
 import { actionAvailability, catalogFamilyForAction, parseActionValue, valueAtPointer } from './action-runtime.js';
 import { diagnosticsForPointer, isInlineRootSchema, pointerLabel, projectGraph, projectInspectorSections, projectProperties, projectSchemaInspectorSections, type InspectorSection, type PropertyRow } from './helpers.js';
 import { GraphNavigationController } from './graph-navigation.js';
-import { editorStyles } from './styles.js';
+import { ForceGraphLayout, graphEdgePath, type ForceGraphPosition } from './force-graph-layout.js';
+import { editorStyles } from './prototype-styles.js';
 import { InstanceWorkspace, type InstanceValidationResult } from '../phase4/instance-workspace.js';
 import { resolveEffectiveMembers } from '../phase4/effective-members.js';
 import { GraphRuntime } from '../phase4/graph-runtime.js';
@@ -115,6 +116,8 @@ export interface JsonStructureEditorOptions {
 export interface JsonStructureEditorHandle {
   /** Replaces the open JSON text and rerenders every synchronized view. */
   setText(text: string, documentVersion?: number): void;
+  /** Updates visible document labels without rebuilding the workbench. */
+  setTitle(title: string): void;
   /** Returns the exact current JSON source text. */
   getText(): string;
   /** Opens the shared command palette. */
@@ -128,6 +131,7 @@ type ImpactDirection = 'outgoing' | 'incoming' | 'both';
 type LibraryOperation = 'import' | 'copy' | 'materialize';
 type GraphResizeObserver = { observe(target: SVGElement): void; disconnect(): void };
 const graphNavigationBySnapshot = new WeakMap<DocumentSnapshot, GraphNavigationController>();
+const forceGraphLayoutBySnapshot = new WeakMap<DocumentSnapshot, ForceGraphLayout>();
 
 /**
  * Mounts the ALPHA JSON Structure workbench into a browser container.
@@ -137,6 +141,7 @@ const graphNavigationBySnapshot = new WeakMap<DocumentSnapshot, GraphNavigationC
  */
 export function mountJsonStructureEditor(container: HTMLElement, options: JsonStructureEditorOptions): JsonStructureEditorHandle {
   const session = new DocumentSession(options.uri ?? 'memory://json-structure-editor/untitled.struct.json', options.text, options.documentVersion);
+  let documentTitle = options.title ?? 'Untitled JSON Structure';
   let selectedPointer: string | undefined;
   let mode: Mode = 'design';
   let disposed = false;
@@ -157,6 +162,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
   let refactoringBinding: PreviewBinding | undefined;
   let refactoringStatus = '';
   let conversionManifest: ConversionCommandsManifest | undefined;
+  let conversionLoading = false;
   let conversionCommandId: string | undefined;
   let conversionResult: ConversionResult | undefined;
   let conversionStatus = '';
@@ -177,7 +183,9 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
   let libraryPlan: RefactoringPlan | undefined;
   let libraryBinding: PreviewBinding | undefined;
   let libraryStatus = '';
+  let problemsOpen = false;
   const graphNavigation = new GraphNavigationController();
+  const graphLayout = new ForceGraphLayout();
   const catalogRegistry = createCatalogRegistry();
   const services = options.services ?? options.host;
   const unsubscribeConversionProgress = services?.onConversionProgress?.((progress) => {
@@ -186,6 +194,24 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
   const styleNonce = options.styleNonce ? ` nonce="${escapeAttribute(options.styleNonce)}"` : '';
   container.innerHTML = `<style${styleNonce}>${editorStyles}</style><main class="json-structure-editor" data-theme="dark"></main>`;
   const root = container.querySelector('.json-structure-editor') as HTMLElement;
+
+  const loadConversionCommands = (): void => {
+    if (!services?.listConversionCommands || conversionLoading) return;
+    conversionLoading = true;
+    conversionStatus = 'Loading conversion tools...';
+    render();
+    void services.listConversionCommands().then((manifest) => {
+      conversionManifest = manifest;
+      conversionCommandId = manifest.commands.some((command) => command.id === conversionCommandId) ? conversionCommandId : manifest.commands[0]?.id;
+      conversionResult = undefined;
+      conversionStatus = manifest.commands.length ? '' : 'No conversion commands are installed.';
+    }, (error) => {
+      conversionStatus = error instanceof Error ? error.message : String(error);
+    }).finally(() => {
+      conversionLoading = false;
+      render();
+    });
+  };
 
   const setText = (text: string, documentVersion = session.snapshot().documentVersion + 1): void => {
     session.update(text, documentVersion);
@@ -199,10 +225,15 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     if (synchronizedRender) clearTimeout(synchronizedRender);
     synchronizedRender = setTimeout(() => { synchronizedRender = undefined; render(); }, 120);
   };
+  const setTitle = (title: string): void => {
+    documentTitle = title;
+    root.querySelectorAll('[data-document-title]').forEach((element: HTMLElement) => { element.textContent = title; });
+  };
   const select = (pointer: string | undefined, nextMode?: Mode): void => {
     selectedPointer = pointer;
     if (nextMode) mode = nextMode;
     render();
+    if (nextMode === 'conversion' && !conversionManifest) loadConversionCommands();
   };
   const applyCommand = async (command: { canExecute(context: { session: DocumentSession; documentVersion: number }): boolean; execute(context: { session: DocumentSession; documentVersion: number }): { edits: readonly TextEdit[] } }): Promise<string | undefined> => {
     if (options.host) {
@@ -246,7 +277,9 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     const graph = projectGraph(snapshot);
     graphNavigation.reconcileSelection(graph.nodes);
     graphNavigationBySnapshot.set(snapshot, graphNavigation);
-    root.innerHTML = shell(snapshot, options.title ?? 'Untitled JSON Structure', definitions.map((item) => ({ name: item.name, pointer: item.pointer, namespace: item.namespacePointer })), definitionPointer, rows, selectedPointer, mode, graphNavigation, graph);
+    graphLayout.reconcile(graph.nodes, graph.edges);
+    forceGraphLayoutBySnapshot.set(snapshot, graphLayout);
+    root.innerHTML = workbenchShell(snapshot, documentTitle, definitions.map((item) => ({ name: item.name, pointer: item.pointer, namespace: item.namespacePointer })), definitionPointer, rows, selectedPointer, mode, problemsOpen);
     mountAdvancedViews(root, snapshot, definitionPointer, graph, mode, instanceText, instanceResult, impactDirection, selectedAddIns, refactoringPlan, refactoringStatus, services, conversionManifest, conversionCommandId, conversionResult, conversionStatus, conversionProgress, conversionRequestId, libraryEntries, librarySelector, libraryDocument, librarySelection, libraryOperation, libraryPlan, libraryStatus, { providers: libraryProviders, catalog: libraryCatalog, resolution: libraryResolution, offline: libraryOffline, publishDraft: libraryPublishDraft, publishPreview: libraryPublishPreviewState, publishedEpoch: libraryPublishedEpoch, documentValid: snapshot.recovery === 'valid' });
     root.dataset.theme = themeName;
     const nextSource = root.querySelector('[data-source]');
@@ -285,14 +318,17 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
   };
   const wire = (definitionPointer: string | undefined, _rows: readonly PropertyRow[], graph: ReturnType<typeof projectGraph>): void => {
     const modeButtons = [...root.querySelectorAll('[data-mode]')] as HTMLButtonElement[];
-    modeButtons.forEach((button, index) => {
-      button.tabIndex = button.dataset.mode === mode ? 0 : -1;
+    modeButtons.forEach((button) => {
       button.addEventListener('click', () => select(selectedPointer, button.dataset.mode as Mode));
+    });
+    const representationButtons = [...root.querySelectorAll('.js-tabs [data-mode]')] as HTMLButtonElement[];
+    representationButtons.forEach((button, index) => {
+      button.tabIndex = button.dataset.mode === mode ? 0 : -1;
       button.addEventListener('keydown', (event: KeyboardEvent) => {
-        const offset = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
-        if (!offset) return;
+        const offset = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : event.key === 'Home' ? -index : event.key === 'End' ? representationButtons.length - index - 1 : 0;
+        if (!offset && event.key !== 'Home' && event.key !== 'End') return;
         event.preventDefault();
-        const next = modeButtons[(index + offset + modeButtons.length) % modeButtons.length]!;
+        const next = representationButtons[(index + offset + representationButtons.length) % representationButtons.length]!;
         select(selectedPointer, next.dataset.mode as Mode);
         (root.querySelector(`[data-mode="${next.dataset.mode}"]`) as HTMLButtonElement | null)?.focus();
       });
@@ -317,7 +353,9 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     const filter = root.querySelector('.js-filter') as HTMLInputElement | null;
     filter?.addEventListener('input', () => filterTypeButtons(root, filter.value));
     root.querySelectorAll('[data-mobile-drawer]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => toggleMobileDrawer(root, button.dataset.mobileDrawer!)));
+    root.querySelectorAll('[data-problems-toggle]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => { problemsOpen = !problemsOpen; render(); }));
     root.querySelector('[data-show-commands]')?.addEventListener('click', () => showCommandPalette());
+    root.querySelectorAll('[data-command="definition.add"]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => openAction('definition.add', '')));
     root.querySelector('[data-command="add"]')?.addEventListener('click', () => openAction('property.add', definitionPointer));
     root.querySelector('[data-command="rename"]')?.addEventListener('click', () => openAction('property.rename', selectedPointer));
     root.querySelector('[data-command="edit"]')?.addEventListener('click', () => openAction('property.edit', selectedPointer));
@@ -386,16 +424,16 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
         render();
       });
     });
-    root.querySelector('[data-conversion-load]')?.addEventListener('click', () => void services?.listConversionCommands?.().then((manifest) => { conversionManifest = manifest; conversionCommandId = manifest.commands[0]?.id; conversionResult = undefined; conversionStatus = ''; render(); }, (error) => { conversionStatus = error instanceof Error ? error.message : String(error); render(); }));
-    root.querySelector('[data-conversion-command]')?.addEventListener('change', (event: Event) => {
-      conversionCommandId = (event.currentTarget as HTMLInputElement).value;
+    root.querySelector('[data-conversion-load]')?.addEventListener('click', loadConversionCommands);
+    root.querySelectorAll('[data-conversion-command]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
+      conversionCommandId = button.dataset.conversionCommand;
       conversionResult = undefined;
       conversionStatus = '';
       render();
-    });
+      queueMicrotask(() => ([...root.querySelectorAll('[data-conversion-command]')] as HTMLButtonElement[]).find((candidate) => candidate.dataset.conversionCommand === conversionCommandId)?.focus());
+    }));
     root.querySelector('[data-conversion-run]')?.addEventListener('click', () => {
-      const commandId = (root.querySelector('[data-conversion-command]') as HTMLInputElement | null)?.value;
-      const command = conversionManifest?.commands.find((item) => item.id === commandId);
+      const command = conversionManifest?.commands.find((item) => item.id === conversionCommandId);
       if (!command || !services?.convert) return;
       const current = session.snapshot();
       let conversionOptions: Record<string, string | number | boolean>;
@@ -547,18 +585,78 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     });
     wireGraph(graph);
   };
-  const wireGraph = (_graph: ReturnType<typeof projectGraph>): void => {
+  const wireGraph = (graph: ReturnType<typeof projectGraph>): void => {
     graphResizeObserver?.disconnect();
+    graphLayout.setTickListener(undefined);
+    let suppressNodeClick: string | undefined;
     root.querySelectorAll('[data-graph-select]').forEach((target: SVGElement) => {
-      const activate = (): void => { const pointer = target.dataset.graphSelect; if (!pointer) return; selectedPointer = pointer; graphNavigation.navigate({ kind: 'type', nodeId: pointer, pointer }, 'graph'); render(); };
+      const activate = (): void => {
+        const nodeId = target.dataset.graphNode;
+        if (nodeId && suppressNodeClick === nodeId) { suppressNodeClick = undefined; return; }
+        const pointer = target.dataset.graphSelect;
+        if (!pointer) return;
+        selectedPointer = pointer;
+        graphNavigation.navigate({ kind: 'type', nodeId: nodeId ?? pointer, pointer }, 'graph');
+        render();
+      };
       target.addEventListener('click', activate);
       target.addEventListener('keydown', (event: KeyboardEvent) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); activate(); } });
     });
-    root.querySelector('[data-graph-fit]')?.addEventListener('click', () => { graphNavigation.fit(); render(); });
+    root.querySelector('[data-graph-fit]')?.addEventListener('click', () => { graphNavigation.fit(); updateGraphCamera(); });
+    root.querySelector('[data-graph-relayout]')?.addEventListener('click', () => { graphLayout.relayout(); });
     root.querySelector('[data-graph-back]')?.addEventListener('click', () => { selectedPointer = graphNavigation.back().selection?.pointer; render(); });
     root.querySelector('[data-graph-forward]')?.addEventListener('click', () => { selectedPointer = graphNavigation.forward().selection?.pointer; render(); });
     const canvas = root.querySelector('[data-graph-canvas]') as SVGElement | null;
     if (!canvas) return;
+    const graphWorld = canvas.querySelector('[data-graph-world]') as SVGElement | null;
+    const updateGraphCamera = (): void => {
+      const state = graphNavigation.snapshot();
+      graphWorld?.setAttribute('transform', `translate(${state.camera.x} ${state.camera.y}) scale(${state.camera.zoom})`);
+      const readout = root.querySelector('[data-semantic-zoom]');
+      if (readout) {
+        readout.textContent = `${Math.round(state.camera.zoom * 100)}% · ${state.semanticZoom}`;
+        readout.setAttribute('data-semantic-zoom', state.semanticZoom);
+      }
+      const bounds = graphLayout.contentBounds();
+      const minimap = graphNavigation.minimap();
+      const viewport = clampMinimapViewport(minimap.viewport, bounds.width, bounds.height);
+      const viewportElement = canvas.querySelector('.js-minimap-viewport');
+      viewportElement?.setAttribute('x', String(viewport.x));
+      viewportElement?.setAttribute('y', String(viewport.y));
+      viewportElement?.setAttribute('width', String(viewport.width));
+      viewportElement?.setAttribute('height', String(viewport.height));
+    };
+    const updateGraphGeometry = (): void => {
+      const positions = new Map(graphLayout.positions().map((position) => [position.id, position]));
+      ([...canvas.querySelectorAll('[data-graph-node]')] as SVGElement[]).forEach((element) => {
+        const id = element.dataset.graphNode;
+        const position = id ? positions.get(id) : undefined;
+        if (!position) return;
+        element.setAttribute('transform', `translate(${position.x} ${position.y})`);
+        element.dataset.graphPinned = String(position.pinned);
+      });
+      const edges = new Map(graph.edges.map((edge) => [edge.id, edge]));
+      ([...canvas.querySelectorAll('[data-graph-edge]')] as SVGElement[]).forEach((element) => {
+        const edge = edges.get(element.dataset.graphEdge ?? '');
+        const from = edge ? positions.get(edge.from) : undefined;
+        const to = edge ? positions.get(edge.to) : undefined;
+        if (!from || !to) return;
+        const geometry = graphEdgePath(from, to);
+        element.querySelector('path')?.setAttribute('d', geometry.path);
+        const label = element.querySelector('text');
+        label?.setAttribute('x', String(geometry.labelX));
+        label?.setAttribute('y', String(geometry.labelY));
+      });
+      const content = graphLayout.contentBounds();
+      ([...canvas.querySelectorAll('[data-minimap-node]')] as SVGElement[]).forEach((element) => {
+        const position = positions.get(element.dataset.minimapNode ?? '');
+        if (!position) return;
+        element.setAttribute('x', String(position.x / content.width * 180));
+        element.setAttribute('y', String(position.y / content.height * 120));
+      });
+      updateGraphCamera();
+    };
+    graphLayout.setTickListener(updateGraphGeometry);
     const syncViewport = () => { const bounds = canvas.getBoundingClientRect(); graphNavigation.setViewport({ x: 0, y: 0, width: Math.max(1, bounds.width), height: Math.max(1, bounds.height) }); return bounds; };
     syncViewport();
     const ResizeObserverConstructor = (globalThis as unknown as { ResizeObserver?: new (callback: () => void) => GraphResizeObserver }).ResizeObserver;
@@ -566,12 +664,54 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       graphResizeObserver = new ResizeObserverConstructor(() => { if (!disposed && canvas.isConnected) syncViewport(); });
       graphResizeObserver.observe(canvas);
     }
-    canvas.addEventListener('wheel', (event: WheelEvent) => { event.preventDefault(); const bounds = syncViewport(); graphNavigation.wheelZoom({ x: event.clientX - bounds.left, y: event.clientY - bounds.top }, event.deltaY); render(); }, { passive: false });
+    canvas.addEventListener('wheel', (event: WheelEvent) => { event.preventDefault(); const bounds = syncViewport(); graphNavigation.wheelZoom({ x: event.clientX - bounds.left, y: event.clientY - bounds.top }, event.deltaY); updateGraphCamera(); }, { passive: false });
     let lastPoint: { x: number; y: number } | undefined;
-    canvas.addEventListener('pointerdown', (event: PointerEvent) => { if ((event.target as SVGElement).closest('[data-graph-select], [data-minimap]')) return; lastPoint = { x: event.clientX, y: event.clientY }; canvas.setPointerCapture(event.pointerId); });
-    canvas.addEventListener('pointermove', (event: PointerEvent) => { if (!lastPoint) return; graphNavigation.pan({ x: event.clientX - lastPoint.x, y: event.clientY - lastPoint.y }); lastPoint = { x: event.clientX, y: event.clientY }; render(); });
-    canvas.addEventListener('pointerup', () => { lastPoint = undefined; });
-    root.querySelector('[data-minimap]')?.addEventListener('click', (event: Event) => { const target = event.currentTarget as SVGElement; const bounds = target.getBoundingClientRect(); const pointer = event as PointerEvent; graphNavigation.navigateMinimap({ x: ((pointer.clientX - bounds.left) / Math.max(1, bounds.width)) * 180, y: ((pointer.clientY - bounds.top) / Math.max(1, bounds.height)) * 120 }, { x: 0, y: 0, width: 180, height: 120 }); render(); });
+    let nodeDrag: { readonly id: string; readonly offsetX: number; readonly offsetY: number; readonly startX: number; readonly startY: number; moved: boolean } | undefined;
+    canvas.addEventListener('pointerdown', (event: PointerEvent) => {
+      const node = (event.target as SVGElement).closest('[data-graph-node]') as SVGElement | null;
+      if (node?.dataset.graphNode && graphWorld?.getScreenCTM()) {
+        event.preventDefault();
+        event.stopPropagation();
+        const position = graphLayout.position(node.dataset.graphNode);
+        const worldPoint = clientToGraphPoint(graphWorld, event.clientX, event.clientY);
+        if (!position) return;
+        nodeDrag = { id: node.dataset.graphNode, offsetX: worldPoint.x - position.x, offsetY: worldPoint.y - position.y, startX: event.clientX, startY: event.clientY, moved: false };
+        graphLayout.startDrag(nodeDrag.id);
+        canvas.setPointerCapture(event.pointerId);
+        canvas.classList.add('js-node-dragging');
+        return;
+      }
+      if ((event.target as SVGElement).closest('[data-minimap]')) return;
+      lastPoint = { x: event.clientX, y: event.clientY };
+      canvas.setPointerCapture(event.pointerId);
+      canvas.classList.add('js-panning');
+    });
+    canvas.addEventListener('pointermove', (event: PointerEvent) => {
+      if (nodeDrag && graphWorld?.getScreenCTM()) {
+        const worldPoint = clientToGraphPoint(graphWorld, event.clientX, event.clientY);
+        nodeDrag.moved ||= Math.hypot(event.clientX - nodeDrag.startX, event.clientY - nodeDrag.startY) > 4;
+        graphLayout.drag(nodeDrag.id, { x: worldPoint.x - nodeDrag.offsetX, y: worldPoint.y - nodeDrag.offsetY });
+        return;
+      }
+      if (!lastPoint) return;
+      graphNavigation.pan({ x: event.clientX - lastPoint.x, y: event.clientY - lastPoint.y });
+      lastPoint = { x: event.clientX, y: event.clientY };
+      updateGraphCamera();
+    });
+    const releasePointer = (event: PointerEvent): void => {
+      if (nodeDrag) {
+        graphLayout.endDrag(nodeDrag.id, true);
+        if (nodeDrag.moved) suppressNodeClick = nodeDrag.id;
+        nodeDrag = undefined;
+      }
+      lastPoint = undefined;
+      canvas.classList.remove('js-node-dragging', 'js-panning');
+      if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+    };
+    canvas.addEventListener('pointerup', releasePointer);
+    canvas.addEventListener('pointercancel', releasePointer);
+    root.querySelector('[data-minimap]')?.addEventListener('click', (event: Event) => { const target = event.currentTarget as SVGElement; const bounds = target.getBoundingClientRect(); const pointer = event as PointerEvent; graphNavigation.navigateMinimap({ x: ((pointer.clientX - bounds.left) / Math.max(1, bounds.width)) * 180, y: ((pointer.clientY - bounds.top) / Math.max(1, bounds.height)) * 120 }, { x: 0, y: 0, width: 180, height: 120 }); updateGraphCamera(); });
+    updateGraphGeometry();
   };
   const showCommandPalette = (): void => {
     const pointer = selectedPointer ?? selectFallback(session.snapshot(), selectedPointer);
@@ -597,7 +737,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     sourceEditor.focus();
     pendingDiagnostic = undefined;
   }
-  return { setText, getText: () => session.snapshot().text, showCommandPalette, dispose: () => { disposed = true; unsubscribeConversionProgress?.(); if (synchronizedRender) clearTimeout(synchronizedRender); graphResizeObserver?.disconnect(); window.removeEventListener('keydown', onKeyDown); sourceEditor?.dispose(); sourceModel?.dispose(); container.innerHTML = ''; } };
+  return { setText, setTitle, getText: () => session.snapshot().text, showCommandPalette, dispose: () => { disposed = true; unsubscribeConversionProgress?.(); if (synchronizedRender) clearTimeout(synchronizedRender); graphResizeObserver?.disconnect(); graphLayout.dispose(); window.removeEventListener('keydown', onKeyDown); sourceEditor?.dispose(); sourceModel?.dispose(); container.innerHTML = ''; } };
 }
 
 interface LibraryWorkbenchState {
@@ -612,8 +752,6 @@ interface LibraryWorkbenchState {
 }
 
 function mountAdvancedViews(root: HTMLElement, snapshot: DocumentSnapshot, definitionPointer: string | undefined, graph: ReturnType<typeof projectGraph>, mode: Mode, instanceText: string, instanceResult: InstanceValidationResult | undefined, impactDirection: ImpactDirection, selectedAddIns: readonly string[], refactoringPlan: RefactoringPlan | undefined, refactoringStatus: string, host: EditorServices | undefined, conversionManifest: ConversionCommandsManifest | undefined, conversionCommandId: string | undefined, conversionResult: ConversionResult | undefined, conversionStatus: string, conversionProgress: ProgressEvent | undefined, conversionRequestId: string | undefined, libraryEntries: readonly LibraryEntry[] | undefined, librarySelector: 'pinned' | 'floating', libraryDocument: LibraryDocument | undefined, librarySelection: readonly string[], libraryOperation: LibraryOperation, libraryPlan: RefactoringPlan | undefined, libraryStatus: string, libraryState: LibraryWorkbenchState): void {
-  const sourceTab = root.querySelector('[data-mode="source"]');
-  sourceTab?.insertAdjacentHTML('beforebegin', `<button role="tab" data-mode="analysis" aria-selected="${mode === 'analysis'}">Analysis</button><button role="tab" data-mode="instance" aria-selected="${mode === 'instance'}">Instance</button><button role="tab" data-mode="conversion" aria-selected="${mode === 'conversion'}">Conversion</button><button role="tab" data-mode="libraries" aria-selected="${mode === 'libraries'}">Libraries</button>`);
   const sourcePanel = root.querySelector('.js-source-view');
   sourcePanel?.insertAdjacentHTML('beforebegin', `<section class="js-view" ${mode === 'analysis' ? '' : 'hidden'}>${analysisView(snapshot, definitionPointer, graph, impactDirection, refactoringPlan, refactoringStatus, selectedAddIns)}</section><section class="js-view" ${mode === 'instance' ? '' : 'hidden'}>${instanceView(instanceText, instanceResult)}</section><section class="js-view" ${mode === 'conversion' ? '' : 'hidden'}>${conversionView(host, conversionManifest, conversionCommandId, conversionResult, conversionStatus, conversionProgress, conversionRequestId)}</section><section class="js-view" ${mode === 'libraries' ? '' : 'hidden'}>${librariesView(host, libraryEntries, librarySelector, libraryDocument, librarySelection, libraryOperation, libraryPlan, libraryStatus, libraryState)}</section>`);
 }
@@ -625,15 +763,47 @@ export function conversionView(host: EditorServices | undefined, manifest: Conve
   const diagnostics = result?.diagnostics.map((diagnostic) => `<div class="js-problem"><span class="js-problem-${diagnostic.severity}">${diagnostic.severity === 'error' ? 'x' : '!'}</span><span><span class="js-code">${escapeHtml(diagnostic.code)}</span> ${escapeHtml(diagnostic.message)}</span></div>`).join('') ?? '';
   const outputs = result?.outputs.map((output) => `<div class="js-analysis-row"><span>${escapeHtml(output.name)}</span><span class="js-code">${escapeHtml(output.uri)}</span></div>`).join('') ?? '';
   const progressView = requestId ? `<div class="js-section-head"><progress max="100" value="${progress?.percent ?? 0}" aria-label="Conversion progress"></progress>${host.cancelConversion ? '<button data-conversion-cancel>Cancel</button>' : ''}</div>` : '';
-  return `<div class="js-sheet"><header class="js-type-head"><div><div class="js-eyebrow">Toolchain</div><h1>Conversion</h1><p class="js-description">Run a packaged converter against the current document.</p></div><button data-conversion-load>${manifest ? 'Refresh' : 'Load converters'}</button></header>${manifest ? `<label>Command<select class="js-service-select" data-conversion-command>${manifest.commands.map((command) => `<option value="${escapeAttribute(command.id)}" ${command.id === selected?.id ? 'selected' : ''}>${escapeHtml(command.label)} (${escapeHtml(command.sourceFormat)} -> ${escapeHtml(command.targetFormat)})</option>`).join('')}</select></label><fieldset><legend>Options</legend>${converter?.options.map(conversionOptionControl).join('') || '<p class="js-description">This converter has no options.</p>'}</fieldset><button data-conversion-run ${requestId ? 'disabled' : ''}>Run conversion</button>` : ''}${progressView}<p role="status" aria-live="polite">${escapeHtml(status)}</p>${result ? `<section><div class="js-section-head"><h2>Outputs (${result.outputs.length})</h2>${result.outputs.length && host.openGeneratedOutput ? '<button data-conversion-open>Open outputs</button>' : ''}</div>${outputs || '<p class="js-description">No output files were committed.</p>'}</section><section><h2>Diagnostics (${result.diagnostics.length})</h2>${diagnostics || '<p class="js-description">No conversion warnings or errors.</p>'}</section>` : ''}</div>`;
+  const commandGroups = manifest ? (['export', 'import'] as const).map((direction) => {
+    const commands = manifest.commands.filter((command) => command.direction === direction);
+    if (!commands.length) return '';
+    return `<section class="js-conversion-group"><h2>${direction === 'export' ? 'Export from JSON Structure' : 'Import into JSON Structure'}</h2><div class="js-conversion-tiles">${commands.map((command) => `<button class="js-conversion-tile" data-conversion-command="${escapeAttribute(command.id)}" aria-pressed="${command.id === selected?.id}"><span class="js-format-icon" aria-hidden="true">${escapeHtml(formatInitials(command.direction === 'export' ? command.targetFormat : command.sourceFormat))}</span><span class="js-conversion-tile-copy"><strong>${escapeHtml(command.label)}</strong><span>${escapeHtml(conversionCommandDescription(command))}</span><small>${escapeHtml(command.sourceFormat)} <span aria-hidden="true">→</span> ${escapeHtml(command.targetFormat)}</small></span></button>`).join('')}</div></section>`;
+  }).join('') : '';
+  const configuration = selected ? `<section class="js-conversion-config"><div class="js-conversion-route"><div><span>From</span><strong>${escapeHtml(selected.sourceFormat)}</strong></div><span class="js-conversion-arrow" aria-hidden="true">→</span><div><span>To</span><strong>${escapeHtml(selected.targetFormat)}</strong></div></div><fieldset><legend>Options</legend>${converter?.options.map(conversionOptionControl).join('') || '<p class="js-description">This converter has no options.</p>'}</fieldset><button data-conversion-run ${requestId ? 'disabled' : ''} class="js-primary">${escapeHtml(conversionCommandAction(selected))}</button></section>` : '';
+  return `<div class="js-sheet js-conversion-sheet"><header class="js-type-head"><div><div class="js-eyebrow">Toolchain</div><h1>Convert</h1><p class="js-description">Choose an outcome, review its options, and write generated files to a directory you approve.</p></div>${manifest ? '<button data-conversion-load title="Refresh conversion tools">Refresh</button>' : ''}</header>${manifest ? `<div class="js-conversion-layout"><div class="js-conversion-catalog">${commandGroups || '<p class="js-description">No conversion commands are installed.</p>'}</div>${configuration}</div>` : '<div class="js-conversion-loading" role="status">Loading conversion tools...</div>'}${progressView}<p role="status" aria-live="polite">${escapeHtml(status)}</p>${result ? `<section><div class="js-section-head"><h2>Outputs (${result.outputs.length})</h2>${result.outputs.length && host.openGeneratedOutput ? '<button data-conversion-open>Open outputs</button>' : ''}</div>${outputs || '<p class="js-description">No output files were committed.</p>'}</section><section><h2>Diagnostics (${result.diagnostics.length})</h2>${diagnostics || '<p class="js-description">No conversion warnings or errors.</p>'}</section>` : ''}</div>`;
+}
+
+function conversionCommandDescription(command: import('../conversion/types.js').ConversionCommand): string {
+  return command.direction === 'export'
+    ? `Create ${conversionFormatName(command.targetFormat)} files from the current structure.`
+    : `Create a JSON Structure document from ${conversionFormatName(command.sourceFormat)}.`;
+}
+
+function conversionCommandAction(command: import('../conversion/types.js').ConversionCommand): string {
+  return command.direction === 'export' ? `Convert to ${conversionFormatName(command.targetFormat)}` : `Import ${conversionFormatName(command.sourceFormat)}`;
+}
+
+function conversionFormatName(format: string): string {
+  const known: Readonly<Record<string, string>> = { 'json-schema': 'JSON Schema', 'json-structure': 'JSON Structure', avro: 'Avro' };
+  return known[format.toLocaleLowerCase()] ?? format;
+}
+
+function formatInitials(format: string): string {
+  const words = format.match(/[A-Za-z0-9]+/g) ?? [];
+  return (words.length > 1 ? words.map((word) => word[0]).join('') : words[0]?.slice(0, 3) ?? '?').toUpperCase();
 }
 
 function conversionOptionControl(option: import('../conversion/types.js').ConversionOption): string {
   const description = option.description ? `<span class="js-description">${escapeHtml(option.description)}</span>` : '';
-  if (option.type === 'boolean') return `<label><input type="checkbox" data-conversion-option="${escapeAttribute(option.name)}" data-option-type="boolean" ${option.default ? 'checked' : ''}>${escapeHtml(option.name)}${description}</label>`;
-  if (option.type === 'string' && option.allowedValues) return `<label>${escapeHtml(option.name)}<select data-conversion-option="${escapeAttribute(option.name)}" data-option-type="string">${option.allowedValues.map((value) => `<option value="${escapeAttribute(value)}" ${value === option.default ? 'selected' : ''}>${escapeHtml(value)}</option>`).join('')}</select>${description}</label>`;
+  const label = `<span class="js-option-name">${escapeHtml(humanizeIdentifier(option.name))}</span>`;
+  if (option.type === 'boolean') return `<label><input type="checkbox" data-conversion-option="${escapeAttribute(option.name)}" data-option-type="boolean" ${option.default ? 'checked' : ''}>${label}${description}</label>`;
+  if (option.type === 'string' && option.allowedValues) return `<label>${label}<select data-conversion-option="${escapeAttribute(option.name)}" data-option-type="string">${option.allowedValues.map((value) => `<option value="${escapeAttribute(value)}" ${value === option.default ? 'selected' : ''}>${escapeHtml(value)}</option>`).join('')}</select>${description}</label>`;
   const constraints = option.type === 'number' ? `${option.minimum === undefined ? '' : ` min="${option.minimum}"`}${option.maximum === undefined ? '' : ` max="${option.maximum}"`}` : '';
-  return `<label>${escapeHtml(option.name)}<input data-conversion-option="${escapeAttribute(option.name)}" data-option-type="${option.type}" type="${option.type === 'number' ? 'number' : 'text'}" value="${escapeAttribute(String(option.default ?? ''))}"${constraints}>${description}</label>`;
+  return `<label>${label}<input data-conversion-option="${escapeAttribute(option.name)}" data-option-type="${option.type}" type="${option.type === 'number' ? 'number' : 'text'}" value="${escapeAttribute(String(option.default ?? ''))}"${constraints}>${description}</label>`;
+}
+
+function humanizeIdentifier(value: string): string {
+  const words = value.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[-_]+/g, ' ').trim();
+  return words ? words[0]!.toLocaleUpperCase() + words.slice(1) : value;
 }
 
 function readConversionOptions(root: HTMLElement): Record<string, string | number | boolean> {
@@ -783,7 +953,25 @@ function pointerTokens(pointer: string): string[] {
 
 function formatPointer(tokens: readonly string[]): string { return tokens.length ? `/${tokens.map((token) => token.replace(/~/g, '~0').replace(/\//g, '~1')).join('/')}` : ''; }
 
-function shell(snapshot: DocumentSnapshot, title: string, definitions: readonly { readonly name: string; readonly pointer: string; readonly namespace: string }[], definitionPointer: string | undefined, rows: readonly PropertyRow[], selectedPointer: string | undefined, mode: Mode, graphNavigation: GraphNavigationController, graph: ReturnType<typeof projectGraph>): string {
+function workbenchShell(snapshot: DocumentSnapshot, title: string, definitions: readonly { readonly name: string; readonly pointer: string; readonly namespace: string }[], definitionPointer: string | undefined, rows: readonly PropertyRow[], selectedPointer: string | undefined, mode: Mode, problemsOpen: boolean): string {
+  const definition = snapshot.model?.projections.definitions.find((item) => item.pointer === definitionPointer);
+  const selectedProperty = rows.find((row) => row.pointer === selectedPointer);
+  const selectedDiagnostics = diagnosticsForPointer(snapshot.diagnostics, selectedPointer);
+  const errors = snapshot.diagnostics.filter((diagnostic) => diagnostic.severity === 'error').length;
+  const warnings = snapshot.diagnostics.filter((diagnostic) => diagnostic.severity === 'warning').length;
+  const documentStatus = snapshot.recovery !== 'valid' || errors ? 'invalid' : warnings ? 'warnings' : 'valid';
+  const advancedModes: readonly { readonly mode: Extract<Mode, 'analysis' | 'instance' | 'conversion' | 'libraries'>; readonly icon: string; readonly label: string }[] = [
+    { mode: 'analysis', icon: 'i', label: 'Analysis' },
+    { mode: 'instance', icon: '✓', label: 'Validate instance' },
+    { mode: 'conversion', icon: '⇄', label: 'Conversions' },
+    { mode: 'libraries', icon: '≡', label: 'Libraries' },
+  ];
+  const representationModes: readonly Extract<Mode, 'design' | 'graph' | 'source'>[] = ['design', 'graph', 'source'];
+  const typeTree = definitions.map((item) => `<button role="treeitem" class="js-tree-item" data-select="${escapeAttribute(item.pointer)}" aria-current="${item.pointer === definitionPointer}"><span class="js-kind" aria-hidden="true">{ }</span><span>${escapeHtml(item.name)}</span></button>`).join('') || '<div class="js-empty js-tree-empty">No definitions yet.</div>';
+  return `<div class="js-shell"><header class="js-title"><span class="js-mark" aria-hidden="true"></span><strong>JSON Structure</strong><span class="js-file" data-document-title>${escapeHtml(title)}</span><button class="js-command-trigger" data-show-commands title="Show Commands (Ctrl+Shift+P)" aria-label="Show Commands">&gt;_</button><label class="js-theme-label"><span class="js-sr-only">Color theme</span><select class="js-theme" data-theme-select aria-label="Color theme"><option value="dark">Dark</option><option value="light">Light</option><option value="contrast">High contrast</option></select></label></header><div class="js-document-toolbar" role="toolbar" aria-label="Document actions"><button class="js-mobile-toggle" data-mobile-drawer="types" aria-controls="js-outline" aria-expanded="false">Types</button><button data-command="definition.add" title="New type">＋ Type</button><button data-mode="conversion" title="Convert this structure">⇄ Convert</button><button data-mode="instance" title="Validate an instance">✓ Validate</button><span class="js-spacer"></span><span class="js-chip">Core v0</span><div class="js-tabs" role="tablist" aria-label="Document representation">${representationModes.map((item) => `<button role="tab" data-mode="${item}" aria-selected="${mode === item}">${item[0]!.toUpperCase()}${item.slice(1)}</button>`).join('')}</div><button class="js-mobile-toggle" data-mobile-drawer="inspector" aria-controls="js-inspector" aria-expanded="false">Inspector</button></div><div class="js-workbench" data-problems-open="${problemsOpen}"><nav class="js-activity" aria-label="Workbench views"><button class="js-activity-button js-activity-primary" data-mobile-drawer="types" aria-label="Schema explorer" title="Schema explorer">T</button>${advancedModes.map((item) => `<button class="js-activity-button" data-mode="${item.mode}" aria-label="${item.label}" title="${item.label}" aria-pressed="${mode === item.mode}">${item.icon}</button>`).join('')}</nav><aside class="js-outline" id="js-outline" data-drawer-panel="types" aria-label="Schema explorer"><div class="js-panel-head"><span>Types</span><button data-command="definition.add" title="New type" aria-label="New type">＋</button></div><input class="js-filter" type="search" placeholder="Filter types" aria-label="Filter types"><div class="js-tree" role="tree" aria-label="Types and namespaces"><div class="js-tree-group">Definitions · ${definitions.length}</div>${typeTree}</div></aside><section class="js-center"><div class="js-editor-tab"><span class="js-kind" aria-hidden="true">{ }</span><span data-document-title>${escapeHtml(title)}</span></div><div class="js-breadcrumbs"><span data-document-title>${escapeHtml(title)}</span>${definition ? `<span aria-hidden="true">›</span><strong>${escapeHtml(definition.name)}</strong>` : ''}${selectedProperty ? `<span aria-hidden="true">›</span><strong>${escapeHtml(selectedProperty.name)}</strong>` : ''}</div><section class="js-view" ${mode === 'design' ? '' : 'hidden'}>${designView(definition?.name, definition?.type, definition?.description, rows, selectedPointer)}</section><section class="js-view js-graph" ${mode === 'graph' ? '' : 'hidden'}>${graphView(snapshot, selectedPointer)}</section><section class="js-view js-source-view" ${mode === 'source' ? '' : 'hidden'}><div class="js-source" data-source aria-label="JSON source editor"></div></section></section><aside class="js-inspector" id="js-inspector" data-drawer-panel="inspector" aria-label="Inspector"><div class="js-panel-head"><span>Inspector</span></div>${inspector(selectedProperty, definition, selectedDiagnostics)}</aside><section class="js-problems" aria-label="Problems panel"><div class="js-problems-head"><button class="js-problems-tab" data-problems-toggle aria-expanded="${problemsOpen}">Problems <span class="js-count">${snapshot.diagnostics.length}</span></button><span class="js-spacer"></span><button data-problems-toggle aria-label="Close Problems">×</button></div><div class="js-problem-list" role="list">${problems(snapshot.diagnostics)}</div></section></div><footer class="js-status"><button data-problems-toggle aria-expanded="${problemsOpen}" title="Toggle Problems"><span>× ${errors}</span><span>△ ${warnings}</span></button><span>JSON Structure Core v0</span><span class="js-spacer"></span><span>${definitions.length} type${definitions.length === 1 ? '' : 's'}</span><span>${documentStatus}</span></footer></div>`;
+}
+
+export function legacyShell(snapshot: DocumentSnapshot, title: string, definitions: readonly { readonly name: string; readonly pointer: string; readonly namespace: string }[], definitionPointer: string | undefined, rows: readonly PropertyRow[], selectedPointer: string | undefined, mode: Mode, graphNavigation: GraphNavigationController, graph: ReturnType<typeof projectGraph>): string {
   const definition = snapshot.model?.projections.definitions.find((item) => item.pointer === definitionPointer);
   const selectedProperty = rows.find((row) => row.pointer === selectedPointer);
   const selectedDiagnostics = diagnosticsForPointer(snapshot.diagnostics, selectedPointer);
@@ -834,35 +1022,38 @@ function instanceView(text: string, result: InstanceValidationResult | undefined
 }
 
 function designView(name: string | undefined, type: string | undefined, description: string | undefined, rows: readonly PropertyRow[], selectedPointer: string | undefined): string {
-  return `<div class="js-sheet"><header class="js-type-head"><div><div class="js-eyebrow">Focused type</div><h1>${escapeHtml(name ?? 'Document')}</h1><p class="js-description">${escapeHtml(description ?? 'Select a reusable type to inspect and edit its properties.')}</p></div><span class="js-chip">${escapeHtml(type ?? 'unknown')}</span></header><div class="js-section-head"><h2>Properties (${rows.length})</h2><button data-command="add">Add property</button></div><div class="js-grid"><div class="js-row js-header"><div class="js-cell">Name</div><div class="js-cell">Type</div><div class="js-cell">Presence</div><div class="js-cell js-description-cell">Description</div><div class="js-cell">Action</div></div>${rows.map((row) => `<div class="js-row" aria-current="${row.pointer === selectedPointer}"><button class="js-cell js-code" data-select="${escapeAttribute(row.pointer)}">${escapeHtml(row.name)}</button><div class="js-cell js-code">${escapeHtml(row.type)}</div><div class="js-cell ${row.required ? 'js-required' : 'js-optional'}">${row.required ? 'required' : 'optional'}</div><div class="js-cell js-description-cell">${escapeHtml(row.description ?? 'No description')}</div><button class="js-cell" data-select="${escapeAttribute(row.pointer)}">Inspect</button></div>`).join('') || '<div class="js-empty">This type has no properties yet.</div>'}</div></div>`;
+  if (!name && !type) return '<div class="js-empty-state"><span class="js-empty-mark" aria-hidden="true"></span><div class="js-eyebrow">Untitled structure</div><h1>Create your first type</h1><p>Start with a reusable declaration, or switch to Source to author the document directly.</p><div class="js-empty-actions"><button class="js-primary" data-command="definition.add">＋ New type</button><button data-mode="source">Open Source</button></div></div>';
+  return `<div class="js-sheet"><header class="js-type-head"><div><div class="js-eyebrow">${name ? 'Local definition' : 'Document root'}</div><h1>${escapeHtml(name ?? 'Document root')}</h1><p class="js-description">${escapeHtml(description ?? 'No description yet.')}</p></div><span class="js-chip">${escapeHtml(type ?? 'untyped')}</span></header><div class="js-section-head"><div><h2>Properties</h2><span class="js-section-meta">${rows.length} total · ${rows.filter((row) => row.required).length} required</span></div><button data-command="add">＋ Add property</button></div><div class="js-grid" role="table" aria-label="Properties"><div class="js-row js-header" role="row"><div class="js-cell" role="columnheader">Name</div><div class="js-cell" role="columnheader">Type</div><div class="js-cell" role="columnheader">Presence</div><div class="js-cell js-description-cell" role="columnheader">Description</div><div class="js-cell" role="columnheader"><span class="js-sr-only">Actions</span></div></div>${rows.map((row) => `<div class="js-row" role="row" aria-current="${row.pointer === selectedPointer}"><button class="js-cell js-code" role="cell" data-select="${escapeAttribute(row.pointer)}">${escapeHtml(row.name)}</button><div class="js-cell js-code" role="cell">${escapeHtml(row.type)}</div><div class="js-cell ${row.required ? 'js-required' : 'js-optional'}" role="cell">${row.required ? 'required' : 'optional'}</div><div class="js-cell js-description-cell" role="cell">${escapeHtml(row.description ?? 'Description needed')}</div><button class="js-cell js-row-action" role="cell" data-select="${escapeAttribute(row.pointer)}" aria-label="Inspect ${escapeAttribute(row.name)}">⋯</button></div>`).join('') || '<button class="js-add-row" data-command="add">＋ <span>Add a property</span></button>'}</div></div>`;
 }
 
 function graphView(graphOrSnapshot: ReturnType<typeof projectGraph> | DocumentSnapshot, navigationOrSelected: GraphNavigationController | string | undefined, selectedPointerOverride?: string | undefined): string {
   const isSnapshot = 'model' in graphOrSnapshot;
   const graph: ReturnType<typeof projectGraph> = isSnapshot ? projectGraph(graphOrSnapshot as DocumentSnapshot) : graphOrSnapshot as ReturnType<typeof projectGraph>;
   const navigation: GraphNavigationController = isSnapshot ? graphNavigationBySnapshot.get(graphOrSnapshot as DocumentSnapshot) ?? new GraphNavigationController() : navigationOrSelected as GraphNavigationController;
+  const layout = isSnapshot ? forceGraphLayoutBySnapshot.get(graphOrSnapshot as DocumentSnapshot) ?? new ForceGraphLayout() : new ForceGraphLayout();
   const selectedPointer = isSnapshot ? navigationOrSelected as string | undefined : selectedPointerOverride;
-  const positions = graph.nodes.map((node, index) => ({ ...node, x: 80 + (index % 3) * 210, y: 80 + Math.floor(index / 3) * 130, width: 150, height: 50 }));
+  const layoutPositions = layout.reconcile(graph.nodes, graph.edges);
+  const graphNodes = new Map(graph.nodes.map((node) => [node.id, node]));
+  const positions = layoutPositions.map((position) => ({ ...graphNodes.get(position.id)!, ...position }));
   const position = new Map(positions.map((node) => [node.id, node]));
-  const width = Math.max(680, 120 + Math.min(3, positions.length) * 210); const height = Math.max(430, 150 + Math.ceil(positions.length / 3) * 130); navigation.setContent({ x: 0, y: 0, width, height }); const state = navigation.snapshot(); const minimap = navigation.minimap(positions); const transform = `translate(${state.camera.x} ${state.camera.y}) scale(${state.camera.zoom})`;
+  const bounds = layout.contentBounds();
+  const width = bounds.width; const height = bounds.height; navigation.setContent({ x: 0, y: 0, width, height }); const state = navigation.snapshot(); const minimap = navigation.minimap(positions); const transform = `translate(${state.camera.x} ${state.camera.y}) scale(${state.camera.zoom})`;
   const minimapViewport = clampMinimapViewport(minimap.viewport, width, height);
   const edges = graph.edges.map((edge) => renderGraphEdge(edge, position)).join('');
   const nodes = positions.map((node) => renderGraphNode(node, selectedPointer, state.semanticZoom)).join('') || '<text x="30" y="50">No types to graph.</text>';
-  return `<div class="js-graph-toolbar"><button data-graph-fit title="Fit graph">Fit</button><button data-graph-back title="Back" ${state.historyIndex > 0 ? '' : 'disabled'}>Back</button><button data-graph-forward title="Forward" ${state.historyIndex < state.history.length - 1 ? '' : 'disabled'}>Forward</button><span data-semantic-zoom="${state.semanticZoom}">${state.semanticZoom}</span></div><svg class="js-graph-canvas" data-graph-canvas viewBox="0 0 ${width} ${height}" role="img" aria-label="Type relationship graph with ${graph.nodes.length} nodes and ${graph.edges.length} edges"><defs><marker id="js-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8Z" fill="currentColor"></path></marker></defs><g transform="${transform}">${edges}${nodes}</g><g class="js-minimap" transform="translate(12 12)"><rect width="180" height="120" data-minimap></rect>${minimap.nodes.map((node) => `<rect x="${node.x / width * 180}" y="${node.y / height * 120}" width="${Math.max(3, node.width / width * 180)}" height="${Math.max(3, node.height / height * 120)}"></rect>`).join('')}<rect class="js-minimap-viewport" x="${minimapViewport.x}" y="${minimapViewport.y}" width="${minimapViewport.width}" height="${minimapViewport.height}"></rect></g></svg>`;
+  if (!isSnapshot) layout.dispose();
+  return `<div class="js-graph-toolbar"><button data-graph-back title="Back" ${state.historyIndex > 0 ? '' : 'disabled'}>←</button><button data-graph-forward title="Forward" ${state.historyIndex < state.history.length - 1 ? '' : 'disabled'}>→</button><button data-graph-fit title="Fit graph">Fit</button><button data-graph-relayout title="Release pinned nodes and run the force layout again">Relayout</button><span data-semantic-zoom="${state.semanticZoom}">${Math.round(state.camera.zoom * 100)}% · ${state.semanticZoom}</span></div><svg class="js-graph-canvas" data-graph-canvas viewBox="0 0 ${width} ${height}" role="img" aria-label="Interactive type relationship graph with ${graph.nodes.length} nodes and ${graph.edges.length} edges"><defs><marker id="js-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8Z" fill="currentColor"></path></marker></defs><g data-graph-world transform="${transform}"><g data-graph-edges>${edges}</g><g data-graph-nodes>${nodes}</g></g><g class="js-minimap" transform="translate(12 12)"><rect width="180" height="120" data-minimap></rect><g data-minimap-nodes>${minimap.nodes.map((node, index) => `<rect data-minimap-node="${escapeAttribute(positions[index]?.id ?? '')}" x="${node.x / width * 180}" y="${node.y / height * 120}" width="${Math.max(3, node.width / width * 180)}" height="${Math.max(3, node.height / height * 120)}"></rect>`).join('')}</g><rect class="js-minimap-viewport" x="${minimapViewport.x}" y="${minimapViewport.y}" width="${minimapViewport.width}" height="${minimapViewport.height}"></rect></g></svg>`;
 }
 
-type PositionedGraphNode = ReturnType<typeof projectGraph>['nodes'][number] & { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
+type PositionedGraphNode = ReturnType<typeof projectGraph>['nodes'][number] & ForceGraphPosition;
 
 function renderGraphEdge(edge: ReturnType<typeof projectGraph>['edges'][number], positions: ReadonlyMap<string, PositionedGraphNode>): string {
   const from = positions.get(edge.from);
   const to = positions.get(edge.to);
   if (!from || !to) return '';
-  const startX = from.x + from.width;
-  const startY = from.y + from.height / 2;
-  const endX = to.x;
-  const endY = to.y + to.height / 2;
+  const geometry = graphEdgePath(from, to);
   const description = [edge.label, edge.status, edge.target, edge.documentUri, edge.provenance, edge.reason].filter(Boolean).join(' | ');
-  return `<g class="js-edge-group js-edge-${edge.kind} js-status-${edge.status ?? 'resolved'}" role="img" aria-label="${escapeAttribute(description)}"><path class="js-edge" d="M${startX} ${startY} L${endX} ${endY}" marker-end="url(#js-arrow)"><title>${escapeHtml(description)}</title></path><text class="js-edge-label" x="${(startX + endX) / 2}" y="${(startY + endY) / 2 - 5}">${escapeHtml(edge.label)}</text></g>`;
+  return `<g class="js-edge-group js-edge-${edge.kind} js-status-${edge.status ?? 'resolved'}" data-graph-edge="${escapeAttribute(edge.id)}" data-graph-from="${escapeAttribute(edge.from)}" data-graph-to="${escapeAttribute(edge.to)}" role="img" aria-label="${escapeAttribute(description)}"><path class="js-edge" d="${geometry.path}" marker-end="url(#js-arrow)"><title>${escapeHtml(description)}</title></path><text class="js-edge-label" x="${geometry.labelX}" y="${geometry.labelY}">${escapeHtml(edge.label)}</text></g>`;
 }
 
 function renderGraphNode(node: PositionedGraphNode, selectedPointer: string | undefined, semanticZoom: string): string {
@@ -872,13 +1063,18 @@ function renderGraphNode(node: PositionedGraphNode, selectedPointer: string | un
     ? `role="img" aria-label="${escapeAttribute(description)}"`
     : `role="button" tabindex="0" data-graph-select="${escapeAttribute(node.pointer)}" aria-label="${escapeAttribute(description)}" aria-current="${node.pointer === selectedPointer}"`;
   const metadata = status === 'resolved' ? node.namespace : `${status}${node.provenance ? ` | ${node.provenance}` : ''}`;
-  return `<g class="js-node js-node-${node.kind} js-status-${status}" ${interaction} transform="translate(${node.x} ${node.y})"><title>${escapeHtml(description)}</title><rect width="150" height="50"></rect><text x="12" y="22">${semanticZoom === 'overview' ? '' : escapeHtml(node.label)}</text><text class="js-node-meta" x="12" y="39">${semanticZoom === 'detail' || status !== 'resolved' ? escapeHtml(metadata) : ''}</text></g>`;
+  return `<g class="js-node js-node-${node.kind} js-status-${status}" data-graph-node="${escapeAttribute(node.id)}" data-graph-pinned="${node.pinned}" ${interaction} transform="translate(${node.x} ${node.y})"><title>${escapeHtml(description)}</title><rect width="150" height="50"></rect><text x="12" y="22">${semanticZoom === 'overview' ? '' : escapeHtml(node.label)}</text><text class="js-node-meta" x="12" y="39">${semanticZoom === 'detail' || status !== 'resolved' ? escapeHtml(metadata) : ''}</text></g>`;
 }
 
 function clampMinimapViewport(viewport: { readonly x: number; readonly y: number; readonly width: number; readonly height: number }, contentWidth: number, contentHeight: number): { readonly x: number; readonly y: number; readonly width: number; readonly height: number } {
   const width = Math.min(180, Math.max(1, viewport.width / contentWidth * 180));
   const height = Math.min(120, Math.max(1, viewport.height / contentHeight * 120));
   return { x: Math.min(180 - width, Math.max(0, viewport.x / contentWidth * 180)), y: Math.min(120 - height, Math.max(0, viewport.y / contentHeight * 120)), width, height };
+}
+
+function clientToGraphPoint(graphWorld: SVGElement, clientX: number, clientY: number): { readonly x: number; readonly y: number } {
+  const inverse = graphWorld.getScreenCTM().inverse();
+  return { x: inverse.a * clientX + inverse.c * clientY + inverse.e, y: inverse.b * clientX + inverse.d * clientY + inverse.f };
 }
 
 function inspector(property: PropertyRow | undefined, definition: import('../model.js').DefinitionProjection | undefined, diagnostics: readonly Diagnostic[]): string {
@@ -1098,24 +1294,6 @@ function isObjectSchema(value: unknown): value is Record<string, unknown> {
 }
 
 function enhanceWorkbenchDom(root: HTMLElement): void {
-  const title = root.querySelector('.js-title');
-  const outline = root.querySelector('.js-outline') as HTMLElement | null;
-  const inspectorPanel = root.querySelector('.js-inspector') as HTMLElement | null;
-  if (title && outline && inspectorPanel) {
-    outline.id = 'js-outline';
-    outline.dataset.drawerPanel = 'types';
-    inspectorPanel.id = 'js-inspector';
-    inspectorPanel.dataset.drawerPanel = 'inspector';
-    for (const [name, label, target] of [['types', 'Types', 'js-outline'], ['inspector', 'Inspector', 'js-inspector']] as const) {
-      const button = document.createElement('button');
-      button.className = 'js-mobile-toggle';
-      button.textContent = label;
-      button.dataset.mobileDrawer = name;
-      button.setAttribute('aria-controls', target);
-      button.setAttribute('aria-expanded', 'false');
-      title.insertBefore(button, title.querySelector('.js-file'));
-    }
-  }
   const graph = root.querySelector('[data-graph-canvas]');
   graph?.setAttribute('role', 'group');
 }

@@ -25,6 +25,12 @@ describe('conversion workbench view', () => {
     }, 'Generated 1 output.');
 
     expect(html).toContain('data-option-type="boolean" checked');
+    expect(html).toContain('class="js-conversion-tile"');
+    expect(html).toContain('data-conversion-command="convert.fixture" aria-pressed="true"');
+    expect(html).toContain('Create b files from the current structure.');
+    expect(html).toContain('Convert to b');
+    expect(html).not.toContain('<select class="js-service-select" data-conversion-command>');
+    expect(html).not.toContain('Load converters');
     expect(html).toContain('<option value="two" selected>two</option>');
     expect(html).toContain('min="1" max="5"');
     expect(html).toContain('schema.json');

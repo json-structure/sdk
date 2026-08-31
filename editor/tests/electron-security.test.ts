@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { deniedWindowOpen, isAllowedRendererNavigation, isTrustedIpcSender, selectDevelopmentUrl } from '../src/electron/security';
+import { deniedWindowOpen, isAllowedRendererNavigation, isTrustedIpcSender, selectDevelopmentUrl, selectInitialDocumentArgument } from '../src/electron/security';
 import viteConfig from '../vite.config';
 
 describe('Electron renderer security boundary', () => {
@@ -9,8 +9,24 @@ describe('Electron renderer security boundary', () => {
     expect(viteConfig.base).toBe('./');
   });
 
+  it('keeps production menus free of duplicate and developer-only commands', async () => {
+    const source = await readFile(join(process.cwd(), 'src', 'electron', 'main.ts'), 'utf8');
+    expect(source).not.toContain("label: 'Selection'");
+    expect(source).not.toContain("role: 'reload'");
+    expect(source).not.toContain("role: 'toggleDevTools'");
+  });
+
   it('ignores the development environment URL in packaged builds', () => {
     expect(selectDevelopmentUrl(true, 'http://127.0.0.1:5173/')).toBeUndefined();
+  });
+
+  it('selects a JSON document argument without treating the Electron app path as a file', () => {
+    expect(selectInitialDocumentArgument([
+      'C:/git/json-structure-sdk-editor/editor',
+      'C:/schemas/library/schema.struct.json',
+      '--remote-debugging-port=9333',
+    ])).toBe('C:/schemas/library/schema.struct.json');
+    expect(selectInitialDocumentArgument(['C:/git/json-structure-sdk-editor/editor', '--inspect'])).toBeUndefined();
   });
 
   it('accepts only the exact loopback development origin, port, and path', () => {

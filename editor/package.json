@@ -31,6 +31,7 @@
     "coverage:generate": "node scripts/generate-coverage.mjs"
   },
   "devDependencies": {
+    "@types/d3-force": "^3.0.10",
     "@types/node": "^25.0.10",
     "@vitest/coverage-v8": "^4.0.18",
     "concurrently": "^9.2.1",
@@ -51,7 +52,9 @@
   },
   "typesVersions": {
     "*": {
-      "library-host-runtime": ["dist/libraries/host-runtime.d.ts"]
+      "library-host-runtime": [
+        "dist/libraries/host-runtime.d.ts"
+      ]
     }
   },
   "build": {
@@ -66,8 +69,14 @@
       "package.json"
     ],
     "extraResources": [
-      { "from": "src/conversion/worker-runtime", "to": "conversion/worker-runtime" },
-      { "from": "../vscode/test-fixtures/financial-types/schema.struct.json", "to": "libraries/financial-types.struct.json" }
+      {
+        "from": "src/conversion/worker-runtime",
+        "to": "conversion/worker-runtime"
+      },
+      {
+        "from": "../vscode/test-fixtures/financial-types/schema.struct.json",
+        "to": "libraries/financial-types.struct.json"
+      }
     ],
     "asar": true,
     "win": {
@@ -90,6 +99,7 @@
     }
   },
   "dependencies": {
+    "d3-force": "^3.0.0",
     "monaco-editor": "^0.56.0"
   }
 }

@@ -8,7 +8,7 @@ import { isConversionRequest, isLibraryOperationRequest, isProtocolEnvelope, PRO
 import { NodeConversionHost } from '../conversion/node-host';
 import { dispatchLibraryOperation, type LibraryHostRuntime } from '../libraries/host-runtime';
 import { createElectronLibraryRuntime } from './library-runtime';
-import { deniedWindowOpen, isAllowedRendererNavigation, isTrustedIpcSender, selectDevelopmentUrl } from './security';
+import { deniedWindowOpen, isAllowedRendererNavigation, isTrustedIpcSender, selectDevelopmentUrl, selectInitialDocumentArgument } from './security';
 
 const currentDirectory = __dirname;
 const rendererDirectory = join(currentDirectory, '..', 'dist', 'renderer');
@@ -50,8 +50,7 @@ function installApplicationMenu(): void {
       ],
     },
     { label: 'Edit', submenu: [{ role: 'undo' }, { role: 'redo' }, { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }] },
-    { label: 'Selection', submenu: [{ role: 'selectAll' }] },
-    { label: 'View', submenu: [{ label: 'Command Palette...', accelerator: 'CmdOrCtrl+Shift+P', click: () => sendHostCommand('show-commands') }, { type: 'separator' }, { role: 'reload' }, { role: 'toggleDevTools' }, { type: 'separator' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { type: 'separator' }, { role: 'togglefullscreen' }] },
+    { label: 'View', submenu: [{ label: 'Command Palette...', accelerator: 'CmdOrCtrl+Shift+P', click: () => sendHostCommand('show-commands') }, { type: 'separator' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { type: 'separator' }, { role: 'togglefullscreen' }] },
     { label: 'Help', submenu: [{ label: 'JSON Structure Website', click: () => { void shell.openExternal('https://json-structure.org/'); } }] },
   ];
   if (process.platform === 'darwin') template.unshift({ label: app.name, submenu: [{ role: 'about' }, { type: 'separator' }, { role: 'services' }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] });
@@ -59,7 +58,7 @@ function installApplicationMenu(): void {
 }
 
 async function readInitialFile(): Promise<{ path: string; text: string } | null> {
-  const candidate = pendingPath ?? process.argv.slice(1).find((argument) => !argument.startsWith('-') && argument !== '.');
+  const candidate = pendingPath ?? selectInitialDocumentArgument(process.argv.slice(1));
   if (!candidate) return null;
 
   try {

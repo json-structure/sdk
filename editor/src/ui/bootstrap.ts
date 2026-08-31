@@ -3,6 +3,8 @@ import type { EditorHost } from '../contracts.js';
 
 export const defaultUntitledDocument = JSON.stringify({
   $schema: 'https://json-structure.org/meta/core/v0/#',
+  $id: 'urn:json-structure:untitled',
+  name: 'UntitledStructure',
   definitions: {},
 }, null, 2);
 
@@ -97,7 +99,9 @@ export function bootstrapJsonStructureEditor(container: HTMLElement, demoText: s
     onChange: () => { if (!controller?.replacing) { controller?.markDirty(); renderFileState(); } }
   });
   const renderFileState = (): void => {
-    document.title = `${controller?.dirty ? '* ' : ''}${controller?.path ? fileName(controller.path) : 'Untitled JSON Structure'} - JSON Structure`;
+    const title = controller?.path ? fileName(controller.path) : 'Untitled JSON Structure';
+    document.title = `${controller?.dirty ? '* ' : ''}${title} - JSON Structure`;
+    editor.setTitle(title);
   };
   controller = createAlphaEditorController(editor, bridge, window.confirm, renderFileState);
   if (bridge) {
