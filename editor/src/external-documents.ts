@@ -46,7 +46,7 @@ export async function loadExternalDocuments(documentUri: string, sources: readon
         results.push({ uri, snapshot: { uri: resource.uri, text: resource.content, documentVersion: 1, recovery: parsed.recovery, diagnostics: parsed.diagnostics }, availability: 'stale' });
         continue;
       }
-      results.push({ uri, model: parsed.model, availability: 'available' });
+      results.push({ uri, model: parsed.model, value: parsed.value as Readonly<Record<string, unknown>>, availability: 'available' });
       for (const imported of importSources(parsed.value)) pending.push({ uri: resolveResourceUri(resource.uri, imported), depth: depth + 1 });
     } catch {
       results.push({ uri, availability: 'unavailable' });

@@ -3,6 +3,7 @@ import type { NormalizedDocument } from './model.js';
 import { parseDocument, type ParseResult } from './parser.js';
 import { resolveCapabilities, type CapabilityResolution } from './capabilities.js';
 import { resolveDocumentReferences, type ExternalDocumentInput } from './resolver.js';
+import type { ResolvedSchemaDocument } from './phase4/resolved-schema.js';
 
 /**
  * API for document session.
@@ -29,6 +30,12 @@ export class DocumentSession {
   snapshot(): DocumentSnapshot { return this.current; }
   get value(): unknown { return this.parsedValue ?? this.lastValid?.value; }
   get model(): NormalizedDocument | undefined { return this.current.model; }
+  get resolvedSchemaDocuments(): readonly ResolvedSchemaDocument[] {
+    return this.externalDocuments.flatMap((input) => {
+      if ('value' in input && input.value && typeof input.value === 'object' && !Array.isArray(input.value)) return [{ uri: input.uri, document: input.value }];
+      return [];
+    });
+  }
   get capabilities(): CapabilityResolution { return resolveCapabilities(this.value); }
   get diagnostics(): readonly Diagnostic[] { return this.current.diagnostics; }
 }

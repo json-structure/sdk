@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { designView, graphView, mobileModeSelect } from '../src/ui/index.js';
+import { designView, graphView, instanceView, mobileModeSelect } from '../src/ui/index.js';
 import { DocumentSession } from '../src/session.js';
+import { resolveEffectiveMembers } from '../src/phase4/effective-members.js';
+import { InstanceWorkspace } from '../src/phase4/instance-workspace.js';
 
 describe('workbench interaction markup', () => {
   it('keeps every representation and workflow reachable from the compact mode selector', () => {
@@ -47,5 +49,38 @@ describe('workbench interaction markup', () => {
     expect(html).toContain('data-graph-fit');
     expect(html).toContain('data-graph-canvas');
     expect(html).toContain('tabindex="0"');
+  });
+
+  it('renders effective member origin, inheritance path, add-in, and conflict provenance', () => {
+    const document = {
+      $offers: { Audited: '#/definitions/Audited' },
+      definitions: {
+        Base: { type: 'object', properties: { id: { type: 'string' }, shared: { type: 'string' } }, required: ['id'] },
+        Target: { type: 'object', $extends: '#/definitions/Base', properties: { shared: { type: 'number' } } },
+        Audited: { abstract: true, type: 'object', $extends: '#/definitions/Target', properties: { updatedAt: { type: 'datetime' } } },
+      },
+    };
+    const effective = resolveEffectiveMembers(document, '#/definitions/Target', { addIns: ['Audited'] });
+    const html = designView('Target', 'object', undefined, [], undefined, [], [], 'effective', effective);
+    expect(html).toContain('data-member-mode="effective" aria-pressed="true"');
+    expect(html).toContain('data-member-origin="inherited"');
+    expect(html).toContain('data-member-origin="add-in"');
+    expect(html).toContain('Base');
+    expect(html).toContain('Audited');
+    expect(html).toContain('local-redefinition');
+    expect(html).toContain('data-effective-source="/definitions/Base/properties/id"');
+  });
+
+  it('renders root selection and expandable instance evaluation trace navigation', () => {
+    const workspace = new InstanceWorkspace({ type: 'object', properties: { age: { type: 'int8' } }, required: ['age'] }, { age: 128 });
+    const result = workspace.validate();
+    const selection = workspace.selectDiagnostic(0);
+    const html = instanceView('{"age":128}', result, [{ pointer: '/definitions/Person', label: 'Person' }], '/definitions/Person', selection);
+    expect(html).toContain('data-instance-root');
+    expect(html).toContain('value="/definitions/Person" selected');
+    expect(html).toContain('class="js-trace js-trace-invalid"');
+    expect(html).toContain('data-trace-instance="/age"');
+    expect(html).toContain('data-trace-schema="/properties/age/type"');
+    expect(html).toContain('data-instance-diagnostic="0"');
   });
 });

@@ -16,6 +16,7 @@ import type {
 export interface ExternalDocumentDescriptor {
   readonly uri: string;
   readonly model?: NormalizedDocument;
+  readonly value?: Readonly<Record<string, unknown>>;
   readonly snapshot?: DocumentSnapshot;
   readonly availability?: 'available' | 'unavailable' | 'stale';
 }
