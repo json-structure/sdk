@@ -21,7 +21,18 @@ describe('conversion workbench view', () => {
       documentVersion: 1,
       succeeded: true,
       outputs: [{ name: 'schema.json', uri: 'file:///output/schema.json' }],
-      diagnostics: [{ code: 'conversion.warning.metadata', message: 'Metadata was approximated.', severity: 'warning' }]
+      diagnostics: [{ code: 'conversion.warning.metadata', message: 'Metadata was approximated.', severity: 'warning' }],
+      review: {
+        commandId: 'convert.fixture',
+        converter: { id: 'fixture', displayName: 'Fixture', version: '1' },
+        sourceFormat: 'a',
+        targetFormat: 'b',
+        lifecycle: ['idle', 'preparing', 'running', 'publishing', 'completed'],
+        published: true,
+        lossiness: 'metadata',
+        warnings: [{ code: 'metadata', message: 'Metadata was approximated.', lossiness: 'metadata', targetPath: '/properties/value', details: { keyword: 'x-source' } }],
+        manifest: { algorithm: 'sha256', files: [{ path: 'schema.json', bytes: 42, sha256: 'a'.repeat(64) }] },
+      },
     }, 'Generated 1 output.');
 
     expect(html).toContain('data-option-type="boolean" checked');
@@ -36,6 +47,16 @@ describe('conversion workbench view', () => {
     expect(html).toContain('schema.json');
     expect(html).toContain('conversion.warning.metadata');
     expect(html).toContain('data-conversion-open');
+    expect(html).toContain('aria-label="Conversion review"');
+    expect(html).toContain('data-lossiness="metadata"');
+    expect(html).toContain('Fixture <span class="js-code">1</span>');
+    expect(html).toContain('a <span aria-hidden="true">→</span> b');
+    expect(html).toContain('Committed atomically');
+    expect(html).toContain('data-state="publishing"');
+    expect(html).toContain('/properties/value');
+    expect(html).toContain('&quot;keyword&quot;: &quot;x-source&quot;');
+    expect(html).toContain('42 B');
+    expect(html).toContain('a'.repeat(64));
   });
 
   it('renders progress and cancellation controls only while a conversion is active', () => {

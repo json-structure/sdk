@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GESTURE_CONTRACT, PROTOCOL_VERSION, SERIALIZATION_GUARANTEES, coverageErrors, isLibraryOperationRequest, isProtocolEnvelope, sameSelection } from '../src/index.js';
+import { GESTURE_CONTRACT, PROTOCOL_VERSION, SERIALIZATION_GUARANTEES, coverageErrors, isConversionResult, isLibraryOperationRequest, isProtocolEnvelope, sameSelection } from '../src/index.js';
 describe('Phase 0 contracts', () => {
   it('accepts only versioned request envelopes', () => {
     expect(isProtocolEnvelope({ protocolVersion: PROTOCOL_VERSION, requestId: 'r1' })).toBe(true);
@@ -9,6 +9,19 @@ describe('Phase 0 contracts', () => {
     expect(isLibraryOperationRequest({ protocolVersion: 1, requestId: 'library-1', kind: 'library-request', operation: 'listCatalog' })).toBe(true);
     expect(isLibraryOperationRequest({ protocolVersion: 1, requestId: 'library-1', kind: 'library-request', operation: 'deleteEverything' })).toBe(false);
     expect(isLibraryOperationRequest({ protocolVersion: 1, requestId: 'library-1', kind: 'library-request', operation: 'publish', payload: { value: () => undefined } })).toBe(false);
+  });
+  it('validates complete conversion review evidence', () => {
+    const result = {
+      protocolVersion: 1, requestId: 'conversion-1', documentVersion: 3, succeeded: true, outputs: [], diagnostics: [],
+      review: {
+        commandId: 'export.fixture', converter: { id: 'fixture', displayName: 'Fixture', version: '1' }, sourceFormat: 'a', targetFormat: 'b',
+        lifecycle: ['idle', 'preparing', 'running', 'publishing', 'completed'], published: true, lossiness: 'none', warnings: [],
+        manifest: { algorithm: 'sha256', files: [{ path: 'out.json', sha256: 'a'.repeat(64), bytes: 2 }] },
+      },
+    };
+    expect(isConversionResult(result)).toBe(true);
+    expect(isConversionResult({ ...result, review: { ...result.review, lossiness: 'perfect-ish' } })).toBe(false);
+    expect(isConversionResult({ ...result, review: { ...result.review, manifest: { algorithm: 'sha256', files: [{ path: 'out.json', sha256: 'short', bytes: 2 }] } } })).toBe(false);
   });
   it('defines lossless serialization and gesture guarantees', () => {
     expect(SERIALIZATION_GUARANTEES.preservesUnknownKeys).toBe(true);

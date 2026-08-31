@@ -122,7 +122,25 @@ export class NodeConversionHost {
     }).finally(() => this.operations.delete(request.requestId));
     const outputs: HostFile[] = Object.keys(result.runtime.files).sort().map((outputPath) => ({ uri: containedPath(destination, outputPath), name: outputPath.replace(/^.*[\\/]/, '') }));
     if (result.runtime.published) for (const output of outputs) this.committedOutputs.add(resolve(output.uri));
-    return { protocolVersion: PROTOCOL_VERSION, requestId: request.requestId, documentVersion: request.documentVersion, succeeded: result.runtime.state === 'completed' && result.runtime.published, outputs, diagnostics: result.diagnostics };
+    return {
+      protocolVersion: PROTOCOL_VERSION,
+      requestId: request.requestId,
+      documentVersion: request.documentVersion,
+      succeeded: result.runtime.state === 'completed' && result.runtime.published,
+      outputs,
+      diagnostics: result.diagnostics,
+      review: {
+        commandId: result.command.id,
+        converter: { id: result.converter.id, displayName: result.converter.displayName, version: result.converter.version },
+        sourceFormat: result.command.sourceFormat,
+        targetFormat: result.command.targetFormat,
+        lifecycle: result.runtime.states,
+        published: result.runtime.published,
+        lossiness: result.runtime.lossiness,
+        warnings: result.runtime.warnings,
+        manifest: result.runtime.manifest,
+      },
+    };
   }
 
   cancel(requestId: string): void {

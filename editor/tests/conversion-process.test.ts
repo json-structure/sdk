@@ -3,7 +3,10 @@ import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { NodeProcessExecutableLauncher, parseBundledCommandsManifest } from '../src/conversion/process.js';
 import { PACKAGED_COMMANDS_MANIFEST_PATH } from '../src/conversion/assets.js';
-import { readFile } from 'node:fs/promises';
+import { NodeConversionHost } from '../src/conversion/node-host.js';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const encoder = new TextEncoder();
 
@@ -54,5 +57,40 @@ describe('Phase 5 packaged process runtime', () => {
       signal: new AbortController().signal,
       onProgress: vi.fn(),
     })).rejects.toThrow('conversion.failed');
+  });
+
+  it('returns review evidence that matches the atomically published manifest', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'json-structure-host-review-'));
+    const destination = join(root, 'output');
+    try {
+      const host = new NodeConversionHost({ runtimeRoot: resolve(process.cwd(), 'src/conversion'), destination: async () => destination });
+      const result = await host.convert({
+        protocolVersion: 1,
+        requestId: 'host-review',
+        kind: 'conversion',
+        documentVersion: 7,
+        commandId: 'import.jsonschema.to-json-structure',
+        sourceName: 'schema.json',
+        sourceText: '{"type":"object","properties":{"id":{"type":"integer","minimum":0}}}',
+        options: { rootName: 'Order', preserveUnknownKeywords: false },
+      });
+
+      expect(result.succeeded).toBe(true);
+      expect(result.review).toMatchObject({
+        commandId: 'import.jsonschema.to-json-structure',
+        converter: { id: 'jsonschema', displayName: 'JSON Schema Converter', version: '1.0.0-node' },
+        sourceFormat: 'json-schema',
+        targetFormat: 'json-structure',
+        lifecycle: ['idle', 'preparing', 'running', 'publishing', 'completed'],
+        published: true,
+        lossiness: 'metadata',
+        warnings: [{ code: 'jsonschema.keyword.unsupported', lossiness: 'metadata', targetPath: '/definitions/Order/properties/id' }],
+      });
+      const publishedManifest = JSON.parse(await readFile(join(destination, 'conversion-output-manifest.json'), 'utf8'));
+      expect(result.review?.manifest).toEqual(publishedManifest);
+      expect(result.review?.manifest?.files[0]).toMatchObject({ path: 'Order.struct.json', bytes: expect.any(Number), sha256: expect.stringMatching(/^[a-f0-9]{64}$/) });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { realpath } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { customEditorProtocolVersion as protocolVersion, isWebviewMessage, type TextEditMessage } from './customEditorProtocol';
-import { isConversionRequest, isProtocolEnvelope, VsCodeConversionHost, type OpenGeneratedOutputRequest } from './editorServices';
+import { conversionCommandsManifest, isConversionRequest, isProtocolEnvelope, VsCodeConversionHost, type OpenGeneratedOutputRequest } from './editorServices';
 import { dispatchLibraryOperation, type LibraryCatalogEntry, type LibraryHostResolution, type LibraryHostRuntime, type LibraryOperation } from '@json-structure/editor-foundation/library-host-runtime';
 import { createVsCodeLibraryRuntime } from './libraryRuntime';
 
@@ -213,16 +213,3 @@ function createNonce(): string {
     return Array.from({ length: 32 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('');
 }
 
-const conversionCommandsManifest = {
-    schemaVersion: 1,
-    converters: [
-        { id: 'jsonschema', displayName: 'JSON Schema Converter', version: '1.0.0-node', sourceFormats: ['json-schema', 'json'], targetFormats: ['json-structure'], options: [] },
-        { id: 'avro', displayName: 'Avro Converter', version: '1.0.0-node', sourceFormats: ['avro', 'json'], targetFormats: ['json-structure'], options: [] },
-    ],
-    commands: [
-        { id: 'import.jsonschema.to-json-structure', converterId: 'jsonschema', direction: 'import', label: 'Import JSON Schema to JSON Structure', sourceFormat: 'json-schema', targetFormat: 'json-structure', defaultAutoOpen: true },
-        { id: 'export.json-structure.to-jsonschema', converterId: 'jsonschema', direction: 'export', label: 'Export JSON Structure to JSON Schema', sourceFormat: 'json-structure', targetFormat: 'json-schema', defaultAutoOpen: true },
-        { id: 'import.avro.to-json-structure', converterId: 'avro', direction: 'import', label: 'Import Avro to JSON Structure', sourceFormat: 'avro', targetFormat: 'json-structure', defaultAutoOpen: true },
-        { id: 'export.json-structure.to-avro', converterId: 'avro', direction: 'export', label: 'Export JSON Structure to Avro', sourceFormat: 'json-structure', targetFormat: 'avro', defaultAutoOpen: true },
-    ],
-} as const;

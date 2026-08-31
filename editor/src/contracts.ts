@@ -90,10 +90,37 @@ export interface WriteResourceRequest extends ProtocolEnvelope { readonly kind: 
  * Defines the conversion request shape.
  */
 export interface ConversionRequest extends ProtocolEnvelope { readonly kind: 'conversion'; readonly documentVersion: DocumentVersion; readonly commandId: string; readonly sourceName: string; readonly sourceText: string; readonly options: Readonly<Record<string, string | number | boolean>>; }
+/** Type alias for conversion lossiness classifications. */
+export type ConversionLossiness = 'none' | 'formatting' | 'metadata' | 'precision' | 'unsupported-feature' | 'data-loss';
+/** Defines one structured conversion warning retained for review. */
+export interface ConversionReviewWarning {
+  readonly code: string;
+  readonly message: string;
+  readonly lossiness: Exclude<ConversionLossiness, 'none'>;
+  readonly sourceLocation?: string;
+  readonly targetPath?: string;
+  readonly details?: Readonly<Record<string, string | number | boolean>>;
+}
+/** Defines one output file integrity record. */
+export interface ConversionIntegrityEntry { readonly path: string; readonly sha256: string; readonly bytes: number; }
+/** Defines the deterministic output integrity manifest. */
+export interface ConversionOutputManifest { readonly algorithm: 'sha256'; readonly files: readonly ConversionIntegrityEntry[]; }
+/** Defines review evidence retained across editor hosts. */
+export interface ConversionReview {
+  readonly commandId: string;
+  readonly converter: { readonly id: string; readonly displayName: string; readonly version: string };
+  readonly sourceFormat: string;
+  readonly targetFormat: string;
+  readonly lifecycle: readonly ('idle' | 'preparing' | 'running' | 'publishing' | 'launching' | 'completed' | 'cancelled' | 'failed')[];
+  readonly published: boolean;
+  readonly lossiness: ConversionLossiness;
+  readonly warnings: readonly ConversionReviewWarning[];
+  readonly manifest?: ConversionOutputManifest;
+}
 /**
  * Defines the conversion result shape.
  */
-export interface ConversionResult extends ProtocolEnvelope { readonly documentVersion: DocumentVersion; readonly succeeded: boolean; readonly outputs: readonly HostFile[]; readonly diagnostics: readonly Diagnostic[]; }
+export interface ConversionResult extends ProtocolEnvelope { readonly documentVersion: DocumentVersion; readonly succeeded: boolean; readonly outputs: readonly HostFile[]; readonly diagnostics: readonly Diagnostic[]; readonly review?: ConversionReview; }
 /**
  * Defines the open generated output request shape.
  */
@@ -180,7 +207,40 @@ export function isConversionResult(value: unknown): value is ConversionResult {
   if (!isProtocolEnvelope(value)) return false;
   const result = value as unknown as Record<string, unknown>;
   return Number.isInteger(result.documentVersion) && (result.documentVersion as number) >= 0 && typeof result.succeeded === 'boolean' &&
-    Array.isArray(result.outputs) && result.outputs.every(isHostFile) && Array.isArray(result.diagnostics) && result.diagnostics.every(isDiagnostic);
+    Array.isArray(result.outputs) && result.outputs.every(isHostFile) && Array.isArray(result.diagnostics) && result.diagnostics.every(isDiagnostic) &&
+    (result.review === undefined || isConversionReview(result.review));
+}
+
+function isConversionReview(value: unknown): value is ConversionReview {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const review = value as Record<string, unknown>;
+  const converter = review.converter;
+  const manifest = review.manifest;
+  const lifecycle = new Set(['idle', 'preparing', 'running', 'publishing', 'launching', 'completed', 'cancelled', 'failed']);
+  const lossiness = new Set<ConversionLossiness>(['none', 'formatting', 'metadata', 'precision', 'unsupported-feature', 'data-loss']);
+  return typeof review.commandId === 'string' && review.commandId.length > 0 && !!converter && typeof converter === 'object' && !Array.isArray(converter) &&
+    typeof (converter as Record<string, unknown>).id === 'string' && typeof (converter as Record<string, unknown>).displayName === 'string' && typeof (converter as Record<string, unknown>).version === 'string' &&
+    typeof review.sourceFormat === 'string' && typeof review.targetFormat === 'string' && Array.isArray(review.lifecycle) && review.lifecycle.every((state) => lifecycle.has(String(state))) &&
+    typeof review.published === 'boolean' && lossiness.has(review.lossiness as ConversionLossiness) && Array.isArray(review.warnings) && review.warnings.every(isConversionReviewWarning) &&
+    (manifest === undefined || isConversionOutputManifest(manifest));
+}
+
+function isConversionReviewWarning(value: unknown): value is ConversionReviewWarning {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const warning = value as Record<string, unknown>;
+  return typeof warning.code === 'string' && typeof warning.message === 'string' && ['formatting', 'metadata', 'precision', 'unsupported-feature', 'data-loss'].includes(String(warning.lossiness)) &&
+    (warning.sourceLocation === undefined || typeof warning.sourceLocation === 'string') && (warning.targetPath === undefined || typeof warning.targetPath === 'string') &&
+    (warning.details === undefined || isScalarRecord(warning.details));
+}
+
+function isConversionOutputManifest(value: unknown): value is ConversionOutputManifest {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const manifest = value as Record<string, unknown>;
+  return manifest.algorithm === 'sha256' && Array.isArray(manifest.files) && manifest.files.every((entry) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return false;
+    const file = entry as Record<string, unknown>;
+    return typeof file.path === 'string' && file.path.length > 0 && typeof file.sha256 === 'string' && /^[a-f0-9]{64}$/i.test(file.sha256) && Number.isInteger(file.bytes) && (file.bytes as number) >= 0;
+  });
 }
 
 function isScalarRecord(value: unknown): value is Readonly<Record<string, string | number | boolean>> {

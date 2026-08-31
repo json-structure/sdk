@@ -72,10 +72,16 @@ suite('JSON Structure custom editor protocol', () => {
     });
 
     test('records conversion output byte sizes and SHA-256 hashes', () => {
-        const manifest = buildOutputManifest([{ path: 'schema.json', contentBase64: Buffer.from('{}').toString('base64') }]);
+        const manifest = buildOutputManifest([
+            { path: 'z.json', contentBase64: Buffer.from('z').toString('base64') },
+            { path: 'schema.json', contentBase64: Buffer.from('{}').toString('base64') }
+        ]);
         assert.deepStrictEqual(manifest, {
             algorithm: 'sha256',
-            files: [{ path: 'schema.json', bytes: 2, sha256: '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a' }]
+            files: [
+                { path: 'schema.json', bytes: 2, sha256: '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a' },
+                { path: 'z.json', bytes: 1, sha256: '594e519ae499312b29433b7dd8a97ff068defcba9755b6d5d00e84c524d67b06' }
+            ]
         });
     });
 
@@ -93,8 +99,12 @@ suite('JSON Structure custom editor protocol', () => {
         assert.deepStrictEqual(parseWorkerEvent('{"type":"progress","operationId":"convert-1","phase":"write","completed":3,"total":4,"message":"Writing"}'), {
             type: 'progress', operationId: 'convert-1', phase: 'write', completed: 3, total: 4, message: 'Writing'
         });
+        assert.deepStrictEqual(parseWorkerEvent('{"type":"result","operationId":"convert-1","lossiness":"metadata","files":[{"path":"schema.json","contentBase64":"e30="}],"warnings":[{"code":"metadata","message":"Approximated","lossiness":"metadata","targetPath":"/value","details":{"keyword":"x-source"}}]}'), {
+            type: 'result', operationId: 'convert-1', lossiness: 'metadata', files: [{ path: 'schema.json', contentBase64: 'e30=' }], warnings: [{ code: 'metadata', message: 'Approximated', lossiness: 'metadata', targetPath: '/value', details: { keyword: 'x-source' } }]
+        });
         assert.throws(() => parseWorkerEvent('{"type":"progress","operationId":"convert-1","phase":"write","completed":"3","total":4}'), /malformed/);
-        assert.throws(() => parseWorkerEvent('{"type":"result","operationId":"convert-1","files":[{"path":1,"contentBase64":"e30="}],"warnings":[]}'), /malformed/);
+        assert.throws(() => parseWorkerEvent('{"type":"result","operationId":"convert-1","lossiness":"none","files":[{"path":1,"contentBase64":"e30="}],"warnings":[]}'), /malformed/);
+        assert.throws(() => parseWorkerEvent('{"type":"result","operationId":"convert-1","files":[],"warnings":[]}'), /malformed/);
     });
 
     test('publishes generated files without deleting unrelated destination contents', async () => {

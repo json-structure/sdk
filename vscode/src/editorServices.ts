@@ -15,8 +15,23 @@ export interface ConversionRequest {
 }
 export interface HostFile { readonly uri: string; readonly name: string }
 export interface OpenGeneratedOutputRequest { readonly protocolVersion: 1; readonly requestId: string; readonly kind: 'open-generated-output'; readonly outputs: readonly HostFile[] }
-interface WorkerResult { readonly files: readonly { path: string; contentBase64: string }[]; readonly warnings: readonly { code: string; message: string; lossiness: string }[] }
+type Lossiness = 'none' | 'formatting' | 'metadata' | 'precision' | 'unsupported-feature' | 'data-loss';
+interface WorkerWarning { readonly code: string; readonly message: string; readonly lossiness: Exclude<Lossiness, 'none'>; readonly sourceLocation?: string; readonly targetPath?: string; readonly details?: Readonly<Record<string, string | number | boolean>> }
+interface WorkerResult { readonly files: readonly { path: string; contentBase64: string }[]; readonly warnings: readonly WorkerWarning[]; readonly lossiness: Lossiness }
 export interface ConversionProgress { readonly phase: string; readonly completed: number; readonly total: number; readonly message?: string }
+export const conversionCommandsManifest = {
+    schemaVersion: 1,
+    converters: [
+        { id: 'jsonschema', displayName: 'JSON Schema Converter', version: '1.0.0-node', sourceFormats: ['json-schema', 'json'], targetFormats: ['json-structure'], options: [] },
+        { id: 'avro', displayName: 'Avro Converter', version: '1.0.0-node', sourceFormats: ['avro', 'json'], targetFormats: ['json-structure'], options: [] },
+    ],
+    commands: [
+        { id: 'import.jsonschema.to-json-structure', converterId: 'jsonschema', direction: 'import', label: 'Import JSON Schema to JSON Structure', sourceFormat: 'json-schema', targetFormat: 'json-structure', defaultAutoOpen: true },
+        { id: 'export.json-structure.to-jsonschema', converterId: 'jsonschema', direction: 'export', label: 'Export JSON Structure to JSON Schema', sourceFormat: 'json-structure', targetFormat: 'json-schema', defaultAutoOpen: true },
+        { id: 'import.avro.to-json-structure', converterId: 'avro', direction: 'import', label: 'Import Avro to JSON Structure', sourceFormat: 'avro', targetFormat: 'json-structure', defaultAutoOpen: true },
+        { id: 'export.json-structure.to-avro', converterId: 'avro', direction: 'export', label: 'Export JSON Structure to Avro', sourceFormat: 'json-structure', targetFormat: 'avro', defaultAutoOpen: true },
+    ],
+} as const;
 export interface PublicationFileSystem {
     stat(uri: vscode.Uri): Thenable<vscode.FileStat>;
     createDirectory(uri: vscode.Uri): Thenable<void>;
@@ -26,14 +41,14 @@ export interface PublicationFileSystem {
     delete(uri: vscode.Uri, options?: { recursive: boolean; useTrash: boolean }): Thenable<void>;
 }
 type WorkerEvent = { readonly type: 'progress'; readonly operationId: string; readonly phase: string; readonly completed: number; readonly total: number; readonly message?: string } |
-    { readonly type: 'result'; readonly operationId: string; readonly files: WorkerResult['files']; readonly warnings: WorkerResult['warnings'] } |
+    { readonly type: 'result'; readonly operationId: string; readonly files: WorkerResult['files']; readonly warnings: WorkerResult['warnings']; readonly lossiness: Lossiness } |
     { readonly type: 'error'; readonly operationId: string; readonly code: string; readonly message: string } |
     { readonly type: 'log'; readonly operationId: string; readonly level: 'debug' | 'info' | 'warn' | 'error'; readonly message: string };
 
 export function buildOutputManifest(files: WorkerResult['files']): { readonly algorithm: 'sha256'; readonly files: readonly { readonly path: string; readonly bytes: number; readonly sha256: string }[] } {
     return {
         algorithm: 'sha256',
-        files: files.map((file) => {
+        files: [...files].sort((left, right) => left.path.localeCompare(right.path)).map((file) => {
             const content = Buffer.from(file.contentBase64, 'base64');
             return { path: file.path, bytes: content.byteLength, sha256: createHash('sha256').update(content).digest('hex') };
         })
@@ -60,7 +75,7 @@ export class VsCodeConversionHost {
     private readonly operations = new Map<string, { child?: ChildProcessWithoutNullStreams; controller: AbortController }>();
     constructor(private readonly extensionUri: vscode.Uri) {}
 
-    async convert(request: ConversionRequest, onProgress?: (progress: ConversionProgress) => void): Promise<{ protocolVersion: 1; requestId: string; documentVersion: number; succeeded: boolean; outputs: readonly HostFile[]; diagnostics: readonly unknown[] }> {
+    async convert(request: ConversionRequest, onProgress?: (progress: ConversionProgress) => void): Promise<{ protocolVersion: 1; requestId: string; documentVersion: number; succeeded: boolean; outputs: readonly HostFile[]; diagnostics: readonly unknown[]; review?: unknown }> {
         const selected = await vscode.window.showOpenDialog({ title: 'Choose conversion output directory', canSelectFolders: true, canSelectFiles: false, canSelectMany: false });
         const destination = selected?.[0];
         if (!destination) return { protocolVersion: 1, requestId: request.requestId, documentVersion: request.documentVersion, succeeded: false, outputs: [], diagnostics: [{ code: 'conversion.cancelled', message: 'Conversion destination selection was cancelled.', severity: 'info' }] };
@@ -70,8 +85,29 @@ export class VsCodeConversionHost {
         try {
             const result = await this.runWorker(request, onProgress);
             const outputs = await publishGeneratedFiles(vscode.workspace.fs, destination, result.files, controller.signal);
+            const command = conversionCommandsManifest.commands.find((candidate) => candidate.id === request.commandId);
+            const converter = conversionCommandsManifest.converters.find((candidate) => candidate.id === command?.converterId);
+            if (!command || !converter) throw new Error(`Conversion metadata for '${request.commandId}' is unavailable.`);
             for (const output of outputs) this.committed.add(path.resolve(output.uri));
-            return { protocolVersion: 1, requestId: request.requestId, documentVersion: request.documentVersion, succeeded: true, outputs, diagnostics: result.warnings.map((warning) => ({ code: `conversion.warning.${warning.code}`, message: warning.message, severity: warning.lossiness === 'data-loss' ? 'error' : 'warning' })) };
+            return {
+                protocolVersion: 1,
+                requestId: request.requestId,
+                documentVersion: request.documentVersion,
+                succeeded: true,
+                outputs,
+                diagnostics: result.warnings.map((warning) => ({ code: `conversion.warning.${warning.code}`, message: warning.message, severity: warning.lossiness === 'data-loss' ? 'error' : warning.lossiness === 'formatting' ? 'info' : 'warning', location: warning.targetPath ? { uri: warning.targetPath, pointer: warning.targetPath } : undefined })),
+                review: {
+                    commandId: command.id,
+                    converter: { id: converter.id, displayName: converter.displayName, version: converter.version },
+                    sourceFormat: command.sourceFormat,
+                    targetFormat: command.targetFormat,
+                    lifecycle: ['idle', 'preparing', 'running', 'publishing', 'completed'],
+                    published: true,
+                    lossiness: result.lossiness,
+                    warnings: result.warnings,
+                    manifest: buildOutputManifest(result.files),
+                },
+            };
         } finally { this.operations.delete(request.requestId); }
     }
 
@@ -106,7 +142,7 @@ export class VsCodeConversionHost {
                     catch (error) { failure = error instanceof Error ? error : new Error(String(error)); child.kill(); continue; }
                     if (event.operationId !== request.requestId) continue;
                     if (event.type === 'progress') onProgress?.({ phase: event.phase, completed: event.completed, total: event.total, message: event.message });
-                    if (event.type === 'result') result = { files: event.files, warnings: event.warnings };
+                    if (event.type === 'result') result = { files: event.files, warnings: event.warnings, lossiness: event.lossiness };
                     if (event.type === 'error') failure = new Error(`${event.code}: ${event.message}`);
                 }
             });
@@ -188,8 +224,8 @@ export function parseWorkerEvent(line: string): WorkerEvent {
         return { type: 'progress', operationId: event.operationId, phase: event.phase, completed: Number(event.completed), total: Number(event.total), message: event.message as string | undefined };
     }
     if (event.type === 'result') {
-        if (!Array.isArray(event.files) || !event.files.every(isWorkerFile) || !Array.isArray(event.warnings) || !event.warnings.every(isWorkerWarning)) throw new Error('Converter result event is malformed.');
-        return { type: 'result', operationId: event.operationId, files: event.files, warnings: event.warnings };
+        if (!Array.isArray(event.files) || !event.files.every(isWorkerFile) || !Array.isArray(event.warnings) || !event.warnings.every(isWorkerWarning) || !isLossiness(event.lossiness)) throw new Error('Converter result event is malformed.');
+        return { type: 'result', operationId: event.operationId, files: event.files, warnings: event.warnings, lossiness: event.lossiness };
     }
     if (event.type === 'error') {
         if (typeof event.code !== 'string' || typeof event.message !== 'string') throw new Error('Converter error event is malformed.');
@@ -207,7 +243,19 @@ function isWorkerFile(value: unknown): value is WorkerResult['files'][number] {
 }
 
 function isWorkerWarning(value: unknown): value is WorkerResult['warnings'][number] {
-    return !!value && typeof value === 'object' && !Array.isArray(value) && typeof (value as Record<string, unknown>).code === 'string' && typeof (value as Record<string, unknown>).message === 'string' && typeof (value as Record<string, unknown>).lossiness === 'string';
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    const warning = value as Record<string, unknown>;
+    return typeof warning.code === 'string' && typeof warning.message === 'string' && isLossiness(warning.lossiness) && warning.lossiness !== 'none' &&
+        (warning.sourceLocation === undefined || typeof warning.sourceLocation === 'string') && (warning.targetPath === undefined || typeof warning.targetPath === 'string') &&
+        (warning.details === undefined || isScalarRecord(warning.details));
+}
+
+function isLossiness(value: unknown): value is Lossiness {
+    return typeof value === 'string' && ['none', 'formatting', 'metadata', 'precision', 'unsupported-feature', 'data-loss'].includes(value);
+}
+
+function isScalarRecord(value: unknown): value is Readonly<Record<string, string | number | boolean>> {
+    return !!value && typeof value === 'object' && !Array.isArray(value) && Object.values(value).every((entry) => typeof entry === 'string' || typeof entry === 'boolean' || typeof entry === 'number' && Number.isFinite(entry));
 }
 
 async function exists(fileSystem: PublicationFileSystem, uri: vscode.Uri): Promise<boolean> {
