@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { IpcRendererEvent } from 'electron';
-import type { ElectronBridge, FileOpenedEvent } from './contracts';
+import type { ElectronBridge, FileCommand, FileOpenedEvent } from './contracts';
 
 const bridge: ElectronBridge = {
   openFile: () => ipcRenderer.invoke('file:open'),
@@ -11,6 +11,11 @@ const bridge: ElectronBridge = {
     const handler = (_event: IpcRendererEvent, file: FileOpenedEvent) => listener(file);
     ipcRenderer.on('file:opened', handler);
     return () => ipcRenderer.removeListener('file:opened', handler);
+  },
+  onFileCommand: (listener) => {
+    const handler = (_event: IpcRendererEvent, command: FileCommand) => listener(command);
+    ipcRenderer.on('file:command', handler);
+    return () => ipcRenderer.removeListener('file:command', handler);
   },
 };
 

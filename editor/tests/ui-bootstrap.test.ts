@@ -13,7 +13,8 @@ describe('ALPHA UI bootstrap', () => {
       openFile: async () => ({ path: 'C:/schemas/opened.struct.json', text: '{"opened":true}' }),
       saveFile: async (path, text) => { calls.push(`${path}:${text}`); return { path }; },
       saveFileAs: async (text) => { calls.push(`as:${text}`); return { path: 'C:/schemas/saved.struct.json' }; },
-      onFileOpened: () => () => undefined
+      onFileOpened: () => () => undefined,
+      onFileCommand: () => () => undefined
     };
     const controller = createAlphaEditorController(surface, bridge, () => true);
     await controller.open();
@@ -45,7 +46,8 @@ describe('ALPHA UI bootstrap', () => {
       openFile: async () => null,
       saveFile: async (path) => ({ path }),
       saveFileAs: async () => null,
-      onFileOpened(nextListener) { listener = nextListener; return () => { disposed = true; }; }
+      onFileOpened(nextListener) { listener = nextListener; return () => { disposed = true; }; },
+      onFileCommand: () => () => undefined
     };
     const controller = createAlphaEditorController(surface, bridge, () => true);
     listener?.({ path: 'C:/schemas/external.struct.json', text: '{"external":true}' });

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell, type OpenDialogOptions } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell, type MenuItemConstructorOptions, type OpenDialogOptions } from 'electron';
 import { join } from 'node:path';
 import { atomicWrite, readFile } from './file-service';
 
@@ -7,6 +7,30 @@ const rendererDirectory = join(currentDirectory, '..', 'dist', 'renderer');
 const developmentUrl = process.env.VITE_DEV_SERVER_URL;
 let mainWindow: BrowserWindow | null = null;
 let pendingPath: string | undefined;
+
+function sendFileCommand(command: 'open' | 'save' | 'save-as'): void {
+  mainWindow?.webContents.send('file:command', command);
+}
+
+function installApplicationMenu(): void {
+  const template: MenuItemConstructorOptions[] = [
+    {
+      label: 'File',
+      submenu: [
+        { label: 'Open...', accelerator: 'CmdOrCtrl+O', click: () => sendFileCommand('open') },
+        { type: 'separator' },
+        { label: 'Save', accelerator: 'CmdOrCtrl+S', click: () => sendFileCommand('save') },
+        { label: 'Save As...', accelerator: 'CmdOrCtrl+Shift+S', click: () => sendFileCommand('save-as') },
+        { type: 'separator' },
+        process.platform === 'darwin' ? { role: 'close' } : { role: 'quit' },
+      ],
+    },
+    { label: 'Edit', submenu: [{ role: 'undo' }, { role: 'redo' }, { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }] },
+    { label: 'View', submenu: [{ role: 'reload' }, { role: 'toggleDevTools' }, { type: 'separator' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { type: 'separator' }, { role: 'togglefullscreen' }] },
+  ];
+  if (process.platform === 'darwin') template.unshift({ label: app.name, submenu: [{ role: 'about' }, { type: 'separator' }, { role: 'services' }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] });
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
 
 async function readInitialFile(): Promise<{ path: string; text: string } | null> {
   const candidate = pendingPath ?? process.argv.slice(1).find((argument) => !argument.startsWith('-') && argument !== '.');
@@ -68,6 +92,7 @@ app.on('open-file', (event, path) => {
 
 app.whenReady().then(() => {
   registerIpcHandlers();
+  installApplicationMenu();
   void createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) void createWindow();

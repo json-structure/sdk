@@ -1,11 +1,14 @@
 import { mountJsonStructureEditor, type JsonStructureEditorHandle } from './index.js';
 
+export type FileCommand = 'open' | 'save' | 'save-as';
+
 /** Renderer-safe file bridge shape consumed by the shared UI bootstrap. */
 export interface FileBridge {
   openFile(): Promise<{ path: string; text: string } | null>;
   saveFile(path: string, text: string): Promise<{ path: string }>;
   saveFileAs(text: string): Promise<{ path: string } | null>;
   onFileOpened(listener: (file: { path: string; text: string }) => void): () => void;
+  onFileCommand(listener: (command: FileCommand) => void): () => void;
 }
 
 /** The editor operations required for ALPHA file lifecycle management. */
@@ -69,7 +72,7 @@ export function createAlphaEditorController(editor: AlphaEditorSurface, bridge: 
  */
 export function bootstrapJsonStructureEditor(container: HTMLElement, demoText: string): JsonStructureEditorHandle {
   const bridge = (window as Window & { electronAPI?: FileBridge }).electronAPI;
-  container.innerHTML = `<div class="js-alpha-filebar" hidden><button data-alpha-action="open">Open</button><button data-alpha-action="save">Save</button><button data-alpha-action="save-as">Save As</button><span data-alpha-title></span><span data-alpha-dirty></span></div><div data-alpha-editor></div>`;
+  container.innerHTML = `<style>.js-alpha-host{height:100%;display:grid;grid-template-rows:36px minmax(0,1fr);background:#1b2225;color:#ecf2f3;font:13px/1.4 "Segoe UI",sans-serif}.js-alpha-filebar{display:flex;align-items:center;gap:4px;padding:4px 10px;border-bottom:1px solid #3b4a4f}.js-alpha-filebar[hidden]{display:none}.js-alpha-filebar button{min-height:27px;padding:0 10px;border:1px solid #3b4a4f;background:#222b2f;color:inherit;cursor:pointer}.js-alpha-filebar button:hover{border-color:#5bc0d9}.js-alpha-filebar [data-alpha-title]{margin-left:8px;font-family:ui-monospace,monospace;color:#a7b5b9}.js-alpha-filebar [data-alpha-dirty]{margin-left:auto;color:#f0ba67}.js-alpha-editor{min-height:0}</style><div class="js-alpha-host"><div class="js-alpha-filebar" hidden role="toolbar" aria-label="File commands"><button data-alpha-action="open" title="Open (Ctrl+O)">Open...</button><button data-alpha-action="save" title="Save (Ctrl+S)">Save</button><button data-alpha-action="save-as" title="Save As (Ctrl+Shift+S)">Save As...</button><span data-alpha-title></span><span data-alpha-dirty></span></div><div class="js-alpha-editor" data-alpha-editor></div></div>`;
   const fileBar = container.querySelector('.js-alpha-filebar') as HTMLElement;
   const title = container.querySelector('[data-alpha-title]') as HTMLElement;
   const dirty = container.querySelector('[data-alpha-dirty]') as HTMLElement;
@@ -86,12 +89,20 @@ export function bootstrapJsonStructureEditor(container: HTMLElement, demoText: s
   controller = createAlphaEditorController(editor, bridge, window.confirm, renderFileState);
   if (bridge) {
     fileBar.hidden = false;
-    fileBar.addEventListener('click', (event: Event) => {
-      const action = (event.target as HTMLElement).dataset.alphaAction;
-      if (action === 'open') void controller?.open().then(renderFileState);
-      if (action === 'save') void controller?.save().then(renderFileState);
-      if (action === 'save-as') void controller?.saveAs().then(renderFileState);
-    });
+    const execute = (command: FileCommand): void => {
+      const operation = command === 'open' ? controller?.open() : command === 'save' ? controller?.save() : controller?.saveAs();
+      void operation?.then(renderFileState);
+    };
+    fileBar.addEventListener('click', (event: Event) => { const action = (event.target as HTMLElement).dataset.alphaAction as FileCommand | undefined; if (action) execute(action); });
+    const unsubscribeCommand = bridge.onFileCommand(execute);
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+      const command = event.key.toLowerCase() === 'o' && !event.shiftKey ? 'open' : event.key.toLowerCase() === 's' ? (event.shiftKey ? 'save-as' : 'save') : undefined;
+      if (command) { event.preventDefault(); execute(command); }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    const originalDispose = controller.dispose.bind(controller);
+    controller.dispose = () => { unsubscribeCommand(); window.removeEventListener('keydown', onKeyDown); originalDispose(); };
   }
   renderFileState();
   return { ...editor, dispose: () => { controller?.dispose(); editor.dispose(); container.innerHTML = ''; } };

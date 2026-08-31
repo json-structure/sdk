@@ -12,6 +12,8 @@ export interface FileOpenedEvent {
   text: string;
 }
 
+export type FileCommand = 'open' | 'save' | 'save-as';
+
 /** Renderer-safe bridge for file workflows and opening links outside the app. */
 export interface ElectronBridge {
   openFile(): Promise<OpenFileResult | null>;
@@ -19,4 +21,5 @@ export interface ElectronBridge {
   saveFileAs(text: string): Promise<SaveFileResult | null>;
   openExternal(url: string): Promise<void>;
   onFileOpened(listener: (file: FileOpenedEvent) => void): () => void;
+  onFileCommand(listener: (command: FileCommand) => void): () => void;
 }
