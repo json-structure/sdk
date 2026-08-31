@@ -1,11 +1,14 @@
-# JSON Structure editor foundation
+# JSON Structure Editor Alpha
 
-This package contains the Phase 1 shared model vertical slice on the Phase 0
-contract foundation. It includes strict JSON parsing with source mapping,
-recovery sessions, capability resolution, minimal `AddProperty` edits, and an
-in-memory host with byte-identical undo.
-The prototype HTML files at the package root are behavioral evidence only and
-are not production dependencies.
+This package contains the shared model and runnable Electron alpha for the JSON
+Structure editor. The host-neutral browser workbench provides Design, Graph,
+and Source modes with an outline, property editor, inspector, and problems
+view. The Electron host adds Open, Save, Save As, command-line file opening,
+and atomic writes through a narrow sandboxed preload bridge.
+
+The same browser workbench is intended for the VS Code host; it does not import
+Electron APIs. The prototype HTML files at the package root are behavioral
+evidence only and are not production dependencies.
 
 ## Commands
 
@@ -13,9 +16,17 @@ are not production dependencies.
 npm test                 # contract and coverage unit tests
 npm run typecheck        # strict TypeScript check
 npm run build            # ESM/CJS package and declarations
+npm run alpha:build      # renderer and Electron main/preload bundles
+npm run alpha:run        # build and launch the Electron alpha
+npm run alpha:dev        # Vite and Electron development mode
+npm run alpha:package    # platform packages under release/
 npm run coverage:check   # validate ledger and generated documentation
 npm run coverage:generate
 ```
+
+On Windows, `npm run alpha:package` produces an NSIS installer and a portable
+executable. macOS and Linux package targets are configured but must be built and
+smoke-tested on their respective platforms.
 
 The coverage gate permits explicit `partial`, `gap`, `unsupported`, and
 `pending` statuses during the initial milestone. It rejects duplicate or

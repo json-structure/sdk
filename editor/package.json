@@ -3,9 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=20.0.0" },
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "build": "tsup",
+    "build:renderer": "vite build --config vite.config.ts",
+    "build:electron": "tsup --config tsup.electron.config.ts",
+    "alpha:build": "npm run build:renderer && npm run build:electron",
+    "alpha:run": "npm run alpha:build && electron .",
+    "alpha:dev": "concurrently --kill-others-on-fail \"vite --config vite.config.ts --host 127.0.0.1\" \"node scripts/dev-electron.mjs\"",
+    "alpha:package": "npm run alpha:build && electron-builder",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "coverage:check": "node scripts/coverage-check.mjs",
@@ -14,8 +22,44 @@
   "devDependencies": {
     "@types/node": "^25.0.10",
     "@vitest/coverage-v8": "^4.0.18",
+    "concurrently": "^9.2.1",
+    "electron": "^41.10.3",
+    "electron-builder": "latest",
     "tsup": "^8.0.1",
     "typescript": "^5.3.2",
+    "vite": "latest",
     "vitest": "^4.0.18"
+  },
+  "main": "dist-electron/main.cjs",
+  "build": {
+    "appId": "org.json-structure.editor",
+    "productName": "JSON Structure Editor",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist-electron/**",
+      "dist/renderer/**",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ]
+    }
   }
 }

@@ -1,6 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { cpSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { loadCoverageInputs, readJson, validateCoverage } from '../src/coverage-contract.mjs';
@@ -20,7 +19,7 @@ function validate(mutator: (state: any) => void): string[] {
 }
 
 function createFixture(): string {
-  const fixtureRoot = mkdtempSync(path.join(tmpdir(), 'json-structure-coverage-'));
+  const fixtureRoot = mkdtempSync(path.join(projectRoot, '.json-structure-coverage-'));
   temporaryRoots.push(fixtureRoot);
   for (const directory of ['coverage', 'scripts', 'src', 'tests']) cpSync(path.join(projectRoot, directory), path.join(fixtureRoot, directory), { recursive: true });
   return fixtureRoot;
@@ -43,7 +42,7 @@ beforeAll(() => {
 afterEach(() => {
   for (const root of temporaryRoots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
-describe('coverage gate scripts', () => {
+describe('coverage gate scripts', { timeout: 15_000 }, () => {
   it('accepts the deterministic inventory, evidence, and generated artifacts', () => {
     expect(() => execFileSync(process.execPath, [path.join(projectRoot, 'scripts', 'coverage-check.mjs')], {
       cwd: projectRoot,

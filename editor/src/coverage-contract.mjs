@@ -96,18 +96,18 @@ function sourceFile(file, text) {
   return ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
 }
 
-function hasExportedSymbol(file, text, symbol) {
+function hasExportedSymbol(parsedSource, symbol) {
   const matches = [];
   const visit = (node) => {
     const exported = ts.canHaveModifiers(node) && ts.getModifiers(node)?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword);
     if (exported && 'name' in node && node.name && ts.isIdentifier(node.name) && node.name.text === symbol) matches.push(node);
     ts.forEachChild(node, visit);
   };
-  visit(sourceFile(file, text));
+  visit(parsedSource);
   return matches.length === 1;
 }
 
-function hasTestName(file, text, testName) {
+function hasTestName(parsedSource, testName) {
   let matches = 0;
   const visit = (node) => {
     if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && ['it', 'test'].includes(node.expression.text)) {
@@ -116,7 +116,7 @@ function hasTestName(file, text, testName) {
     }
     ts.forEachChild(node, visit);
   };
-  visit(sourceFile(file, text));
+  visit(parsedSource);
   return matches === 1;
 }
 
@@ -145,6 +145,7 @@ export function expandEvidenceManifest(manifest, records) {
 
 export function validateCoverage({ projectRoot, inventory, manifest, records, ledger, anchorsBySpec, checkArtifacts = true }) {
   const errors = [];
+  const parsedEvidenceFiles = new Map();
   if (inventory.version !== CONTRACT_VERSION) errors.push(`inventory version must be ${CONTRACT_VERSION}`);
   if (manifest.version !== CONTRACT_VERSION) errors.push(`evidence manifest version must be ${CONTRACT_VERSION}`);
   if (ledger.policy?.version !== CONTRACT_VERSION) errors.push(`ledger policy version must be ${CONTRACT_VERSION}`);
@@ -171,9 +172,13 @@ export function validateCoverage({ projectRoot, inventory, manifest, records, le
       const file = path.join(projectRoot, entry.file);
       if (!fs.existsSync(file)) errors.push(`${entry.id}: missing evidence artifact ${entry.file}`);
       else {
-        const text = fs.readFileSync(file, 'utf8');
-        if (entry.test && !hasTestName(file, text, entry.test)) errors.push(`${entry.id}: executable test name is missing or ambiguous in ${entry.file}`);
-        if (entry.symbol && !hasExportedSymbol(file, text, entry.symbol)) errors.push(`${entry.id}: exported implementation symbol is missing or ambiguous in ${entry.file}`);
+        let parsedSource = parsedEvidenceFiles.get(file);
+        if (!parsedSource) {
+          parsedSource = sourceFile(file, fs.readFileSync(file, 'utf8'));
+          parsedEvidenceFiles.set(file, parsedSource);
+        }
+        if (entry.test && !hasTestName(parsedSource, entry.test)) errors.push(`${entry.id}: executable test name is missing or ambiguous in ${entry.file}`);
+        if (entry.symbol && !hasExportedSymbol(parsedSource, entry.symbol)) errors.push(`${entry.id}: exported implementation symbol is missing or ambiguous in ${entry.file}`);
       }
     }
   }

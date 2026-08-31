@@ -1,12 +1,14 @@
 # JSON Structure Editor Implementation Status
 
-Updated: 2026-08-31 (Phase 1 milestone: exhaustive specification inventory)
+Updated: 2026-08-31 (runnable Electron alpha)
 Branch: `editor-autopilot`
 Worktree: `C:\git\json-structure-sdk-editor`
 
-Blocking findings in this milestone: none. The Phase 1 coverage inventory now contains 742 atomic draft-derived records. Every record has a stable ID, normative source, owning section, requirement, implementation owner, five evidence dimensions, and positive/negative/incomplete/host-parity test facets. All records remain partial: future Electron and VS Code parity is pending, and no record is allowed to appear complete while any dimension or applicable test facet is incomplete.
+Blocking findings in this milestone: none. The editor now has a runnable shared browser workbench and a secure Electron host. The alpha exposes Design, Graph, and Source modes; outline, property, inspector, and problems surfaces; Open, Save, and Save As; dirty-document replacement protection; command-line and operating-system file opening; and atomic file writes. The renderer remains host-neutral for later reuse in VS Code.
 
-The checked-in `coverage/inventory.json` is the authoritative deterministic baseline. `coverage/ledger.json`, `coverage/gaps.json`, and `coverage/COVERAGE.md` are generated from it. The gate compares exact expanded ID sets and rejects omissions, undeclared extras, duplicate or malformed IDs, unknown specifications, malformed statuses or facets, stale evidence paths, missing normative sources, false completion claims, and stale generated artifacts. It does not scrape draft prose at runtime.
+The Phase 1 coverage inventory contains 742 atomic draft-derived records. Every record has a stable ID, normative source, owning section, requirement, implementation owner, five evidence dimensions, and positive/negative/incomplete/host-parity test facets. All records remain partial: VS Code parity and complete graphical authoring coverage are pending, and no record is allowed to appear complete while any dimension or applicable test facet is incomplete.
+
+The checked-in `coverage/inventory.json` is the authoritative deterministic baseline. `coverage/generated/ledger.json`, `coverage/generated/gaps.json`, and `coverage/generated/COVERAGE.md` are generated from it. The gate compares exact expanded ID sets and rejects omissions, undeclared extras, duplicate or malformed IDs, unknown specifications, malformed statuses or facets, stale evidence paths, missing normative sources, false completion claims, and stale generated artifacts. It does not scrape draft prose at runtime.
 
 The old 87-record ledger was replaced rather than extended. Broad Core records were split into 156 separately testable keyword, value-form, placement, default, prohibition, resolution, and interaction records. Characteristics and Semantic Annotations each have 209 records generated from parallel normative rule families while retaining separate IDs and source ownership. Relations and Import evidence now points to implemented typed commands and direct inverse tests instead of stale editing and round-trip gaps. Those records remain partial because instance behavior, graphical surfaces, and production-host parity are not complete.
 
@@ -24,10 +26,15 @@ Reference discovery accepts direct `{ "$ref": ... }` only in active composition 
 
 ## Current milestone
 
-Phase 1 shared-model foundation is in progress. The bounded Core typed-member command and inspection milestone remains partial pending broader Core placement and editing coverage.
+The runnable Electron alpha is complete for Windows. Shared-model expansion and the VS Code host remain in progress.
 
 Implemented:
 
+- Host-neutral browser workbench with Design, Graph, and Source modes.
+- Outline, property editor, inspector, and problems surfaces backed by `DocumentSession` commands.
+- Sandboxed Electron 41 host with context isolation, no Node integration, and a narrow preload bridge.
+- Open, Save, Save As, dirty-document replacement protection, command-line file opening, and atomic saves.
+- Vite renderer build, tsup Electron build, and Electron Builder targets for Windows, macOS, and Linux.
 - Strict JSON parser with source ranges, exact object-key ranges, JSON Pointer locations, and recovery sessions.
 - Null-prototype JSON object materialization so keys such as `__proto__` remain ordinary data.
 - Versioned serializable host contracts and an in-memory host.
@@ -90,11 +97,14 @@ Implemented:
 
 ## Validation
 
-Last validation on 2026-08-31 (exhaustive specification inventory milestone):
+Last validation on 2026-08-31 (runnable Electron alpha):
 
-- `npm test`: passed (11 files, 166 tests), including four coverage-gate regression tests.
+- `npm test`: passed (14 files, 181 tests), including 11 coverage-gate regression tests and focused UI/Electron tests.
 - `npm run typecheck`: passed.
 - `npm run build`: passed (ESM, CJS, DTS).
+- `npm run alpha:build`: passed (Vite renderer and Electron main/preload bundles).
+- `npm run alpha:package`: passed on Windows (NSIS installer and portable executable).
+- Packaged Windows executable launch smoke: remained responsive for 10 seconds.
 - `npm run coverage:generate`: passed; regenerated the ledger, gaps, and Markdown from the checked-in inventory.
 - `npm run coverage:check`: passed with 742 exact inventory records.
 - `git diff --check`: passed.
@@ -131,11 +141,11 @@ Phase 0 ADRs:
 
 Next steps for Phase 1:
 
-1. Resolve or formally defer the interpretation questions in `coverage/gaps.json` and link each resolution to an ADR or draft correction.
+1. Resolve or formally defer the interpretation questions in `coverage/generated/gaps.json` and link each resolution to an ADR or draft correction.
 2. Replace profile-level partial evidence with record-specific complete, partial, gap, unsupported, or pending evidence as implementation and tests prove each dimension.
 3. Define runtime instance-evaluation ownership and semantics for composition, relations, defaults, and semantic external checks.
-4. Add production Electron and VS Code contract suites before marking any host-parity facet complete.
-5. Keep Phase 2 UI work blocked until the remaining Phase 1 command and diagnostic slices satisfy their atomic records.
+4. Add the VS Code host and production cross-host contract suites before marking any host-parity facet complete.
+5. Expand graphical authoring from the current property vertical slice across the remaining typed commands.
 
 ## Repository state
 
