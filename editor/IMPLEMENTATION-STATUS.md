@@ -1,10 +1,14 @@
 # JSON Structure Editor Implementation Status
 
-Updated: 2026-08-31 (Phase 1 milestone: Conditional Composition authoring)
+Updated: 2026-08-31 (Phase 1 milestone: Alternate Names authoring)
 Branch: `editor-autopilot`
 Worktree: `C:\git\json-structure-sdk-editor`
 
-Blocking findings in this milestone: none. The final direct-reference composition blocker is resolved: every structurally owned branch `$ref` is validated through the shared reference form and JSON Pointer fragment grammar regardless of its authored value type, with one exact `$ref` diagnostic and matching command rejection for malformed forms. Runtime composition evaluation, global unsatisfiable-composition analysis, and executable depth budgets remain explicitly pending under ADR-019. Full RFC 5646 validation, full UCUM grammar/dimensional equivalence, the draft's broad `currency` placement wording, and ADR-014 (`has` schema shape) remain prior follow-up items.
+Blocking findings in this milestone: none. Alternate Names authoring is implemented for the actionable draft vocabulary. Full support remains partial because the Extended meta-schema exposes `altsymbols` instead of draft keywords `altenums` and `descriptions`, the draft does not define non-string enum key conversion or enum-value description representation, and the bounded language-tag validator is not registry-aware. These ambiguities are recorded in ADR-018 and `coverage/gaps.json` rather than resolved by editor-specific syntax.
+
+Milestone summary: `altnames`, `altenums`, and `descriptions` now have canonical capability activation, typed add/replace/remove commands, schema-owned placement and value diagnostics, sparse normalized inspection, exact JSON previews, and direct byte-identical inverses. `altnames` ownership is structural: it applies to explicitly named inline roots, reusable declarations in root or nested namespaces, and direct properties, but not anonymous descendants. `altenums` applies independently to any enum-bearing schema, including roots, properties, and anonymous collection items, and requires exact per-purpose coverage of a distinct string enum. `descriptions` remains independent of Core `description`. Custom purpose keys and values are preserved, and no language/locale catalog was added because the companion defines no advisory vocabulary.
+
+Parser traversal is confined to Core-owned schema positions and therefore ignores Alternate Names-shaped content in defaults, descriptions, semantic payloads, relations, and unknown annotations. Inactive keywords receive exact activation diagnostics. Duplicate, stale, incomplete, escaped-key, nested-namespace ownership, anonymous-descendant placement, malformed language-tag, duplicate-variant, duplicate-extension-singleton, wrong-shape, missing-enum, and incomplete/extra enum-map paths are covered by focused parser and command tests.
 
 Milestone summary: Conditional Composition now has typed add/replace/remove commands for `allOf`, `anyOf`, `oneOf`, and `not`, plus atomic `if`/`then`/`else` mutation across every valid branch-key set. Commands enforce capability activation, source uniqueness, stale/incomplete guards, branch shape and dependency rules, schema validity, exact JSON emission, one coordinated minimal edit for conditional replacement, and direct byte-identical inverse edits. The Validation meta-schema activates composition directly; the Extended meta-schema activates it only through exact `JSONStructureConditionalComposition` in `$uses`. The stale `JSONSchemaConditionalComposition` spelling is not accepted.
 
@@ -35,6 +39,8 @@ Implemented:
 - Rejection of dangling locally-decidable relation pointers (targettype, qualifiertype, scope), relation-target identity absences, and dual import-keyword collisions at one namespace.
 - Exact source-key editing for escaped JSON key spellings.
 - Typed normalized projections for Core declaration forms, `$extends`, relation fields (`targettype`, `cardinality`, `scope`, `qualifiertype`), strict `$import`/`$importdefs` absolute-URI provenance, Units keywords, Validation structures (including type-aware numeric-string handling), conditional composition operators, and all 20 semantic annotation keywords.
+- Typed normalized Alternate Names projections for `altnames`, `altenums`, and `descriptions`, including sparse authored/effective inspection and exact emitted JSON previews.
+- `SetAlternateNamesKeywordCommand` plus `SetAltNamesCommand`, `SetAltEnumsCommand`, and `SetLocalizedDescriptionsCommand` with canonical activation, schema-owned placement, value/language/enum mapping, duplicate, stale, incomplete, escaped-key, and inverse guarantees.
 - `SetCompositionKeywordCommand` plus typed `SetAllOfCommand`, `SetAnyOfCommand`, `SetOneOfCommand`, and `SetNotCommand` wrappers with activation, placement, recursive schema, duplicate, stale, incomplete, and inverse guarantees.
 - Atomic `SetConditionalCompositionCommand` authoring, replacement, and removal for every valid `if`/`then`/`else` branch-key set without transient invalid states.
 - Conditional Composition inspection preserves sparse authored values, reports identical effective values because the companion defines no defaults, and emits exact JSON previews.
@@ -78,12 +84,13 @@ Implemented:
 
 ## Validation
 
-Last validation on 2026-08-31 (Conditional Composition authoring milestone):
+Last validation on 2026-08-31 (Alternate Names authoring milestone):
 
-- `npm test`: passed (9 files, 153 tests).
+- `npm test`: passed (10 files, 162 tests).
 - `npm run typecheck`: passed.
 - `npm run build`: passed (ESM, CJS, DTS).
-- `npm run coverage:generate`: passed; composition records remain partial because runtime evaluation and advanced analysis are not implemented.
+- `npm test -- --coverage`: passed; 90.22% statements, 86.65% branches, 97.80% functions, and 95.77% lines. The report output collides with tracked `coverage/` specification artifacts, so generated HTML/XML/JSON files were removed and the tracked artifacts were restored before regeneration.
+- `npm run coverage:generate`: passed; Alternate Names records are partial because full RFC 5646 registry validation and draft/meta-schema alignment remain unresolved.
 - `npm run coverage:check`: passed with 87 feature records.
 - `git diff --check`: passed.
 - Scope check: passed; all changed paths are under `editor/`.
@@ -92,10 +99,10 @@ Last validation on 2026-08-31 (Conditional Composition authoring milestone):
 
 The coverage gate verifies ledger integrity and explicit ownership; it does not claim feature completion.
 
-- Partial: 83
+- Partial: 86
 - Gap: 0
 - Pending: 0
-- Unsupported: 3
+- Unsupported: 0
 - Complete: 1
 
 Phase 0 ADRs:
@@ -110,9 +117,10 @@ Next steps for Phase 1:
 1. Define runtime instance-evaluation ownership and semantics for active composition operators.
 2. Specify whether and how the editor detects globally unsatisfiable `allOf` combinations.
 3. Establish executable composition-depth budgets before adding unbounded evaluator or analysis traversal.
-4. Add host-driven external ontology and catalog resolution without converting unavailable, stale, or untrusted meaning into local validation failures.
-5. Replace the bounded common-form RFC 5646 and UCUM validators with dedicated complete engines before claiming full Units diagnostics coverage.
-6. Keep Phase 2 UI work blocked until the remaining Phase 1 command slices pass review.
+4. Align the Alternate Names draft and Extended meta-schema vocabulary, define non-string `altenums` keys and enum-value descriptions, and replace bounded language-tag checks with registry-aware RFC 5646 validation.
+5. Add host-driven external ontology and catalog resolution without converting unavailable, stale, or untrusted meaning into local validation failures.
+6. Replace the bounded common-form RFC 5646 and UCUM validators with dedicated complete engines before claiming full Units diagnostics coverage.
+7. Keep Phase 2 UI work blocked until the remaining Phase 1 command slices pass review.
 
 ## Repository state
 

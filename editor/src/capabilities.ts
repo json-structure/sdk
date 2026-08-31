@@ -5,6 +5,7 @@ export interface CapabilityResolution {
   readonly conditionalCompositionActive: boolean;
   readonly unitsActive: boolean;
   readonly semanticAnnotationsActive: boolean;
+  readonly alternateNamesActive: boolean;
   readonly offeredExtensions: readonly string[];
   readonly unknown: readonly string[];
 }
@@ -38,6 +39,13 @@ export function semanticAnnotationsExtensionActive(value: unknown): boolean {
   return schema === SEMANTIC_ANNOTATIONS_META_SCHEMA ||
     (schema === EXTENDED_META_SCHEMA && uses.includes('JSONStructureSemanticAnnotations'));
 }
+export function alternateNamesExtensionActive(value: unknown): boolean {
+  const root = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  const schema = typeof root.$schema === 'string' ? root.$schema : undefined;
+  const uses = Array.isArray(root.$uses) ? root.$uses : [];
+  return schema === VALIDATION_META_SCHEMA ||
+    (schema === EXTENDED_META_SCHEMA && uses.includes('JSONStructureAlternateNames'));
+}
 export function resolveCapabilities(value: unknown): CapabilityResolution {
   const root = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
   const offers = Array.isArray(root.$offers) ? root.$offers.filter((item): item is string => typeof item === 'string') : [];
@@ -49,6 +57,7 @@ export function resolveCapabilities(value: unknown): CapabilityResolution {
     conditionalCompositionActive: conditionalCompositionExtensionActive(root),
     unitsActive: unitsExtensionActive(root),
     semanticAnnotationsActive: semanticAnnotationsExtensionActive(root),
+    alternateNamesActive: alternateNamesExtensionActive(root),
     offeredExtensions: offers.filter((offer) => known.has(offer)),
     unknown: offers.filter((offer) => !known.has(offer))
   };

@@ -59,6 +59,20 @@ export interface UnitsProjection {
 	readonly preferredComputationalUnit?: EffectiveAnnotationValue<string>;
 }
 
+export interface AlternateNamesInspection {
+	readonly keyword: keyof AlternateNamesProjection;
+	readonly authored: unknown;
+	readonly effective: unknown;
+	readonly emittedJson: string;
+}
+
+export interface AlternateNamesProjection {
+	readonly altnames?: Readonly<Record<string, string>>;
+	readonly altenums?: Readonly<Record<string, Readonly<Record<string, string>>>>;
+	readonly descriptions?: Readonly<Record<string, string>>;
+	readonly inspection: readonly AlternateNamesInspection[];
+}
+
 export interface ReferenceProjection {
 	readonly pointer: JsonPointer;
 	readonly target: string;
@@ -158,6 +172,7 @@ export interface DefinitionProjection {
 	readonly identity?: readonly string[];
 	readonly relations: readonly RelationProjection[];
 	readonly units?: UnitsProjection;
+	readonly alternateNames?: AlternateNamesProjection;
 	readonly validation?: ValidationProjection;
 	readonly composition?: ConditionalCompositionProjection;
 	readonly semantic?: SemanticAnnotationsProjection;

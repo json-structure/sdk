@@ -13,11 +13,13 @@ import {
   type SemanticPlacementProjection,
   type SemanticAnnotationsProjection,
   type UnitsProjection,
+  type AlternateNamesProjection,
   type ValidationProjection
 } from './model.js';
 import { VALIDATION_KEYWORDS, effectiveValidationTypes, validationIssues, type ValidationKeyword } from './validation.js';
 import { UNITS_KEYWORDS, unitsIssues, type UnitsKeyword } from './units.js';
 import { resolveCapabilities } from './capabilities.js';
+import { ALTERNATE_NAMES_KEYWORDS, alternateNamesIssues, type AlternateNamesKeyword } from './alternate-names.js';
 
 interface ParsedValue { value: unknown; start: number; end: number; pointer: string; keyStart?: number; keyEnd?: number; }
 interface ParseOutput { value: unknown; values: ParsedValue[]; diagnostics: Diagnostic[]; recovery: RecoveryState; }
@@ -364,12 +366,12 @@ function buildProjections(
   const imports: ImportProjection[] = [];
   const references: ReferenceProjection[] = [];
   const semanticPlacements: SemanticPlacementProjection[] = [];
-  const { validationActive, conditionalCompositionActive, unitsActive, semanticAnnotationsActive } = resolveCapabilities(root);
+  const { validationActive, conditionalCompositionActive, unitsActive, semanticAnnotationsActive, alternateNamesActive } = resolveCapabilities(root);
   const semanticByPointer = new Map<string, SemanticAnnotationsProjection>();
   collectCompositionDiagnostics(root, '', uri, text, diagnostics, nodes, conditionalCompositionActive);
   collectSemanticPlacements(root, '', uri, text, diagnostics, semanticPlacements, semanticByPointer, semanticAnnotationsActive, conditionalCompositionActive);
-  collectDefinitions(root, root, '', uri, text, definitions, imports, diagnostics, semanticByPointer, nodes, validationActive, conditionalCompositionActive, unitsActive);
-  collectSchemaProjections(root, uri, text, definitions, diagnostics, semanticByPointer, nodes, validationActive, conditionalCompositionActive, unitsActive);
+  collectDefinitions(root, root, '', uri, text, definitions, imports, diagnostics, semanticByPointer, nodes, validationActive, conditionalCompositionActive, unitsActive, alternateNamesActive);
+  collectSchemaProjections(root, uri, text, definitions, diagnostics, semanticByPointer, nodes, validationActive, conditionalCompositionActive, unitsActive, alternateNamesActive);
   collectReferenceProjections(root, references, conditionalCompositionActive);
   collectStructuralDiagnostics(root, root, '', uri, text, diagnostics, nodes, conditionalCompositionActive);
   return { definitions, imports, references, semanticPlacements };
@@ -385,12 +387,13 @@ function collectSchemaProjections(
   nodes: readonly ModelNode[],
   validationActive: boolean,
   conditionalCompositionActive: boolean,
-  unitsActive: boolean
+  unitsActive: boolean,
+  alternateNamesActive: boolean
 ): void {
   const visited = new Set(definitions.map((definition) => definition.pointer));
   const diagnosed = new Set<string>();
 
-  const visitSchema = (candidate: unknown, pointer: string): void => {
+  const visitSchema = (candidate: unknown, pointer: string, namedElement = false): void => {
     if (!isRecord(candidate)) return;
     if (diagnosed.has(pointer)) return;
     diagnosed.add(pointer);
@@ -400,13 +403,13 @@ function collectSchemaProjections(
       const split = pointer.lastIndexOf('/');
       const name = pointer === '' ? '$root' : pointer.slice(split + 1).replace(/~1/g, '/').replace(/~0/g, '~');
       const namespacePointer = pointer === '' ? '' : pointer.slice(0, split);
-      const projection = definitionProjection(root, name, namespacePointer, pointer, candidate, false, uri, text, diagnostics, semanticByPointer.get(pointer), nodes, validationActive, conditionalCompositionActive, unitsActive);
+      const projection = definitionProjection(root, name, namespacePointer, pointer, candidate, false, namedElement, uri, text, diagnostics, semanticByPointer.get(pointer), nodes, validationActive, conditionalCompositionActive, unitsActive, alternateNamesActive);
       if (projection) definitions.push(projection);
       visited.add(pointer);
     }
 
     visitDefinitions(candidate.definitions, `${pointer}/definitions`);
-    visitSchemaMap(candidate.properties, `${pointer}/properties`);
+    visitSchemaMap(candidate.properties, `${pointer}/properties`, true);
     if (isRecord(candidate.additionalProperties)) visitSchema(candidate.additionalProperties, `${pointer}/additionalProperties`);
     visitSchemaValue(candidate.items, `${pointer}/items`);
     visitSchemaValue(candidate.values, `${pointer}/values`);
@@ -436,13 +439,13 @@ function collectSchemaProjections(
     for (const [key, entry] of Object.entries(candidate)) {
       if (key === '$import' || key === '$importdefs' || !isRecord(entry)) continue;
       const entryPointer = `${pointer}/${pointerPart(key)}`;
-      if (looksLikeSchemaObject(entry)) visitSchema(entry, entryPointer);
+      if (looksLikeSchemaObject(entry)) visitSchema(entry, entryPointer, true);
       else visitDefinitions(entry, entryPointer);
     }
   };
-  const visitSchemaMap = (candidate: unknown, pointer: string): void => {
+  const visitSchemaMap = (candidate: unknown, pointer: string, namedElements = false): void => {
     if (!isRecord(candidate)) return;
-    for (const [key, entry] of Object.entries(candidate)) visitSchema(entry, `${pointer}/${pointerPart(key)}`);
+    for (const [key, entry] of Object.entries(candidate)) visitSchema(entry, `${pointer}/${pointerPart(key)}`, namedElements);
   };
   const visitSchemaArray = (candidate: unknown, pointer: string): void => {
     if (!Array.isArray(candidate)) return;
@@ -453,7 +456,7 @@ function collectSchemaProjections(
     else visitSchema(candidate, pointer);
   };
 
-  visitSchema(root, '');
+  visitSchema(root, '', typeof root.name === 'string');
 }
 
 function collectDefinitions(
@@ -469,7 +472,8 @@ function collectDefinitions(
   nodes: readonly ModelNode[],
   validationActive: boolean,
   conditionalCompositionActive: boolean,
-  unitsActive: boolean
+  unitsActive: boolean,
+  alternateNamesActive: boolean
 ): void {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return;
   const object = value as Record<string, unknown>;
@@ -483,10 +487,10 @@ function collectDefinitions(
       if (name === '$import' || name === '$importdefs') continue;
       const encoded = pointerPart(name);
       const declarationPointer = `${pointer}/definitions/${encoded}`;
-      const projection = definitionProjection(root, name, pointer, declarationPointer, declaration, true, uri, text, diagnostics, semanticByPointer.get(declarationPointer), nodes, validationActive, conditionalCompositionActive, unitsActive);
+      const projection = definitionProjection(root, name, pointer, declarationPointer, declaration, true, true, uri, text, diagnostics, semanticByPointer.get(declarationPointer), nodes, validationActive, conditionalCompositionActive, unitsActive, alternateNamesActive);
       if (projection) definitions.push(projection);
-      else collectNamespaceMembers(root, declaration, declarationPointer, uri, text, definitions, imports, diagnostics, semanticByPointer, nodes, validationActive, conditionalCompositionActive, unitsActive);
-      collectDefinitions(root, declaration, declarationPointer, uri, text, definitions, imports, diagnostics, semanticByPointer, nodes, validationActive, conditionalCompositionActive, unitsActive);
+      else collectNamespaceMembers(root, declaration, declarationPointer, uri, text, definitions, imports, diagnostics, semanticByPointer, nodes, validationActive, conditionalCompositionActive, unitsActive, alternateNamesActive);
+      collectDefinitions(root, declaration, declarationPointer, uri, text, definitions, imports, diagnostics, semanticByPointer, nodes, validationActive, conditionalCompositionActive, unitsActive, alternateNamesActive);
     }
   }
 }
@@ -504,16 +508,17 @@ function collectNamespaceMembers(
   nodes: readonly ModelNode[],
   validationActive: boolean,
   conditionalCompositionActive: boolean,
-  unitsActive: boolean
+  unitsActive: boolean,
+  alternateNamesActive: boolean
 ): void {
   if (!isRecord(value) || !namespacePointer(root, pointer, nodes)) return;
   for (const [name, declaration] of Object.entries(value)) {
     if (name === '$import' || name === '$importdefs' || name === 'definitions') continue;
     const declarationPointer = `${pointer}/${pointerPart(name)}`;
-    const projection = definitionProjection(root, name, pointer, declarationPointer, declaration, true, uri, text, diagnostics, semanticByPointer.get(declarationPointer), nodes, validationActive, conditionalCompositionActive, unitsActive);
+    const projection = definitionProjection(root, name, pointer, declarationPointer, declaration, true, true, uri, text, diagnostics, semanticByPointer.get(declarationPointer), nodes, validationActive, conditionalCompositionActive, unitsActive, alternateNamesActive);
     if (projection) definitions.push(projection);
-    else collectNamespaceMembers(root, declaration, declarationPointer, uri, text, definitions, imports, diagnostics, semanticByPointer, nodes, validationActive, conditionalCompositionActive, unitsActive);
-    collectDefinitions(root, declaration, declarationPointer, uri, text, definitions, imports, diagnostics, semanticByPointer, nodes, validationActive, conditionalCompositionActive, unitsActive);
+    else collectNamespaceMembers(root, declaration, declarationPointer, uri, text, definitions, imports, diagnostics, semanticByPointer, nodes, validationActive, conditionalCompositionActive, unitsActive, alternateNamesActive);
+    collectDefinitions(root, declaration, declarationPointer, uri, text, definitions, imports, diagnostics, semanticByPointer, nodes, validationActive, conditionalCompositionActive, unitsActive, alternateNamesActive);
   }
 }
 
@@ -524,6 +529,7 @@ function definitionProjection(
   pointer: string,
   declaration: unknown,
   reusable: boolean,
+  namedElement: boolean,
   uri: string,
   text: string,
   diagnostics: Diagnostic[],
@@ -531,7 +537,8 @@ function definitionProjection(
   nodes: readonly ModelNode[],
   validationActive: boolean,
   conditionalCompositionActive: boolean,
-  unitsActive: boolean
+  unitsActive: boolean,
+  alternateNamesActive: boolean
 ): DefinitionProjection | undefined {
   if (!declaration || typeof declaration !== 'object' || Array.isArray(declaration)) return undefined;
   const value = declaration as Record<string, unknown>;
@@ -543,6 +550,7 @@ function definitionProjection(
   }
   const relationItems = relationProjections(pointer, value.relations, uri, text, diagnostics);
   const units = unitsActive ? unitsProjection(root, pointer, value, uri, text, diagnostics, nodes) : undefined;
+  const alternateNames = alternateNamesProjection(pointer, value, namedElement, uri, text, diagnostics, nodes, alternateNamesActive);
   const validation = validationActive ? validationProjection(root, pointer, value, uri, text, diagnostics, nodes) : undefined;
   const composition = conditionalCompositionActive ? compositionProjection(pointer, value, uri, text, diagnostics) : undefined;
   const required = requiredProjection(pointer, value, type, uri, text, diagnostics);
@@ -564,6 +572,7 @@ function definitionProjection(
     identity,
     relations: relationItems,
     units,
+    alternateNames,
     validation,
     composition,
     semantic,
@@ -575,6 +584,45 @@ function definitionProjection(
     description,
     binary
   };
+}
+
+function alternateNamesProjection(
+  pointer: string,
+  value: Record<string, unknown>,
+  namedElement: boolean,
+  uri: string,
+  text: string,
+  diagnostics: Diagnostic[],
+  nodes: readonly ModelNode[],
+  active: boolean
+): AlternateNamesProjection | undefined {
+  const invalid = new Set<AlternateNamesKeyword>();
+  for (const keyword of ALTERNATE_NAMES_KEYWORDS) {
+    if (!Object.prototype.hasOwnProperty.call(value, keyword)) continue;
+    const keywordPointer = `${pointer}/${pointerPart(keyword)}`;
+    if (!active) {
+      pushKeywordDiagnostic(diagnostics, uri, keywordPointer, `${keyword} requires the JSON Structure Alternate Names extension.`, text);
+      invalid.add(keyword);
+    }
+    if (nodes.filter((node) => node.pointer === keywordPointer).length > 1) invalid.add(keyword);
+  }
+  if (active) {
+    for (const issue of alternateNamesIssues(value, namedElement)) {
+      invalid.add(issue.keyword);
+      const issuePointer = [issue.keyword, ...issue.path].reduce((current, part) => `${current}/${pointerPart(part)}`, pointer);
+      pushKeywordDiagnostic(diagnostics, uri, issuePointer, issue.message, text);
+    }
+  }
+  const projection: Omit<AlternateNamesProjection, 'inspection'> = {
+    ...(!invalid.has('altnames') && Object.prototype.hasOwnProperty.call(value, 'altnames') ? { altnames: value.altnames as Record<string, string> } : {}),
+    ...(!invalid.has('altenums') && Object.prototype.hasOwnProperty.call(value, 'altenums') ? { altenums: value.altenums as Record<string, Record<string, string>> } : {}),
+    ...(!invalid.has('descriptions') && Object.prototype.hasOwnProperty.call(value, 'descriptions') ? { descriptions: value.descriptions as Record<string, string> } : {})
+  };
+  const inspection = ALTERNATE_NAMES_KEYWORDS.flatMap((keyword) => {
+    const authored = projection[keyword];
+    return authored === undefined ? [] : [{ keyword, authored, effective: authored, emittedJson: JSON.stringify(authored) }];
+  });
+  return hasAnyKey(projection) ? { ...projection, inspection } : undefined;
 }
 
 function identityProjection(

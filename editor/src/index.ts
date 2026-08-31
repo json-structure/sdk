@@ -11,5 +11,6 @@ export * from './commands.js';
 export * from './composition.js';
 export * from './validation.js';
 export * from './units.js';
+export * from './alternate-names.js';
 export * from './catalogs.js';
 export * from './host.js';

@@ -10,6 +10,7 @@ import {
 import { rangeFor, semanticAnnotationCandidateValid, semanticAnnotationSetValid, type SemanticAnnotationKeyword, type SemanticAnnotationKeywordMap } from './parser.js';
 import { effectiveValidationTypes, validationIssues, validationValueIsSchemaBacked, type ValidationKeyword, type ValidationKeywordMap } from './validation.js';
 import { unitsValueValid, type UnitsKeyword, type UnitsKeywordMap } from './units.js';
+import { alternateNamesPlacementValid, alternateNamesValueValid, type AlternateNamesKeyword, type AlternateNamesKeywordMap } from './alternate-names.js';
 
 export type SchemaTypeValue = string | Readonly<Record<string, unknown>> | readonly (string | Readonly<Record<string, unknown>>)[];
 export interface PropertySchema { readonly type: SchemaTypeValue; readonly [keyword: string]: unknown; }
@@ -917,6 +918,39 @@ export class SetUcumUnitCommand extends SetUnitsKeywordCommand<'ucumUnit'> {
 }
 export class SetCurrencyCommand extends SetUnitsKeywordCommand<'currency'> {
   constructor(targetPointer: string, value: string | undefined) { super(targetPointer, 'currency', value); }
+}
+
+export class SetAlternateNamesKeywordCommand<K extends AlternateNamesKeyword> implements EditorCommand {
+  constructor(readonly targetPointer: string, readonly keyword: K, readonly value: AlternateNamesKeywordMap[K] | undefined) {}
+
+  canExecute({ session, documentVersion }: CommandContext): boolean {
+    if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid' || !session.capabilities.alternateNamesActive) return false;
+    const declaration = editableDeclaration(session, this.targetPointer);
+    const root = pointerValue(session.value, '');
+    const namedElement = this.targetPointer === '' ? isObjectLike(root) && typeof root.name === 'string' :
+      propertyContext(session, this.targetPointer) !== undefined || reusableDeclarationPointer(session, this.targetPointer);
+    if (!declaration || !alternateNamesPlacementValid(declaration, this.keyword, namedElement)) return false;
+    const authored = Object.prototype.hasOwnProperty.call(declaration, this.keyword);
+    if (authored && !objectMemberContext(session, this.targetPointer, this.keyword)) return false;
+    return this.value === undefined ? authored : alternateNamesValueValid(declaration, this.keyword, this.value, namedElement);
+  }
+
+  execute(context: CommandContext): CommandResult {
+    if (!this.canExecute(context)) throw new Error('SetAlternateNamesKeyword command preconditions are not satisfied.');
+    return this.value === undefined
+      ? removeMemberCommandResult(context.session, this.targetPointer, this.keyword)
+      : setMemberCommandResult(context.session, this.targetPointer, this.keyword, this.value);
+  }
+}
+
+export class SetAltNamesCommand extends SetAlternateNamesKeywordCommand<'altnames'> {
+  constructor(targetPointer: string, value: AlternateNamesKeywordMap['altnames'] | undefined) { super(targetPointer, 'altnames', value); }
+}
+export class SetAltEnumsCommand extends SetAlternateNamesKeywordCommand<'altenums'> {
+  constructor(targetPointer: string, value: AlternateNamesKeywordMap['altenums'] | undefined) { super(targetPointer, 'altenums', value); }
+}
+export class SetLocalizedDescriptionsCommand extends SetAlternateNamesKeywordCommand<'descriptions'> {
+  constructor(targetPointer: string, value: AlternateNamesKeywordMap['descriptions'] | undefined) { super(targetPointer, 'descriptions', value); }
 }
 
 const SEMANTIC_COLLECTION_TYPES = new Set(['array', 'set', 'map', 'choice']);

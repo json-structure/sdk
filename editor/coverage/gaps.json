@@ -41,6 +41,24 @@
       "owner": "language-service",
       "status": "partial",
       "reason": "Known unit/UCUM pairs produce non-destructive compatibility warnings; arbitrary dimensional equivalence remains indeterminate without a UCUM engine."
+    },
+    {
+      "id": "gap.alternate-names.language-tags",
+      "owner": "language-service",
+      "status": "partial",
+      "reason": "The bounded milestone validates RFC 5646 language-tag structure, including grandfathered and private-use forms, case-insensitive variant uniqueness, and extension-singleton uniqueness, but does not ship complete registry-aware validation."
+    },
+    {
+      "id": "gap.alternate-names.meta-schema",
+      "owner": "language-service",
+      "status": "partial",
+      "reason": "The Extended meta-schema offers altnames and altsymbols while the companion draft specifies altnames, altenums, and descriptions; the editor implements the draft vocabulary under the canonical offer token without inventing altsymbols equivalence."
+    },
+    {
+      "id": "gap.alternate-names.enum-representation",
+      "owner": "language-service",
+      "status": "partial",
+      "reason": "The draft does not define how non-string Core enum values become JSON object keys in altenums, nor a representation for its stated enum-value descriptions. Authoring is limited to exact mappings over distinct string enums."
     }
   ]
 }
