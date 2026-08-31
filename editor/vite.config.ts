@@ -9,6 +9,7 @@ export default defineConfig({
   build: {
     outDir: resolve(projectRoot, 'dist/renderer'),
     emptyOutDir: true,
+    chunkSizeWarningLimit: 3000,
   },
   server: {
     port: 5173,

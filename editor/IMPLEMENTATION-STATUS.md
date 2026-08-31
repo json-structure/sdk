@@ -1,12 +1,12 @@
 # JSON Structure Editor Implementation Status
 
-Updated: 2026-08-31 (runnable Electron alpha)
+Updated: 2026-08-31 (feature-complete Phase 1 authoring beta)
 Branch: `editor-autopilot`
 Worktree: `C:\git\json-structure-sdk-editor`
 
-Blocking findings in this milestone: none. The editor now has a runnable shared browser workbench and a secure Electron host. The alpha exposes Design, Graph, and Source modes; outline, property, inspector, and problems surfaces; Open, Save, and Save As; dirty-document replacement protection; command-line and operating-system file opening; and atomic file writes. The renderer remains host-neutral for later reuse in VS Code.
+Blocking findings in this milestone: none. The shared workbench now runs in Electron and a VS Code custom editor. The beta exposes Design, Graph, and Source modes; 86 metadata-driven authoring actions across every implemented command family; inline-root editing; semantic graph zoom, pan, fit, history, selection continuity, and minimap navigation; native File workflows; and host-owned document lifecycle behavior.
 
-The Phase 1 coverage inventory contains 742 atomic draft-derived records. Every record has a stable ID, normative source, owning section, requirement, implementation owner, five evidence dimensions, and positive/negative/incomplete/host-parity test facets. All records remain partial: VS Code parity and complete graphical authoring coverage are pending, and no record is allowed to appear complete while any dimension or applicable test facet is incomplete.
+The Phase 1 coverage inventory contains 536 atomic draft-derived records. Every record has a stable ID, normative source, owning section, requirement, implementation owner, five evidence dimensions, and positive/negative/incomplete/host-parity test facets. The ledger remains conservative: no record is allowed to appear complete while any dimension or applicable test facet is incomplete.
 
 The checked-in `coverage/inventory.json` is the authoritative deterministic baseline. `coverage/generated/ledger.json`, `coverage/generated/gaps.json`, and `coverage/generated/COVERAGE.md` are generated from it. The gate compares exact expanded ID sets and rejects omissions, undeclared extras, duplicate or malformed IDs, unknown specifications, malformed statuses or facets, stale evidence paths, missing normative sources, false completion claims, and stale generated artifacts. It does not scrape draft prose at runtime.
 
@@ -26,11 +26,15 @@ Reference discovery accepts direct `{ "$ref": ... }` only in active composition 
 
 ## Current milestone
 
-The runnable Electron alpha is complete for Windows. Shared-model expansion and the VS Code host remain in progress.
+The feature-complete Phase 1 authoring beta is implemented for Electron and VS Code. Windows Electron packaging and VS Code extension packaging are validated locally; macOS and Linux packaging remain platform validation work.
 
 Implemented:
 
 - Host-neutral browser workbench with Design, Graph, and Source modes.
+- Contextual inline editors exposing root, definition, property, reference, import, relation, validation, composition, units, alternate-name, binary, and semantic-annotation commands without blocking the workbench.
+- Stateful graph navigation with semantic zoom, pan, fit, Back/Forward history, selection continuity, hit precedence, and minimap navigation.
+- Browser-safe UI package entry and a VS Code `CustomTextEditorProvider` using the same shared workbench.
+- Versioned VS Code lifecycle bridge with acknowledged edits, bounded pending requests, authoritative document replay, and debounced source replacement.
 - Outline, property editor, inspector, and problems surfaces backed by `DocumentSession` commands.
 - Sandboxed Electron 41 host with context isolation, no Node integration, and a narrow preload bridge.
 - Open, Save, Save As, dirty-document replacement protection, command-line file opening, and atomic saves.
@@ -97,40 +101,25 @@ Implemented:
 
 ## Validation
 
-Last validation on 2026-08-31 (runnable Electron alpha):
+Last validation on 2026-08-31 (feature-complete Phase 1 authoring beta):
 
-- `npm test`: passed (14 files, 181 tests), including 11 coverage-gate regression tests and focused UI/Electron tests.
+- `npm test`: passed (20 files, 229 tests), including coverage-gate regression tests and focused UI, graph, lifecycle, import-boundary, and Electron tests.
 - `npm run typecheck`: passed.
 - `npm run build`: passed (ESM, CJS, DTS).
-- `npm run alpha:build`: passed (Vite renderer and Electron main/preload bundles).
-- `npm run alpha:package`: passed on Windows (NSIS installer and portable executable).
+- `npm run beta:build`: passed (shared package, Vite renderer/webview, and Electron main/preload bundles).
+- VS Code extension host suite passed (200 tests, exit code 0), including custom-editor protocol and resource-boundary tests.
+- Browser acceptance passed for 86 authoring actions, type filtering, synchronized Source diagnostics, mobile Types and Inspector drawers, graph nodes/edges, semantic history, pointer-anchored zoom, minimap navigation, Fit, modal focus, theme synchronization, and 200% reflow without horizontal page overflow.
+- `npm run beta:package`: passed; generated the 0.2.0 Windows NSIS installer and portable executable.
+- VSIX packaging passed without mutating the tracked extension version; generated `artifacts/json-structure-vscode-beta.vsix` (1,519,771 bytes).
 - Packaged Windows executable launch smoke: remained responsive for 10 seconds.
 - `npm run coverage:generate`: passed; regenerated the ledger, gaps, and Markdown from the checked-in inventory.
-- `npm run coverage:check`: passed with 742 exact inventory records.
+- `npm run coverage:check`: passed with 536 exact inventory records.
 - `git diff --check`: passed.
-- Scope check: passed; all changed paths are under `editor/`.
+- Import policy validation passed: recursive loads are bounded; Electron permits contained `file:` resources, trusted VS Code workspaces permit contained `file:` or `vscode-remote:` host-filesystem resources, and neither host fetches HTTP(S) imports.
 
 ## Specification coverage
 
-The coverage gate verifies exhaustive inventory integrity and completion-sensitive evidence; it does not claim feature completion.
-
-- Partial: 742
-- Gap: 0
-- Pending: 0
-- Unsupported: 0
-- Complete: 0
-
-Records by specification:
-
-- Core: 156 partial.
-- Alternate Names: 18 partial.
-- Characteristics: 209 partial.
-- Conditional Composition: 18 partial.
-- Import: 23 partial.
-- Relations: 35 partial.
-- Semantic Annotations: 209 partial.
-- Units: 27 partial.
-- Validation: 47 partial.
+The coverage gate verifies the integrity of 536 atomic requirement records and completion-sensitive evidence; it does not claim normative specification completion. Current per-record statuses and exact normative sources are generated in `coverage/generated/COVERAGE.md`.
 
 Phase 0 ADRs:
 
@@ -139,14 +128,10 @@ Phase 0 ADRs:
 
 ## Next work
 
-Next steps for Phase 1:
-
-1. Resolve or formally defer the interpretation questions in `coverage/generated/gaps.json` and link each resolution to an ADR or draft correction.
-2. Replace profile-level partial evidence with record-specific complete, partial, gap, unsupported, or pending evidence as implementation and tests prove each dimension.
-3. Define runtime instance-evaluation ownership and semantics for composition, relations, defaults, and semantic external checks.
-4. Add the VS Code host and production cross-host contract suites before marking any host-parity facet complete.
-5. Expand graphical authoring from the current property vertical slice across the remaining typed commands.
+1. Validate Electron packages on macOS and Linux.
+2. Add large-schema graph virtualization.
+3. Resolve or formally defer interpretation questions in `coverage/generated/gaps.json`.
 
 ## Repository state
 
-These changes are unstaged and uncommitted on `editor-autopilot`. Nothing was pushed.
+Beta changes are present on `editor-autopilot`. Nothing was pushed.

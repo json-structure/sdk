@@ -60,7 +60,7 @@ describe('Phase 1 vertical slice', () => {
   it('projects typed definitions, imports, relation semantics, units, validation, composition, and semantic annotations', () => {
     const fixture = `{
   "$schema": "https://json-structure.org/meta/extended/v0/#",
-  "$uses": ["JSONSchemaValidation", "JSONStructureConditionalComposition", "JSONStructureUnits", "JSONStructureSemanticAnnotations"],
+  "$uses": ["JSONStructureValidation", "JSONStructureConditionalComposition", "JSONStructureUnits", "JSONStructureSemanticAnnotations"],
   "$import": "https://example.org/root.struct.json",
   "$importdefs": "https://example.org/common.struct.json",
   "definitions": {

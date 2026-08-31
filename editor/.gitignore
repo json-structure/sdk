@@ -1,7 +1,7 @@
 node_modules/
 dist/
 dist-electron/
-release/
+/release/
 .json-structure-coverage-*/
 alpha-acceptance.png
 coverage/coverage-final.json

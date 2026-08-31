@@ -89,7 +89,7 @@ export interface WriteResourceRequest extends ProtocolEnvelope { readonly kind: 
 /**
  * Defines the conversion request shape.
  */
-export interface ConversionRequest extends ProtocolEnvelope { readonly kind: 'conversion'; readonly documentVersion: DocumentVersion; readonly converterId: string; readonly options: Readonly<Record<string, string | number | boolean>>; }
+export interface ConversionRequest extends ProtocolEnvelope { readonly kind: 'conversion'; readonly documentVersion: DocumentVersion; readonly commandId: string; readonly sourceName: string; readonly sourceText: string; readonly options: Readonly<Record<string, string | number | boolean>>; }
 /**
  * Defines the conversion result shape.
  */
@@ -106,6 +106,10 @@ export interface OpenGeneratedOutputResult extends ProtocolEnvelope { readonly o
  * Defines the progress event shape.
  */
 export interface ProgressEvent extends ProtocolEnvelope { readonly documentVersion: DocumentVersion; readonly phase: string; readonly percent?: number; readonly message?: string; }
+/** Defines the library operations exposed by an editor host. */
+export type LibraryOperation = 'listProviders' | 'configureProvider' | 'removeProvider' | 'listCatalog' | 'resolve' | 'publish';
+/** Defines a serializable generic library request. */
+export interface LibraryOperationRequest extends ProtocolEnvelope { readonly kind: 'library-request'; readonly operation: LibraryOperation; readonly payload?: unknown; }
 /**
  * Defines the editor host shape.
  */
@@ -113,6 +117,15 @@ export interface EditorHost {
   readonly kind: HostKind;
   readDocument(): Promise<DocumentSnapshot>;
   applyTextEdits(request: ApplyTextEditsRequest): Promise<ApplyResult>;
+  readResource?(uri: string): Promise<ResourceSnapshot>;
+  listConversionCommands?(): Promise<import('./conversion/types.js').ConversionCommandsManifest>;
+  convert?(request: ConversionRequest): Promise<ConversionResult>;
+  onConversionProgress?(listener: (event: ProgressEvent) => void): () => void;
+  cancelConversion?(requestId: string): Promise<void>;
+  openGeneratedOutput?(request: OpenGeneratedOutputRequest): Promise<OpenGeneratedOutputResult>;
+  libraryRequest?<T>(operation: LibraryOperation, payload?: unknown): Promise<T>;
+  listLibraryEntries?(): Promise<readonly import('./libraries/contracts.js').LibraryEntry[]>;
+  readLibraryDocument?(entryId: string, version: string): Promise<import('./libraries/contracts.js').LibraryDocument>;
 }
 /**
  * Defines the serializable request shape.
@@ -124,7 +137,17 @@ export interface SerializableRequest<T extends string = string> extends Protocol
 export function isProtocolEnvelope(value: unknown): value is ProtocolEnvelope {
   if (!value || typeof value !== 'object') return false;
   const v = value as Record<string, unknown>;
-  return v.protocolVersion === PROTOCOL_VERSION && typeof v.requestId === 'string' && v.requestId.trim().length > 0;
+  return v.protocolVersion === PROTOCOL_VERSION && typeof v.requestId === 'string' && v.requestId.trim().length > 0 && v.requestId.length <= 256;
+}
+/** Returns whether a value is a supported library operation. */
+export function isLibraryOperation(value: unknown): value is LibraryOperation {
+  return typeof value === 'string' && ['listProviders', 'configureProvider', 'removeProvider', 'listCatalog', 'resolve', 'publish'].includes(value);
+}
+/** Returns whether a value is a well-formed generic library request. */
+export function isLibraryOperationRequest(value: unknown): value is LibraryOperationRequest {
+  if (!isProtocolEnvelope(value)) return false;
+  const request = value as unknown as Record<string, unknown>;
+  return request.kind === 'library-request' && isLibraryOperation(request.operation) && isSerializableValue(request.payload, 0);
 }
 /**
  * Returns whether a value satisfies apply text edits request constraints.
@@ -140,4 +163,50 @@ export function isApplyTextEditsRequest(value: unknown): value is ApplyTextEdits
         Number.isInteger((range as Record<string, unknown>).startOffset) &&
         Number.isInteger((range as Record<string, unknown>).endOffset);
     });
+}
+
+/** Returns whether a value is a well-formed conversion request. */
+export function isConversionRequest(value: unknown): value is ConversionRequest {
+  if (!isProtocolEnvelope(value)) return false;
+  const request = value as unknown as Record<string, unknown>;
+  return request.kind === 'conversion' && Number.isInteger(request.documentVersion) && (request.documentVersion as number) >= 0 &&
+    typeof request.commandId === 'string' && request.commandId.trim().length > 0 &&
+    typeof request.sourceName === 'string' && request.sourceName.length > 0 && request.sourceName.length <= 255 && !/[\\/]/.test(request.sourceName) &&
+    typeof request.sourceText === 'string' && request.sourceText.length <= 4 * 1024 * 1024 && isScalarRecord(request.options);
+}
+
+/** Returns whether a value is a well-formed conversion result. */
+export function isConversionResult(value: unknown): value is ConversionResult {
+  if (!isProtocolEnvelope(value)) return false;
+  const result = value as unknown as Record<string, unknown>;
+  return Number.isInteger(result.documentVersion) && (result.documentVersion as number) >= 0 && typeof result.succeeded === 'boolean' &&
+    Array.isArray(result.outputs) && result.outputs.every(isHostFile) && Array.isArray(result.diagnostics) && result.diagnostics.every(isDiagnostic);
+}
+
+function isScalarRecord(value: unknown): value is Readonly<Record<string, string | number | boolean>> {
+  return !!value && typeof value === 'object' && !Array.isArray(value) && Object.values(value).every((item) =>
+    typeof item === 'string' || typeof item === 'boolean' || typeof item === 'number' && Number.isFinite(item));
+}
+
+function isSerializableValue(value: unknown, depth: number): boolean {
+  if (value === undefined || value === null || typeof value === 'string' && value.length <= 4 * 1024 * 1024 || typeof value === 'boolean') return true;
+  if (typeof value === 'number') return Number.isFinite(value);
+  if (depth >= 16) return false;
+  if (Array.isArray(value)) return value.length <= 10_000 && value.every((item) => isSerializableValue(item, depth + 1));
+  if (!value || typeof value !== 'object') return false;
+  const entries = Object.entries(value);
+  return entries.length <= 10_000 && entries.every(([key, item]) => key.length <= 256 && isSerializableValue(item, depth + 1));
+}
+
+function isHostFile(value: unknown): value is HostFile {
+  if (!value || typeof value !== 'object') return false;
+  const file = value as Record<string, unknown>;
+  return typeof file.uri === 'string' && file.uri.length > 0 && typeof file.name === 'string' && file.name.length > 0;
+}
+
+function isDiagnostic(value: unknown): value is Diagnostic {
+  if (!value || typeof value !== 'object') return false;
+  const diagnostic = value as Record<string, unknown>;
+  return typeof diagnostic.code === 'string' && typeof diagnostic.message === 'string' &&
+    ['error', 'warning', 'info', 'indeterminate'].includes(String(diagnostic.severity));
 }

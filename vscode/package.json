@@ -26,7 +26,8 @@
   ],
   "activationEvents": [
     "onLanguage:json",
-    "onLanguage:jsonc"
+    "onLanguage:jsonc",
+    "onCustomEditor:jsonStructure.editor"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -42,6 +43,31 @@
       {
         "command": "jsonStructure.showSchemaInfo",
         "title": "JSON Structure: Show Schema Information"
+      },
+      {
+        "command": "jsonStructure.showEditorCommands",
+        "title": "JSON Structure: Show Editor Commands"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "jsonStructure.showEditorCommands",
+          "when": "activeCustomEditorId == jsonStructure.editor",
+          "group": "navigation"
+        }
+      ]
+    },
+    "customEditors": [
+      {
+        "viewType": "jsonStructure.editor",
+        "displayName": "JSON Structure Editor",
+        "selector": [
+          {
+            "filenamePattern": "*.struct.json"
+          }
+        ],
+        "priority": "option"
       }
     ],
     "configuration": {
@@ -97,9 +123,10 @@
   },
   "scripts": {
     "version": "node scripts/update-version.js",
-    "vscode:prepublish": "npm run version && npm run esbuild-base -- --minify",
+    "vscode:prepublish": "npm run build:editor && npm run esbuild-base -- --minify",
     "esbuild-base": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
-    "compile": "npm run esbuild-base -- --sourcemap",
+    "build:editor": "npm --prefix ../editor run build:vscode && node scripts/copy-editor-assets.js",
+    "compile": "npm run build:editor && npm run esbuild-base -- --sourcemap",
     "compile-tests": "tsc -p . --outDir dist",
     "watch": "npm run esbuild-base -- --sourcemap --watch",
     "pretest": "npm run compile && npm run compile-tests",
@@ -124,6 +151,7 @@
     "typescript": "^5.3.0"
   },
   "dependencies": {
+    "@json-structure/editor-foundation": "file:../editor",
     "@json-structure/sdk": "file:../typescript"
   }
 }

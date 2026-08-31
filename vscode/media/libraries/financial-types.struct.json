@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://schemas.example.com/financial-types",
+  "name": "FinancialDocument",
+  "description": "Demonstrates extended numeric types for financial calculations",
+  "$root": "#/definitions/Invoice",
+  "definitions": {
+    "Money": {
+      "type": "object",
+      "description": "Monetary amount with currency",
+      "properties": {
+        "amount": {
+          "type": "decimal",
+          "description": "The monetary amount",
+          "precision": 15,
+          "scale": 2
+        },
+        "currency": {
+          "type": "string",
+          "description": "ISO 4217 currency code",
+          "enum": ["USD", "EUR", "GBP", "JPY", "CAD", "AUD"],
+          "examples": ["USD", "EUR"]
+        }
+      },
+      "required": ["amount", "currency"]
+    },
+    "LineItem": {
+      "type": "object",
+      "description": "A single line item in an invoice",
+      "properties": {
+        "description": {
+          "type": "string",
+          "description": "Description of the item",
+          "maxLength": 200
+        },
+        "quantity": {
+          "type": "integer",
+          "description": "Quantity of items (whole number)"
+        },
+        "unitPrice": {
+          "type": { "$ref": "#/definitions/Money" },
+          "description": "Price per unit"
+        },
+        "totalPrice": {
+          "type": { "$ref": "#/definitions/Money" },
+          "description": "Total price for this line item"
+        },
+        "weight": {
+          "type": "double",
+          "description": "Weight of the item in kilograms (double precision)"
+        },
+        "discountPercent": {
+          "type": "number",
+          "description": "Discount percentage as a raw JSON number"
+        }
+      },
+      "required": ["description", "quantity", "unitPrice", "totalPrice"]
+    },
+    "Invoice": {
+      "type": "object",
+      "description": "A business invoice",
+      "properties": {
+        "invoiceNumber": {
+          "type": "string",
+          "description": "Unique invoice identifier",
+          "maxLength": 50
+        },
+        "sequenceNumber": {
+          "type": "int32",
+          "description": "Sequential invoice number for internal tracking"
+        },
+        "globalSequenceNumber": {
+          "type": "int64",
+          "description": "Global sequential invoice number for audit trail"
+        },
+        "issueDate": {
+          "type": "date",
+          "description": "Date the invoice was issued"
+        },
+        "dueDate": {
+          "type": "date",
+          "description": "Payment due date"
+        },
+        "paymentTermsDays": {
+          "type": "int16",
+          "description": "Number of days for payment terms (1-365 typical range)"
+        },
+        "lineItems": {
+          "type": "array",
+          "description": "List of invoice line items",
+          "items": { "type": { "$ref": "#/definitions/LineItem" }}
+        },
+        "subtotal": {
+          "type": { "$ref": "#/definitions/Money" },
+          "description": "Subtotal before taxes"
+        },
+        "taxRate": {
+          "type": "decimal",
+          "description": "Tax rate as a decimal (e.g., 0.08 for 8%)",
+          "precision": 5,
+          "scale": 4
+        },
+        "taxAmount": {
+          "type": { "$ref": "#/definitions/Money" },
+          "description": "Total tax amount"
+        },
+        "totalAmount": {
+          "type": { "$ref": "#/definitions/Money" },
+          "description": "Total amount due"
+        },
+        "auditTrail": {
+          "type": "int128",
+          "description": "128-bit audit trail hash for financial integrity verification"
+        },
+        "blockchainHash": {
+          "type": "uint128", 
+          "description": "Unsigned 128-bit blockchain transaction hash for immutable record"
+        },
+        "cancelledDate": {
+          "type": ["date", "null"],
+          "description": "Date the invoice was cancelled, or null if not cancelled"
+        }
+      },
+      "required": ["invoiceNumber", "issueDate", "dueDate", "lineItems", "subtotal", "totalAmount"]
+    }
+  }
+}

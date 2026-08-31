@@ -9,12 +9,15 @@ export interface CapabilityResolution {
   readonly unitsActive: boolean;
   readonly semanticAnnotationsActive: boolean;
   readonly alternateNamesActive: boolean;
+  readonly importActive: boolean;
+  readonly relationsActive: boolean;
   readonly offeredExtensions: readonly string[];
   readonly unknown: readonly string[];
 }
 const EXTENDED_META_SCHEMA = 'https://json-structure.org/meta/extended/v0/#';
 const VALIDATION_META_SCHEMA = 'https://json-structure.org/meta/validation/v0/#';
 const SEMANTIC_ANNOTATIONS_META_SCHEMA = 'https://json-structure.org/meta/semantic-annotations/v0/#';
+const RELATIONS_META_SCHEMA = 'https://json-structure.org/meta/relations/v0/#';
 
 /**
  * Validates validation extension active and narrows the value type when applicable.
@@ -23,7 +26,7 @@ export function validationExtensionActive(value: unknown): boolean {
   const root = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
   const schema = typeof root.$schema === 'string' ? root.$schema : undefined;
   const uses = Array.isArray(root.$uses) ? root.$uses : [];
-  return schema === VALIDATION_META_SCHEMA || (schema === EXTENDED_META_SCHEMA && uses.includes('JSONSchemaValidation'));
+  return schema === VALIDATION_META_SCHEMA || (schema === EXTENDED_META_SCHEMA && uses.includes('JSONStructureValidation'));
 }
 /**
  * Performs conditional composition extension active logic.
@@ -79,7 +82,13 @@ export function resolveCapabilities(value: unknown): CapabilityResolution {
     unitsActive: unitsExtensionActive(root),
     semanticAnnotationsActive: semanticAnnotationsExtensionActive(root),
     alternateNamesActive: alternateNamesExtensionActive(root),
+    importActive: root.$schema === RELATIONS_META_SCHEMA || schemaUses(root, 'JSONStructureImport'),
+    relationsActive: root.$schema === RELATIONS_META_SCHEMA || schemaUses(root, 'JSONStructureRelations'),
     offeredExtensions: offers.filter((offer) => known.has(offer)),
     unknown: offers.filter((offer) => !known.has(offer))
   };
+}
+
+function schemaUses(root: Record<string, unknown>, capability: string): boolean {
+  return root.$schema === EXTENDED_META_SCHEMA && Array.isArray(root.$uses) && root.$uses.includes(capability);
 }

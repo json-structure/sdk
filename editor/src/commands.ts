@@ -227,8 +227,15 @@ const CORE_TYPES = new Set([
   'string', 'number', 'integer', 'boolean', 'null',
   'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32', 'int64', 'uint64', 'int128', 'uint128',
   'float8', 'float', 'double', 'decimal', 'date', 'datetime', 'time', 'duration', 'uuid', 'uri', 'binary', 'jsonpointer',
-  'object', 'array', 'map', 'set', 'tuple', 'any', 'choice'
+  'object', 'array', 'map', 'set', 'tuple', 'choice'
 ]);
+export const CORE_DOCUMENT_MEMBERS = [
+  '$schema', '$id', 'name', 'description', '$uses', '$offers', '$root', 'definitions', 'type', 'enum', 'const',
+  'abstract', '$extends', 'properties', 'required', 'additionalProperties', 'items', 'values', 'tuple', 'choices',
+  'selector', 'precision', 'scale'
+] as const;
+export type CoreDocumentMember = typeof CORE_DOCUMENT_MEMBERS[number];
+const CORE_DOCUMENT_MEMBER_SET = new Set<string>(CORE_DOCUMENT_MEMBERS);
 
 function isTypeDeclaration(value: unknown): value is Record<string, unknown> {
   return isObjectLike(value) && validTypeValue(value.type);
@@ -605,6 +612,92 @@ function editableDeclaration(session: DocumentSession, pointer: string): Record<
   const value = pointerValue(session.value, pointer);
   return isObjectLike(value) && hasUniquePointerPath(session, pointer) && !hasDuplicatePointerDiagnostic(session, pointer) &&
     isTypeDeclaration(value) ? value : undefined;
+}
+function editableCoreObject(session: DocumentSession, pointer: string): Record<string, unknown> | undefined {
+  const value = pointerValue(session.value, pointer);
+  if (!isObjectLike(value) || !hasUniquePointerPath(session, pointer) || hasDuplicatePointerDiagnostic(session, pointer)) return undefined;
+  if (pointer === '') return value;
+  return editableCompositionTarget(session, pointer);
+}
+function coreMemberValueValid(keyword: CoreDocumentMember, value: unknown): boolean {
+  switch (keyword) {
+    case '$schema': case '$id': return typeof value === 'string' && absoluteUri(value);
+    case 'name': return typeof value === 'string' && IDENTIFIER.test(value);
+    case 'description': case 'selector': return typeof value === 'string';
+    case '$uses': return isStringArray(value) && new Set(value).size === value.length;
+    case '$offers': return isObjectLike(value) && Object.values(value).every((entry) => typeReferenceValue(entry) !== undefined);
+    case '$root': return typeof value === 'string' && validPointerFragment(value);
+    case 'type': return validTypeValue(value);
+    case 'abstract': return typeof value === 'boolean';
+    case 'additionalProperties': return typeof value === 'boolean' || typeReferenceValue(value) !== undefined;
+    case '$extends': return (typeof value === 'string' && value.length > 0) || (isStringArray(value) && value.length > 0);
+    case 'required': return Array.isArray(value);
+    case 'tuple': return isStringArray(value) && new Set(value).size === value.length;
+    case 'precision': case 'scale': return Number.isInteger(value) && (value as number) >= 0;
+    case 'definitions': case 'properties': case 'choices': return isObjectLike(value);
+    case 'items': case 'values': return isObjectLike(value) && validTypeValue(value.type);
+    case 'enum': return Array.isArray(value) && value.length > 0;
+    case 'const': return value !== undefined;
+  }
+}
+function coreMemberPlacementValid(session: DocumentSession, pointer: string, keyword: CoreDocumentMember): boolean {
+  if (['$schema', '$id', 'name', '$uses', '$offers', '$root'].includes(keyword)) return pointer === '';
+  if (keyword === 'definitions') return namespaceImportPlacement(session, pointer);
+  return pointer === '' || editableCompositionTarget(session, pointer) !== undefined;
+}
+
+/** Command that safely sets a supported Core declaration or document object member. */
+export class SetCoreMemberCommand implements EditorCommand {
+  constructor(readonly targetPointer: string, readonly keyword: CoreDocumentMember, readonly value: unknown) {}
+
+  canExecute({ session, documentVersion }: CommandContext): boolean {
+    if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid' || !CORE_DOCUMENT_MEMBER_SET.has(this.keyword)) return false;
+    const target = editableCoreObject(session, this.targetPointer);
+    if (!target || !coreMemberPlacementValid(session, this.targetPointer, this.keyword) || !coreMemberValueValid(this.keyword, this.value)) return false;
+    if ((this.keyword === 'properties' || this.keyword === 'choices') &&
+      !Object.values(this.value as Record<string, unknown>).every((schema) => validSchemaValue(session, schema))) return false;
+    if ((this.keyword === 'items' || this.keyword === 'values') && !validSchemaValue(session, this.value)) return false;
+    if (this.keyword === 'required' && (!isObjectLike(target.properties) || !validRequired(target.properties, this.value as RequiredProperties))) return false;
+    if (this.keyword === 'tuple' && (!isObjectLike(target.properties) || !(this.value as string[]).every((name) => Object.prototype.hasOwnProperty.call(target.properties, name)))) return false;
+    if ((this.keyword === 'choices' || this.keyword === 'selector') && target.type !== 'choice') return false;
+    if (this.keyword === 'additionalProperties' && target.type !== 'object') return false;
+    if ((this.keyword === 'precision' || this.keyword === 'scale') && target.type !== 'number' && target.type !== 'decimal') return false;
+    if (this.keyword === '$extends') {
+      const references = typeof this.value === 'string' ? [this.value] : this.value as string[];
+      if (!references.every((reference) => referenceResolvesLocally(session, reference))) return false;
+    }
+    const authored = Object.prototype.hasOwnProperty.call(target, this.keyword);
+    return !authored || objectMemberContext(session, this.targetPointer, this.keyword) !== undefined;
+  }
+
+  execute(context: CommandContext): CommandResult {
+    if (!this.canExecute(context)) throw new Error('SetCoreMember command preconditions are not satisfied.');
+    return setMemberCommandResult(context.session, this.targetPointer, this.keyword, this.value);
+  }
+}
+
+/** Command that explicitly removes a supported Core or extension object member. */
+export class RemoveObjectMemberCommand implements EditorCommand {
+  constructor(readonly targetPointer: string, readonly keyword: string) {}
+
+  canExecute({ session, documentVersion }: CommandContext): boolean {
+    if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid' || this.keyword.length === 0) return false;
+    const target = pointerValue(session.value, this.targetPointer);
+    if (this.keyword === 'type' && isTypeDeclaration(target)) return false;
+    if (isObjectLike(target)) {
+      const requiredShapeMembers: Readonly<Record<string, readonly string[]>> = {
+        object: ['properties'], array: ['items'], set: ['items'], map: ['values'], tuple: ['properties', 'tuple'], choice: ['choices']
+      };
+      if (typeof target.type === 'string' && requiredShapeMembers[target.type]?.includes(this.keyword)) return false;
+    }
+    return isObjectLike(target) && hasUniquePointerPath(session, this.targetPointer) && !hasDuplicatePointerDiagnostic(session, this.targetPointer) &&
+      Object.prototype.hasOwnProperty.call(target, this.keyword) && objectMemberContext(session, this.targetPointer, this.keyword) !== undefined;
+  }
+
+  execute(context: CommandContext): CommandResult {
+    if (!this.canExecute(context)) throw new Error('RemoveObjectMember command preconditions are not satisfied.');
+    return removeMemberCommandResult(context.session, this.targetPointer, this.keyword);
+  }
 }
 function editableCompositionTarget(session: DocumentSession, pointer: string): Record<string, unknown> | undefined {
   const value = pointerValue(session.value, pointer);
@@ -1188,8 +1281,8 @@ export class SetAudioChannelsCommand extends SetSemanticAnnotationCommand<'audio
 export class SetSpectralBandsCommand extends SetSemanticAnnotationCommand<'spectralBands'> { constructor(pointer: string, value: SemanticAnnotationKeywordMap['spectralBands'] | undefined) { super(pointer, 'spectralBands', value); } }
 
 const NUMERIC_TYPES_FOR_UNITS = new Set([
-  'number', 'integer', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32',
-  'int64', 'uint64', 'int128', 'uint128', 'float8', 'float', 'double', 'decimal'
+  'number', 'integer', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32', 'int64', 'uint64', 'int128', 'uint128',
+  'float8', 'float', 'double', 'decimal'
 ]);
 
 /**
@@ -1235,6 +1328,31 @@ export class SetTypeReferenceCommand implements EditorCommand {
   execute(context: CommandContext): CommandResult {
     if (!this.canExecute(context)) throw new Error('SetTypeReference command preconditions are not satisfied.');
     return setMemberCommandResult(context.session, this.targetPointer, 'type', { $ref: this.reference });
+  }
+}
+
+/** Command that adds a named namespace without replacing existing definitions. */
+export class AddNamespaceCommand implements EditorCommand {
+  constructor(readonly namespacePointer: string, readonly namespaceName: string) {}
+
+  canExecute({ session, documentVersion }: CommandContext): boolean {
+    if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid' || !IDENTIFIER.test(this.namespaceName)) return false;
+    const namespace = pointerValue(session.value, this.namespacePointer);
+    if (!isNamespaceObject(namespace) || !namespaceImportPlacement(session, this.namespacePointer)) return false;
+    const definitions = namespace.definitions;
+    return definitions === undefined || isNamespaceObject(definitions) && hasUniquePointerPath(session, objectMemberPointer(this.namespacePointer, 'definitions')) &&
+      !Object.prototype.hasOwnProperty.call(definitions, this.namespaceName);
+  }
+
+  execute(context: CommandContext): CommandResult {
+    if (!this.canExecute(context)) throw new Error('AddNamespace command preconditions are not satisfied.');
+    const namespace = pointerValue(context.session.value, this.namespacePointer) as Record<string, unknown>;
+    if (isNamespaceObject(namespace.definitions)) {
+      const range = objectRange(context.session, objectMemberPointer(this.namespacePointer, 'definitions'));
+      if (!range) throw new Error('Definitions source range is unavailable.');
+      return addMemberCommandResult(context.session.snapshot().text, range, this.namespaceName, {});
+    }
+    return setMemberCommandResult(context.session, this.namespacePointer, 'definitions', { [this.namespaceName]: {} });
   }
 }
 

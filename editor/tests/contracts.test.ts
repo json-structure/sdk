@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { GESTURE_CONTRACT, PROTOCOL_VERSION, SERIALIZATION_GUARANTEES, coverageErrors, isProtocolEnvelope, sameSelection } from '../src/index.js';
+import { GESTURE_CONTRACT, PROTOCOL_VERSION, SERIALIZATION_GUARANTEES, coverageErrors, isLibraryOperationRequest, isProtocolEnvelope, sameSelection } from '../src/index.js';
 describe('Phase 0 contracts', () => {
   it('accepts only versioned request envelopes', () => {
     expect(isProtocolEnvelope({ protocolVersion: PROTOCOL_VERSION, requestId: 'r1' })).toBe(true);
     expect(isProtocolEnvelope({ protocolVersion: 2, requestId: 'r1' })).toBe(false);
+  });
+  it('accepts only supported serializable library operation requests', () => {
+    expect(isLibraryOperationRequest({ protocolVersion: 1, requestId: 'library-1', kind: 'library-request', operation: 'listCatalog' })).toBe(true);
+    expect(isLibraryOperationRequest({ protocolVersion: 1, requestId: 'library-1', kind: 'library-request', operation: 'deleteEverything' })).toBe(false);
+    expect(isLibraryOperationRequest({ protocolVersion: 1, requestId: 'library-1', kind: 'library-request', operation: 'publish', payload: { value: () => undefined } })).toBe(false);
   });
   it('defines lossless serialization and gesture guarantees', () => {
     expect(SERIALIZATION_GUARANTEES.preservesUnknownKeys).toBe(true);

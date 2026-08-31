@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseDocument, resolveDocumentReferences, resolveReferences } from '../src/index.js';
+import { DocumentSession, parseDocument, resolveDocumentReferences, resolveReferences } from '../src/index.js';
 
 function model(uri: string, value: unknown) {
   const parsed = parseDocument(uri, JSON.stringify({
@@ -14,6 +14,19 @@ function model(uri: string, value: unknown) {
 }
 
 describe('host-neutral reference resolution', () => {
+  it('re-resolves a document session when external snapshots change', () => {
+    const text = JSON.stringify({
+      $schema: 'https://json-structure.org/meta/core/v0/#',
+      definitions: { Lib: { $importdefs: 'https://example.org/lib.json' }, Use: { type: { $ref: '#/definitions/Lib/Value' } } }
+    });
+    const session = new DocumentSession('memory://session-imports', text);
+    expect(session.model?.projections.resolution?.references[0]?.status).toBe('indeterminate');
+    session.setExternalDocuments([model('https://example.org/lib.json', { definitions: { Value: { type: 'string' } } })]);
+    expect(session.model?.projections.resolution?.references[0]).toEqual(expect.objectContaining({ status: 'resolved', targetDocumentUri: 'https://example.org/lib.json' }));
+    session.update(text.replace('Value', 'Missing'), 2);
+    expect(session.model?.projections.resolution?.references[0]?.status).toBe('unresolved');
+  });
+
   it('distinguishes local missing targets from unavailable imported namespaces', () => {
     const local = model('memory://local', {
       definitions: { Use: { type: { $ref: '#/definitions/Missing' } } }

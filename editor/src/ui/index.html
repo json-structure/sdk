@@ -3,20 +3,13 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; worker-src 'self' blob:; connect-src 'self' http://127.0.0.1:5173 ws://127.0.0.1:5173 https://127.0.0.1:5173 wss://127.0.0.1:5173; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="./electron-shell.css">
     <title>JSON Structure Editor</title>
-    <style>html,body,#editor{height:100%;margin:0}body{background:#121719}</style>
   </head>
   <body>
     <div id="editor"></div>
-    <script type="module">
-      import { bootstrapJsonStructureEditor } from './bootstrap.ts';
-      bootstrapJsonStructureEditor(document.querySelector('#editor'), JSON.stringify({
-          $schema: 'https://json-structure.org/meta/core/v0/#',
-          definitions: {
-            Address: { type: 'object', properties: { street: { type: 'string' }, postalCode: { type: 'string' } } },
-            Person: { type: 'object', $extends: '#/definitions/Address', properties: { id: { type: 'uuid' }, name: { type: 'string' }, address: { $ref: '#/definitions/Address' } }, required: ['id', 'name'] }
-          }
-        }, null, 2));
-    </script>
+    <script type="module" src="./electron-bootstrap.ts"></script>
   </body>
 </html>

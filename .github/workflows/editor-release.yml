@@ -1,0 +1,145 @@
+name: Editor release integrity
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "editor/**"
+      - "vscode/**"
+      - ".github/workflows/editor-release.yml"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  build-test-package:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: editor
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: editor/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run beta:package:verified
+      - uses: actions/upload-artifact@v4
+        with:
+          name: editor-${{ runner.os }}-${{ runner.arch }}
+          path: editor/release/
+          if-no-files-found: error
+
+  macos-notarize:
+    if: github.event_name == 'workflow_dispatch'
+    needs: build-test-package
+    runs-on: macos-latest
+    env:
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      MACOS_SIGNING_CERTIFICATE: ${{ secrets.MACOS_SIGNING_CERTIFICATE }}
+      MACOS_SIGNING_PASSWORD: ${{ secrets.MACOS_SIGNING_PASSWORD }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: editor-macOS-X64
+          path: artifacts
+      - name: Require notarization credentials
+        run: test -n "$APPLE_ID" && test -n "$APPLE_APP_PASSWORD" && test -n "$APPLE_TEAM_ID" && test -n "$MACOS_SIGNING_CERTIFICATE" && test -n "$MACOS_SIGNING_PASSWORD"
+      - name: Sign, notarize, staple, and verify application
+        run: |
+          ZIP=$(find artifacts -name '*.zip' -print -quit)
+          test -n "$ZIP"
+          echo "$MACOS_SIGNING_CERTIFICATE" | base64 --decode > certificate.p12
+          security create-keychain -p temporary build.keychain
+          security import certificate.p12 -k build.keychain -P "$MACOS_SIGNING_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k temporary build.keychain
+          security list-keychains -d user -s build.keychain
+          ditto -x -k "$ZIP" verified
+          IDENTITY=$(security find-identity -v -p codesigning build.keychain | sed -n 's/.*"\(Developer ID Application:.*\)"/\1/p' | head -1)
+          test -n "$IDENTITY"
+          codesign --force --deep --options runtime --timestamp --sign "$IDENTITY" verified/*.app
+          ditto -c -k --keepParent verified/*.app signed.zip
+          xcrun notarytool submit signed.zip --apple-id "$APPLE_ID" --password "$APPLE_APP_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+          xcrun stapler staple verified/*.app
+          codesign --verify --deep --strict --verbose=2 verified/*.app
+          spctl --assess --type execute --verbose=2 verified/*.app
+          ditto -c -k --keepParent verified/*.app json-structure-editor-macos-signed.zip
+          rm -f certificate.p12
+          security delete-keychain build.keychain
+      - uses: actions/upload-artifact@v4
+        with:
+          name: editor-macOS-X64-signed
+          path: json-structure-editor-macos-signed.zip
+          if-no-files-found: error
+
+  windows-sign:
+    if: github.event_name == 'workflow_dispatch'
+    needs: build-test-package
+    runs-on: windows-latest
+    env:
+      WINDOWS_SIGNING_CERTIFICATE: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE }}
+      WINDOWS_SIGNING_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PASSWORD }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: editor-Windows-X64
+          path: artifacts
+      - name: Require signing credentials
+        shell: pwsh
+        run: if (-not $env:WINDOWS_SIGNING_CERTIFICATE -or -not $env:WINDOWS_SIGNING_PASSWORD) { throw 'Windows signing credentials are required.' }
+      - name: Sign and verify executables
+        shell: pwsh
+        run: |
+          [IO.File]::WriteAllBytes("certificate.pfx", [Convert]::FromBase64String($env:WINDOWS_SIGNING_CERTIFICATE))
+          $signtool = (Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Recurse -Filter signtool.exe | Sort-Object FullName -Descending | Select-Object -First 1).FullName
+          Get-ChildItem artifacts -Recurse -Include *.exe,*.msi | ForEach-Object { & $signtool sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /f certificate.pfx /p $env:WINDOWS_SIGNING_PASSWORD $_.FullName; if ($LASTEXITCODE) { throw "Signing failed: $($_.FullName)" }; & $signtool verify /pa /all $_.FullName; if ($LASTEXITCODE) { throw "Verification failed: $($_.FullName)" } }
+          Remove-Item certificate.pfx -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: editor-Windows-X64-signed
+          path: artifacts/
+          if-no-files-found: error
+
+  vscode-package:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: vscode
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            editor/package-lock.json
+            vscode/package-lock.json
+      - run: npm ci --prefix ../editor
+      - run: npm ci
+      - run: npm test
+      - run: mkdir -p artifacts && npm run package -- --out artifacts/json-structure-editor.vsix
+      - name: Verify required VSIX payloads
+        run: |
+          unzip -l artifacts/json-structure-editor.vsix > artifacts/vsix-files.txt
+          grep -q 'extension/media/conversion/worker-runtime/converter-worker.cjs' artifacts/vsix-files.txt
+          grep -q 'extension/media/conversion/worker-runtime/commands-manifest.json' artifacts/vsix-files.txt
+          grep -q 'extension/media/libraries/financial-types.struct.json' artifacts/vsix-files.txt
+          if unzip -p artifacts/json-structure-editor.vsix | grep -E 'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|client[_-]?secret' -i; then exit 1; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: json-structure-editor-vsix
+          path: vscode/artifacts/json-structure-editor.vsix
+          if-no-files-found: error

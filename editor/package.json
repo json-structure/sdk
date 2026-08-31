@@ -1,6 +1,6 @@
 {
   "name": "@json-structure/editor-foundation",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -8,12 +8,23 @@
   },
   "scripts": {
     "build": "tsup",
+    "build:ui": "tsup src/ui.ts --format esm --dts",
     "build:renderer": "vite build --config vite.config.ts",
+    "build:vscode": "vite build --config vite.vscode.config.ts",
     "build:electron": "tsup --config tsup.electron.config.ts",
     "alpha:build": "npm run build:renderer && npm run build:electron",
     "alpha:run": "npm run alpha:build && electron .",
     "alpha:dev": "concurrently --kill-others-on-fail \"vite --config vite.config.ts --host 127.0.0.1\" \"node scripts/dev-electron.mjs\"",
     "alpha:package": "npm run alpha:build && electron-builder",
+    "beta:build": "npm run alpha:build && npm run build:vscode",
+    "beta:run": "npm run beta:build && electron .",
+    "beta:dev": "npm run alpha:dev",
+    "release:clean": "node -e \"require('node:fs').rmSync('release',{recursive:true,force:true})\"",
+    "beta:package": "npm run beta:build && electron-builder",
+    "release:executables": "node scripts/release-integrity.mjs executables release",
+    "release:scan": "node scripts/release-integrity.mjs scan release",
+    "release:attest": "node scripts/release-integrity.mjs attest release",
+    "beta:package:verified": "npm run release:clean && npm run beta:package -- --publish never && npm run release:executables && npm run release:scan && npm run release:attest",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "coverage:check": "node scripts/coverage-check.mjs",
@@ -31,6 +42,18 @@
     "vitest": "^4.0.18"
   },
   "main": "dist-electron/main.cjs",
+  "exports": {
+    "./library-host-runtime": {
+      "types": "./dist/libraries/host-runtime.d.ts",
+      "import": "./dist/libraries/host-runtime.js",
+      "require": "./dist/libraries/host-runtime.cjs"
+    }
+  },
+  "typesVersions": {
+    "*": {
+      "library-host-runtime": ["dist/libraries/host-runtime.d.ts"]
+    }
+  },
   "build": {
     "appId": "org.json-structure.editor",
     "productName": "JSON Structure Editor",
@@ -41,6 +64,10 @@
       "dist-electron/**",
       "dist/renderer/**",
       "package.json"
+    ],
+    "extraResources": [
+      { "from": "src/conversion/worker-runtime", "to": "conversion/worker-runtime" },
+      { "from": "../vscode/test-fixtures/financial-types/schema.struct.json", "to": "libraries/financial-types.struct.json" }
     ],
     "asar": true,
     "win": {
@@ -61,5 +88,8 @@
         "deb"
       ]
     }
+  },
+  "dependencies": {
+    "monaco-editor": "^0.56.0"
   }
 }

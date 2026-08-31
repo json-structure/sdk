@@ -171,10 +171,10 @@ describe('Validation editing and diagnostics', () => {
 
   it('round-trips representative scalar and structured keyword families through direct inverses', async () => {
     const representatives: ReadonlyArray<readonly [string, ValidationKeyword, unknown, unknown]> = [
-      ['int8', 'minimum', -1, 1], ['string', 'pattern', '^a$', '^b$'],
-      ['array', 'contains', { type: 'string', minLength: 1 }, { type: 'int8', minimum: 0 }],
+      ['int32', 'minimum', -1, 1], ['string', 'pattern', '^a$', '^b$'],
+      ['array', 'contains', { type: 'string', minLength: 1 }, { type: 'int32', minimum: 0 }],
       ['object', 'dependentRequired', { alpha: ['beta'] }, { beta: ['alpha'] }],
-      ['object', 'patternProperties', { '^a': { type: 'string' } }, { '^b': { type: 'int8', maximum: 3 } }],
+      ['object', 'patternProperties', { '^a': { type: 'string' } }, { '^b': { type: 'int32', maximum: 3 } }],
       ['string', 'default', { untouched: { minimum: 'data' } }, ['replacement']]
     ];
     for (const [type, keyword, first, replacement] of representatives) {
@@ -221,11 +221,11 @@ describe('Validation editing and diagnostics', () => {
   it('uses one capability result for parser and command Validation activation', () => {
     const matrix: ReadonlyArray<readonly [string, Record<string, unknown>, boolean]> = [
       ['direct-validation', { $schema: 'https://json-structure.org/meta/validation/v0/#' }, true],
-      ['extended-with-use', { $schema: 'https://json-structure.org/meta/extended/v0/#', $uses: ['JSONSchemaValidation'] }, true],
+      ['extended-with-use', { $schema: 'https://json-structure.org/meta/extended/v0/#', $uses: ['JSONStructureValidation'] }, true],
       ['extended-without-use', { $schema: 'https://json-structure.org/meta/extended/v0/#' }, false],
-      ['core-with-use', { $schema: 'https://json-structure.org/meta/core/v0/#', $uses: ['JSONSchemaValidation'] }, false],
-      ['arbitrary-with-use', { $schema: 'https://example.test/meta', $uses: ['JSONSchemaValidation'] }, false],
-      ['missing-schema-with-use', { $uses: ['JSONSchemaValidation'] }, false]
+      ['core-with-use', { $schema: 'https://json-structure.org/meta/core/v0/#', $uses: ['JSONStructureValidation'] }, false],
+      ['arbitrary-with-use', { $schema: 'https://example.test/meta', $uses: ['JSONStructureValidation'] }, false],
+      ['missing-schema-with-use', { $uses: ['JSONStructureValidation'] }, false]
     ];
 
     for (const [name, header, expectedActive] of matrix) {

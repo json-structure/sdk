@@ -8,6 +8,7 @@ import { JsonStructureHoverProvider } from './hoverProvider';
 import { JsonStructureDefinitionProvider, JsonStructureDocumentLinkProvider, JsonStructureReferenceProvider } from './definitionProvider';
 import { JsonStructureDocumentSymbolProvider } from './documentSymbolProvider';
 import { SchemaStatusCodeLensProvider, SchemaStatusTracker } from './schemaStatusCodeLensProvider';
+import { JsonStructureCustomEditorProvider, jsonStructureEditorViewType } from './customEditor';
 
 let diagnosticsManager: DiagnosticsManager;
 let schemaValidator: SchemaValidator;
@@ -30,8 +31,19 @@ export function activate(context: vscode.ExtensionContext): void {
 
     // Register the diagnostics collection
     context.subscriptions.push(diagnosticsManager.getDiagnosticCollection());
+    const customEditorProvider = new JsonStructureCustomEditorProvider(context);
+    context.subscriptions.push(
+        vscode.window.registerCustomEditorProvider(
+            jsonStructureEditorViewType,
+            customEditorProvider,
+            { webviewOptions: { retainContextWhenHidden: false } }
+        )
+    );
 
     // Register commands
+    context.subscriptions.push(
+        vscode.commands.registerCommand('jsonStructure.showEditorCommands', () => customEditorProvider.showCommands())
+    );
     context.subscriptions.push(
         vscode.commands.registerCommand('jsonStructure.clearCache', () => {
             schemaCache.clearCache();

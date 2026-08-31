@@ -1,14 +1,31 @@
-# JSON Structure Editor Alpha
+# JSON Structure Editor Beta
 
-This package contains the shared model and runnable Electron alpha for the JSON
+This package contains the shared model and runnable Electron beta for the JSON
 Structure editor. The host-neutral browser workbench provides Design, Graph,
-and Source modes with an outline, property editor, inspector, and problems
-view. The Electron host adds Open, Save, Save As, command-line file opening,
-and atomic writes through a narrow sandboxed preload bridge.
+and Source modes with an outline, contextual inline authoring, inspector,
+problems view, semantic graph navigation, and source recovery. The Electron
+host adds native Open, Save, Save As, command-line file opening, shortcuts, and
+atomic writes through a narrow sandboxed preload bridge.
 
-The same browser workbench is intended for the VS Code host; it does not import
-Electron APIs. The prototype HTML files at the package root are behavioral
-evidence only and are not production dependencies.
+The same browser workbench is bundled into the VS Code custom editor. VS Code
+owns document versions, workspace edits, undo/redo, dirty state, and saving;
+the webview uses a versioned message boundary and imports no Electron APIs.
+The prototype HTML files are behavioral evidence only.
+
+The shared Libraries view uses the host-owned library runtime in Electron and
+VS Code. It manages trusted HTTPS xRegistry providers with out-of-band
+credentials, supports online and offline version resolution with trust and
+provenance details, preserves the legacy static list/read fallback, and offers
+previewed import, copy, materialize, and optimistic-epoch publish workflows.
+Credential secrets are write-only and cleared from the rendered form after
+submission; bundled providers cannot be removed or used as publish targets.
+
+Import resolution is recursive and bounded to 16 levels, 128 documents, and
+8 MiB aggregate content. Electron reads local files only beneath the opened
+document directory; VS Code reads `file:` and `vscode-remote:` resources only
+within the trusted workspace or opened document directory. Both hosts cap each
+resource at 4 MiB and reject traversal and symlink escape. HTTP(S) imports are
+shown as external but are not fetched by the beta hosts.
 
 ## Commands
 
@@ -20,11 +37,15 @@ npm run alpha:build      # renderer and Electron main/preload bundles
 npm run alpha:run        # build and launch the Electron alpha
 npm run alpha:dev        # Vite and Electron development mode
 npm run alpha:package    # platform packages under release/
+npm run beta:build       # Electron/browser and VS Code webview bundles
+npm run beta:run         # build and launch the Electron beta
+npm run beta:dev         # Vite and Electron development mode
+npm run beta:package     # beta platform packages under release/
 npm run coverage:check   # validate ledger and generated documentation
 npm run coverage:generate
 ```
 
-On Windows, `npm run alpha:package` produces an NSIS installer and a portable
+On Windows, `npm run beta:package` produces an NSIS installer and a portable
 executable. macOS and Linux package targets are configured but must be built and
 smoke-tested on their respective platforms.
 

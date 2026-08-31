@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "kind": "packaged-executable",
+  "executable": "worker-runtime/converter-worker.cjs",
+  "files": [
+    {
+      "path": "worker-runtime/converter-worker.cjs",
+      "sha256": "ed3242903a98503964806abe715527e72afb35194f8c40362889cc5f77f6f374"
+    },
+    {
+      "path": "worker-runtime/commands-manifest.json",
+      "sha256": "4fe0e98e30cc3154f1aedf0e8a5ea16e95b8a9232ddc65d631c34b0cab26ac0c"
+    }
+  ]
+}
