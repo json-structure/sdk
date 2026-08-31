@@ -1,12 +1,14 @@
 # JSON Structure Editor Implementation Status
 
-Updated: 2026-08-31 (Phase 1 milestone: Validation companion editing and diagnostics)
+Updated: 2026-08-31 (Phase 1 milestone: Units companion authoring and host-neutral catalogs)
 Branch: `editor-autopilot`
 Worktree: `C:\git\json-structure-sdk-editor`
 
-Blocking findings in this milestone: 1 specification decision remains unresolved (ADR-014 `has` schema shape). ADR-007 capability activation is accepted.
+Blocking findings in this milestone: none. The Units/catalog review findings are repaired. Full RFC 5646 validation, full UCUM grammar/dimensional equivalence, and the draft's broad `currency` placement wording remain explicit follow-up items. ADR-014 (`has` schema shape) remains unresolved from the prior milestone.
 
-Milestone summary: all 26 ledger Validation keywords share one typed edit command family and one parser rule set, but their ledger records remain partial where direct per-keyword round-trip and test evidence is absent. Validation activates directly through the Validation meta-schema or through `JSONSchemaValidation` in `$uses` only under the Extended meta-schema; Core, arbitrary, and missing `$schema` values do not honor that use declaration. Parser diagnostics/projections and editing commands consume the same capability result. Numeric constraints use exact Core syntax, signedness, and ranges, including string-backed 64-bit and 128-bit integers. Locally resolvable type references and inheritance inform applicability; unions and unresolved external types avoid false hard errors and keep editing disabled. Nested Validation schema payloads recurse while `default` remains opaque. Contradictory bounds are not reported as malformed schemas.
+Milestone summary: `symbol`, `symbols`, `unit`, `ucumUnit`, and `currency` now have typed add/replace/remove commands, schema-owned diagnostics, normalized authored inspection, capability activation, duplicate/stale/incomplete guards, and direct byte-identical inverse edits. Units activates directly through the Validation meta-schema or through normative `JSONStructureUnits` in `$uses` only under the Extended meta-schema; `JSONSchemaUnits` is not an alias. `unit` and `ucumUnit` require one resolved numeric underlying type; unresolved external types remain indeterminate. Known incompatible `unit`/`ucumUnit` pairs produce warnings without deleting either value. The host-neutral catalog registry validates result envelopes and entries before iteration, requires exact request-ID, registry-generated invocation-ID, document-version, kind, and protocol-version correlation, isolates malformed, mismatched, late, and throwing providers as structured issues, binds cancellation to invocation tokens, and canonicalizes duplicates and provenance before deterministic ranking independent of provider order or timing. Suggestions remain advisory and open-vocabulary and preserve exact emitted JSON. Bundled seeds contain 113 common UCUM entries and 179 ISO 4217 currency/fund/special-purpose entries.
+
+Review root cause and repair: capability activation used a non-normative Units token; catalog results were trusted before entry iteration; provider correlation fields were optional and a mismatch discarded every provider result; cancellation state was keyed only by caller request ID; duplicate selection depended on provider entry arrival order; and provider results did not carry or validate the registry-generated invocation ID, allowing a late result to cross into a newer invocation that reused every caller-controlled correlation value. The repair uses the normative token, validates complete provider result and custom-entry shapes, passes and requires exact invocation correlation on every provider request/result, reports provider-local issues without suppressing valid peer results, scopes cancellation to generated invocation IDs, and canonicalizes same-provider candidates before ranking and provenance aggregation. The crossover regression uses identical request ID, document version, catalog version, kind, and protocol version and verifies that the older invocation is rejected. Request and result envelopes remain JSON-round-trip serializable; no host I/O dependency or closed-vocabulary constraint was introduced.
 
 ## Current milestone
 
@@ -32,6 +34,11 @@ Implemented:
 - Exact source-key editing for escaped JSON key spellings.
 - Typed normalized projections for Core declaration forms, `$extends`, relation fields (`targettype`, `cardinality`, `scope`, `qualifiertype`), strict `$import`/`$importdefs` absolute-URI provenance, Units keywords, Validation structures (including type-aware numeric-string handling), conditional composition operators, and all 20 semantic annotation keywords.
 - `SetValidationKeywordCommand` with a generic keyword/value map for every Validation keyword, including duplicate/stale/incomplete guards and post-edit cross-key validation.
+- `SetUnitsKeywordCommand` plus `SetSymbolCommand`, `SetSymbolsCommand`, `SetUnitCommand`, `SetUcumUnitCommand`, and `SetCurrencyCommand` with capability, placement, value-shape, numeric-type, duplicate, stale, incomplete, and inverse guarantees.
+- Units inspection preserves authored values and exposes `preferredComputationalUnit` only when `ucumUnit` is authored; the specification defines no default value for the five Units keywords.
+- Host-neutral `CatalogRegistry`, provider manifest, request/result, suggestion, provenance, and structured provider-issue contracts for bundled, workspace, HTTPS, and host-contributed catalogs without registry-owned filesystem or network I/O.
+- Strict provider envelope/entry validation before iteration, provider-local malformed/mismatched/late/throwing isolation, deterministic exact/prefix/substring ranking, custom-value precedence, canonical duplicate provenance aggregation, exact JSON emission, invocation-scoped cancellation, catalog-version checks, and mandatory exact request-ID/registry-generated-invocation-ID/document-version/kind/protocol-version correlation.
+- Advisory bundled catalog data with 113 UCUM entries and 179 ISO 4217 entries; catalog membership never constrains authored values.
 - Validation projections distinguish authored `minContains` from its effective default of 1 when `contains` is present.
 - Exact Core numeric value-space checks for integer syntax, signedness, fixed-width ranges, string-backed 64-bit and 128-bit integers, decimal syntax, and normative floating ranges.
 - Ordered `identity` inspection and single-pass diagnostics for valid object and tuple schemas across root and nested schema traversal, excluding literal instance and annotation payloads.
@@ -63,20 +70,20 @@ Implemented:
 
 ## Validation
 
-Last validation on 2026-08-31 (Validation companion editing and diagnostics):
+Last validation on 2026-08-31 (Units companion authoring and host-neutral catalogs):
 
-- `npm test`: passed (5 files, 104 tests).
+- `npm test`: passed (7 files, 125 tests).
 - `npm run typecheck`: passed.
 - `npm run build`: passed (ESM, CJS, DTS).
 - `npm run coverage:generate`: passed; coverage statuses remain partial where editing or round-trip coverage is incomplete.
-- `npm run coverage:check`: passed with 86 feature records.
+- `npm run coverage:check`: passed with 87 feature records.
 - `git diff --check`: passed.
 
 ## Specification coverage
 
 The coverage gate verifies ledger integrity and explicit ownership; it does not claim feature completion.
 
-- Partial: 82
+- Partial: 83
 - Gap: 0
 - Pending: 0
 - Unsupported: 3
@@ -84,17 +91,17 @@ The coverage gate verifies ledger integrity and explicit ownership; it does not 
 
 Phase 0 ADRs:
 
-- Accepted: 3
-- Pending: 17
+- Accepted: 6
+- Pending: 14
 
 ## Next work
 
 Next steps for Phase 1:
 
-1. Decide whether imported declarations that reference `#` through `$importdefs` are invalid by specification or require a distinct root binding; the resolver currently reports them unresolved because `$importdefs` imports definitions only.
-2. Decide whether external documents with equivalent canonical `$id` and retrieval URIs may be supplied more than once; the resolver currently rejects multiple matches as ambiguous.
-3. File a Core specification issue for examples and wording that omit required `$schema`, `$id`, or `name`; ADR-002 and ADR-003 record the implementation policy without weakening grammar.
-4. Add a dedicated identity reorder command before claiming complete `relations.identity` editing coverage; runtime instance uniqueness belongs to instance validation rather than normalized schema inspection.
+1. Replace the bounded common-form RFC 5646 and UCUM validators with dedicated complete engines before claiming full diagnostics coverage.
+2. Resolve whether `currency` is intentionally permitted on non-numeric schemas: the normative bullet says any schema element, while the section introduction describes numeric schemas.
+3. Decide whether arbitrary `unit` and `ucumUnit` compatibility is editor-owned or delegated to a selected catalog/provider; the current implementation only warns for known built-in pairs.
+4. Decide whether imported declarations that reference `#` through `$importdefs` are invalid by specification or require a distinct root binding; the resolver currently reports them unresolved because `$importdefs` imports definitions only.
 5. Keep Phase 2 UI work blocked until the remaining Phase 1 command slices pass review.
 
 ## Repository state

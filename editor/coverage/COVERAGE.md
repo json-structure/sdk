@@ -1,6 +1,6 @@
 # Phase 0 specification coverage
 
-Generated from `coverage/ledger.json` (86 feature records).
+Generated from `coverage/ledger.json` (87 feature records).
 
 | ID | Spec | Feature | Owner | Status | Evidence |
 |---|---|---|---|---|---|
@@ -22,11 +22,12 @@ Generated from `coverage/ledger.json` (86 feature records).
 | alternate-names.altnames | Alternate Names | altnames | language-service | unsupported | editing: gap (coverage/gaps.json); inspection: gap (coverage/gaps.json); diagnostics: gap (coverage/gaps.json); roundtrip: gap (coverage/gaps.json); tests: gap (coverage/gaps.json) |
 | alternate-names.altenums | Alternate Names | altenums | language-service | unsupported | editing: gap (coverage/gaps.json); inspection: gap (coverage/gaps.json); diagnostics: gap (coverage/gaps.json); roundtrip: gap (coverage/gaps.json); tests: gap (coverage/gaps.json) |
 | alternate-names.descriptions | Alternate Names | localized descriptions | language-service | unsupported | editing: gap (coverage/gaps.json); inspection: gap (coverage/gaps.json); diagnostics: gap (coverage/gaps.json); roundtrip: gap (coverage/gaps.json); tests: gap (coverage/gaps.json) |
-| units.symbol | Units | symbol | catalogs | partial | editing: gap (coverage/gaps.json); inspection: complete (src/parser.ts); diagnostics: gap (coverage/gaps.json); roundtrip: gap (coverage/gaps.json); tests: partial (tests/phase1.test.ts) |
-| units.symbols | Units | symbols | catalogs | partial | editing: gap (coverage/gaps.json); inspection: complete (src/parser.ts); diagnostics: gap (coverage/gaps.json); roundtrip: gap (coverage/gaps.json); tests: partial (tests/phase1.test.ts) |
-| units.unit | Units | unit | catalogs | partial | editing: gap (coverage/gaps.json); inspection: complete (src/parser.ts); diagnostics: gap (coverage/gaps.json); roundtrip: gap (coverage/gaps.json); tests: partial (tests/phase1.test.ts) |
-| units.ucumUnit | Units | ucumUnit | catalogs | partial | editing: gap (coverage/gaps.json); inspection: complete (src/parser.ts); diagnostics: gap (coverage/gaps.json); roundtrip: gap (coverage/gaps.json); tests: partial (tests/phase1.test.ts) |
-| units.currency | Units | currency | catalogs | partial | editing: gap (coverage/gaps.json); inspection: complete (src/parser.ts); diagnostics: gap (coverage/gaps.json); roundtrip: gap (coverage/gaps.json); tests: partial (tests/phase1.test.ts) |
+| units.symbol | Units | symbol | catalogs | partial | editing: complete (src/commands.ts); inspection: complete (src/parser.ts); diagnostics: complete (src/units.ts); roundtrip: complete (tests/units.test.ts); tests: complete (tests/units.test.ts) |
+| units.symbols | Units | symbols | catalogs | partial | editing: complete (src/commands.ts); inspection: complete (src/parser.ts); diagnostics: partial (src/units.ts); roundtrip: complete (tests/units.test.ts); tests: complete (tests/units.test.ts) |
+| units.unit | Units | unit | catalogs | partial | editing: complete (src/commands.ts); inspection: complete (src/parser.ts); diagnostics: partial (src/units.ts); roundtrip: complete (tests/units.test.ts); tests: complete (tests/units.test.ts) |
+| units.ucumUnit | Units | ucumUnit | catalogs | partial | editing: complete (src/commands.ts); inspection: complete (src/parser.ts); diagnostics: partial (src/units.ts); roundtrip: complete (tests/units.test.ts); tests: complete (tests/units.test.ts) |
+| units.currency | Units | currency | catalogs | partial | editing: complete (src/commands.ts); inspection: complete (src/parser.ts); diagnostics: complete (src/units.ts); roundtrip: complete (tests/units.test.ts); tests: complete (tests/units.test.ts) |
+| units.catalog-protocol | Units | advisory catalog provider protocol | catalogs | partial | editing: partial (src/catalogs.ts); inspection: complete (src/catalogs.ts); diagnostics: complete (src/catalogs.ts); roundtrip: complete (tests/catalogs.test.ts); tests: complete (tests/catalogs.test.ts) |
 | relations.identity | Relations | identity | graph | partial | editing: partial (src/commands.ts); inspection: complete (src/parser.ts); diagnostics: complete (src/parser.ts); roundtrip: complete (tests/phase1.test.ts); tests: complete (tests/phase1.test.ts) |
 | relations.target | Relations | target | graph | partial | editing: gap (coverage/gaps.json); inspection: complete (src/parser.ts); diagnostics: complete (src/resolver.ts); roundtrip: gap (coverage/gaps.json); tests: complete (tests/resolver.test.ts) |
 | relations.cardinality | Relations | cardinality | graph | partial | editing: gap (coverage/gaps.json); inspection: complete (src/parser.ts); diagnostics: partial (src/parser.ts); roundtrip: gap (coverage/gaps.json); tests: partial (tests/phase1.test.ts) |

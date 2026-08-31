@@ -2,6 +2,7 @@ import type { DocumentVersion, TextEdit, TextRange } from './contracts.js';
 import type { DocumentSession } from './session.js';
 import { rangeFor } from './parser.js';
 import { effectiveValidationTypes, validationIssues, validationValueIsSchemaBacked, type ValidationKeyword, type ValidationKeywordMap } from './validation.js';
+import { unitsValueValid, type UnitsKeyword, type UnitsKeywordMap } from './units.js';
 
 export type SchemaTypeValue = string | Readonly<Record<string, unknown>> | readonly (string | Readonly<Record<string, unknown>>)[];
 export interface PropertySchema { readonly type: SchemaTypeValue; readonly [keyword: string]: unknown; }
@@ -681,6 +682,52 @@ export class SetValidationKeywordCommand<K extends ValidationKeyword> implements
       : setMemberCommandResult(context.session, this.targetPointer, this.keyword, this.value);
   }
 }
+
+export class SetUnitsKeywordCommand<K extends UnitsKeyword> implements EditorCommand {
+  constructor(readonly targetPointer: string, readonly keyword: K, readonly value: UnitsKeywordMap[K] | undefined) {}
+
+  canExecute({ session, documentVersion }: CommandContext): boolean {
+    if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid' || !session.capabilities.unitsActive) return false;
+    const declaration = editableDeclaration(session, this.targetPointer);
+    if (!declaration) return false;
+    const authored = Object.prototype.hasOwnProperty.call(declaration, this.keyword);
+    if (authored && !objectMemberContext(session, this.targetPointer, this.keyword)) return false;
+    if (this.value === undefined) return authored;
+    if (this.keyword === 'unit' || this.keyword === 'ucumUnit') {
+      const effectiveTypes = effectiveValidationTypes(pointerValue(session.value, ''), declaration);
+      if (!effectiveTypes.determinate || effectiveTypes.types.length !== 1 || !NUMERIC_TYPES_FOR_UNITS.has(effectiveTypes.types[0])) return false;
+    }
+    return unitsValueValid(pointerValue(session.value, ''), declaration, this.keyword, this.value);
+  }
+
+  execute(context: CommandContext): CommandResult {
+    if (!this.canExecute(context)) throw new Error('SetUnitsKeyword command preconditions are not satisfied.');
+    return this.value === undefined
+      ? removeMemberCommandResult(context.session, this.targetPointer, this.keyword)
+      : setMemberCommandResult(context.session, this.targetPointer, this.keyword, this.value);
+  }
+}
+
+export class SetSymbolCommand extends SetUnitsKeywordCommand<'symbol'> {
+  constructor(targetPointer: string, value: string | undefined) { super(targetPointer, 'symbol', value); }
+}
+export class SetSymbolsCommand extends SetUnitsKeywordCommand<'symbols'> {
+  constructor(targetPointer: string, value: Readonly<Record<string, string>> | undefined) { super(targetPointer, 'symbols', value); }
+}
+export class SetUnitCommand extends SetUnitsKeywordCommand<'unit'> {
+  constructor(targetPointer: string, value: string | undefined) { super(targetPointer, 'unit', value); }
+}
+export class SetUcumUnitCommand extends SetUnitsKeywordCommand<'ucumUnit'> {
+  constructor(targetPointer: string, value: string | undefined) { super(targetPointer, 'ucumUnit', value); }
+}
+export class SetCurrencyCommand extends SetUnitsKeywordCommand<'currency'> {
+  constructor(targetPointer: string, value: string | undefined) { super(targetPointer, 'currency', value); }
+}
+
+const NUMERIC_TYPES_FOR_UNITS = new Set([
+  'number', 'integer', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32',
+  'int64', 'uint64', 'int128', 'uint128', 'float8', 'float', 'double', 'decimal'
+]);
 
 export class SetBinaryAnnotationsCommand implements EditorCommand {
   constructor(readonly targetPointer: string, readonly keyword: BinaryAnnotationKeyword, readonly value: string | undefined) {}

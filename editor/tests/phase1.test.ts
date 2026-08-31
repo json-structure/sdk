@@ -59,7 +59,7 @@ describe('Phase 1 vertical slice', () => {
   it('projects typed definitions, imports, relation semantics, units, validation, composition, and semantic annotations', () => {
     const fixture = `{
   "$schema": "https://json-structure.org/meta/extended/v0/#",
-  "$uses": ["JSONSchemaValidation"],
+  "$uses": ["JSONSchemaValidation", "JSONStructureUnits"],
   "$import": "https://example.org/root.struct.json",
   "$importdefs": "https://example.org/common.struct.json",
   "definitions": {
@@ -159,7 +159,9 @@ describe('Phase 1 vertical slice', () => {
     expect(thing?.relations[0]?.cardinality).toBe('single');
     expect(thing?.relations[0]?.scope).toEqual(['#/items']);
     expect(thing?.relations[0]?.qualifierTypeRef).toBe('#/definitions/Meta');
-    expect(thing?.units).toEqual({ symbol: 'kg', symbols: { display: 'kg', 'lang:en': 'kilogram' }, unit: 'kilogram', ucumUnit: 'kg', currency: 'EUR' });
+    expect(thing?.units).toEqual({ symbol: 'kg', symbols: { display: 'kg', 'lang:en': 'kilogram' }, currency: 'EUR' });
+    expect(result.diagnostics.some((item) => item.location?.pointer === '/definitions/Thing/unit')).toBe(true);
+    expect(result.diagnostics.some((item) => item.location?.pointer === '/definitions/Thing/ucumUnit')).toBe(true);
     expect(thing?.validation?.minimum).toBeUndefined();
     expect(thing?.validation?.maximum).toBeUndefined();
     expect(thing?.validation?.exclusiveMinimum).toBeUndefined();
@@ -275,9 +277,11 @@ describe('Phase 1 vertical slice', () => {
       const schema = testCase.label.startsWith('validation.')
         ? 'https://json-structure.org/meta/validation/v0/#'
         : 'https://json-structure.org/schema/';
+      const uses = testCase.label.startsWith('units.') ? '"$uses":["JSONStructureUnits"],' : '';
+      const effectiveSchema = testCase.label.startsWith('units.') ? 'https://json-structure.org/meta/extended/v0/#' : schema;
       const fixture = testCase.scope === 'root'
-        ? `{"$schema":"${schema}",${testCase.body},"definitions":{"Thing":{"type":"object"}}}`
-        : `{"$schema":"${schema}","definitions":{"Thing":{"type":"object",${testCase.body}}}}`;
+        ? `{"$schema":"${effectiveSchema}",${uses}${testCase.body},"definitions":{"Thing":{"type":"object"}}}`
+        : `{"$schema":"${effectiveSchema}",${uses}"definitions":{"Thing":{"type":"object",${testCase.body}}}}`;
       const result = parseDocument(`memory://malformed-${testCase.label}`, fixture);
       expect(result.recovery).toBe('valid');
       const diagnostic = result.diagnostics.find((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === testCase.pointer);

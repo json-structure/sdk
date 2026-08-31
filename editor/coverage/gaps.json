@@ -3,6 +3,9 @@
     { "id": "gap.phase0-host-adapters", "owner": "hosts", "status": "explicit-gap", "reason": "Electron and VS Code adapters are later phases." },
     { "id": "gap.semantic-annotations.keywords", "owner": "language-service", "status": "explicit-gap", "reason": "Semantic annotation keywords remain pending and are individually tracked in the ledger." },
     { "id": "gap.validation.activation", "owner": "language-service", "status": "partial", "reason": "ADR-007 is accepted: the Validation meta-schema activates directly, while JSONSchemaValidation in $uses activates only under the Extended meta-schema. Broader companion capability coverage remains partial." },
-    { "id": "gap.validation.has-shape", "owner": "language-service", "status": "partial", "reason": "ADR-014 remains pending because the Validation draft requires an object-typed schema but gives a string-typed example." }
+    { "id": "gap.validation.has-shape", "owner": "language-service", "status": "partial", "reason": "ADR-014 remains pending because the Validation draft requires an object-typed schema but gives a string-typed example." },
+    { "id": "gap.units.language-tags", "owner": "language-service", "status": "partial", "reason": "The bounded milestone validates common RFC 5646 language-tag structure but does not ship the complete registry-aware RFC 5646 grammar." },
+    { "id": "gap.units.ucum", "owner": "language-service", "status": "partial", "reason": "The bounded milestone validates common case-sensitive UCUM expressions and substantial advisory seeds; full UCUM grammar and dimensional equivalence require a dedicated UCUM engine." },
+    { "id": "gap.units.compatibility", "owner": "language-service", "status": "partial", "reason": "Known unit/UCUM pairs produce non-destructive compatibility warnings; arbitrary dimensional equivalence remains indeterminate without a UCUM engine." }
   ]
 }

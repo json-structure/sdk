@@ -48,6 +48,7 @@ export interface UnitsProjection {
 	readonly unit?: string;
 	readonly ucumUnit?: string;
 	readonly currency?: string;
+	readonly preferredComputationalUnit?: EffectiveAnnotationValue<string>;
 }
 
 export interface ReferenceProjection {

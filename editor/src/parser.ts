@@ -15,6 +15,7 @@ import {
   type ValidationProjection
 } from './model.js';
 import { VALIDATION_KEYWORDS, effectiveValidationTypes, validationIssues, type ValidationKeyword } from './validation.js';
+import { UNITS_KEYWORDS, unitsIssues, type UnitsKeyword } from './units.js';
 import { resolveCapabilities } from './capabilities.js';
 
 interface ParsedValue { value: unknown; start: number; end: number; pointer: string; keyStart?: number; keyEnd?: number; }
@@ -336,11 +337,11 @@ function buildProjections(
   const imports: ImportProjection[] = [];
   const references: ReferenceProjection[] = [];
   const semanticPlacements: SemanticPlacementProjection[] = [];
-  const { validationActive } = resolveCapabilities(root);
+  const { validationActive, unitsActive } = resolveCapabilities(root);
   const semanticByPointer = new Map<string, SemanticAnnotationsProjection>();
   collectSemanticPlacements(root, '', uri, text, diagnostics, semanticPlacements, semanticByPointer);
-  collectDefinitions(root, root, '', uri, text, definitions, imports, diagnostics, semanticByPointer, nodes, validationActive);
-  collectSchemaProjections(root, uri, text, definitions, diagnostics, semanticByPointer, nodes, validationActive);
+  collectDefinitions(root, root, '', uri, text, definitions, imports, diagnostics, semanticByPointer, nodes, validationActive, unitsActive);
+  collectSchemaProjections(root, uri, text, definitions, diagnostics, semanticByPointer, nodes, validationActive, unitsActive);
   collectReferenceProjections(root, references);
   collectStructuralDiagnostics(root, root, '', uri, text, diagnostics, nodes);
   return { definitions, imports, references, semanticPlacements };
@@ -354,7 +355,8 @@ function collectSchemaProjections(
   diagnostics: Diagnostic[],
   semanticByPointer: ReadonlyMap<string, SemanticAnnotationsProjection>,
   nodes: readonly ModelNode[],
-  validationActive: boolean
+  validationActive: boolean,
+  unitsActive: boolean
 ): void {
   const visited = new Set(definitions.map((definition) => definition.pointer));
   const diagnosed = new Set<string>();
@@ -369,7 +371,7 @@ function collectSchemaProjections(
       const split = pointer.lastIndexOf('/');
       const name = pointer === '' ? '$root' : pointer.slice(split + 1).replace(/~1/g, '/').replace(/~0/g, '~');
       const namespacePointer = pointer === '' ? '' : pointer.slice(0, split);
-      const projection = definitionProjection(root, name, namespacePointer, pointer, candidate, false, uri, text, diagnostics, semanticByPointer.get(pointer), nodes, validationActive);
+      const projection = definitionProjection(root, name, namespacePointer, pointer, candidate, false, uri, text, diagnostics, semanticByPointer.get(pointer), nodes, validationActive, unitsActive);
       if (projection) definitions.push(projection);
       visited.add(pointer);
     }
@@ -434,7 +436,8 @@ function collectDefinitions(
   diagnostics: Diagnostic[],
   semanticByPointer: ReadonlyMap<string, SemanticAnnotationsProjection>,
   nodes: readonly ModelNode[],
-  validationActive: boolean
+  validationActive: boolean,
+  unitsActive: boolean
 ): void {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return;
   const object = value as Record<string, unknown>;
@@ -448,10 +451,10 @@ function collectDefinitions(
       if (name === '$import' || name === '$importdefs') continue;
       const encoded = pointerPart(name);
       const declarationPointer = `${pointer}/definitions/${encoded}`;
-      const projection = definitionProjection(root, name, pointer, declarationPointer, declaration, true, uri, text, diagnostics, semanticByPointer.get(declarationPointer), nodes, validationActive);
+      const projection = definitionProjection(root, name, pointer, declarationPointer, declaration, true, uri, text, diagnostics, semanticByPointer.get(declarationPointer), nodes, validationActive, unitsActive);
       if (projection) definitions.push(projection);
-      else collectNamespaceMembers(root, declaration, declarationPointer, uri, text, definitions, imports, diagnostics, semanticByPointer, nodes, validationActive);
-      collectDefinitions(root, declaration, declarationPointer, uri, text, definitions, imports, diagnostics, semanticByPointer, nodes, validationActive);
+      else collectNamespaceMembers(root, declaration, declarationPointer, uri, text, definitions, imports, diagnostics, semanticByPointer, nodes, validationActive, unitsActive);
+      collectDefinitions(root, declaration, declarationPointer, uri, text, definitions, imports, diagnostics, semanticByPointer, nodes, validationActive, unitsActive);
     }
   }
 }
@@ -467,16 +470,17 @@ function collectNamespaceMembers(
   diagnostics: Diagnostic[],
   semanticByPointer: ReadonlyMap<string, SemanticAnnotationsProjection>,
   nodes: readonly ModelNode[],
-  validationActive: boolean
+  validationActive: boolean,
+  unitsActive: boolean
 ): void {
   if (!isRecord(value) || !namespacePointer(root, pointer, nodes)) return;
   for (const [name, declaration] of Object.entries(value)) {
     if (name === '$import' || name === '$importdefs' || name === 'definitions') continue;
     const declarationPointer = `${pointer}/${pointerPart(name)}`;
-    const projection = definitionProjection(root, name, pointer, declarationPointer, declaration, true, uri, text, diagnostics, semanticByPointer.get(declarationPointer), nodes, validationActive);
+    const projection = definitionProjection(root, name, pointer, declarationPointer, declaration, true, uri, text, diagnostics, semanticByPointer.get(declarationPointer), nodes, validationActive, unitsActive);
     if (projection) definitions.push(projection);
-    else collectNamespaceMembers(root, declaration, declarationPointer, uri, text, definitions, imports, diagnostics, semanticByPointer, nodes, validationActive);
-    collectDefinitions(root, declaration, declarationPointer, uri, text, definitions, imports, diagnostics, semanticByPointer, nodes, validationActive);
+    else collectNamespaceMembers(root, declaration, declarationPointer, uri, text, definitions, imports, diagnostics, semanticByPointer, nodes, validationActive, unitsActive);
+    collectDefinitions(root, declaration, declarationPointer, uri, text, definitions, imports, diagnostics, semanticByPointer, nodes, validationActive, unitsActive);
   }
 }
 
@@ -492,7 +496,8 @@ function definitionProjection(
   diagnostics: Diagnostic[],
   semantic: SemanticAnnotationsProjection | undefined,
   nodes: readonly ModelNode[],
-  validationActive: boolean
+  validationActive: boolean,
+  unitsActive: boolean
 ): DefinitionProjection | undefined {
   if (!declaration || typeof declaration !== 'object' || Array.isArray(declaration)) return undefined;
   const value = declaration as Record<string, unknown>;
@@ -503,7 +508,7 @@ function definitionProjection(
     pushKeywordDiagnostic(diagnostics, uri, `${pointer}/type`, 'type must name a known Core type, be a local type reference, or be an array of those forms.', text);
   }
   const relationItems = relationProjections(pointer, value.relations, uri, text, diagnostics);
-  const units = unitsProjection(pointer, value, uri, text, diagnostics);
+  const units = unitsActive ? unitsProjection(root, pointer, value, uri, text, diagnostics, nodes) : undefined;
   const validation = validationActive ? validationProjection(root, pointer, value, uri, text, diagnostics, nodes) : undefined;
   const composition = compositionProjection(pointer, value, uri, text, diagnostics);
   const required = requiredProjection(pointer, value, type, uri, text, diagnostics);
@@ -980,19 +985,38 @@ function validPointerFragment(value: string): boolean {
 function isSchemaFragmentPointer(value: unknown): value is string { return typeof value === 'string' && (value === '#' || value.startsWith('#/')); }
 function validScope(value: unknown): boolean { return value === undefined || isSchemaFragmentPointer(value) || (Array.isArray(value) && value.length > 0 && value.every(isSchemaFragmentPointer)); }
 function unitsProjection(
+  root: Record<string, unknown>,
   pointer: string,
   value: Record<string, unknown>,
   uri: string,
   text: string,
-  diagnostics: Diagnostic[]
+  diagnostics: Diagnostic[],
+  nodes: readonly ModelNode[]
 ): UnitsProjection | undefined {
-  const symbol = asString(value.symbol, `${pointer}/symbol`, 'symbol', uri, text, diagnostics);
-  const symbols = parseStringMap(value.symbols, `${pointer}/symbols`, 'symbols', uri, text, diagnostics);
-  const unit = asString(value.unit, `${pointer}/unit`, 'unit', uri, text, diagnostics);
-  const ucumUnit = asString(value.ucumUnit, `${pointer}/ucumUnit`, 'ucumUnit', uri, text, diagnostics);
-  const currency = asString(value.currency, `${pointer}/currency`, 'currency', uri, text, diagnostics);
-  if (symbol === undefined && symbols === undefined && unit === undefined && ucumUnit === undefined && currency === undefined) return undefined;
-  return { symbol, symbols, unit, ucumUnit, currency };
+  const invalid = new Set<UnitsKeyword>();
+  for (const issue of unitsIssues(root, value)) {
+    if (issue.severity === 'error') invalid.add(issue.keyword);
+    diagnostics.push({
+      code: issue.severity === 'error' ? 'json.keyword-invalid' : 'units.incompatible-pair',
+      message: issue.message,
+      severity: issue.severity,
+      location: location(uri, `${pointer}/${pointerPart(issue.keyword)}`, keywordRange(text, `${pointer}/${pointerPart(issue.keyword)}`))
+    });
+  }
+  for (const keyword of UNITS_KEYWORDS) {
+    if (nodes.filter((node) => node.pointer === `${pointer}/${pointerPart(keyword)}`).length > 1) invalid.add(keyword);
+  }
+  const projection: UnitsProjection = {
+    ...(!invalid.has('symbol') && typeof value.symbol === 'string' ? { symbol: value.symbol } : {}),
+    ...(!invalid.has('symbols') && isRecord(value.symbols) ? { symbols: value.symbols as Record<string, string> } : {}),
+    ...(!invalid.has('unit') && typeof value.unit === 'string' ? { unit: value.unit } : {}),
+    ...(!invalid.has('ucumUnit') && typeof value.ucumUnit === 'string' ? {
+      ucumUnit: value.ucumUnit,
+      preferredComputationalUnit: { explicit: value.ucumUnit, effective: value.ucumUnit }
+    } : {}),
+    ...(!invalid.has('currency') && typeof value.currency === 'string' ? { currency: value.currency } : {})
+  };
+  return hasAnyKey(projection) ? projection : undefined;
 }
 
 function validationProjection(
@@ -1246,22 +1270,6 @@ function schemaObjectArray(
   const suffix = minimumItems > 0 ? ` with at least ${minimumItems} item${minimumItems === 1 ? '' : 's'}` : '';
   pushKeywordDiagnostic(diagnostics, uri, pointer, `${keyword} must be an array of objects${suffix}.`, text);
   return undefined;
-}
-
-function parseStringMap(
-  value: unknown,
-  pointer: string,
-  keyword: string,
-  uri: string,
-  text: string,
-  diagnostics: Diagnostic[]
-): Readonly<Record<string, string>> | undefined {
-  if (value === undefined) return undefined;
-  if (!isRecord(value) || !Object.values(value).every((entry) => typeof entry === 'string')) {
-    pushKeywordDiagnostic(diagnostics, uri, pointer, `${keyword} must be an object map with string values.`, text);
-    return undefined;
-  }
-  return value as Readonly<Record<string, string>>;
 }
 
 function schemaObjectMap(
