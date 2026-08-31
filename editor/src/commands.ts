@@ -1,5 +1,12 @@
 import type { DocumentVersion, TextEdit, TextRange } from './contracts.js';
 import type { DocumentSession } from './session.js';
+import {
+  compositionArrayValueValid,
+  compositionSchemaValueValid,
+  conditionalCompositionGroupValid,
+  type CompositionKeywordMap,
+  type ConditionalCompositionGroup
+} from './composition.js';
 import { rangeFor, semanticAnnotationCandidateValid, semanticAnnotationSetValid, type SemanticAnnotationKeyword, type SemanticAnnotationKeywordMap } from './parser.js';
 import { effectiveValidationTypes, validationIssues, validationValueIsSchemaBacked, type ValidationKeyword, type ValidationKeywordMap } from './validation.js';
 import { unitsValueValid, type UnitsKeyword, type UnitsKeywordMap } from './units.js';
@@ -145,6 +152,30 @@ function sourceOffsets(range: TextRange, message: string): { start: number; end:
   if (range.startOffset === undefined || range.endOffset === undefined) throw new Error(message);
   return { start: range.startOffset, end: range.endOffset };
 }
+
+function applyTextEdits(source: string, edits: readonly TextEdit[]): string {
+  return [...edits]
+    .sort((left, right) => sourceOffsets(right.range, 'Edit source range is unavailable.').start - sourceOffsets(left.range, 'Edit source range is unavailable.').start)
+    .reduce((text, edit) => {
+      const offsets = sourceOffsets(edit.range, 'Edit source range is unavailable.');
+      return text.slice(0, offsets.start) + edit.newText + text.slice(offsets.end);
+    }, source);
+}
+
+function minimalReplacementCommandResult(source: string, changed: string): CommandResult {
+  let start = 0;
+  while (start < source.length && start < changed.length && source[start] === changed[start]) start++;
+  let sourceEnd = source.length;
+  let changedEnd = changed.length;
+  while (sourceEnd > start && changedEnd > start && source[sourceEnd - 1] === changed[changedEnd - 1]) {
+    sourceEnd--;
+    changedEnd--;
+  }
+  return {
+    edits: [{ range: rangeFor(source, start, sourceEnd), newText: changed.slice(start, changedEnd) }],
+    inverseEdits: [{ range: rangeFor(changed, start, changedEnd), newText: source.slice(start, sourceEnd) }]
+  };
+}
 function chooseInsertRange(session: DocumentSession, pointer: string): TextRange | undefined {
   return objectRange(session, pointer);
 }
@@ -168,7 +199,18 @@ function isTypeDeclaration(value: unknown): value is Record<string, unknown> {
 
 function typeReferenceValue(value: unknown): string | undefined {
   return isObjectLike(value) && Object.keys(value).every((key) => key === '$ref' || key === 'description') &&
-    typeof value.$ref === 'string' && (value.description === undefined || typeof value.description === 'string') ? value.$ref : undefined;
+    typeof value.$ref === 'string' && validPointerFragment(value.$ref) &&
+    (value.description === undefined || typeof value.description === 'string') ? value.$ref : undefined;
+}
+
+function validPointerFragment(value: string): boolean {
+  if (!value.startsWith('#/')) return false;
+  try {
+    const decoded = decodeURIComponent(value.slice(1));
+    return decoded.startsWith('/') && !/~(?:[^01]|$)/.test(decoded);
+  } catch {
+    return false;
+  }
 }
 
 function validTypeValue(value: unknown): boolean {
@@ -484,10 +526,55 @@ function removeMemberCommandResult(session: DocumentSession, targetPointer: stri
   if (!targetRange) throw new Error('Target source range is unavailable.');
   return deleteMemberCommandResult(source, targetRange, member.keyRange, member.valueRange);
 }
+function removeMembersCommandResult(session: DocumentSession, targetPointer: string, keywords: readonly string[]): CommandResult {
+  const source = session.snapshot().text;
+  const targetRange = objectRange(session, targetPointer);
+  if (!targetRange) throw new Error('Target source range is unavailable.');
+  const targetOffsets = sourceOffsets(targetRange, 'Target source range is unavailable.');
+  const selected = new Set(keywords);
+  const members = (session.model?.nodes ?? [])
+    .filter((node) => node.keyRange && node.range && node.pointer.lastIndexOf('/') === targetPointer.length)
+    .map((node) => ({
+      name: decodePointerPart(node.pointer.slice(targetPointer.length + 1)),
+      keyStart: sourceOffsets(node.keyRange!, 'Member name source range is unavailable.').start,
+      valueEnd: sourceOffsets(node.range!, 'Member source range is unavailable.').end
+    }))
+    .sort((left, right) => left.keyStart - right.keyStart);
+  const edits: TextEdit[] = [];
+  for (let index = 0; index < members.length;) {
+    if (!selected.has(members[index].name)) { index++; continue; }
+    const first = index;
+    while (index + 1 < members.length && selected.has(members[index + 1].name)) index++;
+    const last = index;
+    const start = first > 0 ? members[first - 1].valueEnd : members[first].keyStart;
+    const end = first > 0
+      ? members[last].valueEnd
+      : last + 1 < members.length ? members[last + 1].keyStart : targetOffsets.end - 1;
+    edits.push({ range: rangeFor(source, start, end), newText: '' });
+    index++;
+  }
+  const ascending = edits.map((edit) => ({ edit, offsets: sourceOffsets(edit.range, 'Member source range is unavailable.') }))
+    .sort((left, right) => left.offsets.start - right.offsets.start);
+  let removed = 0;
+  const inverseEdits = ascending.map(({ offsets }) => {
+    const start = offsets.start - removed;
+    const oldText = source.slice(offsets.start, offsets.end);
+    removed += offsets.end - offsets.start;
+    return { range: rangeFor(source, start, start), newText: oldText };
+  });
+  return { edits, inverseEdits };
+}
 function editableDeclaration(session: DocumentSession, pointer: string): Record<string, unknown> | undefined {
   const value = pointerValue(session.value, pointer);
   return isObjectLike(value) && hasUniquePointerPath(session, pointer) && !hasDuplicatePointerDiagnostic(session, pointer) &&
     isTypeDeclaration(value) ? value : undefined;
+}
+function editableCompositionTarget(session: DocumentSession, pointer: string): Record<string, unknown> | undefined {
+  const value = pointerValue(session.value, pointer);
+  if (!isObjectLike(value) || !hasUniquePointerPath(session, pointer) || hasDuplicatePointerDiagnostic(session, pointer)) return undefined;
+  const compositionOwned = pointer === '' || /\/(?:allOf|anyOf|oneOf)\/\d+$/.test(pointer) || /\/(?:not|if|then|else)$/.test(pointer);
+  const projectedNonSchema = session.model?.projections.definitions.some((definition) => definition.pointer === pointer && definition.coreForm === 'composed');
+  return isTypeDeclaration(value) || compositionOwned || projectedNonSchema ? value : undefined;
 }
 function validSchemaValue(session: DocumentSession, value: unknown): boolean {
   const root = pointerValue(session.value, '');
@@ -519,6 +606,37 @@ function validSchemaValue(session: DocumentSession, value: unknown): boolean {
   };
   return validate(value);
 }
+function validCompositionSchemaValue(session: DocumentSession, value: unknown, visited = new Set<Record<string, unknown>>()): boolean {
+  if (!isObjectLike(value) || visited.has(value)) return false;
+  visited.add(value);
+  if (Object.prototype.hasOwnProperty.call(value, '$ref')) {
+    const reference = typeReferenceValue(value);
+    return reference !== undefined && Object.keys(value).every((key) => key === '$ref' || key === 'description') &&
+      referenceResolvesLocally(session, reference) && (!isLocalPointerRef(reference) || reusableDeclarationPointer(session, reference.slice(1)));
+  }
+  if (Object.prototype.hasOwnProperty.call(value, 'type') && !validTypeValue(value.type)) return false;
+  if (Object.prototype.hasOwnProperty.call(value, 'properties')) {
+    if (!isObjectLike(value.properties) || !Object.values(value.properties).every((schema) => validSchemaValue(session, schema))) return false;
+  }
+  for (const keyword of ['allOf', 'anyOf', 'oneOf'] as const) {
+    if (Object.prototype.hasOwnProperty.call(value, keyword) &&
+      !compositionArrayValueValid(value[keyword], (schema) => validCompositionSchemaValue(session, schema, visited))) return false;
+  }
+  if (Object.prototype.hasOwnProperty.call(value, 'not') && !validCompositionSchemaValue(session, value.not, visited)) return false;
+  const hasIf = Object.prototype.hasOwnProperty.call(value, 'if');
+  const hasThen = Object.prototype.hasOwnProperty.call(value, 'then');
+  const hasElse = Object.prototype.hasOwnProperty.call(value, 'else');
+  if ((hasThen || hasElse) && !hasIf || hasIf && !hasThen && !hasElse) return false;
+  for (const keyword of ['if', 'then', 'else'] as const) {
+    if (Object.prototype.hasOwnProperty.call(value, keyword) && !validCompositionSchemaValue(session, value[keyword], visited)) return false;
+  }
+  if (Object.keys(value).some((key) => VALIDATION_KEYWORDS_FOR_COMMANDS.has(key))) {
+    if (!session.capabilities.validationActive) return false;
+    const effectiveTypes = effectiveValidationTypes(pointerValue(session.value, ''), value);
+    if (effectiveTypes.determinate && effectiveTypes.types.length === 1 && validationIssues(value, effectiveTypes).length !== 0) return false;
+  }
+  return true;
+}
 const VALIDATION_KEYWORDS_FOR_COMMANDS = new Set<string>([
   'minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf', 'minLength', 'maxLength', 'pattern', 'format',
   'minItems', 'maxItems', 'uniqueItems', 'minContains', 'maxContains', 'minProperties', 'maxProperties', 'minEntries', 'maxEntries',
@@ -542,7 +660,7 @@ export class SetRequiredCommand implements EditorCommand {
 
   canExecute({ session, documentVersion }: CommandContext): boolean {
     if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid') return false;
-    const declaration = editableDeclaration(session, this.targetPointer);
+    const declaration = editableCompositionTarget(session, this.targetPointer);
     if (!declaration || declaration.type !== 'object' || !isObjectLike(declaration.properties)) return false;
     if (Object.prototype.hasOwnProperty.call(declaration, 'required') && !objectMemberContext(session, this.targetPointer, 'required')) return false;
     return this.required === undefined ? Object.prototype.hasOwnProperty.call(declaration, 'required') : validRequired(declaration.properties, this.required);
@@ -561,7 +679,7 @@ export class SetCollectionMemberCommand implements EditorCommand {
 
   canExecute({ session, documentVersion }: CommandContext): boolean {
     if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid') return false;
-    const declaration = editableDeclaration(session, this.targetPointer);
+    const declaration = editableCompositionTarget(session, this.targetPointer);
     if (!declaration || !['array', 'set', 'map'].includes(String(declaration.type)) || !validSchemaValue(session, this.schema)) return false;
     const keyword = declaration.type === 'map' ? 'values' : 'items';
     return !Object.prototype.hasOwnProperty.call(declaration, keyword) || objectMemberContext(session, this.targetPointer, keyword) !== undefined;
@@ -680,6 +798,83 @@ export class SetValidationKeywordCommand<K extends ValidationKeyword> implements
     return this.value === undefined
       ? removeMemberCommandResult(context.session, this.targetPointer, this.keyword)
       : setMemberCommandResult(context.session, this.targetPointer, this.keyword, this.value);
+  }
+}
+
+export class SetCompositionKeywordCommand<K extends keyof CompositionKeywordMap> implements EditorCommand {
+  constructor(readonly targetPointer: string, readonly keyword: K, readonly value: CompositionKeywordMap[K] | undefined) {}
+
+  canExecute({ session, documentVersion }: CommandContext): boolean {
+    if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid' || !session.capabilities.conditionalCompositionActive) return false;
+    const declaration = editableCompositionTarget(session, this.targetPointer);
+    if (!declaration) return false;
+    const authored = Object.prototype.hasOwnProperty.call(declaration, this.keyword);
+    if (authored && !objectMemberContext(session, this.targetPointer, this.keyword)) return false;
+    if (this.value === undefined) return authored;
+    return this.keyword === 'not'
+      ? compositionSchemaValueValid(this.value, (schema) => validCompositionSchemaValue(session, schema))
+      : compositionArrayValueValid(this.value, (schema) => validCompositionSchemaValue(session, schema));
+  }
+
+  execute(context: CommandContext): CommandResult {
+    if (!this.canExecute(context)) throw new Error('SetCompositionKeyword command preconditions are not satisfied.');
+    return this.value === undefined
+      ? removeMemberCommandResult(context.session, this.targetPointer, this.keyword)
+      : setMemberCommandResult(context.session, this.targetPointer, this.keyword, this.value);
+  }
+}
+
+export class SetAllOfCommand extends SetCompositionKeywordCommand<'allOf'> {
+  constructor(targetPointer: string, value: CompositionKeywordMap['allOf'] | undefined) { super(targetPointer, 'allOf', value); }
+}
+export class SetAnyOfCommand extends SetCompositionKeywordCommand<'anyOf'> {
+  constructor(targetPointer: string, value: CompositionKeywordMap['anyOf'] | undefined) { super(targetPointer, 'anyOf', value); }
+}
+export class SetOneOfCommand extends SetCompositionKeywordCommand<'oneOf'> {
+  constructor(targetPointer: string, value: CompositionKeywordMap['oneOf'] | undefined) { super(targetPointer, 'oneOf', value); }
+}
+export class SetNotCommand extends SetCompositionKeywordCommand<'not'> {
+  constructor(targetPointer: string, value: CompositionKeywordMap['not'] | undefined) { super(targetPointer, 'not', value); }
+}
+
+export class SetConditionalCompositionCommand implements EditorCommand {
+  constructor(readonly targetPointer: string, readonly value: ConditionalCompositionGroup | undefined) {}
+
+  canExecute({ session, documentVersion }: CommandContext): boolean {
+    if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid' || !session.capabilities.conditionalCompositionActive) return false;
+    const declaration = editableCompositionTarget(session, this.targetPointer);
+    if (!declaration) return false;
+    const authored = ['if', 'then', 'else'].filter((keyword) => Object.prototype.hasOwnProperty.call(declaration, keyword));
+    if (authored.some((keyword) => !objectMemberContext(session, this.targetPointer, keyword))) return false;
+    if (this.value === undefined) return authored.length > 0;
+    return conditionalCompositionGroupValid(this.value, (schema) => validCompositionSchemaValue(session, schema));
+  }
+
+  execute(context: CommandContext): CommandResult {
+    if (!this.canExecute(context)) throw new Error('SetConditionalComposition command preconditions are not satisfied.');
+    const session = context.session;
+    const declaration = editableCompositionTarget(session, this.targetPointer)!;
+    const authored = ['if', 'then', 'else'].filter((keyword) => Object.prototype.hasOwnProperty.call(declaration, keyword));
+    if (this.value !== undefined && authored.length === 0) {
+      const range = objectRange(session, this.targetPointer);
+      if (!range) throw new Error('Target source range is unavailable.');
+      return addMembersCommandResult(session.snapshot().text, range, { ...this.value });
+    }
+    if (this.value === undefined) return removeMembersCommandResult(session, this.targetPointer, authored);
+    const removed = removeMembersCommandResult(session, this.targetPointer, authored);
+    const source = session.snapshot().text;
+    const withoutConditional = applyTextEdits(source, removed.edits);
+    const originalRange = objectRange(session, this.targetPointer);
+    if (!originalRange) throw new Error('Target source range is unavailable.');
+    const originalOffsets = sourceOffsets(originalRange, 'Target source range is unavailable.');
+    const removedLength = removed.edits.reduce((total, edit) => {
+      const offsets = sourceOffsets(edit.range, 'Conditional branch source range is unavailable.');
+      return total + offsets.end - offsets.start;
+    }, 0);
+    const range = rangeFor(withoutConditional, originalOffsets.start, originalOffsets.end - removedLength);
+    const added = addMembersCommandResult(withoutConditional, range, { ...this.value });
+    const changed = applyTextEdits(withoutConditional, added.edits);
+    return minimalReplacementCommandResult(source, changed);
   }
 }
 

@@ -1,16 +1,16 @@
 # JSON Structure Editor Implementation Status
 
-Updated: 2026-08-31 (Phase 1 milestone: Semantic Annotations authoring and catalog integration, semantic validation blockers resolved)
+Updated: 2026-08-31 (Phase 1 milestone: Conditional Composition authoring)
 Branch: `editor-autopilot`
 Worktree: `C:\git\json-structure-sdk-editor`
 
-Blocking findings in this milestone: none. External ontology and catalog meaning remains explicitly indeterminate and advisory. Full RFC 5646 validation, full UCUM grammar/dimensional equivalence, and the draft's broad `currency` placement wording remain follow-up items from the prior milestone. ADR-014 (`has` schema shape) also remains unresolved.
+Blocking findings in this milestone: none. The final direct-reference composition blocker is resolved: every structurally owned branch `$ref` is validated through the shared reference form and JSON Pointer fragment grammar regardless of its authored value type, with one exact `$ref` diagnostic and matching command rejection for malformed forms. Runtime composition evaluation, global unsatisfiable-composition analysis, and executable depth budgets remain explicitly pending under ADR-019. Full RFC 5646 validation, full UCUM grammar/dimensional equivalence, the draft's broad `currency` placement wording, and ADR-014 (`has` schema shape) remain prior follow-up items.
 
-Milestone summary: all 20 Semantic Annotations keywords now have typed add/replace/remove commands, activation-aware and schema-owned diagnostics, sparse authored/effective inspection, exact JSON previews, duplicate/stale/incomplete guards, and direct byte-identical inverse edits. Semantic Annotations activates directly through its meta-schema or through normative `JSONStructureSemanticAnnotations` in `$uses` only under the Extended meta-schema. Parser and command validation enforce normative placement and value shapes; effective locally resolved Core-type compatibility for temporal roles, status, coded values, and measurement conditioning; statistic, accumulation, support-period, and temporal-reference sibling rules; locally decidable member bindings; singleton temporal roles; concept-reference uniqueness, known class/property kind compatibility and placement; positive Core temporal intervals; and tensor/frame rank and symmetry constraints. Union and external type compatibility remains conservative and indeterminate. Remote ontology, vocabulary, reference-system, and catalog meaning is never inferred or treated as validation authority.
+Milestone summary: Conditional Composition now has typed add/replace/remove commands for `allOf`, `anyOf`, `oneOf`, and `not`, plus atomic `if`/`then`/`else` mutation across every valid branch-key set. Commands enforce capability activation, source uniqueness, stale/incomplete guards, branch shape and dependency rules, schema validity, exact JSON emission, one coordinated minimal edit for conditional replacement, and direct byte-identical inverse edits. The Validation meta-schema activates composition directly; the Extended meta-schema activates it only through exact `JSONStructureConditionalComposition` in `$uses`. The stale `JSONSchemaConditionalComposition` spelling is not accepted.
 
-Semantic annotation removal now constructs and validates the complete post-removal candidate annotation set before `canExecute`, so dependent roles cannot be left invalid when temporal reference systems or fixed-state concepts are removed. Effective type resolution now resolves every declared `$extends` base before accepting or confirming an authored type and treats the declaration as indeterminate when any base is unresolved, external, cyclic, ambiguous, or incompatible; parser diagnostics remain conservative and type-dependent commands require determinate compatibility. Regression coverage includes authored `type: number` declarations with local plus external or missing bases and retains the fully local determinate control case.
+Parser projections expose sparse authored/effective inspection and exact JSON previews. Recursive validation recognizes untyped constraint objects at structurally owned root, `definitions` namespace, and Core schema-child positions while excluding defaults, examples, semantic annotations, relations, and unknown payloads. Untyped composition targets are inspectable and editable but remain non-reusable; Core type requirements for reusable and property declarations are unchanged. Inactive composition subtrees remain opaque to schema, semantic, structural, and reference traversal, with exact activation diagnostics at authored composition keywords.
 
-Catalog integration extends the existing host-neutral registry instead of creating a semantic-specific path. Catalog entries now carry serializable JSON values, so structured annotation values participate in the same deterministic exact/prefix/substring ranking, custom-value precedence, exact JSON emission, provider isolation, provenance aggregation, cancellation, and correlation guarantees as string values. The bundled Semantic Annotations provider contains exactly 73 unique advisory entries across 19 stable catalog-backed families and is deliberately marked untrusted. `supportPeriod` has no external-vocabulary family. Catalog membership never constrains authored values.
+Reference discovery accepts direct `{ "$ref": ... }` only in active composition branch positions, inventories each direct or typed branch reference once, resolves local and imported references through the existing host-neutral resolver, and excludes `$ref`-shaped literal defaults and payloads. The focused matrix covers canonical activation and alias rejection, structural ownership boundaries, positive and negative branch shapes, preserved Core direct-ref policy, incomplete/stale/duplicate/escaped paths, all conditional branch-key transitions, direct inverses, nested validation, inspection, imported references, and payload/cycle false-positive controls.
 
 ## Current milestone
 
@@ -35,6 +35,10 @@ Implemented:
 - Rejection of dangling locally-decidable relation pointers (targettype, qualifiertype, scope), relation-target identity absences, and dual import-keyword collisions at one namespace.
 - Exact source-key editing for escaped JSON key spellings.
 - Typed normalized projections for Core declaration forms, `$extends`, relation fields (`targettype`, `cardinality`, `scope`, `qualifiertype`), strict `$import`/`$importdefs` absolute-URI provenance, Units keywords, Validation structures (including type-aware numeric-string handling), conditional composition operators, and all 20 semantic annotation keywords.
+- `SetCompositionKeywordCommand` plus typed `SetAllOfCommand`, `SetAnyOfCommand`, `SetOneOfCommand`, and `SetNotCommand` wrappers with activation, placement, recursive schema, duplicate, stale, incomplete, and inverse guarantees.
+- Atomic `SetConditionalCompositionCommand` authoring, replacement, and removal for every valid `if`/`then`/`else` branch-key set without transient invalid states.
+- Conditional Composition inspection preserves sparse authored values, reports identical effective values because the companion defines no defaults, and emits exact JSON previews.
+- Capability-aware structural traversal through active composition targets and branches for Core, Validation, Semantic Annotations, structure, and references; literal payload fields remain opaque and inactive branches are preserved as extension data.
 - `SetValidationKeywordCommand` with a generic keyword/value map for every Validation keyword, including duplicate/stale/incomplete guards and post-edit cross-key validation.
 - `SetUnitsKeywordCommand` plus `SetSymbolCommand`, `SetSymbolsCommand`, `SetUnitCommand`, `SetUcumUnitCommand`, and `SetCurrencyCommand` with capability, placement, value-shape, numeric-type, duplicate, stale, incomplete, and inverse guarantees.
 - `SetSemanticAnnotationCommand` plus typed wrappers for all 20 Semantic Annotations keywords, with activation, placement, value-shape, sibling, local binding, concept consistency, rank/symmetry, duplicate, stale, incomplete, and inverse guarantees.
@@ -46,7 +50,7 @@ Implemented:
 - Validation projections distinguish authored `minContains` from its effective default of 1 when `contains` is present.
 - Exact Core numeric value-space checks for integer syntax, signedness, fixed-width ranges, string-backed 64-bit and 128-bit integers, decimal syntax, and normative floating ranges.
 - Ordered `identity` inspection and single-pass diagnostics for valid object and tuple schemas across root and nested schema traversal, excluding literal instance and annotation payloads.
-- Explicit reference inventory including `$root`, `$ref`, `$extends`, and normative `type: {"$ref":"#..."}` declarations.
+- Explicit reference inventory including `$root`, `$ref`, `$extends`, normative `type: {"$ref":"#..."}` declarations, and branch-only direct composition references.
 - Host-neutral `resolveReferences` and immutable `resolveDocumentReferences` APIs over explicit normalized-document/snapshot inputs, with no host callbacks or I/O.
 - Effective local/imported namespace resolution for Core and Relations references, including explicit reusable-declaration classification, recursive import-chain prefixing, provenance, RFC 6901 escaping, URI-fragment decoding, tri-state outcomes, duplicate/stale input handling, imported collision attribution, and inheritance/import cycle detection.
 - Recursive self and mutual type references remain resolved; cyclic `$extends` edges, including array members, are unresolved without rejecting unrelated inheritance edges.
@@ -74,14 +78,15 @@ Implemented:
 
 ## Validation
 
-Last validation on 2026-08-31 (final semantic authored-type `$extends` blocker resolved):
+Last validation on 2026-08-31 (Conditional Composition authoring milestone):
 
-- `npm test`: passed (8 files, 142 tests).
+- `npm test`: passed (9 files, 153 tests).
 - `npm run typecheck`: passed.
 - `npm run build`: passed (ESM, CJS, DTS).
-- `npm run coverage:generate`: passed; coverage statuses remain partial where editing or round-trip coverage is incomplete.
+- `npm run coverage:generate`: passed; composition records remain partial because runtime evaluation and advanced analysis are not implemented.
 - `npm run coverage:check`: passed with 87 feature records.
 - `git diff --check`: passed.
+- Scope check: passed; all changed paths are under `editor/`.
 
 ## Specification coverage
 
@@ -102,11 +107,11 @@ Phase 0 ADRs:
 
 Next steps for Phase 1:
 
-1. Add host-driven external ontology and catalog resolution without converting unavailable, stale, or untrusted meaning into local validation failures.
-2. Replace the bounded common-form RFC 5646 and UCUM validators with dedicated complete engines before claiming full Units diagnostics coverage.
-3. Resolve whether `currency` is intentionally permitted on non-numeric schemas: the normative bullet says any schema element, while the section introduction describes numeric schemas.
-4. Decide whether arbitrary `unit` and `ucumUnit` compatibility is editor-owned or delegated to a selected catalog/provider; the current implementation only warns for known built-in pairs.
-5. Decide whether imported declarations that reference `#` through `$importdefs` are invalid by specification or require a distinct root binding; the resolver currently reports them unresolved because `$importdefs` imports definitions only.
+1. Define runtime instance-evaluation ownership and semantics for active composition operators.
+2. Specify whether and how the editor detects globally unsatisfiable `allOf` combinations.
+3. Establish executable composition-depth budgets before adding unbounded evaluator or analysis traversal.
+4. Add host-driven external ontology and catalog resolution without converting unavailable, stale, or untrusted meaning into local validation failures.
+5. Replace the bounded common-form RFC 5646 and UCUM validators with dedicated complete engines before claiming full Units diagnostics coverage.
 6. Keep Phase 2 UI work blocked until the remaining Phase 1 command slices pass review.
 
 ## Repository state

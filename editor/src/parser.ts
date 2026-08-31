@@ -197,7 +197,7 @@ function collectCoreDeclarationDiagnostics(
   diagnostics: Diagnostic[],
   nodes: readonly ModelNode[]
 ): void {
-  const { validationActive } = resolveCapabilities(root);
+  const { validationActive, conditionalCompositionActive } = resolveCapabilities(root);
   const diagnoseName = (pointer: string, kind: 'type' | 'namespace' | 'property', name: string): void => {
     if (IDENTIFIER.test(name)) return;
     const node = nodes.find((candidate) => candidate.pointer === pointer);
@@ -219,26 +219,44 @@ function collectCoreDeclarationDiagnostics(
   const requireHeader = (keyword: '$schema' | '$id' | 'name', valid: (value: unknown) => boolean, message: string): void => {
     if (!Object.prototype.hasOwnProperty.call(root, keyword) || !valid(root[keyword])) diagnose(`/${keyword}`, message);
   };
-  const validateSchema = (schema: Record<string, unknown>, pointer: string): void => {
-    if (typeof schema.$ref === 'string' && !Object.prototype.hasOwnProperty.call(schema, 'type')) {
+  const validateSchema = (schema: Record<string, unknown>, pointer: string, compositionBranch = false): void => {
+    if (Object.prototype.hasOwnProperty.call(schema, '$ref') && !Object.prototype.hasOwnProperty.call(schema, 'type')) {
+      if (compositionBranch) {
+        const reference = typeReference(schema);
+        if (reference === undefined || !validPointerFragment(reference)) diagnose(`${pointer}/$ref`, 'A direct composition branch $ref must be a valid JSON Pointer URI fragment and may only have an optional string description.');
+        return;
+      }
       diagnose(pointer, 'A schema declaration must use type: {"$ref": ...}; a direct $ref object is not a schema declaration.');
       return;
     }
-    if (!Object.prototype.hasOwnProperty.call(schema, 'type')) {
+    const hasType = Object.prototype.hasOwnProperty.call(schema, 'type');
+    if (!hasType && !compositionBranch) {
       diagnose(pointer, 'A schema declaration must contain type.');
       return;
     }
-    if (!validCoreTypeValue(schema.type) && coreForm(schema) === 'unknown') {
+    if (hasType && !validCoreTypeValue(schema.type) && coreForm(schema) === 'unknown') {
       diagnose(`${pointer}/type`, 'type must name a known Core type, be a local type reference, or be a non-empty array of those forms.');
     }
     const propertiesPresent = Object.prototype.hasOwnProperty.call(schema, 'properties');
-    const propertiesApplicable = schema.type === 'object' || schema.type === 'tuple';
+    const propertiesApplicable = schema.type === 'object' || schema.type === 'tuple' || compositionBranch && !hasType;
     if (schema.type === 'object' && !propertiesPresent) {
       diagnose(pointer, 'An object declaration must contain properties.');
     }
     if (propertiesPresent && !propertiesApplicable) {
       diagnose(`${pointer}/properties`, 'properties is permitted only on object and tuple declarations.');
       return;
+    }
+    if (conditionalCompositionActive) {
+      for (const keyword of ['allOf', 'anyOf', 'oneOf'] as const) {
+        if (Array.isArray(schema[keyword])) {
+          schema[keyword].forEach((branch, index) => {
+            if (isRecord(branch)) validateSchema(branch, `${pointer}/${keyword}/${index}`, true);
+          });
+        }
+      }
+      for (const keyword of ['not', 'if', 'then', 'else'] as const) {
+        if (isRecord(schema[keyword])) validateSchema(schema[keyword], `${pointer}/${keyword}`, true);
+      }
     }
     if (!propertiesPresent) return;
     if (!isRecord(schema.properties)) {
@@ -273,7 +291,9 @@ function collectCoreDeclarationDiagnostics(
         COMPOSITION_KEYWORDS.some((keyword) => Object.prototype.hasOwnProperty.call(member, keyword));
       if (declaration) {
         diagnoseName(memberPointer, 'type', name);
-        validateSchema(member, memberPointer);
+        const nonSchemaComposition = conditionalCompositionActive && !Object.prototype.hasOwnProperty.call(member, 'type') &&
+          COMPOSITION_KEYWORDS.some((keyword) => Object.prototype.hasOwnProperty.call(member, keyword));
+        validateSchema(member, memberPointer, nonSchemaComposition);
       } else validateNamespace(member, memberPointer);
     }
   };
@@ -294,6 +314,7 @@ function collectCoreDeclarationDiagnostics(
     else validateNamespace(root.definitions, '/definitions');
   }
   if (Object.prototype.hasOwnProperty.call(root, 'type')) validateSchema(root, '');
+  else if (conditionalCompositionActive && COMPOSITION_KEYWORDS.some((keyword) => Object.prototype.hasOwnProperty.call(root, keyword))) validateSchema(root, '', true);
 
   const visitSchema = (schema: unknown, pointer: string): void => {
     if (!isRecord(schema)) return;
@@ -303,8 +324,11 @@ function collectCoreDeclarationDiagnostics(
       for (const [name, property] of Object.entries(schema.properties)) visitSchema(property, `${pointer}/properties/${pointerPart(name)}`);
     }
     if (isRecord(schema.additionalProperties)) visitSchema(schema.additionalProperties, `${pointer}/additionalProperties`);
-    for (const keyword of ['items', 'values', 'not', 'if', 'then', 'else'] as const) {
+    for (const keyword of ['items', 'values'] as const) {
       visitSchema(schema[keyword], `${pointer}/${keyword}`);
+    }
+    if (conditionalCompositionActive) {
+      for (const keyword of ['not', 'if', 'then', 'else'] as const) visitSchema(schema[keyword], `${pointer}/${keyword}`);
     }
     if (validationActive) {
       for (const keyword of ['contains', 'propertyNames', 'keyNames', 'has'] as const) visitSchema(schema[keyword], `${pointer}/${keyword}`);
@@ -315,8 +339,10 @@ function collectCoreDeclarationDiagnostics(
     for (const keyword of ['choices'] as const) {
       if (isRecord(schema[keyword])) for (const [name, value] of Object.entries(schema[keyword])) visitSchema(value, `${pointer}/${keyword}/${pointerPart(name)}`);
     }
-    for (const keyword of ['allOf', 'anyOf', 'oneOf'] as const) {
-      if (Array.isArray(schema[keyword])) schema[keyword].forEach((value, index) => visitSchema(value, `${pointer}/${keyword}/${index}`));
+    if (conditionalCompositionActive) {
+      for (const keyword of ['allOf', 'anyOf', 'oneOf'] as const) {
+        if (Array.isArray(schema[keyword])) schema[keyword].forEach((value, index) => visitSchema(value, `${pointer}/${keyword}/${index}`));
+      }
     }
   };
   visitSchema(root, '');
@@ -338,13 +364,14 @@ function buildProjections(
   const imports: ImportProjection[] = [];
   const references: ReferenceProjection[] = [];
   const semanticPlacements: SemanticPlacementProjection[] = [];
-  const { validationActive, unitsActive, semanticAnnotationsActive } = resolveCapabilities(root);
+  const { validationActive, conditionalCompositionActive, unitsActive, semanticAnnotationsActive } = resolveCapabilities(root);
   const semanticByPointer = new Map<string, SemanticAnnotationsProjection>();
-  collectSemanticPlacements(root, '', uri, text, diagnostics, semanticPlacements, semanticByPointer, semanticAnnotationsActive);
-  collectDefinitions(root, root, '', uri, text, definitions, imports, diagnostics, semanticByPointer, nodes, validationActive, unitsActive);
-  collectSchemaProjections(root, uri, text, definitions, diagnostics, semanticByPointer, nodes, validationActive, unitsActive);
-  collectReferenceProjections(root, references);
-  collectStructuralDiagnostics(root, root, '', uri, text, diagnostics, nodes);
+  collectCompositionDiagnostics(root, '', uri, text, diagnostics, nodes, conditionalCompositionActive);
+  collectSemanticPlacements(root, '', uri, text, diagnostics, semanticPlacements, semanticByPointer, semanticAnnotationsActive, conditionalCompositionActive);
+  collectDefinitions(root, root, '', uri, text, definitions, imports, diagnostics, semanticByPointer, nodes, validationActive, conditionalCompositionActive, unitsActive);
+  collectSchemaProjections(root, uri, text, definitions, diagnostics, semanticByPointer, nodes, validationActive, conditionalCompositionActive, unitsActive);
+  collectReferenceProjections(root, references, conditionalCompositionActive);
+  collectStructuralDiagnostics(root, root, '', uri, text, diagnostics, nodes, conditionalCompositionActive);
   return { definitions, imports, references, semanticPlacements };
 }
 
@@ -357,6 +384,7 @@ function collectSchemaProjections(
   semanticByPointer: ReadonlyMap<string, SemanticAnnotationsProjection>,
   nodes: readonly ModelNode[],
   validationActive: boolean,
+  conditionalCompositionActive: boolean,
   unitsActive: boolean
 ): void {
   const visited = new Set(definitions.map((definition) => definition.pointer));
@@ -372,7 +400,7 @@ function collectSchemaProjections(
       const split = pointer.lastIndexOf('/');
       const name = pointer === '' ? '$root' : pointer.slice(split + 1).replace(/~1/g, '/').replace(/~0/g, '~');
       const namespacePointer = pointer === '' ? '' : pointer.slice(0, split);
-      const projection = definitionProjection(root, name, namespacePointer, pointer, candidate, false, uri, text, diagnostics, semanticByPointer.get(pointer), nodes, validationActive, unitsActive);
+      const projection = definitionProjection(root, name, namespacePointer, pointer, candidate, false, uri, text, diagnostics, semanticByPointer.get(pointer), nodes, validationActive, conditionalCompositionActive, unitsActive);
       if (projection) definitions.push(projection);
       visited.add(pointer);
     }
@@ -391,13 +419,15 @@ function collectSchemaProjections(
       visitSchemaMap(candidate.patternProperties, `${pointer}/patternProperties`);
       visitSchemaMap(candidate.patternKeys, `${pointer}/patternKeys`);
     }
-    visitSchemaArray(candidate.allOf, `${pointer}/allOf`);
-    visitSchemaArray(candidate.anyOf, `${pointer}/anyOf`);
-    visitSchemaArray(candidate.oneOf, `${pointer}/oneOf`);
-    visitSchemaValue(candidate.not, `${pointer}/not`);
-    visitSchemaValue(candidate.if, `${pointer}/if`);
-    visitSchemaValue(candidate.then, `${pointer}/then`);
-    visitSchemaValue(candidate.else, `${pointer}/else`);
+    if (conditionalCompositionActive) {
+      visitSchemaArray(candidate.allOf, `${pointer}/allOf`);
+      visitSchemaArray(candidate.anyOf, `${pointer}/anyOf`);
+      visitSchemaArray(candidate.oneOf, `${pointer}/oneOf`);
+      visitSchemaValue(candidate.not, `${pointer}/not`);
+      visitSchemaValue(candidate.if, `${pointer}/if`);
+      visitSchemaValue(candidate.then, `${pointer}/then`);
+      visitSchemaValue(candidate.else, `${pointer}/else`);
+    }
     if (Array.isArray(candidate.type)) visitSchemaArray(candidate.type, `${pointer}/type`);
   };
 
@@ -438,6 +468,7 @@ function collectDefinitions(
   semanticByPointer: ReadonlyMap<string, SemanticAnnotationsProjection>,
   nodes: readonly ModelNode[],
   validationActive: boolean,
+  conditionalCompositionActive: boolean,
   unitsActive: boolean
 ): void {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return;
@@ -452,10 +483,10 @@ function collectDefinitions(
       if (name === '$import' || name === '$importdefs') continue;
       const encoded = pointerPart(name);
       const declarationPointer = `${pointer}/definitions/${encoded}`;
-      const projection = definitionProjection(root, name, pointer, declarationPointer, declaration, true, uri, text, diagnostics, semanticByPointer.get(declarationPointer), nodes, validationActive, unitsActive);
+      const projection = definitionProjection(root, name, pointer, declarationPointer, declaration, true, uri, text, diagnostics, semanticByPointer.get(declarationPointer), nodes, validationActive, conditionalCompositionActive, unitsActive);
       if (projection) definitions.push(projection);
-      else collectNamespaceMembers(root, declaration, declarationPointer, uri, text, definitions, imports, diagnostics, semanticByPointer, nodes, validationActive, unitsActive);
-      collectDefinitions(root, declaration, declarationPointer, uri, text, definitions, imports, diagnostics, semanticByPointer, nodes, validationActive, unitsActive);
+      else collectNamespaceMembers(root, declaration, declarationPointer, uri, text, definitions, imports, diagnostics, semanticByPointer, nodes, validationActive, conditionalCompositionActive, unitsActive);
+      collectDefinitions(root, declaration, declarationPointer, uri, text, definitions, imports, diagnostics, semanticByPointer, nodes, validationActive, conditionalCompositionActive, unitsActive);
     }
   }
 }
@@ -472,16 +503,17 @@ function collectNamespaceMembers(
   semanticByPointer: ReadonlyMap<string, SemanticAnnotationsProjection>,
   nodes: readonly ModelNode[],
   validationActive: boolean,
+  conditionalCompositionActive: boolean,
   unitsActive: boolean
 ): void {
   if (!isRecord(value) || !namespacePointer(root, pointer, nodes)) return;
   for (const [name, declaration] of Object.entries(value)) {
     if (name === '$import' || name === '$importdefs' || name === 'definitions') continue;
     const declarationPointer = `${pointer}/${pointerPart(name)}`;
-    const projection = definitionProjection(root, name, pointer, declarationPointer, declaration, true, uri, text, diagnostics, semanticByPointer.get(declarationPointer), nodes, validationActive, unitsActive);
+    const projection = definitionProjection(root, name, pointer, declarationPointer, declaration, true, uri, text, diagnostics, semanticByPointer.get(declarationPointer), nodes, validationActive, conditionalCompositionActive, unitsActive);
     if (projection) definitions.push(projection);
-    else collectNamespaceMembers(root, declaration, declarationPointer, uri, text, definitions, imports, diagnostics, semanticByPointer, nodes, validationActive, unitsActive);
-    collectDefinitions(root, declaration, declarationPointer, uri, text, definitions, imports, diagnostics, semanticByPointer, nodes, validationActive, unitsActive);
+    else collectNamespaceMembers(root, declaration, declarationPointer, uri, text, definitions, imports, diagnostics, semanticByPointer, nodes, validationActive, conditionalCompositionActive, unitsActive);
+    collectDefinitions(root, declaration, declarationPointer, uri, text, definitions, imports, diagnostics, semanticByPointer, nodes, validationActive, conditionalCompositionActive, unitsActive);
   }
 }
 
@@ -498,11 +530,12 @@ function definitionProjection(
   semantic: SemanticAnnotationsProjection | undefined,
   nodes: readonly ModelNode[],
   validationActive: boolean,
+  conditionalCompositionActive: boolean,
   unitsActive: boolean
 ): DefinitionProjection | undefined {
   if (!declaration || typeof declaration !== 'object' || Array.isArray(declaration)) return undefined;
   const value = declaration as Record<string, unknown>;
-  const declarationCore = coreForm(value);
+  const declarationCore = coreForm(value, conditionalCompositionActive);
   if (declarationCore === 'unknown') return undefined;
   const type = declarationType(value);
   if (value.type !== undefined && !validCoreTypeValue(value.type)) {
@@ -511,7 +544,7 @@ function definitionProjection(
   const relationItems = relationProjections(pointer, value.relations, uri, text, diagnostics);
   const units = unitsActive ? unitsProjection(root, pointer, value, uri, text, diagnostics, nodes) : undefined;
   const validation = validationActive ? validationProjection(root, pointer, value, uri, text, diagnostics, nodes) : undefined;
-  const composition = compositionProjection(pointer, value, uri, text, diagnostics);
+  const composition = conditionalCompositionActive ? compositionProjection(pointer, value, uri, text, diagnostics) : undefined;
   const required = requiredProjection(pointer, value, type, uri, text, diagnostics);
   const properties = schemaObjectMap(value.properties, `${pointer}/properties`, 'properties', uri, text, diagnostics);
   const identity = identityProjection(pointer, value, type, properties, nodes);
@@ -524,7 +557,7 @@ function definitionProjection(
     pointer,
     name,
     namespacePointer,
-    reusable,
+    reusable: reusable && declarationCore !== 'composed',
     type,
     coreForm: declarationCore,
     extends: extendsProjection(value.$extends),
@@ -640,16 +673,18 @@ function collectStructuralDiagnostics(
   uri: string,
   text: string,
   diagnostics: Diagnostic[],
-  nodes: readonly ModelNode[]
+  nodes: readonly ModelNode[],
+  conditionalCompositionActive: boolean
 ): void {
   if (Array.isArray(value)) {
-    value.forEach((entry, index) => collectStructuralDiagnostics(root, entry, `${pointer}/${index}`, uri, text, diagnostics, nodes));
+    value.forEach((entry, index) => collectStructuralDiagnostics(root, entry, `${pointer}/${index}`, uri, text, diagnostics, nodes, conditionalCompositionActive));
     return;
   }
   if (!isRecord(value)) return;
   importPlacementDiagnostics(root, pointer, value, uri, text, diagnostics, nodes);
   for (const [key, entry] of Object.entries(value)) {
-    collectStructuralDiagnostics(root, entry, `${pointer}/${pointerPart(key)}`, uri, text, diagnostics, nodes);
+    if (!conditionalCompositionActive && COMPOSITION_KEYWORDS.includes(key as typeof COMPOSITION_KEYWORDS[number])) continue;
+    collectStructuralDiagnostics(root, entry, `${pointer}/${pointerPart(key)}`, uri, text, diagnostics, nodes, conditionalCompositionActive);
   }
 }
 
@@ -1056,7 +1091,7 @@ function compositionProjection(
   text: string,
   diagnostics: Diagnostic[]
 ): ConditionalCompositionProjection | undefined {
-  const projection: ConditionalCompositionProjection = {
+  const values = {
     allOf: schemaObjectArray(value.allOf, `${pointer}/allOf`, 'allOf', uri, text, diagnostics, 1),
     anyOf: schemaObjectArray(value.anyOf, `${pointer}/anyOf`, 'anyOf', uri, text, diagnostics, 1),
     oneOf: schemaObjectArray(value.oneOf, `${pointer}/oneOf`, 'oneOf', uri, text, diagnostics, 1),
@@ -1065,7 +1100,79 @@ function compositionProjection(
     then: asSchemaObject(value.then, `${pointer}/then`, 'then', uri, text, diagnostics),
     else: asSchemaObject(value.else, `${pointer}/else`, 'else', uri, text, diagnostics)
   };
-  return hasAnyKey(projection) ? projection : undefined;
+  const inspection = COMPOSITION_KEYWORDS.flatMap((keyword) => {
+    const authored = values[keyword];
+    return authored === undefined ? [] : [{ keyword, authored, effective: authored, emittedJson: JSON.stringify(authored) }];
+  });
+  return hasAnyKey(values) ? { ...values, inspection } : undefined;
+}
+
+function collectCompositionDiagnostics(
+  value: unknown,
+  pointer: string,
+  uri: string,
+  text: string,
+  diagnostics: Diagnostic[],
+  nodes: readonly ModelNode[],
+  active: boolean
+): void {
+  const visitSchema = (candidate: unknown, candidatePointer: string): void => {
+    if (!isRecord(candidate)) return;
+    for (const keyword of COMPOSITION_KEYWORDS) {
+      const keywordPointer = `${candidatePointer}/${keyword}`;
+      if (!Object.prototype.hasOwnProperty.call(candidate, keyword)) continue;
+      if (!active) {
+        pushKeywordDiagnostic(diagnostics, uri, keywordPointer, `${keyword} requires the JSON Structure Conditional Composition extension.`, text);
+        continue;
+      }
+      if (nodes.filter((node) => node.pointer === keywordPointer).length > 1) continue;
+      const authored = candidate[keyword];
+      if (keyword === 'allOf' || keyword === 'anyOf' || keyword === 'oneOf') {
+        if (!Array.isArray(authored) || authored.length === 0 || !authored.every(isRecord)) {
+          pushKeywordDiagnostic(diagnostics, uri, keywordPointer, `${keyword} must be a non-empty array of schema objects.`, text);
+        }
+      } else if (!isRecord(authored)) {
+        pushKeywordDiagnostic(diagnostics, uri, keywordPointer, `${keyword} must be a schema object.`, text);
+      }
+    }
+    if (active) {
+      const hasIf = Object.prototype.hasOwnProperty.call(candidate, 'if');
+      const hasThen = Object.prototype.hasOwnProperty.call(candidate, 'then');
+      const hasElse = Object.prototype.hasOwnProperty.call(candidate, 'else');
+      if (!hasIf && hasThen) pushKeywordDiagnostic(diagnostics, uri, `${candidatePointer}/then`, 'then requires an if branch.', text);
+      if (!hasIf && hasElse) pushKeywordDiagnostic(diagnostics, uri, `${candidatePointer}/else`, 'else requires an if branch.', text);
+      if (hasIf && !hasThen && !hasElse) pushKeywordDiagnostic(diagnostics, uri, `${candidatePointer}/if`, 'if requires a then or else branch.', text);
+    }
+
+    visitDefinitions(candidate.definitions, `${candidatePointer}/definitions`);
+    visitSchemaMap(candidate.properties, `${candidatePointer}/properties`);
+    if (isRecord(candidate.additionalProperties)) visitSchema(candidate.additionalProperties, `${candidatePointer}/additionalProperties`);
+    visitSchemaValue(candidate.items, `${candidatePointer}/items`);
+    visitSchemaValue(candidate.values, `${candidatePointer}/values`);
+    visitSchemaMap(candidate.choices, `${candidatePointer}/choices`);
+    if (Array.isArray(candidate.allOf)) candidate.allOf.forEach((entry, index) => visitSchema(entry, `${candidatePointer}/allOf/${index}`));
+    if (Array.isArray(candidate.anyOf)) candidate.anyOf.forEach((entry, index) => visitSchema(entry, `${candidatePointer}/anyOf/${index}`));
+    if (Array.isArray(candidate.oneOf)) candidate.oneOf.forEach((entry, index) => visitSchema(entry, `${candidatePointer}/oneOf/${index}`));
+    for (const keyword of ['not', 'if', 'then', 'else'] as const) visitSchema(candidate[keyword], `${candidatePointer}/${keyword}`);
+    if (Array.isArray(candidate.type)) candidate.type.forEach((entry, index) => visitSchema(entry, `${candidatePointer}/type/${index}`));
+  };
+  const visitDefinitions = (candidate: unknown, candidatePointer: string): void => {
+    if (!isRecord(candidate)) return;
+    for (const [name, entry] of Object.entries(candidate)) {
+      if (name === '$import' || name === '$importdefs' || !isRecord(entry)) continue;
+      const entryPointer = `${candidatePointer}/${pointerPart(name)}`;
+      if (looksLikeSchemaObject(entry)) visitSchema(entry, entryPointer);
+      else visitDefinitions(entry, entryPointer);
+    }
+  };
+  const visitSchemaMap = (candidate: unknown, candidatePointer: string): void => {
+    if (!isRecord(candidate)) return;
+    for (const [name, entry] of Object.entries(candidate)) visitSchema(entry, `${candidatePointer}/${pointerPart(name)}`);
+  };
+  const visitSchemaValue = (candidate: unknown, candidatePointer: string): void => {
+    if (isRecord(candidate)) visitSchema(candidate, candidatePointer);
+  };
+  visitSchema(value, pointer);
 }
 
 const SEMANTIC_COLLECTION_TYPES = new Set(['array', 'set', 'map', 'choice']);
@@ -1679,8 +1786,9 @@ function pushKeywordDiagnostic(
   });
 }
 
-function coreForm(value: Record<string, unknown>): 'typed' | 'unknown' {
+function coreForm(value: Record<string, unknown>, conditionalCompositionActive = false): 'typed' | 'composed' | 'unknown' {
   if (typeof value.type === 'string' || Array.isArray(value.type) || typeReference(value.type) !== undefined) return 'typed';
+  if (conditionalCompositionActive && COMPOSITION_KEYWORDS.some((keyword) => Object.prototype.hasOwnProperty.call(value, keyword))) return 'composed';
   return 'unknown';
 }
 
@@ -1710,7 +1818,7 @@ function declarationKind(value: unknown): ModelNode['kind'] {
   return 'unknown';
 }
 
-function collectReferenceProjections(root: Record<string, unknown>, references: ReferenceProjection[]): void {
+function collectReferenceProjections(root: Record<string, unknown>, references: ReferenceProjection[], conditionalCompositionActive: boolean): void {
   const seen = new Set<string>();
   const push = (entry: ReferenceProjection): void => {
     const key = `${entry.kind}|${entry.pointer}|${entry.target}`;
@@ -1719,8 +1827,16 @@ function collectReferenceProjections(root: Record<string, unknown>, references: 
     references.push(entry);
   };
 
-  const visitSchema = (candidate: unknown, currentPointer: string): void => {
+  const visitSchema = (candidate: unknown, currentPointer: string, compositionBranch = false): void => {
     if (!isRecord(candidate)) return;
+
+    if (compositionBranch) {
+      const directReference = typeReference(candidate);
+      if (directReference !== undefined) {
+        push({ pointer: `${currentPointer}/$ref`, target: directReference, kind: 'ref' });
+        return;
+      }
+    }
 
     if (typeof candidate.$root === 'string' && currentPointer === '') {
       push({ pointer: '/$root', target: candidate.$root, kind: 'root' });
@@ -1763,13 +1879,15 @@ function collectReferenceProjections(root: Record<string, unknown>, references: 
     visitSchemaValue(candidate.has, `${currentPointer}/has`);
     visitSchemaMap(candidate.patternProperties, `${currentPointer}/patternProperties`);
     visitSchemaMap(candidate.patternKeys, `${currentPointer}/patternKeys`);
-    visitSchemaArray(candidate.allOf, `${currentPointer}/allOf`);
-    visitSchemaArray(candidate.anyOf, `${currentPointer}/anyOf`);
-    visitSchemaArray(candidate.oneOf, `${currentPointer}/oneOf`);
-    visitSchemaValue(candidate.not, `${currentPointer}/not`);
-    visitSchemaValue(candidate.if, `${currentPointer}/if`);
-    visitSchemaValue(candidate.then, `${currentPointer}/then`);
-    visitSchemaValue(candidate.else, `${currentPointer}/else`);
+    if (conditionalCompositionActive) {
+      visitCompositionArray(candidate.allOf, `${currentPointer}/allOf`);
+      visitCompositionArray(candidate.anyOf, `${currentPointer}/anyOf`);
+      visitCompositionArray(candidate.oneOf, `${currentPointer}/oneOf`);
+      visitCompositionValue(candidate.not, `${currentPointer}/not`);
+      visitCompositionValue(candidate.if, `${currentPointer}/if`);
+      visitCompositionValue(candidate.then, `${currentPointer}/then`);
+      visitCompositionValue(candidate.else, `${currentPointer}/else`);
+    }
   };
   const visitDefinitions = (candidate: unknown, pointer: string): void => {
     if (!isRecord(candidate)) return;
@@ -1787,9 +1905,15 @@ function collectReferenceProjections(root: Record<string, unknown>, references: 
   const visitSchemaArray = (candidate: unknown, pointer: string): void => {
     if (Array.isArray(candidate)) candidate.forEach((entry, index) => visitSchema(entry, `${pointer}/${index}`));
   };
+  const visitCompositionArray = (candidate: unknown, pointer: string): void => {
+    if (Array.isArray(candidate)) candidate.forEach((entry, index) => visitSchema(entry, `${pointer}/${index}`, true));
+  };
   const visitSchemaValue = (candidate: unknown, pointer: string): void => {
     if (Array.isArray(candidate)) visitSchemaArray(candidate, pointer);
     else visitSchema(candidate, pointer);
+  };
+  const visitCompositionValue = (candidate: unknown, pointer: string): void => {
+    visitSchema(candidate, pointer, true);
   };
   visitSchema(root, '');
 }
@@ -1802,7 +1926,8 @@ function collectSemanticPlacements(
   diagnostics: Diagnostic[],
   placements: SemanticPlacementProjection[],
   byPointer: Map<string, SemanticAnnotationsProjection>,
-  active: boolean
+  active: boolean,
+  conditionalCompositionActive: boolean
 ): void {
   const visitSchema = (candidate: unknown, candidatePointer: string): void => {
     if (!isRecord(candidate)) return;
@@ -1831,13 +1956,15 @@ function collectSemanticPlacements(
     visitSchemaValue(candidate.has, `${candidatePointer}/has`);
     visitSchemaMap(candidate.patternProperties, `${candidatePointer}/patternProperties`);
     visitSchemaMap(candidate.patternKeys, `${candidatePointer}/patternKeys`);
-    visitSchemaArray(candidate.allOf, `${candidatePointer}/allOf`);
-    visitSchemaArray(candidate.anyOf, `${candidatePointer}/anyOf`);
-    visitSchemaArray(candidate.oneOf, `${candidatePointer}/oneOf`);
-    visitSchemaValue(candidate.not, `${candidatePointer}/not`);
-    visitSchemaValue(candidate.if, `${candidatePointer}/if`);
-    visitSchemaValue(candidate.then, `${candidatePointer}/then`);
-    visitSchemaValue(candidate.else, `${candidatePointer}/else`);
+    if (conditionalCompositionActive) {
+      visitSchemaArray(candidate.allOf, `${candidatePointer}/allOf`);
+      visitSchemaArray(candidate.anyOf, `${candidatePointer}/anyOf`);
+      visitSchemaArray(candidate.oneOf, `${candidatePointer}/oneOf`);
+      visitSchemaValue(candidate.not, `${candidatePointer}/not`);
+      visitSchemaValue(candidate.if, `${candidatePointer}/if`);
+      visitSchemaValue(candidate.then, `${candidatePointer}/then`);
+      visitSchemaValue(candidate.else, `${candidatePointer}/else`);
+    }
 
     if (Array.isArray(candidate.type)) visitSchemaArray(candidate.type, `${candidatePointer}/type`);
   };

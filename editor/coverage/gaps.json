@@ -19,6 +19,12 @@
       "reason": "ADR-014 remains pending because the Validation draft requires an object-typed schema but gives a string-typed example."
     },
     {
+      "id": "gap.composition.evaluation",
+      "owner": "language-service",
+      "status": "partial",
+      "reason": "Conditional Composition authoring, inspection, recursive capability-aware validation, and reference traversal are implemented. Runtime instance evaluation, global unsatisfiable-composition analysis, and executable depth budgets remain pending under ADR-019."
+    },
+    {
       "id": "gap.units.language-tags",
       "owner": "language-service",
       "status": "partial",

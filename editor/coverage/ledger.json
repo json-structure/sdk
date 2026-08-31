@@ -826,24 +826,24 @@
       "status": "partial",
       "evidence": {
         "editing": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "complete",
+          "reference": "src/commands.ts"
         },
         "inspection": {
           "status": "complete",
           "reference": "src/parser.ts"
         },
         "diagnostics": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "complete",
+          "reference": "src/parser.ts"
         },
         "roundtrip": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "complete",
+          "reference": "tests/conditional-composition.test.ts"
         },
         "tests": {
-          "status": "partial",
-          "reference": "tests/phase1.test.ts"
+          "status": "complete",
+          "reference": "tests/conditional-composition.test.ts"
         }
       }
     },
@@ -855,24 +855,24 @@
       "status": "partial",
       "evidence": {
         "editing": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "complete",
+          "reference": "src/commands.ts"
         },
         "inspection": {
           "status": "complete",
           "reference": "src/parser.ts"
         },
         "diagnostics": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "complete",
+          "reference": "src/parser.ts"
         },
         "roundtrip": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "complete",
+          "reference": "tests/conditional-composition.test.ts"
         },
         "tests": {
-          "status": "partial",
-          "reference": "tests/phase1.test.ts"
+          "status": "complete",
+          "reference": "tests/conditional-composition.test.ts"
         }
       }
     },
@@ -884,24 +884,24 @@
       "status": "partial",
       "evidence": {
         "editing": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "complete",
+          "reference": "src/commands.ts"
         },
         "inspection": {
           "status": "complete",
           "reference": "src/parser.ts"
         },
         "diagnostics": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "complete",
+          "reference": "src/parser.ts"
         },
         "roundtrip": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "complete",
+          "reference": "tests/conditional-composition.test.ts"
         },
         "tests": {
-          "status": "partial",
-          "reference": "tests/phase1.test.ts"
+          "status": "complete",
+          "reference": "tests/conditional-composition.test.ts"
         }
       }
     },
@@ -913,24 +913,24 @@
       "status": "partial",
       "evidence": {
         "editing": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "complete",
+          "reference": "src/commands.ts"
         },
         "inspection": {
           "status": "complete",
           "reference": "src/parser.ts"
         },
         "diagnostics": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "complete",
+          "reference": "src/parser.ts"
         },
         "roundtrip": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "complete",
+          "reference": "tests/conditional-composition.test.ts"
         },
         "tests": {
-          "status": "partial",
-          "reference": "tests/phase1.test.ts"
+          "status": "complete",
+          "reference": "tests/conditional-composition.test.ts"
         }
       }
     },
@@ -942,24 +942,24 @@
       "status": "partial",
       "evidence": {
         "editing": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "complete",
+          "reference": "src/commands.ts"
         },
         "inspection": {
           "status": "complete",
           "reference": "src/parser.ts"
         },
         "diagnostics": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "complete",
+          "reference": "src/parser.ts"
         },
         "roundtrip": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "complete",
+          "reference": "tests/conditional-composition.test.ts"
         },
         "tests": {
-          "status": "partial",
-          "reference": "tests/phase1.test.ts"
+          "status": "complete",
+          "reference": "tests/conditional-composition.test.ts"
         }
       }
     },
@@ -1696,24 +1696,24 @@
       "status": "partial",
       "evidence": {
         "editing": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "complete",
+          "reference": "src/commands.ts"
         },
         "inspection": {
           "status": "complete",
           "reference": "src/parser.ts"
         },
         "diagnostics": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "complete",
+          "reference": "src/parser.ts"
         },
         "roundtrip": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "complete",
+          "reference": "tests/conditional-composition.test.ts"
         },
         "tests": {
-          "status": "partial",
-          "reference": "tests/phase1.test.ts"
+          "status": "complete",
+          "reference": "tests/conditional-composition.test.ts"
         }
       }
     },
@@ -1725,24 +1725,24 @@
       "status": "partial",
       "evidence": {
         "editing": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "complete",
+          "reference": "src/commands.ts"
         },
         "inspection": {
           "status": "complete",
           "reference": "src/parser.ts"
         },
         "diagnostics": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "complete",
+          "reference": "src/parser.ts"
         },
         "roundtrip": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "complete",
+          "reference": "tests/conditional-composition.test.ts"
         },
         "tests": {
-          "status": "partial",
-          "reference": "tests/phase1.test.ts"
+          "status": "complete",
+          "reference": "tests/conditional-composition.test.ts"
         }
       }
     },
@@ -1754,24 +1754,24 @@
       "status": "partial",
       "evidence": {
         "editing": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "complete",
+          "reference": "src/commands.ts"
         },
         "inspection": {
           "status": "complete",
           "reference": "src/parser.ts"
         },
         "diagnostics": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "complete",
+          "reference": "src/parser.ts"
         },
         "roundtrip": {
-          "status": "gap",
-          "reference": "coverage/gaps.json"
+          "status": "complete",
+          "reference": "tests/conditional-composition.test.ts"
         },
         "tests": {
-          "status": "partial",
-          "reference": "tests/phase1.test.ts"
+          "status": "complete",
+          "reference": "tests/conditional-composition.test.ts"
         }
       }
     },

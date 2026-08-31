@@ -60,7 +60,7 @@ describe('Phase 1 vertical slice', () => {
   it('projects typed definitions, imports, relation semantics, units, validation, composition, and semantic annotations', () => {
     const fixture = `{
   "$schema": "https://json-structure.org/meta/extended/v0/#",
-  "$uses": ["JSONSchemaValidation", "JSONStructureUnits", "JSONStructureSemanticAnnotations"],
+  "$uses": ["JSONSchemaValidation", "JSONStructureConditionalComposition", "JSONStructureUnits", "JSONStructureSemanticAnnotations"],
   "$import": "https://example.org/root.struct.json",
   "$importdefs": "https://example.org/common.struct.json",
   "definitions": {
@@ -945,7 +945,8 @@ describe('Phase 1 vertical slice', () => {
     expect(placements.some((entry) => entry.pointer === '/definitions/Thing/choices/scalar')).toBe(false);
     expect(placements.some((entry) => entry.pointer === '/definitions/Thing/anyOf/0')).toBe(false);
     expect(placements.some((entry) => entry.pointer === '/definitions/Thing/anyOf/1')).toBe(false);
-    expect(result.diagnostics.some((entry) => entry.location?.pointer === '/definitions/Thing/anyOf/0/semanticRole')).toBe(true);
+    expect(result.diagnostics.some((entry) => entry.location?.pointer === '/definitions/Thing/anyOf' && entry.message.includes('requires'))).toBe(true);
+    expect(result.diagnostics.some((entry) => entry.location?.pointer?.startsWith('/definitions/Thing/anyOf/0'))).toBe(false);
     expect(result.diagnostics.some((entry) => entry.location?.pointer === '/definitions/Thing/values/semanticRole')).toBe(true);
     expect(placements.some((entry) => entry.pointer === '/definitions/Thing/unknownPayload')).toBe(false);
   });
@@ -1231,6 +1232,7 @@ describe('Phase 1 vertical slice', () => {
   });
   it('diagnoses local references only in schema-owned type positions', () => {
     const source = JSON.stringify({
+      $schema: 'https://json-structure.org/meta/validation/v0/#',
       type: 'object',
       properties: {
         rootProperty: { type: { $ref: '#/definitions/MissingRootProperty' } },

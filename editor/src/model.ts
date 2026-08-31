@@ -40,6 +40,14 @@ export interface ConditionalCompositionProjection {
 	readonly if?: Record<string, unknown>;
 	readonly then?: Record<string, unknown>;
 	readonly else?: Record<string, unknown>;
+	readonly inspection: readonly ConditionalCompositionInspection[];
+}
+
+export interface ConditionalCompositionInspection {
+	readonly keyword: 'allOf' | 'anyOf' | 'oneOf' | 'not' | 'if' | 'then' | 'else';
+	readonly authored: unknown;
+	readonly effective: unknown;
+	readonly emittedJson: string;
 }
 
 export interface UnitsProjection {

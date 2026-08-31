@@ -2,6 +2,7 @@ export interface CapabilityResolution {
   readonly schema?: string;
   readonly activeCore: true;
   readonly validationActive: boolean;
+  readonly conditionalCompositionActive: boolean;
   readonly unitsActive: boolean;
   readonly semanticAnnotationsActive: boolean;
   readonly offeredExtensions: readonly string[];
@@ -16,6 +17,13 @@ export function validationExtensionActive(value: unknown): boolean {
   const schema = typeof root.$schema === 'string' ? root.$schema : undefined;
   const uses = Array.isArray(root.$uses) ? root.$uses : [];
   return schema === VALIDATION_META_SCHEMA || (schema === EXTENDED_META_SCHEMA && uses.includes('JSONSchemaValidation'));
+}
+export function conditionalCompositionExtensionActive(value: unknown): boolean {
+  const root = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  const schema = typeof root.$schema === 'string' ? root.$schema : undefined;
+  const uses = Array.isArray(root.$uses) ? root.$uses : [];
+  return schema === VALIDATION_META_SCHEMA ||
+    (schema === EXTENDED_META_SCHEMA && uses.includes('JSONStructureConditionalComposition'));
 }
 export function unitsExtensionActive(value: unknown): boolean {
   const root = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -38,6 +46,7 @@ export function resolveCapabilities(value: unknown): CapabilityResolution {
     schema: typeof root.$schema === 'string' ? root.$schema : undefined,
     activeCore: true,
     validationActive: validationExtensionActive(root),
+    conditionalCompositionActive: conditionalCompositionExtensionActive(root),
     unitsActive: unitsExtensionActive(root),
     semanticAnnotationsActive: semanticAnnotationsExtensionActive(root),
     offeredExtensions: offers.filter((offer) => known.has(offer)),
