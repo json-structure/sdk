@@ -1,6 +1,6 @@
 import type { DocumentVersion, TextEdit, TextRange } from './contracts.js';
 import type { DocumentSession } from './session.js';
-import { rangeFor } from './parser.js';
+import { rangeFor, semanticAnnotationCandidateValid, semanticAnnotationSetValid, type SemanticAnnotationKeyword, type SemanticAnnotationKeywordMap } from './parser.js';
 import { effectiveValidationTypes, validationIssues, validationValueIsSchemaBacked, type ValidationKeyword, type ValidationKeywordMap } from './validation.js';
 import { unitsValueValid, type UnitsKeyword, type UnitsKeywordMap } from './units.js';
 
@@ -723,6 +723,76 @@ export class SetUcumUnitCommand extends SetUnitsKeywordCommand<'ucumUnit'> {
 export class SetCurrencyCommand extends SetUnitsKeywordCommand<'currency'> {
   constructor(targetPointer: string, value: string | undefined) { super(targetPointer, 'currency', value); }
 }
+
+const SEMANTIC_COLLECTION_TYPES = new Set(['array', 'set', 'map', 'choice']);
+const SEMANTIC_PROPERTY_OR_COLLECTION = new Set<SemanticAnnotationKeyword>([
+  'observedProperty', 'semanticRole', 'derivation', 'statistic', 'temporalReferenceSystem',
+  'cadence', 'codedValues', 'measurementConditioning'
+]);
+const SEMANTIC_PROPERTY_ONLY = new Set<SemanticAnnotationKeyword>([
+  'phenomenonTimeRelation', 'supportPeriod', 'referenceRole'
+]);
+const SEMANTIC_RECORD_ONLY = new Set<SemanticAnnotationKeyword>([
+  'coordinateReferenceSystem', 'vectorReferenceFrames', 'tensorReferenceFrames', 'frameTransforms',
+  'linearReferenceSystem', 'colorSpaces', 'audioChannels', 'spectralBands'
+]);
+function semanticPlacementValid(pointer: string, declaration: Record<string, unknown>, keyword: SemanticAnnotationKeyword): boolean {
+  if (keyword === 'concepts') return true;
+  const property = /\/properties\/[^/]+$/.test(pointer);
+  if (SEMANTIC_PROPERTY_ONLY.has(keyword)) return property;
+  if (SEMANTIC_PROPERTY_OR_COLLECTION.has(keyword)) {
+    return property || SEMANTIC_COLLECTION_TYPES.has(String(declaration.type)) ||
+      ((declaration.type === 'object' || declaration.type === 'tuple') && (keyword === 'observedProperty' || keyword === 'temporalReferenceSystem'));
+  }
+  return SEMANTIC_RECORD_ONLY.has(keyword) && (declaration.type === 'object' || declaration.type === 'tuple');
+}
+
+export class SetSemanticAnnotationCommand<K extends SemanticAnnotationKeyword> implements EditorCommand {
+  constructor(readonly targetPointer: string, readonly keyword: K, readonly value: SemanticAnnotationKeywordMap[K] | undefined) {}
+
+  canExecute({ session, documentVersion }: CommandContext): boolean {
+    if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid' || !session.capabilities.semanticAnnotationsActive) return false;
+    const declaration = editableDeclaration(session, this.targetPointer);
+    if (!declaration || !semanticPlacementValid(this.targetPointer, declaration, this.keyword)) return false;
+    const authored = Object.prototype.hasOwnProperty.call(declaration, this.keyword);
+    if (authored && !objectMemberContext(session, this.targetPointer, this.keyword)) return false;
+    if (this.value === undefined) {
+      if (!authored) return false;
+      const candidate = { ...declaration };
+      delete candidate[this.keyword];
+      return semanticAnnotationSetValid(candidate, pointerValue(session.value, '') as Record<string, unknown>, this.targetPointer);
+    }
+    return semanticAnnotationCandidateValid(declaration, this.keyword, this.value, pointerValue(session.value, '') as Record<string, unknown>, this.targetPointer);
+  }
+
+  execute(context: CommandContext): CommandResult {
+    if (!this.canExecute(context)) throw new Error('SetSemanticAnnotation command preconditions are not satisfied.');
+    return this.value === undefined
+      ? removeMemberCommandResult(context.session, this.targetPointer, this.keyword)
+      : setMemberCommandResult(context.session, this.targetPointer, this.keyword, this.value);
+  }
+}
+
+export class SetConceptsCommand extends SetSemanticAnnotationCommand<'concepts'> { constructor(pointer: string, value: SemanticAnnotationKeywordMap['concepts'] | undefined) { super(pointer, 'concepts', value); } }
+export class SetObservedPropertyCommand extends SetSemanticAnnotationCommand<'observedProperty'> { constructor(pointer: string, value: SemanticAnnotationKeywordMap['observedProperty'] | undefined) { super(pointer, 'observedProperty', value); } }
+export class SetSemanticRoleCommand extends SetSemanticAnnotationCommand<'semanticRole'> { constructor(pointer: string, value: string | undefined) { super(pointer, 'semanticRole', value); } }
+export class SetDerivationCommand extends SetSemanticAnnotationCommand<'derivation'> { constructor(pointer: string, value: string | undefined) { super(pointer, 'derivation', value); } }
+export class SetStatisticCommand extends SetSemanticAnnotationCommand<'statistic'> { constructor(pointer: string, value: SemanticAnnotationKeywordMap['statistic'] | undefined) { super(pointer, 'statistic', value); } }
+export class SetCodedValuesCommand extends SetSemanticAnnotationCommand<'codedValues'> { constructor(pointer: string, value: SemanticAnnotationKeywordMap['codedValues'] | undefined) { super(pointer, 'codedValues', value); } }
+export class SetMeasurementConditioningCommand extends SetSemanticAnnotationCommand<'measurementConditioning'> { constructor(pointer: string, value: SemanticAnnotationKeywordMap['measurementConditioning'] | undefined) { super(pointer, 'measurementConditioning', value); } }
+export class SetReferenceRoleCommand extends SetSemanticAnnotationCommand<'referenceRole'> { constructor(pointer: string, value: string | undefined) { super(pointer, 'referenceRole', value); } }
+export class SetPhenomenonTimeRelationCommand extends SetSemanticAnnotationCommand<'phenomenonTimeRelation'> { constructor(pointer: string, value: string | undefined) { super(pointer, 'phenomenonTimeRelation', value); } }
+export class SetSupportPeriodCommand extends SetSemanticAnnotationCommand<'supportPeriod'> { constructor(pointer: string, value: SemanticAnnotationKeywordMap['supportPeriod'] | undefined) { super(pointer, 'supportPeriod', value); } }
+export class SetTemporalReferenceSystemCommand extends SetSemanticAnnotationCommand<'temporalReferenceSystem'> { constructor(pointer: string, value: SemanticAnnotationKeywordMap['temporalReferenceSystem'] | undefined) { super(pointer, 'temporalReferenceSystem', value); } }
+export class SetCadenceCommand extends SetSemanticAnnotationCommand<'cadence'> { constructor(pointer: string, value: SemanticAnnotationKeywordMap['cadence'] | undefined) { super(pointer, 'cadence', value); } }
+export class SetCoordinateReferenceSystemCommand extends SetSemanticAnnotationCommand<'coordinateReferenceSystem'> { constructor(pointer: string, value: SemanticAnnotationKeywordMap['coordinateReferenceSystem'] | undefined) { super(pointer, 'coordinateReferenceSystem', value); } }
+export class SetVectorReferenceFramesCommand extends SetSemanticAnnotationCommand<'vectorReferenceFrames'> { constructor(pointer: string, value: SemanticAnnotationKeywordMap['vectorReferenceFrames'] | undefined) { super(pointer, 'vectorReferenceFrames', value); } }
+export class SetTensorReferenceFramesCommand extends SetSemanticAnnotationCommand<'tensorReferenceFrames'> { constructor(pointer: string, value: SemanticAnnotationKeywordMap['tensorReferenceFrames'] | undefined) { super(pointer, 'tensorReferenceFrames', value); } }
+export class SetFrameTransformsCommand extends SetSemanticAnnotationCommand<'frameTransforms'> { constructor(pointer: string, value: SemanticAnnotationKeywordMap['frameTransforms'] | undefined) { super(pointer, 'frameTransforms', value); } }
+export class SetLinearReferenceSystemCommand extends SetSemanticAnnotationCommand<'linearReferenceSystem'> { constructor(pointer: string, value: SemanticAnnotationKeywordMap['linearReferenceSystem'] | undefined) { super(pointer, 'linearReferenceSystem', value); } }
+export class SetColorSpacesCommand extends SetSemanticAnnotationCommand<'colorSpaces'> { constructor(pointer: string, value: SemanticAnnotationKeywordMap['colorSpaces'] | undefined) { super(pointer, 'colorSpaces', value); } }
+export class SetAudioChannelsCommand extends SetSemanticAnnotationCommand<'audioChannels'> { constructor(pointer: string, value: SemanticAnnotationKeywordMap['audioChannels'] | undefined) { super(pointer, 'audioChannels', value); } }
+export class SetSpectralBandsCommand extends SetSemanticAnnotationCommand<'spectralBands'> { constructor(pointer: string, value: SemanticAnnotationKeywordMap['spectralBands'] | undefined) { super(pointer, 'spectralBands', value); } }
 
 const NUMERIC_TYPES_FOR_UNITS = new Set([
   'number', 'integer', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32',

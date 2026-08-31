@@ -45,6 +45,7 @@ const text = `{
     }
   }
 }`;
+const semanticSchema = 'https://json-structure.org/meta/semantic-annotations/v0/#';
 
 describe('Phase 1 vertical slice', () => {
   it('normalizes pointers and exact source ranges', () => {
@@ -59,15 +60,16 @@ describe('Phase 1 vertical slice', () => {
   it('projects typed definitions, imports, relation semantics, units, validation, composition, and semantic annotations', () => {
     const fixture = `{
   "$schema": "https://json-structure.org/meta/extended/v0/#",
-  "$uses": ["JSONSchemaValidation", "JSONStructureUnits"],
+  "$uses": ["JSONSchemaValidation", "JSONStructureUnits", "JSONStructureSemanticAnnotations"],
   "$import": "https://example.org/root.struct.json",
   "$importdefs": "https://example.org/common.struct.json",
   "definitions": {
     "Meta": {"type":"string"},
+    "ObjectBase": {"type":"object","properties":{"base":{"type":"string"}}},
     "Thing": {
       "type": "object",
-      "$extends": ["#/definitions/Meta"],
-      "properties": {"id": {"type": "string"}},
+      "$extends": ["#/definitions/ObjectBase"],
+      "properties": {"id":{"type":"string","semanticRole":"observationValue","derivation":"statistic","statistic":{"function":"percentile","percentile":95},"codedValues":{"reference":"urn:codes","kind":"custom-code-list"},"measurementConditioning":{"weighting":"custom-weighting"},"referenceRole":"position","phenomenonTimeRelation":"interval","supportPeriod":{"length":"PT10S","anchor":"end"},"temporalReferenceSystem":{"reference":"urn:trs:iso8601","kind":"custom-trs"},"cadence":{"kind":"fixed","period":"PT1S"}},"time":{"type":"string"},"x":{"type":"number"},"y":{"type":"number"},"vx":{"type":"number"},"vy":{"type":"number"},"xx":{"type":"number"},"roll":{"type":"number"},"pitch":{"type":"number"},"yaw":{"type":"number"},"tx":{"type":"number"},"ty":{"type":"number"},"tz":{"type":"number"},"road":{"type":"string"},"distance":{"type":"number"},"red":{"type":"number"},"green":{"type":"number"},"blue":{"type":"number"},"left":{"type":"number"},"right":{"type":"number"}},
       "identity": ["id"],
       "relations": {
         "owner": {
@@ -118,16 +120,7 @@ describe('Phase 1 vertical slice', () => {
       "else": {"type":"object"},
       "concepts": [{"reference":"urn:concept:thing","kind":"custom-concept"}],
       "observedProperty": {"reference":"urn:obs:mass","kind":"custom-observable"},
-      "semanticRole": "observationValue",
-      "derivation": "statistic",
-      "statistic": {"function":"percentile","percentile":95},
-      "codedValues": {"reference":"urn:codes","kind":"custom-code-list"},
-      "measurementConditioning": {"weighting":"custom-weighting"},
-      "referenceRole": "position",
-      "phenomenonTimeRelation": "interval",
-      "supportPeriod": {"length":"PT10S","anchor":"end"},
       "temporalReferenceSystem": {"reference":"urn:trs:iso8601","kind":"custom-trs","position":"time","sortOrder":"forward"},
-      "cadence": {"kind":"fixed","period":"PT1S"},
       "coordinateReferenceSystem": {"reference":"urn:ogc:def:crs:EPSG::4326","kind":"custom-crs","coordinates":["x","y"]},
       "vectorReferenceFrames": [{"reference":"urn:frame:enu","kind":"custom-frame","components":["vx","vy"],"variance":"contravariant"}],
       "tensorReferenceFrames": [{"frames":[{"reference":"urn:frame:a","kind":"custom-frame"},{"reference":"urn:frame:a","kind":"custom-frame"}],"components":[{"index":[0,0],"property":"xx"}],"symmetry":"none"}],
@@ -149,10 +142,11 @@ describe('Phase 1 vertical slice', () => {
     const result = parseDocument('memory://typed', fixture);
     expect(result.recovery).toBe('valid');
     const projections = result.model?.projections;
+    const semanticPlacements = projections?.semanticPlacements ?? [];
     expect(projections?.definitions.length).toBeGreaterThanOrEqual(3);
     const thing = projections?.definitions.find((item) => item.pointer === '/definitions/Thing');
     expect(thing?.coreForm).toBe('typed');
-    expect(thing?.extends).toEqual(['#/definitions/Meta']);
+    expect(thing?.extends).toEqual(['#/definitions/ObjectBase']);
     expect(thing?.relations[0]?.name).toBe('owner');
 
     expect(thing?.relations[0]?.targetTypeRef).toBe('#/definitions/Meta');
@@ -197,16 +191,10 @@ describe('Phase 1 vertical slice', () => {
     expect(thing?.composition?.else).toEqual({ type: 'object' });
     expect(thing?.semantic?.concepts).toEqual([{ reference: 'urn:concept:thing', kind: 'custom-concept' }]);
     expect(thing?.semantic?.observedProperty).toEqual({ reference: 'urn:obs:mass', kind: 'custom-observable' });
-    expect(thing?.semantic?.semanticRole).toBe('observationValue');
-    expect(thing?.semantic?.derivation).toBe('statistic');
-    expect(thing?.semantic?.statistic).toEqual({ function: 'percentile', percentile: 95 });
-    expect(thing?.semantic?.codedValues).toEqual({ reference: 'urn:codes', kind: 'custom-code-list' });
-    expect(thing?.semantic?.measurementConditioning).toEqual({ weighting: 'custom-weighting' });
-    expect(thing?.semantic?.referenceRole).toBe('position');
-    expect(thing?.semantic?.phenomenonTimeRelation).toBe('interval');
-    expect(thing?.semantic?.supportPeriod).toEqual({ length: 'PT10S', anchor: 'end' });
     expect(thing?.semantic?.temporalReferenceSystem).toEqual({ reference: 'urn:trs:iso8601', kind: 'custom-trs', position: 'time', sortOrder: 'forward' });
-    expect(thing?.semantic?.cadence).toEqual({ kind: 'fixed', period: 'PT1S' });
+    const idSemantic = semanticPlacements.find((entry) => entry.pointer === '/definitions/Thing/properties/id')?.annotations;
+    expect(idSemantic?.semanticRole).toBe('observationValue');
+    expect(idSemantic?.statistic).toEqual({ function: 'percentile', percentile: 95 });
     expect(thing?.semantic?.coordinateReferenceSystem).toEqual({ reference: 'urn:ogc:def:crs:EPSG::4326', kind: 'custom-crs', coordinates: ['x', 'y'] });
     expect(thing?.semantic?.vectorReferenceFrames?.[0]?.variance).toBe('contravariant');
     expect(thing?.semantic?.tensorReferenceFrames?.[0]?.symmetry).toBe('none');
@@ -225,7 +213,6 @@ describe('Phase 1 vertical slice', () => {
     const refs = projections?.references ?? [];
     expect(refs.some((entry) => entry.pointer === '/definitions/Nested/definitions/Inner/type/$ref' && entry.target === '#/definitions/Meta')).toBe(true);
     expect(refs.some((entry) => entry.pointer === '/definitions/Thing/relations/owner/targettype/$ref' && entry.target === '#/definitions/Meta')).toBe(true);
-    const semanticPlacements = projections?.semanticPlacements ?? [];
     expect(semanticPlacements.some((entry) => entry.pointer === '/definitions/Thing')).toBe(true);
   });
   it('emits per-keyword diagnostics for malformed companion values and excludes invalid projections', () => {
@@ -274,7 +261,9 @@ describe('Phase 1 vertical slice', () => {
       { label: 'semantic.spectralBands', body: '"spectralBands":[1]', pointer: '/definitions/Thing/spectralBands', assertDefinition: (d) => expect(d.semantic?.spectralBands).toBeUndefined() }
     ];
     for (const testCase of cases) {
-      const schema = testCase.label.startsWith('validation.')
+      const schema = testCase.label.startsWith('semantic.')
+        ? semanticSchema
+        : testCase.label.startsWith('validation.')
         ? 'https://json-structure.org/meta/validation/v0/#'
         : 'https://json-structure.org/schema/';
       const uses = testCase.label.startsWith('units.') ? '"$uses":["JSONStructureUnits"],' : '';
@@ -814,94 +803,94 @@ describe('Phase 1 vertical slice', () => {
     expect(result.diagnostics.some((item) => item.location?.pointer === '/definitions/Thing/oneOf' && item.code === 'json.keyword-invalid')).toBe(true);
   });
   it('enforces tensor/frame local constraints for rank and symmetry', () => {
-    const valid = parseDocument('memory://tensor-valid', '{"definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom"},{"reference":"urn:frame:a","kind":"custom"}],"components":[{"index":[0,1],"property":"ab"}],"symmetry":"symmetric"}]}}}');
+    const valid = parseDocument('memory://tensor-valid', `{"$schema":"${semanticSchema}","definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom"},{"reference":"urn:frame:a","kind":"custom"}],"components":[{"index":[0,1],"property":"ab"}],"symmetry":"symmetric"}]}}}`);
     expect(valid.diagnostics.some((item) => item.location?.pointer === '/definitions/Thing/tensorReferenceFrames' && item.code === 'json.keyword-invalid')).toBe(false);
 
-    const invalidRank = parseDocument('memory://tensor-rank', '{"definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom"},{"reference":"urn:frame:b","kind":"custom"},{"reference":"urn:frame:c","kind":"custom"}],"components":[{"index":[0,1],"property":"ab"}],"symmetry":"none"}]}}}');
+    const invalidRank = parseDocument('memory://tensor-rank', `{"$schema":"${semanticSchema}","definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom"},{"reference":"urn:frame:b","kind":"custom"},{"reference":"urn:frame:c","kind":"custom"}],"components":[{"index":[0,1],"property":"ab"}],"symmetry":"none"}]}}}`);
     expect(invalidRank.diagnostics.some((item) => item.location?.pointer === '/definitions/Thing/tensorReferenceFrames' && item.code === 'json.keyword-invalid')).toBe(true);
 
-    const invalidSymmetry = parseDocument('memory://tensor-symmetry', '{"definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom"},{"reference":"urn:frame:b","kind":"custom"}],"components":[{"index":[0,1],"property":"ab"}],"symmetry":"symmetric"}]}}}');
+    const invalidSymmetry = parseDocument('memory://tensor-symmetry', `{"$schema":"${semanticSchema}","definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom"},{"reference":"urn:frame:b","kind":"custom"}],"components":[{"index":[0,1],"property":"ab"}],"symmetry":"symmetric"}]}}}`);
     expect(invalidSymmetry.diagnostics.some((item) => item.location?.pointer === '/definitions/Thing/tensorReferenceFrames' && item.code === 'json.keyword-invalid')).toBe(true);
   });
   it('requires rank-two same-frame tensor symmetry even when symmetry is none', () => {
     const validNone = parseDocument(
       'memory://tensor-symmetry-none-valid',
-      '{"definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom"},{"reference":"urn:frame:a","kind":"custom"}],"components":[{"index":[0,0],"property":"aa"}],"symmetry":"none"}]}}}'
+      `{"$schema":"${semanticSchema}","definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom"},{"reference":"urn:frame:a","kind":"custom"}],"components":[{"index":[0,0],"property":"aa"}],"symmetry":"none"}]}}}`
     );
     expect(validNone.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/Thing/tensorReferenceFrames')).toBe(false);
 
     const invalidNoneDifferentFrames = parseDocument(
       'memory://tensor-symmetry-none-different-frames',
-      '{"definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom"},{"reference":"urn:frame:b","kind":"custom"}],"components":[{"index":[0,0],"property":"aa"}],"symmetry":"none"}]}}}'
+      `{"$schema":"${semanticSchema}","definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom"},{"reference":"urn:frame:b","kind":"custom"}],"components":[{"index":[0,0],"property":"aa"}],"symmetry":"none"}]}}}`
     );
     expect(invalidNoneDifferentFrames.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/Thing/tensorReferenceFrames')).toBe(true);
 
     const invalidNoneWrongRank = parseDocument(
       'memory://tensor-symmetry-none-wrong-rank',
-      '{"definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom"},{"reference":"urn:frame:a","kind":"custom"},{"reference":"urn:frame:a","kind":"custom"}],"components":[{"index":[0,0,0],"property":"aaa"}],"symmetry":"none"}]}}}'
+      `{"$schema":"${semanticSchema}","definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom"},{"reference":"urn:frame:a","kind":"custom"},{"reference":"urn:frame:a","kind":"custom"}],"components":[{"index":[0,0,0],"property":"aaa"}],"symmetry":"none"}]}}}`
     );
     expect(invalidNoneWrongRank.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/Thing/tensorReferenceFrames')).toBe(true);
   });
   it('accepts symmetry when kind:type frame refs are structurally equal but parsed as separate objects', () => {
     const valid = parseDocument(
       'memory://tensor-symmetry-type-ref-structural-equal',
-      '{"definitions":{"Frame":{"type":"object"},"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":{"$ref":"#/definitions/Frame"},"kind":"type"},{"reference":{"$ref":"#/definitions/Frame"},"kind":"type"}],"components":[{"index":[0,0],"property":"aa"}],"symmetry":"none"}]}}}'
+      `{"$schema":"${semanticSchema}","definitions":{"Frame":{"type":"object"},"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":{"$ref":"#/definitions/Frame"},"kind":"type"},{"reference":{"$ref":"#/definitions/Frame"},"kind":"type"}],"components":[{"index":[0,0],"property":"aa"}],"symmetry":"none"}]}}}`
     );
     expect(valid.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/Thing/tensorReferenceFrames')).toBe(false);
 
     const invalidDifferentRef = parseDocument(
       'memory://tensor-symmetry-type-ref-structural-unequal',
-      '{"definitions":{"FrameA":{"type":"object"},"FrameB":{"type":"object"},"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":{"$ref":"#/definitions/FrameA"},"kind":"type"},{"reference":{"$ref":"#/definitions/FrameB"},"kind":"type"}],"components":[{"index":[0,0],"property":"aa"}],"symmetry":"none"}]}}}'
+      `{"$schema":"${semanticSchema}","definitions":{"FrameA":{"type":"object"},"FrameB":{"type":"object"},"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":{"$ref":"#/definitions/FrameA"},"kind":"type"},{"reference":{"$ref":"#/definitions/FrameB"},"kind":"type"}],"components":[{"index":[0,0],"property":"aa"}],"symmetry":"none"}]}}}`
     );
     expect(invalidDifferentRef.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/Thing/tensorReferenceFrames')).toBe(true);
   });
   it('requires equal variance (or both omitted) for symmetric tensor frames including explicit symmetry none', () => {
     const validSameVariance = parseDocument(
       'memory://tensor-symmetry-variance-same',
-      '{"definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom","variance":"covariant"},{"reference":"urn:frame:a","kind":"custom","variance":"covariant"}],"components":[{"index":[0,0],"property":"aa"}],"symmetry":"none"}]}}}'
+      `{"$schema":"${semanticSchema}","definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom","variance":"covariant"},{"reference":"urn:frame:a","kind":"custom","variance":"covariant"}],"components":[{"index":[0,0],"property":"aa"}],"symmetry":"none"}]}}}`
     );
     expect(validSameVariance.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/Thing/tensorReferenceFrames')).toBe(false);
 
     const validBothOmitted = parseDocument(
       'memory://tensor-symmetry-variance-both-omitted',
-      '{"definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom"},{"reference":"urn:frame:a","kind":"custom"}],"components":[{"index":[0,0],"property":"aa"}],"symmetry":"none"}]}}}'
+      `{"$schema":"${semanticSchema}","definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom"},{"reference":"urn:frame:a","kind":"custom"}],"components":[{"index":[0,0],"property":"aa"}],"symmetry":"none"}]}}}`
     );
     expect(validBothOmitted.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/Thing/tensorReferenceFrames')).toBe(false);
 
     const invalidDifferentVariance = parseDocument(
       'memory://tensor-symmetry-variance-different',
-      '{"definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom","variance":"covariant"},{"reference":"urn:frame:a","kind":"custom","variance":"contravariant"}],"components":[{"index":[0,0],"property":"aa"}],"symmetry":"none"}]}}}'
+      `{"$schema":"${semanticSchema}","definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom","variance":"covariant"},{"reference":"urn:frame:a","kind":"custom","variance":"contravariant"}],"components":[{"index":[0,0],"property":"aa"}],"symmetry":"none"}]}}}`
     );
     expect(invalidDifferentVariance.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/Thing/tensorReferenceFrames')).toBe(true);
 
     const invalidOneOmitted = parseDocument(
       'memory://tensor-symmetry-variance-one-omitted',
-      '{"definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom","variance":"covariant"},{"reference":"urn:frame:a","kind":"custom"}],"components":[{"index":[0,0],"property":"aa"}],"symmetry":"none"}]}}}'
+      `{"$schema":"${semanticSchema}","definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom","variance":"covariant"},{"reference":"urn:frame:a","kind":"custom"}],"components":[{"index":[0,0],"property":"aa"}],"symmetry":"none"}]}}}`
     );
     expect(invalidOneOmitted.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/Thing/tensorReferenceFrames')).toBe(true);
   });
   it('requires exactly two indices for indexed matrix components in frame transforms', () => {
     const validRotationIndexed = parseDocument(
       'memory://frame-transform-rotation-indexed-valid',
-      '{"definitions":{"Thing":{"type":"object","frameTransforms":[{"from":{"reference":"urn:frame:a","kind":"custom"},"to":{"reference":"urn:frame:b","kind":"custom"},"encoding":"rotationMatrix","components":[{"index":[0,0],"property":"m00"},{"index":[0,1],"property":"m01"},{"index":[0,2],"property":"m02"},{"index":[1,0],"property":"m10"},{"index":[1,1],"property":"m11"},{"index":[1,2],"property":"m12"},{"index":[2,0],"property":"m20"},{"index":[2,1],"property":"m21"},{"index":[2,2],"property":"m22"}]}]}}}'
+      `{"$schema":"${semanticSchema}","definitions":{"Thing":{"type":"object","frameTransforms":[{"from":{"reference":"urn:frame:a","kind":"custom"},"to":{"reference":"urn:frame:b","kind":"custom"},"encoding":"rotationMatrix","components":[{"index":[0,0],"property":"m00"},{"index":[0,1],"property":"m01"},{"index":[0,2],"property":"m02"},{"index":[1,0],"property":"m10"},{"index":[1,1],"property":"m11"},{"index":[1,2],"property":"m12"},{"index":[2,0],"property":"m20"},{"index":[2,1],"property":"m21"},{"index":[2,2],"property":"m22"}]}]}}}`
     );
     expect(validRotationIndexed.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/Thing/frameTransforms')).toBe(false);
 
     const validHomogeneousIndexed = parseDocument(
       'memory://frame-transform-homogeneous-indexed-valid',
-      '{"definitions":{"Thing":{"type":"object","frameTransforms":[{"from":{"reference":"urn:frame:a","kind":"custom"},"to":{"reference":"urn:frame:b","kind":"custom"},"encoding":"homogeneousMatrix","components":[{"index":[0,0],"property":"h00"},{"index":[0,1],"property":"h01"},{"index":[0,2],"property":"h02"},{"index":[0,3],"property":"h03"},{"index":[1,0],"property":"h10"},{"index":[1,1],"property":"h11"},{"index":[1,2],"property":"h12"},{"index":[1,3],"property":"h13"},{"index":[2,0],"property":"h20"},{"index":[2,1],"property":"h21"},{"index":[2,2],"property":"h22"},{"index":[2,3],"property":"h23"},{"index":[3,0],"property":"h30"},{"index":[3,1],"property":"h31"},{"index":[3,2],"property":"h32"},{"index":[3,3],"property":"h33"}]}]}}}'
+      `{"$schema":"${semanticSchema}","definitions":{"Thing":{"type":"object","frameTransforms":[{"from":{"reference":"urn:frame:a","kind":"custom"},"to":{"reference":"urn:frame:b","kind":"custom"},"encoding":"homogeneousMatrix","components":[{"index":[0,0],"property":"h00"},{"index":[0,1],"property":"h01"},{"index":[0,2],"property":"h02"},{"index":[0,3],"property":"h03"},{"index":[1,0],"property":"h10"},{"index":[1,1],"property":"h11"},{"index":[1,2],"property":"h12"},{"index":[1,3],"property":"h13"},{"index":[2,0],"property":"h20"},{"index":[2,1],"property":"h21"},{"index":[2,2],"property":"h22"},{"index":[2,3],"property":"h23"},{"index":[3,0],"property":"h30"},{"index":[3,1],"property":"h31"},{"index":[3,2],"property":"h32"},{"index":[3,3],"property":"h33"}]}]}}}`
     );
     expect(validHomogeneousIndexed.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/Thing/frameTransforms')).toBe(false);
 
     const invalidOneIndex = parseDocument(
       'memory://frame-transform-indexed-one-index',
-      '{"definitions":{"Thing":{"type":"object","frameTransforms":[{"from":{"reference":"urn:frame:a","kind":"custom"},"to":{"reference":"urn:frame:b","kind":"custom"},"encoding":"rotationMatrix","components":[{"index":[0],"property":"m00"}]}]}}}'
+      `{"$schema":"${semanticSchema}","definitions":{"Thing":{"type":"object","frameTransforms":[{"from":{"reference":"urn:frame:a","kind":"custom"},"to":{"reference":"urn:frame:b","kind":"custom"},"encoding":"rotationMatrix","components":[{"index":[0],"property":"m00"}]}]}}}`
     );
     expect(invalidOneIndex.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/Thing/frameTransforms')).toBe(true);
 
     const invalidThreeIndices = parseDocument(
       'memory://frame-transform-indexed-three-indices',
-      '{"definitions":{"Thing":{"type":"object","frameTransforms":[{"from":{"reference":"urn:frame:a","kind":"custom"},"to":{"reference":"urn:frame:b","kind":"custom"},"encoding":"homogeneousMatrix","components":[{"index":[0,0,0],"property":"h000"}]}]}}}'
+      `{"$schema":"${semanticSchema}","definitions":{"Thing":{"type":"object","frameTransforms":[{"from":{"reference":"urn:frame:a","kind":"custom"},"to":{"reference":"urn:frame:b","kind":"custom"},"encoding":"homogeneousMatrix","components":[{"index":[0,0,0],"property":"h000"}]}]}}}`
     );
     expect(invalidThreeIndices.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/Thing/frameTransforms')).toBe(true);
   });
@@ -909,6 +898,7 @@ describe('Phase 1 vertical slice', () => {
     const result = parseDocument(
       'memory://semantic-placement-scope',
       JSON.stringify({
+        $schema: semanticSchema,
         definitions: {
           Thing: {
             type: 'object',
@@ -930,7 +920,7 @@ describe('Phase 1 vertical slice', () => {
             },
             items: {
               type: 'number',
-              semanticRole: 'resultQuality'
+              concepts: [{ reference: 'urn:concept:item', kind: 'custom-concept' }]
             },
             choices: {
               scalar: {
@@ -951,29 +941,29 @@ describe('Phase 1 vertical slice', () => {
     expect(placements.some((entry) => entry.pointer === '/definitions/Thing')).toBe(true);
     expect(placements.some((entry) => entry.pointer === '/definitions/Thing/properties/id')).toBe(true);
     expect(placements.some((entry) => entry.pointer === '/definitions/Thing/items')).toBe(true);
-    expect(placements.some((entry) => entry.pointer === '/definitions/Thing/values')).toBe(true);
-    expect(placements.some((entry) => entry.pointer === '/definitions/Thing/choices/scalar')).toBe(true);
-    expect(placements.some((entry) => entry.pointer === '/definitions/Thing/anyOf/0')).toBe(true);
-    expect(placements.some((entry) => entry.pointer === '/definitions/Thing/anyOf/1')).toBe(true);
+    expect(placements.some((entry) => entry.pointer === '/definitions/Thing/values')).toBe(false);
+    expect(placements.some((entry) => entry.pointer === '/definitions/Thing/choices/scalar')).toBe(false);
+    expect(placements.some((entry) => entry.pointer === '/definitions/Thing/anyOf/0')).toBe(false);
+    expect(placements.some((entry) => entry.pointer === '/definitions/Thing/anyOf/1')).toBe(false);
+    expect(result.diagnostics.some((entry) => entry.location?.pointer === '/definitions/Thing/anyOf/0/semanticRole')).toBe(true);
+    expect(result.diagnostics.some((entry) => entry.location?.pointer === '/definitions/Thing/values/semanticRole')).toBe(true);
     expect(placements.some((entry) => entry.pointer === '/definitions/Thing/unknownPayload')).toBe(false);
   });
   it('validates relation declarations and semantic unions against closed and open vocabularies', () => {
-    const valid = parseDocument('memory://normative-forms', JSON.stringify({ definitions: { Thing: {
+    const valid = parseDocument('memory://normative-forms', JSON.stringify({ $schema: semanticSchema, definitions: { Thing: {
       type: 'object',
+      properties: { value: { type: 'string', enum: ['active'], semanticRole: 'status', derivation: 'statistic', statistic: 'sum', phenomenonTimeRelation: 'accumulation', supportPeriod: { length: 'PT1M', anchor: 'start' }, cadence: { kind: 'onChange' }, codedValues: { reference: 'urn:codes:custom', kind: 'vendor-private' }, temporalReferenceSystem: { reference: 'urn:trs:custom', kind: 'vendor-private' } } },
       relations: {
         owner: { targettype: { $ref: '#/definitions/Thing' }, cardinality: 'single' },
         peers: { targettype: { $ref: '#/definitions/Thing' }, cardinality: 'multiple', scope: ['#/items'] }
       },
-      semanticRole: 'status', derivation: 'statistic', statistic: { function: 'nthHighest', rank: 2 },
-      phenomenonTimeRelation: 'accumulation', supportPeriod: { length: 'PT1M', anchor: 'start' },
-      cadence: { kind: 'onChange' }, codedValues: { reference: 'urn:codes:custom', kind: 'vendor-private' },
-      temporalReferenceSystem: { reference: 'urn:trs:custom', kind: 'vendor-private', position: 'time' }
     } } }));
     const thing = valid.model?.projections.definitions[0];
+    const valueSemantic = valid.model?.projections.semanticPlacements.find((entry) => entry.pointer === '/definitions/Thing/properties/value')?.annotations;
     expect(thing?.relations.map((relation) => relation.cardinality)).toEqual(['single', 'multiple']);
-    expect(thing?.semantic?.statistic).toEqual({ function: 'nthHighest', rank: 2 });
-    expect(thing?.semantic?.cadence).toEqual({ kind: 'onChange' });
-    expect(thing?.semantic?.codedValues?.kind).toBe('vendor-private');
+    expect(valueSemantic?.statistic).toBe('sum');
+    expect(valueSemantic?.cadence).toEqual({ kind: 'onChange' });
+    expect(valueSemantic?.codedValues?.kind).toBe('vendor-private');
 
     const invalidCases = [
       ['missing targettype', '"relations":{"owner":{"cardinality":"single"}}', '/definitions/Thing/relations/owner'],
@@ -984,7 +974,7 @@ describe('Phase 1 vertical slice', () => {
       ['type reference form', '"codedValues":{"reference":"urn:codes","kind":"type"}', '/definitions/Thing/codedValues']
     ] as const;
     for (const [label, body, pointer] of invalidCases) {
-      const source = `{"definitions":{"Thing":{"type":"object",${body}}}}`;
+      const source = `{"$schema":"${semanticSchema}","definitions":{"Thing":{"type":"object",${body}}}}`;
       const result = parseDocument(`memory://${label}`, source);
       const diagnostic = result.diagnostics.find((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === pointer);
       expect(diagnostic, label).toBeDefined();

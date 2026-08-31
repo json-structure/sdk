@@ -95,6 +95,17 @@ export interface ReferenceResolutionProjection {
 export interface SemanticPlacementProjection {
 	readonly pointer: JsonPointer;
 	readonly annotations: SemanticAnnotationsProjection;
+	readonly inspection: readonly SemanticAnnotationInspection[];
+}
+
+export interface SemanticAnnotationInspection {
+	readonly keyword: keyof SemanticAnnotationsProjection;
+	readonly authored: unknown;
+	readonly effective: unknown;
+	readonly normativeDefaults?: unknown;
+	readonly emittedJson: string;
+	readonly resolution: 'local' | 'indeterminate';
+	readonly advisory: boolean;
 }
 
 export interface RelationProjection {

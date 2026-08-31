@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   BUNDLED_ISO_4217_ENTRIES,
   BUNDLED_ISO_4217_PROVIDER,
+  BUNDLED_SEMANTIC_ENTRIES,
+  BUNDLED_SEMANTIC_PROVIDER,
   BUNDLED_UCUM_ENTRIES,
   BUNDLED_UCUM_PROVIDER,
   CatalogRegistry,
@@ -262,5 +264,50 @@ describe('host-neutral annotation catalogs', () => {
     expect(BUNDLED_UCUM_ENTRIES.some((entry) => entry.value === 'Cel')).toBe(true);
     expect(BUNDLED_ISO_4217_ENTRIES.some((entry) => entry.value === 'EUR')).toBe(true);
     expect(PROTOCOL_VERSION).toBe(1);
+  });
+
+  it('ships semantic families through the existing advisory provider contract', () => {
+    const families = new Set(BUNDLED_SEMANTIC_ENTRIES.map((entry) => entry.family));
+    expect(BUNDLED_SEMANTIC_ENTRIES).toHaveLength(73);
+    expect(families).toEqual(new Set(BUNDLED_SEMANTIC_PROVIDER.families));
+    expect(families).toEqual(new Set([
+      'semanticConcept', 'observedProperty', 'semanticRole', 'derivation', 'statistic',
+      'codedValues', 'measurementConditioning', 'referenceRole', 'phenomenonTimeRelation',
+      'temporalReferenceSystem', 'cadence', 'coordinateReferenceSystem', 'vectorReferenceFrame',
+      'tensorReferenceFrame', 'frameTransform', 'linearReferenceSystem', 'colorSpace',
+      'audioChannelLayout', 'spectralBandSet'
+    ]));
+    expect(BUNDLED_SEMANTIC_PROVIDER.trusted).toBe(false);
+  });
+
+  it('ranks semantic object values deterministically and emits exact JSON previews', () => {
+    const registry = new CatalogRegistry();
+    registry.register(BUNDLED_SEMANTIC_PROVIDER);
+    const request = registry.createRequest('semantic-crs', 2, 'coordinateReferenceSystem', 'EPSG:4326');
+    const merged = registry.merge(request, [bundledCatalogResult(request, BUNDLED_SEMANTIC_PROVIDER.id)]);
+    expect(merged.suggestions[0].label).toBe('WGS 84 geographic coordinates');
+    expect(JSON.parse(merged.suggestions[0].emittedJson)).toEqual(merged.suggestions[0].value);
+    expect(merged.suggestions[0]).toMatchObject({ advisory: true, provenance: [{ providerId: BUNDLED_SEMANTIC_PROVIDER.id }] });
+  });
+
+  it('lets authored semantic objects override bundled values while retaining provenance', () => {
+    const registry = new CatalogRegistry();
+    registry.register(BUNDLED_SEMANTIC_PROVIDER);
+    const request = registry.createRequest('semantic-override', 2, 'cadence', 'PT1S');
+    const value = { kind: 'fixed', period: 'PT1S' } as const;
+    const merged = registry.merge(
+      request,
+      [bundledCatalogResult(request, BUNDLED_SEMANTIC_PROVIDER.id)],
+      [{ family: 'cadence', value, label: 'Project sampling interval' }]
+    );
+    expect(merged.suggestions[0].label).toBe('Project sampling interval');
+    expect(merged.suggestions[0].provenance.map((source) => source.providerId)).toEqual([BUNDLED_SEMANTIC_PROVIDER.id, 'custom']);
+  });
+
+  it('keeps semantic seed JSON values unique within each family', () => {
+    const keys = BUNDLED_SEMANTIC_ENTRIES.map((entry) => `${entry.family}\u0000${JSON.stringify(entry.value)}`);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(BUNDLED_SEMANTIC_ENTRIES.some((entry) => entry.family === 'audioChannelLayout' && entry.label === 'Stereo')).toBe(true);
+    expect(BUNDLED_SEMANTIC_ENTRIES.some((entry) => entry.family === 'spectralBandSet')).toBe(true);
   });
 });

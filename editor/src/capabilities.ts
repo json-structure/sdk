@@ -3,11 +3,13 @@ export interface CapabilityResolution {
   readonly activeCore: true;
   readonly validationActive: boolean;
   readonly unitsActive: boolean;
+  readonly semanticAnnotationsActive: boolean;
   readonly offeredExtensions: readonly string[];
   readonly unknown: readonly string[];
 }
 const EXTENDED_META_SCHEMA = 'https://json-structure.org/meta/extended/v0/#';
 const VALIDATION_META_SCHEMA = 'https://json-structure.org/meta/validation/v0/#';
+const SEMANTIC_ANNOTATIONS_META_SCHEMA = 'https://json-structure.org/meta/semantic-annotations/v0/#';
 
 export function validationExtensionActive(value: unknown): boolean {
   const root = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -21,6 +23,13 @@ export function unitsExtensionActive(value: unknown): boolean {
   const uses = Array.isArray(root.$uses) ? root.$uses : [];
   return schema === VALIDATION_META_SCHEMA || (schema === EXTENDED_META_SCHEMA && uses.includes('JSONStructureUnits'));
 }
+export function semanticAnnotationsExtensionActive(value: unknown): boolean {
+  const root = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  const schema = typeof root.$schema === 'string' ? root.$schema : undefined;
+  const uses = Array.isArray(root.$uses) ? root.$uses : [];
+  return schema === SEMANTIC_ANNOTATIONS_META_SCHEMA ||
+    (schema === EXTENDED_META_SCHEMA && uses.includes('JSONStructureSemanticAnnotations'));
+}
 export function resolveCapabilities(value: unknown): CapabilityResolution {
   const root = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
   const offers = Array.isArray(root.$offers) ? root.$offers.filter((item): item is string => typeof item === 'string') : [];
@@ -30,6 +39,7 @@ export function resolveCapabilities(value: unknown): CapabilityResolution {
     activeCore: true,
     validationActive: validationExtensionActive(root),
     unitsActive: unitsExtensionActive(root),
+    semanticAnnotationsActive: semanticAnnotationsExtensionActive(root),
     offeredExtensions: offers.filter((offer) => known.has(offer)),
     unknown: offers.filter((offer) => !known.has(offer))
   };

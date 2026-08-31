@@ -139,6 +139,11 @@ describe('Validation editing and diagnostics', () => {
     expect(indeterminate.diagnostics.some((item) => item.location?.pointer === '/minimum')).toBe(false);
     const union = new DocumentSession('memory://effective-union', active('"type":["int8","string"]'));
     expect(new SetValidationKeywordCommand('', 'minimum', 1).canExecute({ session: union, documentVersion: 1 })).toBe(false);
+    const mixedSource = active('"definitions":{"Local":{"type":"int8"},"Mixed":{"$extends":["#/definitions/Local","https://example.test/types#External"],"minimum":"not-known"}},"$root":"#/definitions/Mixed"');
+    const mixed = parseDocument('memory://effective-mixed', mixedSource);
+    expect(mixed.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/Mixed/minimum')).toBe(false);
+    const mixedSession = new DocumentSession('memory://effective-mixed-command', active('"definitions":{"Local":{"type":"int8"},"Mixed":{"$extends":["#/definitions/Local","https://example.test/types#External"]}},"$root":"#/definitions/Mixed"'));
+    expect(new SetValidationKeywordCommand('/definitions/Mixed', 'minimum', 1).canExecute({ session: mixedSession, documentVersion: 1 })).toBe(false);
   });
 
   it('distinguishes authored minContains from the normative contains minimum', () => {

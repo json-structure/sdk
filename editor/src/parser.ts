@@ -9,6 +9,7 @@ import {
   type NormalizedDocument,
   type ReferenceProjection,
   type RelationProjection,
+  type SemanticAnnotationInspection,
   type SemanticPlacementProjection,
   type SemanticAnnotationsProjection,
   type UnitsProjection,
@@ -337,9 +338,9 @@ function buildProjections(
   const imports: ImportProjection[] = [];
   const references: ReferenceProjection[] = [];
   const semanticPlacements: SemanticPlacementProjection[] = [];
-  const { validationActive, unitsActive } = resolveCapabilities(root);
+  const { validationActive, unitsActive, semanticAnnotationsActive } = resolveCapabilities(root);
   const semanticByPointer = new Map<string, SemanticAnnotationsProjection>();
-  collectSemanticPlacements(root, '', uri, text, diagnostics, semanticPlacements, semanticByPointer);
+  collectSemanticPlacements(root, '', uri, text, diagnostics, semanticPlacements, semanticByPointer, semanticAnnotationsActive);
   collectDefinitions(root, root, '', uri, text, definitions, imports, diagnostics, semanticByPointer, nodes, validationActive, unitsActive);
   collectSchemaProjections(root, uri, text, definitions, diagnostics, semanticByPointer, nodes, validationActive, unitsActive);
   collectReferenceProjections(root, references);
@@ -1067,10 +1068,34 @@ function compositionProjection(
   return hasAnyKey(projection) ? projection : undefined;
 }
 
-function semanticProjection(pointer: string, value: Record<string, unknown>, uri: string, text: string, diagnostics: Diagnostic[]): SemanticAnnotationsProjection | undefined {
+const SEMANTIC_COLLECTION_TYPES = new Set(['array', 'set', 'map', 'choice']);
+const SEMANTIC_PROPERTY_OR_COLLECTION = new Set<SemanticAnnotationKeyword>([
+  'observedProperty', 'semanticRole', 'derivation', 'statistic', 'temporalReferenceSystem',
+  'cadence', 'codedValues', 'measurementConditioning'
+]);
+const SEMANTIC_PROPERTY_ONLY = new Set<SemanticAnnotationKeyword>(['phenomenonTimeRelation', 'supportPeriod', 'referenceRole']);
+const SEMANTIC_RECORD_ONLY = new Set<SemanticAnnotationKeyword>([
+  'coordinateReferenceSystem', 'vectorReferenceFrames', 'tensorReferenceFrames', 'frameTransforms',
+  'linearReferenceSystem', 'colorSpaces', 'audioChannels', 'spectralBands'
+]);
+function semanticKeywordPlacementValid(pointer: string, value: Record<string, unknown>, keyword: SemanticAnnotationKeyword): boolean {
+  if (keyword === 'concepts') return true;
+  const property = /\/properties\/[^/]+$/.test(pointer);
+  if (SEMANTIC_PROPERTY_ONLY.has(keyword)) return property;
+  if (SEMANTIC_PROPERTY_OR_COLLECTION.has(keyword)) {
+    return property || SEMANTIC_COLLECTION_TYPES.has(String(value.type)) ||
+      ((value.type === 'object' || value.type === 'tuple') && (keyword === 'observedProperty' || keyword === 'temporalReferenceSystem'));
+  }
+  return SEMANTIC_RECORD_ONLY.has(keyword) && (value.type === 'object' || value.type === 'tuple');
+}
+function semanticProjection(root: Record<string, unknown>, pointer: string, value: Record<string, unknown>, uri: string, text: string, diagnostics: Diagnostic[]): SemanticAnnotationsProjection | undefined {
   const read = <T>(keyword: string, validate: (candidate: unknown) => candidate is T): T | undefined => {
     const candidate = value[keyword];
     if (candidate === undefined) return undefined;
+    if (!semanticKeywordPlacementValid(pointer, value, keyword as SemanticAnnotationKeyword)) {
+      pushKeywordDiagnostic(diagnostics, uri, `${pointer}/${keyword}`, `${keyword} is not permitted at this schema position.`, text);
+      return undefined;
+    }
     if (validate(candidate)) return candidate;
     pushKeywordDiagnostic(diagnostics, uri, `${pointer}/${keyword}`, `${keyword} does not have the form required by JSON Structure Semantic Annotations.`, text);
     return undefined;
@@ -1097,6 +1122,22 @@ function semanticProjection(pointer: string, value: Record<string, unknown>, uri
     audioChannels: read('audioChannels', isAudioChannels),
     spectralBands: read('spectralBands', isSpectralBands)
   };
+  if (projection.concepts && !conceptsLocallyValid(projection.concepts, pointer)) {
+    pushKeywordDiagnostic(diagnostics, uri, `${pointer}/concepts`, 'concepts contains duplicate references, incompatible known kinds, or a known kind at the wrong schema position.', text);
+    projection.concepts = undefined;
+  }
+  if (projection.observedProperty && projection.concepts?.some((concept) => concept.reference === projection.observedProperty?.reference)) {
+    pushKeywordDiagnostic(diagnostics, uri, `${pointer}/concepts`, 'The same reference must not occur in both concepts and observedProperty.', text);
+    projection.concepts = undefined;
+  }
+  if (projection.supportPeriod && coreTemporalIntervalRequired(value) && !positiveCoreDuration(projection.supportPeriod.length)) {
+    pushKeywordDiagnostic(diagnostics, uri, `${pointer}/supportPeriod`, 'supportPeriod length must be a positive Core duration for a Core temporal value.', text);
+    projection.supportPeriod = undefined;
+  }
+  if (projection.cadence?.kind === 'fixed' && coreTemporalIntervalRequired(value) && !positiveCoreDuration(projection.cadence.period)) {
+    pushKeywordDiagnostic(diagnostics, uri, `${pointer}/cadence`, 'cadence period must be a positive Core duration for a Core temporal value.', text);
+    projection.cadence = undefined;
+  }
   if (value.statistic !== undefined && value.derivation !== 'statistic') {
     pushKeywordDiagnostic(diagnostics, uri, `${pointer}/statistic`, "statistic is permitted if and only if derivation is 'statistic'.", text);
     projection.statistic = undefined;
@@ -1111,6 +1152,38 @@ function semanticProjection(pointer: string, value: Record<string, unknown>, uri
   if (temporal && (value.type === 'object' || value.type === 'tuple') !== (typeof temporal.position === 'string')) {
     pushKeywordDiagnostic(diagnostics, uri, `${pointer}/temporalReferenceSystem`, 'temporalReferenceSystem position is required on object and tuple types and prohibited otherwise.', text);
     projection.temporalReferenceSystem = undefined;
+  }
+  for (const keyword of ['semanticRole', 'codedValues', 'measurementConditioning'] as const) {
+    if (projection[keyword] === undefined) continue;
+    const isolated = { ...value };
+    for (const other of ['semanticRole', 'codedValues', 'measurementConditioning'] as const) {
+      if (other !== keyword) delete isolated[other];
+    }
+    if (!semanticCoreTypeCompatible(isolated, root)) {
+      pushKeywordDiagnostic(diagnostics, uri, `${pointer}/${keyword}`, `${keyword} is not compatible with the effective Core type of this declaration.`, text);
+      projection[keyword] = undefined;
+    }
+  }
+  if (value.phenomenonTimeRelation === 'accumulation' && (value.derivation !== 'statistic' || value.statistic !== 'sum')) {
+    pushKeywordDiagnostic(diagnostics, uri, `${pointer}/phenomenonTimeRelation`, "phenomenonTimeRelation 'accumulation' requires derivation 'statistic' with statistic 'sum'.", text);
+    projection.phenomenonTimeRelation = undefined;
+  }
+  if (typeof projection.semanticRole === 'string' && temporalRoleDuplicate(root, pointer, projection.semanticRole)) {
+    pushKeywordDiagnostic(diagnostics, uri, `${pointer}/semanticRole`, `${projection.semanticRole} may occur only once among sibling properties.`, text);
+    projection.semanticRole = undefined;
+  }
+  const bindingKeywords = [
+    'temporalReferenceSystem', 'coordinateReferenceSystem', 'vectorReferenceFrames', 'tensorReferenceFrames',
+    'frameTransforms', 'linearReferenceSystem', 'colorSpaces', 'audioChannels', 'spectralBands'
+  ] as const;
+  for (const keyword of bindingKeywords) {
+    if (projection[keyword] === undefined) continue;
+    const isolated = { ...value };
+    for (const other of bindingKeywords) if (other !== keyword) delete isolated[other];
+    if (isRecord(value.properties) && !semanticBindingsValid(isolated)) {
+      pushKeywordDiagnostic(diagnostics, uri, `${pointer}/${keyword}`, `${keyword} references members that are not direct properties of this declaration.`, text);
+      projection[keyword] = undefined;
+    }
   }
   return hasAnyKey(projection) ? projection : undefined;
 }
@@ -1129,6 +1202,24 @@ function absoluteUri(value: unknown): value is string { if (typeof value !== 'st
 function referenceValueForKind(value: Record<string, unknown>): boolean { return typeof value.kind === 'string' && (value.kind === 'type' ? typeReference(value.reference) !== undefined : absoluteUri(value.reference)); }
 function isReferencedDefinition(value: unknown): value is Record<string, unknown> { return isRecord(value) && hasOnlyKeys(value, ['reference','kind']) && referenceValueForKind(value); }
 function isReferencedDefinitionArray(value: unknown): value is Record<string, unknown>[] { return Array.isArray(value) && value.length > 0 && value.every(isReferencedDefinition); }
+const CONCEPT_CLASS_KINDS = new Set(['rdfs-class', 'owl-class']);
+const CONCEPT_PROPERTY_KINDS = new Set(['rdf-property', 'owl-object-property', 'owl-datatype-property', 'dcterms-property']);
+function conceptsLocallyValid(value: readonly Record<string, unknown>[], pointer: string): boolean {
+  const references = value.map((entry) => entry.reference);
+  if (new Set(references).size !== references.length) return false;
+  const hasClass = value.some((entry) => CONCEPT_CLASS_KINDS.has(String(entry.kind)));
+  const hasProperty = value.some((entry) => CONCEPT_PROPERTY_KINDS.has(String(entry.kind)));
+  if (hasClass && hasProperty) return false;
+  const member = /\/(?:properties\/[^/]+|items|values|choices\/\d+)$/.test(pointer);
+  return (!hasClass || !member) && (!hasProperty || member);
+}
+function coreTemporalIntervalRequired(value: Readonly<Record<string, unknown>>): boolean {
+  return value.type === 'datetime' || value.type === 'date' || value.type === 'time';
+}
+function positiveCoreDuration(value: unknown): boolean {
+  if (typeof value !== 'string' || !/^P(?=\d|T\d)(?:\d+W|(?:(?:\d+Y)?(?:\d+M)?(?:\d+D)?)(?:T(?=\d)(?:\d+H)?(?:\d+M)?(?:\d+(?:\.\d+)?S)?)?)$/.test(value)) return false;
+  return /[1-9]/.test(value);
+}
 function isSemanticRole(value: unknown): value is string { return enumString(value, SEMANTIC_ROLES) !== undefined; }
 function isDerivation(value: unknown): value is string { return enumString(value, DERIVATIONS) !== undefined; }
 function isReferenceRole(value: unknown): value is string { return enumString(value, REFERENCE_ROLES) !== undefined; }
@@ -1231,6 +1322,247 @@ function isAudioChannels(value: unknown): value is Record<string, unknown>[] { r
 function isSpectralBand(value: unknown): value is Record<string, unknown> { return isRecord(value) && isReferencedBase(value) && hasOnlyKeys(value, ['reference','kind','bands','calibration']) && distinctStrings(value.bands) && optionalString(value.calibration); }
 function isSpectralBands(value: unknown): value is Record<string, unknown>[] { return Array.isArray(value) && value.length > 0 && value.every(isSpectralBand); }
 function isMeasurementConditioning(value: unknown): value is Record<string, unknown> { return isRecord(value) && Object.keys(value).length > 0 && hasOnlyKeys(value, ['weighting','timeWeighting','levelReference']) && optionalString(value.weighting) && optionalString(value.timeWeighting) && optionalString(value.levelReference); }
+export const SEMANTIC_ANNOTATION_KEYWORDS = [
+  'concepts', 'observedProperty', 'semanticRole', 'derivation', 'statistic', 'codedValues',
+  'measurementConditioning', 'referenceRole', 'phenomenonTimeRelation', 'supportPeriod',
+  'temporalReferenceSystem', 'cadence', 'coordinateReferenceSystem', 'vectorReferenceFrames',
+  'tensorReferenceFrames', 'frameTransforms', 'linearReferenceSystem', 'colorSpaces',
+  'audioChannels', 'spectralBands'
+] as const;
+export type SemanticAnnotationKeyword = typeof SEMANTIC_ANNOTATION_KEYWORDS[number];
+export interface SemanticAnnotationKeywordMap {
+  readonly concepts: readonly Record<string, unknown>[];
+  readonly observedProperty: Record<string, unknown>;
+  readonly semanticRole: string;
+  readonly derivation: string;
+  readonly statistic: string | Record<string, unknown>;
+  readonly codedValues: Record<string, unknown>;
+  readonly measurementConditioning: Record<string, unknown>;
+  readonly referenceRole: string;
+  readonly phenomenonTimeRelation: string;
+  readonly supportPeriod: Record<string, unknown>;
+  readonly temporalReferenceSystem: Record<string, unknown>;
+  readonly cadence: Record<string, unknown>;
+  readonly coordinateReferenceSystem: Record<string, unknown>;
+  readonly vectorReferenceFrames: readonly Record<string, unknown>[];
+  readonly tensorReferenceFrames: readonly Record<string, unknown>[];
+  readonly frameTransforms: readonly Record<string, unknown>[];
+  readonly linearReferenceSystem: Record<string, unknown>;
+  readonly colorSpaces: readonly Record<string, unknown>[];
+  readonly audioChannels: readonly Record<string, unknown>[];
+  readonly spectralBands: readonly Record<string, unknown>[];
+}
+const semanticValueValidators: { readonly [K in SemanticAnnotationKeyword]: (value: unknown) => boolean } = {
+  concepts: isReferencedDefinitionArray,
+  observedProperty: isReferencedDefinition,
+  semanticRole: isSemanticRole,
+  derivation: isDerivation,
+  statistic: isStatistic,
+  codedValues: isReferencedDefinition,
+  measurementConditioning: isMeasurementConditioning,
+  referenceRole: isReferenceRole,
+  phenomenonTimeRelation: isPhenomenonTimeRelation,
+  supportPeriod: isSupportPeriod,
+  temporalReferenceSystem: isTemporalReferenceSystem,
+  cadence: isCadence,
+  coordinateReferenceSystem: isCoordinateReferenceSystem,
+  vectorReferenceFrames: isVectorReferenceFrames,
+  tensorReferenceFrames: isTensorReferenceFrames,
+  frameTransforms: isFrameTransforms,
+  linearReferenceSystem: isLinearReferenceSystem,
+  colorSpaces: isColorSpaces,
+  audioChannels: isAudioChannels,
+  spectralBands: isSpectralBands
+};
+export function semanticAnnotationCandidateValid(
+  declaration: Readonly<Record<string, unknown>>,
+  keyword: SemanticAnnotationKeyword,
+  candidateValue: unknown,
+  root?: Readonly<Record<string, unknown>>,
+  pointer = ''
+): boolean {
+  if (!semanticValueValidators[keyword](candidateValue)) return false;
+  const candidate = { ...declaration, [keyword]: candidateValue };
+  return semanticAnnotationSetValid(candidate, root, pointer, keyword);
+}
+export function semanticAnnotationSetValid(
+  candidate: Readonly<Record<string, unknown>>,
+  root?: Readonly<Record<string, unknown>>,
+  pointer = '',
+  changedKeyword?: SemanticAnnotationKeyword
+): boolean {
+  if (isReferencedDefinitionArray(candidate.concepts) && !conceptsLocallyValid(candidate.concepts, pointer)) return false;
+  const observedPropertyReference = isRecord(candidate.observedProperty) ? candidate.observedProperty.reference : undefined;
+  if (isReferencedDefinitionArray(candidate.concepts) && observedPropertyReference !== undefined && candidate.concepts.some((concept) => concept.reference === observedPropertyReference)) return false;
+  if (isRecord(candidate.supportPeriod) && coreTemporalIntervalRequired(candidate) && !positiveCoreDuration(candidate.supportPeriod.length)) return false;
+  if (isRecord(candidate.cadence) && candidate.cadence.kind === 'fixed' && coreTemporalIntervalRequired(candidate) && !positiveCoreDuration(candidate.cadence.period)) return false;
+  if (candidate.statistic !== undefined && candidate.derivation !== 'statistic') return false;
+  if (candidate.derivation === 'statistic' && candidate.statistic === undefined) return false;
+  if (candidate.supportPeriod !== undefined && candidate.phenomenonTimeRelation !== 'interval' && candidate.phenomenonTimeRelation !== 'accumulation') return false;
+  const temporal = candidate.temporalReferenceSystem;
+  if (isRecord(temporal) && (candidate.type === 'object' || candidate.type === 'tuple') !== (typeof temporal.position === 'string')) return false;
+  if (root && !semanticCoreTypeCompatible(candidate, root)) return false;
+  if (!semanticBindingsValid(candidate)) return false;
+  if (candidate.phenomenonTimeRelation === 'accumulation' && (candidate.derivation !== 'statistic' || candidate.statistic !== 'sum')) return false;
+  if (root && changedKeyword === 'semanticRole' && typeof candidate.semanticRole === 'string' && temporalRoleDuplicate(root, pointer, candidate.semanticRole)) return false;
+  return true;
+}
+
+const INTEGER_CORE_TYPES = new Set(['integer', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32', 'int64', 'uint64', 'int128', 'uint128']);
+const NUMERIC_CORE_TYPES = new Set(['number', ...INTEGER_CORE_TYPES, 'float8', 'float', 'double', 'decimal']);
+const TEMPORAL_POSITION_CORE_TYPES = new Set(['date', 'datetime', 'time']);
+const TEMPORAL_POSITION_ROLES = new Set([
+  'resultTime', 'phenomenonTimeStart', 'phenomenonTimeEnd', 'effectiveTimeStart', 'effectiveTimeEnd',
+  'ingestionTime', 'scheduledTime', 'actualTime', 'forecastIssueTime'
+]);
+
+function localReferencePointer(value: unknown): string | undefined {
+  if (!isRecord(value) || typeof value.$ref !== 'string' || !value.$ref.startsWith('#')) return undefined;
+  return decodePointerFragment(value.$ref);
+}
+function effectiveLocalCoreType(
+  declaration: Readonly<Record<string, unknown>>,
+  root: Readonly<Record<string, unknown>>,
+  seen = new Set<Readonly<Record<string, unknown>>>()
+): string | undefined {
+  if (seen.has(declaration) || Array.isArray(declaration.type)) return undefined;
+  const nextSeen = new Set(seen).add(declaration);
+  const bases = typeof declaration.$extends === 'string' ? [declaration.$extends] : Array.isArray(declaration.$extends) ? declaration.$extends : [];
+  const resolved = bases.map((base) => {
+    if (typeof base !== 'string' || !base.startsWith('#')) return undefined;
+    const pointer = decodePointerFragment(base);
+    const target = pointer === undefined ? undefined : pointerAtRoot(root, pointer);
+    return isRecord(target) ? effectiveLocalCoreType(target, root, nextSeen) : undefined;
+  });
+  if (!resolved.every((type): type is string => type !== undefined) || new Set(resolved).size > 1) return undefined;
+  let authoredType: string | undefined;
+  if (typeof declaration.type === 'string') authoredType = declaration.type;
+  else {
+    const typePointer = localReferencePointer(declaration.type);
+    if (typePointer !== undefined) {
+      const target = pointerAtRoot(root, typePointer);
+      authoredType = isRecord(target) ? effectiveLocalCoreType(target, root, nextSeen) : undefined;
+    }
+  }
+  if (declaration.type !== undefined && authoredType === undefined) return undefined;
+  const candidates = authoredType === undefined ? resolved : [...resolved, authoredType];
+  return candidates.length > 0 && new Set(candidates).size === 1 ? candidates[0] : undefined;
+}
+function hasFixedStates(declaration: Readonly<Record<string, unknown>>): boolean {
+  return Array.isArray(declaration.enum) || Array.isArray(declaration.concepts);
+}
+function semanticCoreTypeCompatible(declaration: Readonly<Record<string, unknown>>, root: Readonly<Record<string, unknown>>): boolean {
+  const type = effectiveLocalCoreType(declaration, root);
+  if (type === undefined) return true;
+  if (declaration.codedValues !== undefined && type !== 'string' && !INTEGER_CORE_TYPES.has(type)) return false;
+  if (declaration.measurementConditioning !== undefined && !NUMERIC_CORE_TYPES.has(type)) return false;
+  const role = declaration.semanticRole;
+  if (typeof role !== 'string') return true;
+  if (TEMPORAL_POSITION_ROLES.has(role)) return TEMPORAL_POSITION_CORE_TYPES.has(type) || declaration.temporalReferenceSystem !== undefined;
+  if (role === 'phenomenonTime') return TEMPORAL_POSITION_CORE_TYPES.has(type) || type === 'object' || type === 'tuple' || declaration.temporalReferenceSystem !== undefined;
+  if (role === 'effectiveTime') return type === 'object' || type === 'tuple';
+  if (role === 'forecastLeadDuration') return type === 'duration' || (NUMERIC_CORE_TYPES.has(type) && (declaration.unit !== undefined || declaration.ucumUnit !== undefined));
+  if (role === 'status') return (type === 'string' || INTEGER_CORE_TYPES.has(type)) && hasFixedStates(declaration);
+  return true;
+}
+
+const TEMPORAL_SINGLETON_ROLES = new Set([
+  'phenomenonTime', 'resultTime', 'effectiveTime', 'phenomenonTimeStart', 'phenomenonTimeEnd',
+  'effectiveTimeStart', 'effectiveTimeEnd', 'ingestionTime', 'scheduledTime', 'actualTime',
+  'forecastIssueTime', 'forecastLeadDuration'
+]);
+function temporalRoleDuplicate(root: Readonly<Record<string, unknown>>, pointer: string, role: string): boolean {
+  if (!TEMPORAL_SINGLETON_ROLES.has(role)) return false;
+  const marker = '/properties/';
+  const index = pointer.lastIndexOf(marker);
+  if (index < 0) return false;
+  const owner = pointerAtRoot(root, pointer.slice(0, index));
+  if (!isRecord(owner) || !isRecord(owner.properties)) return false;
+  return Object.entries(owner.properties).some(([name, property]) =>
+    `${pointer.slice(0, index)}${marker}${pointerPart(name)}` !== pointer && isRecord(property) && property.semanticRole === role);
+}
+function directPropertyNames(value: Readonly<Record<string, unknown>>): Set<string> | undefined {
+  return isRecord(value.properties) ? new Set(Object.keys(value.properties)) : undefined;
+}
+function namesExist(names: unknown, properties: Set<string> | undefined): boolean {
+  return properties !== undefined && Array.isArray(names) && names.every((name) => typeof name === 'string' && properties.has(name));
+}
+function componentProperties(value: unknown): string[] | undefined {
+  if (typeof value === 'string') return [value];
+  if (!Array.isArray(value)) return undefined;
+  if (value.every((entry) => typeof entry === 'string')) return value as string[];
+  if (value.every((entry) => isRecord(entry) && typeof entry.property === 'string')) return value.map((entry) => (entry as Record<string, unknown>).property as string);
+  return undefined;
+}
+function semanticBindingsValid(value: Readonly<Record<string, unknown>>): boolean {
+  if (value.type !== 'object' && value.type !== 'tuple') return true;
+  const properties = directPropertyNames(value);
+  const temporal = value.temporalReferenceSystem;
+  if (isRecord(temporal) && (typeof temporal.position !== 'string' || !properties?.has(temporal.position))) return false;
+  const coordinate = value.coordinateReferenceSystem;
+  if (isRecord(coordinate) && !namesExist(coordinate.coordinates, properties)) return false;
+  for (const keyword of ['vectorReferenceFrames', 'tensorReferenceFrames', 'frameTransforms'] as const) {
+    const entries = value[keyword];
+    if (!Array.isArray(entries)) continue;
+    for (const entry of entries) {
+      if (!isRecord(entry)) return false;
+      const components = componentProperties(entry.components);
+      if (!components || !components.every((name) => properties?.has(name))) return false;
+      if (keyword === 'frameTransforms' && entry.translation !== undefined && !namesExist(entry.translation, properties)) return false;
+    }
+  }
+  const linear = value.linearReferenceSystem;
+  if (isRecord(linear) && !['linearElement', 'measure', 'measureEnd', 'direction'].every((key) => linear[key] === undefined || (typeof linear[key] === 'string' && properties?.has(linear[key] as string)))) return false;
+  for (const [keyword, memberKey, extraKey] of [
+    ['colorSpaces', 'channels', 'alpha'], ['audioChannels', 'channels', undefined], ['spectralBands', 'bands', undefined]
+  ] as const) {
+    const entries = value[keyword];
+    if (!Array.isArray(entries)) continue;
+    for (const entry of entries) {
+      if (!isRecord(entry) || !namesExist(entry[memberKey], properties) || (extraKey && entry[extraKey] !== undefined && !properties?.has(entry[extraKey] as string))) return false;
+    }
+  }
+  return true;
+}
+
+function semanticEffectiveValue(keyword: SemanticAnnotationKeyword, authored: unknown): unknown {
+  const defaultObject = (value: unknown, defaults: Readonly<Record<string, unknown>>): unknown => isRecord(value) ? { ...defaults, ...value } : value;
+  if (keyword === 'temporalReferenceSystem') return defaultObject(authored, { sortOrder: 'forward' });
+  if (keyword === 'vectorReferenceFrames' && Array.isArray(authored)) return authored.map((entry) => defaultObject(entry, { variance: 'contravariant' }));
+  if (keyword === 'colorSpaces' && Array.isArray(authored)) return authored.map((entry) => defaultObject(entry, { transfer: 'asDefined', ...(isRecord(entry) && entry.alpha !== undefined ? { alphaMode: 'straight' } : {}) }));
+  if (keyword === 'audioChannels' && Array.isArray(authored)) return authored.map((entry) => defaultObject(entry, { levelReference: 'fullScale', encoding: 'linear' }));
+  return authored;
+}
+function semanticNormativeDefaults(keyword: SemanticAnnotationKeyword, authored: unknown): unknown {
+  if (keyword === 'temporalReferenceSystem' && isRecord(authored) && authored.sortOrder === undefined) return { sortOrder: 'forward' };
+  if (keyword === 'vectorReferenceFrames' && Array.isArray(authored)) return authored.map((entry) => isRecord(entry) && entry.variance === undefined ? { variance: 'contravariant' } : {});
+  if (keyword === 'colorSpaces' && Array.isArray(authored)) return authored.map((entry) => isRecord(entry) ? {
+    ...(entry.transfer === undefined ? { transfer: 'asDefined' } : {}),
+    ...(entry.alpha !== undefined && entry.alphaMode === undefined ? { alphaMode: 'straight' } : {})
+  } : {});
+  if (keyword === 'audioChannels' && Array.isArray(authored)) return authored.map((entry) => isRecord(entry) ? {
+    ...(entry.levelReference === undefined ? { levelReference: 'fullScale' } : {}),
+    ...(entry.encoding === undefined ? { encoding: 'linear' } : {})
+  } : {});
+  return undefined;
+}
+function semanticInspection(value: Readonly<Record<string, unknown>>, projection: SemanticAnnotationsProjection): SemanticAnnotationInspection[] {
+  return SEMANTIC_ANNOTATION_KEYWORDS.filter((keyword) =>
+    Object.prototype.hasOwnProperty.call(value, keyword) && Object.prototype.hasOwnProperty.call(projection, keyword)
+  ).map((keyword) => {
+    const authored = value[keyword];
+    const normativeDefaults = semanticNormativeDefaults(keyword, authored);
+    return {
+      keyword,
+      authored,
+      effective: semanticEffectiveValue(keyword, authored),
+      ...(normativeDefaults === undefined ? {} : { normativeDefaults }),
+      emittedJson: JSON.stringify(authored),
+      resolution: ['concepts', 'observedProperty', 'codedValues', 'temporalReferenceSystem', 'coordinateReferenceSystem', 'vectorReferenceFrames', 'tensorReferenceFrames', 'frameTransforms', 'linearReferenceSystem', 'colorSpaces', 'audioChannels', 'spectralBands'].includes(keyword) ? 'indeterminate' : 'local',
+      advisory: true
+    };
+  });
+}
 function asString(value: unknown, pointer: string, keyword: string, uri: string, text: string, diagnostics: Diagnostic[]): string | undefined {
   if (value === undefined) return undefined;
   if (typeof value === 'string') return value;
@@ -1469,14 +1801,22 @@ function collectSemanticPlacements(
   text: string,
   diagnostics: Diagnostic[],
   placements: SemanticPlacementProjection[],
-  byPointer: Map<string, SemanticAnnotationsProjection>
+  byPointer: Map<string, SemanticAnnotationsProjection>,
+  active: boolean
 ): void {
   const visitSchema = (candidate: unknown, candidatePointer: string): void => {
     if (!isRecord(candidate)) return;
 
-    const semantic = semanticProjection(candidatePointer, candidate, uri, text, diagnostics);
+    if (!active) {
+      for (const keyword of SEMANTIC_ANNOTATION_KEYWORDS) {
+        if (Object.prototype.hasOwnProperty.call(candidate, keyword)) {
+          pushKeywordDiagnostic(diagnostics, uri, `${candidatePointer}/${keyword}`, `${keyword} requires the JSON Structure Semantic Annotations extension.`, text);
+        }
+      }
+    }
+    const semantic = active ? semanticProjection(value as Record<string, unknown>, candidatePointer, candidate, uri, text, diagnostics) : undefined;
     if (semantic) {
-      placements.push({ pointer: candidatePointer, annotations: semantic });
+      placements.push({ pointer: candidatePointer, annotations: semantic, inspection: semanticInspection(candidate, semantic) });
       byPointer.set(candidatePointer, semantic);
     }
 

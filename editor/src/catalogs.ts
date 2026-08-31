@@ -1,6 +1,12 @@
 import { PROTOCOL_VERSION, type DocumentVersion, type ProtocolEnvelope } from './contracts.js';
 
-export type CatalogFamily = 'symbol' | 'unit' | 'ucumUnit' | 'currency';
+export type CatalogFamily = 'symbol' | 'unit' | 'ucumUnit' | 'currency' |
+  'semanticConcept' | 'observedProperty' | 'semanticRole' | 'derivation' | 'statistic' |
+  'codedValues' | 'measurementConditioning' | 'referenceRole' | 'phenomenonTimeRelation' |
+  'temporalReferenceSystem' | 'cadence' | 'coordinateReferenceSystem' | 'vectorReferenceFrame' |
+  'tensorReferenceFrame' | 'frameTransform' | 'linearReferenceSystem' | 'colorSpace' |
+  'audioChannelLayout' | 'spectralBandSet';
+export type CatalogJsonValue = null | boolean | number | string | readonly CatalogJsonValue[] | { readonly [key: string]: CatalogJsonValue };
 export type CatalogProviderKind = 'bundled' | 'workspace' | 'https' | 'host';
 export interface CatalogProviderManifest {
   readonly id: string;
@@ -15,7 +21,7 @@ export interface CatalogProviderManifest {
 }
 export interface CatalogEntry {
   readonly family: CatalogFamily;
-  readonly value: string;
+  readonly value: CatalogJsonValue;
   readonly label: string;
   readonly description?: string;
   readonly aliases?: readonly string[];
@@ -80,11 +86,23 @@ function validManifest(manifest: CatalogProviderManifest): boolean {
     (manifest.kind !== 'https' || (typeof manifest.endpoint === 'string' && /^https:\/\//.test(manifest.endpoint)));
 }
 function normalized(value: string): string { return value.normalize('NFKC').toLocaleLowerCase('en-US'); }
-const catalogFamilies = new Set<CatalogFamily>(['symbol', 'unit', 'ucumUnit', 'currency']);
+const catalogFamilies = new Set<CatalogFamily>([
+  'symbol', 'unit', 'ucumUnit', 'currency', 'semanticConcept', 'observedProperty',
+  'semanticRole', 'derivation', 'statistic', 'codedValues', 'measurementConditioning',
+  'referenceRole', 'phenomenonTimeRelation', 'temporalReferenceSystem', 'cadence',
+  'coordinateReferenceSystem', 'vectorReferenceFrame', 'tensorReferenceFrame',
+  'frameTransform', 'linearReferenceSystem', 'colorSpace', 'audioChannelLayout', 'spectralBandSet'
+]);
+function validJsonValue(value: unknown): value is CatalogJsonValue {
+  if (value === null || typeof value === 'boolean' || typeof value === 'string') return true;
+  if (typeof value === 'number') return Number.isFinite(value);
+  if (Array.isArray(value)) return value.every(validJsonValue);
+  return typeof value === 'object' && value !== null && Object.values(value).every(validJsonValue);
+}
 function validEntry(value: unknown): value is CatalogEntry {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const entry = value as Record<string, unknown>;
-  return catalogFamilies.has(entry.family as CatalogFamily) && typeof entry.value === 'string' && entry.value.length > 0 &&
+  return catalogFamilies.has(entry.family as CatalogFamily) && validJsonValue(entry.value) && entry.value !== '' &&
     typeof entry.label === 'string' && entry.label.trim().length > 0 &&
     (entry.description === undefined || typeof entry.description === 'string') &&
     (entry.aliases === undefined || (Array.isArray(entry.aliases) && entry.aliases.every((alias) => typeof alias === 'string')));
@@ -114,10 +132,11 @@ function entryTieBreak(left: CatalogEntry, right: CatalogEntry): number {
     (left.description ?? '').localeCompare(right.description ?? '') ||
     [...(left.aliases ?? [])].sort().join('\u0000').localeCompare([...(right.aliases ?? [])].sort().join('\u0000'));
 }
+function searchableValue(value: CatalogJsonValue): string { return typeof value === 'string' ? value : JSON.stringify(value); }
 function rank(entry: CatalogEntry, query: string, priority: number): number {
   const needle = normalized(query.trim());
   if (!needle) return 1000 + priority;
-  const value = normalized(entry.value);
+  const value = normalized(searchableValue(entry.value));
   const label = normalized(entry.label);
   const aliases = (entry.aliases ?? []).map(normalized);
   if (value === needle) return 5000 + priority;
@@ -237,7 +256,7 @@ export class CatalogRegistry {
 
     const canonicalCandidates = new Map<string, typeof candidates[number]>();
     for (const candidate of candidates) {
-      const key = `${candidate.entry.family}\u0000${candidate.entry.value}\u0000${candidate.provenance.providerId}`;
+      const key = `${candidate.entry.family}\u0000${JSON.stringify(candidate.entry.value)}\u0000${candidate.provenance.providerId}`;
       const existing = canonicalCandidates.get(key);
       const candidateScore = rank(candidate.entry, request.query, candidate.priority);
       const existingScore = existing ? rank(existing.entry, request.query, existing.priority) : -1;
@@ -248,7 +267,7 @@ export class CatalogRegistry {
       left.provenance.providerId.localeCompare(right.provenance.providerId) || entryTieBreak(left.entry, right.entry))) {
       const score = rank(candidate.entry, request.query, candidate.priority);
       if (score < 0) continue;
-      const key = `${candidate.entry.family}\u0000${candidate.entry.value}`;
+      const key = `${candidate.entry.family}\u0000${JSON.stringify(candidate.entry.value)}`;
       const existing = merged.get(key);
       if (!existing || score > existing.score || (score === existing.score && candidate.provenance.providerId.localeCompare(existing.provenance[0].providerId) < 0)) {
         merged.set(key, { ...candidate.entry, emittedJson: JSON.stringify(candidate.entry.value), score, advisory: true, provenance: [candidate.provenance, ...(existing?.provenance ?? [])] });
@@ -258,7 +277,7 @@ export class CatalogRegistry {
     }
     const suggestions = [...merged.values()]
       .map((suggestion) => ({ ...suggestion, provenance: [...suggestion.provenance].sort((left, right) => left.providerId.localeCompare(right.providerId)) }))
-      .sort((left, right) => right.score - left.score || left.value.localeCompare(right.value) || left.label.localeCompare(right.label))
+      .sort((left, right) => right.score - left.score || searchableValue(left.value).localeCompare(searchableValue(right.value)) || left.label.localeCompare(right.label))
       .slice(0, request.limit);
     return {
       ...request, kind: 'catalog-merge', cancelled: false, stale: false, suggestions,
@@ -307,7 +326,54 @@ export const BUNDLED_UCUM_PROVIDER: CatalogProviderManifest = {
 export const BUNDLED_ISO_4217_PROVIDER: CatalogProviderManifest = {
   id: 'bundled.iso-4217', label: 'ISO 4217', kind: 'bundled', families: ['currency'], source: 'https://www.iso.org/iso-4217-currency-codes.html', version: 'seed-2026-08-31', priority: 100, trusted: true
 };
+const semanticEntry = (family: CatalogFamily, value: CatalogJsonValue, label: string, aliases: readonly string[] = []): CatalogEntry => ({ family, value, label, aliases });
+const referenced = (reference: string, kind: string): CatalogJsonValue => ({ reference, kind });
+export const BUNDLED_SEMANTIC_ENTRIES: readonly CatalogEntry[] = [
+  semanticEntry('semanticConcept', referenced('https://www.w3.org/2006/time#Instant', 'owl-class'), 'Time instant', ['instant']),
+  semanticEntry('semanticConcept', referenced('https://www.w3.org/2006/time#Interval', 'owl-class'), 'Time interval', ['interval']),
+  semanticEntry('semanticConcept', referenced('https://qudt.org/schema/qudt/QuantityValue', 'owl-class'), 'Quantity value', ['quantity']),
+  semanticEntry('observedProperty', referenced('https://qudt.org/vocab/quantitykind/Temperature', 'qudt-quantity-kind'), 'Temperature'),
+  semanticEntry('observedProperty', referenced('https://qudt.org/vocab/quantitykind/Pressure', 'qudt-quantity-kind'), 'Pressure'),
+  semanticEntry('observedProperty', referenced('https://qudt.org/vocab/quantitykind/Velocity', 'qudt-quantity-kind'), 'Velocity'),
+  ...['observationValue','resultQuality','featureOfInterest','proximateFeatureOfInterest','ultimateFeatureOfInterest','observingProcedure','phenomenonTime','resultTime','effectiveTime','phenomenonTimeStart','phenomenonTimeEnd','effectiveTimeStart','effectiveTimeEnd','ingestionTime','scheduledTime','actualTime','forecastIssueTime','forecastLeadDuration','status'].map((value) => semanticEntry('semanticRole', value, value)),
+  ...['measured','statistic','calculated','estimated','modeled'].map((value) => semanticEntry('derivation', value, value)),
+  ...['mean','median','mode','minimum','maximum','sum','count','standardDeviation','variance','range'].map((value) => semanticEntry('statistic', value, value)),
+  semanticEntry('statistic', { function: 'percentile', percentile: 95 }, '95th percentile', ['p95']),
+  semanticEntry('statistic', { function: 'nthHighest', rank: 2 }, 'Second highest'),
+  semanticEntry('codedValues', referenced('https://www.w3.org/2004/02/skos/core#ConceptScheme', 'skos-concept-scheme'), 'SKOS concept scheme'),
+  semanticEntry('measurementConditioning', { weighting: 'A' }, 'A-weighting'),
+  semanticEntry('measurementConditioning', { weighting: 'C' }, 'C-weighting'),
+  semanticEntry('measurementConditioning', { timeWeighting: 'fast' }, 'Fast time weighting'),
+  ...['position','linearElement','measure','direction'].map((value) => semanticEntry('referenceRole', value, value)),
+  ...['instant','untilNext','interval','accumulation'].map((value) => semanticEntry('phenomenonTimeRelation', value, value)),
+  semanticEntry('temporalReferenceSystem', { reference: 'https://www.iso.org/iso-8601-date-and-time-format.html', kind: 'iso-8601', position: 'time' }, 'ISO 8601 time'),
+  semanticEntry('temporalReferenceSystem', { reference: 'https://www.opengis.net/def/trs/OGC/0/GPS', kind: 'ogc-trs', position: 'time' }, 'GPS time'),
+  semanticEntry('cadence', { kind: 'fixed', period: 'PT1S' }, 'Every second', ['1 Hz']),
+  semanticEntry('cadence', { kind: 'fixed', period: 'PT1M' }, 'Every minute'),
+  semanticEntry('cadence', { kind: 'irregular' }, 'Irregular'),
+  semanticEntry('cadence', { kind: 'onChange' }, 'On change'),
+  semanticEntry('coordinateReferenceSystem', { reference: 'https://www.opengis.net/def/crs/EPSG/0/4326', kind: 'epsg', coordinates: ['latitude', 'longitude'] }, 'WGS 84 geographic coordinates', ['EPSG:4326']),
+  semanticEntry('coordinateReferenceSystem', { reference: 'https://www.opengis.net/def/crs/EPSG/0/3857', kind: 'epsg', coordinates: ['x', 'y'] }, 'Web Mercator', ['EPSG:3857']),
+  semanticEntry('vectorReferenceFrame', [{ reference: 'urn:json-structure:frame:enu', kind: 'local-frame', components: ['east', 'north', 'up'] }], 'East-North-Up frame', ['ENU']),
+  semanticEntry('vectorReferenceFrame', [{ reference: 'urn:json-structure:frame:ned', kind: 'local-frame', components: ['north', 'east', 'down'] }], 'North-East-Down frame', ['NED']),
+  semanticEntry('tensorReferenceFrame', [{ frames: [{ reference: 'urn:json-structure:frame:cartesian', kind: 'local-frame' }, { reference: 'urn:json-structure:frame:cartesian', kind: 'local-frame' }], components: 'matrix', symmetry: 'none' }], 'Cartesian rank-two tensor'),
+  semanticEntry('frameTransform', [{ from: referenced('urn:json-structure:frame:body', 'local-frame'), to: referenced('urn:json-structure:frame:world', 'local-frame'), encoding: 'quaternion', components: ['qx', 'qy', 'qz', 'qw'] }], 'Body-to-world quaternion'),
+  semanticEntry('linearReferenceSystem', { reference: 'urn:json-structure:lrs:route', kind: 'linear-reference-system', linearElement: 'route', measure: 'distance' }, 'Route distance'),
+  semanticEntry('colorSpace', [{ reference: 'https://www.color.org/chardata/rgb/srgb.xalter', kind: 'icc-color-space', channels: ['red', 'green', 'blue'] }], 'sRGB'),
+  semanticEntry('colorSpace', [{ reference: 'https://www.color.org/chardata/rgb/DisplayP3.xalter', kind: 'icc-color-space', channels: ['red', 'green', 'blue'] }], 'Display P3'),
+  semanticEntry('audioChannelLayout', [{ reference: 'urn:mpeg:mpegB:cicp:channels:1', kind: 'cicp-channel-layout', channels: ['center'] }], 'Mono'),
+  semanticEntry('audioChannelLayout', [{ reference: 'urn:mpeg:mpegB:cicp:channels:2', kind: 'cicp-channel-layout', channels: ['left', 'right'] }], 'Stereo'),
+  semanticEntry('spectralBandSet', [{ reference: 'urn:json-structure:spectral:rgb', kind: 'spectral-band-set', bands: ['red', 'green', 'blue'] }], 'Visible RGB bands'),
+  semanticEntry('spectralBandSet', [{ reference: 'urn:json-structure:spectral:sentinel-2', kind: 'spectral-band-set', bands: ['B2', 'B3', 'B4', 'B8'] }], 'Sentinel-2 visible and near infrared')
+];
+export const BUNDLED_SEMANTIC_PROVIDER: CatalogProviderManifest = {
+  id: 'bundled.semantic-annotations', label: 'Semantic Annotations', kind: 'bundled',
+  families: [...new Set(BUNDLED_SEMANTIC_ENTRIES.map((entry) => entry.family))],
+  source: 'https://json-structure.org/semantic-annotations/', version: 'seed-2026-08-31', priority: 100, trusted: false
+};
 export function bundledCatalogResult(request: CatalogSearchRequest, providerId: string): CatalogProviderResult {
-  const entries = providerId === BUNDLED_UCUM_PROVIDER.id ? BUNDLED_UCUM_ENTRIES : providerId === BUNDLED_ISO_4217_PROVIDER.id ? BUNDLED_ISO_4217_ENTRIES : [];
+  const entries = providerId === BUNDLED_UCUM_PROVIDER.id ? BUNDLED_UCUM_ENTRIES :
+    providerId === BUNDLED_ISO_4217_PROVIDER.id ? BUNDLED_ISO_4217_ENTRIES :
+      providerId === BUNDLED_SEMANTIC_PROVIDER.id ? BUNDLED_SEMANTIC_ENTRIES.filter((entry) => entry.family === request.family) : [];
   return { ...request, kind: 'catalog-results', providerId, entries };
 }

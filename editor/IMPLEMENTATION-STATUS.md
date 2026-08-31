@@ -1,14 +1,16 @@
 # JSON Structure Editor Implementation Status
 
-Updated: 2026-08-31 (Phase 1 milestone: Units companion authoring and host-neutral catalogs)
+Updated: 2026-08-31 (Phase 1 milestone: Semantic Annotations authoring and catalog integration, semantic validation blockers resolved)
 Branch: `editor-autopilot`
 Worktree: `C:\git\json-structure-sdk-editor`
 
-Blocking findings in this milestone: none. The Units/catalog review findings are repaired. Full RFC 5646 validation, full UCUM grammar/dimensional equivalence, and the draft's broad `currency` placement wording remain explicit follow-up items. ADR-014 (`has` schema shape) remains unresolved from the prior milestone.
+Blocking findings in this milestone: none. External ontology and catalog meaning remains explicitly indeterminate and advisory. Full RFC 5646 validation, full UCUM grammar/dimensional equivalence, and the draft's broad `currency` placement wording remain follow-up items from the prior milestone. ADR-014 (`has` schema shape) also remains unresolved.
 
-Milestone summary: `symbol`, `symbols`, `unit`, `ucumUnit`, and `currency` now have typed add/replace/remove commands, schema-owned diagnostics, normalized authored inspection, capability activation, duplicate/stale/incomplete guards, and direct byte-identical inverse edits. Units activates directly through the Validation meta-schema or through normative `JSONStructureUnits` in `$uses` only under the Extended meta-schema; `JSONSchemaUnits` is not an alias. `unit` and `ucumUnit` require one resolved numeric underlying type; unresolved external types remain indeterminate. Known incompatible `unit`/`ucumUnit` pairs produce warnings without deleting either value. The host-neutral catalog registry validates result envelopes and entries before iteration, requires exact request-ID, registry-generated invocation-ID, document-version, kind, and protocol-version correlation, isolates malformed, mismatched, late, and throwing providers as structured issues, binds cancellation to invocation tokens, and canonicalizes duplicates and provenance before deterministic ranking independent of provider order or timing. Suggestions remain advisory and open-vocabulary and preserve exact emitted JSON. Bundled seeds contain 113 common UCUM entries and 179 ISO 4217 currency/fund/special-purpose entries.
+Milestone summary: all 20 Semantic Annotations keywords now have typed add/replace/remove commands, activation-aware and schema-owned diagnostics, sparse authored/effective inspection, exact JSON previews, duplicate/stale/incomplete guards, and direct byte-identical inverse edits. Semantic Annotations activates directly through its meta-schema or through normative `JSONStructureSemanticAnnotations` in `$uses` only under the Extended meta-schema. Parser and command validation enforce normative placement and value shapes; effective locally resolved Core-type compatibility for temporal roles, status, coded values, and measurement conditioning; statistic, accumulation, support-period, and temporal-reference sibling rules; locally decidable member bindings; singleton temporal roles; concept-reference uniqueness, known class/property kind compatibility and placement; positive Core temporal intervals; and tensor/frame rank and symmetry constraints. Union and external type compatibility remains conservative and indeterminate. Remote ontology, vocabulary, reference-system, and catalog meaning is never inferred or treated as validation authority.
 
-Review root cause and repair: capability activation used a non-normative Units token; catalog results were trusted before entry iteration; provider correlation fields were optional and a mismatch discarded every provider result; cancellation state was keyed only by caller request ID; duplicate selection depended on provider entry arrival order; and provider results did not carry or validate the registry-generated invocation ID, allowing a late result to cross into a newer invocation that reused every caller-controlled correlation value. The repair uses the normative token, validates complete provider result and custom-entry shapes, passes and requires exact invocation correlation on every provider request/result, reports provider-local issues without suppressing valid peer results, scopes cancellation to generated invocation IDs, and canonicalizes same-provider candidates before ranking and provenance aggregation. The crossover regression uses identical request ID, document version, catalog version, kind, and protocol version and verifies that the older invocation is rejected. Request and result envelopes remain JSON-round-trip serializable; no host I/O dependency or closed-vocabulary constraint was introduced.
+Semantic annotation removal now constructs and validates the complete post-removal candidate annotation set before `canExecute`, so dependent roles cannot be left invalid when temporal reference systems or fixed-state concepts are removed. Effective type resolution now resolves every declared `$extends` base before accepting or confirming an authored type and treats the declaration as indeterminate when any base is unresolved, external, cyclic, ambiguous, or incompatible; parser diagnostics remain conservative and type-dependent commands require determinate compatibility. Regression coverage includes authored `type: number` declarations with local plus external or missing bases and retains the fully local determinate control case.
+
+Catalog integration extends the existing host-neutral registry instead of creating a semantic-specific path. Catalog entries now carry serializable JSON values, so structured annotation values participate in the same deterministic exact/prefix/substring ranking, custom-value precedence, exact JSON emission, provider isolation, provenance aggregation, cancellation, and correlation guarantees as string values. The bundled Semantic Annotations provider contains exactly 73 unique advisory entries across 19 stable catalog-backed families and is deliberately marked untrusted. `supportPeriod` has no external-vocabulary family. Catalog membership never constrains authored values.
 
 ## Current milestone
 
@@ -35,10 +37,12 @@ Implemented:
 - Typed normalized projections for Core declaration forms, `$extends`, relation fields (`targettype`, `cardinality`, `scope`, `qualifiertype`), strict `$import`/`$importdefs` absolute-URI provenance, Units keywords, Validation structures (including type-aware numeric-string handling), conditional composition operators, and all 20 semantic annotation keywords.
 - `SetValidationKeywordCommand` with a generic keyword/value map for every Validation keyword, including duplicate/stale/incomplete guards and post-edit cross-key validation.
 - `SetUnitsKeywordCommand` plus `SetSymbolCommand`, `SetSymbolsCommand`, `SetUnitCommand`, `SetUcumUnitCommand`, and `SetCurrencyCommand` with capability, placement, value-shape, numeric-type, duplicate, stale, incomplete, and inverse guarantees.
+- `SetSemanticAnnotationCommand` plus typed wrappers for all 20 Semantic Annotations keywords, with activation, placement, value-shape, sibling, local binding, concept consistency, rank/symmetry, duplicate, stale, incomplete, and inverse guarantees.
+- Semantic inspection includes only successfully projected authored annotations, preserves authored values, exposes specification defaults only in effective values with authored/effective separation, emits exact JSON previews, and reports external semantic resolution as indeterminate and advisory.
 - Units inspection preserves authored values and exposes `preferredComputationalUnit` only when `ucumUnit` is authored; the specification defines no default value for the five Units keywords.
 - Host-neutral `CatalogRegistry`, provider manifest, request/result, suggestion, provenance, and structured provider-issue contracts for bundled, workspace, HTTPS, and host-contributed catalogs without registry-owned filesystem or network I/O.
 - Strict provider envelope/entry validation before iteration, provider-local malformed/mismatched/late/throwing isolation, deterministic exact/prefix/substring ranking, custom-value precedence, canonical duplicate provenance aggregation, exact JSON emission, invocation-scoped cancellation, catalog-version checks, and mandatory exact request-ID/registry-generated-invocation-ID/document-version/kind/protocol-version correlation.
-- Advisory bundled catalog data with 113 UCUM entries and 179 ISO 4217 entries; catalog membership never constrains authored values.
+- Advisory bundled catalog data with 113 UCUM entries, 179 ISO 4217 entries, and exactly 73 Semantic Annotations entries across 19 stable semantic family IDs; catalog membership never constrains authored values.
 - Validation projections distinguish authored `minContains` from its effective default of 1 when `contains` is present.
 - Exact Core numeric value-space checks for integer syntax, signedness, fixed-width ranges, string-backed 64-bit and 128-bit integers, decimal syntax, and normative floating ranges.
 - Ordered `identity` inspection and single-pass diagnostics for valid object and tuple schemas across root and nested schema traversal, excluding literal instance and annotation payloads.
@@ -50,7 +54,7 @@ Implemented:
 - Schema-owned reference traversal excludes `$ref`-shaped literal defaults, examples, and semantic payloads; diagnostics point to the exact reference value.
 - Semantic annotation placement projection indexed by schema pointer for every detected placement.
 - Relation diagnostics pinpoint unsupported member/value pointers directly.
-- Semantic annotation projections validate normative scalar, object, array, and union shapes, plus local tensor/frame rank and symmetry constraints; cross-document and deep semantic consistency checks remain partial.
+- Semantic annotation projections validate activation, placement, normative scalar/object/array/union shapes, sibling dependencies and exclusions, direct member bindings, singleton temporal roles, concept consistency, positive Core temporal intervals, and local tensor/frame rank and symmetry constraints; cross-document meaning remains indeterminate.
 - Diagnostics projection from parser diagnostics, including duplicate-pointer ambiguity diagnostics used by command precondition checks.
 - Core document-root diagnostics for non-object roots, local `$root` pointer form and placement, and `$root` versus inline `type` exclusivity.
 - Required root metadata diagnostics for missing or malformed `$schema`, `$id`, and `name` values.
@@ -70,9 +74,9 @@ Implemented:
 
 ## Validation
 
-Last validation on 2026-08-31 (Units companion authoring and host-neutral catalogs):
+Last validation on 2026-08-31 (final semantic authored-type `$extends` blocker resolved):
 
-- `npm test`: passed (7 files, 125 tests).
+- `npm test`: passed (8 files, 142 tests).
 - `npm run typecheck`: passed.
 - `npm run build`: passed (ESM, CJS, DTS).
 - `npm run coverage:generate`: passed; coverage statuses remain partial where editing or round-trip coverage is incomplete.
@@ -98,12 +102,13 @@ Phase 0 ADRs:
 
 Next steps for Phase 1:
 
-1. Replace the bounded common-form RFC 5646 and UCUM validators with dedicated complete engines before claiming full diagnostics coverage.
-2. Resolve whether `currency` is intentionally permitted on non-numeric schemas: the normative bullet says any schema element, while the section introduction describes numeric schemas.
-3. Decide whether arbitrary `unit` and `ucumUnit` compatibility is editor-owned or delegated to a selected catalog/provider; the current implementation only warns for known built-in pairs.
-4. Decide whether imported declarations that reference `#` through `$importdefs` are invalid by specification or require a distinct root binding; the resolver currently reports them unresolved because `$importdefs` imports definitions only.
-5. Keep Phase 2 UI work blocked until the remaining Phase 1 command slices pass review.
+1. Add host-driven external ontology and catalog resolution without converting unavailable, stale, or untrusted meaning into local validation failures.
+2. Replace the bounded common-form RFC 5646 and UCUM validators with dedicated complete engines before claiming full Units diagnostics coverage.
+3. Resolve whether `currency` is intentionally permitted on non-numeric schemas: the normative bullet says any schema element, while the section introduction describes numeric schemas.
+4. Decide whether arbitrary `unit` and `ucumUnit` compatibility is editor-owned or delegated to a selected catalog/provider; the current implementation only warns for known built-in pairs.
+5. Decide whether imported declarations that reference `#` through `$importdefs` are invalid by specification or require a distinct root binding; the resolver currently reports them unresolved because `$importdefs` imports definitions only.
+6. Keep Phase 2 UI work blocked until the remaining Phase 1 command slices pass review.
 
 ## Repository state
 
-These repairs are unstaged and uncommitted on `editor-autopilot`. Nothing was pushed.
+These changes are unstaged and uncommitted on `editor-autopilot`. Nothing was pushed.

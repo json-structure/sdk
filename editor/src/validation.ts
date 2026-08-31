@@ -136,13 +136,11 @@ export function effectiveValidationTypes(root: unknown, declaration: Readonly<Re
   const visitSchema = (schema: Readonly<Record<string, unknown>>): void => {
     if (visited.has(schema)) { determinate = false; return; }
     visited.add(schema);
-    const before = types.size;
-    if (Object.prototype.hasOwnProperty.call(schema, 'type')) visitType(schema.type);
+    const hasType = Object.prototype.hasOwnProperty.call(schema, 'type');
+    if (hasType) visitType(schema.type);
     const bases = typeof schema.$extends === 'string' ? [schema.$extends] : Array.isArray(schema.$extends) ? schema.$extends : [];
-    if (types.size === before) {
-      if (bases.length === 0) determinate = false;
-      else bases.forEach(visitReference);
-    }
+    if (!hasType && bases.length === 0) determinate = false;
+    bases.forEach(visitReference);
   };
   visitSchema(declaration);
   return { types: [...types], determinate };
