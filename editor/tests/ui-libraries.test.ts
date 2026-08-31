@@ -2,8 +2,30 @@ import { describe, expect, it } from 'vitest';
 import { bindPreview, clearCredentialSecret, librariesView, libraryConflictMessage, libraryPublishPreview, loadLibraryCatalog, refactoringPlanCommand, resolveLibrarySelection } from '../src/ui/index.js';
 import { planCopyDeclarations, planMaterializeDeclarations, planMoveDefinition } from '../src/phase4/refactoring.js';
 import { DocumentSession } from '../src/session.js';
+import { renderLibraryBrowser } from '../src/ui/library-browser.js';
 
 describe('library workbench view', () => {
+  it('filters provider catalogs and exposes nested reusable declarations', () => {
+    const html = renderLibraryBrowser({ requestBacked: true, fallbackAvailable: false }, undefined, 'floating', {
+      entryId: 'domain', version: '1', uri: 'memory:domain', value: { definitions: { Domain: { Address: { type: 'object' } }, Code: { type: 'string' } } },
+    }, ['/definitions/Domain/Address'], 'copy', undefined, '', {
+      providers: [{ id: 'team', kind: 'xregistry', location: 'https://registry.test', trusted: true, credentialConfigured: true, publishSupported: false }],
+      catalog: [
+        { providerId: 'team', id: 'domain', name: 'Domain', versions: [{ version: '1', documentUri: 'memory:domain', isDefault: true }] },
+        { providerId: 'other', id: 'other', name: 'Other', versions: [{ version: '1', documentUri: 'memory:other', isDefault: true }] },
+      ],
+      offline: false, documentValid: true, providerFilter: 'team', search: 'domain',
+    });
+
+    expect(html).toContain('data-library-provider-filter="team" aria-pressed="true"');
+    expect(html).toContain('data-library-catalog-count>1 of 2 entries');
+    expect(html).toContain('data-library-provider-id="other" data-library-search-text="other other " hidden');
+    expect(html).toContain('data-library-read data-library-entry="domain" data-library-version="1" data-library-provider="team"');
+    expect(html).not.toContain('\u0000');
+    expect(html).toContain('value="/definitions/Domain/Address" data-library-declaration checked');
+    expect(html).toContain('value="/definitions/Code" data-library-declaration');
+  });
+
   it('maps catalog and offline resolve operations through libraryRequest', async () => {
     const catalog = [{ providerId: 'team', id: 'common', name: 'Common', versions: [] }];
     const calls: Array<{ operation: string; payload: unknown }> = [];

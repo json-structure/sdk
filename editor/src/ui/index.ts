@@ -17,6 +17,7 @@ import type { ConversionCommandsManifest } from '../conversion/types.js';
 import type { LibraryEntry } from '../libraries/contracts.js';
 import type { LibraryDocument } from '../libraries/contracts.js';
 import type { LibraryCatalogEntry, LibraryHostResolution, LibraryProviderSummary } from '../libraries/host-runtime.js';
+import { renderLibraryBrowser } from './library-browser.js';
 import { CopyCollisionError, planLibraryCopy, planLibraryMaterialization, type CopyOperation, type LibraryProvenance } from '../libraries/planning.js';
 import { planAddImport, planCopyDeclarations, planExtractInlineProperty, planLocalShadow, planMaterializeDeclarations, planMoveDefinition, type RefactoringPlan } from '../phase4/refactoring.js';
 import { rangeFor } from '../parser.js';
@@ -184,6 +185,8 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
   let libraryPublishDraft: LibraryPublishDraft | undefined;
   let libraryPublishPreviewState: LibraryPublishPreview | undefined;
   let libraryPublishedEpoch: string | undefined;
+  let libraryProviderFilter = 'all';
+  let librarySearch = '';
   let librarySelector: 'pinned' | 'floating' = 'floating';
   let libraryDocument: LibraryDocument | undefined;
   let librarySelection: readonly string[] = [];
@@ -302,7 +305,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     graphLayout.reconcile(semanticGraphView.projection.nodes, semanticGraphView.projection.edges);
     forceGraphLayoutBySnapshot.set(snapshot, graphLayout);
     root.innerHTML = structuredWorkbenchShell(snapshot, documentTitle, definitions.map((item) => ({ name: item.name, pointer: item.pointer, namespace: item.namespacePointer })), definitionPointer, rows, selectedPointer, mode, problemsOpen, designMemberMode, effectiveMembers, expandedPropertyPointer);
-    mountAdvancedViews(root, snapshot, definitionPointer, graph, mode, instanceText, instanceResult, impactDirection, selectedAddIns, refactoringPlan, refactoringStatus, services, conversionManifest, conversionCommandId, conversionResult, conversionStatus, conversionProgress, conversionRequestId, libraryEntries, librarySelector, libraryDocument, librarySelection, libraryOperation, libraryPlan, libraryStatus, { providers: libraryProviders, catalog: libraryCatalog, resolution: libraryResolution, offline: libraryOffline, publishDraft: libraryPublishDraft, publishPreview: libraryPublishPreviewState, publishedEpoch: libraryPublishedEpoch, documentValid: snapshot.recovery === 'valid' }, instanceRoots, instanceRootPointer, instanceSelection);
+    mountAdvancedViews(root, snapshot, definitionPointer, graph, mode, instanceText, instanceResult, impactDirection, selectedAddIns, refactoringPlan, refactoringStatus, services, conversionManifest, conversionCommandId, conversionResult, conversionStatus, conversionProgress, conversionRequestId, libraryEntries, librarySelector, libraryDocument, librarySelection, libraryOperation, libraryPlan, libraryStatus, { providers: libraryProviders, catalog: libraryCatalog, resolution: libraryResolution, offline: libraryOffline, publishDraft: libraryPublishDraft, publishPreview: libraryPublishPreviewState, publishedEpoch: libraryPublishedEpoch, documentValid: snapshot.recovery === 'valid', providerFilter: libraryProviderFilter, search: librarySearch }, instanceRoots, instanceRootPointer, instanceSelection);
     root.dataset.theme = themeName;
     const nextSource = root.querySelector('[data-source]');
     if (preservedSource && nextSource) nextSource.replaceWith(preservedSource);
@@ -759,6 +762,29 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       if (!conversionResult?.outputs.length || !services?.openGeneratedOutput) return;
       void services.openGeneratedOutput({ protocolVersion: PROTOCOL_VERSION, requestId: `open-${Date.now()}`, kind: 'open-generated-output', outputs: conversionResult.outputs }).then((result) => { conversionStatus = result.message ?? (result.opened ? 'Opened generated outputs.' : 'No generated outputs were opened.'); render(); }, (error) => { conversionStatus = error instanceof Error ? error.message : String(error); render(); });
     });
+    const filterLibraryCatalog = (): void => {
+      const query = librarySearch.trim().toLocaleLowerCase();
+      let visible = 0;
+      let total = 0;
+      root.querySelectorAll('[data-library-provider-filter]').forEach((button: HTMLButtonElement) => button.setAttribute('aria-pressed', String((button.dataset.libraryProviderFilter ?? '') === libraryProviderFilter)));
+      root.querySelectorAll('[data-library-provider-id]').forEach((entry: HTMLElement) => {
+        total += 1;
+        const providerMatches = libraryProviderFilter === 'all' || (entry.dataset.libraryProviderId ?? '') === libraryProviderFilter;
+        const searchMatches = !query || (entry.dataset.librarySearchText ?? '').includes(query);
+        entry.hidden = !(providerMatches && searchMatches);
+        if (!entry.hidden) visible += 1;
+      });
+      const count = root.querySelector('[data-library-catalog-count]');
+      if (count) count.textContent = `${visible} of ${total} entries`;
+    };
+    root.querySelectorAll('[data-library-provider-filter]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
+      libraryProviderFilter = button.dataset.libraryProviderFilter ?? '';
+      filterLibraryCatalog();
+    }));
+    root.querySelector('[data-library-search]')?.addEventListener('input', (event: Event) => {
+      librarySearch = (event.currentTarget as HTMLInputElement).value;
+      filterLibraryCatalog();
+    });
     root.querySelector('[data-libraries-load]')?.addEventListener('click', () => {
       if (services?.libraryRequest) {
         libraryStatus = 'Refreshing library providers and catalog...'; render();
@@ -799,7 +825,13 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       render();
     }));
     root.querySelectorAll('[data-library-read]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
-      const [providerOrEntryId, entryOrVersion, requestedVersion] = (button.dataset.libraryRead ?? '').split('\u0000');
+      const explicitProviderId = button.dataset.libraryProvider;
+      const explicitEntryId = button.dataset.libraryEntry;
+      const explicitVersion = button.dataset.libraryVersion;
+      const [legacyProviderOrEntryId, legacyEntryOrVersion, legacyRequestedVersion] = (button.dataset.libraryRead ?? '').split('\u0000');
+      const providerOrEntryId = explicitProviderId ?? explicitEntryId ?? legacyProviderOrEntryId;
+      const entryOrVersion = explicitProviderId ? explicitEntryId : explicitVersion ?? legacyEntryOrVersion;
+      const requestedVersion = explicitProviderId ? explicitVersion : legacyRequestedVersion;
       const catalogEntry = libraryCatalog?.find((candidate) => candidate.providerId === providerOrEntryId && candidate.id === entryOrVersion);
       const entryId = catalogEntry ? entryOrVersion : providerOrEntryId;
       const entry = catalogEntry ?? libraryEntries?.find((candidate) => candidate.id === entryId);
@@ -1173,11 +1205,13 @@ interface LibraryWorkbenchState {
   readonly publishPreview?: LibraryPublishPreview;
   readonly publishedEpoch?: string;
   readonly documentValid: boolean;
+  readonly providerFilter?: string;
+  readonly search?: string;
 }
 
 function mountAdvancedViews(root: HTMLElement, snapshot: DocumentSnapshot, definitionPointer: string | undefined, graph: ReturnType<typeof projectGraph>, mode: Mode, instanceText: string, instanceResult: InstanceValidationResult | undefined, impactDirection: ImpactDirection, selectedAddIns: readonly string[], refactoringPlan: RefactoringPlan | undefined, refactoringStatus: string, host: EditorServices | undefined, conversionManifest: ConversionCommandsManifest | undefined, conversionCommandId: string | undefined, conversionResult: ConversionResult | undefined, conversionStatus: string, conversionProgress: ProgressEvent | undefined, conversionRequestId: string | undefined, libraryEntries: readonly LibraryEntry[] | undefined, librarySelector: 'pinned' | 'floating', libraryDocument: LibraryDocument | undefined, librarySelection: readonly string[], libraryOperation: LibraryOperation, libraryPlan: RefactoringPlan | undefined, libraryStatus: string, libraryState: LibraryWorkbenchState, instanceRoots: readonly { readonly pointer: string; readonly label: string }[], instanceRootPointer: string | undefined, instanceSelection: CrossNavigationSelection | undefined): void {
   const sourcePanel = root.querySelector('.js-source-view');
-  sourcePanel?.insertAdjacentHTML('beforebegin', `<section class="js-view" ${mode === 'analysis' ? '' : 'hidden'}>${analysisView(snapshot, definitionPointer, graph, impactDirection, refactoringPlan, refactoringStatus, selectedAddIns)}</section><section class="js-view" ${mode === 'instance' ? '' : 'hidden'}>${instanceView(instanceText, instanceResult, instanceRoots, instanceRootPointer, instanceSelection)}</section><section class="js-view" ${mode === 'conversion' ? '' : 'hidden'}>${conversionView(host, conversionManifest, conversionCommandId, conversionResult, conversionStatus, conversionProgress, conversionRequestId)}</section><section class="js-view" ${mode === 'libraries' ? '' : 'hidden'}>${librariesView(host, libraryEntries, librarySelector, libraryDocument, librarySelection, libraryOperation, libraryPlan, libraryStatus, libraryState)}</section>`);
+  sourcePanel?.insertAdjacentHTML('beforebegin', `<section class="js-view" ${mode === 'analysis' ? '' : 'hidden'}>${analysisView(snapshot, definitionPointer, graph, impactDirection, refactoringPlan, refactoringStatus, selectedAddIns)}</section><section class="js-view" ${mode === 'instance' ? '' : 'hidden'}>${instanceView(instanceText, instanceResult, instanceRoots, instanceRootPointer, instanceSelection)}</section><section class="js-view" ${mode === 'conversion' ? '' : 'hidden'}>${conversionView(host, conversionManifest, conversionCommandId, conversionResult, conversionStatus, conversionProgress, conversionRequestId)}</section><section class="js-view" ${mode === 'libraries' ? '' : 'hidden'}>${renderLibraryBrowser({ requestBacked: Boolean(host?.libraryRequest), fallbackAvailable: Boolean(host?.listLibraryEntries && host.readLibraryDocument) }, libraryEntries, librarySelector, libraryDocument, librarySelection, libraryOperation, libraryPlan, libraryStatus, libraryState)}</section>`);
 }
 
 export function conversionView(host: EditorServices | undefined, manifest: ConversionCommandsManifest | undefined, commandId: string | undefined, result: ConversionResult | undefined, status: string, progress?: ProgressEvent, requestId?: string): string {
