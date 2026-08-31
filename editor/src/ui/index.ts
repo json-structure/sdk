@@ -184,6 +184,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
   let libraryBinding: PreviewBinding | undefined;
   let libraryStatus = '';
   let problemsOpen = false;
+  let drawerReturnFocus: HTMLElement | undefined;
   const graphNavigation = new GraphNavigationController();
   const graphLayout = new ForceGraphLayout();
   const catalogRegistry = createCatalogRegistry();
@@ -267,6 +268,8 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     syncSourceModel(sourceModel, session.snapshot().text);
     const mount = ++sourceMount;
     const preservedSource = sourceEditor ? root.querySelector('[data-source]') as HTMLElement | null : null;
+    const sourceHadFocus = Boolean(preservedSource?.contains(document.activeElement));
+    const focusAnchor = sourceHadFocus ? undefined : captureWorkbenchFocus(root, document.activeElement as HTMLElement | null);
     preservedSource?.remove();
     const snapshot = session.snapshot();
     const definitions = (snapshot.model?.projections.definitions ?? []).filter((definition) => definition.reusable);
@@ -294,6 +297,8 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       panel?.setAttribute('aria-labelledby', `js-tab-${item}`);
     });
     wire(definitionPointer, rows, graph);
+    if (sourceHadFocus && sourceEditor) sourceEditor.focus();
+    else restoreWorkbenchFocus(root, focusAnchor);
     if (sourceEditor) revealPendingDiagnostic();
     else if (mode === 'source') void mountSourceEditor(root, snapshot.text, sourceModel, setSourceText, themeName, () => !disposed && mount === sourceMount).then((mounted) => {
       if (!mounted) return;
@@ -342,7 +347,11 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
         }
       });
     });
-    enhanceWorkbenchDom(root);
+    enhanceWorkbenchDom(root, mode);
+    root.querySelector('[data-mobile-mode]')?.addEventListener('change', (event: Event) => {
+      const nextMode = (event.currentTarget as HTMLInputElement).value as Mode;
+      if (nextMode) select(selectedPointer, nextMode);
+    });
     const theme = root.querySelector('[data-theme-select]') as HTMLInputElement | null;
     if (theme) theme.value = themeName;
     theme?.addEventListener('change', () => {
@@ -352,7 +361,23 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     });
     const filter = root.querySelector('.js-filter') as HTMLInputElement | null;
     filter?.addEventListener('input', () => filterTypeButtons(root, filter.value));
-    root.querySelectorAll('[data-mobile-drawer]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => toggleMobileDrawer(root, button.dataset.mobileDrawer!)));
+    root.querySelectorAll('[data-mobile-drawer]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
+      const name = button.dataset.mobileDrawer!;
+      const opening = !root.querySelector(`[data-drawer-panel="${name}"]`)?.classList.contains('js-drawer-open');
+      toggleMobileDrawer(root, name);
+      if (opening) {
+        drawerReturnFocus = button;
+        queueMicrotask(() => (root.querySelector(`[data-drawer-panel="${name}"] [data-mobile-drawer-close]`) as HTMLElement | null)?.focus());
+      } else {
+        drawerReturnFocus = undefined;
+      }
+    }));
+    root.querySelectorAll('[data-mobile-drawer-close]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
+      closeMobileDrawers(root);
+      const returnFocus = drawerReturnFocus;
+      drawerReturnFocus = undefined;
+      queueMicrotask(() => returnFocus?.focus());
+    }));
     root.querySelectorAll('[data-problems-toggle]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => { problemsOpen = !problemsOpen; render(); }));
     root.querySelector('[data-show-commands]')?.addEventListener('click', () => showCommandPalette());
     root.querySelectorAll('[data-command="definition.add"]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => openAction('definition.add', '')));
@@ -603,6 +628,8 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       target.addEventListener('keydown', (event: KeyboardEvent) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); activate(); } });
     });
     root.querySelector('[data-graph-fit]')?.addEventListener('click', () => { graphNavigation.fit(); updateGraphCamera(); });
+    root.querySelector('[data-graph-zoom-out]')?.addEventListener('click', () => zoomGraphAtCenter(180));
+    root.querySelector('[data-graph-zoom-in]')?.addEventListener('click', () => zoomGraphAtCenter(-180));
     root.querySelector('[data-graph-relayout]')?.addEventListener('click', () => { graphLayout.relayout(); });
     root.querySelector('[data-graph-back]')?.addEventListener('click', () => { selectedPointer = graphNavigation.back().selection?.pointer; render(); });
     root.querySelector('[data-graph-forward]')?.addEventListener('click', () => { selectedPointer = graphNavigation.forward().selection?.pointer; render(); });
@@ -658,6 +685,11 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     };
     graphLayout.setTickListener(updateGraphGeometry);
     const syncViewport = () => { const bounds = canvas.getBoundingClientRect(); graphNavigation.setViewport({ x: 0, y: 0, width: Math.max(1, bounds.width), height: Math.max(1, bounds.height) }); return bounds; };
+    const zoomGraphAtCenter = (deltaY: number): void => {
+      const bounds = syncViewport();
+      graphNavigation.wheelZoom({ x: bounds.width / 2, y: bounds.height / 2 }, deltaY);
+      updateGraphCamera();
+    };
     syncViewport();
     const ResizeObserverConstructor = (globalThis as unknown as { ResizeObserver?: new (callback: () => void) => GraphResizeObserver }).ResizeObserver;
     if (ResizeObserverConstructor) {
@@ -667,7 +699,20 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     canvas.addEventListener('wheel', (event: WheelEvent) => { event.preventDefault(); const bounds = syncViewport(); graphNavigation.wheelZoom({ x: event.clientX - bounds.left, y: event.clientY - bounds.top }, event.deltaY); updateGraphCamera(); }, { passive: false });
     let lastPoint: { x: number; y: number } | undefined;
     let nodeDrag: { readonly id: string; readonly offsetX: number; readonly offsetY: number; readonly startX: number; readonly startY: number; moved: boolean } | undefined;
+    const activePointers = new Map<number, { readonly x: number; readonly y: number }>();
+    let pinchDistance: number | undefined;
     canvas.addEventListener('pointerdown', (event: PointerEvent) => {
+      if (event.pointerType !== 'mouse') {
+        activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        canvas.setPointerCapture(event.pointerId);
+        if (activePointers.size === 2) {
+          const [first, second] = [...activePointers.values()];
+          pinchDistance = Math.hypot(second!.x - first!.x, second!.y - first!.y);
+          nodeDrag = undefined;
+          lastPoint = undefined;
+          return;
+        }
+      }
       const node = (event.target as SVGElement).closest('[data-graph-node]') as SVGElement | null;
       if (node?.dataset.graphNode && graphWorld?.getScreenCTM()) {
         event.preventDefault();
@@ -687,6 +732,20 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       canvas.classList.add('js-panning');
     });
     canvas.addEventListener('pointermove', (event: PointerEvent) => {
+      if (activePointers.has(event.pointerId)) {
+        activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        if (activePointers.size === 2 && pinchDistance !== undefined) {
+          event.preventDefault();
+          const bounds = syncViewport();
+          const [first, second] = [...activePointers.values()];
+          const nextDistance = Math.max(1, Math.hypot(second!.x - first!.x, second!.y - first!.y));
+          const midpoint = { x: (first!.x + second!.x) / 2 - bounds.left, y: (first!.y + second!.y) / 2 - bounds.top };
+          graphNavigation.wheelZoom(midpoint, -Math.log(nextDistance / Math.max(1, pinchDistance)) / 0.0015);
+          pinchDistance = nextDistance;
+          updateGraphCamera();
+          return;
+        }
+      }
       if (nodeDrag && graphWorld?.getScreenCTM()) {
         const worldPoint = clientToGraphPoint(graphWorld, event.clientX, event.clientY);
         nodeDrag.moved ||= Math.hypot(event.clientX - nodeDrag.startX, event.clientY - nodeDrag.startY) > 4;
@@ -699,6 +758,8 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       updateGraphCamera();
     });
     const releasePointer = (event: PointerEvent): void => {
+      activePointers.delete(event.pointerId);
+      if (activePointers.size < 2) pinchDistance = undefined;
       if (nodeDrag) {
         graphLayout.endDrag(nodeDrag.id, true);
         if (nodeDrag.moved) suppressNodeClick = nodeDrag.id;
@@ -710,6 +771,11 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     };
     canvas.addEventListener('pointerup', releasePointer);
     canvas.addEventListener('pointercancel', releasePointer);
+    canvas.addEventListener('keydown', (event: KeyboardEvent) => {
+      if (event.key === '+' || event.key === '=') { event.preventDefault(); zoomGraphAtCenter(-180); }
+      else if (event.key === '-') { event.preventDefault(); zoomGraphAtCenter(180); }
+      else if (event.key === '0' || event.key === 'Home') { event.preventDefault(); graphNavigation.fit(); updateGraphCamera(); }
+    });
     root.querySelector('[data-minimap]')?.addEventListener('click', (event: Event) => { const target = event.currentTarget as SVGElement; const bounds = target.getBoundingClientRect(); const pointer = event as PointerEvent; graphNavigation.navigateMinimap({ x: ((pointer.clientX - bounds.left) / Math.max(1, bounds.width)) * 180, y: ((pointer.clientY - bounds.top) / Math.max(1, bounds.height)) * 120 }, { x: 0, y: 0, width: 180, height: 120 }); updateGraphCamera(); });
     updateGraphGeometry();
   };
@@ -719,6 +785,14 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     showActionPalette(root, pointer, session, catalogRegistry, applyCommand);
   };
   const onKeyDown = (event: KeyboardEvent): void => {
+    if (event.key === 'Escape' && root.querySelector('.js-drawer-open')) {
+      event.preventDefault();
+      closeMobileDrawers(root);
+      const returnFocus = drawerReturnFocus;
+      drawerReturnFocus = undefined;
+      queueMicrotask(() => returnFocus?.focus());
+      return;
+    }
     if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'p') {
       event.preventDefault();
       showCommandPalette();
@@ -968,7 +1042,7 @@ function workbenchShell(snapshot: DocumentSnapshot, title: string, definitions: 
   ];
   const representationModes: readonly Extract<Mode, 'design' | 'graph' | 'source'>[] = ['design', 'graph', 'source'];
   const typeTree = definitions.map((item) => `<button role="treeitem" class="js-tree-item" data-select="${escapeAttribute(item.pointer)}" aria-current="${item.pointer === definitionPointer}"><span class="js-kind" aria-hidden="true">{ }</span><span>${escapeHtml(item.name)}</span></button>`).join('') || '<div class="js-empty js-tree-empty">No definitions yet.</div>';
-  return `<div class="js-shell"><header class="js-title"><span class="js-mark" aria-hidden="true"></span><strong>JSON Structure</strong><span class="js-file" data-document-title>${escapeHtml(title)}</span><button class="js-command-trigger" data-show-commands title="Show Commands (Ctrl+Shift+P)" aria-label="Show Commands">&gt;_</button><label class="js-theme-label"><span class="js-sr-only">Color theme</span><select class="js-theme" data-theme-select aria-label="Color theme"><option value="dark">Dark</option><option value="light">Light</option><option value="contrast">High contrast</option></select></label></header><div class="js-document-toolbar" role="toolbar" aria-label="Document actions"><button class="js-mobile-toggle" data-mobile-drawer="types" aria-controls="js-outline" aria-expanded="false">Types</button><button data-command="definition.add" title="New type">＋ Type</button><button data-mode="conversion" title="Convert this structure">⇄ Convert</button><button data-mode="instance" title="Validate an instance">✓ Validate</button><span class="js-spacer"></span><span class="js-chip">Core v0</span><div class="js-tabs" role="tablist" aria-label="Document representation">${representationModes.map((item) => `<button role="tab" data-mode="${item}" aria-selected="${mode === item}">${item[0]!.toUpperCase()}${item.slice(1)}</button>`).join('')}</div><button class="js-mobile-toggle" data-mobile-drawer="inspector" aria-controls="js-inspector" aria-expanded="false">Inspector</button></div><div class="js-workbench" data-problems-open="${problemsOpen}"><nav class="js-activity" aria-label="Workbench views"><button class="js-activity-button js-activity-primary" data-mobile-drawer="types" aria-label="Schema explorer" title="Schema explorer">T</button>${advancedModes.map((item) => `<button class="js-activity-button" data-mode="${item.mode}" aria-label="${item.label}" title="${item.label}" aria-pressed="${mode === item.mode}">${item.icon}</button>`).join('')}</nav><aside class="js-outline" id="js-outline" data-drawer-panel="types" aria-label="Schema explorer"><div class="js-panel-head"><span>Types</span><button data-command="definition.add" title="New type" aria-label="New type">＋</button></div><input class="js-filter" type="search" placeholder="Filter types" aria-label="Filter types"><div class="js-tree" role="tree" aria-label="Types and namespaces"><div class="js-tree-group">Definitions · ${definitions.length}</div>${typeTree}</div></aside><section class="js-center"><div class="js-editor-tab"><span class="js-kind" aria-hidden="true">{ }</span><span data-document-title>${escapeHtml(title)}</span></div><div class="js-breadcrumbs"><span data-document-title>${escapeHtml(title)}</span>${definition ? `<span aria-hidden="true">›</span><strong>${escapeHtml(definition.name)}</strong>` : ''}${selectedProperty ? `<span aria-hidden="true">›</span><strong>${escapeHtml(selectedProperty.name)}</strong>` : ''}</div><section class="js-view" ${mode === 'design' ? '' : 'hidden'}>${designView(definition?.name, definition?.type, definition?.description, rows, selectedPointer)}</section><section class="js-view js-graph" ${mode === 'graph' ? '' : 'hidden'}>${graphView(snapshot, selectedPointer)}</section><section class="js-view js-source-view" ${mode === 'source' ? '' : 'hidden'}><div class="js-source" data-source aria-label="JSON source editor"></div></section></section><aside class="js-inspector" id="js-inspector" data-drawer-panel="inspector" aria-label="Inspector"><div class="js-panel-head"><span>Inspector</span></div>${inspector(selectedProperty, definition, selectedDiagnostics)}</aside><section class="js-problems" aria-label="Problems panel"><div class="js-problems-head"><button class="js-problems-tab" data-problems-toggle aria-expanded="${problemsOpen}">Problems <span class="js-count">${snapshot.diagnostics.length}</span></button><span class="js-spacer"></span><button data-problems-toggle aria-label="Close Problems">×</button></div><div class="js-problem-list" role="list">${problems(snapshot.diagnostics)}</div></section></div><footer class="js-status"><button data-problems-toggle aria-expanded="${problemsOpen}" title="Toggle Problems"><span>× ${errors}</span><span>△ ${warnings}</span></button><span>JSON Structure Core v0</span><span class="js-spacer"></span><span>${definitions.length} type${definitions.length === 1 ? '' : 's'}</span><span>${documentStatus}</span></footer></div>`;
+  return `<div class="js-shell"><header class="js-title"><span class="js-mark" aria-hidden="true"></span><strong>JSON Structure</strong><span class="js-file" data-document-title>${escapeHtml(title)}</span><button class="js-command-trigger" data-show-commands title="Show Commands (Ctrl+Shift+P)" aria-label="Show Commands">&gt;_</button><label class="js-theme-label"><span class="js-sr-only">Color theme</span><select class="js-theme" data-theme-select aria-label="Color theme"><option value="dark">Dark</option><option value="light">Light</option><option value="contrast">High contrast</option></select></label></header><div class="js-document-toolbar" role="toolbar" aria-label="Document actions"><button class="js-mobile-toggle" data-mobile-drawer="types" aria-controls="js-outline" aria-expanded="false">Types</button><button data-command="definition.add" title="New type">＋ Type</button><button data-mode="conversion" title="Convert this structure">⇄ Convert</button><button data-mode="instance" title="Validate an instance">✓ Validate</button><span class="js-spacer"></span><span class="js-chip">Core v0</span><div class="js-tabs" role="tablist" aria-label="Document representation">${representationModes.map((item) => `<button role="tab" data-mode="${item}" aria-selected="${mode === item}">${item[0]!.toUpperCase()}${item.slice(1)}</button>`).join('')}</div><button class="js-mobile-toggle" data-mobile-drawer="inspector" aria-controls="js-inspector" aria-expanded="false">Inspector</button></div><div class="js-workbench" data-problems-open="${problemsOpen}"><nav class="js-activity" aria-label="Workbench views"><button class="js-activity-button js-activity-primary" data-mobile-drawer="types" aria-label="Schema explorer" title="Schema explorer">T</button>${advancedModes.map((item) => `<button class="js-activity-button" data-mode="${item.mode}" aria-label="${item.label}" title="${item.label}" aria-pressed="${mode === item.mode}">${item.icon}</button>`).join('')}</nav><aside class="js-outline" id="js-outline" data-drawer-panel="types" aria-label="Schema explorer"><div class="js-panel-head"><span>Types</span><span class="js-spacer"></span><button data-command="definition.add" title="New type" aria-label="New type">＋</button><button class="js-drawer-close" data-mobile-drawer-close aria-label="Close Types">×</button></div><input class="js-filter" type="search" placeholder="Filter types" aria-label="Filter types"><div class="js-tree" role="tree" aria-label="Types and namespaces"><div class="js-tree-group">Definitions · ${definitions.length}</div>${typeTree}</div></aside><section class="js-center"><div class="js-editor-tab"><span class="js-kind" aria-hidden="true">{ }</span><span data-document-title>${escapeHtml(title)}</span></div><div class="js-breadcrumbs"><span data-document-title>${escapeHtml(title)}</span>${definition ? `<span aria-hidden="true">›</span><strong>${escapeHtml(definition.name)}</strong>` : ''}${selectedProperty ? `<span aria-hidden="true">›</span><strong>${escapeHtml(selectedProperty.name)}</strong>` : ''}</div><section class="js-view" ${mode === 'design' ? '' : 'hidden'}>${designView(definition?.name, definition?.type, definition?.description, rows, selectedPointer)}</section><section class="js-view js-graph" ${mode === 'graph' ? '' : 'hidden'}>${graphView(snapshot, selectedPointer)}</section><section class="js-view js-source-view" ${mode === 'source' ? '' : 'hidden'}><div class="js-source" data-source aria-label="JSON source editor"></div></section></section><aside class="js-inspector" id="js-inspector" data-drawer-panel="inspector" aria-label="Inspector"><div class="js-panel-head"><span>Inspector</span><span class="js-spacer"></span><button class="js-drawer-close" data-mobile-drawer-close aria-label="Close Inspector">×</button></div>${inspector(selectedProperty, definition, selectedDiagnostics)}</aside><section class="js-problems" aria-label="Problems panel"><div class="js-problems-head"><button class="js-problems-tab" data-problems-toggle aria-expanded="${problemsOpen}">Problems <span class="js-count">${snapshot.diagnostics.length}</span></button><span class="js-spacer"></span><button data-problems-toggle aria-label="Close Problems">×</button></div><div class="js-problem-list" role="list">${problems(snapshot.diagnostics)}</div></section></div><footer class="js-status"><button data-problems-toggle aria-expanded="${problemsOpen}" title="Toggle Problems"><span>× ${errors}</span><span>△ ${warnings}</span></button><span>JSON Structure Core v0</span><span class="js-spacer"></span><span>${definitions.length} type${definitions.length === 1 ? '' : 's'}</span><span>${documentStatus}</span></footer></div>`;
 }
 
 export function legacyShell(snapshot: DocumentSnapshot, title: string, definitions: readonly { readonly name: string; readonly pointer: string; readonly namespace: string }[], definitionPointer: string | undefined, rows: readonly PropertyRow[], selectedPointer: string | undefined, mode: Mode, graphNavigation: GraphNavigationController, graph: ReturnType<typeof projectGraph>): string {
@@ -1021,12 +1095,13 @@ function instanceView(text: string, result: InstanceValidationResult | undefined
   return `<div class="js-sheet"><header class="js-type-head"><div><div class="js-eyebrow">Instance workspace</div><h1>Validate sample</h1><p class="js-description">Diagnostics link instance locations to exact schema locations.</p></div><span class="js-chip">${result?.status ?? 'not run'}</span></header><label class="js-instance-label">Instance JSON<textarea data-instance-input spellcheck="false">${escapeHtml(text)}</textarea></label><div class="js-section-head"><h2>Diagnostics (${result?.diagnostics.length ?? 0})</h2><button data-instance-validate>Validate</button></div>${result?.diagnostics.map((diagnostic) => `<button class="js-problem" data-instance-schema="${escapeAttribute(diagnostic.schemaPointer)}"><span class="js-problem-${diagnostic.severity}">${diagnostic.severity === 'error' ? 'x' : '!'}</span><span>${escapeHtml(diagnostic.message)}</span><span class="js-location">${escapeHtml(diagnostic.instancePointer)} -> ${escapeHtml(diagnostic.schemaPointer)}</span></button>`).join('') || '<div class="js-empty">Enter an instance and validate it against the focused schema.</div>'}</div>`;
 }
 
-function designView(name: string | undefined, type: string | undefined, description: string | undefined, rows: readonly PropertyRow[], selectedPointer: string | undefined): string {
+export function designView(name: string | undefined, type: string | undefined, description: string | undefined, rows: readonly PropertyRow[], selectedPointer: string | undefined): string {
   if (!name && !type) return '<div class="js-empty-state"><span class="js-empty-mark" aria-hidden="true"></span><div class="js-eyebrow">Untitled structure</div><h1>Create your first type</h1><p>Start with a reusable declaration, or switch to Source to author the document directly.</p><div class="js-empty-actions"><button class="js-primary" data-command="definition.add">＋ New type</button><button data-mode="source">Open Source</button></div></div>';
-  return `<div class="js-sheet"><header class="js-type-head"><div><div class="js-eyebrow">${name ? 'Local definition' : 'Document root'}</div><h1>${escapeHtml(name ?? 'Document root')}</h1><p class="js-description">${escapeHtml(description ?? 'No description yet.')}</p></div><span class="js-chip">${escapeHtml(type ?? 'untyped')}</span></header><div class="js-section-head"><div><h2>Properties</h2><span class="js-section-meta">${rows.length} total · ${rows.filter((row) => row.required).length} required</span></div><button data-command="add">＋ Add property</button></div><div class="js-grid" role="table" aria-label="Properties"><div class="js-row js-header" role="row"><div class="js-cell" role="columnheader">Name</div><div class="js-cell" role="columnheader">Type</div><div class="js-cell" role="columnheader">Presence</div><div class="js-cell js-description-cell" role="columnheader">Description</div><div class="js-cell" role="columnheader"><span class="js-sr-only">Actions</span></div></div>${rows.map((row) => `<div class="js-row" role="row" aria-current="${row.pointer === selectedPointer}"><button class="js-cell js-code" role="cell" data-select="${escapeAttribute(row.pointer)}">${escapeHtml(row.name)}</button><div class="js-cell js-code" role="cell">${escapeHtml(row.type)}</div><div class="js-cell ${row.required ? 'js-required' : 'js-optional'}" role="cell">${row.required ? 'required' : 'optional'}</div><div class="js-cell js-description-cell" role="cell">${escapeHtml(row.description ?? 'Description needed')}</div><button class="js-cell js-row-action" role="cell" data-select="${escapeAttribute(row.pointer)}" aria-label="Inspect ${escapeAttribute(row.name)}">⋯</button></div>`).join('') || '<button class="js-add-row" data-command="add">＋ <span>Add a property</span></button>'}</div></div>`;
+  const propertyRows = rows.map((row) => `<div class="js-row" role="row" aria-current="${row.pointer === selectedPointer}"><div class="js-cell" role="cell"><button class="js-property-link js-code" data-select="${escapeAttribute(row.pointer)}">${escapeHtml(row.name)}</button></div><div class="js-cell js-code" role="cell">${escapeHtml(row.type)}</div><div class="js-cell ${row.required ? 'js-required' : 'js-optional'}" role="cell">${row.required ? 'required' : 'optional'}</div><div class="js-cell js-description-cell" role="cell">${escapeHtml(row.description ?? 'Description needed')}</div><div class="js-cell js-action-cell" role="cell"><button class="js-row-action" data-select="${escapeAttribute(row.pointer)}" aria-label="Inspect ${escapeAttribute(row.name)}">⋯</button></div></div>`).join('');
+  return `<div class="js-sheet"><header class="js-type-head"><div><div class="js-eyebrow">${name ? 'Local definition' : 'Document root'}</div><h1>${escapeHtml(name ?? 'Document root')}</h1><p class="js-description">${escapeHtml(description ?? 'No description yet.')}</p></div><span class="js-chip">${escapeHtml(type ?? 'untyped')}</span></header><div class="js-section-head"><div><h2>Properties</h2><span class="js-section-meta">${rows.length} total · ${rows.filter((row) => row.required).length} required</span></div><button data-command="add">＋ Add property</button></div><div class="js-grid" role="table" aria-label="Properties"><div class="js-row js-header" role="row"><div class="js-cell" role="columnheader">Name</div><div class="js-cell" role="columnheader">Type</div><div class="js-cell" role="columnheader">Presence</div><div class="js-cell js-description-cell" role="columnheader">Description</div><div class="js-cell" role="columnheader"><span class="js-sr-only">Actions</span></div></div>${propertyRows || '<button class="js-add-row" data-command="add">＋ <span>Add a property</span></button>'}</div></div>`;
 }
 
-function graphView(graphOrSnapshot: ReturnType<typeof projectGraph> | DocumentSnapshot, navigationOrSelected: GraphNavigationController | string | undefined, selectedPointerOverride?: string | undefined): string {
+export function graphView(graphOrSnapshot: ReturnType<typeof projectGraph> | DocumentSnapshot, navigationOrSelected: GraphNavigationController | string | undefined, selectedPointerOverride?: string | undefined): string {
   const isSnapshot = 'model' in graphOrSnapshot;
   const graph: ReturnType<typeof projectGraph> = isSnapshot ? projectGraph(graphOrSnapshot as DocumentSnapshot) : graphOrSnapshot as ReturnType<typeof projectGraph>;
   const navigation: GraphNavigationController = isSnapshot ? graphNavigationBySnapshot.get(graphOrSnapshot as DocumentSnapshot) ?? new GraphNavigationController() : navigationOrSelected as GraphNavigationController;
@@ -1042,7 +1117,7 @@ function graphView(graphOrSnapshot: ReturnType<typeof projectGraph> | DocumentSn
   const edges = graph.edges.map((edge) => renderGraphEdge(edge, position)).join('');
   const nodes = positions.map((node) => renderGraphNode(node, selectedPointer, state.semanticZoom)).join('') || '<text x="30" y="50">No types to graph.</text>';
   if (!isSnapshot) layout.dispose();
-  return `<div class="js-graph-toolbar"><button data-graph-back title="Back" ${state.historyIndex > 0 ? '' : 'disabled'}>←</button><button data-graph-forward title="Forward" ${state.historyIndex < state.history.length - 1 ? '' : 'disabled'}>→</button><button data-graph-fit title="Fit graph">Fit</button><button data-graph-relayout title="Release pinned nodes and run the force layout again">Relayout</button><span data-semantic-zoom="${state.semanticZoom}">${Math.round(state.camera.zoom * 100)}% · ${state.semanticZoom}</span></div><svg class="js-graph-canvas" data-graph-canvas viewBox="0 0 ${width} ${height}" role="img" aria-label="Interactive type relationship graph with ${graph.nodes.length} nodes and ${graph.edges.length} edges"><defs><marker id="js-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8Z" fill="currentColor"></path></marker></defs><g data-graph-world transform="${transform}"><g data-graph-edges>${edges}</g><g data-graph-nodes>${nodes}</g></g><g class="js-minimap" transform="translate(12 12)"><rect width="180" height="120" data-minimap></rect><g data-minimap-nodes>${minimap.nodes.map((node, index) => `<rect data-minimap-node="${escapeAttribute(positions[index]?.id ?? '')}" x="${node.x / width * 180}" y="${node.y / height * 120}" width="${Math.max(3, node.width / width * 180)}" height="${Math.max(3, node.height / height * 120)}"></rect>`).join('')}</g><rect class="js-minimap-viewport" x="${minimapViewport.x}" y="${minimapViewport.y}" width="${minimapViewport.width}" height="${minimapViewport.height}"></rect></g></svg>`;
+  return `<div class="js-graph-toolbar"><button data-graph-back title="Back" aria-label="Back" ${state.historyIndex > 0 ? '' : 'disabled'}>←</button><button data-graph-forward title="Forward" aria-label="Forward" ${state.historyIndex < state.history.length - 1 ? '' : 'disabled'}>→</button><button data-graph-fit title="Fit graph">Fit</button><button data-graph-relayout title="Release pinned nodes and run the force layout again">Relayout</button><span class="js-spacer"></span><button data-graph-zoom-out title="Zoom out" aria-label="Zoom out">−</button><span data-semantic-zoom="${state.semanticZoom}">${Math.round(state.camera.zoom * 100)}% · ${state.semanticZoom}</span><button data-graph-zoom-in title="Zoom in" aria-label="Zoom in">＋</button></div><svg class="js-graph-canvas" data-graph-canvas viewBox="0 0 ${width} ${height}" tabindex="0" role="group" aria-label="Interactive type relationship graph with ${graph.nodes.length} nodes and ${graph.edges.length} edges. Use plus and minus to zoom, zero to fit, and Tab to reach graph nodes."><defs><marker id="js-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8Z" fill="currentColor"></path></marker></defs><g data-graph-world transform="${transform}"><g data-graph-edges>${edges}</g><g data-graph-nodes>${nodes}</g></g><g class="js-minimap" transform="translate(12 12)"><rect width="180" height="120" data-minimap></rect><g data-minimap-nodes>${minimap.nodes.map((node, index) => `<rect data-minimap-node="${escapeAttribute(positions[index]?.id ?? '')}" x="${node.x / width * 180}" y="${node.y / height * 120}" width="${Math.max(3, node.width / width * 180)}" height="${Math.max(3, node.height / height * 120)}"></rect>`).join('')}</g><rect class="js-minimap-viewport" x="${minimapViewport.x}" y="${minimapViewport.y}" width="${minimapViewport.width}" height="${minimapViewport.height}"></rect></g></svg>`;
 }
 
 type PositionedGraphNode = ReturnType<typeof projectGraph>['nodes'][number] & ForceGraphPosition;
@@ -1293,7 +1368,20 @@ function isObjectSchema(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value) && (value as Record<string, unknown>).type === 'object';
 }
 
-function enhanceWorkbenchDom(root: HTMLElement): void {
+export function mobileModeSelect(mode: Mode): string {
+  const representations: readonly { readonly value: Mode; readonly label: string }[] = [
+    { value: 'design', label: 'Design' }, { value: 'graph', label: 'Graph' }, { value: 'source', label: 'Source' },
+  ];
+  const tools: readonly { readonly value: Mode; readonly label: string }[] = [
+    { value: 'analysis', label: 'Analysis' }, { value: 'instance', label: 'Validate instance' }, { value: 'conversion', label: 'Conversions' }, { value: 'libraries', label: 'Libraries' },
+  ];
+  const options = (items: readonly { readonly value: Mode; readonly label: string }[]): string => items.map((item) => `<option value="${item.value}" ${item.value === mode ? 'selected' : ''}>${item.label}</option>`).join('');
+  return `<label class="js-mobile-mode"><span class="js-sr-only">Workbench view</span><select data-mobile-mode aria-label="Workbench view"><optgroup label="Editor">${options(representations)}</optgroup><optgroup label="Tools">${options(tools)}</optgroup></select></label>`;
+}
+
+function enhanceWorkbenchDom(root: HTMLElement, mode: Mode): void {
+  const representationTabs = root.querySelector('.js-document-toolbar .js-tabs');
+  representationTabs?.insertAdjacentHTML('beforebegin', mobileModeSelect(mode));
   const graph = root.querySelector('[data-graph-canvas]');
   graph?.setAttribute('role', 'group');
 }
@@ -1313,6 +1401,43 @@ function filterTypeButtons(root: HTMLElement, query: string): void {
 function toggleMobileDrawer(root: HTMLElement, name: string): void {
   root.querySelectorAll('[data-drawer-panel]').forEach((panel: HTMLElement) => panel.classList.toggle('js-drawer-open', panel.dataset.drawerPanel === name && !panel.classList.contains('js-drawer-open')));
   root.querySelectorAll('[data-mobile-drawer]').forEach((button: HTMLButtonElement) => button.setAttribute('aria-expanded', String(root.querySelector(`[data-drawer-panel="${button.dataset.mobileDrawer}"]`)?.classList.contains('js-drawer-open') ?? false)));
+}
+
+function closeMobileDrawers(root: HTMLElement): void {
+  root.querySelectorAll('[data-drawer-panel]').forEach((panel: HTMLElement) => panel.classList.remove('js-drawer-open'));
+  root.querySelectorAll('[data-mobile-drawer]').forEach((button: HTMLButtonElement) => button.setAttribute('aria-expanded', 'false'));
+}
+
+interface WorkbenchFocusAnchor {
+  readonly attribute: string;
+  readonly value: string;
+  readonly ordinal: number;
+}
+
+const focusIdentityAttributes = [
+  'data-select', 'data-mode', 'data-graph-select', 'data-problem', 'data-problems-toggle',
+  'data-mobile-mode', 'data-conversion-command', 'data-conversion-option', 'data-addin',
+  'data-impact-direction', 'data-command', 'data-action-select', 'data-library-read',
+  'data-library-operation', 'data-library-selector', 'data-library-declaration',
+] as const;
+
+function captureWorkbenchFocus(root: HTMLElement, active: HTMLElement | null): WorkbenchFocusAnchor | undefined {
+  if (!active || !root.contains(active)) return undefined;
+  for (const attribute of focusIdentityAttributes) {
+    const owner = active.closest?.(`[${attribute}]`) as HTMLElement | null;
+    if (!owner || !root.contains(owner)) continue;
+    const value = owner.getAttribute(attribute) ?? '';
+    const peers = ([...root.querySelectorAll(`[${attribute}]`)] as HTMLElement[]).filter((candidate) => (candidate.getAttribute(attribute) ?? '') === value);
+    const ordinal = peers.indexOf(owner);
+    if (ordinal >= 0) return { attribute, value, ordinal };
+  }
+  return undefined;
+}
+
+function restoreWorkbenchFocus(root: HTMLElement, anchor: WorkbenchFocusAnchor | undefined): void {
+  if (!anchor) return;
+  const peers = ([...root.querySelectorAll(`[${anchor.attribute}]`)] as HTMLElement[]).filter((candidate) => (candidate.getAttribute(anchor.attribute) ?? '') === anchor.value);
+  (peers[anchor.ordinal] ?? peers[0])?.focus();
 }
 
 function trapFocus(container: HTMLElement, onEscape: () => void): () => void {
