@@ -20,6 +20,15 @@ describe('UI command action registry', () => {
     expect(command.execute(context).edits[0]?.newText).toContain('"age"');
   });
 
+  it('removes a property description when the inline editor is cleared', () => {
+    const session = new DocumentSession('memory://ui-description', '{"type":"object","properties":{"name":{"type":"string","description":"Display name"}}}');
+    const action = actionById('property.description')!;
+    const command = action.create('/properties/name', undefined);
+    const context = { session, documentVersion: session.snapshot().documentVersion };
+    expect(command.canExecute(context)).toBe(true);
+    expect(command.execute(context).edits[0]?.newText).toBe('');
+  });
+
   it('describes typed controls, targets, capabilities, and explicit removals', () => {
     expect(actionById('core.type')).toMatchObject({ control: { kind: 'select' }, capability: 'core', targets: ['declaration'], operation: 'set', removesActionId: 'core.type.remove' });
     expect(actionById('core.type')?.control).toMatchObject({ options: expect.arrayContaining([

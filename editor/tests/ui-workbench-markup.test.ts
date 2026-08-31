@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { designView, graphView, instanceView, mobileModeSelect } from '../src/ui/index.js';
+import { catalogBrowserView, designView, graphView, instanceView, mobileModeSelect } from '../src/ui/index.js';
+import { BUNDLED_SEMANTIC_PROVIDER, CatalogRegistry, bundledCatalogResult } from '../src/catalogs.js';
 import { DocumentSession } from '../src/session.js';
 import { resolveEffectiveMembers } from '../src/phase4/effective-members.js';
 import { InstanceWorkspace } from '../src/phase4/instance-workspace.js';
@@ -11,12 +12,41 @@ describe('workbench interaction markup', () => {
     expect(html).toContain('value="conversion" selected');
   });
 
-  it('preserves native button semantics inside property table cells', () => {
-    const html = designView('Person', 'object', undefined, [{ name: 'id', pointer: '/definitions/Person/properties/id', type: 'uuid', required: true, schema: { type: 'uuid' } }], undefined);
+  it('renders native inline property controls inside table cells', () => {
+    const html = designView('Person', 'object', undefined, [{ name: 'id', pointer: '/definitions/Person/properties/id', type: 'uuid', required: true, schema: { type: 'uuid' } }], undefined, [], [], 'local', undefined, undefined, [
+      { name: 'Address', pointer: '/definitions/Common/Address' },
+      { name: 'Person', pointer: '/definitions/Person' },
+    ]);
     expect(html).not.toContain('<button class="js-cell js-code" role="cell"');
     expect(html).not.toContain('<button class="js-cell js-row-action" role="cell"');
-    expect(html).toContain('<div class="js-cell" role="cell"><button class="js-property-link js-code"');
+    expect(html).toContain('data-inline-property="name"');
+    expect(html).toContain('data-inline-property="type"');
+    expect(html).toContain('data-inline-property="required"');
+    expect(html).toContain('data-inline-property="description"');
+    expect(html).toContain('<optgroup label="Primitive types">');
+    expect(html).toContain('value="type:string"');
+    expect(html).toContain('<optgroup label="Reusable types">');
+    expect(html).toContain('value="ref:#/definitions/Common/Address"');
+    expect(html).toContain('>Common.Address</option>');
+    expect(html).toContain('data-type-drop="/definitions/Person/properties/id"');
+    expect(html).toContain('<span class="js-type-drop-zone" aria-hidden="true"></span>');
     expect(html).toContain('<div class="js-cell js-action-cell" role="cell"><button class="js-row-action"');
+    expect(html).toContain('data-property-details="/definitions/Person/properties/id"');
+  });
+
+  it('renders the annotations panel directly below its property row', () => {
+    const pointer = '/definitions/Person/properties/name';
+    const html = designView('Person', 'object', undefined, [{
+      name: 'name', pointer, type: 'string', required: false,
+      schema: { type: 'string', minLength: 2, semanticRole: 'observationValue' },
+    }], pointer, [], [], 'local', undefined, pointer, [{ name: 'Person', pointer: '/definitions/Person' }]);
+    expect(html).toContain(`data-property-editor="${pointer}" aria-current="true"`);
+    expect(html).toContain(`data-property-details="${pointer}" aria-expanded="true"`);
+    expect(html).toContain('class="js-property-details"');
+    expect(html).toContain('aria-label="Validation and annotations for name"');
+    expect(html).toContain('data-inline-keyword="minLength"');
+    expect(html).toContain('data-inline-keyword="semanticRole"');
+    expect(html.indexOf('class="js-property-details"')).toBeLessThan(html.indexOf('</div></div><section class="js-design-section">'));
   });
 
   it('renders ordered identity and selectable relation summaries in Design', () => {
@@ -82,5 +112,19 @@ describe('workbench interaction markup', () => {
     expect(html).toContain('data-trace-instance="/age"');
     expect(html).toContain('data-trace-schema="/properties/age/type"');
     expect(html).toContain('data-instance-diagnostic="0"');
+  });
+
+  it('renders catalog providers, exact emitted JSON, provenance trust, and custom values', () => {
+    const registry = new CatalogRegistry();
+    registry.register(BUNDLED_SEMANTIC_PROVIDER);
+    const request = registry.createRequest('ui-catalog', 1, 'coordinateReferenceSystem', '4326');
+    const result = registry.merge(request, [bundledCatalogResult(request, BUNDLED_SEMANTIC_PROVIDER.id)]);
+    const html = catalogBrowserView([BUNDLED_SEMANTIC_PROVIDER], result, 'coordinateReferenceSystem', '4326');
+    expect(html).toContain('data-catalog-provider="bundled.semantic-annotations"');
+    expect(html).toContain('data-catalog-suggestion="0"');
+    expect(html).toContain('WGS 84 geographic coordinates');
+    expect(html).toContain('&quot;reference&quot;');
+    expect(html).toContain('data-trusted="false"');
+    expect(html).toContain('data-catalog-custom-apply');
   });
 });
