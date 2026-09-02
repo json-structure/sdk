@@ -106,10 +106,15 @@ export const editorStyles = `
 .js-file { min-width:0; margin-inline:auto; overflow:hidden; color:var(--js-muted); text-overflow:ellipsis; white-space:nowrap; }
 .js-command-trigger { width:44px; height:44px; flex:0 0 44px; border:1px solid transparent; border-radius:3px; background:transparent; color:var(--js-muted); font:11px/1 Consolas,monospace; }
 .js-command-trigger:hover { border-color:var(--js-line); background:var(--js-raised); color:var(--js-text); }
+.js-icon { width:18px; height:18px; display:inline-block; flex:0 0 auto; fill:currentColor; vertical-align:middle; }
+.js-chevron { width:14px; height:14px; }
+.js-icon-down { transform:rotate(180deg); }
+.js-command-trigger,.js-activity-button,.js-panel-head button,.js-problems-head button,.js-graph-toolbar button,.js-catalog-head button { display:inline-flex; align-items:center; justify-content:center; }
 .js-theme-label { display:flex; align-items:center; }
 .js-theme { width:112px; height:26px; border:1px solid var(--js-line); border-radius:3px; padding:0 5px; background:var(--js-panel); color:var(--js-muted); }
 .js-document-toolbar { min-width:0; padding:0 8px 0 52px; gap:5px; border-bottom:1px solid var(--js-line); }
 .js-document-toolbar>button,.js-tabs button,.js-panel-head button,.js-problems-head button,.js-status button { height:26px; border:1px solid transparent; border-radius:3px; padding:0 8px; background:transparent; color:var(--js-muted); }
+.js-document-toolbar>button { display:inline-flex; align-items:center; gap:5px; }
 .js-document-toolbar>button:hover,.js-panel-head button:hover,.js-problems-head button:hover { border-color:var(--js-line); background:var(--js-raised); color:var(--js-text); }
 .js-tabs { display:flex; overflow:hidden; border:1px solid var(--js-line); border-radius:4px; }
 .js-tabs button { border:0; border-inline-end:1px solid var(--js-line); border-radius:0; padding:0 10px; }
@@ -119,7 +124,8 @@ export const editorStyles = `
 .js-workbench { min-width:0; min-height:0; display:grid; grid-template-columns:var(--js-rail) var(--js-sidebar) minmax(360px,1fr) var(--js-inspector); grid-template-rows:minmax(0,1fr) 31px; transition:grid-template-rows 120ms ease; }
 .js-workbench[data-problems-open="true"] { grid-template-rows:minmax(0,1fr) 174px; }
 .js-activity { grid-column:1; grid-row:1/3; display:flex; flex-direction:column; align-items:stretch; padding-top:4px; border-inline-end:1px solid var(--js-line); background:var(--js-chrome); }
-.js-activity-button { width:45px; height:43px; border:0; border-inline-start:2px solid transparent; background:transparent; color:var(--js-quiet); font:17px/1 Consolas,monospace; }
+.js-activity-button { width:45px; height:43px; border:0; border-inline-start:2px solid transparent; background:transparent; color:var(--js-quiet); }
+.js-activity-button .js-icon { width:22px; height:22px; }
 .js-activity-button:hover { color:var(--js-text); }
 .js-activity-button[aria-pressed="true"],.js-activity-primary[aria-expanded="true"] { border-inline-start-color:var(--js-accent); background:var(--js-selected); color:var(--js-text); }
 .js-outline { grid-column:2; grid-row:1/3; min-width:0; display:flex; flex-direction:column; overflow:hidden; border-inline-end:1px solid var(--js-line); background:var(--js-chrome); }
@@ -137,7 +143,8 @@ export const editorStyles = `
 .js-tree-item>span:not(.js-kind) { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .js-tree-item small { margin-inline-start:auto; color:var(--js-quiet); font-size:9px; }
 .js-tree-item-imported { border-inline-start-style:dashed; }
-.js-kind { width:18px; flex:0 0 auto; color:var(--js-accent); text-align:center; font:11px/1 Consolas,monospace; }
+.js-kind { width:18px; flex:0 0 auto; color:var(--js-accent); text-align:center; }
+.js-kind .js-icon { width:16px; height:16px; }
 .js-tree-empty { margin:6px 9px; border:1px dashed var(--js-line); padding:12px; text-align:start; }
 .js-center { grid-column:3; grid-row:1; min-width:0; min-height:0; display:grid; grid-template-rows:34px 30px minmax(0,1fr); overflow:hidden; background:var(--js-bg); }
 .js-editor-tab { width:min(260px,45%); height:34px; display:flex; align-items:center; gap:6px; overflow:hidden; border-top:1px solid var(--js-accent); border-inline-end:1px solid var(--js-line); padding:0 10px; background:var(--js-bg); color:var(--js-text); }
@@ -156,6 +163,7 @@ export const editorStyles = `
 .js-section-head>div:first-child { display:flex; align-items:baseline; gap:7px; }
 .js-section-head h2,.js-sheet h2 { margin:0; font-size:13px; line-height:1.35; }
 .js-section-head>button { height:28px; margin-inline-start:auto; border:1px solid var(--js-line); border-radius:3px; padding:0 9px; background:var(--js-raised); color:var(--js-muted); }
+.js-section-head>button,.js-empty-actions button,.js-add-row,.js-value-actions button { display:inline-flex; align-items:center; justify-content:center; gap:5px; }
 .js-section-head>button:hover { border-color:var(--js-accent); color:var(--js-text); }
 .js-section-meta { color:var(--js-quiet); font-size:12px; }
 .js-member-mode { display:flex; overflow:hidden; border:1px solid var(--js-line); border-radius:3px; }
@@ -272,13 +280,17 @@ export const editorStyles = `
 .js-problem:hover { background:var(--js-hover); color:var(--js-text); }
 .js-problem-error { color:var(--js-error); }
 .js-problem-warning { color:var(--js-warn); }
+.js-problem-error .js-icon,.js-problem-warning .js-icon { width:16px; height:16px; }
 .js-location { color:var(--js-quiet); font:11px/1.3 Consolas,monospace; }
 .js-status { gap:13px; padding:0 8px; background:var(--js-accent); color:var(--js-on-accent); font-size:11px; }
 .js-status button { height:22px; display:flex; gap:9px; padding:0 2px; color:inherit; }
+.js-status button span { display:inline-flex; align-items:center; gap:3px; }
+.js-status .js-icon { width:14px; height:14px; }
 .js-status button:hover { background:rgba(255,255,255,.2); }
 .js-graph { display:flex; flex-direction:column; padding:0; background:var(--js-canvas); }
 .js-graph-toolbar { min-height:40px; flex:0 0 auto; display:flex; flex-wrap:wrap; align-items:center; gap:5px; border-bottom:1px solid var(--js-line); padding:5px 9px; background:var(--js-chrome); }
 .js-graph-toolbar button { height:27px; border:1px solid transparent; border-radius:3px; padding:0 8px; background:transparent; color:var(--js-muted); }
+.js-graph-toolbar button .js-icon { width:16px; height:16px; }
 .js-graph-toolbar button:hover { border-color:var(--js-line); background:var(--js-raised); color:var(--js-text); }
 .js-graph-toolbar [data-semantic-zoom] { min-width:94px; color:var(--js-muted); text-align:center; font:11px/1 Consolas,monospace; }
 .js-graph-context { min-height:58px; display:grid; grid-template-columns:minmax(180px,1fr) minmax(160px,240px) auto; gap:12px; align-items:center; border-bottom:1px solid var(--js-line); padding:6px 9px; background:var(--js-chrome); }
@@ -376,7 +388,8 @@ export const editorStyles = `
 .js-conversion-route span,.js-conversion-route strong { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .js-conversion-route>div>span { color:var(--js-quiet); font-size:10px; text-transform:uppercase; }
 .js-conversion-route strong { margin-top:3px; }
-.js-conversion-arrow { color:var(--js-accent)!important; text-align:center; }
+.js-conversion-arrow { display:inline-flex!important; align-items:center; justify-content:center; color:var(--js-accent)!important; }
+.js-conversion-tile small .js-icon,.js-review-summary dd .js-icon { width:13px; height:13px; }
 .js-conversion-source { min-width:0; display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:7px; align-items:center; margin-top:10px; border:1px solid var(--js-line); padding:7px; background:var(--js-panel); }
 .js-conversion-source>span { color:var(--js-quiet); font-size:10px; text-transform:uppercase; }
 .js-conversion-source>strong { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }

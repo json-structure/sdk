@@ -65,7 +65,7 @@ describe('conversion workbench view', () => {
     expect(html).toContain('aria-label="Conversion review"');
     expect(html).toContain('data-lossiness="metadata"');
     expect(html).toContain('Fixture <span class="js-code">1</span>');
-    expect(html).toContain('a <span aria-hidden="true">→</span> b');
+    expect(html).toContain('a <span aria-hidden="true"><svg class="js-icon js-chevron"');
     expect(html).toContain('Committed atomically');
     expect(html).toContain('data-state="publishing"');
     expect(html).toContain('/properties/value');
