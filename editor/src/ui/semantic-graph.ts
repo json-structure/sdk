@@ -90,6 +90,18 @@ export class SemanticGraphController {
     return this.view();
   }
 
+  public revealNode(nodeId: string): SemanticGraphView {
+    const node = this.source.nodes.find((candidate) => candidate.id === nodeId);
+    if (!node) return this.view();
+    const namespace = normalizedNamespace(node);
+    if (this.location.level === 'atlas' || this.location.namespace !== namespace) {
+      this.navigate({ level: 'types', lens: this.location.lens, namespace }, selectionForNode(node));
+    } else {
+      this.selection = selectionForNode(node);
+    }
+    return this.view();
+  }
+
   public selectEdge(edgeId: string): SemanticGraphView {
     const edge = this.view().projection.edges.find((candidate) => candidate.id === edgeId) ?? this.source.edges.find((candidate) => candidate.id === edgeId);
     if (!edge) return this.view();

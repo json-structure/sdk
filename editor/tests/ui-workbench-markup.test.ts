@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { catalogBrowserView, designView, graphView, instanceView, mobileModeSelect, prefersReducedMotion, problemsView, shouldFitGraphOnEntry, workbenchFocusIdentityAttributes, workbenchTitleChrome } from '../src/ui/index.js';
+import { catalogBrowserView, designView, graphView, instanceView, mobileModeSelect, prefersReducedMotion, problemsView, shouldFitGraphOnEntry, workbenchFocusIdentityAttributes, workbenchShell, workbenchTitleChrome } from '../src/ui/index.js';
 import { BUNDLED_SEMANTIC_PROVIDER, CatalogRegistry, bundledCatalogResult } from '../src/catalogs.js';
 import { DocumentSession } from '../src/session.js';
 import { resolveEffectiveMembers } from '../src/phase4/effective-members.js';
@@ -49,10 +49,43 @@ describe('workbench interaction markup', () => {
     expect(workbenchTitleChrome('example.struct.json', 'embedded')).toBe('');
   });
 
-  it('keeps every representation and workflow reachable from the compact mode selector', () => {
-    const html = mobileModeSelect('conversion');
-    for (const mode of ['design', 'graph', 'source', 'analysis', 'instance', 'conversion', 'libraries']) expect(html).toContain(`value="${mode}"`);
-    expect(html).toContain('value="conversion" selected');
+  it('uses the compact selector for the four primary editor modes', () => {
+    const html = mobileModeSelect('graph');
+    for (const mode of ['design', 'graph', 'source', 'instance']) expect(html).toContain(`value="${mode}"`);
+    for (const mode of ['analysis', 'conversion', 'libraries']) expect(html).not.toContain(`value="${mode}"`);
+    expect(html).toContain('value="graph" selected');
+  });
+
+  it('uses the activity rail for modes and groups type actions in the namespace tree', () => {
+    const snapshot = new DocumentSession('memory://navigation', JSON.stringify({
+      definitions: {
+        Domain: {
+          Person: { type: 'object' },
+          Place: { type: 'object' },
+        },
+        Shared: {
+          Identifier: { type: 'string' },
+        },
+      },
+    })).snapshot();
+    const definitions = [
+      { name: 'Person', pointer: '/definitions/Domain/Person', namespace: '/definitions/Domain' },
+      { name: 'Place', pointer: '/definitions/Domain/Place', namespace: '/definitions/Domain' },
+      { name: 'Identifier', pointer: '/definitions/Shared/Identifier', namespace: '/definitions/Shared' },
+    ];
+    const html = workbenchShell(snapshot, 'navigation.struct.json', definitions, '/definitions/Domain/Person', [], '/definitions/Domain/Person', 'graph', false);
+
+    expect(html).toContain('<nav class="js-activity" aria-label="Editor modes">');
+    for (const mode of ['design', 'graph', 'source', 'instance']) expect(html).toContain(`data-mode="${mode}"`);
+    expect(html).not.toContain('data-mode="libraries"');
+    expect(html).not.toContain('class="js-tabs"');
+    expect(html).toContain('data-command="definition.add" title="Add type"');
+    expect(html).toContain('data-library-open title="Import type library"');
+    expect(html).toContain('role="tree" aria-label="Types by namespace"');
+    expect(html).toContain('<details class="js-tree-namespace" open>');
+    expect(html).toContain('<span>Domain</span><small>2</small>');
+    expect(html).toContain('<span>Shared</span><small>1</small>');
+    expect(html).toContain('data-select="/definitions/Domain/Person"');
   });
 
   it('renders native inline property controls inside table cells', () => {
@@ -151,6 +184,7 @@ describe('workbench interaction markup', () => {
     expect(html).toContain('data-graph-zoom-out');
     expect(html).toContain('data-graph-zoom-in');
     expect(html).toContain('data-graph-fit');
+    expect(html).toContain('data-graph-relayout');
     expect(html).toContain('data-graph-canvas');
     expect(html).toContain('tabindex="0"');
     expect(html).toContain('class="js-node-hit-target"');

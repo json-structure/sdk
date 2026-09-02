@@ -39,6 +39,11 @@ export interface LibraryBrowserCapabilities {
   readonly fallbackAvailable: boolean;
 }
 
+export interface LibraryBrowserOptions {
+  readonly purpose?: 'manage' | 'import';
+  readonly targetNamespaces?: readonly string[];
+}
+
 export function renderLibraryBrowser(
   capabilities: LibraryBrowserCapabilities,
   entries: readonly LibraryEntry[] | undefined,
@@ -49,6 +54,7 @@ export function renderLibraryBrowser(
   plan?: RefactoringPlan,
   status = '',
   state?: LibraryBrowserState,
+  options: LibraryBrowserOptions = {},
 ): string {
   if (!capabilities.requestBacked && !capabilities.fallbackAvailable) {
     return '<div class="js-sheet"><h1>Libraries</h1><p class="js-description">This host does not provide library catalogs.</p></div>';
@@ -63,14 +69,15 @@ export function renderLibraryBrowser(
   const declarationPointers = definitionRecord ? collectDeclarationPointers(definitionRecord) : [];
   const providerFilter = state?.providerFilter ?? (requestBacked ? 'all' : '');
   const search = state?.search ?? '';
-  const providerPane = providerBrowser(providers, requestBacked, providerFilter);
+  const importOnly = options.purpose === 'import';
+  const providerPane = importOnly ? providerDiscovery(providers, requestBacked, providerFilter) : providerBrowser(providers, requestBacked, providerFilter);
   const catalogPane = catalogBrowser(catalog, selector, requestBacked, providerFilter, search);
-  const consumePane = consumeBrowser(document, resolution, selector, selection, operation, plan, declarationPointers);
-  const publishPane = requestBacked ? publishBrowser(providers, state) : '';
+  const consumePane = consumeBrowser(document, resolution, selector, selection, operation, plan, declarationPointers, options.targetNamespaces ?? []);
+  const publishPane = requestBacked && !importOnly ? publishBrowser(providers, state) : '';
 
   return `<div class="js-library-workbench">
     <header class="js-library-header">
-      <div><div class="js-eyebrow">Catalogs</div><h1>Libraries</h1><p>Resolve a version, inspect its provenance, then import or copy declarations deliberately.</p></div>
+      <div><div class="js-eyebrow">Catalogs</div><h1>${importOnly ? 'Import library' : 'Libraries'}</h1><p>${importOnly ? 'Discover a schema, resolve a version, and associate it with a namespace.' : 'Resolve a version, inspect its provenance, then import or copy declarations deliberately.'}</p></div>
       <button data-libraries-load>${catalog ? 'Refresh' : 'Load libraries'}</button>
     </header>
     <div class="js-library-policy" role="group" aria-label="Resolution policy">
@@ -90,6 +97,12 @@ function providerBrowser(providers: readonly LibraryProviderSummary[], requestBa
   }
   const items = providers.map((provider) => `<div class="js-library-provider-row"><button class="js-library-provider" data-library-provider-filter="${escapeAttribute(provider.id)}" aria-pressed="${providerFilter === provider.id}"><strong>${escapeHtml(provider.id)}</strong><small>${escapeHtml(provider.kind)} | ${provider.trusted ? 'trusted' : 'untrusted'}</small><span>${provider.credentialConfigured ? 'credential configured' : 'no credential'} | publishing ${provider.publishSupported ? 'supported' : 'unsupported'}</span></button>${provider.kind === 'bundled' ? '<span class="js-provider-required">required</span>' : `<button class="js-provider-remove" data-provider-remove="${escapeAttribute(provider.id)}" aria-label="Remove ${escapeAttribute(provider.id)}">x</button>`}</div>`).join('');
   return `<nav class="js-library-providers" aria-label="Library providers"><div class="js-panel-head">Providers</div><button class="js-library-provider" data-library-provider-filter="all" aria-pressed="${providerFilter === 'all'}"><strong>All providers</strong><small>${providers.length} configured</small></button>${items || '<div class="js-empty">Load providers to manage them.</div>'}<details class="js-provider-add"><summary>Add local publisher</summary><div class="js-provider-form"><label>Provider id<input data-local-provider-id autocomplete="off" placeholder="team-schemas"></label><p class="js-description">Stores immutable versions in this host profile.</p><button data-local-provider-configure>Configure local publisher</button></div></details><details class="js-provider-add"><summary>Add read-only xRegistry</summary><div class="js-provider-form"><label>Provider id<input data-provider-id autocomplete="off"></label><label>Base URL<input data-provider-url type="url" inputmode="url" placeholder="https://registry.example"></label><label>Credential id<input data-provider-credential-id autocomplete="off"></label><label>Credential scheme<select data-provider-credential-scheme><option value="">Bearer (default)</option><option value="Bearer">Bearer</option><option value="Basic">Basic</option><option value="API-Key">API-Key</option></select></label><label>Credential secret<input data-provider-secret type="password" autocomplete="new-password"></label><label class="js-check"><input data-provider-trusted type="checkbox"> Trust this provider and HTTPS origin</label><button data-provider-configure>Configure read-only provider</button></div></details></nav>`;
+}
+
+function providerDiscovery(providers: readonly LibraryProviderSummary[], requestBacked: boolean, providerFilter: string): string {
+  if (!requestBacked) return providerBrowser(providers, requestBacked, providerFilter);
+  const items = providers.map((provider) => `<button class="js-library-provider" data-library-provider-filter="${escapeAttribute(provider.id)}" aria-pressed="${providerFilter === provider.id}"><strong>${escapeHtml(provider.id)}</strong><small>${escapeHtml(provider.kind)} | ${provider.trusted ? 'trusted' : 'untrusted'}</small></button>`).join('');
+  return `<nav class="js-library-providers" aria-label="Library providers"><div class="js-panel-head">Providers</div><button class="js-library-provider" data-library-provider-filter="all" aria-pressed="${providerFilter === 'all'}"><strong>All providers</strong><small>${providers.length} available</small></button>${items || '<div class="js-empty">Load providers to browse libraries.</div>'}</nav>`;
 }
 
 function catalogBrowser(catalog: readonly LibraryCatalogEntry[] | undefined, selector: 'pinned' | 'floating', requestBacked: boolean, providerFilter: string, search: string): string {
@@ -114,6 +127,7 @@ function consumeBrowser(
   operation: LibraryBrowserOperation,
   plan: RefactoringPlan | undefined,
   declarationPointers: readonly string[],
+  targetNamespaces: readonly string[],
 ): string {
   if (!document) return `<section class="js-library-empty-detail">${jsonStructureLogo('js-library-logo')}<h2>Select a library version</h2><p>Its trust, source, declarations, and available consume operations will appear here.</p></section>`;
 
@@ -122,13 +136,13 @@ function consumeBrowser(
   const trust = resolution?.trust ?? { trusted: true, reasons: [] };
   const sourceLabel = resolution ? `${resolution.resolution.state.connectivity} | ${resolution.resolution.state.verification} | ${resolution.resolution.source}` : `Bundled static provider | trusted | ${selector}`;
   const declarations = declarationPointers.map((pointer) => `<label class="js-library-declaration"><input type="checkbox" value="${escapeAttribute(pointer)}" data-library-declaration ${selection.includes(pointer) ? 'checked' : ''}><span class="js-code">${escapeHtml(pointerLabel(pointer))}</span><small>${escapeHtml(pointer)}</small></label>`).join('');
-  const operationOptions = `<option value="import" ${operation === 'import' ? 'selected' : ''}>Import reference</option><option value="copy" ${operation === 'copy' ? 'selected' : ''}>Copy declarations</option><option value="materialize" ${operation === 'materialize' ? 'selected' : ''}>Materialize declarations</option>`;
   const operationFields = operation === 'import'
     ? '<label>Import keyword<select data-library-import-keyword><option value="$importdefs">$importdefs</option><option value="$import">$import</option></select></label>'
     : operation === 'materialize' ? '<label>Authored import pointer<input data-library-materialize-import placeholder="/definitions/shared/$importdefs"></label>' : '';
+  const namespaceOptions = [...new Set(['/definitions', ...targetNamespaces])].sort().map((pointer) => `<option value="${escapeAttribute(pointer)}">${escapeHtml(pointer === '/definitions' ? 'Definitions' : pointer.slice('/definitions/'.length).replace(/\//g, ' / '))}</option>`).join('');
   const preview = plan ? `<section class="js-library-preview"><div class="js-section-head"><div><h2>${capitalize(operation)} preview</h2><span class="js-section-meta">${plan.impact.length} changes</span></div></div>${plan.impact.map((impact) => `<div class="js-analysis-row"><span>${escapeHtml(impact.kind)}</span><span class="js-code">${escapeHtml(impact.pointer)}</span></div>`).join('')}${plan.collisions.map((collision) => `<p class="js-problem-warning">${escapeHtml(collision.message)}</p>`).join('')}${plan.provenance.map((entry) => `<p class="js-library-provenance">${escapeHtml(entry.reason)}: <code>${escapeHtml(entry.sourcePointer)}</code> -&gt; <code>${escapeHtml(entry.targetPointer)}</code></p>`).join('')}${plan.applicable ? `<button data-library-apply>Apply ${escapeHtml(operation)}</button>` : ''}</section>` : '';
 
-  return `<section class="js-library-consume"><header><div><span class="js-library-guarantee" data-guarantee="${escapeAttribute(guarantee)}">${escapeHtml(guarantee)}</span><h2>${escapeHtml(document.entryId)} <small>${escapeHtml(document.version)}</small></h2></div><span class="js-trust-badge" data-trusted="${trust.trusted}">${trust.trusted ? 'trusted' : 'untrusted'}</span></header><p class="js-library-source">${escapeHtml(sourceLabel)}</p>${trust.reasons.map((reason) => `<p class="js-problem-warning">${escapeHtml(reason)}</p>`).join('')}<dl><dt>Provider</dt><dd>${escapeHtml(provenance?.providerId ?? 'bundled')}</dd><dt>Source</dt><dd class="js-code">${escapeHtml(provenance?.sourceUri ?? document.uri)}</dd><dt>Entry</dt><dd>${escapeHtml(provenance?.entryId ?? document.entryId)}</dd><dt>Version</dt><dd>${escapeHtml(provenance?.version ?? document.version)}</dd></dl><div class="js-library-declarations"><div class="js-section-head"><div><h2>Declarations</h2><span class="js-section-meta">${declarationPointers.length}</span></div></div>${declarations || '<p class="js-description">No reusable declarations.</p>'}</div><div class="js-library-operation"><label>Operation<select data-library-operation>${operationOptions}</select></label><label>Destination pointer<input data-library-destination value="/definitions"></label>${operationFields}<button data-library-preview>Preview ${escapeHtml(operation)}</button></div>${preview}</section>`;
+  return `<section class="js-library-consume"><header><div><span class="js-library-guarantee" data-guarantee="${escapeAttribute(guarantee)}">${escapeHtml(guarantee)}</span><h2>${escapeHtml(document.entryId)} <small>${escapeHtml(document.version)}</small></h2></div><span class="js-trust-badge" data-trusted="${trust.trusted}">${trust.trusted ? 'trusted' : 'untrusted'}</span></header><p class="js-library-source">${escapeHtml(sourceLabel)}</p>${trust.reasons.map((reason) => `<p class="js-problem-warning">${escapeHtml(reason)}</p>`).join('')}<dl><dt>Provider</dt><dd>${escapeHtml(provenance?.providerId ?? 'bundled')}</dd><dt>Source</dt><dd class="js-code">${escapeHtml(provenance?.sourceUri ?? document.uri)}</dd><dt>Entry</dt><dd>${escapeHtml(provenance?.entryId ?? document.entryId)}</dd><dt>Version</dt><dd>${escapeHtml(provenance?.version ?? document.version)}</dd></dl><div class="js-library-declarations"><div class="js-section-head"><div><h2>Declarations</h2><span class="js-section-meta">${declarationPointers.length}</span></div></div>${declarations || '<p class="js-description">No reusable declarations.</p>'}</div><div class="js-library-operation"><label>Namespace destination<select data-library-destination>${namespaceOptions}</select></label>${operationFields}<button data-library-preview>Preview import</button></div>${preview}</section>`;
 }
 
 function publishBrowser(providers: readonly LibraryProviderSummary[], state: LibraryBrowserState | undefined): string {

@@ -162,6 +162,14 @@ export const editorStyles = `
 .js-tree-item>span:not(.js-kind) { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .js-tree-item small { margin-inline-start:auto; color:var(--js-quiet); font-size:9px; }
 .js-tree-item-imported { border-inline-start-style:dashed; }
+.js-tree-namespace>summary { min-height:28px; display:flex; align-items:center; gap:6px; padding:0 8px; color:var(--js-muted); cursor:pointer; list-style:none; }
+.js-tree-namespace>summary::-webkit-details-marker { display:none; }
+.js-tree-namespace>summary:hover { background:var(--js-hover); color:var(--js-text); }
+.js-tree-namespace>summary small { margin-inline-start:auto; color:var(--js-quiet); font-size:9px; }
+.js-tree-namespace>summary .js-tree-chevron { width:14px; display:grid; place-items:center; transition:transform 120ms ease; }
+.js-tree-namespace>summary .js-icon { width:13px; height:13px; }
+.js-tree-namespace[open]>summary .js-tree-chevron { transform:rotate(90deg); }
+.js-tree-namespace>[role="group"] { border-inline-start:1px solid var(--js-line); margin-inline-start:14px; }
 .js-kind { width:18px; flex:0 0 auto; color:var(--js-accent); text-align:center; }
 .js-kind .js-icon { width:16px; height:16px; }
 .js-tree-empty { margin:6px 9px; border:1px dashed var(--js-line); padding:12px; text-align:start; }
@@ -312,11 +320,13 @@ export const editorStyles = `
 .js-status .js-icon { width:14px; height:14px; }
 .js-status button:hover { background:rgba(255,255,255,.2); }
 .js-graph { display:flex; flex-direction:column; padding:0; background:var(--js-canvas); }
-.js-workbench[data-active-mode="graph"] .js-activity,.js-workbench[data-active-mode="graph"]>.js-outline,.js-workbench[data-active-mode="graph"]>.js-inspector { display:none; }
-.js-workbench[data-active-mode="graph"]>.js-center { grid-column:1/5; grid-template-rows:minmax(0,1fr); }
+.js-workbench[data-active-mode="graph"]>.js-inspector { display:none; }
+.js-workbench[data-active-mode="graph"]>.js-center { grid-column:3/5; grid-template-rows:minmax(0,1fr); }
 .js-workbench[data-active-mode="graph"]>.js-center>.js-editor-tab,.js-workbench[data-active-mode="graph"]>.js-center>.js-breadcrumbs { display:none; }
 .js-workbench[data-active-mode="graph"]>.js-center>.js-view { grid-row:1; }
 .js-workbench[data-active-mode="graph"]>.js-problems { grid-column:1/5; }
+.js-workbench[data-active-mode="source"]>.js-outline,.js-workbench[data-active-mode="source"]>.js-inspector,.js-workbench[data-active-mode="instance"]>.js-outline,.js-workbench[data-active-mode="instance"]>.js-inspector,.js-workbench[data-active-mode="conversion"]>.js-outline,.js-workbench[data-active-mode="conversion"]>.js-inspector,.js-workbench[data-active-mode="analysis"]>.js-outline,.js-workbench[data-active-mode="analysis"]>.js-inspector { display:none; }
+.js-workbench[data-active-mode="source"]>.js-center,.js-workbench[data-active-mode="instance"]>.js-center,.js-workbench[data-active-mode="conversion"]>.js-center,.js-workbench[data-active-mode="analysis"]>.js-center { grid-column:2/5; }
 .js-graph-toolbar { min-height:40px; flex:0 0 auto; display:flex; flex-wrap:wrap; align-items:center; gap:5px; border-bottom:1px solid var(--js-line); padding:5px 9px; background:var(--js-chrome); }
 .js-graph-toolbar button { height:27px; border:1px solid transparent; border-radius:3px; padding:0 8px; background:transparent; color:var(--js-muted); }
 .js-graph-toolbar button .js-icon { width:16px; height:16px; }
@@ -325,7 +335,7 @@ export const editorStyles = `
 .js-graph-divider { width:1px; height:20px; margin:0 4px; background:var(--js-line); }
 .js-graph-toolbar .js-graph-crumbs { flex:0 1 auto; }
 .js-graph-toolbar .js-graph-search { width:220px; }
-.js-graph-workspace { min-width:0; min-height:0; flex:1 1 0; display:grid; grid-template-columns:210px minmax(470px,1fr) 286px; }
+.js-graph-workspace { min-width:0; min-height:0; flex:1 1 0; display:grid; grid-template-columns:minmax(470px,1fr) 286px; }
 .js-graph-navigator,.js-graph-inspector { min-width:0; min-height:0; overflow:auto; background:var(--js-chrome); font-size:11px; }
 .js-graph-navigator { border-inline-end:1px solid var(--js-line); }
 .js-graph-inspector { border-inline-start:1px solid var(--js-line); }
@@ -353,7 +363,7 @@ export const editorStyles = `
 .js-graph-level-banner>span { color:var(--js-accent); font:10px/1.3 Consolas,monospace; text-transform:uppercase; }
 .js-graph-level-banner>strong { margin-top:3px; font-size:20px; }
 .js-graph-level-banner>small { color:var(--js-muted); font-size:11px; }
-.js-graph-lenses { position:absolute; z-index:3; inset-block-start:12px; inset-inline-end:12px; background:rgba(28,32,35,.96); }
+.js-graph-lenses { position:static; flex:0 0 auto; margin-inline-start:6px; background:var(--js-panel); }
 .js-graph-command-bar { position:absolute; z-index:3; inset-block-start:47px; inset-inline-end:12px; display:flex; gap:4px; }
 .js-graph-command-bar button { height:26px; border:1px solid var(--js-line); border-radius:3px; padding:0 7px; background:rgba(28,32,35,.96); color:var(--js-muted); font-size:9px; }
 .js-graph-command-bar button:hover { border-color:var(--js-accent); color:var(--js-text); }
@@ -392,6 +402,8 @@ export const editorStyles = `
 .js-graph-canvas { width:100%; height:0; min-width:0; min-height:0; flex:1 1 0; display:block; contain:layout paint; cursor:grab; touch-action:none; background-color:var(--js-canvas); background-image:linear-gradient(var(--js-canvas-grid) 1px,transparent 1px),linear-gradient(90deg,var(--js-canvas-grid) 1px,transparent 1px); background-size:24px 24px; }
 .js-graph-canvas.js-panning { cursor:grabbing; }
 .js-graph-canvas.js-node-dragging { cursor:move; }
+.js-node[data-graph-pinned="false"] { cursor:grab; }
+.js-node[data-graph-pinned="true"],.js-graph-canvas.js-node-dragging .js-node { cursor:grabbing; }
 .js-edge-group { color:var(--js-quiet); }
 .js-edge { fill:none; stroke:currentColor; stroke-width:1.5; }
 .js-edge-label { fill:var(--js-muted); stroke:var(--js-canvas); stroke-width:3px; paint-order:stroke; font-size:9px; }
@@ -663,6 +675,13 @@ export const editorStyles = `
 .js-catalog-custom button { min-height:44px; border:1px solid var(--js-accent); border-radius:3px; padding:0 10px; background:var(--js-accent); color:var(--js-on-accent); font-weight:650; }
 .js-dialog { pointer-events:none; }
 .js-dialog-card { position:relative; z-index:1; pointer-events:auto; }
+.js-library-dialog { width:min(1280px,calc(100vw - 48px)); max-width:none; height:min(820px,calc(100vh - 48px)); max-height:none; margin:auto; border:1px solid var(--js-line-strong); padding:0; overflow:hidden; background:var(--js-bg); color:var(--js-text); box-shadow:0 18px 70px rgba(0,0,0,.6); }
+.js-library-dialog::backdrop { background:rgba(0,0,0,.62); }
+.js-library-dialog-head { height:38px; display:flex; align-items:center; gap:8px; border-bottom:1px solid var(--js-line); padding:0 10px; background:var(--js-chrome); }
+.js-library-dialog-head strong { flex:1; font-size:12px; }
+.js-library-dialog-head button { width:28px; height:28px; display:grid; place-items:center; border:0; background:transparent; color:var(--js-muted); }
+.js-library-dialog-head button:hover { background:var(--js-raised); color:var(--js-text); }
+.js-library-dialog>.js-library-workbench { height:calc(100% - 38px); overflow:auto; padding:12px; }
 .js-mobile-toggle,.js-mobile-mode { display:none; }
 @media (max-width:1120px) {
   :host,.json-structure-editor { --js-sidebar:205px; --js-inspector:250px; }
@@ -797,12 +816,13 @@ export const editorStyles = `
   .js-shell.js-chrome-embedded { grid-template-rows:44px minmax(0,1fr) 44px; }
 }
 @media (max-width:1120px) {
-  .js-graph-workspace { grid-template-columns:175px minmax(430px,1fr) 248px; }
+  .js-graph-workspace { grid-template-columns:minmax(430px,1fr) 248px; }
   .js-graph-toolbar .js-graph-search { width:145px; }
   .js-minimap-wrap { width:154px; }
   .js-minimap { width:136px; }
 }
 @media (max-width:860px) {
+  .js-workbench[data-active-mode="graph"]>.js-center { grid-column:2; }
   .js-graph-workspace { grid-template-columns:minmax(0,1fr); }
   .js-graph-navigator,.js-graph-inspector { display:none; }
   .js-graph-toolbar .js-graph-crumbs { display:none; }
@@ -810,6 +830,7 @@ export const editorStyles = `
   .js-graph-command-bar { display:none; }
 }
 @media (max-width:620px) {
+  .js-workbench[data-active-mode="graph"]>.js-center { grid-column:1; }
   .js-graph-toolbar { min-height:44px; flex-wrap:nowrap; overflow:hidden; }
   .js-graph-toolbar .js-graph-search { width:min(120px,28vw); }
   .js-graph-divider { display:none; }

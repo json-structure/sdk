@@ -61,6 +61,31 @@ describe('library workbench view', () => {
     expect(html).toContain('data-library-provider="two"');
   });
 
+  it('keeps the modal workflow focused on discovery and namespace import', () => {
+    const html = renderLibraryBrowser({ requestBacked: true, fallbackAvailable: false }, undefined, 'pinned', {
+      entryId: 'common', version: '1', uri: 'memory:common', value: { definitions: { A: { type: 'string' } } },
+    }, [], 'import', undefined, '', {
+      providers: [{ id: 'team', kind: 'xregistry', location: 'https://registry.test', trusted: true, credentialConfigured: true, publishSupported: true }],
+      catalog: [],
+      offline: false,
+      documentValid: true,
+      providerFilter: 'all',
+    }, {
+      purpose: 'import',
+      targetNamespaces: ['/definitions/Domain', '/definitions/Shared'],
+    });
+
+    expect(html).toContain('<h1>Import library</h1>');
+    expect(html).toContain('associate it with a namespace');
+    expect(html).toContain('<select data-library-destination>');
+    expect(html).toContain('<option value="/definitions/Domain">Domain</option>');
+    expect(html).toContain('<option value="/definitions/Shared">Shared</option>');
+    expect(html).not.toContain('data-provider-configure');
+    expect(html).not.toContain('data-provider-remove');
+    expect(html).not.toContain('data-library-publish-preview');
+    expect(html).not.toContain('data-library-operation');
+  });
+
   it('renders version policy, trusted provenance, declarations, and materialization preview', () => {
     const entry = { id: 'common', name: 'Common', versions: [{ version: '1.0.0', documentUri: 'memory:common', integrity: 'sha256:value', isDefault: true }] };
     const document = { entryId: 'common', version: '1.0.0', uri: 'memory:common', value: { definitions: { A: { type: 'string' }, B: { type: 'object', properties: { a: { type: { $ref: '#/definitions/A' } } } } } } };

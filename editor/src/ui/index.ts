@@ -149,6 +149,7 @@ type ImpactDirection = 'outgoing' | 'incoming' | 'both';
 type LibraryOperation = 'import' | 'copy' | 'materialize';
 type DesignMemberMode = 'local' | 'effective';
 type GraphResizeObserver = { observe(target: SVGElement): void; disconnect(): void };
+type DialogElement = HTMLElement & { readonly open: boolean; showModal(): void; close(): void };
 const graphNavigationBySnapshot = new WeakMap<DocumentSnapshot, GraphNavigationController>();
 const forceGraphLayoutBySnapshot = new WeakMap<DocumentSnapshot, ForceGraphLayout>();
 const semanticGraphBySnapshot = new WeakMap<DocumentSnapshot, SemanticGraphController>();
@@ -213,10 +214,11 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
   let librarySelector: 'pinned' | 'floating' = 'floating';
   let libraryDocument: LibraryDocument | undefined;
   let librarySelection: readonly string[] = [];
-  let libraryOperation: LibraryOperation = 'materialize';
+  let libraryOperation: LibraryOperation = 'import';
   let libraryPlan: RefactoringPlan | undefined;
   let libraryBinding: PreviewBinding | undefined;
   let libraryStatus = '';
+  let libraryModalOpen = false;
   let problemsOpen = false;
   let drawerReturnFocus: HTMLElement | undefined;
   let releaseDrawerTrap = (): void => undefined;
@@ -391,13 +393,15 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     graphLayout.reconcile(semanticGraphView.projection.nodes, semanticGraphView.projection.edges);
     forceGraphLayoutBySnapshot.set(snapshot, graphLayout);
     root.innerHTML = structuredWorkbenchShell(snapshot, documentTitle, typeDefinitions, definitionPointer, rows, selectedPointer, mode, problemsOpen, designMemberMode, effectiveMembers, expandedPropertyPointer, options.chrome ?? 'document');
-    mountAdvancedViews(root, snapshot, definitionPointer, graph, mode, instanceText, instanceResult, impactDirection, selectedAddIns, refactoringPlan, refactoringStatus, services, conversionManifest, conversionCommandId, conversionSource, conversionResult, conversionStatus, conversionProgress, conversionRequestId, libraryEntries, librarySelector, libraryDocument, librarySelection, libraryOperation, libraryPlan, libraryStatus, { providers: libraryProviders, catalog: libraryCatalog, resolution: libraryResolution, offline: libraryOffline, publishDraft: libraryPublishDraft, publishPreview: libraryPublishPreviewState, publishedEpoch: libraryPublishedEpoch, documentValid: documentCanPublish(snapshot), providerFilter: libraryProviderFilter, search: librarySearch, currentDocumentUri: snapshot.uri }, instanceRoots, instanceRootPointer, instanceSelection, session.resolvedSchemaDocuments);
+    mountAdvancedViews(root, snapshot, definitionPointer, graph, mode, instanceText, instanceResult, impactDirection, selectedAddIns, refactoringPlan, refactoringStatus, services, conversionManifest, conversionCommandId, conversionSource, conversionResult, conversionStatus, conversionProgress, conversionRequestId, libraryEntries, librarySelector, libraryDocument, librarySelection, libraryOperation, libraryPlan, libraryStatus, { providers: libraryProviders, catalog: libraryCatalog, resolution: libraryResolution, offline: libraryOffline, publishDraft: libraryPublishDraft, publishPreview: libraryPublishPreviewState, publishedEpoch: libraryPublishedEpoch, documentValid: documentCanPublish(snapshot), providerFilter: libraryProviderFilter, search: librarySearch, currentDocumentUri: snapshot.uri }, libraryModalOpen, instanceRoots, instanceRootPointer, instanceSelection, session.resolvedSchemaDocuments, typeDefinitions.map((definition) => definition.namespace));
     root.dataset.theme = themeName;
+    const libraryDialog = root.querySelector('[data-library-dialog]') as DialogElement | null;
+    if (libraryModalOpen && libraryDialog && !libraryDialog.open) queueMicrotask(() => libraryDialog.isConnected && libraryDialog.showModal());
     const nextSource = root.querySelector('[data-source]');
     if (preservedSource && nextSource) nextSource.replaceWith(preservedSource);
-    (['design', 'graph', 'analysis', 'instance', 'conversion', 'libraries', 'source'] as const).forEach((item, index) => {
+    (['design', 'graph', 'analysis', 'instance', 'conversion', 'source'] as const).forEach((item) => {
       const tab = root.querySelector(`[data-mode="${item}"]`);
-      const panel = root.querySelectorAll('.js-view')[index];
+      const panel = root.querySelector(`[data-panel-mode="${item}"]`);
       tab?.setAttribute('id', `js-tab-${item}`);
       tab?.setAttribute('aria-controls', `js-panel-${item}`);
       panel?.setAttribute('id', `js-panel-${item}`);
@@ -455,11 +459,22 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       });
     });
     root.querySelectorAll('[data-select]').forEach((target: HTMLButtonElement) => {
-      target.addEventListener('click', () => select(target.dataset.select));
+      const selectType = (): void => {
+        const pointer = target.dataset.select;
+        if (mode === 'graph' && pointer) {
+          const view = semanticGraph.revealNode(pointer);
+          selectedPointer = view.selection?.pointer || undefined;
+          fitGraphAfterRender = true;
+          render();
+          return;
+        }
+        select(pointer);
+      };
+      target.addEventListener('click', selectType);
       target.addEventListener('keydown', (event: KeyboardEvent) => {
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault();
-          select(target.dataset.select);
+          selectType();
         }
       });
     });
@@ -506,6 +521,19 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     root.querySelectorAll('[data-mobile-drawer-close]').forEach((button: HTMLButtonElement) => button.addEventListener('click', closeCompactDrawer));
     root.querySelectorAll('[data-problems-toggle]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => { problemsOpen = !problemsOpen; render(); }));
     root.querySelector('[data-show-commands]')?.addEventListener('click', () => showCommandPalette());
+    root.querySelector('[data-library-open]')?.addEventListener('click', () => {
+      libraryOperation = 'import';
+      libraryModalOpen = true;
+      render();
+    });
+    const libraryDialog = root.querySelector('[data-library-dialog]') as DialogElement | null;
+    const closeLibraryDialog = (): void => {
+      libraryModalOpen = false;
+      libraryDialog?.close();
+      render();
+    };
+    root.querySelector('[data-library-close]')?.addEventListener('click', closeLibraryDialog);
+    libraryDialog?.addEventListener('cancel', (event: Event) => { event.preventDefault(); closeLibraryDialog(); });
     root.querySelectorAll('[data-member-mode]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
       designMemberMode = button.dataset.memberMode as DesignMemberMode;
       render();
@@ -1055,7 +1083,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       if (!libraryPlan?.applicable || !libraryBinding) return;
       void applyCommand(refactoringPlanCommand(libraryPlan, libraryBinding)).then((error) => {
         libraryStatus = error ?? `Applied ${libraryOperation} with ${libraryPlan?.provenance.length ?? 0} provenance records.`;
-        if (!error) { libraryPlan = undefined; librarySelection = []; }
+        if (!error) { libraryPlan = undefined; librarySelection = []; libraryModalOpen = false; }
         render();
         queueMicrotask(() => (root.querySelector('[data-library-status]') as HTMLElement | null)?.focus());
       });
@@ -1098,6 +1126,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
   const wireGraph = (graph: ReturnType<typeof projectGraph>): void => {
     graphResizeObserver?.disconnect();
     graphLayout.setTickListener(undefined);
+    const suppressedGraphClicks = new Set<string>();
     root.querySelectorAll('[data-graph-select]').forEach((target: SVGElement) => {
       const activate = (): void => {
         const nodeId = target.dataset.graphNode;
@@ -1109,6 +1138,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       target.addEventListener('click', () => {
         const nodeId = target.dataset.graphNode;
         if (!nodeId) return;
+        if (suppressedGraphClicks.delete(nodeId)) return;
         const pending = pendingGraphActivation;
         if (pending?.nodeId === nodeId) return;
         if (pendingGraphActivation) clearTimeout(pendingGraphActivation.timer);
@@ -1278,6 +1308,52 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       return false;
     };
     syncViewport();
+    root.querySelectorAll('[data-graph-select]').forEach((target: SVGElement) => {
+      const nodeId = target.dataset.graphNode;
+      if (!nodeId) return;
+      let start: { readonly x: number; readonly y: number } | undefined;
+      let offset: { readonly x: number; readonly y: number } | undefined;
+      let moved = false;
+      target.addEventListener('pointerdown', (event: PointerEvent) => {
+        if (event.button !== 0) return;
+        event.stopPropagation();
+        const bounds = syncViewport();
+        const world = graphNavigation.screenToWorld({ x: event.clientX - bounds.left, y: event.clientY - bounds.top });
+        const position = graphLayout.position(nodeId);
+        if (!position) return;
+        if (pendingGraphActivation) clearTimeout(pendingGraphActivation.timer);
+        pendingGraphActivation = undefined;
+        start = { x: event.clientX, y: event.clientY };
+        offset = { x: world.x - position.x, y: world.y - position.y };
+        moved = false;
+        target.setPointerCapture(event.pointerId);
+      });
+      target.addEventListener('pointermove', (event: PointerEvent) => {
+        if (!start || !offset || !target.hasPointerCapture(event.pointerId)) return;
+        if (!moved && Math.hypot(event.clientX - start.x, event.clientY - start.y) < 4) return;
+        if (!moved) graphLayout.startDrag(nodeId);
+        moved = true;
+        event.preventDefault();
+        const bounds = syncViewport();
+        const world = graphNavigation.screenToWorld({ x: event.clientX - bounds.left, y: event.clientY - bounds.top });
+        graphLayout.drag(nodeId, { x: world.x - offset.x, y: world.y - offset.y });
+        canvas.classList.add('js-node-dragging');
+      });
+      const releaseNode = (event: PointerEvent): void => {
+        if (!start) return;
+        if (moved) {
+          graphLayout.endDrag(nodeId, true);
+          suppressedGraphClicks.add(nodeId);
+        }
+        start = undefined;
+        offset = undefined;
+        moved = false;
+        canvas.classList.remove('js-node-dragging');
+        if (target.hasPointerCapture(event.pointerId)) target.releasePointerCapture(event.pointerId);
+      };
+      target.addEventListener('pointerup', releaseNode);
+      target.addEventListener('pointercancel', releaseNode);
+    });
     const ResizeObserverConstructor = (globalThis as unknown as { ResizeObserver?: new (callback: () => void) => GraphResizeObserver }).ResizeObserver;
     if (ResizeObserverConstructor) {
       graphResizeObserver = new ResizeObserverConstructor(() => { if (!disposed && canvas.isConnected) syncViewport(); });
@@ -1397,9 +1473,11 @@ interface LibraryWorkbenchState {
   readonly currentDocumentUri?: string;
 }
 
-function mountAdvancedViews(root: HTMLElement, snapshot: DocumentSnapshot, definitionPointer: string | undefined, graph: ReturnType<typeof projectGraph>, mode: Mode, instanceText: string, instanceResult: InstanceValidationResult | undefined, impactDirection: ImpactDirection, selectedAddIns: readonly string[], refactoringPlan: RefactoringPlan | undefined, refactoringStatus: string, host: EditorServices | undefined, conversionManifest: ConversionCommandsManifest | undefined, conversionCommandId: string | undefined, conversionSource: ConversionSource | undefined, conversionResult: ConversionResult | undefined, conversionStatus: string, conversionProgress: ProgressEvent | undefined, conversionRequestId: string | undefined, libraryEntries: readonly LibraryEntry[] | undefined, librarySelector: 'pinned' | 'floating', libraryDocument: LibraryDocument | undefined, librarySelection: readonly string[], libraryOperation: LibraryOperation, libraryPlan: RefactoringPlan | undefined, libraryStatus: string, libraryState: LibraryWorkbenchState, instanceRoots: readonly { readonly pointer: string; readonly label: string }[], instanceRootPointer: string | undefined, instanceSelection: CrossNavigationSelection | undefined, resolvedDocuments: readonly ResolvedSchemaDocument[] = []): void {
+function mountAdvancedViews(root: HTMLElement, snapshot: DocumentSnapshot, definitionPointer: string | undefined, graph: ReturnType<typeof projectGraph>, mode: Mode, instanceText: string, instanceResult: InstanceValidationResult | undefined, impactDirection: ImpactDirection, selectedAddIns: readonly string[], refactoringPlan: RefactoringPlan | undefined, refactoringStatus: string, host: EditorServices | undefined, conversionManifest: ConversionCommandsManifest | undefined, conversionCommandId: string | undefined, conversionSource: ConversionSource | undefined, conversionResult: ConversionResult | undefined, conversionStatus: string, conversionProgress: ProgressEvent | undefined, conversionRequestId: string | undefined, libraryEntries: readonly LibraryEntry[] | undefined, librarySelector: 'pinned' | 'floating', libraryDocument: LibraryDocument | undefined, librarySelection: readonly string[], libraryOperation: LibraryOperation, libraryPlan: RefactoringPlan | undefined, libraryStatus: string, libraryState: LibraryWorkbenchState, libraryModalOpen: boolean, instanceRoots: readonly { readonly pointer: string; readonly label: string }[], instanceRootPointer: string | undefined, instanceSelection: CrossNavigationSelection | undefined, resolvedDocuments: readonly ResolvedSchemaDocument[] = [], targetNamespaces: readonly string[] = []): void {
   const sourcePanel = root.querySelector('.js-source-view');
-  sourcePanel?.insertAdjacentHTML('beforebegin', `<section class="js-view" ${mode === 'analysis' ? '' : 'hidden'}>${analysisView(snapshot, definitionPointer, graph, impactDirection, refactoringPlan, refactoringStatus, selectedAddIns, resolvedDocuments)}</section><section class="js-view" ${mode === 'instance' ? '' : 'hidden'}>${instanceView(instanceText, instanceResult, instanceRoots, instanceRootPointer, instanceSelection)}</section><section class="js-view" ${mode === 'conversion' ? '' : 'hidden'}>${conversionView(host, conversionManifest, conversionCommandId, conversionSource, conversionResult, conversionStatus, conversionProgress, conversionRequestId)}</section><section class="js-view" ${mode === 'libraries' ? '' : 'hidden'}>${renderLibraryBrowser({ requestBacked: Boolean(host?.libraryRequest), fallbackAvailable: Boolean(host?.listLibraryEntries && host.readLibraryDocument) }, libraryEntries, librarySelector, libraryDocument, librarySelection, libraryOperation, libraryPlan, libraryStatus, libraryState)}</section>`);
+  sourcePanel?.insertAdjacentHTML('beforebegin', `<section class="js-view" data-panel-mode="analysis" ${mode === 'analysis' ? '' : 'hidden'}>${analysisView(snapshot, definitionPointer, graph, impactDirection, refactoringPlan, refactoringStatus, selectedAddIns, resolvedDocuments)}</section><section class="js-view" data-panel-mode="instance" ${mode === 'instance' ? '' : 'hidden'}>${instanceView(instanceText, instanceResult, instanceRoots, instanceRootPointer, instanceSelection)}</section><section class="js-view" data-panel-mode="conversion" ${mode === 'conversion' ? '' : 'hidden'}>${conversionView(host, conversionManifest, conversionCommandId, conversionSource, conversionResult, conversionStatus, conversionProgress, conversionRequestId)}</section>`);
+  root.querySelector('.js-shell')?.insertAdjacentHTML('beforeend', `<dialog class="js-library-dialog" data-library-dialog aria-label="Import from library"><div class="js-library-dialog-head"><strong>Import type library</strong><button data-library-close aria-label="Close library browser">${fluentIcon('dismiss')}</button></div>${renderLibraryBrowser({ requestBacked: Boolean(host?.libraryRequest), fallbackAvailable: Boolean(host?.listLibraryEntries && host.readLibraryDocument) }, libraryEntries, librarySelector, libraryDocument, librarySelection, libraryOperation, libraryPlan, libraryStatus, libraryState, { purpose: 'import', targetNamespaces })}</dialog>`);
+  if (!libraryModalOpen) (root.querySelector('[data-library-dialog]') as DialogElement | null)?.removeAttribute('open');
 }
 
 export function conversionView(host: EditorServices | undefined, manifest: ConversionCommandsManifest | undefined, commandId: string | undefined, source: ConversionSource | undefined, result: ConversionResult | undefined, status: string, progress?: ProgressEvent, requestId?: string): string {
@@ -1628,6 +1706,48 @@ function pointerTokens(pointer: string): string[] {
 
 function formatPointer(tokens: readonly string[]): string { return tokens.length ? `/${tokens.map((token) => token.replace(/~/g, '~0').replace(/\//g, '~1')).join('/')}` : ''; }
 
+interface TypeTreeItem {
+  readonly name: string;
+  readonly pointer: string;
+  readonly namespace: string;
+  readonly imported?: boolean;
+  readonly documentUri?: string;
+  readonly sourcePointer?: string;
+}
+
+interface TypeTreeNamespace {
+  readonly label: string;
+  readonly path: string;
+  readonly children: Map<string, TypeTreeNamespace>;
+  readonly types: TypeTreeItem[];
+}
+
+function renderTypeTree(definitions: readonly TypeTreeItem[], selectedPointer: string | undefined): string {
+  const root: TypeTreeNamespace = { label: 'Definitions', path: '', children: new Map(), types: [] };
+  for (const definition of definitions) {
+    const segments = definition.namespace.split('/').filter(Boolean).slice(1);
+    let namespace = root;
+    for (const segment of segments) {
+      const path = namespace.path ? `${namespace.path}/${segment}` : segment;
+      let child = namespace.children.get(segment);
+      if (!child) {
+        child = { label: segment, path, children: new Map(), types: [] };
+        namespace.children.set(segment, child);
+      }
+      namespace = child;
+    }
+    namespace.types.push(definition);
+  }
+  const renderType = (item: TypeTreeItem): string => `<button role="treeitem" class="js-tree-item${item.imported ? ' js-tree-item-imported' : ''}" ${item.imported ? `data-effective-source="${escapeAttribute(item.sourcePointer ?? '')}" data-effective-document="${escapeAttribute(item.documentUri ?? '')}" title="Imported from ${escapeAttribute(item.documentUri ?? '')}${escapeAttribute(item.sourcePointer ? `#${item.sourcePointer}` : '')}"` : `data-select="${escapeAttribute(item.pointer)}"`} data-type-drag="${escapeAttribute(item.pointer)}" draggable="true" aria-current="${selectedPointer === item.pointer}"><span class="js-kind" aria-hidden="true">${fluentIcon('cube')}</span><span>${escapeHtml(item.name)}</span>${item.imported ? '<small>imported</small>' : ''}</button>`;
+  const renderNamespace = (namespace: TypeTreeNamespace): string => {
+    const children = [...namespace.children.values()].sort((left, right) => left.label.localeCompare(right.label)).map(renderNamespace).join('');
+    const types = [...namespace.types].sort((left, right) => left.name.localeCompare(right.name)).map(renderType).join('');
+    if (!namespace.path) return `${types}${children}`;
+    return `<details class="js-tree-namespace" open><summary><span class="js-tree-chevron">${fluentIcon('chevronRight')}</span><span>${escapeHtml(namespace.label)}</span><small>${namespace.types.length + namespace.children.size}</small></summary><div role="group">${types}${children}</div></details>`;
+  };
+  return renderNamespace(root) || '<div class="js-empty js-tree-empty">No definitions yet.</div>';
+}
+
 function structuredWorkbenchShell(snapshot: DocumentSnapshot, title: string, definitions: readonly { readonly name: string; readonly pointer: string; readonly namespace: string; readonly imported?: boolean; readonly documentUri?: string; readonly sourcePointer?: string }[], definitionPointer: string | undefined, rows: readonly PropertyRow[], selectedPointer: string | undefined, mode: Mode, problemsOpen: boolean, memberMode: DesignMemberMode, effectiveMembers: EffectiveMembersResult | undefined, expandedPropertyPointer: string | undefined, chrome: NonNullable<JsonStructureEditorOptions['chrome']> = 'document'): string {
   const definition = snapshot.model?.projections.definitions.find((item) => item.pointer === definitionPointer);
   const selectedProperty = rows.find((row) => row.pointer === selectedPointer);
@@ -1639,26 +1759,24 @@ function structuredWorkbenchShell(snapshot: DocumentSnapshot, title: string, def
   const documentValue = snapshot.recovery === 'valid' ? JSON.parse(snapshot.text) : {};
   const profile = detectMetaSchemaMode(documentValue);
   const activeCompanions = Object.entries(profile.capabilities).filter(([name, active]) => name !== 'core' && name !== 'unknownUses' && active === true).length;
-  const advancedModes: readonly { readonly mode: Extract<Mode, 'analysis' | 'instance' | 'conversion' | 'libraries'>; readonly icon: FluentIconName; readonly label: string }[] = [
-    { mode: 'analysis', icon: 'info', label: 'Analysis' },
-    { mode: 'instance', icon: 'checkmarkCircle', label: 'Validate instance' },
-    { mode: 'conversion', icon: 'arrowSwap', label: 'Conversions' },
-    { mode: 'libraries', icon: 'library', label: 'Libraries' },
+  const primaryModes: readonly { readonly mode: Extract<Mode, 'design' | 'graph' | 'source' | 'instance'>; readonly icon: FluentIconName; readonly label: string }[] = [
+    { mode: 'design', icon: 'documentData', label: 'Document' },
+    { mode: 'graph', icon: 'cube', label: 'Graph' },
+    { mode: 'source', icon: 'document', label: 'Source' },
+    { mode: 'instance', icon: 'checkmarkCircle', label: 'Validate' },
   ];
-  const representationModes: readonly Extract<Mode, 'design' | 'graph' | 'source'>[] = ['design', 'graph', 'source'];
-  const typeTree = definitions.map((item) => `<button role="treeitem" class="js-tree-item${item.imported ? ' js-tree-item-imported' : ''}" ${item.imported ? `data-effective-source="${escapeAttribute(item.sourcePointer ?? '')}" data-effective-document="${escapeAttribute(item.documentUri ?? '')}" title="Imported from ${escapeAttribute(item.documentUri ?? '')}${escapeAttribute(item.sourcePointer ? `#${item.sourcePointer}` : '')}"` : `data-select="${escapeAttribute(item.pointer)}"`} data-type-drag="${escapeAttribute(item.pointer)}" draggable="true" aria-current="${item.pointer === definitionPointer}"><span class="js-kind" aria-hidden="true">${fluentIcon('cube')}</span><span>${escapeHtml(item.name)}</span>${item.imported ? '<small>imported</small>' : ''}</button>`).join('') || '<div class="js-empty js-tree-empty">No definitions yet.</div>';
-  const representations = representationModes.map((item) => `<button role="tab" data-mode="${item}" aria-selected="${mode === item}">${item[0]!.toUpperCase()}${item.slice(1)}</button>`).join('');
-  const activities = advancedModes.map((item) => `<button class="js-activity-button" data-mode="${item.mode}" aria-label="${item.label}" title="${item.label}" aria-pressed="${mode === item.mode}">${fluentIcon(item.icon)}</button>`).join('');
+  const typeTree = renderTypeTree(definitions, definitionPointer);
+  const activities = primaryModes.map((item) => `<button class="js-activity-button" data-mode="${item.mode}" aria-label="${item.label}" title="${item.label}" aria-pressed="${mode === item.mode}">${fluentIcon(item.icon)}</button>`).join('');
   const breadcrumbSeparator = fluentIcon('chevronRight', 'js-chevron');
   const breadcrumbs = `<span data-document-title>${escapeHtml(title)}</span>${definition ? `<span aria-hidden="true">${breadcrumbSeparator}</span><strong>${escapeHtml(definition.name)}</strong>` : ''}${selectedProperty ? `<span aria-hidden="true">${breadcrumbSeparator}</span><strong>${escapeHtml(selectedProperty.name)}</strong>` : ''}${selectedRelation ? `<span aria-hidden="true">${breadcrumbSeparator}</span><strong>${escapeHtml(selectedRelation.name)}</strong>` : ''}`;
   const titleChrome = workbenchTitleChrome(title, chrome);
   return `<div class="js-shell js-chrome-${chrome}">
     ${titleChrome}
-    <div class="js-document-toolbar" role="toolbar" aria-label="Document actions"><button class="js-mobile-toggle" data-mobile-drawer="types" aria-controls="js-outline" aria-haspopup="dialog" aria-expanded="false">Types</button><button data-command="definition.add" title="New type">${fluentIcon('add')}<span>Type</span></button><button data-mode="conversion" title="Convert this structure">${fluentIcon('arrowSwap')}<span>Convert</span></button><button data-mode="instance" title="Validate an instance">${fluentIcon('checkmarkCircle')}<span>Validate</span></button><span class="js-spacer"></span><span class="js-chip">${escapeHtml(profile.mode)}</span>${activeCompanions ? `<span class="js-chip">${activeCompanions} companions</span>` : ''}<div class="js-tabs" role="tablist" aria-label="Document representation">${representations}</div><button class="js-mobile-toggle" data-mobile-drawer="inspector" aria-controls="js-inspector" aria-haspopup="dialog" aria-expanded="false">Inspector</button></div>
+    <div class="js-document-toolbar" role="toolbar" aria-label="Document status"><button class="js-mobile-toggle" data-mobile-drawer="types" aria-controls="js-outline" aria-haspopup="dialog" aria-expanded="false">Types</button><span class="js-chip">${escapeHtml(profile.mode)}</span>${activeCompanions ? `<span class="js-chip">${activeCompanions} companions</span>` : ''}<span class="js-spacer"></span><button data-mode="conversion" title="Convert this structure">${fluentIcon('arrowSwap')}<span>Convert</span></button><button class="js-mobile-toggle" data-mobile-drawer="inspector" aria-controls="js-inspector" aria-haspopup="dialog" aria-expanded="false">Inspector</button></div>
     <div class="js-workbench" data-problems-open="${problemsOpen}" data-active-mode="${mode}">
-      <nav class="js-activity" aria-label="Workbench views"><button class="js-activity-button js-activity-primary" data-mobile-drawer="types" aria-label="Schema explorer" title="Schema explorer">${fluentIcon('documentData')}</button>${activities}</nav>
-      <aside class="js-outline" id="js-outline" data-drawer-panel="types" aria-label="Schema explorer"><div class="js-panel-head"><span>Types</span><span class="js-spacer"></span><button data-command="definition.add" title="New type" aria-label="New type">${fluentIcon('add')}</button><button class="js-drawer-close" data-mobile-drawer-close aria-label="Close Types">${fluentIcon('dismiss')}</button></div><input class="js-filter" type="search" placeholder="Filter types" aria-label="Filter types"><div class="js-tree" role="tree" aria-label="Types and namespaces"><div class="js-tree-group">Definitions · ${definitions.length}</div>${typeTree}</div></aside>
-      <section class="js-center"><div class="js-editor-tab"><span class="js-kind" aria-hidden="true">${fluentIcon('document')}</span><span data-document-title>${escapeHtml(title)}</span></div><div class="js-breadcrumbs">${breadcrumbs}</div><section class="js-view" ${mode === 'design' ? '' : 'hidden'}>${designView(definition?.name, definition?.type, definition?.description, rows, selectedPointer, definition?.identity, definition?.relations, memberMode, effectiveMembers, expandedPropertyPointer, definitions, documentValue)}</section><section class="js-view js-graph" ${mode === 'graph' ? '' : 'hidden'}>${graphView(snapshot, selectedPointer)}</section><section class="js-view js-source-view" ${mode === 'source' ? '' : 'hidden'}><div class="js-source" data-source aria-label="JSON source editor"></div></section></section>
+      <nav class="js-activity" aria-label="Editor modes">${activities}</nav>
+      <aside class="js-outline" id="js-outline" data-drawer-panel="types" aria-label="Types"><div class="js-panel-head"><span>Types</span><span class="js-spacer"></span><button data-command="definition.add" title="Add type" aria-label="Add type">${fluentIcon('add')}</button><button data-library-open title="Import type library" aria-label="Import type library">${fluentIcon('library')}</button><button class="js-drawer-close" data-mobile-drawer-close aria-label="Close Types">${fluentIcon('dismiss')}</button></div><input class="js-filter" type="search" placeholder="Filter types" aria-label="Filter types"><div class="js-tree" role="tree" aria-label="Types by namespace"><div class="js-tree-group">${definitions.length} definitions</div>${typeTree}</div></aside>
+      <section class="js-center"><div class="js-editor-tab"><span class="js-kind" aria-hidden="true">${fluentIcon('document')}</span><span data-document-title>${escapeHtml(title)}</span></div><div class="js-breadcrumbs">${breadcrumbs}</div><section class="js-view" data-panel-mode="design" ${mode === 'design' ? '' : 'hidden'}>${designView(definition?.name, definition?.type, definition?.description, rows, selectedPointer, definition?.identity, definition?.relations, memberMode, effectiveMembers, expandedPropertyPointer, definitions, documentValue)}</section><section class="js-view js-graph" data-panel-mode="graph" ${mode === 'graph' ? '' : 'hidden'}>${graphView(snapshot, selectedPointer)}</section><section class="js-view js-source-view" data-panel-mode="source" ${mode === 'source' ? '' : 'hidden'}><div class="js-source" data-source aria-label="JSON source editor"></div></section></section>
       <aside class="js-inspector" id="js-inspector" data-drawer-panel="inspector" aria-label="Inspector"><div class="js-panel-head"><span>Inspector</span><span class="js-spacer"></span><button class="js-drawer-close" data-mobile-drawer-close aria-label="Close Inspector">${fluentIcon('dismiss')}</button></div>${inspector(selectedProperty, definition, selectedDiagnostics, selectedRelation)}</aside>
       <section class="js-problems" aria-label="Problems panel"><div class="js-problems-head"><button class="js-problems-tab" data-problems-toggle aria-controls="js-problem-list" aria-expanded="${problemsOpen}">Problems <span class="js-count">${snapshot.diagnostics.length}</span></button><span class="js-spacer"></span><button data-problems-toggle aria-controls="js-problem-list" aria-expanded="${problemsOpen}" aria-label="Close Problems">${fluentIcon('dismiss')}</button></div><div class="js-problem-list" id="js-problem-list" role="list">${problems(snapshot.diagnostics)}</div></section>
     </div>
@@ -1974,24 +2092,20 @@ export function graphView(graphOrSnapshot: ReturnType<typeof projectGraph> | Doc
   if (!isSnapshot) layout.dispose();
   const semanticToolbar = semanticView
     ? renderSemanticGraphToolbar(semanticView, state.camera.zoom, isSnapshot ? documentNameFromUri((graphOrSnapshot as DocumentSnapshot).uri) : 'Schema')
-    : `<div class="js-graph-toolbar"><button data-graph-fit title="Fit level">Fit level</button><span class="js-spacer"></span><button data-graph-zoom-out aria-label="Zoom out">${fluentIcon('subtract')}</button><span data-semantic-zoom>${Math.round(state.camera.zoom * 100)}%</span><button data-graph-zoom-in aria-label="Zoom in">${fluentIcon('add')}</button></div>`;
+    : `<div class="js-graph-toolbar"><button data-graph-fit title="Fit level">Fit level</button><button data-graph-relayout title="Release pinned nodes and arrange automatically" aria-label="Auto arrange">${fluentIcon('arrowSync')}</button><span class="js-spacer"></span><button data-graph-zoom-out aria-label="Zoom out">${fluentIcon('subtract')}</button><span data-semantic-zoom>${Math.round(state.camera.zoom * 100)}%</span><button data-graph-zoom-in aria-label="Zoom in">${fluentIcon('add')}</button></div>`;
   const graphLabel = semanticView ? `${semanticView.title}. ${semanticView.description}` : `Type relationship graph with ${graph.nodes.length} nodes and ${graph.edges.length} edges`;
   const selectedNode = selectedNodeId ? graph.nodes.find((node) => node.id === selectedNodeId) : undefined;
   const selectedEdge = selectedEdgeId ? graph.edges.find((edge) => edge.id === selectedEdgeId) : undefined;
-  const focusPointer = semanticView?.location.focusNodeId ? sourceGraph.nodes.find((node) => node.id === semanticView.location.focusNodeId)?.pointer : selectedNode?.pointer;
-  const levelContext = semanticView ? renderGraphNavigationContext(semanticView) : '';
   const graphInspector = semanticView ? renderGraphInspector(semanticView, selectedNode, selectedEdge) : '';
   const minimapMarkup = `<aside class="js-minimap-wrap" aria-label="Graph minimap"><div class="js-minimap-head"><span>Whole document</span><span>${escapeHtml(semanticView?.location.level ?? 'Graph')}</span></div><svg class="js-minimap" viewBox="0 0 180 120" data-minimap><rect width="180" height="120"></rect><g data-minimap-nodes>${minimap.nodes.map((node, index) => `<rect data-minimap-node="${escapeAttribute(positions[index]?.id ?? '')}" x="${node.x / width * 180}" y="${node.y / height * 120}" width="${Math.max(3, node.width / width * 180)}" height="${Math.max(3, node.height / height * 120)}"></rect>`).join('')}</g><rect class="js-minimap-viewport" x="${minimapViewport.x}" y="${minimapViewport.y}" width="${minimapViewport.width}" height="${minimapViewport.height}"></rect></svg></aside>`;
-  const lensBar = semanticView ? renderGraphLensBar(semanticView) : '';
-  const commandBar = semanticView ? `<div class="js-graph-command-bar" aria-label="Schema authoring commands"><button data-action-id="relation.add" data-action-pointer="${escapeAttribute(focusPointer ?? '')}">+ Relation</button><button data-action-id="core.extends" data-action-pointer="${escapeAttribute(focusPointer ?? '')}">Set extends</button><button data-action-id="import.set" data-action-pointer="${escapeAttribute(focusPointer ?? '')}">Import types</button></div>` : '';
   const levelBanner = semanticView ? `<div class="js-graph-level-banner"><span>Level ${semanticView.location.level === 'atlas' ? '1' : semanticView.location.level === 'types' ? '2' : '3'} · ${escapeHtml(semanticView.location.level)}</span><strong>${escapeHtml(semanticView.title)}</strong><small>${escapeHtml(semanticView.description)}</small></div>` : '';
   const hint = semanticView ? `<div class="js-graph-hint">${escapeHtml(graphHint(semanticView))}</div>` : '';
-  return `${semanticToolbar}<div class="js-graph-workspace">${levelContext}<section class="js-graph-viewport">${levelBanner}${lensBar}${commandBar}<svg class="js-graph-canvas" data-graph-canvas data-search-active="${Boolean(semanticView?.searchQuery.trim())}" viewBox="0 0 ${width} ${height}" tabindex="0" role="group" aria-label="${escapeAttribute(graphLabel)}. Press Enter to drill in, Escape to drill out, wheel or pinch to zoom, and drag to pan."><defs><marker id="js-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8Z" fill="currentColor"></path></marker></defs><g data-graph-world transform="${transform}"><g data-graph-edges>${edges}</g><g data-graph-nodes>${nodes}</g></g></svg>${hint}${minimapMarkup}</section>${graphInspector}</div>`;
+  return `${semanticToolbar}<div class="js-graph-workspace"><section class="js-graph-viewport">${levelBanner}<svg class="js-graph-canvas" data-graph-canvas data-search-active="${Boolean(semanticView?.searchQuery.trim())}" viewBox="0 0 ${width} ${height}" tabindex="0" role="group" aria-label="${escapeAttribute(graphLabel)}. Press Enter to drill in, Escape to drill out, wheel or pinch to zoom, and drag to pan."><defs><marker id="js-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8Z" fill="currentColor"></path></marker></defs><g data-graph-world transform="${transform}"><g data-graph-edges>${edges}</g><g data-graph-nodes>${nodes}</g></g></svg>${hint}${minimapMarkup}</section>${graphInspector}</div>`;
 }
 
 function renderSemanticGraphToolbar(view: SemanticGraphView, zoom: number, documentTitle: string): string {
   const breadcrumbs = [{ label: documentTitle, level: 'atlas' as const }, ...view.breadcrumbs.slice(1)].map((crumb, index, values) => `<button data-graph-breadcrumb="${crumb.level}" ${index === values.length - 1 ? 'aria-current="page"' : ''}>${escapeHtml(crumb.label)}</button>${index < values.length - 1 ? `<span aria-hidden="true">${fluentIcon('chevronRight', 'js-chevron')}</span>` : ''}`).join('');
-  return `<div class="js-graph-toolbar"><button data-graph-back title="Back" aria-label="Back" ${view.canBack ? '' : 'disabled'}>${fluentIcon('arrowLeft')}</button><button data-graph-forward title="Forward" aria-label="Forward" ${view.canForward ? '' : 'disabled'}>${fluentIcon('arrowRight')}</button><button data-graph-home title="Schema atlas" aria-label="Schema atlas">${fluentIcon('home')}</button><span class="js-graph-divider"></span><nav class="js-graph-crumbs" aria-label="Graph location">${breadcrumbs}</nav><span class="js-spacer"></span><label class="js-graph-search"><span class="js-sr-only">Find type or relation</span><input type="search" data-graph-search value="${escapeAttribute(view.searchQuery)}" placeholder="Find type or relation"></label><span class="js-graph-divider"></span><button data-graph-zoom-out title="Zoom out" aria-label="Zoom out">${fluentIcon('subtract')}</button><span data-semantic-zoom>${Math.round(zoom * 100)}%</span><button data-graph-zoom-in title="Zoom in" aria-label="Zoom in">${fluentIcon('add')}</button><button data-graph-fit title="Fit level" aria-label="Fit level">Fit level</button></div>`;
+  return `<div class="js-graph-toolbar"><button data-graph-back title="Back" aria-label="Back" ${view.canBack ? '' : 'disabled'}>${fluentIcon('arrowLeft')}</button><button data-graph-forward title="Forward" aria-label="Forward" ${view.canForward ? '' : 'disabled'}>${fluentIcon('arrowRight')}</button><button data-graph-home title="Schema atlas" aria-label="Schema atlas">${fluentIcon('home')}</button><span class="js-graph-divider"></span><nav class="js-graph-crumbs" aria-label="Graph location">${breadcrumbs}</nav>${renderGraphLensBar(view)}<span class="js-spacer"></span><label class="js-graph-search"><span class="js-sr-only">Find type or relation</span><input type="search" data-graph-search value="${escapeAttribute(view.searchQuery)}" placeholder="Find type or relation"></label><span class="js-graph-divider"></span><button data-graph-relayout title="Release pinned nodes and arrange automatically" aria-label="Auto arrange">${fluentIcon('arrowSync')}</button><button data-graph-zoom-out title="Zoom out" aria-label="Zoom out">${fluentIcon('subtract')}</button><span data-semantic-zoom>${Math.round(zoom * 100)}%</span><button data-graph-zoom-in title="Zoom in" aria-label="Zoom in">${fluentIcon('add')}</button><button data-graph-fit title="Fit level" aria-label="Fit level">Fit level</button></div>`;
 }
 
 function renderGraphLensBar(view: SemanticGraphView): string {
@@ -1999,20 +2113,6 @@ function renderGraphLensBar(view: SemanticGraphView): string {
     { id: 'namespaces', label: 'Namespaces' }, { id: 'relations', label: 'Relations' }, { id: 'extends', label: 'Extends' }, { id: 'imports', label: 'Imports' },
   ];
   return `<div class="js-graph-lenses" role="group" aria-label="Graph lens">${lenses.map((lens) => `<button data-graph-lens="${lens.id}" aria-pressed="${view.location.lens === lens.id}">${lens.label}</button>`).join('')}</div>`;
-}
-
-function renderGraphNavigationContext(view: SemanticGraphView): string {
-  const levels = view.location.lens === 'relations'
-    ? [['atlas', 'Domain atlas', 'Namespaces and domains'], ['types', 'Type topology', view.location.namespace ?? 'Selected namespace'], ['neighborhood', 'Neighborhood', 'Outgoing relationships']]
-    : view.location.lens === 'namespaces'
-      ? [['atlas', 'Document root', 'Namespace hierarchy'], ['types', 'Declarations', view.location.namespace ?? 'Selected namespace'], ['neighborhood', 'Type', 'Selected declaration']]
-      : view.location.lens === 'extends'
-        ? [['atlas', 'Inheritance', 'Base and derived types'], ['types', 'Descendants', 'Selected hierarchy'], ['neighborhood', 'Members', 'Inherited context']]
-        : [['atlas', 'Sources', 'Imported documents'], ['types', 'Selection', 'Imported declarations'], ['neighborhood', 'Mapping', 'Target namespace']];
-  const current = ['atlas', 'types', 'neighborhood'].indexOf(view.location.level);
-  const steps = levels.map((level, index) => `<div class="js-graph-level-step${index < current ? ' js-complete' : ''}${index === current ? ' js-active' : ''}"><span>0${index + 1}</span><div><strong>${escapeHtml(level[1]!)}</strong><small>${escapeHtml(level[2]!)}</small></div></div>`).join('');
-  const history = view.recentPath.map((entry) => `<button data-graph-history="${entry.index}" ${entry.current ? 'aria-current="true"' : ''}><span class="js-history-dot"></span><span>${escapeHtml(entry.label)}</span>${entry.current ? '<small>current</small>' : ''}</button>`).join('');
-  return `<aside class="js-graph-navigator" aria-label="Navigation context"><div class="js-graph-panel-title">Semantic zoom <span>3 levels</span></div><div class="js-graph-panel-section">${steps}</div><div class="js-graph-panel-title">Recent path <span>${view.recentPath.length}</span></div><div class="js-graph-panel-section js-graph-history">${history}</div><div class="js-graph-panel-title">Keyboard</div><div class="js-graph-panel-section js-graph-instructions"><span>Drill in <kbd>Enter</kbd></span><span>Back out <kbd>Esc</kbd></span><span>Fit level <kbd>0</kbd></span><span>Zoom <kbd>+ / -</kbd></span></div><div class="js-graph-panel-title">Pointer &amp; touch</div><div class="js-graph-panel-section js-graph-instructions"><span>Select / inspect <kbd>click · tap</kbd></span><span>Open / follow <kbd>double</kbd></span><span>Zoom at pointer <kbd>wheel · pinch</kbd></span><span>Move viewport <kbd>drag</kbd></span></div></aside>`;
 }
 
 function renderGraphInspector(view: SemanticGraphView, node: ReturnType<typeof projectGraph>['nodes'][number] | undefined, edge: ReturnType<typeof projectGraph>['edges'][number] | undefined): string {
@@ -2430,14 +2530,11 @@ function isObjectSchema(value: unknown): value is Record<string, unknown> {
 }
 
 export function mobileModeSelect(mode: Mode): string {
-  const representations: readonly { readonly value: Mode; readonly label: string }[] = [
-    { value: 'design', label: 'Design' }, { value: 'graph', label: 'Graph' }, { value: 'source', label: 'Source' },
-  ];
-  const tools: readonly { readonly value: Mode; readonly label: string }[] = [
-    { value: 'analysis', label: 'Analysis' }, { value: 'instance', label: 'Validate instance' }, { value: 'conversion', label: 'Conversions' }, { value: 'libraries', label: 'Libraries' },
+  const modes: readonly { readonly value: Mode; readonly label: string }[] = [
+    { value: 'design', label: 'Document' }, { value: 'graph', label: 'Graph' }, { value: 'source', label: 'Source' }, { value: 'instance', label: 'Validate' },
   ];
   const options = (items: readonly { readonly value: Mode; readonly label: string }[]): string => items.map((item) => `<option value="${item.value}" ${item.value === mode ? 'selected' : ''}>${item.label}</option>`).join('');
-  return `<label class="js-mobile-mode"><span class="js-sr-only">Workbench view</span><select data-mobile-mode aria-label="Workbench view"><optgroup label="Editor">${options(representations)}</optgroup><optgroup label="Tools">${options(tools)}</optgroup></select></label>`;
+  return `<label class="js-mobile-mode"><span class="js-sr-only">Editor mode</span><select data-mobile-mode aria-label="Editor mode">${options(modes)}</select></label>`;
 }
 
 export function shouldFitGraphOnEntry(currentMode: Mode, nextMode: Mode, graphEntered: boolean): boolean {
@@ -2445,8 +2542,8 @@ export function shouldFitGraphOnEntry(currentMode: Mode, nextMode: Mode, graphEn
 }
 
 function enhanceWorkbenchDom(root: HTMLElement, mode: Mode): void {
-  const representationTabs = root.querySelector('.js-document-toolbar .js-tabs');
-  representationTabs?.insertAdjacentHTML('beforebegin', mobileModeSelect(mode));
+  const toolbarSpacer = root.querySelector('.js-document-toolbar .js-spacer');
+  toolbarSpacer?.insertAdjacentHTML('afterend', mobileModeSelect(mode));
   const graph = root.querySelector('[data-graph-canvas]');
   graph?.setAttribute('role', 'group');
 }
@@ -2458,6 +2555,12 @@ function filterTypeButtons(root: HTMLElement, query: string): void {
     const match = !normalized || (button.textContent ?? '').toLocaleLowerCase().includes(normalized);
     button.hidden = !match;
     if (match) visible += 1;
+  });
+  const namespaces = [...root.querySelectorAll('.js-tree-namespace')] as HTMLElement[];
+  namespaces.reverse().forEach((namespace) => {
+    const hasVisibleType = [...namespace.querySelectorAll('.js-tree-item')].some((item) => !(item as HTMLElement).hidden);
+    namespace.hidden = !hasVisibleType;
+    if (normalized && hasVisibleType) namespace.setAttribute('open', '');
   });
   const count = root.querySelector('.js-tree-group');
   if (count) count.textContent = `${visible} definitions`;

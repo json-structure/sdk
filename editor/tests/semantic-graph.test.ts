@@ -49,6 +49,22 @@ describe('semantic graph controller', () => {
     expect(controller.home().location.level).toBe('atlas');
   });
 
+  it('reveals a type in its namespace topology without entering its relation neighborhood', () => {
+    const controller = new SemanticGraphController();
+    controller.setSource(projection());
+
+    const revealed = controller.revealNode('/definitions/Domain/A');
+    expect(revealed.location).toEqual({ level: 'types', lens: 'relations', namespace: 'Domain' });
+    expect(revealed.selection).toMatchObject({ kind: 'type', nodeId: '/definitions/Domain/A', pointer: '/definitions/Domain/A' });
+    expect(revealed.projection.nodes.map((node) => node.label)).toEqual(['A', 'B']);
+
+    controller.openNode('/definitions/Domain/A');
+    const moved = controller.revealNode('/definitions/Common/C');
+    expect(moved.location).toEqual({ level: 'types', lens: 'relations', namespace: 'Common' });
+    expect(moved.selection?.nodeId).toBe('/definitions/Common/C');
+    expect(moved.projection.nodes.map((node) => node.label)).toEqual(['C']);
+  });
+
   it('retains a normalized semantic namespace when source nodes use the raw root namespace', () => {
     const controller = new SemanticGraphController();
     controller.setSource({
