@@ -127,6 +127,8 @@ describe('workbench interaction markup', () => {
     expect(html).toContain(`data-inline-definition-description="${pointer}" placeholder="No description yet."`);
     expect(html).toContain('> Root</label>');
     expect(html).not.toContain('Document root');
+    expect(editorStyles).toContain('.json-structure-editor .js-definition-name');
+    expect(editorStyles).toContain('font-size:25px; font-weight:650;');
   });
 
   it('renders native inline property controls inside table cells', () => {

@@ -211,9 +211,9 @@ var JsonStructureEditorWebview=(function(e){Object.defineProperty(e,Symbol.toStr
 .js-type-head { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:16px; border-bottom:1px solid var(--js-line-strong); padding-bottom:16px; }
 .js-eyebrow { color:var(--js-accent); font:11px/1.3 Consolas,"Cascadia Code",monospace; text-transform:uppercase; }
 .js-type-head h1,.js-sheet>header h1 { margin:4px 0 5px; font-size:25px; line-height:1.18; font-weight:650; }
-.js-definition-name { width:100%; min-width:0; margin:2px 0 1px; border:1px solid transparent; padding:1px 3px; background:transparent; color:var(--js-text); font:650 25px/1.18 "Segoe UI",sans-serif; }
-.js-definition-name:hover,.js-definition-name:focus { border-color:var(--js-line); background:var(--js-canvas); }
-.js-definition-name:focus { border-color:var(--js-focus); outline:0; }
+.json-structure-editor .js-definition-name { width:100%; min-width:0; margin:2px 0 1px; border:1px solid transparent; padding:1px 3px; background:transparent; color:var(--js-text); font-family:"Segoe UI",sans-serif; font-size:25px; font-weight:650; line-height:1.18; }
+.json-structure-editor .js-definition-name:hover,.json-structure-editor .js-definition-name:focus { border-color:var(--js-line); background:var(--js-canvas); }
+.json-structure-editor .js-definition-name:focus { border-color:var(--js-focus); outline:0; }
 .js-definition-description { width:100%; min-height:25px; max-height:120px; resize:none; overflow-y:auto; border:1px solid transparent; padding:2px 3px; background:transparent; color:var(--js-muted); line-height:1.45; }
 .js-definition-description:hover,.js-definition-description:focus { border-color:var(--js-line); background:var(--js-canvas); }
 .js-definition-description:focus { border-color:var(--js-focus); outline:0; color:var(--js-text); }
