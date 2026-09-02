@@ -182,6 +182,8 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
   let graphResizeObserver: GraphResizeObserver | undefined;
   let designMemberMode: DesignMemberMode = 'local';
   let expandedPropertyPointer: string | undefined;
+  const pendingPropertyFields = new Set<string>();
+  let relationDraftOpen = false;
   let instanceText = '{}';
   let instanceResult: InstanceValidationResult | undefined;
   let instanceWorkspace: InstanceWorkspace | undefined;
@@ -366,7 +368,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     const definitions = (snapshot.model?.projections.definitions ?? []).filter((definition) => definition.reusable);
     const localDefinitionPointers = new Set(definitions.map((definition) => definition.pointer));
     const typeDefinitions = [
-      ...definitions.map((definition) => ({ name: definition.name, pointer: definition.pointer, namespace: definition.namespacePointer, imported: false })),
+      ...definitions.map((definition) => ({ name: definition.name, pointer: definition.pointer, namespace: definition.namespacePointer, identity: definition.identity, imported: false })),
       ...session.effectiveDeclarations
         .filter((declaration) => declaration.imports.length > 0 && !localDefinitionPointers.has(declaration.effectivePointer))
         .map((declaration) => ({
@@ -395,7 +397,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     semanticGraphBySnapshot.set(snapshot, semanticGraph);
     graphLayout.reconcile(semanticGraphView.projection.nodes, semanticGraphView.projection.edges);
     forceGraphLayoutBySnapshot.set(snapshot, graphLayout);
-    root.innerHTML = structuredWorkbenchShell(snapshot, documentTitle, typeDefinitions, definitionPointer, rows, selectedPointer, mode, problemsOpen, designMemberMode, effectiveMembers, expandedPropertyPointer, options.chrome ?? 'document');
+    root.innerHTML = structuredWorkbenchShell(snapshot, documentTitle, typeDefinitions, definitionPointer, rows, selectedPointer, mode, problemsOpen, designMemberMode, effectiveMembers, expandedPropertyPointer, options.chrome ?? 'document', pendingPropertyFields, relationDraftOpen);
     mountAdvancedViews(root, snapshot, definitionPointer, graph, mode, instanceText, instanceResult, impactDirection, selectedAddIns, refactoringPlan, refactoringStatus, services, conversionManifest, conversionCommandId, conversionSource, conversionResult, conversionStatus, conversionProgress, conversionRequestId, libraryEntries, librarySelector, libraryDocument, librarySelection, libraryOperation, libraryPlan, libraryStatus, { providers: libraryProviders, catalog: libraryCatalog, resolution: libraryResolution, offline: libraryOffline, publishDraft: libraryPublishDraft, publishPreview: libraryPublishPreviewState, publishedEpoch: libraryPublishedEpoch, documentValid: documentCanPublish(snapshot), providerFilter: libraryProviderFilter, search: librarySearch, currentDocumentUri: snapshot.uri }, libraryModalOpen, instanceRoots, instanceRootPointer, instanceSelection, session.resolvedSchemaDocuments, typeDefinitions.map((definition) => definition.namespace));
     root.dataset.theme = themeName;
     const libraryDialog = root.querySelector('[data-library-dialog]') as DialogElement | null;
@@ -661,7 +663,19 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       if (!action) return;
       void applyCommand(action.create(ownerPointer, next)).then((error) => error && setInlineStatus(root, pointer, error));
     }));
-    const commitInlineDescription = async (input: HTMLInputElement): Promise<string | undefined> => {
+    root.querySelectorAll('[data-inline-property="identity"]').forEach((checkbox: HTMLInputElement) => checkbox.addEventListener('change', () => {
+      const pointer = checkbox.dataset.propertyPointer;
+      if (!pointer) return;
+      const ownerPointer = propertyOwnerPointer(pointer);
+      const owner = valueAtPointer(session.value, ownerPointer) as Record<string, unknown> | undefined;
+      const propertyName = pointerLabel(pointer);
+      const identity = Array.isArray(owner?.identity) ? owner.identity.filter((entry): entry is string => typeof entry === 'string') : [];
+      const next = checkbox.checked ? [...identity.filter((name) => name !== propertyName), propertyName] : identity.filter((name) => name !== propertyName);
+      const action = actionById(next.length ? 'relation.identity' : 'relation.remove-identity');
+      if (!action) return;
+      void applyCommand(action.create(ownerPointer, next)).then((error) => error && setInlineStatus(root, pointer, error));
+    }));
+    const commitInlineDescription = async (input: HTMLInputElement | HTMLTextAreaElement): Promise<string | undefined> => {
       const pointer = input.dataset.propertyPointer;
       const action = actionById('property.description');
       if (!pointer || !action) return 'The description editor is no longer available.';
@@ -685,8 +699,9 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       nameControl?.select();
       return undefined;
     };
-    root.querySelectorAll('[data-inline-property="description"]').forEach((input: HTMLInputElement) => {
-      input.addEventListener('keydown', (event: KeyboardEvent) => { if (event.key === 'Enter') { event.preventDefault(); input.blur(); } });
+    root.querySelectorAll('[data-inline-property="description"]').forEach((input: HTMLTextAreaElement) => {
+      autoGrowTextarea(input);
+      input.addEventListener('input', () => autoGrowTextarea(input));
       input.addEventListener('change', () => {
         if (input.dataset.skipDescriptionChange === 'true') { delete input.dataset.skipDescriptionChange; return; }
         input.setCustomValidity('');
@@ -724,7 +739,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       const currentEditor = control.closest('[data-property-editor]') as HTMLElement | null;
       if (!currentEditor) return;
       event.preventDefault();
-      const input = control as HTMLInputElement;
+      const input = control as HTMLTextAreaElement;
       input.dataset.skipDescriptionChange = 'true';
       input.blur();
       delete input.dataset.skipDescriptionChange;
@@ -739,7 +754,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
         }
         const error = descriptionError ?? await addInlineProperty(propertyOwnerPointer(pointer));
         if (!error) return;
-        const current = ([...root.querySelectorAll('[data-inline-property="description"]')] as HTMLInputElement[]).find((candidate) => candidate.dataset.propertyPointer === pointer) ?? input;
+        const current = ([...root.querySelectorAll('[data-inline-property="description"]')] as HTMLTextAreaElement[]).find((candidate) => candidate.dataset.propertyPointer === pointer) ?? input;
         current.setCustomValidity(error);
         current.reportValidity();
         current.focus();
@@ -751,13 +766,20 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       const family = control.dataset.inlineFamily;
       if (!pointer || !keyword || !family) return;
       const raw = control.dataset.valueKind === 'boolean' ? String(control.checked) : control.value.trim();
-      const remove = control.dataset.valueKind !== 'boolean' && raw === '';
+      const fieldKey = inlineFieldKey(pointer, `${inlineKeywordActionId(family, keyword)}`);
+      const schema = valueAtPointer(session.value, pointer) as Readonly<Record<string, unknown>> | undefined;
+      const authored = schema?.[keyword] !== undefined;
+      if (!authored && pendingPropertyFields.has(fieldKey) && control.dataset.valueKind !== 'boolean' && raw === '') return;
+      const remove = authored && control.dataset.valueKind !== 'boolean' && raw === '';
       const action = actionById(`${inlineKeywordActionId(family, keyword)}${remove ? '.remove' : ''}`);
       if (!action) { setInlineStatus(root, pointer, `${keyword} is not available in this profile.`); return; }
       let value: unknown;
       try { value = remove ? undefined : parseActionValue(action, raw, control.checked, effectiveSchemaType(session.value, pointer)); }
       catch (error) { setInlineStatus(root, pointer, error instanceof Error ? error.message : String(error)); return; }
-      void applyCommand(action.create(pointer, value)).then((error) => error && setInlineStatus(root, pointer, error));
+      void applyCommand(action.create(pointer, value)).then((error) => {
+        if (error) { setInlineStatus(root, pointer, error); return; }
+        pendingPropertyFields.delete(fieldKey);
+      });
     }));
     root.querySelectorAll('[data-inline-catalog]').forEach((field: HTMLElement) => {
       const actionId = field.dataset.inlineCatalog;
@@ -775,7 +797,14 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       const actionId = button.dataset.inlineKeywordRemove;
       const action = actionId ? actionById(actionId) : undefined;
       if (!pointer || !action) return;
+      pendingPropertyFields.delete(inlineFieldKey(pointer, actionId.replace(/\.remove$/, '')));
       void applyCommand(action.create(pointer, undefined)).then((error) => error && setInlineStatus(root, pointer, error));
+    }));
+    root.querySelectorAll('[data-inline-pending-remove]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
+      const key = button.dataset.inlinePendingRemove;
+      if (!key) return;
+      pendingPropertyFields.delete(key);
+      render();
     }));
     root.querySelectorAll('[data-effective-source]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
       const sourcePointer = button.dataset.effectiveSource;
@@ -792,13 +821,38 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       }
     }));
     root.querySelectorAll('[data-command="definition.add"]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => openAction('definition.add', '')));
-    root.querySelector('[data-command="add"]')?.addEventListener('click', () => openAction('property.add', definitionPointer));
+    root.querySelectorAll('[data-command="add"]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
+      if (definitionPointer === undefined) return;
+      void addInlineProperty(definitionPointer);
+    }));
     root.querySelectorAll('[data-action-id]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => openAction(button.dataset.actionId!, button.dataset.actionPointer ?? selectedPointer)));
     root.querySelectorAll('[data-property-detail-add]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
       const select = button.closest('.js-detail-add')?.querySelector('[data-property-detail-select]') as HTMLSelectElement | null;
       const pointer = button.dataset.propertyPointer;
-      if (select?.value && pointer) openAction(select.value, pointer);
+      if (!select?.value || !pointer) return;
+      pendingPropertyFields.add(inlineFieldKey(pointer, select.value));
+      render();
+      queueMicrotask(() => {
+        const details = root.querySelector(`[data-property-editor="${cssAttributeValue(pointer)}"] .js-property-details`) as HTMLElement | null;
+        (details?.querySelector(`[data-inline-field-action="${cssAttributeValue(select.value)}"] input,[data-inline-field-action="${cssAttributeValue(select.value)}"] textarea`) as HTMLElement | null)?.focus();
+      });
     }));
+    root.querySelector('[data-inline-relation-add]')?.addEventListener('click', () => { relationDraftOpen = true; render(); });
+    root.querySelector('[data-inline-relation-cancel]')?.addEventListener('click', () => { relationDraftOpen = false; render(); });
+    root.querySelector('[data-inline-relation-commit]')?.addEventListener('click', () => {
+      if (definitionPointer === undefined) return;
+      const name = (root.querySelector('[data-inline-relation-name]') as HTMLInputElement | null)?.value.trim() ?? '';
+      const targetTypeRef = (root.querySelector('[data-inline-relation-target]') as HTMLSelectElement | null)?.value ?? '';
+      const cardinality = (root.querySelector('[data-inline-relation-cardinality]') as HTMLSelectElement | null)?.value as 'single' | 'multiple';
+      const scope = (root.querySelector('[data-inline-relation-scope]') as HTMLSelectElement | null)?.value;
+      const action = actionById('relation.add');
+      if (!action || !name || !targetTypeRef) return;
+      void applyCommand(action.create(definitionPointer, { targetTypeRef, cardinality, ...(scope ? { scope } : {}) }, name)).then((error) => {
+        if (error) { const status = root.querySelector('[data-inline-relation-status]'); if (status) status.textContent = error; return; }
+        relationDraftOpen = false;
+        render();
+      });
+    });
     root.querySelectorAll('[data-relation-cardinality]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
       const action = actionById('relation.cardinality');
       const pointer = button.dataset.actionPointer;
@@ -1804,7 +1858,7 @@ function renderTypeTree(definitions: readonly TypeTreeItem[], selectedPointer: s
   return renderNamespace(root) || '<div class="js-empty js-tree-empty">No definitions yet.</div>';
 }
 
-function structuredWorkbenchShell(snapshot: DocumentSnapshot, title: string, definitions: readonly { readonly name: string; readonly pointer: string; readonly namespace: string; readonly imported?: boolean; readonly documentUri?: string; readonly sourcePointer?: string }[], definitionPointer: string | undefined, rows: readonly PropertyRow[], selectedPointer: string | undefined, mode: Mode, problemsOpen: boolean, memberMode: DesignMemberMode, effectiveMembers: EffectiveMembersResult | undefined, expandedPropertyPointer: string | undefined, chrome: NonNullable<JsonStructureEditorOptions['chrome']> = 'document'): string {
+function structuredWorkbenchShell(snapshot: DocumentSnapshot, title: string, definitions: readonly { readonly name: string; readonly pointer: string; readonly namespace: string; readonly identity?: readonly string[]; readonly imported?: boolean; readonly documentUri?: string; readonly sourcePointer?: string }[], definitionPointer: string | undefined, rows: readonly PropertyRow[], selectedPointer: string | undefined, mode: Mode, problemsOpen: boolean, memberMode: DesignMemberMode, effectiveMembers: EffectiveMembersResult | undefined, expandedPropertyPointer: string | undefined, chrome: NonNullable<JsonStructureEditorOptions['chrome']> = 'document', pendingPropertyFields: ReadonlySet<string> = new Set(), relationDraftOpen = false): string {
   const definition = snapshot.model?.projections.definitions.find((item) => item.pointer === definitionPointer);
   const selectedProperty = rows.find((row) => row.pointer === selectedPointer);
   const selectedRelation = definition?.relations.find((relation) => relation.pointer === selectedPointer);
@@ -1834,7 +1888,7 @@ function structuredWorkbenchShell(snapshot: DocumentSnapshot, title: string, def
     <div class="js-workbench" data-problems-open="${problemsOpen}" data-active-mode="${mode}">
       <nav class="js-activity" aria-label="Editor modes">${activities}</nav>
       <aside class="js-outline" id="js-outline" data-drawer-panel="types" aria-label="Types"><div class="js-panel-head"><span>Types</span><span class="js-spacer"></span><button data-command="definition.add" title="Add type" aria-label="Add type">${fluentIcon('add')}</button><button data-library-open title="Import type library" aria-label="Import type library">${fluentIcon('library')}</button><button class="js-drawer-close" data-mobile-drawer-close aria-label="Close Types">${fluentIcon('dismiss')}</button></div><input class="js-filter" type="search" placeholder="Filter types" aria-label="Filter types"><div class="js-tree" role="tree" aria-label="Types by namespace"><div class="js-tree-group">${definitions.length} definitions</div>${typeTree}</div></aside>
-      <section class="js-center"><div class="js-editor-tab"><span class="js-kind" aria-hidden="true">${fluentIcon('document')}</span><span data-document-title>${escapeHtml(title)}</span></div><div class="js-breadcrumbs">${breadcrumbs}</div><section class="js-view" data-panel-mode="design" ${mode === 'design' ? '' : 'hidden'}>${designView(definition?.name, definition?.type, definition?.description, rows, selectedPointer, definition?.identity, definition?.relations, memberMode, effectiveMembers, expandedPropertyPointer, definitions, documentValue)}</section><section class="js-view js-graph" data-panel-mode="graph" ${mode === 'graph' ? '' : 'hidden'}>${graphView(snapshot, selectedPointer)}</section><section class="js-view js-source-view" data-panel-mode="source" ${mode === 'source' ? '' : 'hidden'}><div class="js-source" data-source aria-label="JSON source editor"></div></section></section>
+      <section class="js-center"><div class="js-editor-tab"><span class="js-kind" aria-hidden="true">${fluentIcon('document')}</span><span data-document-title>${escapeHtml(title)}</span></div><div class="js-breadcrumbs">${breadcrumbs}</div><section class="js-view" data-panel-mode="design" ${mode === 'design' ? '' : 'hidden'}>${designView(definition?.name, definition?.type, definition?.description, rows, selectedPointer, definition?.identity, definition?.relations, memberMode, effectiveMembers, expandedPropertyPointer, definitions, documentValue, pendingPropertyFields, relationDraftOpen)}</section><section class="js-view js-graph" data-panel-mode="graph" ${mode === 'graph' ? '' : 'hidden'}>${graphView(snapshot, selectedPointer)}</section><section class="js-view js-source-view" data-panel-mode="source" ${mode === 'source' ? '' : 'hidden'}><div class="js-source" data-source aria-label="JSON source editor"></div></section></section>
       <aside class="js-inspector" id="js-inspector" data-drawer-panel="inspector" aria-label="Inspector"><div class="js-panel-head"><span>Inspector</span><span class="js-spacer"></span><button class="js-drawer-close" data-mobile-drawer-close aria-label="Close Inspector">${fluentIcon('dismiss')}</button></div>${inspector(selectedProperty, definition, selectedDiagnostics, selectedRelation)}</aside>
       <section class="js-problems" aria-label="Problems panel"><div class="js-problems-head"><button class="js-problems-tab" data-problems-toggle aria-controls="js-problem-list" aria-expanded="${problemsOpen}">Problems <span class="js-count">${snapshot.diagnostics.length}</span></button><span class="js-spacer"></span><button data-problems-toggle aria-controls="js-problem-list" aria-expanded="${problemsOpen}" aria-label="Close Problems">${fluentIcon('dismiss')}</button></div><div class="js-problem-list" id="js-problem-list" role="list">${problems(snapshot.diagnostics)}</div></section>
     </div>
@@ -1950,22 +2004,21 @@ function renderEvaluationTrace(trace: EvaluationTrace, selection: CrossNavigatio
   return `<details class="js-trace js-trace-${trace.status}" ${depth < 2 || trace.status !== 'valid' ? 'open' : ''} data-trace-depth="${depth}"><summary><span class="js-trace-status" aria-hidden="true">${trace.status === 'valid' ? '✓' : trace.status === 'invalid' ? '×' : '?'}</span><strong>${escapeHtml(trace.keyword)}</strong><span>${escapeHtml(trace.message ?? trace.status)}</span></summary><div class="js-trace-locations" aria-current="${selected}"><button data-trace-instance="${escapeAttribute(trace.instancePointer)}" data-trace-schema="${escapeAttribute(trace.schemaPointer)}">Instance <span class="js-code">${escapeHtml(trace.instancePointer || '/')}</span></button><button data-trace-schema="${escapeAttribute(trace.schemaPointer)}" data-trace-instance="${escapeAttribute(trace.instancePointer)}">Schema <span class="js-code">${escapeHtml(trace.schemaPointer || '/')}</span></button></div>${children ? `<div class="js-trace-children">${children}</div>` : ''}</details>`;
 }
 
-export function designView(name: string | undefined, type: string | undefined, description: string | undefined, rows: readonly PropertyRow[], selectedPointer: string | undefined, identity: readonly string[] = [], relations: readonly import('../model.js').RelationProjection[] = [], memberMode: DesignMemberMode = 'local', effectiveMembers?: EffectiveMembersResult, expandedPropertyPointer?: string, definitions: readonly { readonly name: string; readonly pointer: string }[] = [], document?: unknown): string {
+export function designView(name: string | undefined, type: string | undefined, description: string | undefined, rows: readonly PropertyRow[], selectedPointer: string | undefined, identity: readonly string[] = [], relations: readonly import('../model.js').RelationProjection[] = [], memberMode: DesignMemberMode = 'local', effectiveMembers?: EffectiveMembersResult, expandedPropertyPointer?: string, definitions: readonly { readonly name: string; readonly pointer: string; readonly identity?: readonly string[] }[] = [], document?: unknown, pendingPropertyFields: ReadonlySet<string> = new Set(), relationDraftOpen = false): string {
   if (!name && !type) return `<div class="js-empty-state">${jsonStructureLogo('js-empty-logo')}<div class="js-eyebrow">Untitled structure</div><h1>Create your first type</h1><p>Start with a reusable declaration, or switch to Source to author the document directly.</p><div class="js-empty-actions"><button class="js-primary" data-command="definition.add">${fluentIcon('add')}<span>New type</span></button><button data-mode="source">Open Source</button></div></div>`;
-  const localPropertyRows = rows.map((row) => propertyEditorRow(row, row.pointer === selectedPointer, row.pointer === expandedPropertyPointer, definitions, document)).join('');
-  const effectiveRows = effectiveMembers?.members.map((member) => `<div class="js-row js-effective-row" role="row" data-member-origin="${member.provenance}"><div class="js-cell" role="cell"><button class="js-property-link js-code" data-effective-source="${escapeAttribute(member.sourcePointer)}" data-effective-document="${escapeAttribute(member.documentUri)}">${escapeHtml(member.name)}</button></div><div class="js-cell js-code" role="cell">${escapeHtml(displayPropertyValueTypes(member.schema))}</div><div class="js-cell js-nullable-indicator" role="cell">${inlinePropertyNullable(member.schema) ? 'yes' : 'no'}</div><div class="js-cell ${member.required ? 'js-required' : 'js-optional'}" role="cell">${member.required ? 'required' : 'optional'}</div><div class="js-cell js-description-cell" role="cell"><span class="js-origin-chip">${escapeHtml(member.provenance)}</span>${member.addIn ? ` ${escapeHtml(member.addIn)}` : ''}${member.inheritedVia.length ? `<small>${member.inheritedVia.map(pointerLabel).map(escapeHtml).join(' → ')}</small>` : ''}${member.imports.length ? `<small>${member.imports.map((item) => `${item.keyword} ${item.importSource}`).map(escapeHtml).join(' → ')}</small>` : ''}</div><div class="js-cell js-action-cell" role="cell"><button class="js-row-action" data-effective-source="${escapeAttribute(member.sourcePointer)}" data-effective-document="${escapeAttribute(member.documentUri)}" aria-label="Open declaration of ${escapeAttribute(member.name)}">↗</button></div></div>`).join('') ?? '';
+  const localPropertyRows = rows.map((row) => propertyEditorRow(row, row.pointer === selectedPointer, row.pointer === expandedPropertyPointer, identity.includes(row.name), definitions, document, pendingPropertyFields)).join('');
+  const effectiveRows = effectiveMembers?.members.map((member) => `<div class="js-row js-effective-row" role="row" data-member-origin="${member.provenance}"><div class="js-cell" role="cell"><button class="js-property-link js-code" data-effective-source="${escapeAttribute(member.sourcePointer)}" data-effective-document="${escapeAttribute(member.documentUri)}">${escapeHtml(member.name)}</button></div><div class="js-cell js-code" role="cell">${escapeHtml(displayPropertyValueTypes(member.schema))}</div><div class="js-cell js-nullable-indicator" role="cell">${inlinePropertyNullable(member.schema) ? 'yes' : 'no'}</div><div class="js-cell js-identity-indicator" role="cell">${identity.includes(member.name) ? 'yes' : 'no'}</div><div class="js-cell ${member.required ? 'js-required' : 'js-optional'}" role="cell">${member.required ? 'required' : 'optional'}</div><div class="js-cell js-description-cell" role="cell"><span class="js-origin-chip">${escapeHtml(member.provenance)}</span>${member.addIn ? ` ${escapeHtml(member.addIn)}` : ''}${member.inheritedVia.length ? `<small>${member.inheritedVia.map(pointerLabel).map(escapeHtml).join(' → ')}</small>` : ''}${member.imports.length ? `<small>${member.imports.map((item) => `${item.keyword} ${item.importSource}`).map(escapeHtml).join(' → ')}</small>` : ''}</div><div class="js-cell js-action-cell" role="cell"><button class="js-row-action" data-effective-source="${escapeAttribute(member.sourcePointer)}" data-effective-document="${escapeAttribute(member.documentUri)}" aria-label="Open declaration of ${escapeAttribute(member.name)}">↗</button></div></div>`).join('') ?? '';
   const propertyRows = memberMode === 'effective' ? effectiveRows : localPropertyRows;
   const conflictView = memberMode === 'effective' && effectiveMembers ? `${effectiveMembers.conflicts.map((conflict) => `<div class="js-conflict"><strong>${escapeHtml(conflict.name)}</strong><span>${escapeHtml(conflict.reason)} · ${escapeHtml(conflict.winner)} wins over ${escapeHtml(conflict.loser)}</span></div>`).join('')}${effectiveMembers.diagnostics.map((diagnostic) => `<div class="js-conflict"><strong>${escapeHtml(diagnostic.code)}</strong><span>${escapeHtml(diagnostic.message)}</span></div>`).join('')}` : '';
-  const definitionPointer = relations[0]?.pointer.replace(/\/relations\/[^/]+$/, '') ?? selectedPointer?.replace(/\/(?:properties|relations)\/[^/]+$/, '') ?? '';
-  const identityView = `<section class="js-design-section"><div class="js-section-head"><div><h2>Identity</h2><span class="js-section-meta">ordered key</span></div><button data-action-id="relation.identity" data-action-pointer="${escapeAttribute(definitionPointer)}">Edit identity</button></div>${identity.length ? `<ol class="js-identity-list">${identity.map((property, index) => `<li><span class="js-order">${index + 1}</span><span class="js-code">${escapeHtml(property)}</span></li>`).join('')}</ol>` : '<p class="js-description">No identity is declared. Relations cannot target this type until it has an identity.</p>'}</section>`;
   const relationRows = relations.map((relation) => `<button class="js-relation-row" data-select="${escapeAttribute(relation.pointer)}" aria-current="${relation.pointer === selectedPointer}"><span><strong>${escapeHtml(relation.name)}</strong><small>${escapeHtml(relation.targetTypeRef ?? 'No target')}</small></span><span class="js-chip">${escapeHtml(relation.cardinality ?? 'single')}</span><span class="js-relation-scope">${escapeHtml(formatRelationScope(relation.scope))}</span><span aria-hidden="true">${fluentIcon('chevronRight', 'js-chevron')}</span></button>`).join('');
-  const relationsView = `<section class="js-design-section"><div class="js-section-head"><div><h2>Relations</h2><span class="js-section-meta">${relations.length}</span></div><button data-action-id="relation.add" data-action-pointer="${escapeAttribute(definitionPointer)}">${fluentIcon('add')}<span>Add relation</span></button></div><div class="js-relation-list">${relationRows || '<p class="js-description">No relations declared.</p>'}</div></section>`;
+  const relationDraft = relationDraftOpen ? inlineRelationDraft(definitions, document) : '';
+  const relationsView = `<section class="js-design-section"><div class="js-section-head"><div><h2>Relations</h2><span class="js-section-meta">${relations.length}</span></div><button data-inline-relation-add ${relationDraftOpen ? 'disabled' : ''}>${fluentIcon('add')}<span>Add relation</span></button></div><div class="js-relation-list">${relationRows}${relationDraft || (!relationRows ? '<p class="js-description">No relations declared.</p>' : '')}</div></section>`;
   const memberCount = memberMode === 'effective' ? effectiveMembers?.members.length ?? 0 : rows.length;
   const addProperty = `${fluentIcon('add')}<span>Add property</span>`;
-  return `<div class="js-sheet"><header class="js-type-head"><div><div class="js-eyebrow">${name ? 'Local definition' : 'Document root'}</div><h1>${escapeHtml(name ?? 'Document root')}</h1><p class="js-description">${escapeHtml(description ?? 'No description yet.')}</p></div><span class="js-chip">${escapeHtml(type ?? 'untyped')}</span></header><div class="js-section-head"><div><h2>Properties</h2><span class="js-section-meta">${memberCount} visible</span></div><div class="js-member-mode" role="group" aria-label="Property origin"><button data-member-mode="local" aria-pressed="${memberMode === 'local'}">Local</button><button data-member-mode="effective" aria-pressed="${memberMode === 'effective'}">Effective</button></div>${memberMode === 'local' ? `<button data-command="add">${addProperty}</button>` : ''}</div>${conflictView}<div class="js-grid" role="table" aria-label="Properties"><div class="js-row js-header" role="row"><div class="js-cell" role="columnheader">Name</div><div class="js-cell" role="columnheader">Type</div><div class="js-cell" role="columnheader">Nullable</div><div class="js-cell" role="columnheader">Presence</div><div class="js-cell js-description-cell" role="columnheader">${memberMode === 'effective' ? 'Origin' : 'Description'}</div><div class="js-cell" role="columnheader"><span class="js-sr-only">Actions</span></div></div>${propertyRows || (memberMode === 'local' ? `<button class="js-add-row" data-command="add">${fluentIcon('add')}<span>Add a property</span></button>` : '<div class="js-empty">No effective members.</div>')}</div>${identityView}${relationsView}</div>`;
+  return `<div class="js-sheet"><header class="js-type-head"><div><div class="js-eyebrow">${name ? 'Local definition' : 'Document root'}</div><h1>${escapeHtml(name ?? 'Document root')}</h1><p class="js-description">${escapeHtml(description ?? 'No description yet.')}</p></div><span class="js-chip">${escapeHtml(type ?? 'untyped')}</span></header><div class="js-section-head"><div><h2>Properties</h2><span class="js-section-meta">${memberCount} visible</span></div><div class="js-member-mode" role="group" aria-label="Property origin"><button data-member-mode="local" aria-pressed="${memberMode === 'local'}">Local</button><button data-member-mode="effective" aria-pressed="${memberMode === 'effective'}">Effective</button></div>${memberMode === 'local' ? `<button data-command="add">${addProperty}</button>` : ''}</div>${conflictView}<div class="js-grid" role="table" aria-label="Properties"><div class="js-row js-header" role="row"><div class="js-cell" role="columnheader">Name</div><div class="js-cell" role="columnheader">Type</div><div class="js-cell" role="columnheader">Nullable</div><div class="js-cell" role="columnheader">Identity</div><div class="js-cell" role="columnheader">Presence</div><div class="js-cell" role="columnheader"><span class="js-sr-only">Actions</span></div></div>${propertyRows || (memberMode === 'local' ? `<button class="js-add-row" data-command="add">${fluentIcon('add')}<span>Add a property</span></button>` : '<div class="js-empty">No effective members.</div>')}</div>${relationsView}</div>`;
 }
 
-function propertyEditorRow(row: PropertyRow, selected: boolean, expanded: boolean, definitions: readonly { readonly name: string; readonly pointer: string }[], document?: unknown): string {
+function propertyEditorRow(row: PropertyRow, selected: boolean, expanded: boolean, identity: boolean, definitions: readonly { readonly name: string; readonly pointer: string }[], document?: unknown, pendingPropertyFields: ReadonlySet<string> = new Set()): string {
   const schema = row.schema ?? {};
   const members = inlinePropertyTypeMembers(schema);
   const memberChips = members.map((member) => `<span class="js-type-member"><span>${escapeHtml(inlinePropertyTypeLabel(member))}</span><button type="button" data-inline-type-remove="${escapeAttribute(member)}" data-property-pointer="${escapeAttribute(row.pointer)}" aria-label="Remove ${escapeAttribute(inlinePropertyTypeLabel(member))} from ${escapeAttribute(row.name)}">${fluentIcon('dismiss')}</button></span>`).join('');
@@ -1976,7 +2029,7 @@ function propertyEditorRow(row: PropertyRow, selected: boolean, expanded: boolea
   const requiredControl = row.requiredAlternatives
     ? `<button class="js-required-sets" data-action-id="property.required-alternatives" data-action-pointer="${escapeAttribute(propertyOwnerPointer(row.pointer))}" title="This type uses alternative required sets">Edit sets</button>`
     : `<label><input type="checkbox" data-inline-property="required" data-property-pointer="${escapeAttribute(row.pointer)}" ${row.required ? 'checked' : ''}> required</label>`;
-  return `<div class="js-property-editor" data-property-editor="${escapeAttribute(row.pointer)}" aria-current="${selected}"><div class="js-row js-inline-property-row" role="row"><div class="js-cell" role="cell"><input class="js-inline-name js-code" data-inline-property="name" data-property-pointer="${escapeAttribute(row.pointer)}" value="${escapeAttribute(row.name)}" aria-label="Property name"></div><div class="js-cell js-inline-type-cell" role="cell" data-type-drop="${escapeAttribute(row.pointer)}">${typeComposer}<span class="js-type-drop-zone" aria-hidden="true"></span></div><div class="js-cell js-inline-nullable-cell" role="cell"><label><input type="checkbox" data-inline-property="nullable" data-property-pointer="${escapeAttribute(row.pointer)}" ${inlinePropertyNullable(schema) ? 'checked' : ''}> nullable</label></div><div class="js-cell js-inline-required-cell" role="cell">${requiredControl}</div><div class="js-cell js-description-cell" role="cell"><input class="js-inline-description" data-inline-property="description" data-property-pointer="${escapeAttribute(row.pointer)}" value="${escapeAttribute(row.description ?? '')}" placeholder="Add description" aria-label="Description for ${escapeAttribute(row.name)}"></div><div class="js-cell js-action-cell" role="cell"><button class="js-row-action" data-property-details="${escapeAttribute(row.pointer)}" aria-expanded="${expanded}" aria-controls="${detailsId}" aria-label="${expanded ? 'Collapse' : 'Expand'} validation and annotations for ${escapeAttribute(row.name)}">${fluentIcon('chevronRight', `js-property-chevron${expanded ? ' js-expanded' : ''}`)}</button></div></div>${expanded ? propertyDetailsPanel(row, detailsId, document) : ''}</div>`;
+  return `<div class="js-property-editor" data-property-editor="${escapeAttribute(row.pointer)}" aria-current="${selected}"><div class="js-row js-inline-property-row" role="row"><div class="js-cell" role="cell"><input class="js-inline-name js-code" data-inline-property="name" data-property-pointer="${escapeAttribute(row.pointer)}" value="${escapeAttribute(row.name)}" aria-label="Property name"></div><div class="js-cell js-inline-type-cell" role="cell" data-type-drop="${escapeAttribute(row.pointer)}">${typeComposer}<span class="js-type-drop-zone" aria-hidden="true"></span></div><div class="js-cell js-inline-nullable-cell" role="cell"><label><input type="checkbox" data-inline-property="nullable" data-property-pointer="${escapeAttribute(row.pointer)}" ${inlinePropertyNullable(schema) ? 'checked' : ''}> nullable</label></div><div class="js-cell js-inline-identity-cell" role="cell"><label><input type="checkbox" data-inline-property="identity" data-property-pointer="${escapeAttribute(row.pointer)}" ${identity ? 'checked' : ''}> identity</label></div><div class="js-cell js-inline-required-cell" role="cell">${requiredControl}</div><div class="js-cell js-description-cell" role="cell"><textarea class="js-inline-description" rows="1" data-inline-property="description" data-property-pointer="${escapeAttribute(row.pointer)}" placeholder="Add description" aria-label="Description for ${escapeAttribute(row.name)}">${escapeHtml(row.description ?? '')}</textarea></div><div class="js-cell js-action-cell" role="cell"><button class="js-row-action" data-property-details="${escapeAttribute(row.pointer)}" aria-expanded="${expanded}" aria-controls="${detailsId}" aria-label="${expanded ? 'Collapse' : 'Expand'} validation and annotations for ${escapeAttribute(row.name)}">${fluentIcon('chevronRight', `js-property-chevron${expanded ? ' js-expanded' : ''}`)}</button></div></div>${expanded ? propertyDetailsPanel(row, detailsId, document, pendingPropertyFields) : ''}</div>`;
 }
 
 function inlinePropertyTypeMembers(schema: Readonly<Record<string, unknown>>): readonly string[] {
@@ -2017,7 +2070,7 @@ function inlinePropertyTypes(): readonly string[] {
   return control?.kind === 'select' ? control.options.map((option) => option.value).filter((value) => value !== 'null' && !compound.has(value)) : [];
 }
 
-function propertyDetailsPanel(row: PropertyRow, id: string, document?: unknown): string {
+function propertyDetailsPanel(row: PropertyRow, id: string, document?: unknown, pendingPropertyFields: ReadonlySet<string> = new Set()): string {
   const schema = row.schema ?? {};
   const validationFields = [
     ['minimum', 'Minimum', 'number'], ['maximum', 'Maximum', 'number'], ['exclusiveMinimum', 'Exclusive minimum', 'number'], ['exclusiveMaximum', 'Exclusive maximum', 'number'], ['multipleOf', 'Multiple of', 'number'],
@@ -2030,50 +2083,55 @@ function propertyDetailsPanel(row: PropertyRow, id: string, document?: unknown):
   const structuredFields = [
     ['symbols', 'Localized symbols'], ['observedProperty', 'Observed property'], ['concepts', 'Concepts'], ['statistic', 'Statistic'], ['codedValues', 'Coded values'], ['measurementConditioning', 'Measurement conditioning'], ['temporalReferenceSystem', 'Temporal reference system'], ['cadence', 'Cadence'], ['coordinateReferenceSystem', 'Coordinate reference system'], ['altnames', 'Alternate names'],
   ] as const;
-  const validation = propertyDetailFields(schema, validationFields, row.pointer, 'validation');
-  const annotations = propertyDetailFields(schema, annotationFields, row.pointer, 'annotation');
-  const structured = structuredFields.filter(([keyword]) => schema[keyword] !== undefined).map(([keyword, label]) => propertyJsonField(row.pointer, keyword, label, schema[keyword])).join('');
+  const validation = propertyDetailFields(schema, validationFields, row.pointer, 'validation', pendingPropertyFields);
+  const annotations = propertyDetailFields(schema, annotationFields, row.pointer, 'annotation', pendingPropertyFields);
+  const structured = structuredFields.filter(([keyword]) => schema[keyword] !== undefined || pendingPropertyFields.has(inlineFieldKey(row.pointer, inlineKeywordActionId('annotation', keyword)))).map(([keyword, label]) => propertyJsonField(row.pointer, keyword, label, schema[keyword], pendingPropertyFields.has(inlineFieldKey(row.pointer, inlineKeywordActionId('annotation', keyword))))).join('');
   const validationCount = validationFields.filter(([keyword]) => schema[keyword] !== undefined).length;
   const annotationCount = annotationFields.filter(([keyword]) => schema[keyword] !== undefined).length + structuredFields.filter(([keyword]) => schema[keyword] !== undefined).length;
-  const validationAdd = propertyDetailAddControl(schema, row.pointer, validationFields.map(([keyword, label]) => [inlineKeywordActionId('validation', keyword), keyword, label] as const), 'constraint', document);
+  const validationAdd = propertyDetailAddControl(schema, row.pointer, validationFields.map(([keyword, label]) => [inlineKeywordActionId('validation', keyword), keyword, label] as const), 'constraint', document, pendingPropertyFields);
   const annotationOptions = [
     ...annotationFields.map(([keyword, label]) => [inlineKeywordActionId('annotation', keyword), keyword, label] as const),
     ...structuredFields.map(([keyword, label]) => [inlineKeywordActionId('annotation', keyword), keyword, label] as const),
   ];
-  const annotationAdd = propertyDetailAddControl(schema, row.pointer, annotationOptions, 'annotation', document);
+  const annotationAdd = propertyDetailAddControl(schema, row.pointer, annotationOptions, 'annotation', document, pendingPropertyFields);
   return `<section class="js-property-details" id="${id}" aria-label="Validation and annotations for ${escapeAttribute(row.name)}"><div class="js-property-detail-columns"><section class="js-property-detail-group" aria-labelledby="${id}-constraints"><header><strong id="${id}-constraints">Validation constraints</strong><span>${validationCount}</span></header><div class="js-property-detail-fields">${validation || '<p class="js-detail-empty">No constraints</p>'}</div>${validationAdd}</section><section class="js-property-detail-group" aria-labelledby="${id}-annotations"><header><strong id="${id}-annotations">Annotations</strong><span>${annotationCount}</span></header><div class="js-property-detail-fields">${annotations}${structured || (!annotations ? '<p class="js-detail-empty">No annotations</p>' : '')}</div>${annotationAdd}</section></div><p class="js-inline-status" data-inline-status="${escapeAttribute(row.pointer)}" role="status" aria-live="polite"></p></section>`;
 }
 
-function propertyDetailFields(schema: Readonly<Record<string, unknown>>, fields: readonly (readonly [string, string, 'text' | 'number' | 'integer' | 'boolean'])[], pointer: string, family: string): string {
-  return fields.filter(([keyword]) => schema[keyword] !== undefined).map(([keyword, label, kind]) => {
+function propertyDetailFields(schema: Readonly<Record<string, unknown>>, fields: readonly (readonly [string, string, 'text' | 'number' | 'integer' | 'boolean'])[], pointer: string, family: string, pendingPropertyFields: ReadonlySet<string>): string {
+  return fields.filter(([keyword]) => schema[keyword] !== undefined || pendingPropertyFields.has(inlineFieldKey(pointer, inlineKeywordActionId(family, keyword)))).map(([keyword, label, kind]) => {
     const value = schema[keyword];
+    const actionId = inlineKeywordActionId(family, keyword);
+    const pending = value === undefined && pendingPropertyFields.has(inlineFieldKey(pointer, actionId));
     const removeAction = `${inlineKeywordActionId(family, keyword)}.remove`;
-    if (kind === 'boolean') return `<div class="js-detail-field"><label class="js-detail-check"><input type="checkbox" data-inline-keyword="${keyword}" data-inline-family="${family}" data-property-pointer="${escapeAttribute(pointer)}" data-value-kind="boolean" ${value === true ? 'checked' : ''}> ${label}</label>${propertyDetailRemoveButton(pointer, removeAction, label)}</div>`;
-    const action = actionById(inlineKeywordActionId(family, keyword));
+    const removeButton = pending ? pendingPropertyFieldRemoveButton(pointer, actionId, label) : propertyDetailRemoveButton(pointer, removeAction, label);
+    if (kind === 'boolean') return `<div class="js-detail-field" data-inline-field-action="${escapeAttribute(actionId)}"><label class="js-detail-check"><input type="checkbox" data-inline-keyword="${keyword}" data-inline-family="${family}" data-property-pointer="${escapeAttribute(pointer)}" data-value-kind="boolean" ${value === true ? 'checked' : ''}> ${label}</label>${removeButton}</div>`;
+    const action = actionById(actionId);
     const catalog = action && catalogFamilyForAction(action);
     const stringBacked = action?.control?.kind === 'number' && action.control.schemaNumeric && stringBackedNumericType(typeof schema.type === 'string' ? schema.type : undefined);
     const numericInput = kind === 'number' || kind === 'integer';
     const input = `<input data-inline-keyword="${keyword}" data-inline-family="${family}" data-property-pointer="${escapeAttribute(pointer)}" data-value-kind="${kind}" ${catalog ? 'data-catalog-value ' : ''}type="${numericInput && !stringBacked ? 'number' : 'text'}" ${kind === 'integer' ? 'step="1" min="0"' : kind === 'number' && !stringBacked ? 'step="any"' : stringBacked ? 'inputmode="decimal"' : ''} value="${escapeAttribute(value === undefined ? '' : String(value))}">`;
     const field = catalog ? `<label data-inline-catalog="${escapeAttribute(action.id)}" data-property-pointer="${escapeAttribute(pointer)}">${label}<span class="js-detail-json">${input}<button type="button" data-inline-browse="${keyword}" data-catalog-open aria-label="Browse ${escapeAttribute(label.toLocaleLowerCase())} catalog">Browse</button></span><small class="js-detail-provenance" data-catalog-provenance>Catalog suggestions are advisory.</small></label>` : `<label>${label}${input}</label>`;
-    return `<div class="js-detail-field">${field}${propertyDetailRemoveButton(pointer, removeAction, label)}</div>`;
+    return `<div class="js-detail-field" data-inline-field-action="${escapeAttribute(actionId)}">${field}${removeButton}</div>`;
   }).join('');
 }
 
-function propertyJsonField(pointer: string, keyword: string, label: string, value: unknown): string {
+function propertyJsonField(pointer: string, keyword: string, label: string, value: unknown, pending: boolean): string {
   const action = actionById(inlineKeywordActionId('annotation', keyword));
   const catalog = action && catalogFamilyForAction(action);
   const raw = value === undefined ? '' : JSON.stringify(value);
   const summary = structuredValueLabel(value);
   const remove = propertyDetailRemoveButton(pointer, `${inlineKeywordActionId('annotation', keyword)}.remove`, label);
-  if (!catalog) return `<div class="js-detail-field"><div><span class="js-detail-label">${escapeHtml(label)}</span><span class="js-structured-summary">${escapeHtml(summary)}</span><small>Edit this structured value from its dedicated editor.</small></div>${remove}</div>`;
+  const actionId = inlineKeywordActionId('annotation', keyword);
+  const removeButton = pending ? pendingPropertyFieldRemoveButton(pointer, actionId, label) : remove;
+  if (!catalog) return `<div class="js-detail-field" data-inline-field-action="${escapeAttribute(actionId)}"><label>${escapeHtml(label)}<textarea data-inline-keyword="${escapeAttribute(keyword)}" data-inline-family="annotation" data-property-pointer="${escapeAttribute(pointer)}" data-value-kind="json" rows="3" placeholder="Enter JSON">${escapeHtml(raw)}</textarea></label>${removeButton}</div>`;
   const input = `<input type="hidden" data-inline-keyword="${keyword}" data-inline-family="annotation" data-property-pointer="${escapeAttribute(pointer)}" data-value-kind="json" data-catalog-value value="${escapeAttribute(raw)}"><input data-catalog-display value="${escapeAttribute(summary)}" readonly aria-label="${escapeAttribute(label)}">`;
-  return `<div class="js-detail-field"><label data-inline-catalog="${escapeAttribute(action.id)}" data-property-pointer="${escapeAttribute(pointer)}">${label}<span class="js-detail-json">${input}<button type="button" data-inline-browse="${keyword}" data-catalog-open aria-label="Browse ${escapeAttribute(label.toLocaleLowerCase())} catalog">Browse</button></span><small class="js-detail-provenance" data-catalog-provenance>Catalog suggestions are advisory.</small></label>${remove}</div>`;
+  return `<div class="js-detail-field" data-inline-field-action="${escapeAttribute(actionId)}"><label data-inline-catalog="${escapeAttribute(action.id)}" data-property-pointer="${escapeAttribute(pointer)}">${label}<span class="js-detail-json">${input}<button type="button" data-inline-browse="${keyword}" data-catalog-open aria-label="Browse ${escapeAttribute(label.toLocaleLowerCase())} catalog">Browse</button></span><small class="js-detail-provenance" data-catalog-provenance>Catalog suggestions are advisory.</small></label>${removeButton}</div>`;
 }
 
-function propertyDetailAddControl(schema: Readonly<Record<string, unknown>>, pointer: string, fields: readonly (readonly [string, string, string])[], kind: string, document?: unknown): string {
+function propertyDetailAddControl(schema: Readonly<Record<string, unknown>>, pointer: string, fields: readonly (readonly [string, string, string])[], kind: string, document: unknown, pendingPropertyFields: ReadonlySet<string>): string {
   const options = fields.filter(([actionId, keyword]) => {
     const action = actionById(actionId);
-    return schema[keyword] === undefined && action !== undefined && (document === undefined || actionAvailability(action, pointer, document).enabled);
+    return schema[keyword] === undefined && !pendingPropertyFields.has(inlineFieldKey(pointer, actionId)) && action !== undefined && (document === undefined || actionAvailability(action, pointer, document).enabled);
   }).map(([actionId, , label]) => `<option value="${escapeAttribute(actionId)}">${escapeHtml(label)}</option>`).join('');
   if (!options) return '';
   return `<div class="js-detail-add"><label>Add ${escapeHtml(kind)}<select data-property-detail-select><option value="">Choose ${escapeHtml(kind)}</option>${options}</select></label><button type="button" data-property-detail-add data-property-pointer="${escapeAttribute(pointer)}">Add</button></div>`;
@@ -2081,6 +2139,32 @@ function propertyDetailAddControl(schema: Readonly<Record<string, unknown>>, poi
 
 function propertyDetailRemoveButton(pointer: string, actionId: string, label: string): string {
   return `<button class="js-detail-remove" type="button" data-inline-keyword-remove="${escapeAttribute(actionId)}" data-property-pointer="${escapeAttribute(pointer)}" aria-label="Remove ${escapeAttribute(label.toLocaleLowerCase())}">Remove</button>`;
+}
+
+function pendingPropertyFieldRemoveButton(pointer: string, actionId: string, label: string): string {
+  return `<button class="js-detail-remove" type="button" data-inline-pending-remove="${escapeAttribute(inlineFieldKey(pointer, actionId))}" aria-label="Cancel adding ${escapeAttribute(label.toLocaleLowerCase())}">Cancel</button>`;
+}
+
+function inlineFieldKey(pointer: string, actionId: string): string {
+  return `${pointer}\u0000${actionId}`;
+}
+
+function autoGrowTextarea(textarea: HTMLTextAreaElement): void {
+  textarea.style.height = 'auto';
+  textarea.style.height = `${textarea.scrollHeight}px`;
+}
+
+function inlineRelationDraft(definitions: readonly { readonly name: string; readonly pointer: string; readonly identity?: readonly string[] }[], document: unknown): string {
+  const targets = definitions.filter((definition) => definition.identity?.length);
+  const scopes = collectionPointers(document);
+  return `<div class="js-inline-relation-draft">
+    <input data-inline-relation-name class="js-code" placeholder="relation_name" aria-label="Relation name">
+    <select data-inline-relation-target aria-label="Target type"><option value="">Choose target type</option>${targets.map((definition) => `<option value="#${escapeAttribute(definition.pointer)}">${escapeHtml(definition.name)}</option>`).join('')}</select>
+    <select data-inline-relation-cardinality aria-label="Cardinality"><option value="single">single</option><option value="multiple">multiple</option></select>
+    <select data-inline-relation-scope aria-label="Scope"><option value="">Context scope</option>${scopes.map((scope) => `<option value="${escapeAttribute(scope)}">${escapeHtml(scope)}</option>`).join('')}</select>
+    <span class="js-inline-relation-actions"><button type="button" data-inline-relation-cancel>Cancel</button><button type="button" data-inline-relation-commit ${targets.length ? '' : 'disabled'}>Add</button></span>
+    <span class="js-inline-status" data-inline-relation-status role="status" aria-live="polite">${targets.length ? '' : 'Create an identity on a target type before adding a relation.'}</span>
+  </div>`;
 }
 
 function structuredValueLabel(value: unknown): string {
@@ -2703,7 +2787,8 @@ export const workbenchFocusIdentityAttributes = [
   'data-addin', 'data-impact-direction', 'data-command', 'data-show-commands', 'data-theme-select', 'data-action-select', 'data-action-id',
   'data-libraries-load', 'data-library-read', 'data-library-operation', 'data-library-selector', 'data-library-declaration', 'data-library-provider-filter', 'data-library-search', 'data-library-preview', 'data-library-apply',
   'data-provider-configure', 'data-local-provider-configure', 'data-provider-remove', 'data-library-publish-preview', 'data-library-publish', 'data-publish-provider', 'data-publish-entry', 'data-publish-version', 'data-publish-source', 'data-publish-epoch', 'data-publish-default',
-  'data-inline-property', 'data-inline-keyword', 'data-property-details', 'data-inline-property-apply', 'data-catalog-open',
+  'data-inline-property', 'data-inline-keyword', 'data-inline-type-add', 'data-inline-type-remove', 'data-property-details', 'data-inline-property-apply', 'data-catalog-open',
+  'data-property-detail-select', 'data-property-detail-add', 'data-inline-relation-add', 'data-inline-relation-name', 'data-inline-relation-target', 'data-inline-relation-cardinality', 'data-inline-relation-scope', 'data-inline-relation-cancel', 'data-inline-relation-commit',
 ] as const;
 
 function availablePropertyName(owner: Readonly<Record<string, unknown>>): string {

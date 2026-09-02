@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { catalogBrowserView, designView, graphView, instanceView, mobileModeSelect, prefersReducedMotion, problemsView, shouldFitGraphOnEntry, workbenchFocusIdentityAttributes, workbenchShell, workbenchTitleChrome } from '../src/ui/index.js';
+import { catalogBrowserView, designView, graphView, instanceView, mobileModeSelect, prefersReducedMotion, problemsView, projectProperties, shouldFitGraphOnEntry, workbenchFocusIdentityAttributes, workbenchShell, workbenchTitleChrome } from '../src/ui/index.js';
 import { BUNDLED_SEMANTIC_PROVIDER, CatalogRegistry, bundledCatalogResult } from '../src/catalogs.js';
 import { DocumentSession } from '../src/session.js';
 import { resolveEffectiveMembers } from '../src/phase4/effective-members.js';
@@ -112,6 +112,8 @@ describe('workbench interaction markup', () => {
     expect(html).toContain('data-inline-property="nullable"');
     expect(html).toContain('data-inline-property="required"');
     expect(html).toContain('data-inline-property="description"');
+    expect(html).toContain('<textarea class="js-inline-description" rows="1"');
+    expect(html).toContain('data-inline-property="identity"');
     expect(html).toContain('<optgroup label="Primitive types">');
     expect(html).toContain('value="type:any"');
     expect(html).toContain('value="type:string"');
@@ -170,6 +172,24 @@ describe('workbench interaction markup', () => {
     expect(html.indexOf('class="js-property-details"')).toBeLessThan(html.indexOf('</div></div><section class="js-design-section">'));
   });
 
+  it('renders newly selected constraints and structured annotations as inline drafts', () => {
+    const pointer = '/definitions/Reading/properties/value';
+    const pending = new Set([
+      `${pointer}\u0000validation.maximum`,
+      `${pointer}\u0000semantic.concepts`,
+    ]);
+    const html = designView('Reading', 'object', undefined, [{
+      name: 'value', pointer, type: 'double', required: false, schema: { type: 'double' },
+    }], pointer, [], [], 'local', undefined, pointer, [], {}, pending);
+    expect(html).toContain('data-inline-field-action="validation.maximum"');
+    expect(html).toContain('data-inline-keyword="maximum"');
+    expect(html).toContain('data-inline-field-action="semantic.concepts"');
+    expect(html).toContain('data-value-kind="json"');
+    expect(html).toContain('placeholder="Enter JSON"');
+    expect(html).not.toContain('Edit this structured value from its dedicated editor.');
+    expect(html).not.toContain('role="dialog"');
+  });
+
   it('renders string-backed numeric bounds as text without losing their lexical form', () => {
     const pointer = '/definitions/Limits/properties/huge';
     const html = designView('Limits', 'object', undefined, [{
@@ -191,26 +211,32 @@ describe('workbench interaction markup', () => {
     expect(html).not.toContain('data-inline-property="required"');
   });
 
-  it('renders ordered identity and selectable relation summaries in Design', () => {
-    const html = designView('Copy', 'object', undefined, [], '/definitions/Copy/relations/edition', ['barcode', 'shelfmark'], [{
+  it('renders identity checkboxes, inline relation creation, and selectable relation summaries in Design', () => {
+    const rows = [
+      { name: 'barcode', pointer: '/definitions/Copy/properties/barcode', type: 'string', required: true, schema: { type: 'string' } },
+      { name: 'shelfmark', pointer: '/definitions/Copy/properties/shelfmark', type: 'string', required: false, schema: { type: 'string' } },
+    ];
+    const html = designView('Copy', 'object', undefined, rows, '/definitions/Copy/relations/edition', ['barcode', 'shelfmark'], [{
       pointer: '/definitions/Copy/relations/edition', name: 'edition', targetTypeRef: '#/definitions/Edition', cardinality: 'single', scope: '#/definitions/Catalog/properties/editions',
-    }]);
-    expect(html).toContain('<span class="js-order">1</span><span class="js-code">barcode</span>');
-    expect(html).toContain('<span class="js-order">2</span><span class="js-code">shelfmark</span>');
-    expect(html).toContain('data-action-id="relation.identity"');
-    expect(html).toContain('data-action-id="relation.add"');
+    }], 'local', undefined, undefined, [{ name: 'Edition', pointer: '/definitions/Edition', identity: ['id'] }], {}, new Set(), true);
+    expect(html.match(/data-inline-property="identity"[^>]*checked/g)).toHaveLength(2);
+    expect(html).not.toContain('data-action-id="relation.identity"');
+    expect(html).toContain('data-inline-relation-name');
+    expect(html).toContain('data-inline-relation-target');
+    expect(html).toContain('data-inline-relation-commit');
     expect(html).toContain('data-select="/definitions/Copy/relations/edition" aria-current="true"');
     expect(html).toContain('#/definitions/Edition');
     expect(html).toContain('single');
     expect(html).toContain('editions');
   });
 
-  it('renders explicit reordering controls for ordered property selections', () => {
+  it('projects ordered identity state onto property-line checkboxes', () => {
     const source = JSON.stringify({ $schema: 'https://json-structure.org/meta/relations/v0/#', $uses: ['JSONStructureRelations'], definitions: { Person: { type: 'object', properties: { tenant: { type: 'string' }, id: { type: 'string' } }, identity: ['tenant', 'id'] } } });
     const snapshot = new DocumentSession('memory://ordered-identity', source).snapshot();
     expect(snapshot.model?.projections.definitions[0]?.identity).toEqual(['tenant', 'id']);
-    const html = designView('Person', 'object', undefined, [], undefined, ['tenant', 'id']);
-    expect(html.indexOf('<span class="js-code">tenant</span>')).toBeLessThan(html.indexOf('<span class="js-code">id</span>'));
+    const person = snapshot.model!.projections.definitions[0]!;
+    const html = designView('Person', 'object', undefined, projectProperties(person), undefined, ['tenant', 'id']);
+    expect(html.match(/data-inline-property="identity"[^>]*checked/g)).toHaveLength(2);
   });
 
   it('exposes keyboard-operable graph zoom and fit controls', () => {

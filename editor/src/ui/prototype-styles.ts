@@ -198,7 +198,7 @@ export const editorStyles = `
 .js-member-mode button:last-child { border-inline-end:0; }
 .js-member-mode button[aria-pressed="true"] { background:var(--js-raised); color:var(--js-text); box-shadow:inset 0 -2px var(--js-accent); }
 .js-grid { border:1px solid var(--js-line); background:var(--js-grid-surface); }
-.js-row { min-height:36px; display:grid; grid-template-columns:minmax(115px,1.05fr) minmax(180px,1.45fr) 66px 82px minmax(130px,1.35fr) 34px; align-items:center; border-bottom:1px solid var(--js-line); }
+.js-row { min-height:36px; display:grid; grid-template-columns:minmax(115px,1.05fr) minmax(180px,1.45fr) 66px 66px 82px 34px; align-items:center; border-bottom:1px solid var(--js-line); }
 .js-row:last-child { border-bottom:0; }
 .js-row.js-header { min-height:29px; background:var(--js-panel); color:var(--js-quiet); font-size:10px; text-transform:uppercase; }
 .js-row[aria-current="true"] { background:var(--js-selected); box-shadow:inset 2px 0 var(--js-accent); }
@@ -212,21 +212,33 @@ export const editorStyles = `
 .js-conflict span { color:var(--js-muted); overflow-wrap:anywhere; }
 .js-cell { min-width:0; overflow:hidden; padding:0 9px; text-overflow:ellipsis; white-space:nowrap; }
 .js-property-editor[aria-current="true"]>.js-row { background:var(--js-selected); box-shadow:inset 2px 0 var(--js-accent); }
+.js-inline-property-row,.js-effective-row { grid-template-areas:"name type nullable identity presence action" ". description description description description description"; align-items:start; }
+.js-inline-property-row>.js-cell:nth-child(1),.js-effective-row>.js-cell:nth-child(1) { grid-area:name; }
+.js-inline-property-row>.js-cell:nth-child(2),.js-effective-row>.js-cell:nth-child(2) { grid-area:type; }
+.js-inline-property-row>.js-cell:nth-child(3),.js-effective-row>.js-cell:nth-child(3) { grid-area:nullable; }
+.js-inline-property-row>.js-cell:nth-child(4),.js-effective-row>.js-cell:nth-child(4) { grid-area:identity; }
+.js-inline-property-row>.js-cell:nth-child(5),.js-effective-row>.js-cell:nth-child(5) { grid-area:presence; }
+.js-inline-property-row>.js-cell:nth-child(6),.js-effective-row>.js-cell:nth-child(6) { grid-area:description; }
+.js-inline-property-row>.js-cell:nth-child(7),.js-effective-row>.js-cell:nth-child(7) { grid-area:action; }
 .js-inline-property-row .js-cell { padding:3px 4px; }
 .js-inline-property-row input:not([type="checkbox"]),.js-inline-property-row select { width:100%; min-width:0; min-height:28px; border-color:transparent; padding:3px 6px; background:transparent; }
 .js-inline-property-row input:not([type="checkbox"]):hover,.js-inline-property-row select:hover { border-color:var(--js-line); background:var(--js-canvas); }
 .js-inline-property-row input:not([type="checkbox"]):focus,.js-inline-property-row select:focus { border-color:var(--js-accent); background:var(--js-canvas); }
-.js-inline-required-cell label,.js-inline-nullable-cell label { min-height:28px; display:flex; align-items:center; gap:5px; color:var(--js-muted); font-size:11px; }
-.js-inline-required-cell input,.js-inline-nullable-cell input { margin:0; }
+.js-inline-description { width:100%; min-height:28px; max-height:180px; resize:none; overflow-y:auto; border-color:transparent; padding:5px 6px; background:transparent; line-height:1.4; white-space:pre-wrap; }
+.js-inline-description:hover { border-color:var(--js-line); background:var(--js-canvas); }
+.js-inline-description:focus { border-color:var(--js-accent); background:var(--js-canvas); }
+.js-inline-required-cell label,.js-inline-nullable-cell label,.js-inline-identity-cell label { min-height:28px; display:flex; align-items:center; gap:5px; color:var(--js-muted); font-size:11px; }
+.js-inline-required-cell input,.js-inline-nullable-cell input,.js-inline-identity-cell input { margin:0; }
 .js-inline-type-cell { position:relative; }
-.js-type-composer { display:flex; min-width:0; align-items:center; gap:3px; overflow:hidden; }
-.js-type-member { display:inline-flex; min-width:0; align-items:center; gap:2px; border:1px solid var(--js-line); border-radius:3px; padding-inline-start:5px; background:var(--js-panel); color:var(--js-text); font:11px/22px Consolas,monospace; }
-.js-type-member>span { overflow:hidden; text-overflow:ellipsis; }
+.js-type-composer { display:flex; min-width:0; flex-wrap:wrap; align-items:center; gap:3px; overflow:visible; }
+.js-type-member { display:inline-flex; min-width:max-content; max-width:100%; align-items:center; gap:2px; border:1px solid var(--js-line); border-radius:3px; padding-inline-start:5px; background:var(--js-panel); color:var(--js-text); font:11px/22px Consolas,monospace; }
+.js-type-member>span { overflow:visible; text-overflow:clip; white-space:nowrap; }
 .js-type-member button { width:20px; height:22px; border:0; padding:3px; background:transparent; color:var(--js-muted); }
 .js-type-member button:hover { color:var(--js-text); }
 .js-type-empty { color:var(--js-quiet); font-size:11px; }
-.js-inline-type-add { flex:1 1 64px; max-width:88px; }
+.js-inline-type-add { flex:0 1 88px; max-width:100%; }
 .js-nullable-indicator { color:var(--js-muted); font-size:11px; }
+.js-identity-indicator { color:var(--js-muted); font-size:11px; }
 .js-type-drop-zone { position:absolute; z-index:2; pointer-events:none; inset:2px; border:1px dashed transparent; }
 .js-type-drag-active .js-type-drop-zone { pointer-events:auto; }
 .js-inline-type-cell.js-type-drop-active .js-type-drop-zone { border-color:var(--js-focus); background:rgba(242,207,114,.08); }
@@ -280,6 +292,11 @@ export const editorStyles = `
 .js-relation-row strong,.js-relation-row small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .js-relation-row strong { color:var(--js-text); }
 .js-relation-row small,.js-relation-scope { color:var(--js-quiet); font:10px/1.35 Consolas,monospace; }
+.js-inline-relation-draft { display:grid; grid-template-columns:minmax(130px,.8fr) minmax(160px,1fr) 110px minmax(150px,1fr) auto; gap:7px; align-items:center; padding:8px; background:var(--js-panel); }
+.js-inline-relation-draft input,.js-inline-relation-draft select { width:100%; min-width:0; min-height:30px; }
+.js-inline-relation-actions { display:flex; gap:5px; }
+.js-inline-relation-actions button { min-height:30px; }
+.js-inline-relation-draft>.js-inline-status { grid-column:1/-1; }
 .js-cardinality { display:grid; grid-template-columns:1fr 1fr; overflow:hidden; margin-top:8px; border:1px solid var(--js-line-strong); }
 .js-cardinality button { min-height:30px; border:0; background:var(--js-panel); color:var(--js-muted); }
 .js-cardinality button+button { border-inline-start:1px solid var(--js-line-strong); }
@@ -737,15 +754,9 @@ export const editorStyles = `
   .js-library-browser { grid-template-columns:150px minmax(0,1fr); }
   .js-library-detail { grid-column:1/-1; min-height:360px; border-top:1px solid var(--js-line-strong); }
   .js-theme-label,.js-document-toolbar>.js-chip { display:none; }
-  .js-row { grid-template-columns:minmax(90px,1fr) minmax(120px,1fr) 64px 70px 32px; }
-  .js-row:not(.js-inline-property-row) .js-description-cell { display:none; }
-  .js-inline-property-row { grid-template-areas:"name type nullable presence action" "description description description description description"; }
-  .js-inline-property-row>.js-cell:nth-child(1) { grid-area:name; }
-  .js-inline-property-row>.js-cell:nth-child(2) { grid-area:type; }
-  .js-inline-property-row>.js-cell:nth-child(3) { grid-area:nullable; }
-  .js-inline-property-row>.js-cell:nth-child(4) { grid-area:presence; }
-  .js-inline-property-row>.js-cell:nth-child(5) { grid-area:description; }
-  .js-inline-property-row>.js-cell:nth-child(6) { grid-area:action; }
+  .js-row { grid-template-columns:minmax(90px,1fr) minmax(120px,1fr) 64px 64px 70px 32px; }
+  .js-inline-relation-draft { grid-template-columns:minmax(120px,1fr) minmax(150px,1fr) 100px; }
+  .js-inline-relation-draft [data-inline-relation-scope],.js-inline-relation-actions { grid-column:auto; }
   .js-property-detail-columns { grid-template-columns:1fr; }
 }
 @media (max-width:620px) {
@@ -766,10 +777,11 @@ export const editorStyles = `
   .js-view { padding:14px 12px 48px; }
   .js-type-head { display:block; }
   .js-type-head>.js-chip { margin-top:10px; }
-  .js-row { grid-template-columns:minmax(80px,1fr) minmax(100px,1fr) 32px; }
-  .js-row:not(.js-inline-property-row) .js-description-cell,.js-row .js-required,.js-row .js-optional,.js-row.js-header .js-cell:nth-child(3),.js-row.js-header .js-cell:nth-child(4) { display:none; }
-  .js-inline-property-row { grid-template-areas:"name type action" "nullable presence presence" "description description description"; }
-  .js-inline-property-row .js-inline-nullable-cell,.js-inline-property-row .js-inline-required-cell,.js-inline-property-row .js-description-cell { display:block; }
+  .js-row { grid-template-columns:minmax(80px,1fr) minmax(100px,1fr) 44px; }
+  .js-row.js-header .js-cell:nth-child(3),.js-row.js-header .js-cell:nth-child(4),.js-row.js-header .js-cell:nth-child(5) { display:none; }
+  .js-inline-property-row,.js-effective-row { grid-template-areas:"name type action" "nullable identity presence" ". description description"; }
+  .js-inline-property-row .js-inline-nullable-cell,.js-inline-property-row .js-inline-identity-cell,.js-inline-property-row .js-inline-required-cell,.js-inline-property-row .js-description-cell { display:block; }
+  .js-inline-relation-draft { grid-template-columns:1fr; }
   .js-property-details { padding-inline:10px; }
   .js-property-detail-fields { grid-template-columns:1fr; }
   .js-library-form,.js-resolution dl { grid-template-columns:1fr; }
@@ -808,11 +820,11 @@ export const editorStyles = `
   .js-tree-item { height:44px; }
   .js-shell { grid-template-rows:44px 44px minmax(0,1fr) 44px; }
   .js-center { grid-template-rows:44px 30px minmax(0,1fr); }
-  .js-mobile-mode select,.js-inline-property-row input:not([type="checkbox"]),.js-inline-property-row select,.js-row-action,.js-add-row,.js-member-mode button,.js-section-head>button,.js-section-head [role="group"] button,.js-cardinality button,.js-inspector-action,.js-actions button,.js-value-actions button { min-height:44px; }
+  .js-mobile-mode select,.js-inline-property-row input:not([type="checkbox"]),.js-inline-property-row select,.js-inline-property-row textarea,.js-row-action,.js-add-row,.js-member-mode button,.js-section-head>button,.js-section-head [role="group"] button,.js-cardinality button,.js-inspector-action,.js-actions button,.js-value-actions button { min-height:44px; }
   .js-inline-property-row { grid-template-columns:minmax(80px,1fr) minmax(100px,1fr) 44px; }
   .js-inline-property-row .js-action-cell { padding:0; }
   .js-row-action { min-width:44px; }
-  .js-inline-required-cell label,.js-inline-nullable-cell label,.js-property-details input:not([type="checkbox"]),.js-property-details select,.js-detail-json button,.js-property-advanced button,.js-property-advanced summary,.js-integrity-manifest summary { min-height:44px; }
+  .js-inline-required-cell label,.js-inline-nullable-cell label,.js-inline-identity-cell label,.js-property-details input:not([type="checkbox"]),.js-property-details select,.js-detail-json button,.js-property-advanced button,.js-property-advanced summary,.js-integrity-manifest summary { min-height:44px; }
   .js-graph-crumbs button,.js-graph-lenses button,.js-graph-search input { min-height:44px; }
   .js-instance-toolbar select,.js-instance-toolbar button,.js-trace>summary,.js-trace-locations button { min-height:44px; }
   .js-conversion-sheet>.js-type-head>button,.js-conversion-source>button,.js-conversion-config input:not([type="checkbox"]),.js-conversion-config select,.js-conversion-config .js-primary { min-height:44px; }
