@@ -60,13 +60,11 @@ describe('force graph layout', () => {
     expect(graphEdgePath(from, from).path).toContain(' C');
   });
 
-  it('centers the focus type in prototype neighborhood layouts', () => {
+  it('uses the same force-directed auto-arrangement for graph subsets', () => {
     const layout = new ForceGraphLayout();
-    const positions = layout.reconcile(nodes, edges, `neighborhood:${nodes[0]!.id}`);
-    const focus = positions.find((position) => position.id === nodes[0]!.id)!;
-    const bounds = layout.contentBounds();
-    expect(focus.x + focus.width / 2).toBeCloseTo(bounds.width / 2);
-    expect(focus.y + focus.height / 2).toBeCloseTo(bounds.height / 2);
+    const positions = layout.reconcile(nodes.slice(0, 3), edges.slice(0, 2));
+    expect(new Set(positions.map((node) => Math.round(node.x))).size).toBeGreaterThan(2);
+    expect(new Set(positions.map((node) => Math.round(node.y))).size).toBeGreaterThan(1);
     layout.dispose();
   });
 });

@@ -92,6 +92,9 @@ describe('workbench interaction markup', () => {
     expect(html).toContain('aria-label="Validation and annotations for name"');
     expect(html).toContain('data-inline-keyword="minLength"');
     expect(html).toContain('data-inline-keyword="semanticRole"');
+    expect(html).toContain('id="property-details--2Fdefinitions-2FPerson-2Fproperties-2Fname-constraints">Validation constraints</strong><span>1</span>');
+    expect(html).toContain('id="property-details--2Fdefinitions-2FPerson-2Fproperties-2Fname-annotations">Annotations</strong><span>1</span>');
+    expect(html).not.toContain('No annotations');
     expect(html).toContain('data-property-detail-add');
     expect(html).toContain('data-inline-keyword-remove');
     expect(html).not.toContain('Advanced property schema');

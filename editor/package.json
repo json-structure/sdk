@@ -68,6 +68,7 @@
   "build": {
     "appId": "org.json-structure.editor",
     "productName": "JSON Structure Editor",
+    "icon": "assets/icon.png",
     "directories": {
       "output": "release"
     },
@@ -85,6 +86,10 @@
       {
         "from": "../vscode/test-fixtures/financial-types/schema.struct.json",
         "to": "libraries/financial-types.struct.json"
+      },
+      {
+        "from": "assets/icon.png",
+        "to": "icon.png"
       }
     ],
     "asar": true,

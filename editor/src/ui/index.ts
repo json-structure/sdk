@@ -6,7 +6,7 @@ import { actionById, commandActions, type CommandAction } from './actions.js';
 import { actionAvailability, catalogFamilyForAction, parseActionValue, valueAtPointer } from './action-runtime.js';
 import { diagnosticsForPointer, isInlineRootSchema, pointerLabel, projectGraph, projectInspectorSections, projectProperties, projectSchemaInspectorSections, type InspectorSection, type PropertyRow } from './helpers.js';
 import { GraphNavigationController } from './graph-navigation.js';
-import { ForceGraphLayout, graphEdgePath, type ForceGraphPosition, type GraphLayoutMode } from './force-graph-layout.js';
+import { ForceGraphLayout, graphEdgePath, type ForceGraphPosition } from './force-graph-layout.js';
 import { SemanticGraphController, type SemanticGraphView } from './semantic-graph.js';
 import { editorStyles } from './prototype-styles.js';
 import { InstanceWorkspace, type CrossNavigationSelection, type EvaluationTrace, type InstanceValidationResult } from '../phase4/instance-workspace.js';
@@ -225,7 +225,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
   const semanticGraph = new SemanticGraphController();
   let fitGraphAfterRender = false;
   let graphEntered = false;
-  let lastGraphActivation: { readonly nodeId: string; readonly time: number } | undefined;
+  let pendingGraphActivation: { readonly nodeId: string; readonly timer: ReturnType<typeof setTimeout> } | undefined;
   const catalogRegistry = createCatalogRegistry();
   const services = options.services ?? options.host;
   const unsubscribeConversionProgress = services?.onConversionProgress?.((progress) => {
@@ -1109,17 +1109,25 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       target.addEventListener('click', () => {
         const nodeId = target.dataset.graphNode;
         if (!nodeId) return;
-        const now = performance.now();
-        const priorActivation = lastGraphActivation;
-        if (priorActivation !== undefined && priorActivation.nodeId === nodeId && now - priorActivation.time < 360) {
-          lastGraphActivation = undefined;
-          semanticGraph.openNode(nodeId);
+        const pending = pendingGraphActivation;
+        if (pending && pending.nodeId === nodeId) {
+          clearTimeout(pending.timer);
+          pendingGraphActivation = undefined;
+          const view = semanticGraph.openNode(nodeId);
+          selectedPointer = view.selection?.pointer || undefined;
+          mode = 'graph';
+          lastRepresentationMode = 'graph';
           fitGraphAfterRender = true;
           render();
-        } else {
-          lastGraphActivation = { nodeId, time: now };
-          activate();
+          return;
         }
+        if (pendingGraphActivation) clearTimeout(pendingGraphActivation.timer);
+        const timer = setTimeout(() => {
+          if (disposed || pendingGraphActivation?.timer !== timer) return;
+          pendingGraphActivation = undefined;
+          activate();
+        }, 240);
+        pendingGraphActivation = { nodeId, timer };
       });
       target.addEventListener('keydown', (event: KeyboardEvent) => {
         if (event.key === 'Enter') {
@@ -1368,7 +1376,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     sourceEditor.focus();
     pendingDiagnostic = undefined;
   }
-  return { setText, setTitle, setUri, getText: () => session.snapshot().text, showCommandPalette, dispose: () => { disposed = true; unsubscribeConversionProgress?.(); if (synchronizedRender) clearTimeout(synchronizedRender); graphResizeObserver?.disconnect(); graphLayout.dispose(); releaseDrawerTrap(); setCompactDrawerModal(root); window.removeEventListener('keydown', onKeyDown); sourceEditor?.dispose(); sourceModel?.dispose(); container.innerHTML = ''; } };
+  return { setText, setTitle, setUri, getText: () => session.snapshot().text, showCommandPalette, dispose: () => { disposed = true; unsubscribeConversionProgress?.(); if (synchronizedRender) clearTimeout(synchronizedRender); if (pendingGraphActivation) clearTimeout(pendingGraphActivation.timer); graphResizeObserver?.disconnect(); graphLayout.dispose(); releaseDrawerTrap(); setCompactDrawerModal(root); window.removeEventListener('keydown', onKeyDown); sourceEditor?.dispose(); sourceModel?.dispose(); container.innerHTML = ''; } };
 }
 
 interface LibraryWorkbenchState {
@@ -1788,7 +1796,7 @@ function propertyEditorRow(row: PropertyRow, selected: boolean, expanded: boolea
   const requiredControl = row.requiredAlternatives
     ? `<button class="js-required-sets" data-action-id="property.required-alternatives" data-action-pointer="${escapeAttribute(propertyOwnerPointer(row.pointer))}" title="This type uses alternative required sets">Edit sets</button>`
     : `<label><input type="checkbox" data-inline-property="required" data-property-pointer="${escapeAttribute(row.pointer)}" ${row.required ? 'checked' : ''}> required</label>`;
-  return `<div class="js-property-editor" data-property-editor="${escapeAttribute(row.pointer)}" aria-current="${selected}"><div class="js-row js-inline-property-row" role="row"><div class="js-cell" role="cell"><input class="js-inline-name js-code" data-inline-property="name" data-property-pointer="${escapeAttribute(row.pointer)}" value="${escapeAttribute(row.name)}" aria-label="Property name"></div><div class="js-cell js-inline-type-cell" role="cell" data-type-drop="${escapeAttribute(row.pointer)}"><select class="js-inline-type js-code" data-inline-property="type" data-property-pointer="${escapeAttribute(row.pointer)}" aria-label="Type for ${escapeAttribute(row.name)}" aria-keyshortcuts="Alt+ArrowDown">${preservedType}<optgroup label="Primitive types">${primitiveOptions}</optgroup>${referenceOptions ? `<optgroup label="Reusable types">${referenceOptions}</optgroup>` : ''}</select><span class="js-type-drop-zone" aria-hidden="true"></span></div><div class="js-cell js-inline-required-cell" role="cell">${requiredControl}</div><div class="js-cell js-description-cell" role="cell"><input class="js-inline-description" data-inline-property="description" data-property-pointer="${escapeAttribute(row.pointer)}" value="${escapeAttribute(row.description ?? '')}" placeholder="Add description" aria-label="Description for ${escapeAttribute(row.name)}"></div><div class="js-cell js-action-cell" role="cell"><button class="js-row-action" data-property-details="${escapeAttribute(row.pointer)}" aria-expanded="${expanded}" aria-controls="${detailsId}" aria-label="${expanded ? 'Collapse' : 'Expand'} validation and annotations for ${escapeAttribute(row.name)}">${expanded ? '⌃' : '⌄'}</button></div></div>${expanded ? propertyDetailsPanel(row, detailsId, document) : ''}</div>`;
+  return `<div class="js-property-editor" data-property-editor="${escapeAttribute(row.pointer)}" aria-current="${selected}"><div class="js-row js-inline-property-row" role="row"><div class="js-cell" role="cell"><input class="js-inline-name js-code" data-inline-property="name" data-property-pointer="${escapeAttribute(row.pointer)}" value="${escapeAttribute(row.name)}" aria-label="Property name"></div><div class="js-cell js-inline-type-cell" role="cell" data-type-drop="${escapeAttribute(row.pointer)}"><select class="js-inline-type js-code" data-inline-property="type" data-property-pointer="${escapeAttribute(row.pointer)}" aria-label="Type for ${escapeAttribute(row.name)}" aria-keyshortcuts="Alt+ArrowDown">${preservedType}<optgroup label="Primitive types">${primitiveOptions}</optgroup>${referenceOptions ? `<optgroup label="Reusable types">${referenceOptions}</optgroup>` : ''}</select><span class="js-type-drop-zone" aria-hidden="true"></span></div><div class="js-cell js-inline-required-cell" role="cell">${requiredControl}</div><div class="js-cell js-description-cell" role="cell"><input class="js-inline-description" data-inline-property="description" data-property-pointer="${escapeAttribute(row.pointer)}" value="${escapeAttribute(row.description ?? '')}" placeholder="Add description" aria-label="Description for ${escapeAttribute(row.name)}"></div><div class="js-cell js-action-cell" role="cell"><button class="js-row-action" data-property-details="${escapeAttribute(row.pointer)}" aria-expanded="${expanded}" aria-controls="${detailsId}" aria-label="${expanded ? 'Collapse' : 'Expand'} validation and annotations for ${escapeAttribute(row.name)}">${fluentIcon('chevronRight', `js-property-chevron${expanded ? ' js-expanded' : ''}`)}</button></div></div>${expanded ? propertyDetailsPanel(row, detailsId, document) : ''}</div>`;
 }
 
 function inlinePropertyTypeValue(schema: Readonly<Record<string, unknown>>): string {
@@ -1827,13 +1835,15 @@ function propertyDetailsPanel(row: PropertyRow, id: string, document?: unknown):
   const validation = propertyDetailFields(schema, validationFields, row.pointer, 'validation');
   const annotations = propertyDetailFields(schema, annotationFields, row.pointer, 'annotation');
   const structured = structuredFields.filter(([keyword]) => schema[keyword] !== undefined).map(([keyword, label]) => propertyJsonField(row.pointer, keyword, label, schema[keyword])).join('');
+  const validationCount = validationFields.filter(([keyword]) => schema[keyword] !== undefined).length;
+  const annotationCount = annotationFields.filter(([keyword]) => schema[keyword] !== undefined).length + structuredFields.filter(([keyword]) => schema[keyword] !== undefined).length;
   const validationAdd = propertyDetailAddControl(schema, row.pointer, validationFields.map(([keyword, label]) => [inlineKeywordActionId('validation', keyword), keyword, label] as const), 'constraint', document);
   const annotationOptions = [
     ...annotationFields.map(([keyword, label]) => [inlineKeywordActionId('annotation', keyword), keyword, label] as const),
     ...structuredFields.map(([keyword, label]) => [inlineKeywordActionId('annotation', keyword), keyword, label] as const),
   ];
   const annotationAdd = propertyDetailAddControl(schema, row.pointer, annotationOptions, 'annotation', document);
-  return `<section class="js-property-details" id="${id}" aria-label="Validation and annotations for ${escapeAttribute(row.name)}"><div class="js-property-detail-columns"><fieldset><legend>Validation constraints</legend>${validation || '<p class="js-description">No constraints added.</p>'}${validationAdd}</fieldset><fieldset><legend>Annotations</legend>${annotations}${structured || '<p class="js-description">No annotations added.</p>'}${annotationAdd}</fieldset></div><p class="js-inline-status" data-inline-status="${escapeAttribute(row.pointer)}" role="status" aria-live="polite"></p></section>`;
+  return `<section class="js-property-details" id="${id}" aria-label="Validation and annotations for ${escapeAttribute(row.name)}"><div class="js-property-detail-columns"><section class="js-property-detail-group" aria-labelledby="${id}-constraints"><header><strong id="${id}-constraints">Validation constraints</strong><span>${validationCount}</span></header><div class="js-property-detail-fields">${validation || '<p class="js-detail-empty">No constraints</p>'}</div>${validationAdd}</section><section class="js-property-detail-group" aria-labelledby="${id}-annotations"><header><strong id="${id}-annotations">Annotations</strong><span>${annotationCount}</span></header><div class="js-property-detail-fields">${annotations}${structured || (!annotations ? '<p class="js-detail-empty">No annotations</p>' : '')}</div>${annotationAdd}</section></div><p class="js-inline-status" data-inline-status="${escapeAttribute(row.pointer)}" role="status" aria-live="polite"></p></section>`;
 }
 
 function propertyDetailFields(schema: Readonly<Record<string, unknown>>, fields: readonly (readonly [string, string, 'text' | 'number' | 'integer' | 'boolean'])[], pointer: string, family: string): string {
@@ -1940,14 +1950,7 @@ export function graphView(graphOrSnapshot: ReturnType<typeof projectGraph> | Doc
   const navigation: GraphNavigationController = isSnapshot ? graphNavigationBySnapshot.get(graphOrSnapshot as DocumentSnapshot) ?? new GraphNavigationController() : navigationOrSelected as GraphNavigationController;
   const layout = isSnapshot ? forceGraphLayoutBySnapshot.get(graphOrSnapshot as DocumentSnapshot) ?? new ForceGraphLayout() : new ForceGraphLayout();
   const selectedPointer = semanticView?.selection?.pointer ?? (isSnapshot ? navigationOrSelected as string | undefined : selectedPointerOverride);
-  const layoutMode: GraphLayoutMode = !semanticView
-    ? 'force'
-    : semanticView.location.level === 'neighborhood' && semanticView.location.focusNodeId
-      ? `neighborhood:${semanticView.location.focusNodeId}`
-      : semanticView.location.lens === 'relations'
-        ? semanticView.location.level === 'atlas' ? 'atlas' : 'types'
-        : semanticView.location.lens;
-  const layoutPositions = layout.reconcile(graph.nodes, graph.edges, layoutMode);
+  const layoutPositions = layout.reconcile(graph.nodes, graph.edges);
   const graphNodes = new Map(graph.nodes.map((node) => [node.id, node]));
   const positions = layoutPositions.map((position) => ({ ...graphNodes.get(position.id)!, ...position }));
   const position = new Map(positions.map((node) => [node.id, node]));

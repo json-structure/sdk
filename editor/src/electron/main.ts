@@ -13,6 +13,7 @@ import { deniedWindowOpen, isAllowedRendererNavigation, isTrustedIpcSender, sele
 
 const currentDirectory = __dirname;
 const rendererDirectory = join(currentDirectory, '..', 'dist', 'renderer');
+const appIconPath = app.isPackaged ? join(process.resourcesPath, 'icon.png') : join(app.getAppPath(), 'assets', 'icon.png');
 let mainWindow: BrowserWindow | null = null;
 let allowedRendererUrl: string | undefined;
 let pendingPath: string | undefined;
@@ -238,6 +239,7 @@ async function createWindow(): Promise<void> {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
+    icon: appIconPath,
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'hidden',
     ...(process.platform === 'darwin' ? {} : { titleBarOverlay: { color: '#181818', symbolColor: '#cccccc', height: 35 } }),
     backgroundColor: '#181818',
@@ -272,6 +274,7 @@ app.on('open-file', (event, path) => {
 });
 
 app.whenReady().then(() => {
+  app.setAppUserModelId('org.json-structure.editor');
   registerIpcHandlers();
   installApplicationMenu();
   void createWindow();

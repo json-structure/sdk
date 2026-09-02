@@ -26,8 +26,6 @@ export interface ForceGraphBounds {
   readonly height: number;
 }
 
-export type GraphLayoutMode = 'force' | 'atlas' | 'types' | 'namespaces' | 'extends' | 'imports' | `neighborhood:${string}`;
-
 interface LayoutNode extends SimulationNodeDatum {
   readonly id: string;
   readonly kind: GraphNode['kind'];
@@ -76,8 +74,8 @@ export class ForceGraphLayout {
     })
     .stop();
 
-  public reconcile(nodes: readonly GraphNode[], edges: readonly GraphEdge[], mode: GraphLayoutMode = 'force'): readonly ForceGraphPosition[] {
-    const topologyKey = `${mode}\u0002${nodes.map((node) => node.id).join('\u0000')}\u0001${edges.map((edge) => `${edge.id}:${edge.from}:${edge.to}`).join('\u0000')}`;
+  public reconcile(nodes: readonly GraphNode[], edges: readonly GraphEdge[]): readonly ForceGraphPosition[] {
+    const topologyKey = `${nodes.map((node) => node.id).join('\u0000')}\u0001${edges.map((edge) => `${edge.id}:${edge.from}:${edge.to}`).join('\u0000')}`;
     if (topologyKey === this.topologyKey) return this.positions();
 
     const previous = new Map(this.nodes.map((node) => [node.id, node]));
@@ -98,7 +96,6 @@ export class ForceGraphLayout {
     this.linkForce.links(this.links);
     this.simulation.alpha(1).alphaTarget(0).stop();
     this.simulation.tick(220);
-    this.applyLayoutMode(mode);
     this.clampNodes();
     return this.positions();
   }
@@ -181,65 +178,6 @@ export class ForceGraphLayout {
       .force('y', forceY<LayoutNode>(centerY).strength(0.035));
   }
 
-  private applyLayoutMode(mode: GraphLayoutMode): void {
-    if (mode === 'force') return;
-    const gapX = 36;
-    const gapY = 34;
-    if (mode.startsWith('neighborhood:')) {
-      const focusId = mode.slice('neighborhood:'.length);
-      const focus = this.nodes.find((node) => node.id === focusId);
-      const related = this.nodes.filter((node) => node !== focus);
-      if (focus) {
-        focus.x = this.bounds.width / 2 - nodeWidth / 2;
-        focus.y = this.bounds.height / 2 - nodeHeight / 2;
-      }
-      related.forEach((node, index) => {
-        const angle = -Math.PI * 0.82 + Math.PI * 1.64 * index / Math.max(1, related.length - 1);
-        node.x = this.bounds.width / 2 + Math.cos(angle) * Math.min(330, this.bounds.width * 0.32) - nodeWidth / 2;
-        node.y = this.bounds.height / 2 + Math.sin(angle) * Math.min(245, this.bounds.height * 0.35) - nodeHeight / 2;
-      });
-      return;
-    }
-    if (mode === 'namespaces') {
-      const root = this.nodes.find((node) => node.kind === 'document');
-      if (root) { root.x = this.bounds.width / 2 - nodeWidth / 2; root.y = layoutPadding; }
-      const rest = this.nodes.filter((node) => node !== root);
-      placeGrid(rest, this.bounds, 160, nodeHeight, gapX, 130);
-      return;
-    }
-    if (mode === 'extends') {
-      const incoming = new Set(this.links.map((link) => typeof link.target === 'string' ? link.target : link.target.id));
-      const roots = this.nodes.filter((node) => !incoming.has(node.id));
-      const depth = new Map(roots.map((node) => [node.id, 0]));
-      for (let pass = 0; pass < this.nodes.length; pass += 1) {
-        this.links.forEach((link) => {
-          const source = typeof link.source === 'string' ? link.source : link.source.id;
-          const target = typeof link.target === 'string' ? link.target : link.target.id;
-          const sourceDepth = depth.get(source);
-          if (sourceDepth !== undefined) depth.set(target, Math.max(depth.get(target) ?? 0, sourceDepth + 1));
-        });
-      }
-      const groups = new Map<number, LayoutNode[]>();
-      this.nodes.forEach((node) => groups.set(depth.get(node.id) ?? 0, [...(groups.get(depth.get(node.id) ?? 0) ?? []), node]));
-      [...groups.entries()].sort(([left], [right]) => left - right).forEach(([level, items]) => {
-        items.forEach((node, index) => {
-          node.x = (index + 1) * this.bounds.width / (items.length + 1) - nodeWidth / 2;
-          node.y = 55 + level * 115;
-        });
-      });
-      return;
-    }
-    if (mode === 'imports') {
-      const sources = new Set(this.links.map((link) => typeof link.source === 'string' ? link.source : link.source.id));
-      const left = this.nodes.filter((node) => sources.has(node.id));
-      const right = this.nodes.filter((node) => !sources.has(node.id));
-      left.forEach((node, index) => { node.x = 70; node.y = 70 + index * 86; });
-      right.forEach((node, index) => { node.x = this.bounds.width - nodeWidth - 70; node.y = 70 + index * 86; });
-      return;
-    }
-    placeGrid(this.nodes, this.bounds, nodeWidth, nodeHeight, gapX, mode === 'atlas' ? 95 : 115, gapY);
-  }
-
   private clampNodes(): void {
     for (const node of this.nodes) {
       node.x = clamp(node.x, layoutPadding, this.bounds.width - node.width - layoutPadding);
@@ -305,16 +243,4 @@ function hashString(value: string): number {
 
 function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(maximum, Math.max(minimum, value));
-}
-
-function placeGrid(nodes: readonly LayoutNode[], bounds: ForceGraphBounds, width: number, height: number, gapX: number, top: number, gapY = 34): void {
-  const columns = Math.max(1, Math.floor((bounds.width - layoutPadding * 2 + gapX) / (width + gapX)));
-  nodes.forEach((node, index) => {
-    const row = Math.floor(index / columns);
-    const column = index % columns;
-    const rowCount = Math.min(columns, nodes.length - row * columns);
-    const rowWidth = rowCount * width + Math.max(0, rowCount - 1) * gapX;
-    node.x = (bounds.width - rowWidth) / 2 + column * (width + gapX);
-    node.y = top + row * (height + gapY);
-  });
 }
