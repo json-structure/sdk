@@ -139,6 +139,7 @@ describe('UI command action registry', () => {
     const documentContext = { session: document, documentVersion: document.snapshot().documentVersion };
     for (const [id, value] of [
       ['core.schema', 'https://json-structure.org/meta/extended/v0/#'],
+      ['core.id', 'https://example.test/schema'],
       ['core.uses', ['JSONStructureUnits']],
       ['core.offers', { Units: '#/definitions/Units' }]
     ] as const) expect(actionById(id)!.create('', value).canExecute(documentContext)).toBe(true);
@@ -193,6 +194,14 @@ describe('UI command action registry', () => {
     const context = { session, documentVersion: session.snapshot().documentVersion };
     expect(command.canExecute(context)).toBe(true);
     expect(command.execute(context).edits[0]?.newText).toContain('"$root":"#/definitions/Person"');
+  });
+
+  it('removes the reusable document root selection', () => {
+    const session = new DocumentSession('memory://ui-actions', '{"$root":"#/definitions/Person","definitions":{"Person":{"type":"object","properties":{}}}}');
+    const command = actionById('root.remove')!.create('/definitions/Person', undefined);
+    const context = { session, documentVersion: session.snapshot().documentVersion };
+    expect(command.canExecute(context)).toBe(true);
+    expect(command.execute(context).edits[0]?.newText).toBe('');
   });
 
   it('passes alternate-name values through the generic keyword factory', () => {

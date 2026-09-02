@@ -149,6 +149,7 @@ type Mode = 'design' | 'graph' | 'analysis' | 'instance' | 'conversion' | 'libra
 type ImpactDirection = 'outgoing' | 'incoming' | 'both';
 type LibraryOperation = 'import' | 'copy' | 'materialize';
 type DesignMemberMode = 'local' | 'effective';
+type CompositeType = 'object' | 'array' | 'set' | 'map' | 'tuple' | 'choice';
 type GraphResizeObserver = { observe(target: SVGElement): void; disconnect(): void };
 type DialogElement = HTMLElement & { readonly open: boolean; showModal(): void; close(): void };
 const graphNavigationBySnapshot = new WeakMap<DocumentSnapshot, GraphNavigationController>();
@@ -181,6 +182,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
   let externalLoadKey: string | undefined;
   let graphResizeObserver: GraphResizeObserver | undefined;
   let designMemberMode: DesignMemberMode = 'local';
+  let typeCreatorOpen = false;
   let expandedPropertyPointer: string | undefined;
   const pendingPropertyFields = new Set<string>();
   let relationDraftOpen = false;
@@ -368,7 +370,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     const definitions = (snapshot.model?.projections.definitions ?? []).filter((definition) => definition.reusable);
     const localDefinitionPointers = new Set(definitions.map((definition) => definition.pointer));
     const typeDefinitions = [
-      ...definitions.map((definition) => ({ name: definition.name, pointer: definition.pointer, namespace: definition.namespacePointer, identity: definition.identity, imported: false })),
+      ...definitions.map((definition) => ({ name: definition.name, pointer: definition.pointer, namespace: definition.namespacePointer, identity: definition.identity, imported: false, root: snapshot.model?.rootPointer === definition.pointer })),
       ...session.effectiveDeclarations
         .filter((declaration) => declaration.imports.length > 0 && !localDefinitionPointers.has(declaration.effectivePointer))
         .map((declaration) => ({
@@ -397,7 +399,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     semanticGraphBySnapshot.set(snapshot, semanticGraph);
     graphLayout.reconcile(semanticGraphView.projection.nodes, semanticGraphView.projection.edges);
     forceGraphLayoutBySnapshot.set(snapshot, graphLayout);
-    root.innerHTML = structuredWorkbenchShell(snapshot, documentTitle, typeDefinitions, definitionPointer, rows, selectedPointer, mode, problemsOpen, designMemberMode, effectiveMembers, expandedPropertyPointer, options.chrome ?? 'document', pendingPropertyFields, relationDraftOpen);
+    root.innerHTML = structuredWorkbenchShell(snapshot, documentTitle, typeDefinitions, definitionPointer, rows, selectedPointer, mode, problemsOpen, designMemberMode, effectiveMembers, expandedPropertyPointer, options.chrome ?? 'document', pendingPropertyFields, relationDraftOpen, typeCreatorOpen);
     mountAdvancedViews(root, snapshot, definitionPointer, graph, mode, instanceText, instanceResult, impactDirection, selectedAddIns, refactoringPlan, refactoringStatus, services, conversionManifest, conversionCommandId, conversionSource, conversionResult, conversionStatus, conversionProgress, conversionRequestId, libraryEntries, librarySelector, libraryDocument, librarySelection, libraryOperation, libraryPlan, libraryStatus, { providers: libraryProviders, catalog: libraryCatalog, resolution: libraryResolution, offline: libraryOffline, publishDraft: libraryPublishDraft, publishPreview: libraryPublishPreviewState, publishedEpoch: libraryPublishedEpoch, documentValid: documentCanPublish(snapshot), providerFilter: libraryProviderFilter, search: librarySearch, currentDocumentUri: snapshot.uri }, libraryModalOpen, instanceRoots, instanceRootPointer, instanceSelection, session.resolvedSchemaDocuments, typeDefinitions.map((definition) => definition.namespace));
     root.dataset.theme = themeName;
     const libraryDialog = root.querySelector('[data-library-dialog]') as DialogElement | null;
@@ -826,7 +828,87 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
         render();
       }
     }));
-    root.querySelectorAll('[data-command="definition.add"]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => openAction('definition.add', '')));
+    root.querySelectorAll('[data-command="definition.add"]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
+      typeCreatorOpen = true;
+      mode = 'design';
+      render();
+      queueMicrotask(() => (root.querySelector('[data-type-create-name]') as HTMLInputElement | null)?.focus());
+    }));
+    root.querySelectorAll('[data-type-create]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
+      const input = root.querySelector('[data-type-create-name]') as HTMLInputElement | null;
+      const name = input?.value.trim() ?? '';
+      const type = button.dataset.typeCreate as CompositeType | undefined;
+      const add = actionById('definition.add');
+      if (!name || !type || !add) {
+        setTypeCreatorStatus(root, 'Enter a type name.');
+        input?.focus();
+        return;
+      }
+      const pointer = `/definitions/${escapePointerToken(name)}`;
+      const firstType = (session.model?.projections.definitions.filter((definition) => definition.reusable).length ?? 0) === 0;
+      void applyCommand(add.create('', compositeSchema(type), name)).then(async (error) => {
+        if (error) {
+          setTypeCreatorStatus(root, error);
+          return;
+        }
+        selectedPointer = pointer;
+        typeCreatorOpen = false;
+        if (firstType) {
+          const setRoot = actionById('root.set');
+          if (setRoot) await applyCommand(setRoot.create(pointer, undefined));
+        }
+        selectedPointer = pointer;
+        render();
+        queueMicrotask(() => {
+          const nameInput = root.querySelector(`[data-inline-definition-name="${cssAttributeValue(pointer)}"]`) as HTMLInputElement | null;
+          nameInput?.focus();
+          nameInput?.select();
+        });
+      });
+    }));
+    root.querySelector('[data-type-create-cancel]')?.addEventListener('click', () => { typeCreatorOpen = false; render(); });
+    root.querySelectorAll('[data-document-member]').forEach((input: HTMLInputElement) => input.addEventListener('change', () => {
+      const action = actionById(input.dataset.documentMember === '$schema' ? 'core.schema' : 'core.id');
+      if (!action || !input.value.trim()) return;
+      void applyCommand(action.create('', input.value.trim())).then((error) => error && setDocumentMemberStatus(root, input.dataset.documentMember ?? '', error));
+    }));
+    root.querySelectorAll('[data-root-toggle]').forEach((checkbox: HTMLInputElement) => checkbox.addEventListener('change', () => {
+      const pointer = checkbox.dataset.rootToggle;
+      const action = actionById(checkbox.checked ? 'root.set' : 'root.remove');
+      if (!pointer || !action) return;
+      void applyCommand(action.create(pointer, undefined)).then((error) => error && setInlineStatus(root, pointer, error));
+    }));
+    root.querySelectorAll('[data-inline-definition-name]').forEach((input: HTMLInputElement) => {
+      input.addEventListener('keydown', (event: KeyboardEvent) => { if (event.key === 'Enter') { event.preventDefault(); input.blur(); } });
+      input.addEventListener('change', () => {
+        const pointer = input.dataset.inlineDefinitionName;
+        const nextName = input.value.trim();
+        const action = actionById('definition.rename');
+        if (!pointer || !nextName || nextName === pointerLabel(pointer) || !action) return;
+        const namespacePointer = pointer.slice(0, pointer.lastIndexOf('/'));
+        const nextPointer = `${namespacePointer}/${escapePointerToken(nextName)}`;
+        void applyCommand(action.create(pointer, nextName)).then((error) => {
+          if (error) {
+            setInlineStatus(root, pointer, error);
+            input.value = pointerLabel(pointer);
+            return;
+          }
+          selectedPointer = nextPointer;
+          render();
+        });
+      });
+    });
+    root.querySelectorAll('[data-inline-definition-description]').forEach((input: HTMLTextAreaElement) => {
+      autoGrowTextarea(input);
+      input.addEventListener('input', () => autoGrowTextarea(input));
+      input.addEventListener('change', () => {
+        const pointer = input.dataset.inlineDefinitionDescription;
+        const action = actionById('property.description');
+        if (!pointer || !action) return;
+        const description = input.value.trim() ? input.value : undefined;
+        void applyCommand(action.create(pointer, description)).then((error) => error && setInlineStatus(root, pointer, error));
+      });
+    });
     root.querySelectorAll('[data-command="add"]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
       if (definitionPointer === undefined) return;
       void addInlineProperty(definitionPointer);
@@ -1829,6 +1911,7 @@ interface TypeTreeItem {
   readonly imported?: boolean;
   readonly documentUri?: string;
   readonly sourcePointer?: string;
+  readonly root?: boolean;
 }
 
 interface TypeTreeNamespace {
@@ -1854,7 +1937,7 @@ function renderTypeTree(definitions: readonly TypeTreeItem[], selectedPointer: s
     }
     namespace.types.push(definition);
   }
-  const renderType = (item: TypeTreeItem): string => `<button role="treeitem" class="js-tree-item${item.imported ? ' js-tree-item-imported' : ''}" ${item.imported ? `data-effective-source="${escapeAttribute(item.sourcePointer ?? '')}" data-effective-document="${escapeAttribute(item.documentUri ?? '')}" title="Imported from ${escapeAttribute(item.documentUri ?? '')}${escapeAttribute(item.sourcePointer ? `#${item.sourcePointer}` : '')}"` : `data-select="${escapeAttribute(item.pointer)}"`} data-type-drag="${escapeAttribute(item.pointer)}" draggable="true" aria-current="${selectedPointer === item.pointer}"><span class="js-kind" aria-hidden="true">${fluentIcon('cube')}</span><span>${escapeHtml(item.name)}</span>${item.imported ? '<small>imported</small>' : ''}</button>`;
+  const renderType = (item: TypeTreeItem): string => `<button role="treeitem" class="js-tree-item${item.imported ? ' js-tree-item-imported' : ''}" ${item.imported ? `data-effective-source="${escapeAttribute(item.sourcePointer ?? '')}" data-effective-document="${escapeAttribute(item.documentUri ?? '')}" title="Imported from ${escapeAttribute(item.documentUri ?? '')}${escapeAttribute(item.sourcePointer ? `#${item.sourcePointer}` : '')}"` : `data-select="${escapeAttribute(item.pointer)}"`} data-type-drag="${escapeAttribute(item.pointer)}" draggable="true" aria-current="${selectedPointer === item.pointer}"><span class="js-kind" aria-hidden="true">${fluentIcon('cube')}</span><span>${escapeHtml(item.name)}</span>${item.root ? '<small>root</small>' : item.imported ? '<small>imported</small>' : ''}</button>`;
   const renderNamespace = (namespace: TypeTreeNamespace): string => {
     const children = [...namespace.children.values()].sort((left, right) => left.label.localeCompare(right.label)).map(renderNamespace).join('');
     const types = [...namespace.types].sort((left, right) => left.name.localeCompare(right.name)).map(renderType).join('');
@@ -1864,7 +1947,7 @@ function renderTypeTree(definitions: readonly TypeTreeItem[], selectedPointer: s
   return renderNamespace(root) || '<div class="js-empty js-tree-empty">No definitions yet.</div>';
 }
 
-function structuredWorkbenchShell(snapshot: DocumentSnapshot, title: string, definitions: readonly { readonly name: string; readonly pointer: string; readonly namespace: string; readonly identity?: readonly string[]; readonly imported?: boolean; readonly documentUri?: string; readonly sourcePointer?: string }[], definitionPointer: string | undefined, rows: readonly PropertyRow[], selectedPointer: string | undefined, mode: Mode, problemsOpen: boolean, memberMode: DesignMemberMode, effectiveMembers: EffectiveMembersResult | undefined, expandedPropertyPointer: string | undefined, chrome: NonNullable<JsonStructureEditorOptions['chrome']> = 'document', pendingPropertyFields: ReadonlySet<string> = new Set(), relationDraftOpen = false): string {
+function structuredWorkbenchShell(snapshot: DocumentSnapshot, title: string, definitions: readonly { readonly name: string; readonly pointer: string; readonly namespace: string; readonly identity?: readonly string[]; readonly imported?: boolean; readonly documentUri?: string; readonly sourcePointer?: string; readonly root?: boolean }[], definitionPointer: string | undefined, rows: readonly PropertyRow[], selectedPointer: string | undefined, mode: Mode, problemsOpen: boolean, memberMode: DesignMemberMode, effectiveMembers: EffectiveMembersResult | undefined, expandedPropertyPointer: string | undefined, chrome: NonNullable<JsonStructureEditorOptions['chrome']> = 'document', pendingPropertyFields: ReadonlySet<string> = new Set(), relationDraftOpen = false, typeCreatorOpen = false): string {
   const definition = snapshot.model?.projections.definitions.find((item) => item.pointer === definitionPointer);
   const selectedProperty = rows.find((row) => row.pointer === selectedPointer);
   const selectedRelation = definition?.relations.find((relation) => relation.pointer === selectedPointer);
@@ -1884,9 +1967,9 @@ function structuredWorkbenchShell(snapshot: DocumentSnapshot, title: string, def
   ];
   const typeTree = renderTypeTree(definitions, definitionPointer);
   const activities = primaryModes.map((item) => `<button class="js-activity-button" data-mode="${item.mode}" aria-label="${item.label}" title="${item.label}" aria-pressed="${mode === item.mode}">${fluentIcon(item.icon)}</button>`).join('');
-  const breadcrumbSeparator = fluentIcon('chevronRight', 'js-chevron');
-  const showSelectionBreadcrumb = mode === 'design' || mode === 'graph';
-  const breadcrumbs = `<span data-document-title>${escapeHtml(title)}</span>${showSelectionBreadcrumb && definition ? `<span aria-hidden="true">${breadcrumbSeparator}</span><strong>${escapeHtml(definition.name)}</strong>` : ''}${showSelectionBreadcrumb && selectedProperty ? `<span aria-hidden="true">${breadcrumbSeparator}</span><strong>${escapeHtml(selectedProperty.name)}</strong>` : ''}${showSelectionBreadcrumb && selectedRelation ? `<span aria-hidden="true">${breadcrumbSeparator}</span><strong>${escapeHtml(selectedRelation.name)}</strong>` : ''}`;
+  const schemaUri = isSchemaRecord(documentValue) && typeof documentValue.$schema === 'string' ? documentValue.$schema : '';
+  const documentId = isSchemaRecord(documentValue) && typeof documentValue.$id === 'string' ? documentValue.$id : '';
+  const schemaStrip = `<div class="js-schema-strip" aria-label="Schema metadata"><label><span>Meta-schema</span><input data-document-member="$schema" value="${escapeAttribute(schemaUri)}" aria-label="Meta-schema reference"></label><label><span>Id</span><input data-document-member="$id" value="${escapeAttribute(documentId)}" aria-label="Schema id"></label><span class="js-schema-status" data-document-member-status role="status" aria-live="polite"></span></div>`;
   const titleChrome = workbenchTitleChrome(title, chrome);
   return `<div class="js-shell js-chrome-${chrome}">
     ${titleChrome}
@@ -1894,7 +1977,7 @@ function structuredWorkbenchShell(snapshot: DocumentSnapshot, title: string, def
     <div class="js-workbench" data-problems-open="${problemsOpen}" data-active-mode="${mode}">
       <nav class="js-activity" aria-label="Editor modes">${activities}</nav>
       <aside class="js-outline" id="js-outline" data-drawer-panel="types" aria-label="Types"><div class="js-panel-head"><span>Types</span><span class="js-spacer"></span><button data-command="definition.add" title="Add type" aria-label="Add type">${fluentIcon('add')}</button><button data-library-open title="Import type library" aria-label="Import type library">${fluentIcon('library')}</button><button class="js-drawer-close" data-mobile-drawer-close aria-label="Close Types">${fluentIcon('dismiss')}</button></div><input class="js-filter" type="search" placeholder="Filter types" aria-label="Filter types"><div class="js-tree" role="tree" aria-label="Types by namespace"><div class="js-tree-group">${definitions.length} definitions</div>${typeTree}</div></aside>
-      <section class="js-center"><div class="js-editor-tab"><span class="js-kind" aria-hidden="true">${fluentIcon('document')}</span><span data-document-title>${escapeHtml(title)}</span></div><div class="js-breadcrumbs">${breadcrumbs}</div><section class="js-view" data-panel-mode="design" ${mode === 'design' ? '' : 'hidden'}>${designView(definition?.name, definition?.type, definition?.description, rows, selectedPointer, definition?.identity, definition?.relations, memberMode, effectiveMembers, expandedPropertyPointer, definitions, documentValue, pendingPropertyFields, relationDraftOpen)}</section><section class="js-view js-graph" data-panel-mode="graph" ${mode === 'graph' ? '' : 'hidden'}>${graphView(snapshot, selectedPointer)}</section><section class="js-view js-source-view" data-panel-mode="source" ${mode === 'source' ? '' : 'hidden'}><div class="js-source" data-source aria-label="JSON source editor"></div></section></section>
+      <section class="js-center"><div class="js-editor-tab"><span class="js-kind" aria-hidden="true">${fluentIcon('document')}</span><span data-document-title>${escapeHtml(title)}</span></div>${schemaStrip}<section class="js-view" data-panel-mode="design" ${mode === 'design' ? '' : 'hidden'}>${designView(definition?.name, definition?.type, definition?.description, rows, selectedPointer, definition?.identity, definition?.relations, memberMode, effectiveMembers, expandedPropertyPointer, definitions, documentValue, pendingPropertyFields, relationDraftOpen, typeCreatorOpen, definitionPointer, snapshot.model?.rootPointer === definitionPointer)}</section><section class="js-view js-graph" data-panel-mode="graph" ${mode === 'graph' ? '' : 'hidden'}>${graphView(snapshot, selectedPointer)}</section><section class="js-view js-source-view" data-panel-mode="source" ${mode === 'source' ? '' : 'hidden'}><div class="js-source" data-source aria-label="JSON source editor"></div></section></section>
       <aside class="js-inspector" id="js-inspector" data-drawer-panel="inspector" aria-label="Inspector"><div class="js-panel-head"><span>Inspector</span><span class="js-spacer"></span><button class="js-drawer-close" data-mobile-drawer-close aria-label="Close Inspector">${fluentIcon('dismiss')}</button></div>${inspector(selectedProperty, definition, selectedDiagnostics, selectedRelation)}</aside>
       <section class="js-problems" aria-label="Problems panel"><div class="js-problems-head"><button class="js-problems-tab" data-problems-toggle aria-controls="js-problem-list" aria-expanded="${problemsOpen}">Problems <span class="js-count">${snapshot.diagnostics.length}</span></button><span class="js-spacer"></span><button data-problems-toggle aria-controls="js-problem-list" aria-expanded="${problemsOpen}" aria-label="Close Problems">${fluentIcon('dismiss')}</button></div><div class="js-problem-list" id="js-problem-list" role="list">${problems(snapshot.diagnostics)}</div></section>
     </div>
@@ -2010,8 +2093,8 @@ function renderEvaluationTrace(trace: EvaluationTrace, selection: CrossNavigatio
   return `<details class="js-trace js-trace-${trace.status}" ${depth < 2 || trace.status !== 'valid' ? 'open' : ''} data-trace-depth="${depth}"><summary><span class="js-trace-status" aria-hidden="true">${trace.status === 'valid' ? '✓' : trace.status === 'invalid' ? '×' : '?'}</span><strong>${escapeHtml(trace.keyword)}</strong><span>${escapeHtml(trace.message ?? trace.status)}</span></summary><div class="js-trace-locations" aria-current="${selected}"><button data-trace-instance="${escapeAttribute(trace.instancePointer)}" data-trace-schema="${escapeAttribute(trace.schemaPointer)}">Instance <span class="js-code">${escapeHtml(trace.instancePointer || '/')}</span></button><button data-trace-schema="${escapeAttribute(trace.schemaPointer)}" data-trace-instance="${escapeAttribute(trace.instancePointer)}">Schema <span class="js-code">${escapeHtml(trace.schemaPointer || '/')}</span></button></div>${children ? `<div class="js-trace-children">${children}</div>` : ''}</details>`;
 }
 
-export function designView(name: string | undefined, type: string | undefined, description: string | undefined, rows: readonly PropertyRow[], selectedPointer: string | undefined, identity: readonly string[] = [], relations: readonly import('../model.js').RelationProjection[] = [], memberMode: DesignMemberMode = 'local', effectiveMembers?: EffectiveMembersResult, expandedPropertyPointer?: string, definitions: readonly { readonly name: string; readonly pointer: string; readonly identity?: readonly string[] }[] = [], document?: unknown, pendingPropertyFields: ReadonlySet<string> = new Set(), relationDraftOpen = false): string {
-  if (!name && !type) return `<div class="js-empty-state">${jsonStructureLogo('js-empty-logo')}<div class="js-eyebrow">Untitled structure</div><h1>Create your first type</h1><p>Start with a reusable declaration, or switch to Source to author the document directly.</p><div class="js-empty-actions"><button class="js-primary" data-command="definition.add">${fluentIcon('add')}<span>New type</span></button><button data-mode="source">Open Source</button></div></div>`;
+export function designView(name: string | undefined, type: string | undefined, description: string | undefined, rows: readonly PropertyRow[], selectedPointer: string | undefined, identity: readonly string[] = [], relations: readonly import('../model.js').RelationProjection[] = [], memberMode: DesignMemberMode = 'local', effectiveMembers?: EffectiveMembersResult, expandedPropertyPointer?: string, definitions: readonly { readonly name: string; readonly pointer: string; readonly identity?: readonly string[] }[] = [], document?: unknown, pendingPropertyFields: ReadonlySet<string> = new Set(), relationDraftOpen = false, typeCreatorOpen = false, definitionPointer?: string, rootActive = false): string {
+  if (typeCreatorOpen || !name && !type) return typeCreatorView(definitions.length === 0);
   const localPropertyRows = rows.map((row) => propertyEditorRow(row, row.pointer === selectedPointer, row.pointer === expandedPropertyPointer, identity.includes(row.name), definitions, document, pendingPropertyFields)).join('');
   const effectiveRows = effectiveMembers?.members.map((member) => `<div class="js-row js-effective-row" role="row" data-member-origin="${member.provenance}"><div class="js-cell" role="cell"><button class="js-property-link js-code" data-effective-source="${escapeAttribute(member.sourcePointer)}" data-effective-document="${escapeAttribute(member.documentUri)}">${escapeHtml(member.name)}</button></div><div class="js-cell js-code" role="cell">${escapeHtml(displayPropertyValueTypes(member.schema))}</div><div class="js-cell js-nullable-indicator" role="cell">${inlinePropertyNullable(member.schema) ? 'yes' : 'no'}</div><div class="js-cell js-identity-indicator" role="cell">${identity.includes(member.name) ? 'yes' : 'no'}</div><div class="js-cell ${member.required ? 'js-required' : 'js-optional'}" role="cell">${member.required ? 'required' : 'optional'}</div><div class="js-cell js-description-cell" role="cell"><span class="js-origin-chip">${escapeHtml(member.provenance)}</span>${member.addIn ? ` ${escapeHtml(member.addIn)}` : ''}${member.inheritedVia.length ? `<small>${member.inheritedVia.map(pointerLabel).map(escapeHtml).join(' → ')}</small>` : ''}${member.imports.length ? `<small>${member.imports.map((item) => `${item.keyword} ${item.importSource}`).map(escapeHtml).join(' → ')}</small>` : ''}</div><div class="js-cell js-action-cell" role="cell"><button class="js-row-action" data-effective-source="${escapeAttribute(member.sourcePointer)}" data-effective-document="${escapeAttribute(member.documentUri)}" aria-label="Open declaration of ${escapeAttribute(member.name)}">↗</button></div></div>`).join('') ?? '';
   const propertyRows = memberMode === 'effective' ? effectiveRows : localPropertyRows;
@@ -2021,7 +2104,35 @@ export function designView(name: string | undefined, type: string | undefined, d
   const relationsView = `<section class="js-design-section"><div class="js-section-head"><div><h2>Relations</h2><span class="js-section-meta">${relations.length}</span></div><button data-inline-relation-add ${relationDraftOpen ? 'disabled' : ''}>${fluentIcon('add')}<span>Add relation</span></button></div><div class="js-relation-list">${relationRows}${relationDraft || (!relationRows ? '<p class="js-description">No relations declared.</p>' : '')}</div></section>`;
   const memberCount = memberMode === 'effective' ? effectiveMembers?.members.length ?? 0 : rows.length;
   const addProperty = `${fluentIcon('add')}<span>Add property</span>`;
-  return `<div class="js-sheet"><header class="js-type-head"><div><div class="js-eyebrow">${name ? 'Local definition' : 'Document root'}</div><h1>${escapeHtml(name ?? 'Document root')}</h1><p class="js-description">${escapeHtml(description ?? 'No description yet.')}</p></div><span class="js-chip">${escapeHtml(type ?? 'untyped')}</span></header><div class="js-section-head"><div><h2>Properties</h2><span class="js-section-meta">${memberCount} visible</span></div><div class="js-member-mode" role="group" aria-label="Property origin"><button data-member-mode="local" aria-pressed="${memberMode === 'local'}">Local</button><button data-member-mode="effective" aria-pressed="${memberMode === 'effective'}">Effective</button></div>${memberMode === 'local' ? `<button data-command="add">${addProperty}</button>` : ''}</div>${conflictView}<div class="js-grid" role="table" aria-label="Properties"><div class="js-row js-header" role="row"><div class="js-cell" role="columnheader">Name</div><div class="js-cell" role="columnheader">Type</div><div class="js-cell" role="columnheader">Nullable</div><div class="js-cell" role="columnheader">Identity</div><div class="js-cell" role="columnheader">Presence</div><div class="js-cell" role="columnheader"><span class="js-sr-only">Actions</span></div></div>${propertyRows || (memberMode === 'local' ? `<button class="js-add-row" data-command="add">${fluentIcon('add')}<span>Add a property</span></button>` : '<div class="js-empty">No effective members.</div>')}</div>${relationsView}</div>`;
+  const rootToggle = definitionPointer && definitionPointer !== '' ? `<label class="js-root-toggle"><input type="checkbox" data-root-toggle="${escapeAttribute(definitionPointer)}" ${rootActive ? 'checked' : ''}> Root</label>` : '';
+  const editableName = definitionPointer && definitionPointer !== ''
+    ? `<input class="js-definition-name" data-inline-definition-name="${escapeAttribute(definitionPointer)}" value="${escapeAttribute(name ?? '')}" aria-label="Type name" spellcheck="false">`
+    : `<h1>${escapeHtml(name ?? 'Inline schema')}</h1>`;
+  const editableDescription = definitionPointer && definitionPointer !== ''
+    ? `<textarea class="js-definition-description" rows="1" data-inline-definition-description="${escapeAttribute(definitionPointer)}" placeholder="No description yet." aria-label="Type description">${escapeHtml(description ?? '')}</textarea>`
+    : `<p class="js-description">${escapeHtml(description ?? 'No description yet.')}</p>`;
+  return `<div class="js-sheet"><header class="js-type-head"><div><div class="js-eyebrow">${name ? 'Local definition' : 'Inline schema'}</div>${editableName}${editableDescription}<p class="js-inline-status" data-inline-status="${escapeAttribute(definitionPointer ?? '')}" role="status" aria-live="polite"></p></div><div class="js-type-badges"><span class="js-chip">${escapeHtml(type ?? 'untyped')}</span>${rootToggle}</div></header><div class="js-section-head"><div><h2>Properties</h2><span class="js-section-meta">${memberCount} visible</span></div><div class="js-member-mode" role="group" aria-label="Property origin"><button data-member-mode="local" aria-pressed="${memberMode === 'local'}">Local</button><button data-member-mode="effective" aria-pressed="${memberMode === 'effective'}">Effective</button></div>${memberMode === 'local' ? `<button data-command="add">${addProperty}</button>` : ''}</div>${conflictView}<div class="js-grid" role="table" aria-label="Properties"><div class="js-row js-header" role="row"><div class="js-cell" role="columnheader">Name</div><div class="js-cell" role="columnheader">Type</div><div class="js-cell" role="columnheader">Nullable</div><div class="js-cell" role="columnheader">Identity</div><div class="js-cell" role="columnheader">Presence</div><div class="js-cell" role="columnheader"><span class="js-sr-only">Actions</span></div></div>${propertyRows || (memberMode === 'local' ? `<button class="js-add-row" data-command="add">${fluentIcon('add')}<span>Add a property</span></button>` : '<div class="js-empty">No effective members.</div>')}</div>${relationsView}</div>`;
+}
+
+function typeCreatorView(firstType: boolean): string {
+  const choices: readonly { readonly type: CompositeType; readonly label: string; readonly detail: string }[] = [
+    { type: 'object', label: 'Object', detail: 'Named properties and relations' },
+    { type: 'array', label: 'Array', detail: 'Ordered values of one schema' },
+    { type: 'set', label: 'Set', detail: 'Unique values of one schema' },
+    { type: 'map', label: 'Map', detail: 'String keys and typed values' },
+    { type: 'tuple', label: 'Tuple', detail: 'Ordered named members' },
+    { type: 'choice', label: 'Choice', detail: 'Named alternatives' },
+  ];
+  const cards = choices.map((choice) => `<button class="js-composite-choice" type="button" data-type-create="${choice.type}">${fluentIcon('cube')}<span><strong>${choice.label}</strong><small>${choice.detail}</small></span></button>`).join('');
+  return `<section class="js-type-creator" aria-labelledby="type-creator-title"><div class="js-eyebrow">${firstType ? 'Start the schema' : 'Add a type'}</div><h1 id="type-creator-title">${firstType ? 'Choose the first composite type' : 'Choose a composite type'}</h1><p class="js-description">${firstType ? 'The first type becomes the document root. You can change the root flag at any time.' : 'Create a reusable schema type in this document.'}</p><label class="js-type-name">Type name<input class="js-code" data-type-create-name value="${firstType ? 'Root' : 'NewType'}" autocomplete="off" spellcheck="false"></label><div class="js-composite-choices">${cards}</div><p class="js-action-status" data-type-create-status role="status" aria-live="polite"></p>${firstType ? '' : '<button class="js-type-create-cancel" type="button" data-type-create-cancel>Cancel</button>'}</section>`;
+}
+
+export function compositeSchema(type: CompositeType): Readonly<Record<string, unknown>> {
+  if (type === 'object') return { type, properties: {} };
+  if (type === 'array' || type === 'set') return { type, items: { type: 'string' } };
+  if (type === 'map') return { type, values: { type: 'string' } };
+  if (type === 'tuple') return { type, properties: {}, tuple: [] };
+  return { type, choices: {} };
 }
 
 function propertyEditorRow(row: PropertyRow, selected: boolean, expanded: boolean, identity: boolean, definitions: readonly { readonly name: string; readonly pointer: string }[], document?: unknown, pendingPropertyFields: ReadonlySet<string> = new Set()): string {
@@ -2309,6 +2420,16 @@ function cssAttributeValue(value: string): string {
 function setInlineStatus(root: HTMLElement, pointer: string, message: string): void {
   const status = root.querySelector(`[data-inline-status="${cssAttributeValue(pointer)}"]`);
   if (status) status.textContent = message;
+}
+
+function setTypeCreatorStatus(root: HTMLElement, message: string): void {
+  const status = root.querySelector('[data-type-create-status]');
+  if (status) status.textContent = message;
+}
+
+function setDocumentMemberStatus(root: HTMLElement, member: string, message: string): void {
+  const status = root.querySelector('[data-document-member-status]');
+  if (status) status.textContent = `${member}: ${message}`;
 }
 
 export function graphView(graphOrSnapshot: ReturnType<typeof projectGraph> | DocumentSnapshot, navigationOrSelected: GraphNavigationController | string | undefined, selectedPointerOverride?: string | undefined): string {

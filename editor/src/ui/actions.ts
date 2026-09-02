@@ -63,6 +63,7 @@ const remove = (action: CommandAction, keyword: string, Command?: CommandConstru
 });
 const coreActions = [
   core('schema', '$schema', 'Set document schema', { kind: 'text' }, ['document']),
+  core('id', '$id', 'Set document id', { kind: 'text' }, ['document']),
   core('uses', '$uses', 'Set document uses', { kind: 'structured-list', item: 'text' }, ['document']),
   core('offers', '$offers', 'Set document offers', { kind: 'structured-object', family: 'offers' }, ['document']),
   core('type', 'type', 'Set type', { kind: 'select', options: [
@@ -92,6 +93,7 @@ const coreActions = [
 export const commandActions: readonly CommandAction[] = [
   ...coreActions.flatMap((action) => [action, remove(action, action.keyword!)]),
   { id: 'root.set', group: 'Root', label: 'Set document root', help: 'Use the selected reusable definition as the document root.', requiresValue: false, targets: ['declaration'], create: (pointer) => new SetRootCommand(pointer) },
+  { id: 'root.remove', group: 'Root', label: 'Remove document root', help: 'Remove the reusable document root selection.', requiresValue: false, targets: ['declaration'], create: () => new RemoveObjectMemberCommand('', '$root') },
   { id: 'namespace.add', group: 'Definitions', label: 'Add namespace', help: 'Add a named namespace under definitions.', valueLabel: 'Namespace name', control: { kind: 'text' }, capability: 'core', targets: ['document', 'namespace'], operation: 'add', create: (pointer, value, name) => new AddNamespaceCommand(pointer, name ?? String(value)) },
   { id: 'definition.add', group: 'Definitions', label: 'Add definition', help: 'Add a named schema to the selected namespace.', valueLabel: 'Type', control: { kind: 'schema-type' }, targets: ['document', 'namespace'], create: named(AddDefinitionCommand as unknown as CommandConstructor) },
   { id: 'definition.rename', group: 'Definitions', label: 'Rename definition', help: 'Rename the selected reusable definition when it has no references.', valueLabel: 'New name', control: { kind: 'text' }, targets: ['declaration'], create: (pointer, value) => new RenameDefinitionCommand(pointer, String(value)) },

@@ -1570,7 +1570,7 @@ export class RenameDefinitionCommand implements EditorCommand {
     if (context.definitionName === this.newName) return true;
     if (Object.prototype.hasOwnProperty.call(context.definitions, this.newName)) return false;
     const oldRef = `#${this.definitionPointer}`;
-    return definitionReferenceSites(session, this.definitionPointer, oldRef).length === 0;
+    return definitionReferenceSites(session, this.definitionPointer, oldRef).every((pointer) => pointer === '/$root');
   }
 
   execute(context: CommandContext): CommandResult {
@@ -1581,10 +1581,15 @@ export class RenameDefinitionCommand implements EditorCommand {
     const oldText = source.slice(keyOffsets.start, keyOffsets.end);
     const start = keyOffsets.start;
     const newText = JSON.stringify(this.newName);
-    const edit: TextEdit = { range: rangeFor(source, start, start + oldText.length), newText };
-    const editedSource = source.slice(0, start) + newText + source.slice(start + oldText.length);
-    const inverse: TextEdit = { range: rangeFor(editedSource, start, start + newText.length), newText: oldText };
-    return { edits: [edit], inverseEdits: [inverse] };
+    const edits: TextEdit[] = [{ range: rangeFor(source, start, start + oldText.length), newText }];
+    if (context.session.model?.rootPointer === this.definitionPointer) {
+      const rootNode = context.session.model.nodes.find((node) => node.pointer === '/$root');
+      if (!rootNode?.range) throw new Error('Root source range is unavailable.');
+      const namespacePointer = this.definitionPointer.slice(0, this.definitionPointer.lastIndexOf('/'));
+      const renamedPointer = `${namespacePointer}/${encodePointerPart(this.newName)}`;
+      edits.push({ range: rootNode.range, newText: JSON.stringify(`#${renamedPointer}`) });
+    }
+    return commandResultForEdits(source, edits);
   }
 }
 

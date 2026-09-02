@@ -173,19 +173,32 @@ export const editorStyles = `
 .js-kind { width:18px; flex:0 0 auto; color:var(--js-accent); text-align:center; }
 .js-kind .js-icon { width:16px; height:16px; }
 .js-tree-empty { margin:6px 9px; border:1px dashed var(--js-line); padding:12px; text-align:start; }
-.js-center { grid-column:3; grid-row:1; min-width:0; min-height:0; display:grid; grid-template-rows:34px 30px minmax(0,1fr); overflow:hidden; background:var(--js-bg); }
+.js-center { grid-column:3; grid-row:1; min-width:0; min-height:0; display:grid; grid-template-rows:34px 38px minmax(0,1fr); overflow:hidden; background:var(--js-bg); }
 .js-editor-tab { width:min(260px,45%); height:34px; display:flex; align-items:center; gap:6px; overflow:hidden; border-top:1px solid var(--js-accent); border-inline-end:1px solid var(--js-line); padding:0 10px; background:var(--js-bg); color:var(--js-text); }
 .js-editor-tab span:last-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.js-breadcrumbs { min-width:0; display:flex; align-items:center; gap:7px; overflow:hidden; border-bottom:1px solid var(--js-line); padding:0 12px; color:var(--js-quiet); white-space:nowrap; }
-.js-breadcrumbs strong { color:var(--js-muted); font-weight:500; }
+.js-schema-strip { min-width:0; display:grid; grid-template-columns:minmax(240px,1.25fr) minmax(180px,.75fr) auto; align-items:center; gap:8px; overflow:hidden; border-bottom:1px solid var(--js-line); padding:4px 10px; background:var(--js-chrome); }
+.js-schema-strip label { min-width:0; display:grid; grid-template-columns:auto minmax(0,1fr); align-items:center; gap:6px; color:var(--js-quiet); font-size:10px; text-transform:uppercase; }
+.js-schema-strip input { width:100%; min-width:0; height:28px; border:1px solid transparent; padding:2px 6px; background:transparent; color:var(--js-muted); font:11px/1.3 Consolas,monospace; }
+.js-schema-strip input:hover { border-color:var(--js-line); background:var(--js-canvas); }
+.js-schema-strip input:focus { border-color:var(--js-focus); background:var(--js-canvas); color:var(--js-text); }
+.js-schema-status { color:var(--js-error); font-size:11px; }
 .js-center>.js-view { grid-row:3; min-width:0; min-height:0; overflow:auto; }
 .js-view { padding:20px 24px 56px; }
 .js-sheet { width:min(980px,100%); margin:0 auto; }
 .js-type-head { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:16px; border-bottom:1px solid var(--js-line-strong); padding-bottom:16px; }
 .js-eyebrow { color:var(--js-accent); font:11px/1.3 Consolas,"Cascadia Code",monospace; text-transform:uppercase; }
 .js-type-head h1,.js-sheet>header h1 { margin:4px 0 5px; font-size:25px; line-height:1.18; font-weight:650; }
+.js-definition-name { width:100%; min-width:0; margin:2px 0 1px; border:1px solid transparent; padding:1px 3px; background:transparent; color:var(--js-text); font:650 25px/1.18 "Segoe UI",sans-serif; }
+.js-definition-name:hover,.js-definition-name:focus { border-color:var(--js-line); background:var(--js-canvas); }
+.js-definition-name:focus { border-color:var(--js-focus); outline:0; }
+.js-definition-description { width:100%; min-height:25px; max-height:120px; resize:none; overflow-y:auto; border:1px solid transparent; padding:2px 3px; background:transparent; color:var(--js-muted); line-height:1.45; }
+.js-definition-description:hover,.js-definition-description:focus { border-color:var(--js-line); background:var(--js-canvas); }
+.js-definition-description:focus { border-color:var(--js-focus); outline:0; color:var(--js-text); }
 .js-description { margin:0; color:var(--js-muted); line-height:1.45; }
 .js-type-head>.js-chip { align-self:start; }
+.js-type-badges { display:flex; align-items:center; gap:8px; }
+.js-root-toggle { min-height:26px; display:flex; align-items:center; gap:5px; border:1px solid var(--js-line); border-radius:3px; padding:0 7px; color:var(--js-muted); font-size:11px; }
+.js-root-toggle:has(input:checked) { border-color:var(--js-accent); color:var(--js-text); }
 .js-section-head { display:flex; align-items:center; gap:8px; margin:20px 0 7px; }
 .js-section-head>div:first-child { display:flex; align-items:baseline; gap:7px; }
 .js-section-head h2,.js-sheet h2 { margin:0; font-size:13px; line-height:1.35; }
@@ -320,6 +333,18 @@ export const editorStyles = `
 .js-empty-actions { display:flex; gap:7px; margin-top:18px; }
 .js-empty-actions button { height:30px; border:1px solid var(--js-line-strong); border-radius:3px; padding:0 13px; background:var(--js-raised); }
 .js-empty-actions .js-primary { border-color:var(--js-accent); background:var(--js-accent); color:var(--js-on-accent); font-weight:650; }
+.js-type-creator { width:min(760px,100%); margin:28px auto; }
+.js-type-creator h1 { margin:5px 0; font-size:25px; }
+.js-type-name { width:min(360px,100%); display:grid; gap:5px; margin-top:20px; color:var(--js-muted); font-size:11px; }
+.js-type-name input { height:32px; padding:4px 8px; }
+.js-composite-choices { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin-top:12px; }
+.js-composite-choice { min-height:76px; display:grid; grid-template-columns:32px minmax(0,1fr); align-items:center; gap:9px; border:1px solid var(--js-line); border-radius:3px; padding:10px; background:var(--js-panel); color:var(--js-muted); text-align:start; }
+.js-composite-choice:hover,.js-composite-choice:focus-visible { border-color:var(--js-accent); background:var(--js-selected); color:var(--js-text); }
+.js-composite-choice>.js-icon { width:25px; height:25px; color:var(--js-accent); }
+.js-composite-choice span { min-width:0; display:grid; gap:3px; }
+.js-composite-choice strong { color:var(--js-text); font-size:13px; }
+.js-composite-choice small { color:var(--js-quiet); line-height:1.3; }
+.js-type-create-cancel { min-height:30px; border:1px solid var(--js-line); border-radius:3px; padding:0 10px; background:var(--js-raised); color:var(--js-muted); }
 .js-empty { padding:16px; color:var(--js-muted); text-align:center; }
 .js-inspector { grid-column:4; grid-row:1; min-width:0; min-height:0; overflow:auto; border-inline-start:1px solid var(--js-line); background:var(--js-chrome); }
 .js-inspector>section,.js-inspector-section { padding:12px 10px; border-bottom:1px solid var(--js-line); }
@@ -353,7 +378,7 @@ export const editorStyles = `
 .js-graph { display:flex; flex-direction:column; padding:0; background:var(--js-canvas); }
 .js-workbench[data-active-mode="graph"]>.js-inspector { display:none; }
 .js-workbench[data-active-mode="graph"]>.js-center { grid-column:3/5; grid-template-rows:minmax(0,1fr); }
-.js-workbench[data-active-mode="graph"]>.js-center>.js-editor-tab,.js-workbench[data-active-mode="graph"]>.js-center>.js-breadcrumbs { display:none; }
+.js-workbench[data-active-mode="graph"]>.js-center>.js-editor-tab,.js-workbench[data-active-mode="graph"]>.js-center>.js-schema-strip { display:none; }
 .js-workbench[data-active-mode="graph"]>.js-center>.js-view { grid-row:1; }
 .js-workbench[data-active-mode="graph"]>.js-problems { grid-column:1/5; }
 .js-workbench[data-active-mode="source"]>.js-outline,.js-workbench[data-active-mode="source"]>.js-inspector,.js-workbench[data-active-mode="instance"]>.js-outline,.js-workbench[data-active-mode="instance"]>.js-inspector,.js-workbench[data-active-mode="conversion"]>.js-outline,.js-workbench[data-active-mode="conversion"]>.js-inspector,.js-workbench[data-active-mode="analysis"]>.js-outline,.js-workbench[data-active-mode="analysis"]>.js-inspector { display:none; }
@@ -779,10 +804,13 @@ export const editorStyles = `
   .js-center,.js-problems { grid-column:1; }
   .js-outline.js-drawer-open { inset-inline-start:0; }
   .js-editor-tab { width:70%; }
-  .js-breadcrumbs { font-size:12px; }
+  .js-schema-strip { grid-template-columns:1fr; height:auto; overflow:visible; }
+  .js-schema-strip label { grid-template-columns:76px minmax(0,1fr); }
+  .js-center { grid-template-rows:44px auto minmax(0,1fr); }
   .js-view { padding:14px 12px 48px; }
   .js-type-head { display:block; }
   .js-type-head>.js-chip { margin-top:10px; }
+  .js-composite-choices { grid-template-columns:1fr; }
   .js-row { grid-template-columns:minmax(80px,1fr) minmax(100px,1fr) 44px; }
   .js-row.js-header .js-cell:nth-child(3),.js-row.js-header .js-cell:nth-child(4),.js-row.js-header .js-cell:nth-child(5) { display:none; }
   .js-inline-property-row,.js-effective-row { grid-template-areas:"name type action" "nullable identity presence" ". composite composite" ". description description"; }

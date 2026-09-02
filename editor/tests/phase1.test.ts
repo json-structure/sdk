@@ -1600,11 +1600,16 @@ describe('Phase 1 vertical slice', () => {
     expect(new DeleteDefinitionCommand('/definitions/User').canExecute({ session: qualifierTypeRef, documentVersion: 1 })).toBe(false);
 
     const rootRef = new DocumentSession('memory://root-ref', '{"$root":"#/definitions/User","definitions":{"User":{"type":"object"}}}');
-    expect(new RenameDefinitionCommand('/definitions/User', 'Profile').canExecute({ session: rootRef, documentVersion: 1 })).toBe(false);
+    const renameRoot = new RenameDefinitionCommand('/definitions/User', 'Profile');
+    expect(renameRoot.canExecute({ session: rootRef, documentVersion: 1 })).toBe(true);
+    const renamedRootText = [...renameRoot.execute({ session: rootRef, documentVersion: 1 }).edits]
+      .sort((left, right) => right.range.startOffset! - left.range.startOffset!)
+      .reduce((source, edit) => source.slice(0, edit.range.startOffset) + edit.newText + source.slice(edit.range.endOffset), rootRef.snapshot().text);
+    expect(JSON.parse(renamedRootText)).toEqual({ $root: '#/definitions/Profile', definitions: { Profile: { type: 'object' } } });
     expect(new DeleteDefinitionCommand('/definitions/User').canExecute({ session: rootRef, documentVersion: 1 })).toBe(false);
 
     const encodedRootRef = new DocumentSession('memory://encoded-root-ref', '{"$root":"#%2Fdefinitions%2FUser","definitions":{"User":{"type":"object"},"Team":{"type":"object"}}}');
-    expect(new RenameDefinitionCommand('/definitions/User', 'Profile').canExecute({ session: encodedRootRef, documentVersion: 1 })).toBe(false);
+    expect(new RenameDefinitionCommand('/definitions/User', 'Profile').canExecute({ session: encodedRootRef, documentVersion: 1 })).toBe(true);
     expect(new DeleteDefinitionCommand('/definitions/User').canExecute({ session: encodedRootRef, documentVersion: 1 })).toBe(false);
     expect(new RenameDefinitionCommand('/definitions/Team', 'Group').canExecute({ session: encodedRootRef, documentVersion: 1 })).toBe(true);
     expect(new DeleteDefinitionCommand('/definitions/Team').canExecute({ session: encodedRootRef, documentVersion: 1 })).toBe(true);
@@ -1653,7 +1658,14 @@ describe('Phase 1 vertical slice', () => {
         ? withRelations(JSON.stringify(value))
         : JSON.stringify(value);
       const session = new DocumentSession('memory://escaped-reference', document);
-      expect(new RenameDefinitionCommand(definitionPointer, 'Renamed').canExecute({ session, documentVersion: 1 })).toBe(false);
+      const rename = new RenameDefinitionCommand(definitionPointer, 'Renamed');
+      expect(rename.canExecute({ session, documentVersion: 1 })).toBe(Object.prototype.hasOwnProperty.call(site, '$root'));
+      if (Object.prototype.hasOwnProperty.call(site, '$root')) {
+        const renamed = [...rename.execute({ session, documentVersion: 1 }).edits]
+          .sort((left, right) => right.range.startOffset! - left.range.startOffset!)
+          .reduce((text, edit) => text.slice(0, edit.range.startOffset) + edit.newText + text.slice(edit.range.endOffset), document);
+        expect(JSON.parse(renamed).$root).toBe('#/definitions/Renamed');
+      }
       expect(new DeleteDefinitionCommand(definitionPointer).canExecute({ session, documentVersion: 1 })).toBe(false);
     }
   });

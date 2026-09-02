@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { catalogBrowserView, designView, graphView, instanceView, mobileModeSelect, prefersReducedMotion, problemsView, projectProperties, shouldFitGraphOnEntry, workbenchFocusIdentityAttributes, workbenchShell, workbenchTitleChrome } from '../src/ui/index.js';
+import { catalogBrowserView, compositeSchema, designView, graphView, instanceView, mobileModeSelect, prefersReducedMotion, problemsView, projectProperties, shouldFitGraphOnEntry, workbenchFocusIdentityAttributes, workbenchShell, workbenchTitleChrome } from '../src/ui/index.js';
 import { BUNDLED_SEMANTIC_PROVIDER, CatalogRegistry, bundledCatalogResult } from '../src/catalogs.js';
 import { DocumentSession } from '../src/session.js';
 import { resolveEffectiveMembers } from '../src/phase4/effective-members.js';
@@ -92,11 +92,41 @@ describe('workbench interaction markup', () => {
     expect(html).toContain('<span>Domain</span><small>2</small>');
     expect(html).toContain('<span>Shared</span><small>1</small>');
     expect(html).toContain('data-select="/definitions/Domain/Person"');
+    expect(html).toContain('class="js-schema-strip"');
+    expect(html).toContain('data-document-member="$schema"');
+    expect(html).toContain('data-document-member="$id"');
+    expect(html).not.toContain('class="js-breadcrumbs"');
 
     const convertHtml = workbenchShell(snapshot, 'navigation.struct.json', definitions, '/definitions/Domain/Person', [], '/definitions/Domain/Person', 'conversion', false);
     expect(convertHtml).toContain('data-mobile-drawer="types" aria-controls="js-outline" aria-haspopup="dialog" aria-expanded="false" hidden');
     expect(convertHtml).toContain('data-mobile-drawer="inspector" aria-controls="js-inspector" aria-haspopup="dialog" aria-expanded="false" hidden');
     expect(convertHtml).not.toContain('<strong>Person</strong>');
+  });
+
+  it('starts from composite type choices without opening the generic action editor', () => {
+    const html = designView(undefined, undefined, undefined, [], undefined);
+    expect(html).toContain('Choose the first composite type');
+    expect(html).toContain('data-type-create-name value="Root"');
+    for (const type of ['object', 'array', 'set', 'map', 'tuple', 'choice']) {
+      expect(html).toContain(`data-type-create="${type}"`);
+    }
+    expect(html).not.toContain('data-command="definition.add"');
+    expect(html).not.toContain('class="js-inline-editor"');
+    expect(compositeSchema('object')).toEqual({ type: 'object', properties: {} });
+    expect(compositeSchema('array')).toEqual({ type: 'array', items: { type: 'string' } });
+    expect(compositeSchema('map')).toEqual({ type: 'map', values: { type: 'string' } });
+    expect(compositeSchema('tuple')).toEqual({ type: 'tuple', properties: {}, tuple: [] });
+    expect(compositeSchema('choice')).toEqual({ type: 'choice', choices: {} });
+  });
+
+  it('renders the selected reusable root as a mutually exclusive type flag', () => {
+    const pointer = '/definitions/Root';
+    const html = designView('Root', 'object', undefined, [], pointer, [], [], 'local', undefined, undefined, [], undefined, new Set(), false, false, pointer, true);
+    expect(html).toContain(`data-root-toggle="${pointer}" checked`);
+    expect(html).toContain(`data-inline-definition-name="${pointer}" value="Root"`);
+    expect(html).toContain(`data-inline-definition-description="${pointer}" placeholder="No description yet."`);
+    expect(html).toContain('> Root</label>');
+    expect(html).not.toContain('Document root');
   });
 
   it('renders native inline property controls inside table cells', () => {
