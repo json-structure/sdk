@@ -99,9 +99,8 @@ export const editorStyles = `
 .js-shell { height:100%; min-height:0; display:grid; grid-template-rows:44px 36px minmax(0,1fr) 22px; overflow:hidden; background:var(--js-bg); }
 .js-title,.js-document-toolbar,.js-status { display:flex; align-items:center; background:var(--js-chrome); }
 .js-title { min-width:0; padding:0 10px; gap:9px; border-bottom:1px solid var(--js-line); user-select:none; }
-.js-mark,.js-empty-mark { display:inline-block; position:relative; border:2px solid var(--js-accent); transform:rotate(45deg); }
-.js-mark { width:16px; height:16px; }
-.js-mark::after,.js-empty-mark::after { content:""; position:absolute; inset:3px; border:1px solid var(--js-accent-strong); }
+.js-product-logo { width:24px; height:24px; flex:0 0 auto; }
+.js-empty-logo { width:88px; height:82px; margin-bottom:12px; }
 .js-title strong { font-weight:650; }
 .js-file { min-width:0; margin-inline:auto; overflow:hidden; color:var(--js-muted); text-overflow:ellipsis; white-space:nowrap; }
 .js-command-trigger { width:44px; height:44px; flex:0 0 44px; border:1px solid transparent; border-radius:3px; background:transparent; color:var(--js-muted); font:11px/1 Consolas,monospace; }
@@ -251,7 +250,6 @@ export const editorStyles = `
 .js-value-actions button { width:28px; height:26px; border:1px solid var(--js-line); border-radius:3px; background:var(--js-raised); }
 .js-value-item:not(.js-value-selected) .js-value-actions { opacity:.35; }
 .js-empty-state { height:100%; min-height:330px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:32px; text-align:center; }
-.js-empty-mark { width:38px; height:38px; margin-bottom:22px; }
 .js-empty-state h1 { margin:6px 0; font-size:24px; font-weight:600; }
 .js-empty-state p { max-width:430px; margin:0; color:var(--js-muted); line-height:1.5; }
 .js-empty-actions { display:flex; gap:7px; margin-top:18px; }
@@ -494,7 +492,7 @@ export const editorStyles = `
 .js-library-resolve span { margin-inline-start:5px; color:var(--js-ok); font-size:9px; }
 .js-library-detail { min-width:0; min-height:0; overflow:auto; background:var(--js-chrome); }
 .js-library-empty-detail { min-height:100%; display:grid; place-content:center; justify-items:center; padding:28px; color:var(--js-muted); text-align:center; }
-.js-library-empty-detail .js-empty-mark { width:28px; height:28px; margin-bottom:12px; }
+.js-library-logo { width:48px; height:45px; margin-bottom:12px; }
 .js-library-empty-detail h2 { margin:0 0 5px; }
 .js-library-empty-detail p { max-width:280px; margin:0; }
 .js-library-consume { padding:12px; }

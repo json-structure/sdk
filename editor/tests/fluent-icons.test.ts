@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { fluentIcon, type FluentIconName } from '../src/ui/fluent-icons.js';
+import { jsonStructureLogo } from '../src/ui/brand-logo.js';
 
 describe('embedded Fluent UI icons', () => {
   it('renders the workbench icon set as decorative inline SVG', () => {
@@ -15,5 +16,12 @@ describe('embedded Fluent UI icons', () => {
       expect(markup).toContain('focusable="false"');
       expect(markup).toContain('<path d="');
     }
+  });
+
+  it('embeds the JSON Structure product logo', () => {
+    const markup = jsonStructureLogo();
+    expect(markup).toContain('viewBox="0 0 1218 1138"');
+    expect(markup).toContain('fill="#215F9A"');
+    expect(markup).toContain('fill="#4E95D9"');
   });
 });

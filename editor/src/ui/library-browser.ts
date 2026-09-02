@@ -1,4 +1,5 @@
 import type { LibraryDocument, LibraryEntry } from '../libraries/contracts.js';
+import { jsonStructureLogo } from './brand-logo.js';
 import type { LibraryCatalogEntry, LibraryHostResolution, LibraryProviderSummary } from '../libraries/host-runtime.js';
 import type { RefactoringPlan } from '../phase4/refactoring.js';
 
@@ -114,7 +115,7 @@ function consumeBrowser(
   plan: RefactoringPlan | undefined,
   declarationPointers: readonly string[],
 ): string {
-  if (!document) return `<section class="js-library-empty-detail"><div class="js-empty-mark" aria-hidden="true"></div><h2>Select a library version</h2><p>Its trust, source, declarations, and available consume operations will appear here.</p></section>`;
+  if (!document) return `<section class="js-library-empty-detail">${jsonStructureLogo('js-library-logo')}<h2>Select a library version</h2><p>Its trust, source, declarations, and available consume operations will appear here.</p></section>`;
 
   const provenance = resolution?.provenance;
   const guarantee = resolution?.resolution.label ?? 'pinned-reproducible';
