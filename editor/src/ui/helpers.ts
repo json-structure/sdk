@@ -77,7 +77,7 @@ export function projectProperties(definition: DefinitionProjection | undefined):
   return Object.entries(definition.properties).map(([name, schema]) => ({
     name,
     pointer: `${definition.pointer}/properties/${escapePointer(name)}`,
-    type: displayType(schema.type),
+    type: displaySchemaTypeValue(schema.type),
     required: required.has(name),
     ...(requiredAlternatives ? { requiredAlternatives: true } : {}),
     description: typeof schema.description === 'string' ? schema.description : undefined
@@ -276,12 +276,13 @@ export function diagnosticsForPointer(diagnostics: readonly Diagnostic[], pointe
   return diagnostics.filter((diagnostic) => !diagnostic.location?.pointer || diagnostic.location.pointer === pointer || diagnostic.location.pointer.startsWith(`${pointer}/`));
 }
 
-function displayType(value: unknown): string {
+/** Formats a Core type value, including unions and references, for the workbench. */
+export function displaySchemaTypeValue(value: unknown): string {
   if (typeof value === 'string') return value;
   const target = value && typeof value === 'object' && !Array.isArray(value) && typeof (value as Record<string, unknown>).$ref === 'string'
     ? (value as Record<string, string>).$ref : undefined;
   if (target) return pointerLabel(normalizeRef(target) ?? target);
-  if (Array.isArray(value)) return value.map(displayType).join(' or ');
+  if (Array.isArray(value)) return value.map(displaySchemaTypeValue).join(' or ');
   return value === undefined ? 'unknown' : displayValue(value);
 }
 

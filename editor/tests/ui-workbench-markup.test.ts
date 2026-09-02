@@ -119,6 +119,24 @@ describe('workbench interaction markup', () => {
     expect(html).toContain('data-property-details="/definitions/Person/properties/id"');
   });
 
+  it('preserves nullable unions in local and effective property type displays', () => {
+    const pointer = '/definitions/Place/properties/latitude';
+    const localHtml = designView('Place', 'object', undefined, [{
+      name: 'latitude', pointer, type: 'double or null', required: false, schema: { type: ['double', 'null'] },
+    }], pointer);
+    expect(localHtml).toContain('selected>double or null</option>');
+    expect(localHtml).not.toContain('<option value="type:any" selected>');
+
+    const document = {
+      definitions: {
+        Place: { type: 'object', properties: { latitude: { type: ['double', 'null'] } } }
+      }
+    };
+    const effective = resolveEffectiveMembers(document, '#/definitions/Place');
+    const effectiveHtml = designView('Place', 'object', undefined, [], pointer, [], [], 'effective', effective);
+    expect(effectiveHtml).toContain('double or null');
+  });
+
   it('renders the annotations panel directly below its property row', () => {
     const pointer = '/definitions/Person/properties/name';
     const html = designView('Person', 'object', undefined, [{

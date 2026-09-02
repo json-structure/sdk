@@ -4,7 +4,7 @@ import { DocumentSession } from '../session.js';
 import { loadExternalDocuments } from '../external-documents.js';
 import { actionById, commandActions, type CommandAction } from './actions.js';
 import { actionAvailability, catalogFamilyForAction, parseActionValue, valueAtPointer } from './action-runtime.js';
-import { diagnosticsForPointer, isInlineRootSchema, pointerLabel, projectGraph, projectInspectorSections, projectProperties, projectSchemaInspectorSections, type InspectorSection, type PropertyRow } from './helpers.js';
+import { diagnosticsForPointer, displaySchemaTypeValue, isInlineRootSchema, pointerLabel, projectGraph, projectInspectorSections, projectProperties, projectSchemaInspectorSections, type InspectorSection, type PropertyRow } from './helpers.js';
 import { GraphNavigationController } from './graph-navigation.js';
 import { ForceGraphLayout, graphEdgePath, type ForceGraphPosition } from './force-graph-layout.js';
 import { SemanticGraphController, type SemanticGraphView } from './semantic-graph.js';
@@ -1962,7 +1962,8 @@ function propertyEditorRow(row: PropertyRow, selected: boolean, expanded: boolea
 function inlinePropertyTypeValue(schema: Readonly<Record<string, unknown>>): string {
   if (typeof schema.type === 'string') return `type:${schema.type}`;
   const reference = relationReference(schema.type);
-  return reference ? `ref:${reference}` : '';
+  if (reference) return `ref:${reference}`;
+  return Array.isArray(schema.type) ? `union:${JSON.stringify(schema.type)}` : '';
 }
 
 function definitionTypeLabel(pointer: string): string {
@@ -1970,6 +1971,13 @@ function definitionTypeLabel(pointer: string): string {
 }
 
 function inlinePropertyTypeLabel(value: string): string {
+  if (value.startsWith('union:')) {
+    try {
+      return displaySchemaTypeValue(JSON.parse(value.slice('union:'.length)));
+    } catch {
+      return 'union';
+    }
+  }
   return value.startsWith('ref:#/') ? definitionTypeLabel(value.slice('ref:#'.length)) : value.replace(/^(?:type|ref):/, '');
 }
 
@@ -2076,8 +2084,7 @@ function effectiveSchemaType(document: unknown, pointer: string): string | undef
 }
 
 function displaySchemaType(schema: Readonly<Record<string, unknown>>): string {
-  if (typeof schema.type === 'string') return schema.type;
-  return relationReference(schema.type) ? pointerLabel(relationReference(schema.type)!) : 'schema';
+  return displaySchemaTypeValue(schema.type);
 }
 
 function formatRelationScope(scope: string | readonly string[] | undefined): string {

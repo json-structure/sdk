@@ -24,6 +24,22 @@ describe('UI projection helpers', () => {
     ]);
   });
 
+  it('projects nullable union property types without collapsing them to any', () => {
+    const session = new DocumentSession('memory://nullable-union', JSON.stringify({
+      definitions: {
+        Place: {
+          type: 'object',
+          properties: {
+            name: { type: ['string', 'null'] },
+            latitude: { type: ['double', 'null'] }
+          }
+        }
+      }
+    }));
+    const place = session.model!.projections.definitions.find((definition) => definition.name === 'Place');
+    expect(projectProperties(place).map((property) => property.type)).toEqual(['string or null', 'double or null']);
+  });
+
   it('projects reusable types, inheritance, and regular references', () => {
     const graph = projectGraph(new DocumentSession('memory://ui', text).snapshot());
     expect(graph.nodes.map((node) => node.label)).toEqual(['Base', 'Person']);
