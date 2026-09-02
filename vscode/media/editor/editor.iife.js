@@ -136,7 +136,7 @@ var JsonStructureEditorWebview=(function(e){Object.defineProperty(e,Symbol.toStr
 .js-app-menu-popup button:hover,.js-app-menu-popup button:focus-visible { background:var(--js-selected); }
 .js-app-menu-popup kbd { color:var(--js-quiet); font:11px/1 Consolas,"Cascadia Code",monospace; }
 .js-app-menu-popup hr { height:1px; margin:4px 6px; border:0; background:var(--js-line); }
-.js-command-center { min-width:0; height:24px; display:flex; align-items:center; justify-content:center; gap:7px; border:1px solid var(--js-line); border-radius:4px; padding:0 10px; background:var(--js-panel); color:var(--js-muted); -webkit-app-region:no-drag; }
+.js-command-center { width:min(520px,72vw); min-width:0; height:24px; justify-self:center; display:flex; align-items:center; justify-content:center; gap:7px; border:1px solid var(--js-line); border-radius:4px; padding:0 10px; background:var(--js-panel); color:var(--js-muted); -webkit-app-region:no-drag; }
 .js-command-center:hover { border-color:var(--js-line-strong); background:var(--js-raised); color:var(--js-text); }
 .js-command-center span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .js-command-center .js-icon { width:14px; height:14px; }

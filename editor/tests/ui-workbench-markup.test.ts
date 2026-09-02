@@ -42,10 +42,15 @@ describe('workbench interaction markup', () => {
   it('renders VS Code-style integrated Electron chrome without duplicate product or theme rows', () => {
     const html = workbenchTitleChrome('example.struct.json', 'integrated');
     expect(html).toContain('class="js-titlebar"');
+    expect(html).toContain('class="js-titlebar-drag"');
     expect(html).toContain('role="menubar"');
     expect(html).toContain('class="js-command-center"');
     expect(html).toContain('data-theme-choice="dark"');
     expect(html).not.toContain('class="js-theme"');
+    expect(editorStyles).toContain('-webkit-app-region:drag');
+    expect(editorStyles).toContain('-webkit-app-region:no-drag');
+    expect(editorStyles).toContain('width:min(520px,72vw)');
+    expect(editorStyles).toContain('justify-self:center');
     expect(workbenchTitleChrome('example.struct.json', 'embedded')).toBe('');
   });
 

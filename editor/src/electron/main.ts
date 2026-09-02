@@ -26,6 +26,10 @@ const coreLibraryPath = app.isPackaged ? join(process.resourcesPath, 'libraries'
 const coreLibraryEntry = { id: 'financial-types', name: 'Financial Types', description: 'A bundled JSON Structure type library sample.', versions: [{ version: '1.0.0', documentUri: pathToFileURL(coreLibraryPath).toString(), isDefault: true }] } as const;
 let libraryRuntime: Promise<LibraryHostRuntime> | undefined;
 const approvedLibraryRequests = new Set<string>();
+function activeMainWindow(): BrowserWindow | undefined {
+  return mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
+}
+
 const conversionHost = new NodeConversionHost({
   runtimeRoot,
   destination: async () => {
@@ -33,11 +37,11 @@ const conversionHost = new NodeConversionHost({
     return result.canceled ? undefined : result.filePaths[0];
   },
   launch: async (path) => { const error = await shell.openPath(path); if (error) throw new Error(error); },
-  progress: (request, phase, completed, total, message) => mainWindow?.webContents.send('conversion:progress', { protocolVersion: PROTOCOL_VERSION, requestId: request.requestId, documentVersion: request.documentVersion, phase, percent: total > 0 ? Math.max(0, Math.min(100, completed / total * 100)) : undefined, message }),
+  progress: (request, phase, completed, total, message) => activeMainWindow()?.webContents.send('conversion:progress', { protocolVersion: PROTOCOL_VERSION, requestId: request.requestId, documentVersion: request.documentVersion, phase, percent: total > 0 ? Math.max(0, Math.min(100, completed / total * 100)) : undefined, message }),
 });
 
 function sendHostCommand(command: 'open' | 'save' | 'save-as' | 'show-commands'): void {
-  mainWindow?.webContents.send('file:command', command);
+  activeMainWindow()?.webContents.send('file:command', command);
 }
 
 function installApplicationMenu(): void {
@@ -118,7 +122,10 @@ function registerIpcHandlers(): void {
       'reset-zoom': () => contents.setZoomFactor(1),
       'zoom-in': () => contents.setZoomFactor(Math.min(3, contents.getZoomFactor() + 0.1)),
       'zoom-out': () => contents.setZoomFactor(Math.max(0.5, contents.getZoomFactor() - 0.1)),
-      'toggle-fullscreen': () => mainWindow?.setFullScreen(!mainWindow.isFullScreen()),
+      'toggle-fullscreen': () => {
+        const window = BrowserWindow.fromWebContents(contents);
+        if (window && !window.isDestroyed()) window.setFullScreen(!window.isFullScreen());
+      },
       quit: () => app.quit(),
     };
     const execute = commands[command];
@@ -132,7 +139,7 @@ function registerIpcHandlers(): void {
       : theme === 'contrast'
         ? { color: '#000000', symbolColor: '#ffffff' }
         : { color: '#181818', symbolColor: '#cccccc' };
-    mainWindow?.setTitleBarOverlay({ ...colors, height: 35 });
+    activeMainWindow()?.setTitleBarOverlay({ ...colors, height: 35 });
   });
   handleTrusted('resource:read', async (_event, uri: string) => {
     const resource = await readResource(uri, openedDocumentRoot, maxImportedResourceBytes, async (requestedUri) => (await getLibraryRuntime()).readResource(requestedUri));
@@ -179,7 +186,7 @@ function handleTrusted(channel: string, listener: (event: IpcMainInvokeEvent, ..
     const expectedWindow = mainWindow;
     const expectedUrl = allowedRendererUrl;
     const frame = event.senderFrame;
-    if (!expectedWindow || !expectedUrl || !frame || !isTrustedIpcSender({
+    if (!expectedWindow || expectedWindow.isDestroyed() || !expectedUrl || !frame || !isTrustedIpcSender({
       senderId: event.sender.id,
       expectedSenderId: expectedWindow.webContents.id,
       senderDestroyed: event.sender.isDestroyed(),
@@ -207,7 +214,8 @@ async function approveLibraryRequest(request: ElectronLibraryApprovalRequest): P
   if (request.kind === 'operation') return true;
   const key = JSON.stringify(request);
   if (approvedLibraryRequests.has(key)) return true;
-  if (!mainWindow) return false;
+  const window = activeMainWindow();
+  if (!window) return false;
   const detail = request.kind === 'provider'
     ? `Provider: ${request.providerId}`
     : request.kind === 'origin'
@@ -215,7 +223,7 @@ async function approveLibraryRequest(request: ElectronLibraryApprovalRequest): P
       : request.kind === 'uri'
         ? `Provider: ${request.providerId}\nResource: ${request.uri}`
         : `Credential: ${request.request.credentialId}\nFrom: ${request.request.source.origin}\nTo: ${request.request.target.origin}`;
-  const result = await dialog.showMessageBox(mainWindow, {
+  const result = await dialog.showMessageBox(window, {
     type: 'warning',
     title: 'Approve library access',
     message: request.kind === 'credential-binding' ? 'Allow this provider to use the stored credential?' : 'Trust this library provider or resource for this session?',
@@ -236,7 +244,7 @@ async function canonicalPath(path: string): Promise<string> {
 }
 
 async function createWindow(): Promise<void> {
-  mainWindow = new BrowserWindow({
+  const window = new BrowserWindow({
     width: 1280,
     height: 800,
     icon: appIconPath,
@@ -250,27 +258,33 @@ async function createWindow(): Promise<void> {
       nodeIntegration: false,
     },
   });
+  mainWindow = window;
   const developmentUrl = selectDevelopmentUrl(app.isPackaged, process.env.VITE_DEV_SERVER_URL);
   allowedRendererUrl = developmentUrl ?? pathToFileURL(join(rendererDirectory, 'index.html')).href;
   const expectedUrl = allowedRendererUrl;
-  mainWindow.webContents.setWindowOpenHandler(() => deniedWindowOpen);
-  mainWindow.webContents.on('will-navigate', (event, url) => {
+  window.webContents.setWindowOpenHandler(() => deniedWindowOpen);
+  window.webContents.on('will-navigate', (event, url) => {
     if (!isAllowedRendererNavigation(url, expectedUrl)) event.preventDefault();
   });
-  mainWindow.on('closed', () => {
-    if (mainWindow?.webContents.id === eventWindowId) { mainWindow = null; allowedRendererUrl = undefined; }
+  window.on('closed', () => {
+    if (mainWindow === window) { mainWindow = null; allowedRendererUrl = undefined; }
   });
-  const eventWindowId = mainWindow.webContents.id;
   const initialFile = await readInitialFile();
-  if (developmentUrl) await mainWindow.loadURL(developmentUrl);
-  else await mainWindow.loadFile(join(rendererDirectory, 'index.html'));
-  if (initialFile) mainWindow.webContents.send('file:opened', initialFile);
+  if (window.isDestroyed()) return;
+  try {
+    if (developmentUrl) await window.loadURL(developmentUrl);
+    else await window.loadFile(join(rendererDirectory, 'index.html'));
+  } catch (error) {
+    if (window.isDestroyed()) return;
+    throw error;
+  }
+  if (initialFile && !window.isDestroyed()) window.webContents.send('file:opened', initialFile);
 }
 
 app.on('open-file', (event, path) => {
   event.preventDefault();
   pendingPath = path;
-  if (mainWindow) void readInitialFile().then((file) => file && mainWindow?.webContents.send('file:opened', file));
+  if (activeMainWindow()) void readInitialFile().then((file) => file && activeMainWindow()?.webContents.send('file:opened', file));
 });
 
 app.whenReady().then(() => {
