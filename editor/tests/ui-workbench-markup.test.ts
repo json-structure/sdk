@@ -119,6 +119,9 @@ describe('workbench interaction markup', () => {
     expect(html).toContain('value="type:string"');
     expect(html).not.toContain('value="type:object"');
     expect(html).not.toContain('value="type:array"');
+    expect(html).toContain('<optgroup label="Collection types">');
+    expect(html).toContain('array&lt;string&gt;');
+    expect(html).toContain('map&lt;string, string&gt;');
     expect(html).toContain('<optgroup label="Reusable types">');
     expect(html).toContain('value="ref:#/definitions/Common/Address"');
     expect(html).toContain('>Common.Address</option>');
@@ -126,6 +129,35 @@ describe('workbench interaction markup', () => {
     expect(html).toContain('<span class="js-type-drop-zone" aria-hidden="true"></span>');
     expect(html).toContain('<div class="js-cell js-action-cell" role="cell"><button class="js-row-action"');
     expect(html).toContain('data-property-details="/definitions/Person/properties/id"');
+  });
+
+  it('renders collection schemas as editable expressions instead of opaque type pills', () => {
+    const pointer = '/definitions/Route/properties/waypoints';
+    const html = designView('Route', 'object', undefined, [{
+      name: 'waypoints', pointer, type: 'array', required: false,
+      schema: { type: 'array', items: { type: { $ref: '#/definitions/Geo/Point' } } },
+    }], pointer, [], [], 'local', undefined, undefined, [
+      { name: 'Point', pointer: '/definitions/Geo/Point' },
+    ]);
+    expect(html).toContain('array&lt;Geo.Point&gt;');
+    expect(html).toContain('class="js-cell js-composite-cell"');
+    expect(html).toContain('class="js-collection-kind">array</span>');
+    expect(html).toContain('>Item type</span>');
+    expect(html).toContain(`data-property-pointer="${pointer}/items"`);
+    expect(html).toContain(`data-inline-type-remove="ref:#/definitions/Geo/Point"`);
+  });
+
+  it('renders structured collection branches inside nullable unions without losing members', () => {
+    const pointer = '/definitions/Index/properties/byName';
+    const html = designView('Index', 'object', undefined, [{
+      name: 'byName', pointer, type: 'map or null', required: false,
+      schema: { type: [{ type: 'map', values: { type: 'uuid' } }, 'null'] },
+    }], pointer);
+    expect(html).toContain('map&lt;string, uuid&gt;');
+    expect(html).toContain('class="js-collection-kind">map</span>');
+    expect(html).toContain('>Value type</span>');
+    expect(html).toContain(`data-property-pointer="${pointer}/type/0/values"`);
+    expect(html).toContain('checked> nullable');
   });
 
   it('preserves nullable unions in local and effective property type displays', () => {

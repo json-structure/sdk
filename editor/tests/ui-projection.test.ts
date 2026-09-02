@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DocumentSession } from '../src/session.js';
 import { diagnosticsForPointer, filterTypes, isInlineRootSchema, pointerLabel, projectGraph, projectInspectorSections, projectProperties, projectSchemaInspectorSections } from '../src/ui/helpers.js';
+import { propertySchemaWithTypes } from '../src/ui/index.js';
 
 const text = `{
   "definitions": {
@@ -38,6 +39,26 @@ describe('UI projection helpers', () => {
     }));
     const place = session.model!.projections.definitions.find((definition) => definition.name === 'Place');
     expect(projectProperties(place).map((property) => property.type)).toEqual(['string or null', 'double or null']);
+  });
+
+  it('moves collection structure into and out of union branches without stale keywords', () => {
+    const array = { type: 'array', items: { type: 'uuid' }, minItems: 1, description: 'Identifiers' };
+    expect(propertySchemaWithTypes(array, [{ type: 'array', items: { type: 'uuid' }, minItems: 1 }, 'null'])).toEqual({
+      type: [{ type: 'array', items: { type: 'uuid' }, minItems: 1 }, 'null'],
+      description: 'Identifiers',
+    });
+    expect(propertySchemaWithTypes({
+      type: [{ type: 'map', values: { type: 'string' } }, 'null'],
+      description: 'Lookup',
+    }, [{ type: 'map', values: { type: 'string' } }])).toEqual({
+      type: 'map',
+      values: { type: 'string' },
+      description: 'Lookup',
+    });
+    expect(propertySchemaWithTypes(array, ['string'])).toEqual({
+      type: 'string',
+      description: 'Identifiers',
+    });
   });
 
   it('projects reusable types, inheritance, and regular references', () => {

@@ -212,7 +212,7 @@ export const editorStyles = `
 .js-conflict span { color:var(--js-muted); overflow-wrap:anywhere; }
 .js-cell { min-width:0; overflow:hidden; padding:0 9px; text-overflow:ellipsis; white-space:nowrap; }
 .js-property-editor[aria-current="true"]>.js-row { background:var(--js-selected); box-shadow:inset 2px 0 var(--js-accent); }
-.js-inline-property-row,.js-effective-row { grid-template-areas:"name type nullable identity presence action" ". description description description description description"; align-items:start; }
+.js-inline-property-row,.js-effective-row { grid-template-areas:"name type nullable identity presence action" ". composite composite composite composite composite" ". description description description description description"; align-items:start; }
 .js-inline-property-row>.js-cell:nth-child(1),.js-effective-row>.js-cell:nth-child(1) { grid-area:name; }
 .js-inline-property-row>.js-cell:nth-child(2),.js-effective-row>.js-cell:nth-child(2) { grid-area:type; }
 .js-inline-property-row>.js-cell:nth-child(3),.js-effective-row>.js-cell:nth-child(3) { grid-area:nullable; }
@@ -220,6 +220,7 @@ export const editorStyles = `
 .js-inline-property-row>.js-cell:nth-child(5),.js-effective-row>.js-cell:nth-child(5) { grid-area:presence; }
 .js-inline-property-row>.js-cell:nth-child(6),.js-effective-row>.js-cell:nth-child(6) { grid-area:description; }
 .js-inline-property-row>.js-cell:nth-child(7),.js-effective-row>.js-cell:nth-child(7) { grid-area:action; }
+.js-inline-property-row>.js-cell:nth-child(8) { grid-area:composite; }
 .js-inline-property-row .js-cell { padding:3px 4px; }
 .js-inline-property-row input:not([type="checkbox"]),.js-inline-property-row select { width:100%; min-width:0; min-height:28px; border-color:transparent; padding:3px 6px; background:transparent; }
 .js-inline-property-row input:not([type="checkbox"]):hover,.js-inline-property-row select:hover { border-color:var(--js-line); background:var(--js-canvas); }
@@ -237,6 +238,11 @@ export const editorStyles = `
 .js-type-member button:hover { color:var(--js-text); }
 .js-type-empty { color:var(--js-quiet); font-size:11px; }
 .js-inline-type-add { flex:0 1 88px; max-width:100%; }
+.js-composite-cell { display:grid; gap:4px; overflow:visible; padding:3px 4px 6px 14px!important; white-space:normal; }
+.js-collection-expression { min-width:0; display:grid; grid-template-columns:auto auto minmax(0,1fr) auto; align-items:center; gap:6px; border-inline-start:2px solid var(--js-accent); padding:5px 8px; background:var(--js-chrome); }
+.js-collection-kind,.js-collection-angle { color:var(--js-accent); font:600 11px/1.4 Consolas,monospace; }
+.js-collection-member { min-width:0; display:grid; grid-template-columns:auto minmax(0,1fr); align-items:center; gap:8px; }
+.js-collection-member>span { color:var(--js-muted); font-size:11px; }
 .js-nullable-indicator { color:var(--js-muted); font-size:11px; }
 .js-identity-indicator { color:var(--js-muted); font-size:11px; }
 .js-type-drop-zone { position:absolute; z-index:2; pointer-events:none; inset:2px; border:1px dashed transparent; }
@@ -779,7 +785,9 @@ export const editorStyles = `
   .js-type-head>.js-chip { margin-top:10px; }
   .js-row { grid-template-columns:minmax(80px,1fr) minmax(100px,1fr) 44px; }
   .js-row.js-header .js-cell:nth-child(3),.js-row.js-header .js-cell:nth-child(4),.js-row.js-header .js-cell:nth-child(5) { display:none; }
-  .js-inline-property-row,.js-effective-row { grid-template-areas:"name type action" "nullable identity presence" ". description description"; }
+  .js-inline-property-row,.js-effective-row { grid-template-areas:"name type action" "nullable identity presence" ". composite composite" ". description description"; }
+  .js-collection-expression { grid-template-columns:auto auto minmax(0,1fr) auto; }
+  .js-collection-member { grid-template-columns:1fr; gap:3px; }
   .js-inline-property-row .js-inline-nullable-cell,.js-inline-property-row .js-inline-identity-cell,.js-inline-property-row .js-inline-required-cell,.js-inline-property-row .js-description-cell { display:block; }
   .js-inline-relation-draft { grid-template-columns:1fr; }
   .js-property-details { padding-inline:10px; }

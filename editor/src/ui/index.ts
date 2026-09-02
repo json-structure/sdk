@@ -571,15 +571,21 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     });
     const applyInlineTypes = (pointer: string, members: readonly string[], nullable: boolean): void => {
       const values = [...members.map(decodeInlineTypeMember), ...(nullable ? ['null'] : [])];
-      const action = actionById('core.type');
-      if (!action) return;
       if (values.length === 0) {
         setInlineStatus(root, pointer, 'A property must have at least one type.');
         render();
         return;
       }
+      const schema = valueAtPointer(session.value, pointer) as Readonly<Record<string, unknown>> | undefined;
+      const propertyAction = pointer.includes('/properties/') ? actionById('property.edit') : undefined;
+      const coreAction = actionById('core.type');
+      const action = propertyAction ?? coreAction;
+      if (!schema || !action) return;
       selectedPointer = pointer;
-      void applyCommand(action.create(pointer, values.length === 1 ? values[0] : values)).then((error) => error && setInlineStatus(root, pointer, error));
+      const value = propertyAction
+        ? propertySchemaWithTypes(schema, values)
+        : values.length === 1 ? values[0] : values;
+      void applyCommand(action.create(pointer, value)).then((error) => error && setInlineStatus(root, pointer, error));
     };
     root.querySelectorAll('[data-inline-type-add]').forEach((selectControl: HTMLSelectElement) => selectControl.addEventListener('change', () => {
       const pointer = selectControl.dataset.propertyPointer;
@@ -2020,19 +2026,17 @@ export function designView(name: string | undefined, type: string | undefined, d
 
 function propertyEditorRow(row: PropertyRow, selected: boolean, expanded: boolean, identity: boolean, definitions: readonly { readonly name: string; readonly pointer: string }[], document?: unknown, pendingPropertyFields: ReadonlySet<string> = new Set()): string {
   const schema = row.schema ?? {};
-  const members = inlinePropertyTypeMembers(schema);
-  const memberChips = members.map((member) => `<span class="js-type-member"><span>${escapeHtml(inlinePropertyTypeLabel(member))}</span><button type="button" data-inline-type-remove="${escapeAttribute(member)}" data-property-pointer="${escapeAttribute(row.pointer)}" aria-label="Remove ${escapeAttribute(inlinePropertyTypeLabel(member))} from ${escapeAttribute(row.name)}">${fluentIcon('dismiss')}</button></span>`).join('');
-  const primitiveOptions = inlinePropertyTypes().filter((value) => !members.includes(`type:${value}`)).map((value) => `<option value="type:${escapeAttribute(value)}">${escapeHtml(value)}</option>`).join('');
-  const referenceOptions = definitions.filter((definition) => !members.includes(`ref:#${definition.pointer}`)).map((definition) => `<option value="ref:#${escapeAttribute(definition.pointer)}">${escapeHtml(definitionTypeLabel(definition.pointer))}</option>`).join('');
-  const typeComposer = `<div class="js-type-composer">${memberChips || '<span class="js-type-empty">No value type</span>'}<select class="js-inline-type-add js-code" data-inline-type-add data-property-pointer="${escapeAttribute(row.pointer)}" aria-label="Add a type to ${escapeAttribute(row.name)}"><option value="">+ type</option>${primitiveOptions ? `<optgroup label="Primitive types">${primitiveOptions}</optgroup>` : ''}${referenceOptions ? `<optgroup label="Reusable types">${referenceOptions}</optgroup>` : ''}</select></div>`;
+  const typeComposer = inlineTypeComposer(schema, row.pointer, row.name, definitions, true);
+  const collectionEditors = inlineCollectionEditors(schema, row.pointer, definitions);
   const detailsId = `property-details-${encodeURIComponent(row.pointer).replace(/%/g, '-')}`;
   const requiredControl = row.requiredAlternatives
     ? `<button class="js-required-sets" data-action-id="property.required-alternatives" data-action-pointer="${escapeAttribute(propertyOwnerPointer(row.pointer))}" title="This type uses alternative required sets">Edit sets</button>`
     : `<label><input type="checkbox" data-inline-property="required" data-property-pointer="${escapeAttribute(row.pointer)}" ${row.required ? 'checked' : ''}> required</label>`;
-  return `<div class="js-property-editor" data-property-editor="${escapeAttribute(row.pointer)}" aria-current="${selected}"><div class="js-row js-inline-property-row" role="row"><div class="js-cell" role="cell"><input class="js-inline-name js-code" data-inline-property="name" data-property-pointer="${escapeAttribute(row.pointer)}" value="${escapeAttribute(row.name)}" aria-label="Property name"></div><div class="js-cell js-inline-type-cell" role="cell" data-type-drop="${escapeAttribute(row.pointer)}">${typeComposer}<span class="js-type-drop-zone" aria-hidden="true"></span></div><div class="js-cell js-inline-nullable-cell" role="cell"><label><input type="checkbox" data-inline-property="nullable" data-property-pointer="${escapeAttribute(row.pointer)}" ${inlinePropertyNullable(schema) ? 'checked' : ''}> nullable</label></div><div class="js-cell js-inline-identity-cell" role="cell"><label><input type="checkbox" data-inline-property="identity" data-property-pointer="${escapeAttribute(row.pointer)}" ${identity ? 'checked' : ''}> identity</label></div><div class="js-cell js-inline-required-cell" role="cell">${requiredControl}</div><div class="js-cell js-description-cell" role="cell"><textarea class="js-inline-description" rows="1" data-inline-property="description" data-property-pointer="${escapeAttribute(row.pointer)}" placeholder="Add description" aria-label="Description for ${escapeAttribute(row.name)}">${escapeHtml(row.description ?? '')}</textarea></div><div class="js-cell js-action-cell" role="cell"><button class="js-row-action" data-property-details="${escapeAttribute(row.pointer)}" aria-expanded="${expanded}" aria-controls="${detailsId}" aria-label="${expanded ? 'Collapse' : 'Expand'} validation and annotations for ${escapeAttribute(row.name)}">${fluentIcon('chevronRight', `js-property-chevron${expanded ? ' js-expanded' : ''}`)}</button></div></div>${expanded ? propertyDetailsPanel(row, detailsId, document, pendingPropertyFields) : ''}</div>`;
+  return `<div class="js-property-editor" data-property-editor="${escapeAttribute(row.pointer)}" aria-current="${selected}"><div class="js-row js-inline-property-row" role="row"><div class="js-cell" role="cell"><input class="js-inline-name js-code" data-inline-property="name" data-property-pointer="${escapeAttribute(row.pointer)}" value="${escapeAttribute(row.name)}" aria-label="Property name"></div><div class="js-cell js-inline-type-cell" role="cell" data-type-drop="${escapeAttribute(row.pointer)}">${typeComposer}<span class="js-type-drop-zone" aria-hidden="true"></span></div><div class="js-cell js-inline-nullable-cell" role="cell"><label><input type="checkbox" data-inline-property="nullable" data-property-pointer="${escapeAttribute(row.pointer)}" ${inlinePropertyNullable(schema) ? 'checked' : ''}> nullable</label></div><div class="js-cell js-inline-identity-cell" role="cell"><label><input type="checkbox" data-inline-property="identity" data-property-pointer="${escapeAttribute(row.pointer)}" ${identity ? 'checked' : ''}> identity</label></div><div class="js-cell js-inline-required-cell" role="cell">${requiredControl}</div><div class="js-cell js-description-cell" role="cell"><textarea class="js-inline-description" rows="1" data-inline-property="description" data-property-pointer="${escapeAttribute(row.pointer)}" placeholder="Add description" aria-label="Description for ${escapeAttribute(row.name)}">${escapeHtml(row.description ?? '')}</textarea></div><div class="js-cell js-action-cell" role="cell"><button class="js-row-action" data-property-details="${escapeAttribute(row.pointer)}" aria-expanded="${expanded}" aria-controls="${detailsId}" aria-label="${expanded ? 'Collapse' : 'Expand'} validation and annotations for ${escapeAttribute(row.name)}">${fluentIcon('chevronRight', `js-property-chevron${expanded ? ' js-expanded' : ''}`)}</button></div>${collectionEditors}</div>${expanded ? propertyDetailsPanel(row, detailsId, document, pendingPropertyFields) : ''}</div>`;
 }
 
 function inlinePropertyTypeMembers(schema: Readonly<Record<string, unknown>>): readonly string[] {
+  if (isCollectionSchema(schema)) return [`json:${JSON.stringify(collectionTypeBranch(schema))}`];
   const values = Array.isArray(schema.type) ? schema.type : [schema.type];
   return values.flatMap((value) => {
     if (value === 'null') return [];
@@ -2060,7 +2064,7 @@ function definitionTypeLabel(pointer: string): string {
 }
 
 function inlinePropertyTypeLabel(value: string): string {
-  if (value.startsWith('json:')) return displaySchemaTypeValue(JSON.parse(value.slice('json:'.length)));
+  if (value.startsWith('json:')) return schemaExpressionLabel(JSON.parse(value.slice('json:'.length)));
   return value.startsWith('ref:#/') ? definitionTypeLabel(value.slice('ref:#'.length)) : value.replace(/^(?:type|ref):/, '');
 }
 
@@ -2068,6 +2072,88 @@ function inlinePropertyTypes(): readonly string[] {
   const control = actionById('core.type')?.control;
   const compound = new Set(['object', 'array', 'map', 'set', 'tuple', 'choice']);
   return control?.kind === 'select' ? control.options.map((option) => option.value).filter((value) => value !== 'null' && !compound.has(value)) : [];
+}
+
+function inlineTypeComposer(schema: Readonly<Record<string, unknown>>, pointer: string, label: string, definitions: readonly { readonly name: string; readonly pointer: string }[], allowCollections: boolean): string {
+  const members = inlinePropertyTypeMembers(schema);
+  const memberChips = members.map((member) => `<span class="js-type-member"><span>${escapeHtml(inlinePropertyTypeLabel(member))}</span><button type="button" data-inline-type-remove="${escapeAttribute(member)}" data-property-pointer="${escapeAttribute(pointer)}" aria-label="Remove ${escapeAttribute(inlinePropertyTypeLabel(member))} from ${escapeAttribute(label)}">${fluentIcon('dismiss')}</button></span>`).join('');
+  const primitiveOptions = inlinePropertyTypes().filter((value) => !members.includes(`type:${value}`)).map((value) => `<option value="type:${escapeAttribute(value)}">${escapeHtml(value)}</option>`).join('');
+  const collectionOptions = allowCollections ? (['array', 'set', 'map'] as const).map((type) => {
+    const schemaValue = type === 'map' ? { type, values: { type: 'string' } } : { type, items: { type: 'string' } };
+    const encoded = `json:${JSON.stringify(schemaValue)}`;
+    const optionLabel = type === 'map' ? 'map<string, string>' : `${type}<string>`;
+    return members.includes(encoded) ? '' : `<option value="${escapeAttribute(encoded)}">${escapeHtml(optionLabel)}</option>`;
+  }).join('') : '';
+  const referenceOptions = definitions.filter((definition) => !members.includes(`ref:#${definition.pointer}`)).map((definition) => `<option value="ref:#${escapeAttribute(definition.pointer)}">${escapeHtml(definitionTypeLabel(definition.pointer))}</option>`).join('');
+  return `<div class="js-type-composer">${memberChips || '<span class="js-type-empty">No value type</span>'}<select class="js-inline-type-add js-code" data-inline-type-add data-property-pointer="${escapeAttribute(pointer)}" aria-label="Add a type to ${escapeAttribute(label)}"><option value="">+ type</option>${primitiveOptions ? `<optgroup label="Primitive types">${primitiveOptions}</optgroup>` : ''}${collectionOptions ? `<optgroup label="Collection types">${collectionOptions}</optgroup>` : ''}${referenceOptions ? `<optgroup label="Reusable types">${referenceOptions}</optgroup>` : ''}</select></div>`;
+}
+
+function inlineCollectionEditors(schema: Readonly<Record<string, unknown>>, pointer: string, definitions: readonly { readonly name: string; readonly pointer: string }[]): string {
+  const collections: Array<{ readonly schema: Readonly<Record<string, unknown>>; readonly pointer: string }> = [];
+  if (isCollectionSchema(schema)) collections.push({ schema, pointer });
+  if (Array.isArray(schema.type)) {
+    schema.type.forEach((member, index) => {
+      if (isCollectionSchema(member)) collections.push({ schema: member, pointer: `${pointer}/type/${index}` });
+    });
+  }
+  if (!collections.length) return '';
+  const editors = collections.map(({ schema: collection, pointer: collectionPointer }) => {
+    const keyword = collection.type === 'map' ? 'values' : 'items';
+    const member = collection[keyword];
+    const memberSchema = isSchemaRecord(member) ? member : {};
+    const memberPointer = `${collectionPointer}/${keyword}`;
+    const label = collection.type === 'map' ? 'Value type' : 'Item type';
+    return `<div class="js-collection-expression"><span class="js-collection-kind">${escapeHtml(String(collection.type))}</span><span class="js-collection-angle">&lt;</span><div class="js-collection-member"><span>${label}</span>${inlineTypeComposer(memberSchema, memberPointer, label, definitions, false)}</div><span class="js-collection-angle">&gt;</span></div>`;
+  }).join('');
+  return `<div class="js-cell js-composite-cell" role="cell" aria-label="Collection member schemas">${editors}</div>`;
+}
+
+function isCollectionSchema(value: unknown): value is Readonly<Record<string, unknown>> & { readonly type: 'array' | 'set' | 'map' } {
+  return isSchemaRecord(value) && (value.type === 'array' || value.type === 'set' || value.type === 'map');
+}
+
+function isSchemaRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function collectionTypeBranch(schema: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> {
+  const { description: _description, ...branch } = schema;
+  return branch;
+}
+
+function schemaExpressionLabel(value: unknown): string {
+  if (!isSchemaRecord(value)) return displaySchemaTypeValue(value);
+  const reference = relationReference(value);
+  if (reference) return definitionTypeLabel(reference.replace(/^#/, ''));
+  if (!isCollectionSchema(value)) return displaySchemaTypeValue(value);
+  const member = value[value.type === 'map' ? 'values' : 'items'];
+  const memberLabel = isSchemaRecord(member) ? schemaExpressionLabel(member.type) : 'untyped';
+  return value.type === 'map' ? `map<string, ${memberLabel}>` : `${value.type}<${memberLabel}>`;
+}
+
+export function propertySchemaWithTypes(schema: Readonly<Record<string, unknown>>, values: readonly unknown[]): Readonly<Record<string, unknown>> {
+  const nonNull = values.filter((value) => value !== 'null');
+  const nullable = nonNull.length !== values.length;
+  const sharedDescription = typeof schema.description === 'string' ? { description: schema.description } : {};
+  if (values.length === 1 && isCollectionSchema(nonNull[0])) {
+    return { ...schemaWithoutTypeStructure(schema), ...nonNull[0], ...sharedDescription };
+  }
+  const nextType = values.length === 1 ? values[0] : values;
+  if (isCollectionSchema(schema)) return { ...sharedDescription, type: nextType };
+  const next: Record<string, unknown> = { ...schema, type: nextType };
+  if (nullable || nonNull.some(isCollectionSchema)) {
+    delete next.items;
+    delete next.values;
+  }
+  return next;
+}
+
+function schemaWithoutTypeStructure(schema: Readonly<Record<string, unknown>>): Record<string, unknown> {
+  const result = { ...schema };
+  delete result.type;
+  delete result.items;
+  delete result.values;
+  return result;
 }
 
 function propertyDetailsPanel(row: PropertyRow, id: string, document?: unknown, pendingPropertyFields: ReadonlySet<string> = new Set()): string {
@@ -2198,8 +2284,9 @@ function effectiveSchemaType(document: unknown, pointer: string): string | undef
 }
 
 function displayPropertyValueTypes(schema: Readonly<Record<string, unknown>>): string {
+  if (isCollectionSchema(schema)) return schemaExpressionLabel(schema);
   const values = Array.isArray(schema.type) ? schema.type.filter((value) => value !== 'null') : schema.type === 'null' ? [] : [schema.type];
-  return values.length ? values.map(displaySchemaTypeValue).join(' or ') : 'null only';
+  return values.length ? values.map(schemaExpressionLabel).join(' or ') : 'null only';
 }
 
 function formatRelationScope(scope: string | readonly string[] | undefined): string {
