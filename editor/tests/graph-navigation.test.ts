@@ -27,6 +27,15 @@ describe('graph navigation controller', () => {
     expect(semanticZoomForScale(1.61)).toBe('detail');
   });
 
+  it('uses prototype-sized discrete zoom steps around the pointer', () => {
+    const navigation = new GraphNavigationController({ camera: { x: 0, y: 0, zoom: 1 } });
+    const pointer = { x: 200, y: 100 };
+    const world = navigation.screenToWorld(pointer);
+    navigation.zoomBy(pointer, 0.1);
+    expect(navigation.snapshot().camera.zoom).toBe(1.1);
+    expect(navigation.screenToWorld(pointer)).toEqual(world);
+  });
+
   it('maintains selection continuity and browser-like navigation history', () => {
     const navigation = new GraphNavigationController();
     const first = { kind: 'type' as const, nodeId: '/a' as NodeId, pointer: '/a' };

@@ -6,7 +6,7 @@ import { actionById, commandActions, type CommandAction } from './actions.js';
 import { actionAvailability, catalogFamilyForAction, parseActionValue, valueAtPointer } from './action-runtime.js';
 import { diagnosticsForPointer, isInlineRootSchema, pointerLabel, projectGraph, projectInspectorSections, projectProperties, projectSchemaInspectorSections, type InspectorSection, type PropertyRow } from './helpers.js';
 import { GraphNavigationController } from './graph-navigation.js';
-import { ForceGraphLayout, graphEdgePath, type ForceGraphPosition } from './force-graph-layout.js';
+import { ForceGraphLayout, graphEdgePath, type ForceGraphPosition, type GraphLayoutMode } from './force-graph-layout.js';
 import { SemanticGraphController, type SemanticGraphView } from './semantic-graph.js';
 import { editorStyles } from './prototype-styles.js';
 import { InstanceWorkspace, type CrossNavigationSelection, type EvaluationTrace, type InstanceValidationResult } from '../phase4/instance-workspace.js';
@@ -1098,14 +1098,12 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
   const wireGraph = (graph: ReturnType<typeof projectGraph>): void => {
     graphResizeObserver?.disconnect();
     graphLayout.setTickListener(undefined);
-    let suppressNodeClick: string | undefined;
     root.querySelectorAll('[data-graph-select]').forEach((target: SVGElement) => {
       const activate = (): void => {
         const nodeId = target.dataset.graphNode;
-        if (nodeId && suppressNodeClick === nodeId) { suppressNodeClick = undefined; return; }
         if (!nodeId) return;
         const view = semanticGraph.selectNode(nodeId);
-        if (view.selection?.pointer) selectedPointer = view.selection.pointer;
+        selectedPointer = view.selection?.pointer || undefined;
         render();
       };
       target.addEventListener('click', () => {
@@ -1139,20 +1137,26 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
         const edgeId = target.dataset.graphEdgeSelect;
         if (!edgeId) return;
         const view = semanticGraph.selectEdge(edgeId);
-        if (view.selection?.pointer) selectedPointer = view.selection.pointer;
+        selectedPointer = view.selection?.pointer || undefined;
         render();
       };
       target.addEventListener('click', activate);
       target.addEventListener('keydown', (event: KeyboardEvent) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); activate(); } });
     });
     root.querySelectorAll('[data-graph-lens]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
-      semanticGraph.setLens(button.dataset.graphLens as import('../graph.js').ProjectionId);
+      const view = semanticGraph.setLens(button.dataset.graphLens as import('../graph.js').ProjectionId);
+      selectedPointer = view.selection?.pointer || undefined;
       fitGraphAfterRender = true;
       render();
     }));
     root.querySelector('[data-graph-search]')?.addEventListener('input', (event: Event) => {
       semanticGraph.setSearch((event.currentTarget as HTMLInputElement).value);
       render();
+      queueMicrotask(() => {
+        const search = root.querySelector('[data-graph-search]') as HTMLInputElement | null;
+        search?.focus();
+        search?.setSelectionRange(search.value.length, search.value.length);
+      });
     });
     root.querySelectorAll('[data-graph-breadcrumb]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
       const level = button.dataset.graphBreadcrumb;
@@ -1162,16 +1166,23 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       render();
     }));
     root.querySelector('[data-graph-fit]')?.addEventListener('click', () => { graphNavigation.fit(); updateGraphCamera(); });
-    root.querySelector('[data-graph-zoom-out]')?.addEventListener('click', () => zoomGraphAtCenter(180));
-    root.querySelector('[data-graph-zoom-in]')?.addEventListener('click', () => zoomGraphAtCenter(-180));
+    root.querySelector('[data-graph-zoom-out]')?.addEventListener('click', () => zoomGraphAtCenter(-0.1));
+    root.querySelector('[data-graph-zoom-in]')?.addEventListener('click', () => zoomGraphAtCenter(0.1));
     root.querySelector('[data-graph-relayout]')?.addEventListener('click', () => {
       graphLayout.relayout();
       if (prefersReducedMotion()) graphLayout.settle();
     });
-    root.querySelector('[data-graph-back]')?.addEventListener('click', () => { const view = semanticGraph.back(); if (view.selection?.pointer) selectedPointer = view.selection.pointer; fitGraphAfterRender = true; render(); });
-    root.querySelector('[data-graph-forward]')?.addEventListener('click', () => { const view = semanticGraph.forward(); if (view.selection?.pointer) selectedPointer = view.selection.pointer; fitGraphAfterRender = true; render(); });
-    root.querySelector('[data-graph-home]')?.addEventListener('click', () => { semanticGraph.home(); fitGraphAfterRender = true; render(); });
-    root.querySelector('[data-graph-out]')?.addEventListener('click', () => { semanticGraph.drillOut(); fitGraphAfterRender = true; render(); });
+    root.querySelector('[data-graph-back]')?.addEventListener('click', () => { const view = semanticGraph.back(); selectedPointer = view.selection?.pointer || undefined; fitGraphAfterRender = true; render(); });
+    root.querySelector('[data-graph-forward]')?.addEventListener('click', () => { const view = semanticGraph.forward(); selectedPointer = view.selection?.pointer || undefined; fitGraphAfterRender = true; render(); });
+    root.querySelector('[data-graph-home]')?.addEventListener('click', () => { const view = semanticGraph.home(); selectedPointer = view.selection?.pointer || undefined; fitGraphAfterRender = true; render(); });
+    root.querySelector('[data-graph-out]')?.addEventListener('click', () => { const view = semanticGraph.drillOut(); selectedPointer = view.selection?.pointer || undefined; fitGraphAfterRender = true; render(); });
+    root.querySelector('[data-graph-open-selection]')?.addEventListener('click', () => { const view = semanticGraph.openSelection(); selectedPointer = view.selection?.pointer || undefined; fitGraphAfterRender = true; render(); });
+    root.querySelectorAll('[data-graph-history]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
+      const view = semanticGraph.restore(Number(button.dataset.graphHistory));
+      selectedPointer = view.selection?.pointer || undefined;
+      fitGraphAfterRender = true;
+      render();
+    }));
     const canvas = root.querySelector('[data-graph-canvas]') as SVGElement | null;
     if (!canvas) return;
     const graphWorld = canvas.querySelector('[data-graph-world]') as SVGElement | null;
@@ -1180,13 +1191,13 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       graphWorld?.setAttribute('transform', `translate(${state.camera.x} ${state.camera.y}) scale(${state.camera.zoom})`);
       const readout = root.querySelector('[data-semantic-zoom]');
       if (readout) {
-        readout.textContent = `${Math.round(state.camera.zoom * 100)}% · ${state.semanticZoom}`;
+        readout.textContent = `${Math.round(state.camera.zoom * 100)}%`;
         readout.setAttribute('data-semantic-zoom', state.semanticZoom);
       }
       const bounds = graphLayout.contentBounds();
       const minimap = graphNavigation.minimap();
       const viewport = clampMinimapViewport(minimap.viewport, bounds.width, bounds.height);
-      const viewportElement = canvas.querySelector('.js-minimap-viewport');
+      const viewportElement = root.querySelector('.js-minimap-viewport');
       viewportElement?.setAttribute('x', String(viewport.x));
       viewportElement?.setAttribute('y', String(viewport.y));
       viewportElement?.setAttribute('width', String(viewport.width));
@@ -1214,7 +1225,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
         label?.setAttribute('y', String(geometry.labelY));
       });
       const content = graphLayout.contentBounds();
-      ([...canvas.querySelectorAll('[data-minimap-node]')] as SVGElement[]).forEach((element) => {
+      ([...root.querySelectorAll('[data-minimap-node]')] as SVGElement[]).forEach((element) => {
         const position = positions.get(element.dataset.minimapNode ?? '');
         if (!position) return;
         element.setAttribute('x', String(position.x / content.width * 180));
@@ -1223,22 +1234,30 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       updateGraphCamera();
     };
     graphLayout.setTickListener(updateGraphGeometry);
-    const syncViewport = () => { const bounds = canvas.getBoundingClientRect(); graphNavigation.setViewport({ x: 0, y: 0, width: Math.max(1, bounds.width), height: Math.max(1, bounds.height) }); return bounds; };
-    const zoomGraphAtCenter = (deltaY: number): void => {
-      const bounds = syncViewport();
-      graphNavigation.wheelZoom({ x: bounds.width / 2, y: bounds.height / 2 }, deltaY);
-      if (!transitionSemanticLevel()) updateGraphCamera();
+    const syncViewport = () => {
+      const bounds = canvas.getBoundingClientRect();
+      const width = Math.max(1, bounds.width);
+      const height = Math.max(1, bounds.height);
+      canvas.setAttribute('viewBox', `0 0 ${width} ${height}`);
+      graphNavigation.setViewport({ x: 0, y: 0, width, height });
+      return bounds;
     };
-    const transitionSemanticLevel = (): boolean => {
+    const zoomGraphAtCenter = (delta: number): void => {
+      const bounds = syncViewport();
+      graphNavigation.zoomBy({ x: bounds.width / 2, y: bounds.height / 2 }, delta);
+      if (!transitionSemanticLevel(delta > 0 ? 'in' : 'out')) updateGraphCamera();
+    };
+    const transitionSemanticLevel = (direction: 'in' | 'out'): boolean => {
       const camera = graphNavigation.snapshot().camera;
       const semantic = semanticGraph.view();
-      if (camera.zoom > 1.6 && semantic.location.level !== 'neighborhood' && semantic.selection?.nodeId) {
+      if (semantic.location.lens !== 'relations') return false;
+      if (direction === 'in' && camera.zoom > 1.6 && semantic.location.level !== 'neighborhood' && semantic.selection?.nodeId) {
         semanticGraph.openSelection();
         fitGraphAfterRender = true;
         render();
         return true;
       }
-      if (camera.zoom < 0.6 && semantic.location.level !== 'atlas') {
+      if (direction === 'out' && camera.zoom < 0.6 && semantic.location.level !== 'atlas') {
         semanticGraph.drillOut();
         fitGraphAfterRender = true;
         render();
@@ -1252,9 +1271,8 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       graphResizeObserver = new ResizeObserverConstructor(() => { if (!disposed && canvas.isConnected) syncViewport(); });
       graphResizeObserver.observe(canvas);
     }
-    canvas.addEventListener('wheel', (event: WheelEvent) => { event.preventDefault(); const bounds = syncViewport(); graphNavigation.wheelZoom({ x: event.clientX - bounds.left, y: event.clientY - bounds.top }, event.deltaY); if (!transitionSemanticLevel()) updateGraphCamera(); }, { passive: false });
+    canvas.addEventListener('wheel', (event: WheelEvent) => { event.preventDefault(); const bounds = syncViewport(); graphNavigation.wheelZoom({ x: event.clientX - bounds.left, y: event.clientY - bounds.top }, event.deltaY); if (!transitionSemanticLevel(event.deltaY < 0 ? 'in' : 'out')) updateGraphCamera(); }, { passive: false });
     let lastPoint: { x: number; y: number } | undefined;
-    let nodeDrag: { readonly id: string; readonly offsetX: number; readonly offsetY: number; readonly startX: number; readonly startY: number; moved: boolean } | undefined;
     const activePointers = new Map<number, { readonly x: number; readonly y: number }>();
     let pinchDistance: number | undefined;
     canvas.addEventListener('pointerdown', (event: PointerEvent) => {
@@ -1264,23 +1282,9 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
         if (activePointers.size === 2) {
           const [first, second] = [...activePointers.values()];
           pinchDistance = Math.hypot(second!.x - first!.x, second!.y - first!.y);
-          nodeDrag = undefined;
           lastPoint = undefined;
           return;
         }
-      }
-      const node = (event.target as SVGElement).closest('[data-graph-node]') as SVGElement | null;
-      if (node?.dataset.graphNode && graphWorld?.getScreenCTM()) {
-        event.preventDefault();
-        event.stopPropagation();
-        const position = graphLayout.position(node.dataset.graphNode);
-        const worldPoint = clientToGraphPoint(graphWorld, event.clientX, event.clientY);
-        if (!position) return;
-        nodeDrag = { id: node.dataset.graphNode, offsetX: worldPoint.x - position.x, offsetY: worldPoint.y - position.y, startX: event.clientX, startY: event.clientY, moved: false };
-        graphLayout.startDrag(nodeDrag.id);
-        canvas.setPointerCapture(event.pointerId);
-        canvas.classList.add('js-node-dragging');
-        return;
       }
       if ((event.target as SVGElement).closest('[data-minimap]')) return;
       lastPoint = { x: event.clientX, y: event.clientY };
@@ -1295,18 +1299,13 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
           const bounds = syncViewport();
           const [first, second] = [...activePointers.values()];
           const nextDistance = Math.max(1, Math.hypot(second!.x - first!.x, second!.y - first!.y));
+          const direction = nextDistance > pinchDistance ? 'in' : 'out';
           const midpoint = { x: (first!.x + second!.x) / 2 - bounds.left, y: (first!.y + second!.y) / 2 - bounds.top };
           graphNavigation.wheelZoom(midpoint, -Math.log(nextDistance / Math.max(1, pinchDistance)) / 0.0015);
           pinchDistance = nextDistance;
-          if (!transitionSemanticLevel()) updateGraphCamera();
+          if (!transitionSemanticLevel(direction)) updateGraphCamera();
           return;
         }
-      }
-      if (nodeDrag && graphWorld?.getScreenCTM()) {
-        const worldPoint = clientToGraphPoint(graphWorld, event.clientX, event.clientY);
-        nodeDrag.moved ||= Math.hypot(event.clientX - nodeDrag.startX, event.clientY - nodeDrag.startY) > 4;
-        graphLayout.drag(nodeDrag.id, { x: worldPoint.x - nodeDrag.offsetX, y: worldPoint.y - nodeDrag.offsetY });
-        return;
       }
       if (!lastPoint) return;
       graphNavigation.pan({ x: event.clientX - lastPoint.x, y: event.clientY - lastPoint.y });
@@ -1316,11 +1315,6 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     const releasePointer = (event: PointerEvent): void => {
       activePointers.delete(event.pointerId);
       if (activePointers.size < 2) pinchDistance = undefined;
-      if (nodeDrag) {
-        graphLayout.endDrag(nodeDrag.id, true);
-        if (nodeDrag.moved) suppressNodeClick = nodeDrag.id;
-        nodeDrag = undefined;
-      }
       lastPoint = undefined;
       canvas.classList.remove('js-node-dragging', 'js-panning');
       if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
@@ -1328,12 +1322,17 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     canvas.addEventListener('pointerup', releasePointer);
     canvas.addEventListener('pointercancel', releasePointer);
     canvas.addEventListener('keydown', (event: KeyboardEvent) => {
-      if (event.key === '+' || event.key === '=') { event.preventDefault(); zoomGraphAtCenter(-180); }
-      else if (event.key === '-') { event.preventDefault(); zoomGraphAtCenter(180); }
+      if (event.key === '+' || event.key === '=') { event.preventDefault(); zoomGraphAtCenter(0.1); }
+      else if (event.key === '-') { event.preventDefault(); zoomGraphAtCenter(-0.1); }
+      else if (event.key === 'Enter') { event.preventDefault(); const view = semanticGraph.openSelection(); selectedPointer = view.selection?.pointer || undefined; fitGraphAfterRender = true; render(); }
+      else if (event.altKey && event.key === 'ArrowRight') { event.preventDefault(); const view = semanticGraph.openSelection(); selectedPointer = view.selection?.pointer || undefined; fitGraphAfterRender = true; render(); }
       else if (event.key === '0' || event.key === 'Home') { event.preventDefault(); graphNavigation.fit(); updateGraphCamera(); }
       else if (event.key === 'Escape' && semanticGraph.view().canDrillOut) { event.preventDefault(); semanticGraph.drillOut(); fitGraphAfterRender = true; render(); }
     });
-    root.querySelector('[data-minimap]')?.addEventListener('click', (event: Event) => { const target = event.currentTarget as SVGElement; const bounds = target.getBoundingClientRect(); const pointer = event as PointerEvent; graphNavigation.navigateMinimap({ x: ((pointer.clientX - bounds.left) / Math.max(1, bounds.width)) * 180, y: ((pointer.clientY - bounds.top) / Math.max(1, bounds.height)) * 120 }, { x: 0, y: 0, width: 180, height: 120 }); updateGraphCamera(); });
+    const minimapElement = root.querySelector('[data-minimap]');
+    minimapElement?.addEventListener('click', (event: Event) => { const target = event.currentTarget as SVGElement; const bounds = target.getBoundingClientRect(); const pointer = event as PointerEvent; graphNavigation.navigateMinimap({ x: ((pointer.clientX - bounds.left) / Math.max(1, bounds.width)) * 180, y: ((pointer.clientY - bounds.top) / Math.max(1, bounds.height)) * 120 }, { x: 0, y: 0, width: 180, height: 120 }); updateGraphCamera(); });
+    minimapElement?.addEventListener('dblclick', (event: Event) => { event.preventDefault(); graphNavigation.fit(); updateGraphCamera(); });
+    minimapElement?.addEventListener('wheel', (event: Event) => { const wheel = event as WheelEvent; wheel.preventDefault(); zoomGraphAtCenter(wheel.deltaY < 0 ? 0.1 : -0.1); }, { passive: false });
     if (fitGraphAfterRender) {
       fitGraphAfterRender = false;
       graphNavigation.fit();
@@ -1644,7 +1643,7 @@ function structuredWorkbenchShell(snapshot: DocumentSnapshot, title: string, def
   return `<div class="js-shell js-chrome-${chrome}">
     ${titleChrome}
     <div class="js-document-toolbar" role="toolbar" aria-label="Document actions"><button class="js-mobile-toggle" data-mobile-drawer="types" aria-controls="js-outline" aria-haspopup="dialog" aria-expanded="false">Types</button><button data-command="definition.add" title="New type">${fluentIcon('add')}<span>Type</span></button><button data-mode="conversion" title="Convert this structure">${fluentIcon('arrowSwap')}<span>Convert</span></button><button data-mode="instance" title="Validate an instance">${fluentIcon('checkmarkCircle')}<span>Validate</span></button><span class="js-spacer"></span><span class="js-chip">${escapeHtml(profile.mode)}</span>${activeCompanions ? `<span class="js-chip">${activeCompanions} companions</span>` : ''}<div class="js-tabs" role="tablist" aria-label="Document representation">${representations}</div><button class="js-mobile-toggle" data-mobile-drawer="inspector" aria-controls="js-inspector" aria-haspopup="dialog" aria-expanded="false">Inspector</button></div>
-    <div class="js-workbench" data-problems-open="${problemsOpen}">
+    <div class="js-workbench" data-problems-open="${problemsOpen}" data-active-mode="${mode}">
       <nav class="js-activity" aria-label="Workbench views"><button class="js-activity-button js-activity-primary" data-mobile-drawer="types" aria-label="Schema explorer" title="Schema explorer">${fluentIcon('documentData')}</button>${activities}</nav>
       <aside class="js-outline" id="js-outline" data-drawer-panel="types" aria-label="Schema explorer"><div class="js-panel-head"><span>Types</span><span class="js-spacer"></span><button data-command="definition.add" title="New type" aria-label="New type">${fluentIcon('add')}</button><button class="js-drawer-close" data-mobile-drawer-close aria-label="Close Types">${fluentIcon('dismiss')}</button></div><input class="js-filter" type="search" placeholder="Filter types" aria-label="Filter types"><div class="js-tree" role="tree" aria-label="Types and namespaces"><div class="js-tree-group">Definitions · ${definitions.length}</div>${typeTree}</div></aside>
       <section class="js-center"><div class="js-editor-tab"><span class="js-kind" aria-hidden="true">${fluentIcon('document')}</span><span data-document-title>${escapeHtml(title)}</span></div><div class="js-breadcrumbs">${breadcrumbs}</div><section class="js-view" ${mode === 'design' ? '' : 'hidden'}>${designView(definition?.name, definition?.type, definition?.description, rows, selectedPointer, definition?.identity, definition?.relations, memberMode, effectiveMembers, expandedPropertyPointer, definitions, documentValue)}</section><section class="js-view js-graph" ${mode === 'graph' ? '' : 'hidden'}>${graphView(snapshot, selectedPointer)}</section><section class="js-view js-source-view" ${mode === 'source' ? '' : 'hidden'}><div class="js-source" data-source aria-label="JSON source editor"></div></section></section>
@@ -1941,7 +1940,14 @@ export function graphView(graphOrSnapshot: ReturnType<typeof projectGraph> | Doc
   const navigation: GraphNavigationController = isSnapshot ? graphNavigationBySnapshot.get(graphOrSnapshot as DocumentSnapshot) ?? new GraphNavigationController() : navigationOrSelected as GraphNavigationController;
   const layout = isSnapshot ? forceGraphLayoutBySnapshot.get(graphOrSnapshot as DocumentSnapshot) ?? new ForceGraphLayout() : new ForceGraphLayout();
   const selectedPointer = semanticView?.selection?.pointer ?? (isSnapshot ? navigationOrSelected as string | undefined : selectedPointerOverride);
-  const layoutPositions = layout.reconcile(graph.nodes, graph.edges);
+  const layoutMode: GraphLayoutMode = !semanticView
+    ? 'force'
+    : semanticView.location.level === 'neighborhood' && semanticView.location.focusNodeId
+      ? `neighborhood:${semanticView.location.focusNodeId}`
+      : semanticView.location.lens === 'relations'
+        ? semanticView.location.level === 'atlas' ? 'atlas' : 'types'
+        : semanticView.location.lens;
+  const layoutPositions = layout.reconcile(graph.nodes, graph.edges, layoutMode);
   const graphNodes = new Map(graph.nodes.map((node) => [node.id, node]));
   const positions = layoutPositions.map((position) => ({ ...graphNodes.get(position.id)!, ...position }));
   const position = new Map(positions.map((node) => [node.id, node]));
@@ -1959,17 +1965,72 @@ export function graphView(graphOrSnapshot: ReturnType<typeof projectGraph> | Doc
   const edges = graph.edges.map((edge) => renderGraphEdge(edge, position, labelLanes.get(edge.id) ?? 0, edge.id === selectedEdgeId)).join('');
   const nodes = positions.map((node) => renderGraphNode(node, selectedPointer, state.semanticZoom, node.id === selectedNodeId, searchMatches.has(node.id))).join('') || '<text x="30" y="50">No types to graph.</text>';
   if (!isSnapshot) layout.dispose();
-  const semanticToolbar = semanticView ? renderSemanticGraphToolbar(semanticView) : '';
+  const semanticToolbar = semanticView
+    ? renderSemanticGraphToolbar(semanticView, state.camera.zoom, isSnapshot ? documentNameFromUri((graphOrSnapshot as DocumentSnapshot).uri) : 'Schema')
+    : `<div class="js-graph-toolbar"><button data-graph-fit title="Fit level">Fit level</button><span class="js-spacer"></span><button data-graph-zoom-out aria-label="Zoom out">${fluentIcon('subtract')}</button><span data-semantic-zoom>${Math.round(state.camera.zoom * 100)}%</span><button data-graph-zoom-in aria-label="Zoom in">${fluentIcon('add')}</button></div>`;
   const graphLabel = semanticView ? `${semanticView.title}. ${semanticView.description}` : `Type relationship graph with ${graph.nodes.length} nodes and ${graph.edges.length} edges`;
-  return `<div class="js-graph-toolbar"><button data-graph-back title="Back" aria-label="Back" ${semanticView?.canBack || state.historyIndex > 0 ? '' : 'disabled'}>${fluentIcon('arrowLeft')}</button><button data-graph-forward title="Forward" aria-label="Forward" ${semanticView?.canForward || state.historyIndex < state.history.length - 1 ? '' : 'disabled'}>${fluentIcon('arrowRight')}</button><button data-graph-home title="Schema atlas" aria-label="Schema atlas">${fluentIcon('home')}</button>${semanticView?.canDrillOut ? `<button data-graph-out title="Drill out" aria-label="Drill out">${fluentIcon('arrowUp')}</button>` : ''}<button data-graph-fit title="Fit graph" aria-label="Fit graph">${fluentIcon('fit')}</button><button data-graph-relayout title="Release pinned nodes and run the force layout again" aria-label="Relayout graph">${fluentIcon('arrowSync')}</button><span class="js-spacer"></span><button data-graph-zoom-out title="Zoom out" aria-label="Zoom out">${fluentIcon('subtract')}</button><span data-semantic-zoom="${state.semanticZoom}">${Math.round(state.camera.zoom * 100)}% · ${state.semanticZoom}</span><button data-graph-zoom-in title="Zoom in" aria-label="Zoom in">${fluentIcon('add')}</button></div>${semanticToolbar}<svg class="js-graph-canvas" data-graph-canvas viewBox="0 0 ${width} ${height}" tabindex="0" role="group" aria-label="${escapeAttribute(graphLabel)}. Use plus and minus to zoom, zero to fit, Escape to drill out, and Tab to reach graph nodes and edges."><defs><marker id="js-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8Z" fill="currentColor"></path></marker></defs><g data-graph-world transform="${transform}"><g data-graph-edges>${edges}</g><g data-graph-nodes>${nodes}</g></g><g class="js-minimap" transform="translate(12 12)"><rect width="180" height="120" data-minimap></rect><g data-minimap-nodes>${minimap.nodes.map((node, index) => `<rect data-minimap-node="${escapeAttribute(positions[index]?.id ?? '')}" x="${node.x / width * 180}" y="${node.y / height * 120}" width="${Math.max(3, node.width / width * 180)}" height="${Math.max(3, node.height / height * 120)}"></rect>`).join('')}</g><rect class="js-minimap-viewport" x="${minimapViewport.x}" y="${minimapViewport.y}" width="${minimapViewport.width}" height="${minimapViewport.height}"></rect></g></svg>`;
+  const selectedNode = selectedNodeId ? graph.nodes.find((node) => node.id === selectedNodeId) : undefined;
+  const selectedEdge = selectedEdgeId ? graph.edges.find((edge) => edge.id === selectedEdgeId) : undefined;
+  const focusPointer = semanticView?.location.focusNodeId ? sourceGraph.nodes.find((node) => node.id === semanticView.location.focusNodeId)?.pointer : selectedNode?.pointer;
+  const levelContext = semanticView ? renderGraphNavigationContext(semanticView) : '';
+  const graphInspector = semanticView ? renderGraphInspector(semanticView, selectedNode, selectedEdge) : '';
+  const minimapMarkup = `<aside class="js-minimap-wrap" aria-label="Graph minimap"><div class="js-minimap-head"><span>Whole document</span><span>${escapeHtml(semanticView?.location.level ?? 'Graph')}</span></div><svg class="js-minimap" viewBox="0 0 180 120" data-minimap><rect width="180" height="120"></rect><g data-minimap-nodes>${minimap.nodes.map((node, index) => `<rect data-minimap-node="${escapeAttribute(positions[index]?.id ?? '')}" x="${node.x / width * 180}" y="${node.y / height * 120}" width="${Math.max(3, node.width / width * 180)}" height="${Math.max(3, node.height / height * 120)}"></rect>`).join('')}</g><rect class="js-minimap-viewport" x="${minimapViewport.x}" y="${minimapViewport.y}" width="${minimapViewport.width}" height="${minimapViewport.height}"></rect></svg></aside>`;
+  const lensBar = semanticView ? renderGraphLensBar(semanticView) : '';
+  const commandBar = semanticView ? `<div class="js-graph-command-bar" aria-label="Schema authoring commands"><button data-action-id="relation.add" data-action-pointer="${escapeAttribute(focusPointer ?? '')}">+ Relation</button><button data-action-id="core.extends" data-action-pointer="${escapeAttribute(focusPointer ?? '')}">Set extends</button><button data-action-id="import.set" data-action-pointer="${escapeAttribute(focusPointer ?? '')}">Import types</button></div>` : '';
+  const levelBanner = semanticView ? `<div class="js-graph-level-banner"><span>Level ${semanticView.location.level === 'atlas' ? '1' : semanticView.location.level === 'types' ? '2' : '3'} · ${escapeHtml(semanticView.location.level)}</span><strong>${escapeHtml(semanticView.title)}</strong><small>${escapeHtml(semanticView.description)}</small></div>` : '';
+  const hint = semanticView ? `<div class="js-graph-hint">${escapeHtml(graphHint(semanticView))}</div>` : '';
+  return `${semanticToolbar}<div class="js-graph-workspace">${levelContext}<section class="js-graph-viewport">${levelBanner}${lensBar}${commandBar}<svg class="js-graph-canvas" data-graph-canvas data-search-active="${Boolean(semanticView?.searchQuery.trim())}" viewBox="0 0 ${width} ${height}" tabindex="0" role="group" aria-label="${escapeAttribute(graphLabel)}. Press Enter to drill in, Escape to drill out, wheel or pinch to zoom, and drag to pan."><defs><marker id="js-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8Z" fill="currentColor"></path></marker></defs><g data-graph-world transform="${transform}"><g data-graph-edges>${edges}</g><g data-graph-nodes>${nodes}</g></g></svg>${hint}${minimapMarkup}</section>${graphInspector}</div>`;
 }
 
-function renderSemanticGraphToolbar(view: SemanticGraphView): string {
+function renderSemanticGraphToolbar(view: SemanticGraphView, zoom: number, documentTitle: string): string {
+  const breadcrumbs = [{ label: documentTitle, level: 'atlas' as const }, ...view.breadcrumbs.slice(1)].map((crumb, index, values) => `<button data-graph-breadcrumb="${crumb.level}" ${index === values.length - 1 ? 'aria-current="page"' : ''}>${escapeHtml(crumb.label)}</button>${index < values.length - 1 ? `<span aria-hidden="true">${fluentIcon('chevronRight', 'js-chevron')}</span>` : ''}`).join('');
+  return `<div class="js-graph-toolbar"><button data-graph-back title="Back" aria-label="Back" ${view.canBack ? '' : 'disabled'}>${fluentIcon('arrowLeft')}</button><button data-graph-forward title="Forward" aria-label="Forward" ${view.canForward ? '' : 'disabled'}>${fluentIcon('arrowRight')}</button><button data-graph-home title="Schema atlas" aria-label="Schema atlas">${fluentIcon('home')}</button><span class="js-graph-divider"></span><nav class="js-graph-crumbs" aria-label="Graph location">${breadcrumbs}</nav><span class="js-spacer"></span><label class="js-graph-search"><span class="js-sr-only">Find type or relation</span><input type="search" data-graph-search value="${escapeAttribute(view.searchQuery)}" placeholder="Find type or relation"></label><span class="js-graph-divider"></span><button data-graph-zoom-out title="Zoom out" aria-label="Zoom out">${fluentIcon('subtract')}</button><span data-semantic-zoom>${Math.round(zoom * 100)}%</span><button data-graph-zoom-in title="Zoom in" aria-label="Zoom in">${fluentIcon('add')}</button><button data-graph-fit title="Fit level" aria-label="Fit level">Fit level</button></div>`;
+}
+
+function renderGraphLensBar(view: SemanticGraphView): string {
   const lenses: readonly { readonly id: import('../graph.js').ProjectionId; readonly label: string }[] = [
     { id: 'namespaces', label: 'Namespaces' }, { id: 'relations', label: 'Relations' }, { id: 'extends', label: 'Extends' }, { id: 'imports', label: 'Imports' },
   ];
-  const breadcrumbs = view.breadcrumbs.map((crumb, index) => `<button data-graph-breadcrumb="${crumb.level}" ${index === view.breadcrumbs.length - 1 ? 'aria-current="page"' : ''}>${escapeHtml(crumb.label)}</button>${index < view.breadcrumbs.length - 1 ? `<span aria-hidden="true">${fluentIcon('chevronRight', 'js-chevron')}</span>` : ''}`).join('');
-  return `<div class="js-graph-context"><div class="js-graph-location"><div class="js-graph-crumbs" aria-label="Graph location">${breadcrumbs}</div><strong>${escapeHtml(view.title)}</strong><span>${escapeHtml(view.description)}</span></div><label class="js-graph-search"><span class="js-sr-only">Find type or relation</span><input type="search" data-graph-search value="${escapeAttribute(view.searchQuery)}" placeholder="Find type or relation"></label><div class="js-graph-lenses" role="group" aria-label="Graph lens">${lenses.map((lens) => `<button data-graph-lens="${lens.id}" aria-pressed="${view.location.lens === lens.id}">${lens.label}</button>`).join('')}</div></div>`;
+  return `<div class="js-graph-lenses" role="group" aria-label="Graph lens">${lenses.map((lens) => `<button data-graph-lens="${lens.id}" aria-pressed="${view.location.lens === lens.id}">${lens.label}</button>`).join('')}</div>`;
+}
+
+function renderGraphNavigationContext(view: SemanticGraphView): string {
+  const levels = view.location.lens === 'relations'
+    ? [['atlas', 'Domain atlas', 'Namespaces and domains'], ['types', 'Type topology', view.location.namespace ?? 'Selected namespace'], ['neighborhood', 'Neighborhood', 'Outgoing relationships']]
+    : view.location.lens === 'namespaces'
+      ? [['atlas', 'Document root', 'Namespace hierarchy'], ['types', 'Declarations', view.location.namespace ?? 'Selected namespace'], ['neighborhood', 'Type', 'Selected declaration']]
+      : view.location.lens === 'extends'
+        ? [['atlas', 'Inheritance', 'Base and derived types'], ['types', 'Descendants', 'Selected hierarchy'], ['neighborhood', 'Members', 'Inherited context']]
+        : [['atlas', 'Sources', 'Imported documents'], ['types', 'Selection', 'Imported declarations'], ['neighborhood', 'Mapping', 'Target namespace']];
+  const current = ['atlas', 'types', 'neighborhood'].indexOf(view.location.level);
+  const steps = levels.map((level, index) => `<div class="js-graph-level-step${index < current ? ' js-complete' : ''}${index === current ? ' js-active' : ''}"><span>0${index + 1}</span><div><strong>${escapeHtml(level[1]!)}</strong><small>${escapeHtml(level[2]!)}</small></div></div>`).join('');
+  const history = view.recentPath.map((entry) => `<button data-graph-history="${entry.index}" ${entry.current ? 'aria-current="true"' : ''}><span class="js-history-dot"></span><span>${escapeHtml(entry.label)}</span>${entry.current ? '<small>current</small>' : ''}</button>`).join('');
+  return `<aside class="js-graph-navigator" aria-label="Navigation context"><div class="js-graph-panel-title">Semantic zoom <span>3 levels</span></div><div class="js-graph-panel-section">${steps}</div><div class="js-graph-panel-title">Recent path <span>${view.recentPath.length}</span></div><div class="js-graph-panel-section js-graph-history">${history}</div><div class="js-graph-panel-title">Keyboard</div><div class="js-graph-panel-section js-graph-instructions"><span>Drill in <kbd>Enter</kbd></span><span>Back out <kbd>Esc</kbd></span><span>Fit level <kbd>0</kbd></span><span>Zoom <kbd>+ / -</kbd></span></div><div class="js-graph-panel-title">Pointer &amp; touch</div><div class="js-graph-panel-section js-graph-instructions"><span>Select / inspect <kbd>click · tap</kbd></span><span>Open / follow <kbd>double</kbd></span><span>Zoom at pointer <kbd>wheel · pinch</kbd></span><span>Move viewport <kbd>drag</kbd></span></div></aside>`;
+}
+
+function renderGraphInspector(view: SemanticGraphView, node: ReturnType<typeof projectGraph>['nodes'][number] | undefined, edge: ReturnType<typeof projectGraph>['edges'][number] | undefined): string {
+  const selectionKind = edge ? edge.kind === 'relation' ? 'Relation' : 'Graph link' : node?.kind === 'namespace' ? 'Namespace' : node?.kind === 'document' ? 'Document root' : node ? 'Type' : 'Graph';
+  const title = edge?.label ?? node?.label ?? view.title;
+  const description = edge
+    ? `${pointerLabel(edge.from)} → ${pointerLabel(edge.to)}${edge.target ? ` · ${edge.target}` : ''}`
+    : node ? `${node.namespace || 'Document'} · ${node.status ?? 'resolved'}` : view.description;
+  const related = view.projection.edges.filter((candidate) => candidate.from === node?.id || candidate.to === node?.id).slice(0, 12);
+  const relationList = related.length
+    ? related.map((candidate) => `<button data-graph-edge-select="${escapeAttribute(candidate.id)}"><span><strong>${escapeHtml(candidate.label)}</strong><small>${escapeHtml(pointerLabel(candidate.to === node?.id ? candidate.from : candidate.to))}</small></span><em>${candidate.kind}</em></button>`).join('')
+    : '<p>No related links in this view.</p>';
+  return `<aside class="js-graph-inspector" aria-label="Graph selection details"><div class="js-graph-panel-title">Details <span>${selectionKind}</span></div><header><span>${escapeHtml(view.location.lens)} · ${escapeHtml(view.location.level)}</span><h2>${escapeHtml(title)}</h2><p>${escapeHtml(description)}</p></header><div class="js-graph-panel-section"><div class="js-graph-metrics"><div><strong>${view.projection.nodes.length}</strong><span>visible nodes</span></div><div><strong>${view.projection.edges.length}</strong><span>visible links</span></div></div></div><div class="js-graph-panel-title">Related in view</div><div class="js-graph-panel-section js-graph-related">${relationList}</div><div class="js-graph-panel-section js-graph-inspector-actions"><button data-graph-open-selection ${view.location.lens === 'relations' && view.location.level !== 'neighborhood' ? '' : 'disabled'}>Drill into selection</button></div></aside>`;
+}
+
+function graphHint(view: SemanticGraphView): string {
+  if (view.location.lens !== 'relations') return 'Select an item to inspect it; use the lens controls to change the graph perspective.';
+  if (view.location.level === 'atlas') return 'Double-click a namespace to reveal its type topology; wheel or pinch crosses semantic levels.';
+  if (view.location.level === 'types') return 'Double-click a type to open its outgoing relationship neighborhood.';
+  return 'Select a relationship to inspect it; Back preserves the navigation path.';
+}
+
+function documentNameFromUri(uri: string): string {
+  const value = uri.replace(/[?#].*$/, '').split(/[\\/]/).pop();
+  return value ? decodeURIComponent(value) : 'Schema';
 }
 
 type PositionedGraphNode = ReturnType<typeof projectGraph>['nodes'][number] & ForceGraphPosition;
@@ -1991,18 +2052,13 @@ function renderGraphNode(node: PositionedGraphNode, selectedPointer: string | un
     ? `role="img" aria-label="${escapeAttribute(description)}"`
     : `role="button" tabindex="0" data-graph-select="${escapeAttribute(node.pointer)}" aria-label="${escapeAttribute(description)}" aria-current="${node.pointer === selectedPointer}"`;
   const metadata = status === 'resolved' ? node.namespace : `${status}${node.provenance ? ` | ${node.provenance}` : ''}`;
-  return `<g class="js-node js-node-${node.kind} js-status-${status}" data-graph-node="${escapeAttribute(node.id)}" data-graph-pinned="${node.pinned}" data-search-match="${searchMatch}" ${interaction} aria-current="${selectedById || (!selectedById && node.pointer === selectedPointer)}" transform="translate(${node.x} ${node.y})"><title>${escapeHtml(description)}</title><rect class="js-node-hit-target" width="150" height="50"></rect><rect class="js-node-shape" width="150" height="50"></rect><text x="12" y="22">${semanticZoom === 'overview' ? '' : escapeHtml(node.label)}</text><text class="js-node-meta" x="12" y="39">${semanticZoom === 'detail' || status !== 'resolved' ? escapeHtml(metadata) : ''}</text></g>`;
+  return `<g class="js-node js-node-${node.kind} js-status-${status}" data-graph-node="${escapeAttribute(node.id)}" data-graph-pinned="${node.pinned}" data-search-match="${searchMatch}" ${interaction} aria-current="${selectedById || (!selectedById && node.pointer === selectedPointer)}" transform="translate(${node.x} ${node.y})"><title>${escapeHtml(description)}</title><rect class="js-node-hit-target" width="150" height="50"></rect><rect class="js-node-shape" width="150" height="50"></rect><text x="12" y="22">${escapeHtml(node.label)}</text><text class="js-node-meta" x="12" y="39">${semanticZoom === 'detail' || status !== 'resolved' ? escapeHtml(metadata) : ''}</text></g>`;
 }
 
 function clampMinimapViewport(viewport: { readonly x: number; readonly y: number; readonly width: number; readonly height: number }, contentWidth: number, contentHeight: number): { readonly x: number; readonly y: number; readonly width: number; readonly height: number } {
   const width = Math.min(180, Math.max(1, viewport.width / contentWidth * 180));
   const height = Math.min(120, Math.max(1, viewport.height / contentHeight * 120));
   return { x: Math.min(180 - width, Math.max(0, viewport.x / contentWidth * 180)), y: Math.min(120 - height, Math.max(0, viewport.y / contentHeight * 120)), width, height };
-}
-
-function clientToGraphPoint(graphWorld: SVGElement, clientX: number, clientY: number): { readonly x: number; readonly y: number } {
-  const inverse = graphWorld.getScreenCTM().inverse();
-  return { x: inverse.a * clientX + inverse.c * clientY + inverse.e, y: inverse.b * clientX + inverse.d * clientY + inverse.f };
 }
 
 function inspector(property: PropertyRow | undefined, definition: import('../model.js').DefinitionProjection | undefined, diagnostics: readonly Diagnostic[], relation?: import('../model.js').RelationProjection): string {

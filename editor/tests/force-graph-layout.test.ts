@@ -59,4 +59,14 @@ describe('force graph layout', () => {
     expect(after.path).not.toBe(before.path);
     expect(graphEdgePath(from, from).path).toContain(' C');
   });
+
+  it('centers the focus type in prototype neighborhood layouts', () => {
+    const layout = new ForceGraphLayout();
+    const positions = layout.reconcile(nodes, edges, `neighborhood:${nodes[0]!.id}`);
+    const focus = positions.find((position) => position.id === nodes[0]!.id)!;
+    const bounds = layout.contentBounds();
+    expect(focus.x + focus.width / 2).toBeCloseTo(bounds.width / 2);
+    expect(focus.y + focus.height / 2).toBeCloseTo(bounds.height / 2);
+    layout.dispose();
+  });
 });

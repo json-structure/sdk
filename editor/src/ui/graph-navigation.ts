@@ -93,6 +93,13 @@ export class GraphNavigationController {
     return this.snapshot();
   }
 
+  public zoomBy(pointer: GraphPoint, delta: number): GraphNavigationState {
+    const nextZoom = this.clampZoom(Math.round((this.camera.zoom + delta) * 10) / 10);
+    const world = this.screenToWorld(pointer);
+    this.camera = { x: pointer.x - world.x * nextZoom, y: pointer.y - world.y * nextZoom, zoom: nextZoom };
+    return this.snapshot();
+  }
+
   public pan(delta: GraphPoint): GraphNavigationState {
     this.camera = { ...this.camera, x: this.camera.x + delta.x, y: this.camera.y + delta.y };
     return this.snapshot();

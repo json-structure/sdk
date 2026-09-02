@@ -52,7 +52,7 @@ describe('canonical capability profiles', () => {
     expect(resolveCapabilities({ $schema: relations, $uses: ['JSONStructureRelations'] })).toMatchObject({ importActive: true, relationsActive: true });
     expect(resolveCapabilities({ $schema: core, $uses: ['JSONStructureUnits'] }).unitsActive).toBe(false);
     expect(resolveCapabilities({ $schema: relations, $uses: ['JSONStructureSemanticAnnotations'] }).semanticAnnotationsActive).toBe(false);
-    expect(resolveCapabilities({ $schema: semanticAnnotations, $uses: ['JSONStructureRelations'] }).relationsActive).toBe(false);
+    expect(resolveCapabilities({ $schema: semanticAnnotations, $uses: ['JSONStructureRelations'] }).relationsActive).toBe(true);
   });
 
   it('inherits offered capabilities and reads authored offer-map keys', () => {
@@ -61,6 +61,7 @@ describe('canonical capability profiles', () => {
       'JSONStructureAlternateNames',
       'JSONStructureConditionalComposition',
       'JSONStructureImport',
+      'JSONStructureRelations',
       'JSONStructureSemanticAnnotations',
       'JSONStructureUnits',
       'JSONStructureValidation'
@@ -74,6 +75,19 @@ describe('canonical capability profiles', () => {
     })).toMatchObject({
       offeredExtensions: ['JSONStructureRelations', 'VendorCapability'],
       unknown: []
+    });
+  });
+
+  it('activates Relations as a semantic-annotations companion', () => {
+    const capabilities = resolveCapabilities({
+      $schema: semanticAnnotations,
+      $uses: ['JSONStructureSemanticAnnotations', 'JSONStructureAlternateNames', 'JSONStructureRelations', 'JSONStructureUnits']
+    });
+    expect(capabilities).toMatchObject({
+      semanticAnnotationsActive: true,
+      alternateNamesActive: true,
+      relationsActive: true,
+      unitsActive: true
     });
   });
 

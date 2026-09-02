@@ -82,4 +82,32 @@ describe('semantic graph controller', () => {
     expect(domain.projection.nodes.map((node) => node.id)).toEqual(['graph:namespace:Domain', '/definitions/Domain/A', '/definitions/Domain/B']);
     expect(domain.projection.edges.every((edge) => edge.label === 'contains')).toBe(true);
   });
+
+  it('builds relation neighborhoods from outgoing declarations and bundles common targets', () => {
+    const controller = new SemanticGraphController();
+    const source = projection();
+    controller.setSource({
+      nodes: source.nodes,
+      edges: [
+        ...source.edges,
+        { id: 'relation-a-b-2', from: '/definitions/Domain/A', to: '/definitions/Domain/B', pointer: '/definitions/Domain/A/relations/also-related', label: 'also related', kind: 'relation' },
+        { id: 'relation-c-a', from: '/definitions/Common/C', to: '/definitions/Domain/A', pointer: '/definitions/Common/C/relations/a', label: 'incoming', kind: 'relation' },
+      ],
+    });
+    controller.openNode('graph:namespace:Domain');
+    const neighborhood = controller.openNode('/definitions/Domain/A');
+    expect(neighborhood.projection.nodes.map((node) => node.label)).toEqual(['A', 'B']);
+    expect(neighborhood.projection.edges).toHaveLength(1);
+    expect(neighborhood.projection.edges[0]?.label).toBe('2 relations');
+  });
+
+  it('keeps non-relation lenses out of the generic neighborhood flow', () => {
+    const controller = new SemanticGraphController();
+    controller.setSource(projection());
+    controller.setLens('extends');
+    const before = controller.view().location;
+    controller.openNode('/definitions/Domain/B');
+    expect(controller.view().location).toEqual(before);
+    expect(controller.view().selection?.nodeId).toBe('/definitions/Domain/B');
+  });
 });

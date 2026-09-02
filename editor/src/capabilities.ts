@@ -73,7 +73,7 @@ const CANONICAL_META_SCHEMAS: Readonly<Record<string, CanonicalMetaSchema>> = {
     mode: 'semantic-annotations',
     parent: EXTENDED_META_SCHEMA,
     uses: [CAPABILITY_USES.units, CAPABILITY_USES.imports, CAPABILITY_USES.conditionalComposition, CAPABILITY_USES.validation],
-    offers: [CAPABILITY_USES.semanticAnnotations]
+    offers: [CAPABILITY_USES.semanticAnnotations, CAPABILITY_USES.relations]
   },
   [RELATIONS_META_SCHEMA]: {
     mode: 'relations',
