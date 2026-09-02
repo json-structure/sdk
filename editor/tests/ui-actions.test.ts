@@ -3,6 +3,8 @@ import { commandActions, actionById } from '../src/ui/actions.js';
 import { actionAvailability } from '../src/ui/action-runtime.js';
 import { resolveCapabilities } from '../src/capabilities.js';
 import { DocumentSession } from '../src/session.js';
+import { collectionPointers } from '../src/ui/index.js';
+import { parseActionValue } from '../src/ui/action-runtime.js';
 
 describe('UI command action registry', () => {
   it('exposes every supported command family through metadata', () => {
@@ -32,11 +34,15 @@ describe('UI command action registry', () => {
   it('describes typed controls, targets, capabilities, and explicit removals', () => {
     expect(actionById('core.type')).toMatchObject({ control: { kind: 'select' }, capability: 'core', targets: ['declaration'], operation: 'set', removesActionId: 'core.type.remove' });
     expect(actionById('core.type')?.control).toMatchObject({ options: expect.arrayContaining([
+      { value: 'any', label: 'any' },
       { value: 'int8', label: 'int8' }, { value: 'uint16', label: 'uint16' }, { value: 'float8', label: 'float8' },
       { value: 'decimal', label: 'decimal' }, { value: 'datetime', label: 'datetime' }, { value: 'binary', label: 'binary' }, { value: 'jsonpointer', label: 'jsonpointer' }
     ]) });
-    expect(actionById('core.type')?.control).not.toMatchObject({ options: expect.arrayContaining([{ value: 'any', label: 'any' }]) });
     expect(actionById('core.required')).toMatchObject({ control: { kind: 'property-multi-select' } });
+    expect(actionById('core.max-length')).toMatchObject({ capability: 'core', schemaTypes: ['string'], keyword: 'maxLength' });
+    expect(actionById('validation.maxLength')).toBeUndefined();
+    expect(actionById('property.required-alternatives')).toMatchObject({ control: { kind: 'source-only' } });
+    expect(actionById('definition.add')).toMatchObject({ control: { kind: 'schema-type' } });
     expect(actionById('core.extends')).toMatchObject({ control: { kind: 'structured-list', item: 'reference' } });
     expect(actionById('reference.type')).toMatchObject({ control: { kind: 'reference-picker' } });
     expect(actionById('relation.add')).toMatchObject({ control: { kind: 'relation-editor' }, capability: 'relations' });
@@ -46,13 +52,29 @@ describe('UI command action registry', () => {
     expect(actionById('relation.scope')).toMatchObject({ control: { kind: 'structured-list', item: 'reference' }, keyword: 'scope' });
     expect(actionById('relation.qualifier')).toMatchObject({ control: { kind: 'reference-picker' }, keyword: 'qualifiertype' });
     expect(actionById('units.ucumUnit')).toMatchObject({ control: { kind: 'catalog', family: 'ucumUnit' }, capability: 'units', operation: 'set', removesActionId: 'units.ucumUnit.remove' });
+    expect(actionById('units.symbol')?.schemaTypes).toBeUndefined();
+    expect(actionById('units.symbols')?.schemaTypes).toBeUndefined();
+    expect(actionById('units.currency')?.schemaTypes).toBeUndefined();
     expect(actionById('units.unit.remove')).toMatchObject({ requiresValue: false, capability: 'units', operation: 'remove' });
     expect(commandActions.filter((action) => action.operation === 'set').every((action) => action.control || action.id === 'root.set')).toBe(true);
   });
 
-  it('disables hand-authored commands on incompatible selections', () => {
+  it('keeps type-agnostic Units annotations available while restricting unit expressions to numeric schemas', () => {
     const document = {
       $schema: 'https://json-structure.org/meta/extended/v0/#',
+      $uses: ['JSONStructureUnits'],
+      type: 'string'
+    };
+    expect(actionAvailability(actionById('units.symbol')!, '', document).enabled).toBe(true);
+    expect(actionAvailability(actionById('units.symbols')!, '', document).enabled).toBe(true);
+    expect(actionAvailability(actionById('units.currency')!, '', document).enabled).toBe(true);
+    expect(actionAvailability(actionById('units.unit')!, '', document).enabled).toBe(false);
+    expect(actionAvailability(actionById('units.ucumUnit')!, '', document).enabled).toBe(false);
+  });
+
+  it('disables hand-authored commands on incompatible selections', () => {
+    const document = {
+      $schema: 'https://json-structure.org/meta/relations/v0/#',
       $uses: ['JSONStructureImport', 'JSONStructureRelations', 'JSONStructureValidation'],
       definitions: {
         Domain: {
@@ -101,13 +123,24 @@ describe('UI command action registry', () => {
     expect(numberPrecision.canExecute({ session: number, documentVersion: number.snapshot().documentVersion })).toBe(true);
   });
 
+  it('preserves exact string-backed numeric bounds through action parsing and command edits', () => {
+    for (const [type, raw] of [['int128', '9007199254740993'], ['decimal', '1.2300']] as const) {
+      const session = new DocumentSession(`memory://exact-${type}`, `{"$schema":"https://json-structure.org/meta/validation/v0/#","type":"${type}"}`);
+      const action = actionById('validation.minimum')!;
+      const value = parseActionValue(action, raw, false, type);
+      const command = action.create('', value);
+      const result = command.execute({ session, documentVersion: 1 });
+      expect(result.edits[0]?.newText).toContain(`"minimum":"${raw}"`);
+    }
+  });
+
   it('creates document activation and compound Core commands', () => {
     const document = new DocumentSession('memory://document-actions', '{"$schema":"https://json-structure.org/meta/core/v0/#","type":"object","properties":{}}');
     const documentContext = { session: document, documentVersion: document.snapshot().documentVersion };
     for (const [id, value] of [
       ['core.schema', 'https://json-structure.org/meta/extended/v0/#'],
       ['core.uses', ['JSONStructureUnits']],
-      ['core.offers', { Units: { $ref: '#/definitions/Units' } }]
+      ['core.offers', { Units: '#/definitions/Units' }]
     ] as const) expect(actionById(id)!.create('', value).canExecute(documentContext)).toBe(true);
 
     const choice = new DocumentSession('memory://choice-actions', '{"type":"choice","choices":{"text":{"type":"string"}},"selector":"kind"}');
@@ -123,17 +156,35 @@ describe('UI command action registry', () => {
   });
 
   it('does not alias experimental Characteristics to a distinct capability profile', () => {
-    const capabilities = resolveCapabilities({ $schema: 'https://json-structure.org/meta/extended/v0/#', $uses: ['JSONStructureCharacteristics'], $offers: ['Characteristics'] });
+    const capabilities = resolveCapabilities({
+      $schema: 'https://json-structure.org/meta/extended/v0/#',
+      $uses: ['JSONStructureCharacteristics'],
+      $offers: { Characteristics: '#/definitions/Characteristics' }
+    });
     expect(capabilities.semanticAnnotationsActive).toBe(false);
-    expect(capabilities.offeredExtensions).not.toContain('Characteristics');
-    expect(capabilities.unknown).toContain('Characteristics');
+    expect(capabilities.offeredExtensions).toContain('Characteristics');
+    expect(capabilities.unknown).toContain('JSONStructureCharacteristics');
   });
 
-  it('activates Relations and its imported namespace feature for the canonical Relations meta-schema', () => {
-    expect(resolveCapabilities({ $schema: 'https://json-structure.org/meta/relations/v0/#' })).toMatchObject({
+  it('offers Relations from its canonical meta-schema and activates it through explicit uses', () => {
+    expect(resolveCapabilities({
+      $schema: 'https://json-structure.org/meta/relations/v0/#',
+      $uses: ['JSONStructureRelations']
+    })).toMatchObject({
       importActive: true,
       relationsActive: true
     });
+  });
+
+  it('discovers collection scopes without coercing reference-typed properties', () => {
+    expect(collectionPointers({
+      type: 'object',
+      properties: {
+        owner: { type: { $ref: '#/definitions/Person' } },
+        people: { type: 'array', items: { type: { $ref: '#/definitions/Person' } } },
+      },
+      definitions: { Person: { type: 'object', properties: { id: { type: 'string' } }, identity: ['id'] } },
+    })).toEqual(['#/properties/people']);
   });
 
   it('uses the selected definition for the document root', () => {

@@ -18,7 +18,6 @@ export interface ValidationProjection {
 	readonly exclusiveMaximum?: number | string;
 	readonly multipleOf?: number | string;
 	readonly minLength?: number;
-	readonly maxLength?: number;
 	readonly pattern?: string;
 	readonly format?: string;
 	readonly minItems?: number;
@@ -241,6 +240,7 @@ export interface DefinitionProjection {
 	readonly items?: Record<string, unknown>;
 	readonly values?: Record<string, unknown>;
 	readonly tuple?: readonly string[];
+	readonly maxLength?: number;
 	readonly description?: string;
 	readonly binary?: BinaryAnnotationsProjection;
 }

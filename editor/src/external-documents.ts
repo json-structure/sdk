@@ -15,7 +15,7 @@ export const defaultExternalDocumentLimits: ExternalDocumentLimits = {
   maxDepth: 16,
   maxDocuments: 128,
   maxTotalBytes: 8 * 1024 * 1024,
-  supportedSchemes: ['file', 'http', 'https', 'vscode-remote'],
+  supportedSchemes: ['file', 'http', 'https', 'vscode-remote', 'memory', 'bundle'],
 };
 
 /** Loads the transitive import closure as resolver-ready descriptors. */
@@ -42,12 +42,12 @@ export async function loadExternalDocuments(documentUri: string, sources: readon
       }
       totalBytes += contentBytes;
       const parsed = parseDocument(resource.uri, resource.content);
-      if (!parsed.model || parsed.recovery !== 'valid') {
+      if (!parsed.model || parsed.recovery !== 'valid' || parsed.diagnostics.some((diagnostic) => diagnostic.severity === 'error')) {
         results.push({ uri, snapshot: { uri: resource.uri, text: resource.content, documentVersion: 1, recovery: parsed.recovery, diagnostics: parsed.diagnostics }, availability: 'stale' });
         continue;
       }
       results.push({ uri, model: parsed.model, value: parsed.value as Readonly<Record<string, unknown>>, availability: 'available' });
-      for (const imported of importSources(parsed.value)) pending.push({ uri: resolveResourceUri(resource.uri, imported), depth: depth + 1 });
+      for (const imported of parsed.model.projections.imports) pending.push({ uri: resolveResourceUri(resource.uri, imported.source), depth: depth + 1 });
     } catch {
       results.push({ uri, availability: 'unavailable' });
     }
@@ -70,16 +70,4 @@ export function resolveResourceUri(documentUri: string, source: string): string 
 /** Creates a protocol resource result for host implementations and tests. */
 export function resourceSnapshot(requestId: string, uri: string, content: string, contentHash = ''): ResourceSnapshot {
   return { protocolVersion: PROTOCOL_VERSION, requestId, uri, content, contentHash };
-}
-
-function importSources(value: unknown): readonly string[] {
-  const sources: string[] = [];
-  const visit = (candidate: unknown): void => {
-    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return;
-    const object = candidate as Record<string, unknown>;
-    for (const keyword of ['$import', '$importdefs']) if (typeof object[keyword] === 'string') sources.push(object[keyword]);
-    for (const nested of Object.values(object)) visit(nested);
-  };
-  visit(value);
-  return sources;
 }

@@ -27,6 +27,7 @@ import {
 
 const extended = 'https://json-structure.org/meta/extended/v0/#';
 const semantic = 'https://json-structure.org/meta/semantic-annotations/v0/#';
+const semanticHeader = { $schema: semantic, $uses: ['JSONStructureSemanticAnnotations'] } as const;
 
 function apply(text: string, command: EditorCommand): { changed: string; restored: string } {
   const session = new DocumentSession('memory://semantic-edit', text);
@@ -45,8 +46,9 @@ function execute(text: string, command: EditorCommand, documentVersion = 1) {
 describe('Semantic Annotations authoring', () => {
   it('uses the normative activation matrix and enforces placement', () => {
     const matrix: ReadonlyArray<readonly [Record<string, unknown>, boolean]> = [
-      [{ $schema: semantic }, true],
-      [{ $schema: extended, $uses: ['JSONStructureSemanticAnnotations'] }, true],
+      [{ $schema: semantic }, false],
+      [semanticHeader, true],
+      [{ $schema: extended, $uses: ['JSONStructureSemanticAnnotations'] }, false],
       [{ $schema: extended, $uses: ['SemanticAnnotations'] }, false],
       [{ $schema: extended }, false],
       [{ $schema: 'https://json-structure.org/meta/core/v0/#', $uses: ['JSONStructureSemanticAnnotations'] }, false]
@@ -56,14 +58,28 @@ describe('Semantic Annotations authoring', () => {
       expect(session.capabilities.semanticAnnotationsActive).toBe(expected);
       expect(new SetConceptsCommand('', [{ reference: 'https://example.test/concept', kind: 'skos-concept' }]).canExecute({ session, documentVersion: 1 })).toBe(expected);
     }
-    const scalar = new DocumentSession('memory://scalar', JSON.stringify({ $schema: semantic, type: 'string' }));
+    const scalar = new DocumentSession('memory://scalar', JSON.stringify({ ...semanticHeader, type: 'string' }));
     expect(new SetCoordinateReferenceSystemCommand('', { reference: 'https://www.opengis.net/def/crs/EPSG/0/4326', kind: 'epsg', coordinates: ['lat', 'lon'] }).canExecute({ session: scalar, documentVersion: 1 })).toBe(false);
-    const record = new DocumentSession('memory://record', JSON.stringify({ $schema: semantic, type: 'object', properties: { lat: { type: 'number' }, lon: { type: 'number' } } }));
+    const record = new DocumentSession('memory://record', JSON.stringify({ ...semanticHeader, type: 'object', properties: { lat: { type: 'number' }, lon: { type: 'number' } } }));
     expect(new SetCoordinateReferenceSystemCommand('', { reference: 'https://www.opengis.net/def/crs/EPSG/0/4326', kind: 'epsg', coordinates: ['lat', 'lon'] }).canExecute({ session: record, documentVersion: 1 })).toBe(true);
   });
 
+  it('projects annotations on schema-valued additionalProperties', () => {
+    const parsed = parseDocument('memory://semantic-additional-properties', JSON.stringify({
+      ...semanticHeader,
+      type: 'object',
+      properties: { id: { type: 'string' } },
+      additionalProperties: {
+        type: 'string',
+        concepts: [{ reference: 'urn:concept:additional', kind: 'custom-concept' }]
+      }
+    }));
+    expect(parsed.model?.projections.semanticPlacements.some((entry) => entry.pointer === '/additionalProperties')).toBe(true);
+    expect(parsed.diagnostics.some((entry) => entry.location?.pointer?.startsWith('/additionalProperties/concepts'))).toBe(false);
+  });
+
   it('preserves exact bytes for add, replace, and remove', () => {
-    const original = `{"$schema":"${semantic}","type":"object","properties":{"value":{"type":"string","unknown":{"keep":"\\u0061"}}}}`;
+    const original = `{"$schema":"${semantic}","$uses":["JSONStructureSemanticAnnotations"],"type":"object","properties":{"value":{"type":"string","unknown":{"keep":"\\u0061"}}}}`;
     const pointer = '/properties/value';
     const added = apply(original, new SetSemanticRoleCommand(pointer, 'featureOfInterest'));
     expect(added.restored).toBe(original);
@@ -75,7 +91,7 @@ describe('Semantic Annotations authoring', () => {
 
   it('validates the complete candidate annotation set before removal', () => {
     const temporal = JSON.stringify({
-      $schema: semantic,
+      ...semanticHeader,
       type: 'object',
       properties: {
         value: {
@@ -89,7 +105,7 @@ describe('Semantic Annotations authoring', () => {
     expect(new SetTemporalReferenceSystemCommand('/properties/value', undefined).canExecute({ session: temporalSession, documentVersion: 1 })).toBe(false);
 
     const fixedState = JSON.stringify({
-      $schema: semantic,
+      ...semanticHeader,
       type: 'object',
       properties: {
         value: {
@@ -110,7 +126,7 @@ describe('Semantic Annotations authoring', () => {
 
   it('provides typed add, replace, and remove commands for all 20 keywords', () => {
     const original = JSON.stringify({
-      $schema: semantic,
+      ...semanticHeader,
       type: 'object',
       properties: Object.fromEntries(['time','x','y','z','matrix','route','distance','distanceEnd','direction','red','green','blue','alpha','left','right','B2','B3','B4','B8','qx','qy','qz','qw'].map((name) => [name, { type: 'number' }]))
     });
@@ -165,7 +181,7 @@ describe('Semantic Annotations authoring', () => {
 
   it('inspects authored values, effective defaults, exact JSON, and indeterminate references', () => {
     const source = JSON.stringify({
-      $schema: semantic,
+      ...semanticHeader,
       type: 'object',
       properties: { time: { type: 'string' }, red: { type: 'number' }, green: { type: 'number' }, blue: { type: 'number' }, left: { type: 'number' }, right: { type: 'number' } },
       temporalReferenceSystem: { reference: 'https://example.test/trs', kind: 'custom', position: 'time' },
@@ -187,7 +203,7 @@ describe('Semantic Annotations authoring', () => {
   });
 
   it('emits an exact sparse one-key semantic preview', () => {
-    const source = JSON.stringify({ $schema: semantic, type: 'object', properties: { value: { type: 'number', derivation: 'measured' } } });
+    const source = JSON.stringify({ ...semanticHeader, type: 'object', properties: { value: { type: 'number', derivation: 'measured' } } });
     const placement = parseDocument('memory://one-key-preview', source).model?.projections.semanticPlacements.find((item) => item.pointer === '/properties/value');
     expect(placement?.annotations).toEqual({ derivation: 'measured' });
     expect(placement?.inspection).toEqual([{
@@ -219,13 +235,13 @@ describe('Semantic Annotations authoring', () => {
       ['conditioned string', { type: 'string', measurementConditioning: { weighting: 'A' } }, new SetMeasurementConditioningCommand('/properties/value', { weighting: 'A' }), false]
     ];
     for (const [label, annotated, command, valid] of cases) {
-      const parserSource = JSON.stringify({ $schema: semantic, type: 'object', properties: { value: annotated } });
+      const parserSource = JSON.stringify({ ...semanticHeader, type: 'object', properties: { value: annotated } });
       const parsed = parseDocument(`memory://parser-${label}`, parserSource);
       expect(parsed.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer.startsWith('/properties/value/')), label).toBe(!valid);
 
       const { semanticRole, codedValues, measurementConditioning, ...base } = annotated;
       expect(command.canExecute({
-        session: new DocumentSession(`memory://command-${label}`, JSON.stringify({ $schema: semantic, type: 'object', properties: { value: base } })),
+        session: new DocumentSession(`memory://command-${label}`, JSON.stringify({ ...semanticHeader, type: 'object', properties: { value: base } })),
         documentVersion: 1
       }), label).toBe(valid);
       expect(semanticRole ?? codedValues ?? measurementConditioning).toBeDefined();
@@ -235,7 +251,7 @@ describe('Semantic Annotations authoring', () => {
   it('resolves compatible local refs and extends while leaving unions and external refs indeterminate', () => {
     const annotation = { reference: 'https://example.test/codes', kind: 'custom' };
     const source = JSON.stringify({
-      $schema: semantic,
+      ...semanticHeader,
       type: 'object',
       definitions: {
         Code: { type: 'string' },
@@ -257,7 +273,7 @@ describe('Semantic Annotations authoring', () => {
   it('gates authored types on determinate compatible extends for diagnostics and commands', () => {
     const annotation = { reference: 'https://example.test/codes', kind: 'custom' };
     const source = JSON.stringify({
-      $schema: semantic,
+      ...semanticHeader,
       type: 'object',
       definitions: {
         LocalNumber: { type: 'number' },
@@ -277,7 +293,7 @@ describe('Semantic Annotations authoring', () => {
     expect(parsed.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/properties/local/codedValues')).toBe(true);
 
     const commandSource = JSON.stringify({
-      $schema: semantic,
+      ...semanticHeader,
       type: 'object',
       definitions: {
         LocalNumber: { type: 'number' },
@@ -298,23 +314,23 @@ describe('Semantic Annotations authoring', () => {
   });
 
   it('rejects stale, duplicate, incomplete, and sibling-invalid edits without touching bytes', () => {
-    const source = `{"$schema":"${semantic}","type":"object","properties":{"x":{"type":"number","semanticRole":"status"}}}`;
+    const source = `{"$schema":"${semantic}","$uses":["JSONStructureSemanticAnnotations"],"type":"object","properties":{"x":{"type":"number","semanticRole":"status"}}}`;
     const session = new DocumentSession('memory://guards', source);
     expect(() => new SetSemanticRoleCommand('/properties/x', 'observationValue').execute({ session, documentVersion: 2 })).toThrow();
-    const duplicate = `{"$schema":"${semantic}","type":"object","properties":{"x":{"type":"number","semanticRole":"status","semantic\u0052ole":"status"}}}`;
+    const duplicate = `{"$schema":"${semantic}","$uses":["JSONStructureSemanticAnnotations"],"type":"object","properties":{"x":{"type":"number","semanticRole":"status","semantic\u0052ole":"status"}}}`;
     expect(() => execute(duplicate, new SetSemanticRoleCommand('/properties/x', 'observationValue'))).toThrow();
-    const incomplete = `{"$schema":"${semantic}","type":"object","properties":{"x":{"type":"number","derivation":"statistic"}}}`;
+    const incomplete = `{"$schema":"${semantic}","$uses":["JSONStructureSemanticAnnotations"],"type":"object","properties":{"x":{"type":"number","derivation":"statistic"}}}`;
     expect(execute(incomplete, new SetStatisticCommand('/properties/x', 'mean')).edits).toHaveLength(1);
     expect(() => execute(source, new SetStatisticCommand('/properties/x', 'mean'))).toThrow();
   });
 
   it('preserves escaped authored bytes and rejects duplicate temporal singleton roles', () => {
-    const escaped = `{"$schema":"${semantic}","type":"object","properties":{"x":{"type":"number","semantic\u0052ole":"status","unknown":"\\u0061"}}}`;
+    const escaped = `{"$schema":"${semantic}","$uses":["JSONStructureSemanticAnnotations"],"type":"object","properties":{"x":{"type":"number","semantic\u0052ole":"status","unknown":"\\u0061"}}}`;
     const replaced = apply(escaped, new SetSemanticRoleCommand('/properties/x', 'observationValue'));
     expect(replaced.changed).toContain('"semanticRole":"observationValue"');
     expect(replaced.changed).toContain('"unknown":"\\u0061"');
     expect(replaced.restored).toBe(escaped);
-    const duplicateRole = JSON.stringify({ $schema: semantic, type: 'object', properties: { start: { type: 'string', semanticRole: 'phenomenonTime' }, end: { type: 'string' } } });
+    const duplicateRole = JSON.stringify({ ...semanticHeader, type: 'object', properties: { start: { type: 'string', semanticRole: 'phenomenonTime' }, end: { type: 'string' } } });
     expect(() => execute(duplicateRole, new SetSemanticRoleCommand('/properties/end', 'phenomenonTime'))).toThrow();
   });
 
@@ -329,7 +345,7 @@ describe('Semantic Annotations authoring', () => {
     expect(inactive.diagnostics.some((item) => item.location?.pointer === '/default/semanticRole')).toBe(false);
 
     const invalid = parseDocument('memory://semantic-local-invalid', JSON.stringify({
-      $schema: semantic,
+      ...semanticHeader,
       type: 'object',
       properties: {
         first: { type: 'number', semanticRole: 'phenomenonTime' },
@@ -351,9 +367,64 @@ describe('Semantic Annotations authoring', () => {
     expect(invalid.model?.projections.semanticPlacements.find((item) => item.pointer === '')?.annotations.coordinateReferenceSystem).toBeUndefined();
   });
 
+  it('resolves semantic bindings against inherited members and named choice member paths', () => {
+    const inherited = JSON.stringify({
+      ...semanticHeader,
+      definitions: {
+        PositionBase: {
+          type: 'object',
+          abstract: true,
+          properties: { latitude: { type: 'number' }, longitude: { type: 'number' } }
+        },
+        Position: {
+          type: 'object',
+          $extends: '#/definitions/PositionBase',
+          properties: { altitude: { type: 'number' } },
+          coordinateReferenceSystem: {
+            reference: 'https://www.opengis.net/def/crs/EPSG/0/4979',
+            kind: 'epsg',
+            coordinates: ['latitude', 'longitude', 'altitude']
+          }
+        }
+      }
+    });
+    const parsed = parseDocument('memory://semantic-inherited-binding', inherited);
+    expect(parsed.diagnostics.some((item) => item.location?.pointer === '/definitions/Position/coordinateReferenceSystem')).toBe(false);
+    const inheritedSession = new DocumentSession('memory://semantic-inherited-command', JSON.stringify({
+      ...semanticHeader,
+      definitions: {
+        PositionBase: { type: 'object', abstract: true, properties: { latitude: { type: 'number' } } },
+        Position: { type: 'object', $extends: '#/definitions/PositionBase', properties: { longitude: { type: 'number' } } }
+      }
+    }));
+    expect(new SetCoordinateReferenceSystemCommand('/definitions/Position', {
+      reference: 'https://www.opengis.net/def/crs/EPSG/0/4326',
+      kind: 'epsg',
+      coordinates: ['latitude', 'longitude']
+    }).canExecute({ session: inheritedSession, documentVersion: 1 })).toBe(true);
+
+    const choice = JSON.stringify({
+      ...semanticHeader,
+      type: 'choice',
+      choices: {
+        reading: { type: 'number', semanticRole: 'observationValue', derivation: 'measured' }
+      }
+    });
+    const choicePointer = '/choices/reading';
+    const choiceParsed = parseDocument('memory://semantic-choice-member', choice);
+    expect(choiceParsed.diagnostics.some((item) => item.location?.pointer === `${choicePointer}/semanticRole`)).toBe(false);
+    expect(choiceParsed.model?.projections.semanticPlacements.some((item) => item.pointer === choicePointer)).toBe(true);
+    const choiceSession = new DocumentSession('memory://semantic-choice-command', JSON.stringify({
+      ...semanticHeader,
+      type: 'choice',
+      choices: { reading: { type: 'number' } }
+    }));
+    expect(new SetSemanticRoleCommand(choicePointer, 'observationValue').canExecute({ session: choiceSession, documentVersion: 1 })).toBe(true);
+  });
+
   it('enforces local concept consistency and positive Core temporal intervals', () => {
     const source = JSON.stringify({
-      $schema: semantic,
+      ...semanticHeader,
       type: 'object',
       properties: { when: { type: 'datetime' }, value: { type: 'number' } }
     });

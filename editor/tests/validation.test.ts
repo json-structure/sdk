@@ -8,6 +8,7 @@ import {
   type ValidationKeyword,
   type ValidationKeywordMap
 } from '../src/index.js';
+import { MAX_SAFE_REGEX_PATTERN_LENGTH } from '../src/safe-regex.js';
 
 const validationSchema = '"$schema":"https://json-structure.org/meta/validation/v0/#",';
 const active = (members: string): string => `{${validationSchema}${members}}`;
@@ -46,6 +47,24 @@ describe('Validation editing and diagnostics', () => {
       const session = new DocumentSession(`memory://${keyword}`, active(`"type":"${type}"${extra}`));
       expect(new SetValidationKeywordCommand('', keyword, value).canExecute({ session, documentVersion: 1 }), keyword).toBe(true);
     }
+  });
+
+  it('treats maxLength as a Core annotation while retaining the generic command API', () => {
+    const valid = parseDocument('memory://core-max-length', '{"$schema":"https://json-structure.org/meta/core/v0/#","$id":"https://example.test/string","name":"BoundedString","type":"string","maxLength":64}');
+    expect(valid.diagnostics.some((item) => item.location?.pointer === '/maxLength')).toBe(false);
+    expect(valid.model?.projections.definitions[0]?.maxLength).toBe(64);
+    expect(valid.model?.projections.definitions[0]?.validation && 'maxLength' in valid.model.projections.definitions[0].validation).toBeFalsy();
+    const validationActive = parseDocument('memory://validation-max-length', active('"type":"string","maxLength":64'));
+    expect(validationActive.model?.projections.definitions[0]?.maxLength).toBe(64);
+    expect(validationActive.model?.projections.definitions[0]?.validation && 'maxLength' in validationActive.model.projections.definitions[0].validation).toBeFalsy();
+    const invalid = parseDocument('memory://invalid-core-max-length', '{"$schema":"https://json-structure.org/meta/core/v0/#","$id":"https://example.test/string","name":"BoundedString","type":"string","maxLength":-1}');
+    expect(invalid.diagnostics.filter((item) => item.location?.pointer === '/maxLength')).toEqual([
+      expect.objectContaining({ code: 'core.declaration-invalid' })
+    ]);
+    expect(invalid.model?.projections.definitions[0]?.maxLength).toBeUndefined();
+    const session = new DocumentSession('memory://core-max-length-command', '{"type":"string"}');
+    expect(new SetValidationKeywordCommand('', 'maxLength', 32).canExecute({ session, documentVersion: 1 })).toBe(true);
+    expect(new SetValidationKeywordCommand('', 'maxLength', -1).canExecute({ session, documentVersion: 1 })).toBe(false);
   });
 
   it('rejects an invalid edit for every Validation ledger keyword', () => {
@@ -98,6 +117,19 @@ describe('Validation editing and diagnostics', () => {
     for (const pointer of ['/definitions/S/maxLength', '/definitions/A/maxContains', '/definitions/M/maxEntries']) {
       expect(invalid.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === pointer), pointer).toBe(false);
     }
+  });
+
+  it('caps schema patterns while retaining valid ECMAScript patterns unsupported by the safe runtime', () => {
+    const overlong = 'a'.repeat(MAX_SAFE_REGEX_PATTERN_LENGTH + 1);
+    const parsed = parseDocument('memory://overlong-pattern', active(`"type":"string","pattern":${JSON.stringify(overlong)}`));
+    expect(parsed.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'json.keyword-invalid', location: expect.objectContaining({ pointer: '/pattern' }) })
+    ]));
+    const session = new DocumentSession('memory://overlong-pattern-command', active('"type":"string"'));
+    expect(new SetValidationKeywordCommand('', 'pattern', overlong).canExecute({ session, documentVersion: 1 })).toBe(false);
+
+    const lookahead = parseDocument('memory://safe-regex-unsupported', active('"type":"string","pattern":"^(?=a)a$"'));
+    expect(lookahead.diagnostics.some((item) => item.location?.pointer === '/pattern')).toBe(false);
   });
 
   it('enforces extended numeric strings and all lower/upper bound interactions', () => {
@@ -235,7 +267,7 @@ describe('Validation editing and diagnostics', () => {
       const invalid = parseDocument(`memory://${name}-invalid`, JSON.stringify({ ...header, type: 'string', minLength: -1 }));
       expect(session.capabilities.validationActive, `${name}: capability`).toBe(expectedActive);
       expect(parsed.model?.projections.definitions[0]?.validation !== undefined, `${name}: parser projection`).toBe(expectedActive);
-      expect(invalid.diagnostics.some((item) => item.location?.pointer === '/minLength'), `${name}: parser diagnostic`).toBe(expectedActive);
+      expect(invalid.diagnostics.some((item) => item.location?.pointer === '/minLength'), `${name}: parser diagnostic`).toBe(true);
       expect(new SetValidationKeywordCommand('', 'minLength', 1).canExecute({ session, documentVersion: 1 }), `${name}: command`).toBe(expectedActive);
     }
   });

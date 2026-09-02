@@ -43,10 +43,12 @@ describe('graph projection', () => {
 
   it('retains root, relation, import, external, unresolved, and indeterminate metadata', () => {
     const external = parseDocument('https://example.org/types.json', JSON.stringify({
-      $schema: 'https://json-structure.org/meta/core/v0/#', $id: 'https://example.org/types.json', name: 'Types',
+      $schema: 'https://json-structure.org/meta/relations/v0/#', $uses: ['JSONStructureRelations'], $id: 'https://example.org/types.json', name: 'Types',
       definitions: { External: { type: 'object', properties: { id: { type: 'string' } }, identity: ['id'] }, Qualifier: { type: 'object', properties: { code: { type: 'string' } } } }
     })).model!;
     const graph = projectGraph(resolvedSnapshot('memory://statuses', {
+      $schema: 'https://json-structure.org/meta/relations/v0/#',
+      $uses: ['JSONStructureRelations'],
       $root: '#/definitions/Source',
       definitions: {
         Imported: { $importdefs: 'https://example.org/types.json' }, MissingImport: { $importdefs: 'https://example.org/missing.json' },

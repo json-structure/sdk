@@ -16,6 +16,7 @@ const bridge: ElectronBridge = {
   openExternal: (url) => ipcRenderer.invoke('external:open', url),
   readResource: (uri) => ipcRenderer.invoke('resource:read', uri),
   listConversionCommands: () => ipcRenderer.invoke('conversion:list', { protocolVersion: 1, requestId: `commands-${Date.now()}` }),
+  selectConversionSource: (request) => ipcRenderer.invoke('conversion:source', request),
   convert: (request) => ipcRenderer.invoke('conversion:run', request),
   onConversionProgress: (listener) => {
     const handler = (_event: IpcRendererEvent, progress: Parameters<typeof listener>[0]) => listener(progress);
@@ -31,7 +32,7 @@ const bridge: ElectronBridge = {
     const entry = catalog.find((candidate) => candidate.id === entryId && candidate.versions.some((candidateVersion) => candidateVersion.version === version));
     if (!entry) throw new Error(`Library document '${entryId}@${version}' is not available.`);
     const resolved = await libraryRequest<import('../libraries/host-runtime').LibraryHostResolution>('resolve', { providerId: entry.providerId, entryId, selector: { kind: 'pinned', version }, offline: false });
-    return { entryId, version, uri: resolved.provenance.sourceUri, value: resolved.document };
+    return { entryId, version, uri: resolved.documentUri, value: resolved.document };
   },
   onFileOpened: (listener) => {
     const handler = (_event: IpcRendererEvent, file: FileOpenedEvent) => listener(file);

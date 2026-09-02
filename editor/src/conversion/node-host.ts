@@ -1,5 +1,5 @@
-import { randomUUID } from 'node:crypto';
-import { copyFile, lstat, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { copyFile, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import type { ConversionRequest, ConversionResult, HostFile } from '../contracts.js';
 import { PROTOCOL_VERSION } from '../contracts.js';
@@ -9,10 +9,13 @@ import type { ConversionStorage } from './storage.js';
 import { PackagedExecutableWorkerAdapter } from './worker.js';
 
 export class NodeFilesystemConversionStorage implements ConversionStorage {
-  async createStagingDirectory(destination: string, operationId: string): Promise<string> {
-    const staging = `${destination}.staging-${operationId}`;
-    await rm(staging, { recursive: true, force: true });
-    await mkdir(staging, { recursive: true });
+  private readonly temporaryDirectories = new Map<string, string>();
+
+  async createStagingDirectory(destination: string, _operationId: string): Promise<string> {
+    const parent = resolve(dirname(destination));
+    await mkdir(parent, { recursive: true });
+    const staging = await mkdtemp(join(parent, `.${destination.replace(/^.*[\\/]/, '')}.staging-`));
+    this.temporaryDirectories.set(resolve(staging), parent);
     return staging;
   }
 
@@ -27,12 +30,11 @@ export class NodeFilesystemConversionStorage implements ConversionStorage {
     validateOutputPaths(files);
     await preflightDestination(destination, files);
 
-    const rollbackDirectory = `${destination}.rollback-${randomUUID()}`;
+    const rollbackDirectory = await this.createTemporaryDirectory(destination, 'rollback');
     const published: { target: string; backup?: string }[] = [];
     const createdDirectories = new Set<string>();
     try {
       await ensureDirectory(destination, createdDirectories);
-      await mkdir(rollbackDirectory, { recursive: true });
       for (const outputPath of files) {
         if (signal.aborted) throw new DOMException('Conversion cancelled.', 'AbortError');
         const source = containedPath(stagingDirectory, outputPath);
@@ -49,8 +51,8 @@ export class NodeFilesystemConversionStorage implements ConversionStorage {
         await this.publishPath(source, target, existing);
         if (signal.aborted) throw new DOMException('Conversion cancelled.', 'AbortError');
       }
-      await rm(rollbackDirectory, { recursive: true, force: true });
-      await rm(stagingDirectory, { recursive: true, force: true });
+      await this.removeDirectory(rollbackDirectory);
+      await this.removeDirectory(stagingDirectory);
     } catch (error) {
       for (const entry of published.reverse()) {
         await rm(entry.target, { force: true }).catch(() => undefined);
@@ -59,13 +61,25 @@ export class NodeFilesystemConversionStorage implements ConversionStorage {
       for (const directory of [...createdDirectories].sort((left, right) => right.length - left.length)) {
         await rm(directory).catch(() => undefined);
       }
-      await rm(rollbackDirectory, { recursive: true, force: true }).catch(() => undefined);
+      await this.removeDirectory(rollbackDirectory).catch(() => undefined);
       throw error;
     }
   }
 
-  removeDirectory(directory: string): Promise<void> {
-    return rm(directory, { recursive: true, force: true });
+  async removeDirectory(directory: string): Promise<void> {
+    const canonical = resolve(directory);
+    const parent = this.temporaryDirectories.get(canonical);
+    if (!parent || dirname(canonical) !== parent) throw new Error(`Refusing recursive deletion outside a registered staging parent: ${directory}.`);
+    this.temporaryDirectories.delete(canonical);
+    await rm(canonical, { recursive: true, force: true });
+  }
+
+  private async createTemporaryDirectory(destination: string, kind: 'rollback'): Promise<string> {
+    const parent = resolve(dirname(destination));
+    await mkdir(parent, { recursive: true });
+    const temporary = await mkdtemp(join(parent, `.${destination.replace(/^.*[\\/]/, '')}.${kind}-`));
+    this.temporaryDirectories.set(resolve(temporary), parent);
+    return temporary;
   }
 
   protected renamePath(source: string, destination: string): Promise<void> {
@@ -104,43 +118,54 @@ export class NodeConversionHost {
   listCommands() { return this.service.listCommands(); }
 
   async convert(request: ConversionRequest): Promise<ConversionResult> {
-    const destination = await this.options.destination(request);
-    if (!destination) return { protocolVersion: PROTOCOL_VERSION, requestId: request.requestId, documentVersion: request.documentVersion, succeeded: false, outputs: [], diagnostics: [{ code: 'conversion.cancelled', message: 'Conversion destination selection was cancelled.', severity: 'info' }] };
+    if (this.operations.has(request.requestId)) throw new Error(`Conversion ${request.requestId} is already running.`);
     const controller = new AbortController();
     this.operations.set(request.requestId, controller);
-    const result = await this.service.execute({
-      operationId: request.requestId,
-      commandId: request.commandId,
-      sourceName: request.sourceName,
-      source: new TextEncoder().encode(request.sourceText),
-      destination,
-      preview: false,
-      optionValues: request.options,
-      launch: { autoOpen: false },
-      signal: controller.signal,
-      onProgress: (progress) => this.options.progress?.(request, progress.phase, progress.completed, progress.total, progress.message),
-    }).finally(() => this.operations.delete(request.requestId));
-    const outputs: HostFile[] = Object.keys(result.runtime.files).sort().map((outputPath) => ({ uri: containedPath(destination, outputPath), name: outputPath.replace(/^.*[\\/]/, '') }));
-    if (result.runtime.published) for (const output of outputs) this.committedOutputs.add(resolve(output.uri));
-    return {
-      protocolVersion: PROTOCOL_VERSION,
-      requestId: request.requestId,
-      documentVersion: request.documentVersion,
-      succeeded: result.runtime.state === 'completed' && result.runtime.published,
-      outputs,
-      diagnostics: result.diagnostics,
-      review: {
-        commandId: result.command.id,
-        converter: { id: result.converter.id, displayName: result.converter.displayName, version: result.converter.version },
-        sourceFormat: result.command.sourceFormat,
-        targetFormat: result.command.targetFormat,
-        lifecycle: result.runtime.states,
-        published: result.runtime.published,
-        lossiness: result.runtime.lossiness,
-        warnings: result.runtime.warnings,
-        manifest: result.runtime.manifest,
-      },
-    };
+    try {
+      if (controller.signal.aborted) return cancelledResult(request);
+      const destination = await this.options.destination(request);
+      if (!destination || controller.signal.aborted) return cancelledResult(request);
+      const source = new TextEncoder().encode(request.sourceText);
+      const result = await this.service.execute({
+        operationId: randomUUID(),
+        commandId: request.commandId,
+        sourceName: request.sourceName,
+        source,
+        destination,
+        preview: false,
+        optionValues: request.options,
+        launch: { autoOpen: false },
+        signal: controller.signal,
+        onProgress: (progress) => this.options.progress?.(request, progress.phase, progress.completed, progress.total, progress.message),
+      });
+      const outputs: HostFile[] = result.runtime.published
+        ? Object.keys(result.runtime.files).sort().map((outputPath) => ({ uri: containedPath(destination, outputPath), name: outputPath.replace(/^.*[\\/]/, '') }))
+        : [];
+      if (result.runtime.published) for (const output of outputs) this.committedOutputs.add(resolve(output.uri));
+      return {
+        protocolVersion: PROTOCOL_VERSION,
+        requestId: request.requestId,
+        documentVersion: request.documentVersion,
+        succeeded: result.runtime.state === 'completed' && result.runtime.published,
+        outputs,
+        diagnostics: result.diagnostics,
+        review: {
+          commandId: result.command.id,
+          converter: { id: result.converter.id, displayName: result.converter.displayName, version: result.converter.version },
+          sourceFormat: result.command.sourceFormat,
+          targetFormat: result.command.targetFormat,
+          lifecycle: result.runtime.states,
+          published: result.runtime.published,
+          lossiness: result.runtime.lossiness,
+          warnings: result.runtime.warnings,
+          effectiveOptions: result.effectiveOptions,
+          source: { name: request.sourceName, bytes: source.byteLength, sha256: createHash('sha256').update(source).digest('hex') },
+          manifest: result.runtime.manifest,
+        },
+      };
+    } finally {
+      this.operations.delete(request.requestId);
+    }
   }
 
   cancel(requestId: string): void {
@@ -223,4 +248,15 @@ async function ensureDirectory(directory: string, created: Set<string>): Promise
 
 function isMissing(error: unknown): boolean {
   return (error as NodeJS.ErrnoException).code === 'ENOENT';
+}
+
+function cancelledResult(request: ConversionRequest): ConversionResult {
+  return {
+    protocolVersion: PROTOCOL_VERSION,
+    requestId: request.requestId,
+    documentVersion: request.documentVersion,
+    succeeded: false,
+    outputs: [],
+    diagnostics: [{ code: 'conversion.cancelled', message: 'Conversion destination selection was cancelled.', severity: 'info' }],
+  };
 }

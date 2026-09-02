@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseDocument, resolveDocumentReferences, resolveReferences } from '../src/index.js';
+import { DocumentSession, SetCoreMemberCommand, parseDocument, resolveDocumentReferences, resolveReferences } from '../src/index.js';
 
 function diagnosticAt(source: string, pointer: string, code?: string) {
   const parsed = parseDocument('memory://core-declarations', source);
@@ -199,5 +199,151 @@ describe('Core declaration diagnostics', () => {
       expect(parsed.diagnostics).toHaveLength(1);
       expect(parsed.diagnostics[0]?.code).toBe('json.incomplete');
     }
+  });
+
+  it('enforces primitive enum and const placement, exact scalar value spaces, and deep uniqueness', () => {
+    const valid = parseDocument('memory://core-scalar-values', JSON.stringify({
+      $schema: 'https://json-structure.org/meta/core/v0/#',
+      $id: 'https://example.org/scalars',
+      name: 'Scalars',
+      definitions: {
+        Signed: { type: 'int64', enum: ['-9223372036854775808', '9223372036854775807'] },
+        Unsigned: { type: 'uint128', const: '340282366920938463463374607431768211455' },
+        Decimal: { type: 'decimal', enum: ['-0.25', '10.0'] },
+        Small: { type: 'int8', enum: [-128, 127] },
+        Nothing: { type: 'null', const: null }
+      }
+    }));
+    expect(valid.diagnostics.filter((entry) => ['/enum', '/const'].some((suffix) => entry.location?.pointer.endsWith(suffix)))).toEqual([]);
+
+    const invalid = parseDocument('memory://core-scalar-counterexamples', JSON.stringify({
+      $schema: 'https://json-structure.org/meta/core/v0/#',
+      $id: 'https://example.org/scalar-counterexamples',
+      name: 'ScalarCounterexamples',
+      definitions: {
+        Compound: { type: 'object', properties: { id: { type: 'string' } }, enum: [{ id: 'a' }] },
+        Union: { type: ['string', 'null'], const: 'value' },
+        NumericInt64: { type: 'int64', const: 1 },
+        OverflowInt64: { type: 'int64', enum: ['9223372036854775808'] },
+        NegativeUint64: { type: 'uint64', enum: ['-1'] },
+        ExponentDecimal: { type: 'decimal', const: '1e2' },
+        DefaultPrecisionDecimal: { type: 'decimal', const: '1234567890123456789012345678901234.5' },
+        DefaultScaleDecimal: { type: 'decimal', const: '0.12345678' },
+        FractionalInt8: { type: 'int8', const: 1.5 },
+        Duplicate: { type: 'string', enum: ['same', 'same'] }
+      }
+    }));
+    for (const pointer of [
+      '/definitions/Compound/enum',
+      '/definitions/Union/const',
+      '/definitions/NumericInt64/const',
+      '/definitions/OverflowInt64/enum',
+      '/definitions/NegativeUint64/enum',
+      '/definitions/ExponentDecimal/const',
+      '/definitions/DefaultPrecisionDecimal/const',
+      '/definitions/DefaultScaleDecimal/const',
+      '/definitions/FractionalInt8/const',
+      '/definitions/Duplicate/enum'
+    ]) {
+      expect(invalid.diagnostics.some((entry) => entry.code === 'core.declaration-invalid' && entry.location?.pointer === pointer), pointer).toBe(true);
+    }
+
+    const session = new DocumentSession('memory://core-decimal-command', JSON.stringify({
+      $schema: 'https://json-structure.org/meta/core/v0/#',
+      $id: 'https://example.org/decimal-command',
+      name: 'DecimalCommand',
+      definitions: { Decimal: { type: 'decimal' } }
+    }));
+    const context = { session, documentVersion: 1 };
+    expect(new SetCoreMemberCommand('/definitions/Decimal', 'const', '1234567890123456789012345678901234.5').canExecute(context)).toBe(false);
+    expect(new SetCoreMemberCommand('/definitions/Decimal', 'enum', ['0.12345678']).canExecute(context)).toBe(false);
+
+    const unresolved = new DocumentSession('memory://core-unresolved-enum-command', JSON.stringify({
+      $schema: 'https://json-structure.org/meta/core/v0/#',
+      $id: 'https://example.org/unresolved-enum-command',
+      name: 'UnresolvedEnumCommand',
+      definitions: { Value: { type: { $ref: '#/definitions/Missing' } } }
+    }));
+    const unresolvedContext = { session: unresolved, documentVersion: 1 };
+    expect(new SetCoreMemberCommand('/definitions/Value', 'enum', ['value']).canExecute(unresolvedContext)).toBe(false);
+    expect(new SetCoreMemberCommand('/definitions/Value', 'const', 'value').canExecute(unresolvedContext)).toBe(false);
+  });
+
+  it('enforces abstract object and tuple inheritance without local property redefinition', () => {
+    const parsed = parseDocument('memory://core-inheritance-counterexamples', JSON.stringify({
+      $schema: 'https://json-structure.org/meta/core/v0/#',
+      $id: 'https://example.org/inheritance',
+      name: 'Inheritance',
+      definitions: {
+        ObjectBase: { type: 'object', abstract: true, properties: { id: { type: 'string' } } },
+        TupleBase: { type: 'tuple', abstract: true, properties: { x: { type: 'number' } }, tuple: ['x'] },
+        ValidObject: { type: 'object', $extends: '#/definitions/ObjectBase', properties: { name: { type: 'string' } } },
+        ValidTuple: { type: 'tuple', $extends: '#/definitions/TupleBase', properties: { y: { type: 'number' } }, tuple: ['y'] },
+        Redefines: { type: 'object', $extends: '#/definitions/ObjectBase', properties: { id: { type: 'uuid' } } },
+        ConcreteBase: { type: 'object', properties: { value: { type: 'string' } } },
+        ExtendsConcrete: { type: 'object', $extends: '#/definitions/ConcreteBase', properties: { other: { type: 'string' } } },
+        Incompatible: { type: 'object', $extends: '#/definitions/TupleBase', properties: { other: { type: 'string' } } },
+        ScalarExtension: { type: 'string', $extends: '#/definitions/ObjectBase' },
+        AbstractScalar: { type: 'string', abstract: true }
+      }
+    }));
+    expect(parsed.diagnostics.some((entry) => entry.location?.pointer.startsWith('/definitions/ValidObject'))).toBe(false);
+    expect(parsed.diagnostics.some((entry) => entry.location?.pointer.startsWith('/definitions/ValidTuple'))).toBe(false);
+    for (const pointer of [
+      '/definitions/Redefines/properties/id',
+      '/definitions/ExtendsConcrete/$extends',
+      '/definitions/Incompatible/$extends',
+      '/definitions/ScalarExtension/$extends',
+      '/definitions/AbstractScalar/abstract'
+    ]) {
+      expect(parsed.diagnostics.some((entry) => entry.code === 'core.declaration-invalid' && entry.location?.pointer === pointer), pointer).toBe(true);
+    }
+  });
+
+  it('rejects abstract declarations in ordinary local reference positions', () => {
+    const parsed = parseDocument('memory://abstract-reference-counterexamples', JSON.stringify({
+      $schema: 'https://json-structure.org/meta/relations/v0/#',
+      $id: 'https://example.org/abstract-references',
+      name: 'AbstractReferences',
+      $uses: ['JSONStructureRelations'],
+      $root: '#/definitions/AbstractEntity',
+      definitions: {
+        AbstractEntity: {
+          type: 'object',
+          abstract: true,
+          properties: { id: { type: 'string' } },
+          identity: ['id']
+        },
+        ValidDerived: {
+          type: 'object',
+          $extends: '#/definitions/AbstractEntity',
+          properties: { name: { type: 'string' } }
+        },
+        InvalidAlias: { type: { $ref: '#/definitions/AbstractEntity' } },
+        InvalidCollection: { type: 'array', items: { type: { $ref: '#/definitions/AbstractEntity' } } },
+        Source: {
+          type: 'object',
+          properties: { local: { type: 'string' } },
+          relations: {
+            invalid: {
+              targettype: { $ref: '#/definitions/AbstractEntity' },
+              cardinality: 'single',
+              qualifiertype: { $ref: '#/definitions/AbstractEntity' }
+            }
+          }
+        }
+      }
+    }));
+
+    for (const pointer of [
+      '/$root',
+      '/definitions/InvalidAlias/type/$ref',
+      '/definitions/InvalidCollection/items/type/$ref',
+      '/definitions/Source/relations/invalid/targettype/$ref',
+      '/definitions/Source/relations/invalid/qualifiertype/$ref'
+    ]) {
+      expect(parsed.diagnostics.some((diagnostic) => diagnostic.code === 'core.declaration-invalid' && diagnostic.location?.pointer === pointer), pointer).toBe(true);
+    }
+    expect(parsed.diagnostics.some((diagnostic) => diagnostic.location?.pointer === '/definitions/ValidDerived/$extends')).toBe(false);
   });
 });

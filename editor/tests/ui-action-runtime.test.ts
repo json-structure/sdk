@@ -19,6 +19,9 @@ describe('action runtime', () => {
   it('converts typed values and rejects invalid constrained numbers', () => {
     expect(parseActionValue(actionById('core.abstract')!, '', true)).toBe(true);
     expect(parseActionValue(actionById('core.precision')!, '12')).toBe(12);
+    expect(parseActionValue(actionById('validation.minimum')!, '9007199254740993', false, 'int128')).toBe('9007199254740993');
+    expect(parseActionValue(actionById('validation.multipleOf')!, '0.0100', false, 'decimal')).toBe('0.0100');
+    expect(parseActionValue(actionById('validation.minimum')!, '12', false, 'int32')).toBe(12);
     expect(parseActionValue(actionById('core.required')!, '["name"]')).toEqual(['name']);
     expect(() => parseActionValue(actionById('core.precision')!, '-1')).toThrow('valid number');
   });

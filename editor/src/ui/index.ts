@@ -1,4 +1,4 @@
-import { PROTOCOL_VERSION, type ConversionResult, type Diagnostic, type DocumentSnapshot, type EditorHost, type ProgressEvent, type TextEdit } from '../contracts.js';
+import { PROTOCOL_VERSION, type ConversionResult, type ConversionSource, type Diagnostic, type DocumentSnapshot, type EditorHost, type ProgressEvent, type TextEdit } from '../contracts.js';
 import { BUNDLED_ISO_4217_PROVIDER, BUNDLED_SEMANTIC_PROVIDER, BUNDLED_UCUM_PROVIDER, CatalogRegistry, bundledCatalogResult, type CatalogMergeResult, type CatalogProvider, type CatalogProviderManifest } from '../catalogs.js';
 import { DocumentSession } from '../session.js';
 import { loadExternalDocuments } from '../external-documents.js';
@@ -11,9 +11,10 @@ import { SemanticGraphController, type SemanticGraphView } from './semantic-grap
 import { editorStyles } from './prototype-styles.js';
 import { InstanceWorkspace, type CrossNavigationSelection, type EvaluationTrace, type InstanceValidationResult } from '../phase4/instance-workspace.js';
 import { resolveEffectiveMembers, type EffectiveMembersResult } from '../phase4/effective-members.js';
+import type { ResolvedSchemaDocument } from '../phase4/resolved-schema.js';
 import { GraphRuntime } from '../phase4/graph-runtime.js';
 import { detectMetaSchemaMode, paletteDescriptors } from '../phase4/meta-schema.js';
-import type { ConversionCommandsManifest } from '../conversion/types.js';
+import { conversionOptionsForCommand, type ConversionCommandsManifest, type ConversionOptionValues } from '../conversion/types.js';
 import type { LibraryEntry } from '../libraries/contracts.js';
 import type { LibraryDocument } from '../libraries/contracts.js';
 import type { LibraryCatalogEntry, LibraryHostResolution, LibraryProviderSummary } from '../libraries/host-runtime.js';
@@ -21,11 +22,12 @@ import { renderLibraryBrowser } from './library-browser.js';
 import { CopyCollisionError, planLibraryCopy, planLibraryMaterialization, type CopyOperation, type LibraryProvenance } from '../libraries/planning.js';
 import { planAddImport, planCopyDeclarations, planExtractInlineProperty, planLocalShadow, planMaterializeDeclarations, planMoveDefinition, type RefactoringPlan } from '../phase4/refactoring.js';
 import { rangeFor } from '../parser.js';
+import { effectiveValidationTypes } from '../validation.js';
 import type { editor as MonacoEditor } from 'monaco-editor';
 
 export { diagnosticsForPointer, pointerLabel, projectGraph, projectProperties } from './helpers.js';
 
-type EditorServices = Pick<EditorHost, 'listConversionCommands' | 'convert' | 'onConversionProgress' | 'cancelConversion' | 'openGeneratedOutput' | 'libraryRequest' | 'listLibraryEntries' | 'readLibraryDocument'>;
+type EditorServices = Pick<EditorHost, 'listConversionCommands' | 'selectConversionSource' | 'convert' | 'onConversionProgress' | 'cancelConversion' | 'openGeneratedOutput' | 'libraryRequest' | 'listLibraryEntries' | 'readLibraryDocument'>;
 
 export interface LibraryResolveSelection {
   readonly providerId: string;
@@ -60,14 +62,18 @@ export async function resolveLibrarySelection<T>(libraryRequest: NonNullable<Edi
   return libraryRequest<T>('resolve', selection);
 }
 
+export function documentCanPublish(snapshot: Pick<DocumentSnapshot, 'recovery' | 'diagnostics' | 'model'>): boolean {
+  return snapshot.recovery === 'valid' && snapshot.model !== undefined && !snapshot.diagnostics.some((diagnostic) => diagnostic.severity === 'error');
+}
+
 export function libraryPublishPreview(draft: LibraryPublishDraft, providers: readonly LibraryProviderSummary[], catalog: readonly LibraryCatalogEntry[], documentValid: boolean): LibraryPublishPreview {
   const provider = providers.find((candidate) => candidate.id === draft.providerId);
-  const versionExists = catalog.some((entry) => entry.id === draft.entryId && entry.versions.some((candidate) => candidate.version === draft.version));
+  const versionExists = catalog.some((entry) => entry.providerId === draft.providerId && entry.id === draft.entryId && entry.versions.some((candidate) => candidate.version === draft.version));
   const collisionRisks = [
-    ...(versionExists ? [`${draft.entryId}@${draft.version} already exists.`] : []),
+    ...(versionExists ? [`${draft.providerId}:${draft.entryId}@${draft.version} already exists and cannot be overwritten.`] : []),
     ...(draft.promoteDefault ? [`Default version will move to ${draft.version}.`] : []),
   ];
-  const valid = documentValid && Boolean(draft.entryId.trim() && draft.version.trim() && validLibrarySourceUri(draft.sourceUri) && provider?.publishSupported);
+  const valid = documentValid && !versionExists && Boolean(draft.entryId.trim() && draft.version.trim() && validLibrarySourceUri(draft.sourceUri) && provider?.publishSupported);
   return {
     draft,
     summary: `${draft.providerId}:${draft.entryId}@${draft.version} from ${draft.sourceUri}; promoteDefault=${draft.promoteDefault}; expectedEpoch=${draft.expectedEpoch ?? 'none'}`,
@@ -120,6 +126,8 @@ export interface JsonStructureEditorHandle {
   setText(text: string, documentVersion?: number): void;
   /** Updates visible document labels without rebuilding the workbench. */
   setTitle(title: string): void;
+  /** Updates the canonical document URI used for relative resource resolution. */
+  setUri(uri: string): void;
   /** Returns the exact current JSON source text. */
   getText(): string;
   /** Opens the shared command palette. */
@@ -148,10 +156,14 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
   let documentTitle = options.title ?? 'Untitled JSON Structure';
   let selectedPointer: string | undefined;
   let mode: Mode = 'design';
+  let lastRepresentationMode: Extract<Mode, 'design' | 'graph' | 'source'> = 'design';
   let disposed = false;
   let sourceEditor: MonacoEditor.IStandaloneCodeEditor | undefined;
   let sourceModel: MonacoEditor.ITextModel | undefined;
   let sourceMount = 0;
+  let focusSourceAfterMount = false;
+  let commandRequest = 0;
+  let commandQueue: Promise<void> = Promise.resolve();
   let synchronizedRender: ReturnType<typeof setTimeout> | undefined;
   let themeName: 'dark' | 'light' | 'contrast' = 'dark';
   let pendingDiagnostic: Diagnostic['location'] | undefined;
@@ -173,6 +185,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
   let conversionManifest: ConversionCommandsManifest | undefined;
   let conversionLoading = false;
   let conversionCommandId: string | undefined;
+  let conversionSource: ConversionSource | undefined;
   let conversionResult: ConversionResult | undefined;
   let conversionStatus = '';
   let conversionProgress: ProgressEvent | undefined;
@@ -181,9 +194,11 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
   let libraryProviders: readonly LibraryProviderSummary[] | undefined;
   let libraryCatalog: readonly LibraryCatalogEntry[] | undefined;
   let libraryResolution: LibraryHostResolution | undefined;
+  let libraryResolveSequence = 0;
   let libraryOffline = false;
   let libraryPublishDraft: LibraryPublishDraft | undefined;
   let libraryPublishPreviewState: LibraryPublishPreview | undefined;
+  let libraryPublishBinding: PreviewBinding | undefined;
   let libraryPublishedEpoch: string | undefined;
   let libraryProviderFilter = 'all';
   let librarySearch = '';
@@ -196,10 +211,12 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
   let libraryStatus = '';
   let problemsOpen = false;
   let drawerReturnFocus: HTMLElement | undefined;
+  let releaseDrawerTrap = (): void => undefined;
   const graphNavigation = new GraphNavigationController();
   const graphLayout = new ForceGraphLayout();
   const semanticGraph = new SemanticGraphController();
   let fitGraphAfterRender = false;
+  let graphEntered = false;
   let lastGraphActivation: { readonly nodeId: string; readonly time: number } | undefined;
   const catalogRegistry = createCatalogRegistry();
   const services = options.services ?? options.host;
@@ -209,6 +226,15 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
   const styleNonce = options.styleNonce ? ` nonce="${escapeAttribute(options.styleNonce)}"` : '';
   container.innerHTML = `<style${styleNonce}>${editorStyles}</style><main class="json-structure-editor" data-theme="dark"></main>`;
   const root = container.querySelector('.json-structure-editor') as HTMLElement;
+  const closeCompactDrawer = (): void => {
+    releaseDrawerTrap();
+    releaseDrawerTrap = () => undefined;
+    setCompactDrawerModal(root);
+    closeMobileDrawers(root);
+    const returnFocus = drawerReturnFocus;
+    drawerReturnFocus = undefined;
+    queueMicrotask(() => returnFocus?.isConnected && returnFocus.focus());
+  };
 
   const loadConversionCommands = (): void => {
     if (!services?.listConversionCommands || conversionLoading) return;
@@ -230,12 +256,16 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
 
   const setText = (text: string, documentVersion = session.snapshot().documentVersion + 1): void => {
     session.update(text, documentVersion);
+    libraryPublishPreviewState = undefined;
+    libraryPublishBinding = undefined;
     selectedPointer = selectFallback(session.snapshot(), selectedPointer);
     render();
     options.onChange?.(text, session.snapshot());
   };
   const setSourceText = (text: string): void => {
     session.update(text, options.host ? session.snapshot().documentVersion : session.snapshot().documentVersion + 1);
+    libraryPublishPreviewState = undefined;
+    libraryPublishBinding = undefined;
     options.onChange?.(text, session.snapshot());
     if (synchronizedRender) clearTimeout(synchronizedRender);
     synchronizedRender = setTimeout(() => { synchronizedRender = undefined; render(); }, 120);
@@ -244,13 +274,37 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     documentTitle = title;
     root.querySelectorAll('[data-document-title]').forEach((element: HTMLElement) => { element.textContent = title; });
   };
+  const setUri = (uri: string): void => {
+    if (uri === session.uri) return;
+    session.setUri(uri);
+    externalLoadKey = undefined;
+    externalLoad += 1;
+    render();
+  };
   const select = (pointer: string | undefined, nextMode?: Mode): void => {
     selectedPointer = pointer;
-    if (nextMode) mode = nextMode;
+    if (nextMode) {
+      if (shouldFitGraphOnEntry(mode, nextMode, graphEntered)) {
+        graphEntered = true;
+        fitGraphAfterRender = true;
+      }
+      mode = nextMode;
+      if (nextMode === 'design' || nextMode === 'graph' || nextMode === 'source') lastRepresentationMode = nextMode;
+    }
     render();
     if (nextMode === 'conversion' && !conversionManifest) loadConversionCommands();
   };
-  const applyCommand = async (command: { canExecute(context: { session: DocumentSession; documentVersion: number }): boolean; execute(context: { session: DocumentSession; documentVersion: number }): { edits: readonly TextEdit[] } }): Promise<string | undefined> => {
+  const openSourceView = (pointer: string | undefined): void => {
+    focusSourceAfterMount = true;
+    select(pointer, 'source');
+    setTimeout(() => {
+      if (sourceEditor) {
+        sourceEditor.focus();
+        focusSourceAfterMount = false;
+      }
+    }, 0);
+  };
+  const applyCommandNow = async (command: { canExecute(context: { session: DocumentSession; documentVersion: number }): boolean; execute(context: { session: DocumentSession; documentVersion: number }): { edits: readonly TextEdit[] } }): Promise<string | undefined> => {
     if (options.host) {
       const hostSnapshot = await options.host.readDocument();
       session.update(hostSnapshot.text, hostSnapshot.documentVersion);
@@ -267,15 +321,22 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
         session.update(revalidated.text, revalidated.documentVersion);
         return 'The preview is stale because the document changed. Preview again before applying.';
       }
-      const response = await options.host.applyTextEdits({ protocolVersion: PROTOCOL_VERSION, requestId: `ui-${Date.now()}`, documentVersion: snapshot.documentVersion, edits: result.edits });
+      const response = await options.host.applyTextEdits({ protocolVersion: PROTOCOL_VERSION, requestId: `ui-${++commandRequest}`, documentVersion: snapshot.documentVersion, edits: result.edits });
       if (!response.applied) { session.update(snapshot.text, snapshot.documentVersion); return 'The host rejected the edit. Refresh the document and try again.'; }
       const hostSnapshot = await options.host.readDocument();
       session.update(hostSnapshot.text, hostSnapshot.documentVersion);
     } else session.update(applyEdits(snapshot.text, result.edits), snapshot.documentVersion + 1);
+    libraryPublishPreviewState = undefined;
+    libraryPublishBinding = undefined;
     selectedPointer = selectFallback(session.snapshot(), selectedPointer);
     render();
     options.onChange?.(session.snapshot().text, session.snapshot());
     return undefined;
+  };
+  const applyCommand = (command: { canExecute(context: { session: DocumentSession; documentVersion: number }): boolean; execute(context: { session: DocumentSession; documentVersion: number }): { edits: readonly TextEdit[] } }): Promise<string | undefined> => {
+    const result = commandQueue.then(() => applyCommandNow(command), () => applyCommandNow(command));
+    commandQueue = result.then(() => undefined, () => undefined);
+    return result;
   };
   const render = (): void => {
     if (disposed) return;
@@ -284,9 +345,26 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     const preservedSource = sourceEditor ? root.querySelector('[data-source]') as HTMLElement | null : null;
     const sourceHadFocus = Boolean(preservedSource?.contains(document.activeElement));
     const focusAnchor = sourceHadFocus ? undefined : captureWorkbenchFocus(root, document.activeElement as HTMLElement | null);
+    releaseDrawerTrap();
+    releaseDrawerTrap = () => undefined;
+    setCompactDrawerModal(root);
     preservedSource?.remove();
     const snapshot = session.snapshot();
     const definitions = (snapshot.model?.projections.definitions ?? []).filter((definition) => definition.reusable);
+    const localDefinitionPointers = new Set(definitions.map((definition) => definition.pointer));
+    const typeDefinitions = [
+      ...definitions.map((definition) => ({ name: definition.name, pointer: definition.pointer, namespace: definition.namespacePointer, imported: false })),
+      ...session.effectiveDeclarations
+        .filter((declaration) => declaration.imports.length > 0 && !localDefinitionPointers.has(declaration.effectivePointer))
+        .map((declaration) => ({
+          name: definitionTypeLabel(declaration.effectivePointer),
+          pointer: declaration.effectivePointer,
+          namespace: declaration.effectivePointer.slice(0, declaration.effectivePointer.lastIndexOf('/')),
+          imported: true,
+          documentUri: declaration.documentUri,
+          sourcePointer: declaration.sourcePointer,
+        })),
+    ];
     selectedPointer = selectFallback(snapshot, selectedPointer);
     const selectedDefinition = selectedPointer === '' ? undefined : definitions.find((definition) => definition.pointer === selectedPointer) ?? definitions.find((definition) => selectedPointer?.startsWith(`${definition.pointer}/`));
     const definitionPointer = selectedDefinition?.pointer ?? (isInlineRootSchema(session.value) ? '' : undefined);
@@ -304,8 +382,8 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     semanticGraphBySnapshot.set(snapshot, semanticGraph);
     graphLayout.reconcile(semanticGraphView.projection.nodes, semanticGraphView.projection.edges);
     forceGraphLayoutBySnapshot.set(snapshot, graphLayout);
-    root.innerHTML = structuredWorkbenchShell(snapshot, documentTitle, definitions.map((item) => ({ name: item.name, pointer: item.pointer, namespace: item.namespacePointer })), definitionPointer, rows, selectedPointer, mode, problemsOpen, designMemberMode, effectiveMembers, expandedPropertyPointer);
-    mountAdvancedViews(root, snapshot, definitionPointer, graph, mode, instanceText, instanceResult, impactDirection, selectedAddIns, refactoringPlan, refactoringStatus, services, conversionManifest, conversionCommandId, conversionResult, conversionStatus, conversionProgress, conversionRequestId, libraryEntries, librarySelector, libraryDocument, librarySelection, libraryOperation, libraryPlan, libraryStatus, { providers: libraryProviders, catalog: libraryCatalog, resolution: libraryResolution, offline: libraryOffline, publishDraft: libraryPublishDraft, publishPreview: libraryPublishPreviewState, publishedEpoch: libraryPublishedEpoch, documentValid: snapshot.recovery === 'valid', providerFilter: libraryProviderFilter, search: librarySearch }, instanceRoots, instanceRootPointer, instanceSelection);
+    root.innerHTML = structuredWorkbenchShell(snapshot, documentTitle, typeDefinitions, definitionPointer, rows, selectedPointer, mode, problemsOpen, designMemberMode, effectiveMembers, expandedPropertyPointer);
+    mountAdvancedViews(root, snapshot, definitionPointer, graph, mode, instanceText, instanceResult, impactDirection, selectedAddIns, refactoringPlan, refactoringStatus, services, conversionManifest, conversionCommandId, conversionSource, conversionResult, conversionStatus, conversionProgress, conversionRequestId, libraryEntries, librarySelector, libraryDocument, librarySelection, libraryOperation, libraryPlan, libraryStatus, { providers: libraryProviders, catalog: libraryCatalog, resolution: libraryResolution, offline: libraryOffline, publishDraft: libraryPublishDraft, publishPreview: libraryPublishPreviewState, publishedEpoch: libraryPublishedEpoch, documentValid: documentCanPublish(snapshot), providerFilter: libraryProviderFilter, search: librarySearch, currentDocumentUri: snapshot.uri }, instanceRoots, instanceRootPointer, instanceSelection, session.resolvedSchemaDocuments);
     root.dataset.theme = themeName;
     const nextSource = root.querySelector('[data-source]');
     if (preservedSource && nextSource) nextSource.replaceWith(preservedSource);
@@ -320,6 +398,10 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     });
     wire(definitionPointer, rows, mode === 'graph' ? semanticGraphView.projection : graph);
     if (sourceHadFocus && sourceEditor) sourceEditor.focus();
+    else if (focusSourceAfterMount && sourceEditor) {
+      sourceEditor.focus();
+      focusSourceAfterMount = false;
+    }
     else restoreWorkbenchFocus(root, focusAnchor);
     if (sourceEditor) revealPendingDiagnostic();
     else if (mode === 'source') void mountSourceEditor(root, snapshot.text, sourceModel, setSourceText, themeName, () => !disposed && mount === sourceMount).then((mounted) => {
@@ -327,6 +409,10 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       sourceEditor = mounted.editor;
       sourceModel = mounted.model;
       revealPendingDiagnostic();
+      if (focusSourceAfterMount) {
+        sourceEditor.focus();
+        focusSourceAfterMount = false;
+      }
     });
     void refreshExternalDocuments(snapshot);
   };
@@ -350,7 +436,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     });
     const representationButtons = [...root.querySelectorAll('.js-tabs [data-mode]')] as HTMLButtonElement[];
     representationButtons.forEach((button, index) => {
-      button.tabIndex = button.dataset.mode === mode ? 0 : -1;
+      button.tabIndex = button.dataset.mode === lastRepresentationMode ? 0 : -1;
       button.addEventListener('keydown', (event: KeyboardEvent) => {
         const offset = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : event.key === 'Home' ? -index : event.key === 'End' ? representationButtons.length - index - 1 : 0;
         if (!offset && event.key !== 'Home' && event.key !== 'End') return;
@@ -386,20 +472,17 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     root.querySelectorAll('[data-mobile-drawer]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
       const name = button.dataset.mobileDrawer!;
       const opening = !root.querySelector(`[data-drawer-panel="${name}"]`)?.classList.contains('js-drawer-open');
+      if (!opening) { closeCompactDrawer(); return; }
       toggleMobileDrawer(root, name);
-      if (opening) {
-        drawerReturnFocus = button;
-        queueMicrotask(() => (root.querySelector(`[data-drawer-panel="${name}"] [data-mobile-drawer-close]`) as HTMLElement | null)?.focus());
-      } else {
-        drawerReturnFocus = undefined;
+      drawerReturnFocus = button;
+      const panel = root.querySelector(`[data-drawer-panel="${name}"]`) as HTMLElement | null;
+      if (panel && compactDrawerMode()) {
+        setCompactDrawerModal(root, panel);
+        releaseDrawerTrap = trapFocus(panel, closeCompactDrawer);
       }
+      queueMicrotask(() => (panel?.querySelector('[data-mobile-drawer-close]') as HTMLElement | null)?.focus());
     }));
-    root.querySelectorAll('[data-mobile-drawer-close]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
-      closeMobileDrawers(root);
-      const returnFocus = drawerReturnFocus;
-      drawerReturnFocus = undefined;
-      queueMicrotask(() => returnFocus?.focus());
-    }));
+    root.querySelectorAll('[data-mobile-drawer-close]').forEach((button: HTMLButtonElement) => button.addEventListener('click', closeCompactDrawer));
     root.querySelectorAll('[data-problems-toggle]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => { problemsOpen = !problemsOpen; render(); }));
     root.querySelector('[data-show-commands]')?.addEventListener('click', () => showCommandPalette());
     root.querySelectorAll('[data-member-mode]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
@@ -595,26 +678,32 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       const keyword = control.dataset.inlineKeyword;
       const family = control.dataset.inlineFamily;
       if (!pointer || !keyword || !family) return;
-      let actionPrefix = family === 'validation' ? 'validation' : keyword === 'unit' || keyword === 'ucumUnit' || keyword === 'currency' ? 'units' : keyword === 'altnames' ? 'alternate-names' : 'semantic';
       const raw = control.dataset.valueKind === 'boolean' ? String(control.checked) : control.value.trim();
       const remove = control.dataset.valueKind !== 'boolean' && raw === '';
-      const action = actionById(`${actionPrefix}.${keyword}${remove ? '.remove' : ''}`);
+      const action = actionById(`${inlineKeywordActionId(family, keyword)}${remove ? '.remove' : ''}`);
       if (!action) { setInlineStatus(root, pointer, `${keyword} is not available in this profile.`); return; }
       let value: unknown;
-      try { value = remove ? undefined : parseInlineValue(raw, control.dataset.valueKind ?? 'text'); }
+      try { value = remove ? undefined : parseActionValue(action, raw, control.checked, effectiveSchemaType(session.value, pointer)); }
       catch (error) { setInlineStatus(root, pointer, error instanceof Error ? error.message : String(error)); return; }
       void applyCommand(action.create(pointer, value)).then((error) => error && setInlineStatus(root, pointer, error));
-      void actionPrefix;
     }));
-    root.querySelectorAll('[data-inline-property-apply="schema"]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
+    root.querySelectorAll('[data-inline-catalog]').forEach((field: HTMLElement) => {
+      const actionId = field.dataset.inlineCatalog;
+      const pointer = field.dataset.propertyPointer;
+      const action = actionId ? actionById(actionId) : undefined;
+      const status = pointer ? root.querySelector(`[data-inline-status="${cssAttributeValue(pointer)}"]`) as HTMLElement | null : null;
+      if (!action || !pointer || !status) return;
+      wireCatalogControl(field, action, session, catalogRegistry, status, () => {
+        const input = field.querySelector('[data-inline-keyword]') as HTMLInputElement | null;
+        input?.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+    });
+    root.querySelectorAll('[data-inline-keyword-remove]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
       const pointer = button.dataset.propertyPointer;
-      const textarea = pointer ? root.querySelector(`[data-inline-property="schema"][data-property-pointer="${cssAttributeValue(pointer)}"]`) as HTMLTextAreaElement | null : null;
-      const action = actionById('property.edit');
-      if (!pointer || !textarea || !action) return;
-      try {
-        const schema = JSON.parse(textarea.value) as unknown;
-        void applyCommand(action.create(pointer, schema)).then((error) => error && setInlineStatus(root, pointer, error));
-      } catch (error) { setInlineStatus(root, pointer, error instanceof Error ? error.message : String(error)); }
+      const actionId = button.dataset.inlineKeywordRemove;
+      const action = actionId ? actionById(actionId) : undefined;
+      if (!pointer || !action) return;
+      void applyCommand(action.create(pointer, undefined)).then((error) => error && setInlineStatus(root, pointer, error));
     }));
     root.querySelectorAll('[data-effective-source]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
       const sourcePointer = button.dataset.effectiveSource;
@@ -633,6 +722,11 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     root.querySelectorAll('[data-command="definition.add"]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => openAction('definition.add', '')));
     root.querySelector('[data-command="add"]')?.addEventListener('click', () => openAction('property.add', definitionPointer));
     root.querySelectorAll('[data-action-id]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => openAction(button.dataset.actionId!, button.dataset.actionPointer ?? selectedPointer)));
+    root.querySelectorAll('[data-property-detail-add]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
+      const select = button.closest('.js-detail-add')?.querySelector('[data-property-detail-select]') as HTMLSelectElement | null;
+      const pointer = button.dataset.propertyPointer;
+      if (select?.value && pointer) openAction(select.value, pointer);
+    }));
     root.querySelectorAll('[data-relation-cardinality]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
       const action = actionById('relation.cardinality');
       const pointer = button.dataset.actionPointer;
@@ -643,18 +737,32 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       const select = root.querySelector('[data-action-select]') as HTMLInputElement;
       const action = actionById(select.value);
       const pointer = selectedPointer ?? definitionPointer;
-      if (action && pointer !== undefined) showActionEditor(root, action, pointer, session, catalogRegistry, applyCommand);
+      if (action && pointer !== undefined) showActionEditor(root, action, pointer, session, catalogRegistry, applyCommand, undefined, () => openSourceView(pointer));
     });
     function openAction(id: string, pointer: string | undefined): void {
       const action = actionById(id);
-      if (action && pointer !== undefined) showActionEditor(root, action, pointer, session, catalogRegistry, applyCommand);
+      if (action && pointer !== undefined) showActionEditor(root, action, pointer, session, catalogRegistry, applyCommand, undefined, () => openSourceView(pointer));
     }
     root.querySelectorAll('[data-problem]').forEach((button: HTMLButtonElement, index: number) => button.addEventListener('click', () => {
       pendingDiagnostic = session.snapshot().diagnostics[index]?.location;
       select(button.dataset.problem, 'source');
     }));
-        const instanceInput = root.querySelector('[data-instance-input]') as HTMLTextAreaElement | null;
-        instanceInput?.addEventListener('input', () => { instanceText = instanceInput.value; });
+        const instanceInput = root.querySelector('[data-instance-input]') as HTMLInputElement | null;
+        instanceInput?.addEventListener('change', () => {
+          const file = instanceInput.files?.[0];
+          if (!file) return;
+          void file.text().then((text: string) => {
+            JSON.parse(text);
+            instanceText = text;
+            instanceResult = undefined;
+            render();
+          }).catch((error: unknown) => {
+            instanceWorkspace = undefined;
+            instanceResult = { status: 'invalid', diagnostics: [{ code: 'instance.parse', message: error instanceof Error ? error.message : String(error), severity: 'error', instancePointer: '', schemaPointer: instanceRootPointer ?? '' }], trace: { keyword: 'parse', status: 'invalid', instancePointer: '', schemaPointer: instanceRootPointer ?? '', children: [] } };
+            instanceSelection = { source: 'diagnostic', instancePointer: '', schemaPointer: instanceRootPointer ?? '', diagnosticIndex: 0 };
+            render();
+          });
+        });
         root.querySelector('[data-instance-root]')?.addEventListener('change', (event: Event) => {
           instanceRootPointer = (event.currentTarget as HTMLInputElement).value;
           instanceResult = undefined;
@@ -666,7 +774,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
           try {
             if (!session.value || typeof session.value !== 'object' || Array.isArray(session.value)) throw new Error('The schema document is unavailable.');
             const rootPointer = instanceRootPointer ?? '';
-            const rootSchema = rootPointer === '' ? session.value as Record<string, unknown> : { type: { $ref: `#${rootPointer}` }, definitions: (session.value as Record<string, unknown>).definitions };
+            const rootSchema = rootPointer === '' ? session.value as Record<string, unknown> : { ...(session.value as Record<string, unknown>), $root: `#${rootPointer}` };
             instanceWorkspace = new InstanceWorkspace(rootSchema, JSON.parse(instanceText), { documentUri: session.uri, resolvedDocuments: session.resolvedSchemaDocuments });
             instanceResult = instanceWorkspace.validate();
             instanceSelection = instanceWorkspace.selection;
@@ -732,26 +840,43 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     root.querySelector('[data-conversion-load]')?.addEventListener('click', loadConversionCommands);
     root.querySelectorAll('[data-conversion-command]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
       conversionCommandId = button.dataset.conversionCommand;
+      conversionSource = undefined;
       conversionResult = undefined;
       conversionStatus = '';
       render();
       queueMicrotask(() => ([...root.querySelectorAll('[data-conversion-command]')] as HTMLButtonElement[]).find((candidate) => candidate.dataset.conversionCommand === conversionCommandId)?.focus());
     }));
+    root.querySelector('[data-conversion-source]')?.addEventListener('click', () => {
+      const command = conversionManifest?.commands.find((item) => item.id === conversionCommandId);
+      if (!command || command.direction !== 'import' || !services?.selectConversionSource) return;
+      conversionStatus = 'Choosing source file...'; render();
+      void services.selectConversionSource({ protocolVersion: PROTOCOL_VERSION, requestId: `conversion-source-${Date.now()}`, kind: 'select-conversion-source', formats: [command.sourceFormat] }).then((source) => {
+        conversionSource = source;
+        conversionResult = undefined;
+        conversionStatus = source ? `Selected ${source.name}.` : 'Source selection was cancelled.';
+        render();
+        queueMicrotask(() => (root.querySelector('[data-conversion-source]') as HTMLElement | null)?.focus());
+      }, (error) => { conversionStatus = error instanceof Error ? error.message : String(error); render(); });
+    });
     root.querySelector('[data-conversion-run]')?.addEventListener('click', () => {
       const command = conversionManifest?.commands.find((item) => item.id === conversionCommandId);
       if (!command || !services?.convert) return;
+      if (command.direction === 'import' && !conversionSource) { conversionStatus = 'Choose a source file before importing.'; render(); return; }
       const current = session.snapshot();
-      let conversionOptions: Record<string, string | number | boolean>;
+      let conversionOptions: ConversionOptionValues;
       try { conversionOptions = readConversionOptions(root); }
       catch (error) { conversionStatus = error instanceof Error ? error.message : String(error); render(); return; }
       conversionRequestId = `convert-${Date.now()}`; conversionProgress = undefined; conversionResult = undefined; conversionStatus = 'Converting...'; render();
-      void services.convert({ protocolVersion: PROTOCOL_VERSION, requestId: conversionRequestId, kind: 'conversion', documentVersion: current.documentVersion, commandId: command.id, sourceName: current.uri.replace(/^.*[\\/]/, '') || 'schema.struct.json', sourceText: current.text, options: conversionOptions }).then(async (result) => {
+      const sourceName = command.direction === 'import' ? conversionSource!.name : current.uri.replace(/^.*[\\/]/, '') || 'schema.struct.json';
+      const sourceText = command.direction === 'import' ? conversionSource!.text : current.text;
+      void services.convert({ protocolVersion: PROTOCOL_VERSION, requestId: conversionRequestId, kind: 'conversion', documentVersion: current.documentVersion, commandId: command.id, sourceName, sourceText, options: conversionOptions }).then(async (result) => {
         conversionRequestId = undefined; conversionProgress = undefined;
         conversionResult = result;
         conversionStatus = result.succeeded ? `Generated ${result.outputs.length} output${result.outputs.length === 1 ? '' : 's'}.` : result.diagnostics.map((diagnostic) => diagnostic.message).join(' ');
         if (result.succeeded && command.defaultAutoOpen && services.openGeneratedOutput) await services.openGeneratedOutput({ protocolVersion: PROTOCOL_VERSION, requestId: `open-${Date.now()}`, kind: 'open-generated-output', outputs: result.outputs });
         render();
-      }, (error) => { conversionRequestId = undefined; conversionProgress = undefined; conversionStatus = error instanceof Error ? error.message : String(error); render(); });
+        queueMicrotask(() => (root.querySelector('[data-conversion-run]') as HTMLElement | null)?.focus());
+      }, (error) => { conversionRequestId = undefined; conversionProgress = undefined; conversionStatus = error instanceof Error ? error.message : String(error); render(); queueMicrotask(() => (root.querySelector('[data-conversion-run]') as HTMLElement | null)?.focus()); });
     });
     root.querySelector('[data-conversion-cancel]')?.addEventListener('click', () => {
       if (!conversionRequestId || !services?.cancelConversion) return;
@@ -786,13 +911,14 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       filterLibraryCatalog();
     });
     root.querySelector('[data-libraries-load]')?.addEventListener('click', () => {
+      libraryResolveSequence += 1;
       if (services?.libraryRequest) {
         libraryStatus = 'Refreshing library providers and catalog...'; render();
         void Promise.all([services.libraryRequest<readonly LibraryProviderSummary[]>('listProviders'), loadLibraryCatalog(services.libraryRequest)])
           .then(([providers, catalog]) => { libraryProviders = providers; libraryCatalog = catalog; libraryResolution = undefined; libraryDocument = undefined; librarySelection = []; libraryPlan = undefined; libraryStatus = `Loaded ${catalog.length} catalog entries from ${providers.length} providers.`; render(); }, (error) => { libraryStatus = libraryConflictMessage(error); render(); });
       } else void services?.listLibraryEntries?.().then((entries) => { libraryEntries = entries; libraryDocument = undefined; librarySelection = []; libraryPlan = undefined; libraryStatus = ''; render(); }, (error) => { libraryStatus = error instanceof Error ? error.message : String(error); render(); });
     });
-    root.querySelector('[data-library-offline]')?.addEventListener('change', (event: Event) => { libraryOffline = (event.currentTarget as HTMLInputElement).checked; libraryResolution = undefined; libraryDocument = undefined; libraryPlan = undefined; render(); });
+    root.querySelector('[data-library-offline]')?.addEventListener('change', (event: Event) => { libraryResolveSequence += 1; libraryOffline = (event.currentTarget as HTMLInputElement).checked; libraryResolution = undefined; libraryDocument = undefined; libraryPlan = undefined; render(); });
     root.querySelector('[data-provider-configure]')?.addEventListener('click', () => {
       if (!services?.libraryRequest) return;
       const id = (root.querySelector('[data-provider-id]') as HTMLInputElement | null)?.value.trim() ?? '';
@@ -808,6 +934,15 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
         .then(() => Promise.all([services.libraryRequest!<readonly LibraryProviderSummary[]>('listProviders'), loadLibraryCatalog(services.libraryRequest!)]))
         .then(([providers, catalog]) => { libraryProviders = providers; libraryCatalog = catalog; libraryStatus = `Configured provider '${id}'.`; render(); }, (error) => { libraryStatus = libraryConflictMessage(error); render(); });
     });
+    root.querySelector('[data-local-provider-configure]')?.addEventListener('click', () => {
+      if (!services?.libraryRequest) return;
+      const id = (root.querySelector('[data-local-provider-id]') as HTMLInputElement | null)?.value.trim() ?? '';
+      if (!id) return;
+      libraryStatus = 'Configuring local publisher...';
+      void services.libraryRequest<LibraryProviderSummary>('configureProvider', { config: { id, kind: 'local', location: `memory://published/${encodeURIComponent(id)}/`, entries: [], trusted: true } })
+        .then(() => Promise.all([services.libraryRequest!<readonly LibraryProviderSummary[]>('listProviders'), loadLibraryCatalog(services.libraryRequest!)]))
+        .then(([providers, catalog]) => { libraryProviders = providers; libraryCatalog = catalog; libraryStatus = `Configured local publisher '${id}'.`; render(); queueMicrotask(() => (root.querySelector(`[data-library-provider-filter="${cssAttributeValue(id)}"]`) as HTMLElement | null)?.focus()); }, (error) => { libraryStatus = libraryConflictMessage(error); render(); queueMicrotask(() => (root.querySelector('[data-library-status]') as HTMLElement | null)?.focus()); });
+    });
     root.querySelectorAll('[data-provider-remove]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
       if (!services?.libraryRequest) return;
       const providerId = button.dataset.providerRemove;
@@ -818,6 +953,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     }));
     root.querySelectorAll('[data-library-selector]').forEach((input: HTMLInputElement) => input.addEventListener('change', () => {
       if (!input.checked) return;
+      libraryResolveSequence += 1;
       librarySelector = input.value as typeof librarySelector;
       libraryDocument = undefined;
       librarySelection = [];
@@ -825,6 +961,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       render();
     }));
     root.querySelectorAll('[data-library-read]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
+      const resolveSequence = ++libraryResolveSequence;
       const explicitProviderId = button.dataset.libraryProvider;
       const explicitEntryId = button.dataset.libraryEntry;
       const explicitVersion = button.dataset.libraryVersion;
@@ -840,12 +977,15 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       if (services?.libraryRequest && catalogEntry && providerOrEntryId && entryId) {
         const selector = librarySelector === 'floating' ? { kind: 'floating' as const } : { kind: 'pinned' as const, version: requestedVersion ?? '' };
         libraryStatus = 'Resolving...'; render();
-        void resolveLibrarySelection<LibraryHostResolution>(services.libraryRequest, { providerId: providerOrEntryId, entryId, selector, offline: libraryOffline }).then((resolution) => { libraryResolution = resolution; libraryDocument = { entryId: resolution.provenance.entryId, version: resolution.provenance.version, uri: resolution.provenance.sourceUri, value: resolution.document }; librarySelection = []; libraryPlan = undefined; libraryStatus = `Resolved ${resolution.provenance.entryId} ${resolution.provenance.version}: ${resolution.resolution.label}.`; render(); }, (error) => { libraryStatus = libraryConflictMessage(error); render(); });
+        void resolveLibrarySelection<LibraryHostResolution>(services.libraryRequest, { providerId: providerOrEntryId, entryId, selector, offline: libraryOffline }).then((resolution) => {
+          if (resolveSequence !== libraryResolveSequence) return;
+          libraryResolution = resolution; libraryDocument = { entryId: resolution.provenance.entryId, version: resolution.provenance.version, uri: resolution.provenance.sourceUri, value: resolution.document }; librarySelection = []; libraryPlan = undefined; libraryStatus = `Resolved ${resolution.provenance.entryId} ${resolution.provenance.version}: ${resolution.resolution.label}.`; render();
+        }, (error) => { if (resolveSequence !== libraryResolveSequence) return; libraryStatus = libraryConflictMessage(error); render(); });
         return;
       }
       if (!entryId || !version || !services?.readLibraryDocument) return;
       libraryStatus = 'Loading...'; render();
-      void services.readLibraryDocument(entryId, version).then((document) => { libraryDocument = document; librarySelection = []; libraryPlan = undefined; libraryStatus = `Resolved ${document.entryId} ${document.version}.`; render(); }, (error) => { libraryStatus = error instanceof Error ? error.message : String(error); render(); });
+      void services.readLibraryDocument(entryId, version).then((document) => { if (resolveSequence !== libraryResolveSequence) return; libraryDocument = document; librarySelection = []; libraryPlan = undefined; libraryStatus = `Resolved ${document.entryId} ${document.version}.`; render(); }, (error) => { if (resolveSequence !== libraryResolveSequence) return; libraryStatus = error instanceof Error ? error.message : String(error); render(); });
     }));
     root.querySelectorAll('[data-library-declaration]').forEach((input: HTMLInputElement) => input.addEventListener('change', () => {
       const pointer = input.value;
@@ -888,6 +1028,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       const previewPlan = libraryPlan;
       libraryStatus = previewPlan?.applicable ? `Preview ready: ${previewPlan.impact.length} changes.` : previewPlan?.collisions.map((collision) => collision.message).join(' ') ?? 'Preview could not be created.';
       render();
+      queueMicrotask(() => ((root.querySelector('[data-library-apply]') ?? root.querySelector('[data-library-status]')) as HTMLElement | null)?.focus());
     });
     root.querySelector('[data-library-apply]')?.addEventListener('click', () => {
       if (!libraryPlan?.applicable || !libraryBinding) return;
@@ -895,6 +1036,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
         libraryStatus = error ?? `Applied ${libraryOperation} with ${libraryPlan?.provenance.length ?? 0} provenance records.`;
         if (!error) { libraryPlan = undefined; librarySelection = []; }
         render();
+        queueMicrotask(() => (root.querySelector('[data-library-status]') as HTMLElement | null)?.focus());
       });
     });
     root.querySelector('[data-library-publish-preview]')?.addEventListener('click', () => {
@@ -907,15 +1049,28 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
         promoteDefault: (root.querySelector('[data-publish-default]') as HTMLInputElement | null)?.checked === true,
         ...(expectedEpoch ? { expectedEpoch } : {}),
       };
-      libraryPublishPreviewState = libraryPublishPreview(libraryPublishDraft, libraryProviders ?? [], libraryCatalog ?? [], session.snapshot().recovery === 'valid');
+      libraryPublishPreviewState = libraryPublishPreview(libraryPublishDraft, libraryProviders ?? [], libraryCatalog ?? [], documentCanPublish(session.snapshot()));
+      libraryPublishBinding = libraryPublishPreviewState.valid ? bindPreview(session.snapshot()) : undefined;
       libraryPublishedEpoch = undefined;
-      libraryStatus = libraryPublishPreviewState.valid ? 'Publish preview ready. Review collision risks, then publish explicitly.' : 'Publish preview is invalid. Select a non-bundled provider and provide entry, version, source URI, and valid JSON.';
+      libraryStatus = libraryPublishPreviewState.valid ? 'Publish preview ready. Review publication details, then publish explicitly.' : 'Publish preview is invalid. Resolve schema errors and version collisions, then verify provider, entry, version, and source URI.';
       render();
+      queueMicrotask(() => ((root.querySelector('[data-library-publish]') ?? root.querySelector('[data-library-publish-preview]')) as HTMLElement | null)?.focus());
     });
     root.querySelector('[data-library-publish]')?.addEventListener('click', () => {
-      if (!services?.libraryRequest || !libraryPublishPreviewState?.valid || !libraryPublishDraft || session.snapshot().recovery !== 'valid') return;
+      const snapshot = session.snapshot();
+      if (!services?.libraryRequest || !libraryPublishPreviewState?.valid || !libraryPublishDraft || !libraryPublishBinding || !documentCanPublish(snapshot)) return;
+      if (libraryPublishBinding.documentVersion !== snapshot.documentVersion || libraryPublishBinding.sourceText !== snapshot.text) {
+        libraryPublishPreviewState = undefined;
+        libraryPublishBinding = undefined;
+        libraryStatus = 'The document changed after this publish preview. Preview again before publishing.';
+        render();
+        return;
+      }
+      const reviewedDocument = JSON.parse(libraryPublishBinding.sourceText) as unknown;
       libraryStatus = 'Publishing...'; render();
-      void services.libraryRequest<{ epoch: string }>('publish', { ...libraryPublishDraft, document: session.value }).then((result) => { libraryPublishedEpoch = result.epoch; libraryPublishPreviewState = undefined; libraryStatus = `Published ${libraryPublishDraft?.entryId}@${libraryPublishDraft?.version}; resulting epoch ${result.epoch}.`; render(); }, (error) => { libraryStatus = libraryConflictMessage(error); render(); });
+      void services.libraryRequest<{ epoch: string }>('publish', { ...libraryPublishDraft, document: reviewedDocument })
+        .then((result) => Promise.all([services.libraryRequest!<readonly LibraryProviderSummary[]>('listProviders'), loadLibraryCatalog(services.libraryRequest!)]).then(([providers, catalog]) => ({ result, providers, catalog })))
+        .then(({ result, providers, catalog }) => { libraryProviders = providers; libraryCatalog = catalog; libraryPublishedEpoch = result.epoch; libraryPublishPreviewState = undefined; libraryPublishBinding = undefined; libraryStatus = `Published ${libraryPublishDraft?.entryId}@${libraryPublishDraft?.version}; resulting epoch ${result.epoch}.`; render(); queueMicrotask(() => (root.querySelector('[data-library-status]') as HTMLElement | null)?.focus()); }, (error) => { libraryStatus = libraryConflictMessage(error); render(); queueMicrotask(() => (root.querySelector('[data-library-status]') as HTMLElement | null)?.focus()); });
     });
     wireGraph(graph);
   };
@@ -988,7 +1143,10 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     root.querySelector('[data-graph-fit]')?.addEventListener('click', () => { graphNavigation.fit(); updateGraphCamera(); });
     root.querySelector('[data-graph-zoom-out]')?.addEventListener('click', () => zoomGraphAtCenter(180));
     root.querySelector('[data-graph-zoom-in]')?.addEventListener('click', () => zoomGraphAtCenter(-180));
-    root.querySelector('[data-graph-relayout]')?.addEventListener('click', () => { graphLayout.relayout(); });
+    root.querySelector('[data-graph-relayout]')?.addEventListener('click', () => {
+      graphLayout.relayout();
+      if (prefersReducedMotion()) graphLayout.settle();
+    });
     root.querySelector('[data-graph-back]')?.addEventListener('click', () => { const view = semanticGraph.back(); if (view.selection?.pointer) selectedPointer = view.selection.pointer; fitGraphAfterRender = true; render(); });
     root.querySelector('[data-graph-forward]')?.addEventListener('click', () => { const view = semanticGraph.forward(); if (view.selection?.pointer) selectedPointer = view.selection.pointer; fitGraphAfterRender = true; render(); });
     root.querySelector('[data-graph-home]')?.addEventListener('click', () => { semanticGraph.home(); fitGraphAfterRender = true; render(); });
@@ -1164,15 +1322,12 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
   const showCommandPalette = (): void => {
     const pointer = selectedPointer ?? selectFallback(session.snapshot(), selectedPointer);
     if (pointer === undefined) return;
-    showActionPalette(root, pointer, session, catalogRegistry, applyCommand);
+    showActionPalette(root, pointer, session, catalogRegistry, applyCommand, () => openSourceView(pointer));
   };
   const onKeyDown = (event: KeyboardEvent): void => {
     if (event.key === 'Escape' && root.querySelector('.js-drawer-open')) {
       event.preventDefault();
-      closeMobileDrawers(root);
-      const returnFocus = drawerReturnFocus;
-      drawerReturnFocus = undefined;
-      queueMicrotask(() => returnFocus?.focus());
+      closeCompactDrawer();
       return;
     }
     if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'p') {
@@ -1193,7 +1348,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     sourceEditor.focus();
     pendingDiagnostic = undefined;
   }
-  return { setText, setTitle, getText: () => session.snapshot().text, showCommandPalette, dispose: () => { disposed = true; unsubscribeConversionProgress?.(); if (synchronizedRender) clearTimeout(synchronizedRender); graphResizeObserver?.disconnect(); graphLayout.dispose(); window.removeEventListener('keydown', onKeyDown); sourceEditor?.dispose(); sourceModel?.dispose(); container.innerHTML = ''; } };
+  return { setText, setTitle, setUri, getText: () => session.snapshot().text, showCommandPalette, dispose: () => { disposed = true; unsubscribeConversionProgress?.(); if (synchronizedRender) clearTimeout(synchronizedRender); graphResizeObserver?.disconnect(); graphLayout.dispose(); releaseDrawerTrap(); setCompactDrawerModal(root); window.removeEventListener('keydown', onKeyDown); sourceEditor?.dispose(); sourceModel?.dispose(); container.innerHTML = ''; } };
 }
 
 interface LibraryWorkbenchState {
@@ -1207,14 +1362,15 @@ interface LibraryWorkbenchState {
   readonly documentValid: boolean;
   readonly providerFilter?: string;
   readonly search?: string;
+  readonly currentDocumentUri?: string;
 }
 
-function mountAdvancedViews(root: HTMLElement, snapshot: DocumentSnapshot, definitionPointer: string | undefined, graph: ReturnType<typeof projectGraph>, mode: Mode, instanceText: string, instanceResult: InstanceValidationResult | undefined, impactDirection: ImpactDirection, selectedAddIns: readonly string[], refactoringPlan: RefactoringPlan | undefined, refactoringStatus: string, host: EditorServices | undefined, conversionManifest: ConversionCommandsManifest | undefined, conversionCommandId: string | undefined, conversionResult: ConversionResult | undefined, conversionStatus: string, conversionProgress: ProgressEvent | undefined, conversionRequestId: string | undefined, libraryEntries: readonly LibraryEntry[] | undefined, librarySelector: 'pinned' | 'floating', libraryDocument: LibraryDocument | undefined, librarySelection: readonly string[], libraryOperation: LibraryOperation, libraryPlan: RefactoringPlan | undefined, libraryStatus: string, libraryState: LibraryWorkbenchState, instanceRoots: readonly { readonly pointer: string; readonly label: string }[], instanceRootPointer: string | undefined, instanceSelection: CrossNavigationSelection | undefined): void {
+function mountAdvancedViews(root: HTMLElement, snapshot: DocumentSnapshot, definitionPointer: string | undefined, graph: ReturnType<typeof projectGraph>, mode: Mode, instanceText: string, instanceResult: InstanceValidationResult | undefined, impactDirection: ImpactDirection, selectedAddIns: readonly string[], refactoringPlan: RefactoringPlan | undefined, refactoringStatus: string, host: EditorServices | undefined, conversionManifest: ConversionCommandsManifest | undefined, conversionCommandId: string | undefined, conversionSource: ConversionSource | undefined, conversionResult: ConversionResult | undefined, conversionStatus: string, conversionProgress: ProgressEvent | undefined, conversionRequestId: string | undefined, libraryEntries: readonly LibraryEntry[] | undefined, librarySelector: 'pinned' | 'floating', libraryDocument: LibraryDocument | undefined, librarySelection: readonly string[], libraryOperation: LibraryOperation, libraryPlan: RefactoringPlan | undefined, libraryStatus: string, libraryState: LibraryWorkbenchState, instanceRoots: readonly { readonly pointer: string; readonly label: string }[], instanceRootPointer: string | undefined, instanceSelection: CrossNavigationSelection | undefined, resolvedDocuments: readonly ResolvedSchemaDocument[] = []): void {
   const sourcePanel = root.querySelector('.js-source-view');
-  sourcePanel?.insertAdjacentHTML('beforebegin', `<section class="js-view" ${mode === 'analysis' ? '' : 'hidden'}>${analysisView(snapshot, definitionPointer, graph, impactDirection, refactoringPlan, refactoringStatus, selectedAddIns)}</section><section class="js-view" ${mode === 'instance' ? '' : 'hidden'}>${instanceView(instanceText, instanceResult, instanceRoots, instanceRootPointer, instanceSelection)}</section><section class="js-view" ${mode === 'conversion' ? '' : 'hidden'}>${conversionView(host, conversionManifest, conversionCommandId, conversionResult, conversionStatus, conversionProgress, conversionRequestId)}</section><section class="js-view" ${mode === 'libraries' ? '' : 'hidden'}>${renderLibraryBrowser({ requestBacked: Boolean(host?.libraryRequest), fallbackAvailable: Boolean(host?.listLibraryEntries && host.readLibraryDocument) }, libraryEntries, librarySelector, libraryDocument, librarySelection, libraryOperation, libraryPlan, libraryStatus, libraryState)}</section>`);
+  sourcePanel?.insertAdjacentHTML('beforebegin', `<section class="js-view" ${mode === 'analysis' ? '' : 'hidden'}>${analysisView(snapshot, definitionPointer, graph, impactDirection, refactoringPlan, refactoringStatus, selectedAddIns, resolvedDocuments)}</section><section class="js-view" ${mode === 'instance' ? '' : 'hidden'}>${instanceView(instanceText, instanceResult, instanceRoots, instanceRootPointer, instanceSelection)}</section><section class="js-view" ${mode === 'conversion' ? '' : 'hidden'}>${conversionView(host, conversionManifest, conversionCommandId, conversionSource, conversionResult, conversionStatus, conversionProgress, conversionRequestId)}</section><section class="js-view" ${mode === 'libraries' ? '' : 'hidden'}>${renderLibraryBrowser({ requestBacked: Boolean(host?.libraryRequest), fallbackAvailable: Boolean(host?.listLibraryEntries && host.readLibraryDocument) }, libraryEntries, librarySelector, libraryDocument, librarySelection, libraryOperation, libraryPlan, libraryStatus, libraryState)}</section>`);
 }
 
-export function conversionView(host: EditorServices | undefined, manifest: ConversionCommandsManifest | undefined, commandId: string | undefined, result: ConversionResult | undefined, status: string, progress?: ProgressEvent, requestId?: string): string {
+export function conversionView(host: EditorServices | undefined, manifest: ConversionCommandsManifest | undefined, commandId: string | undefined, source: ConversionSource | undefined, result: ConversionResult | undefined, status: string, progress?: ProgressEvent, requestId?: string): string {
   if (!host?.listConversionCommands || !host.convert) return '<div class="js-sheet"><h1>Conversion</h1><p class="js-description">This host does not provide conversion tools.</p></div>';
   const selected = manifest?.commands.find((command) => command.id === commandId) ?? manifest?.commands[0];
   const converter = manifest?.converters.find((item) => item.id === selected?.converterId);
@@ -1227,12 +1383,14 @@ export function conversionView(host: EditorServices | undefined, manifest: Conve
     if (!commands.length) return '';
     return `<section class="js-conversion-group"><h2>${direction === 'export' ? 'Export from JSON Structure' : 'Import into JSON Structure'}</h2><div class="js-conversion-tiles">${commands.map((command) => `<button class="js-conversion-tile" data-conversion-command="${escapeAttribute(command.id)}" aria-pressed="${command.id === selected?.id}"><span class="js-format-icon" aria-hidden="true">${escapeHtml(formatInitials(command.direction === 'export' ? command.targetFormat : command.sourceFormat))}</span><span class="js-conversion-tile-copy"><strong>${escapeHtml(command.label)}</strong><span>${escapeHtml(conversionCommandDescription(command))}</span><small>${escapeHtml(command.sourceFormat)} <span aria-hidden="true">→</span> ${escapeHtml(command.targetFormat)}</small></span></button>`).join('')}</div></section>`;
   }).join('') : '';
-  const configuration = selected ? `<section class="js-conversion-config"><div class="js-conversion-route"><div><span>From</span><strong>${escapeHtml(selected.sourceFormat)}</strong></div><span class="js-conversion-arrow" aria-hidden="true">→</span><div><span>To</span><strong>${escapeHtml(selected.targetFormat)}</strong></div></div><fieldset><legend>Options</legend>${converter?.options.map(conversionOptionControl).join('') || '<p class="js-description">This converter has no options.</p>'}</fieldset><button data-conversion-run ${requestId ? 'disabled' : ''} class="js-primary">${escapeHtml(conversionCommandAction(selected))}</button></section>` : '';
+  const sourcePicker = selected?.direction === 'import' ? `<div class="js-conversion-source"><span>Source file</span><strong>${escapeHtml(source?.name ?? 'No file selected')}</strong><button data-conversion-source ${host.selectConversionSource ? '' : 'disabled'}>${source ? 'Change' : 'Choose file'}</button></div>` : '';
+  const commandOptions = selected && converter ? conversionOptionsForCommand(converter, selected) : [];
+  const configuration = selected ? `<section class="js-conversion-config"><div class="js-conversion-route"><div><span>From</span><strong>${escapeHtml(selected.sourceFormat)}</strong></div><span class="js-conversion-arrow" aria-hidden="true">→</span><div><span>To</span><strong>${escapeHtml(selected.targetFormat)}</strong></div></div>${sourcePicker}<fieldset><legend>Options</legend>${commandOptions.map(conversionOptionControl).join('') || '<p class="js-description">This converter has no options.</p>'}</fieldset><button data-conversion-run ${requestId || selected.direction === 'import' && !source ? 'disabled' : ''} class="js-primary">${escapeHtml(conversionCommandAction(selected))}</button></section>` : '';
   return `<div class="js-sheet js-conversion-sheet"><header class="js-type-head"><div><div class="js-eyebrow">Toolchain</div><h1>Convert</h1><p class="js-description">Choose an outcome, review its options, and write generated files to a directory you approve.</p></div>${manifest ? '<button data-conversion-load title="Refresh conversion tools">Refresh</button>' : ''}</header>${manifest ? `<div class="js-conversion-layout"><div class="js-conversion-catalog">${commandGroups || '<p class="js-description">No conversion commands are installed.</p>'}</div>${configuration}</div>` : '<div class="js-conversion-loading" role="status">Loading conversion tools...</div>'}${progressView}<p role="status" aria-live="polite">${escapeHtml(status)}</p>${review}${result ? `<section><div class="js-section-head"><h2>Outputs (${result.outputs.length})</h2>${result.outputs.length && host.openGeneratedOutput ? '<button data-conversion-open>Open outputs</button>' : ''}</div>${outputs || '<p class="js-description">No output files were committed.</p>'}</section><section><h2>Diagnostics (${result.diagnostics.length})</h2>${diagnostics || '<p class="js-description">No conversion warnings or errors.</p>'}</section>` : ''}</div>`;
 }
 
 function conversionReviewView(review: NonNullable<ConversionResult['review']>): string {
-  const warnings = review.warnings.map((warning) => `<article class="js-conversion-warning" data-lossiness="${escapeAttribute(warning.lossiness)}"><header><strong>${escapeHtml(warning.code)}</strong><span>${escapeHtml(humanizeIdentifier(warning.lossiness))}</span></header><p>${escapeHtml(warning.message)}</p>${warning.sourceLocation || warning.targetPath ? `<dl>${warning.sourceLocation ? `<dt>Source</dt><dd class="js-code">${escapeHtml(warning.sourceLocation)}</dd>` : ''}${warning.targetPath ? `<dt>Target</dt><dd class="js-code">${escapeHtml(warning.targetPath)}</dd>` : ''}</dl>` : ''}${warning.details ? `<pre>${escapeHtml(JSON.stringify(warning.details, null, 2))}</pre>` : ''}</article>`).join('');
+  const warnings = review.warnings.map((warning) => `<article class="js-conversion-warning" data-lossiness="${escapeAttribute(warning.lossiness)}"><header><strong>${escapeHtml(warning.code)}</strong><span>${escapeHtml(humanizeIdentifier(warning.lossiness))}</span></header><p>${escapeHtml(warning.message)}</p>${warning.sourceLocation || warning.targetPath ? `<dl>${warning.sourceLocation ? `<dt>Source</dt><dd class="js-code">${escapeHtml(warning.sourceLocation)}</dd>` : ''}${warning.targetPath ? `<dt>Target</dt><dd class="js-code">${escapeHtml(warning.targetPath)}</dd>` : ''}</dl>` : ''}${warning.details ? `<p class="js-description">${escapeHtml(structuredValueLabel(warning.details))}</p>` : ''}</article>`).join('');
   const files = review.manifest?.files.map((file) => `<div class="js-integrity-row"><span><strong>${escapeHtml(file.path)}</strong><small>${formatBytes(file.bytes)}</small></span><code title="SHA-256 ${escapeAttribute(file.sha256)}">${escapeHtml(file.sha256)}</code></div>`).join('') ?? '';
   const lifecycle = review.lifecycle.map((state) => `<li data-state="${escapeAttribute(state)}">${escapeHtml(state)}</li>`).join('');
   return `<section class="js-conversion-review" aria-label="Conversion review"><div class="js-section-head"><div><h2>Conversion review</h2><span class="js-section-meta">${review.warnings.length} warning${review.warnings.length === 1 ? '' : 's'}</span></div><span class="js-lossiness" data-lossiness="${escapeAttribute(review.lossiness)}">${escapeHtml(humanizeIdentifier(review.lossiness))}</span></div><div class="js-review-summary"><dl><dt>Converter</dt><dd>${escapeHtml(review.converter.displayName)} <span class="js-code">${escapeHtml(review.converter.version)}</span></dd><dt>Route</dt><dd>${escapeHtml(review.sourceFormat)} <span aria-hidden="true">→</span> ${escapeHtml(review.targetFormat)}</dd><dt>Publication</dt><dd>${review.published ? 'Committed atomically' : 'Not published'}</dd><dt>Integrity</dt><dd>${review.manifest ? `${review.manifest.algorithm.toUpperCase()} · ${review.manifest.files.length} file${review.manifest.files.length === 1 ? '' : 's'}` : 'Unavailable'}</dd></dl><ol class="js-conversion-lifecycle" aria-label="Conversion lifecycle">${lifecycle}</ol></div>${warnings ? `<div class="js-conversion-warnings">${warnings}</div>` : '<p class="js-review-clean">No lossy mappings or conversion warnings were reported.</p>'}${review.manifest ? `<details class="js-integrity-manifest" open><summary>Output integrity manifest</summary>${files || '<p class="js-description">The manifest contains no generated files.</p>'}</details>` : ''}</section>`;
@@ -1255,7 +1413,7 @@ function conversionCommandAction(command: import('../conversion/types.js').Conve
 }
 
 function conversionFormatName(format: string): string {
-  const known: Readonly<Record<string, string>> = { 'json-schema': 'JSON Schema', 'json-structure': 'JSON Structure', avro: 'Avro' };
+  const known: Readonly<Record<string, string>> = { 'json-schema': 'JSON Schema', 'json-structure': 'JSON Structure', avro: 'Avro', protobuf: 'Protocol Buffers' };
   return known[format.toLocaleLowerCase()] ?? format;
 }
 
@@ -1269,6 +1427,7 @@ function conversionOptionControl(option: import('../conversion/types.js').Conver
   const label = `<span class="js-option-name">${escapeHtml(humanizeIdentifier(option.name))}</span>`;
   if (option.type === 'boolean') return `<label><input type="checkbox" data-conversion-option="${escapeAttribute(option.name)}" data-option-type="boolean" ${option.default ? 'checked' : ''}>${label}${description}</label>`;
   if (option.type === 'string' && option.allowedValues) return `<label>${label}<select data-conversion-option="${escapeAttribute(option.name)}" data-option-type="string">${option.allowedValues.map((value) => `<option value="${escapeAttribute(value)}" ${value === option.default ? 'selected' : ''}>${escapeHtml(value)}</option>`).join('')}</select>${description}</label>`;
+  if (option.type === 'string-list') return `<label>${label}<input data-conversion-option="${escapeAttribute(option.name)}" data-option-type="string-list" type="text" value="${escapeAttribute((option.default ?? []).join(', '))}">${description}</label>`;
   const constraints = option.type === 'number' ? `${option.minimum === undefined ? '' : ` min="${option.minimum}"`}${option.maximum === undefined ? '' : ` max="${option.maximum}"`}` : '';
   return `<label>${label}<input data-conversion-option="${escapeAttribute(option.name)}" data-option-type="${option.type}" type="${option.type === 'number' ? 'number' : 'text'}" value="${escapeAttribute(String(option.default ?? ''))}"${constraints}>${description}</label>`;
 }
@@ -1278,12 +1437,13 @@ function humanizeIdentifier(value: string): string {
   return words ? words[0]!.toLocaleUpperCase() + words.slice(1) : value;
 }
 
-function readConversionOptions(root: HTMLElement): Record<string, string | number | boolean> {
-  const result: Record<string, string | number | boolean> = {};
+function readConversionOptions(root: HTMLElement): ConversionOptionValues {
+  const result: Record<string, import('../conversion/types.js').ConversionOptionValue> = {};
   root.querySelectorAll('[data-conversion-option]').forEach((control: HTMLInputElement) => {
     const name = control.dataset.conversionOption;
     if (!name) return;
     if (control.dataset.optionType === 'boolean') result[name] = (control as HTMLInputElement).checked;
+    else if (control.dataset.optionType === 'string-list') result[name] = control.value.split(/[\r\n,]+/).map((value: string) => value.trim()).filter(Boolean);
     else if (control.dataset.optionType === 'number') {
       const value = (control as HTMLInputElement).valueAsNumber;
       if (!Number.isFinite(value)) throw new Error(`Option ${name} must be a number.`);
@@ -1370,6 +1530,7 @@ function pointerScopedPlanEdits(snapshot: DocumentSnapshot, plan: RefactoringPla
   const nodes = snapshot.model?.nodes ?? [];
   const edits: TextEdit[] = [];
   const additions = new Map<string, Array<{ name: string; value: unknown }>>();
+  const removals = new Map<string, TextEdit[]>();
   const addedPointers = plan.impact.filter((impact) => impact.kind === 'add').map((impact) => impact.pointer);
   for (const impact of plan.impact) {
     if (impact.kind === 'rewrite-reference' && addedPointers.some((pointer) => impact.pointer.startsWith(`${pointer}/`))) continue;
@@ -1382,7 +1543,10 @@ function pointerScopedPlanEdits(snapshot: DocumentSnapshot, plan: RefactoringPla
       additions.set(parentPointer, entries);
     } else if (impact.kind === 'remove') {
       if (!node?.keyRange || !node.range) throw new Error(`Source range is unavailable for ${impact.pointer}.`);
-      edits.push(removeMemberEdit(source, nodes.find((candidate) => candidate.pointer === formatPointer(tokens.slice(0, -1)))?.range, node.keyRange, node.range));
+      const parentPointer = formatPointer(tokens.slice(0, -1));
+      const edit = removeMemberEdit(source, nodes.find((candidate) => candidate.pointer === parentPointer)?.range, node.keyRange, node.range);
+      edits.push(edit);
+      removals.set(parentPointer, [...(removals.get(parentPointer) ?? []), edit]);
     } else {
       if (!node?.range) throw new Error(`Source range is unavailable for ${impact.pointer}.`);
       edits.push({ range: node.range, newText: JSON.stringify(impact.to) });
@@ -1393,9 +1557,16 @@ function pointerScopedPlanEdits(snapshot: DocumentSnapshot, plan: RefactoringPla
     if (parent?.startOffset === undefined || parent.endOffset === undefined) throw new Error(`Destination range is unavailable for ${parentPointer}.`);
     const close = parent.endOffset - 1;
     const body = source.slice(parent.startOffset + 1, close);
+    const bodyStart = parent.startOffset + 1;
+    const localRemovals = (removals.get(parentPointer) ?? []).map((edit) => {
+      const { startOffset, endOffset } = edit.range;
+      if (startOffset === undefined || endOffset === undefined) throw new Error(`Removal range is unavailable for ${parentPointer}.`);
+      return { range: rangeFor(body, startOffset - bodyStart, endOffset - bodyStart), newText: edit.newText };
+    });
+    const remainingBody = applyEdits(body, localRemovals);
     const multiline = body.includes('\n');
     const indent = multiline ? (body.match(/\n([ \t]*)\S/)?.[1] ?? '  ') : '';
-    const separator = body.trim() ? (multiline ? `,\n${indent}` : ',') : '';
+    const separator = remainingBody.trim() ? (multiline ? `,\n${indent}` : ',') : '';
     const joined = entries.map((entry) => `${JSON.stringify(entry.name)}:${multiline ? ' ' : ''}${JSON.stringify(entry.value)}`).join(multiline ? `,\n${indent}` : ',');
     edits.push({ range: rangeFor(source, close, close), newText: `${separator}${joined}` });
   }
@@ -1425,7 +1596,7 @@ function pointerTokens(pointer: string): string[] {
 
 function formatPointer(tokens: readonly string[]): string { return tokens.length ? `/${tokens.map((token) => token.replace(/~/g, '~0').replace(/\//g, '~1')).join('/')}` : ''; }
 
-function structuredWorkbenchShell(snapshot: DocumentSnapshot, title: string, definitions: readonly { readonly name: string; readonly pointer: string; readonly namespace: string }[], definitionPointer: string | undefined, rows: readonly PropertyRow[], selectedPointer: string | undefined, mode: Mode, problemsOpen: boolean, memberMode: DesignMemberMode, effectiveMembers: EffectiveMembersResult | undefined, expandedPropertyPointer: string | undefined): string {
+function structuredWorkbenchShell(snapshot: DocumentSnapshot, title: string, definitions: readonly { readonly name: string; readonly pointer: string; readonly namespace: string; readonly imported?: boolean; readonly documentUri?: string; readonly sourcePointer?: string }[], definitionPointer: string | undefined, rows: readonly PropertyRow[], selectedPointer: string | undefined, mode: Mode, problemsOpen: boolean, memberMode: DesignMemberMode, effectiveMembers: EffectiveMembersResult | undefined, expandedPropertyPointer: string | undefined): string {
   const definition = snapshot.model?.projections.definitions.find((item) => item.pointer === definitionPointer);
   const selectedProperty = rows.find((row) => row.pointer === selectedPointer);
   const selectedRelation = definition?.relations.find((relation) => relation.pointer === selectedPointer);
@@ -1443,21 +1614,21 @@ function structuredWorkbenchShell(snapshot: DocumentSnapshot, title: string, def
     { mode: 'libraries', icon: '≡', label: 'Libraries' },
   ];
   const representationModes: readonly Extract<Mode, 'design' | 'graph' | 'source'>[] = ['design', 'graph', 'source'];
-  const typeTree = definitions.map((item) => `<button role="treeitem" class="js-tree-item" data-select="${escapeAttribute(item.pointer)}" data-type-drag="${escapeAttribute(item.pointer)}" draggable="true" aria-current="${item.pointer === definitionPointer}"><span class="js-kind" aria-hidden="true">{ }</span><span>${escapeHtml(item.name)}</span></button>`).join('') || '<div class="js-empty js-tree-empty">No definitions yet.</div>';
+  const typeTree = definitions.map((item) => `<button role="treeitem" class="js-tree-item${item.imported ? ' js-tree-item-imported' : ''}" ${item.imported ? `data-effective-source="${escapeAttribute(item.sourcePointer ?? '')}" data-effective-document="${escapeAttribute(item.documentUri ?? '')}" title="Imported from ${escapeAttribute(item.documentUri ?? '')}${escapeAttribute(item.sourcePointer ? `#${item.sourcePointer}` : '')}"` : `data-select="${escapeAttribute(item.pointer)}"`} data-type-drag="${escapeAttribute(item.pointer)}" draggable="true" aria-current="${item.pointer === definitionPointer}"><span class="js-kind" aria-hidden="true">T</span><span>${escapeHtml(item.name)}</span>${item.imported ? '<small>imported</small>' : ''}</button>`).join('') || '<div class="js-empty js-tree-empty">No definitions yet.</div>';
   const representations = representationModes.map((item) => `<button role="tab" data-mode="${item}" aria-selected="${mode === item}">${item[0]!.toUpperCase()}${item.slice(1)}</button>`).join('');
   const activities = advancedModes.map((item) => `<button class="js-activity-button" data-mode="${item.mode}" aria-label="${item.label}" title="${item.label}" aria-pressed="${mode === item.mode}">${item.icon}</button>`).join('');
   const breadcrumbs = `<span data-document-title>${escapeHtml(title)}</span>${definition ? `<span aria-hidden="true">›</span><strong>${escapeHtml(definition.name)}</strong>` : ''}${selectedProperty ? `<span aria-hidden="true">›</span><strong>${escapeHtml(selectedProperty.name)}</strong>` : ''}${selectedRelation ? `<span aria-hidden="true">›</span><strong>${escapeHtml(selectedRelation.name)}</strong>` : ''}`;
   return `<div class="js-shell">
     <header class="js-title"><span class="js-mark" aria-hidden="true"></span><strong>JSON Structure</strong><span class="js-file" data-document-title>${escapeHtml(title)}</span><button class="js-command-trigger" data-show-commands title="Show Commands (Ctrl+Shift+P)" aria-label="Show Commands">&gt;_</button><label class="js-theme-label"><span class="js-sr-only">Color theme</span><select class="js-theme" data-theme-select aria-label="Color theme"><option value="dark">Dark</option><option value="light">Light</option><option value="contrast">High contrast</option></select></label></header>
-    <div class="js-document-toolbar" role="toolbar" aria-label="Document actions"><button class="js-mobile-toggle" data-mobile-drawer="types" aria-controls="js-outline" aria-expanded="false">Types</button><button data-command="definition.add" title="New type">＋ Type</button><button data-mode="conversion" title="Convert this structure">⇄ Convert</button><button data-mode="instance" title="Validate an instance">✓ Validate</button><span class="js-spacer"></span><span class="js-chip">${escapeHtml(profile.mode)}</span>${activeCompanions ? `<span class="js-chip">${activeCompanions} companions</span>` : ''}<div class="js-tabs" role="tablist" aria-label="Document representation">${representations}</div><button class="js-mobile-toggle" data-mobile-drawer="inspector" aria-controls="js-inspector" aria-expanded="false">Inspector</button></div>
+    <div class="js-document-toolbar" role="toolbar" aria-label="Document actions"><button class="js-mobile-toggle" data-mobile-drawer="types" aria-controls="js-outline" aria-haspopup="dialog" aria-expanded="false">Types</button><button data-command="definition.add" title="New type">＋ Type</button><button data-mode="conversion" title="Convert this structure">⇄ Convert</button><button data-mode="instance" title="Validate an instance">✓ Validate</button><span class="js-spacer"></span><span class="js-chip">${escapeHtml(profile.mode)}</span>${activeCompanions ? `<span class="js-chip">${activeCompanions} companions</span>` : ''}<div class="js-tabs" role="tablist" aria-label="Document representation">${representations}</div><button class="js-mobile-toggle" data-mobile-drawer="inspector" aria-controls="js-inspector" aria-haspopup="dialog" aria-expanded="false">Inspector</button></div>
     <div class="js-workbench" data-problems-open="${problemsOpen}">
       <nav class="js-activity" aria-label="Workbench views"><button class="js-activity-button js-activity-primary" data-mobile-drawer="types" aria-label="Schema explorer" title="Schema explorer">T</button>${activities}</nav>
       <aside class="js-outline" id="js-outline" data-drawer-panel="types" aria-label="Schema explorer"><div class="js-panel-head"><span>Types</span><span class="js-spacer"></span><button data-command="definition.add" title="New type" aria-label="New type">＋</button><button class="js-drawer-close" data-mobile-drawer-close aria-label="Close Types">×</button></div><input class="js-filter" type="search" placeholder="Filter types" aria-label="Filter types"><div class="js-tree" role="tree" aria-label="Types and namespaces"><div class="js-tree-group">Definitions · ${definitions.length}</div>${typeTree}</div></aside>
-      <section class="js-center"><div class="js-editor-tab"><span class="js-kind" aria-hidden="true">{ }</span><span data-document-title>${escapeHtml(title)}</span></div><div class="js-breadcrumbs">${breadcrumbs}</div><section class="js-view" ${mode === 'design' ? '' : 'hidden'}>${designView(definition?.name, definition?.type, definition?.description, rows, selectedPointer, definition?.identity, definition?.relations, memberMode, effectiveMembers, expandedPropertyPointer, definitions)}</section><section class="js-view js-graph" ${mode === 'graph' ? '' : 'hidden'}>${graphView(snapshot, selectedPointer)}</section><section class="js-view js-source-view" ${mode === 'source' ? '' : 'hidden'}><div class="js-source" data-source aria-label="JSON source editor"></div></section></section>
+      <section class="js-center"><div class="js-editor-tab"><span class="js-kind" aria-hidden="true">S</span><span data-document-title>${escapeHtml(title)}</span></div><div class="js-breadcrumbs">${breadcrumbs}</div><section class="js-view" ${mode === 'design' ? '' : 'hidden'}>${designView(definition?.name, definition?.type, definition?.description, rows, selectedPointer, definition?.identity, definition?.relations, memberMode, effectiveMembers, expandedPropertyPointer, definitions, documentValue)}</section><section class="js-view js-graph" ${mode === 'graph' ? '' : 'hidden'}>${graphView(snapshot, selectedPointer)}</section><section class="js-view js-source-view" ${mode === 'source' ? '' : 'hidden'}><div class="js-source" data-source aria-label="JSON source editor"></div></section></section>
       <aside class="js-inspector" id="js-inspector" data-drawer-panel="inspector" aria-label="Inspector"><div class="js-panel-head"><span>Inspector</span><span class="js-spacer"></span><button class="js-drawer-close" data-mobile-drawer-close aria-label="Close Inspector">×</button></div>${inspector(selectedProperty, definition, selectedDiagnostics, selectedRelation)}</aside>
-      <section class="js-problems" aria-label="Problems panel"><div class="js-problems-head"><button class="js-problems-tab" data-problems-toggle aria-expanded="${problemsOpen}">Problems <span class="js-count">${snapshot.diagnostics.length}</span></button><span class="js-spacer"></span><button data-problems-toggle aria-label="Close Problems">×</button></div><div class="js-problem-list" role="list">${problems(snapshot.diagnostics)}</div></section>
+      <section class="js-problems" aria-label="Problems panel"><div class="js-problems-head"><button class="js-problems-tab" data-problems-toggle aria-controls="js-problem-list" aria-expanded="${problemsOpen}">Problems <span class="js-count">${snapshot.diagnostics.length}</span></button><span class="js-spacer"></span><button data-problems-toggle aria-controls="js-problem-list" aria-expanded="${problemsOpen}" aria-label="Close Problems">×</button></div><div class="js-problem-list" id="js-problem-list" role="list">${problems(snapshot.diagnostics)}</div></section>
     </div>
-    <footer class="js-status"><button data-problems-toggle aria-expanded="${problemsOpen}" title="Toggle Problems"><span>× ${errors}</span><span>△ ${warnings}</span></button><span>JSON Structure ${escapeHtml(profile.mode)}</span><span class="js-spacer"></span><span>${definitions.length} type${definitions.length === 1 ? '' : 's'}</span><span>${documentStatus}</span></footer>
+    <footer class="js-status"><button data-problems-toggle aria-controls="js-problem-list" aria-expanded="${problemsOpen}" title="Toggle Problems"><span>× ${errors}</span><span>△ ${warnings}</span></button><span>JSON Structure ${escapeHtml(profile.mode)}</span><span class="js-spacer"></span><span>${definitions.length} type${definitions.length === 1 ? '' : 's'}</span><span>${documentStatus}</span></footer>
   </div>`;
 }
 
@@ -1475,8 +1646,8 @@ export function workbenchShell(snapshot: DocumentSnapshot, title: string, defini
     { mode: 'libraries', icon: '≡', label: 'Libraries' },
   ];
   const representationModes: readonly Extract<Mode, 'design' | 'graph' | 'source'>[] = ['design', 'graph', 'source'];
-  const typeTree = definitions.map((item) => `<button role="treeitem" class="js-tree-item" data-select="${escapeAttribute(item.pointer)}" aria-current="${item.pointer === definitionPointer}"><span class="js-kind" aria-hidden="true">{ }</span><span>${escapeHtml(item.name)}</span></button>`).join('') || '<div class="js-empty js-tree-empty">No definitions yet.</div>';
-  return `<div class="js-shell"><header class="js-title"><span class="js-mark" aria-hidden="true"></span><strong>JSON Structure</strong><span class="js-file" data-document-title>${escapeHtml(title)}</span><button class="js-command-trigger" data-show-commands title="Show Commands (Ctrl+Shift+P)" aria-label="Show Commands">&gt;_</button><label class="js-theme-label"><span class="js-sr-only">Color theme</span><select class="js-theme" data-theme-select aria-label="Color theme"><option value="dark">Dark</option><option value="light">Light</option><option value="contrast">High contrast</option></select></label></header><div class="js-document-toolbar" role="toolbar" aria-label="Document actions"><button class="js-mobile-toggle" data-mobile-drawer="types" aria-controls="js-outline" aria-expanded="false">Types</button><button data-command="definition.add" title="New type">＋ Type</button><button data-mode="conversion" title="Convert this structure">⇄ Convert</button><button data-mode="instance" title="Validate an instance">✓ Validate</button><span class="js-spacer"></span><span class="js-chip">Core v0</span><div class="js-tabs" role="tablist" aria-label="Document representation">${representationModes.map((item) => `<button role="tab" data-mode="${item}" aria-selected="${mode === item}">${item[0]!.toUpperCase()}${item.slice(1)}</button>`).join('')}</div><button class="js-mobile-toggle" data-mobile-drawer="inspector" aria-controls="js-inspector" aria-expanded="false">Inspector</button></div><div class="js-workbench" data-problems-open="${problemsOpen}"><nav class="js-activity" aria-label="Workbench views"><button class="js-activity-button js-activity-primary" data-mobile-drawer="types" aria-label="Schema explorer" title="Schema explorer">T</button>${advancedModes.map((item) => `<button class="js-activity-button" data-mode="${item.mode}" aria-label="${item.label}" title="${item.label}" aria-pressed="${mode === item.mode}">${item.icon}</button>`).join('')}</nav><aside class="js-outline" id="js-outline" data-drawer-panel="types" aria-label="Schema explorer"><div class="js-panel-head"><span>Types</span><span class="js-spacer"></span><button data-command="definition.add" title="New type" aria-label="New type">＋</button><button class="js-drawer-close" data-mobile-drawer-close aria-label="Close Types">×</button></div><input class="js-filter" type="search" placeholder="Filter types" aria-label="Filter types"><div class="js-tree" role="tree" aria-label="Types and namespaces"><div class="js-tree-group">Definitions · ${definitions.length}</div>${typeTree}</div></aside><section class="js-center"><div class="js-editor-tab"><span class="js-kind" aria-hidden="true">{ }</span><span data-document-title>${escapeHtml(title)}</span></div><div class="js-breadcrumbs"><span data-document-title>${escapeHtml(title)}</span>${definition ? `<span aria-hidden="true">›</span><strong>${escapeHtml(definition.name)}</strong>` : ''}${selectedProperty ? `<span aria-hidden="true">›</span><strong>${escapeHtml(selectedProperty.name)}</strong>` : ''}</div><section class="js-view" ${mode === 'design' ? '' : 'hidden'}>${designView(definition?.name, definition?.type, definition?.description, rows, selectedPointer)}</section><section class="js-view js-graph" ${mode === 'graph' ? '' : 'hidden'}>${graphView(snapshot, selectedPointer)}</section><section class="js-view js-source-view" ${mode === 'source' ? '' : 'hidden'}><div class="js-source" data-source aria-label="JSON source editor"></div></section></section><aside class="js-inspector" id="js-inspector" data-drawer-panel="inspector" aria-label="Inspector"><div class="js-panel-head"><span>Inspector</span><span class="js-spacer"></span><button class="js-drawer-close" data-mobile-drawer-close aria-label="Close Inspector">×</button></div>${inspector(selectedProperty, definition, selectedDiagnostics)}</aside><section class="js-problems" aria-label="Problems panel"><div class="js-problems-head"><button class="js-problems-tab" data-problems-toggle aria-expanded="${problemsOpen}">Problems <span class="js-count">${snapshot.diagnostics.length}</span></button><span class="js-spacer"></span><button data-problems-toggle aria-label="Close Problems">×</button></div><div class="js-problem-list" role="list">${problems(snapshot.diagnostics)}</div></section></div><footer class="js-status"><button data-problems-toggle aria-expanded="${problemsOpen}" title="Toggle Problems"><span>× ${errors}</span><span>△ ${warnings}</span></button><span>JSON Structure Core v0</span><span class="js-spacer"></span><span>${definitions.length} type${definitions.length === 1 ? '' : 's'}</span><span>${documentStatus}</span></footer></div>`;
+  const typeTree = definitions.map((item) => `<button role="treeitem" class="js-tree-item" data-select="${escapeAttribute(item.pointer)}" aria-current="${item.pointer === definitionPointer}"><span class="js-kind" aria-hidden="true">T</span><span>${escapeHtml(item.name)}</span></button>`).join('') || '<div class="js-empty js-tree-empty">No definitions yet.</div>';
+  return `<div class="js-shell"><header class="js-title"><span class="js-mark" aria-hidden="true"></span><strong>JSON Structure</strong><span class="js-file" data-document-title>${escapeHtml(title)}</span><button class="js-command-trigger" data-show-commands title="Show Commands (Ctrl+Shift+P)" aria-label="Show Commands">&gt;_</button><label class="js-theme-label"><span class="js-sr-only">Color theme</span><select class="js-theme" data-theme-select aria-label="Color theme"><option value="dark">Dark</option><option value="light">Light</option><option value="contrast">High contrast</option></select></label></header><div class="js-document-toolbar" role="toolbar" aria-label="Document actions"><button class="js-mobile-toggle" data-mobile-drawer="types" aria-controls="js-outline" aria-expanded="false">Types</button><button data-command="definition.add" title="New type">＋ Type</button><button data-mode="conversion" title="Convert this structure">⇄ Convert</button><button data-mode="instance" title="Validate an instance">✓ Validate</button><span class="js-spacer"></span><span class="js-chip">Core v0</span><div class="js-tabs" role="tablist" aria-label="Document representation">${representationModes.map((item) => `<button role="tab" data-mode="${item}" aria-selected="${mode === item}">${item[0]!.toUpperCase()}${item.slice(1)}</button>`).join('')}</div><button class="js-mobile-toggle" data-mobile-drawer="inspector" aria-controls="js-inspector" aria-expanded="false">Inspector</button></div><div class="js-workbench" data-problems-open="${problemsOpen}"><nav class="js-activity" aria-label="Workbench views"><button class="js-activity-button js-activity-primary" data-mobile-drawer="types" aria-label="Schema explorer" title="Schema explorer">T</button>${advancedModes.map((item) => `<button class="js-activity-button" data-mode="${item.mode}" aria-label="${item.label}" title="${item.label}" aria-pressed="${mode === item.mode}">${item.icon}</button>`).join('')}</nav><aside class="js-outline" id="js-outline" data-drawer-panel="types" aria-label="Schema explorer"><div class="js-panel-head"><span>Types</span><span class="js-spacer"></span><button data-command="definition.add" title="New type" aria-label="New type">＋</button><button class="js-drawer-close" data-mobile-drawer-close aria-label="Close Types">×</button></div><input class="js-filter" type="search" placeholder="Filter types" aria-label="Filter types"><div class="js-tree" role="tree" aria-label="Types and namespaces"><div class="js-tree-group">Definitions · ${definitions.length}</div>${typeTree}</div></aside>  <section class="js-center"><div class="js-editor-tab"><span class="js-kind" aria-hidden="true">S</span><span data-document-title>${escapeHtml(title)}</span></div><div class="js-breadcrumbs"><span data-document-title>${escapeHtml(title)}</span>${definition ? `<span aria-hidden="true">›</span><strong>${escapeHtml(definition.name)}</strong>` : ''}${selectedProperty ? `<span aria-hidden="true">›</span><strong>${escapeHtml(selectedProperty.name)}</strong>` : ''}</div><section class="js-view" ${mode === 'design' ? '' : 'hidden'}>${designView(definition?.name, definition?.type, definition?.description, rows, selectedPointer)}</section><section class="js-view js-graph" ${mode === 'graph' ? '' : 'hidden'}>${graphView(snapshot, selectedPointer)}</section><section class="js-view js-source-view" ${mode === 'source' ? '' : 'hidden'}><div class="js-source" data-source aria-label="JSON source editor"></div></section></section><aside class="js-inspector" id="js-inspector" data-drawer-panel="inspector" aria-label="Inspector"><div class="js-panel-head"><span>Inspector</span><span class="js-spacer"></span><button class="js-drawer-close" data-mobile-drawer-close aria-label="Close Inspector">×</button></div>${inspector(selectedProperty, definition, selectedDiagnostics)}</aside><section class="js-problems" aria-label="Problems panel"><div class="js-problems-head"><button class="js-problems-tab" data-problems-toggle aria-expanded="${problemsOpen}">Problems <span class="js-count">${snapshot.diagnostics.length}</span></button><span class="js-spacer"></span><button data-problems-toggle aria-label="Close Problems">×</button></div><div class="js-problem-list" role="list">${problems(snapshot.diagnostics)}</div></section></div><footer class="js-status"><button data-problems-toggle aria-expanded="${problemsOpen}" title="Toggle Problems"><span>× ${errors}</span><span>△ ${warnings}</span></button><span>JSON Structure Core v0</span><span class="js-spacer"></span><span>${definitions.length} type${definitions.length === 1 ? '' : 's'}</span><span>${documentStatus}</span></footer></div>`;
 }
 
 export function legacyShell(snapshot: DocumentSnapshot, title: string, definitions: readonly { readonly name: string; readonly pointer: string; readonly namespace: string }[], definitionPointer: string | undefined, rows: readonly PropertyRow[], selectedPointer: string | undefined, mode: Mode, graphNavigation: GraphNavigationController, graph: ReturnType<typeof projectGraph>): string {
@@ -1485,7 +1656,7 @@ export function legacyShell(snapshot: DocumentSnapshot, title: string, definitio
   const selectedDiagnostics = diagnosticsForPointer(snapshot.diagnostics, selectedPointer);
   void graphNavigation;
   void graph;
-  return `<div class="js-shell"><header class="js-title"><span class="js-mark" aria-hidden="true"></span><strong>JSON Structure</strong><button class="js-command-trigger" data-show-commands title="Show Commands (Ctrl+Shift+P)" aria-label="Show Commands">&gt;_</button><span class="js-file">${escapeHtml(title)}</span><label class="js-theme-label">Theme <select class="js-theme" data-theme-select aria-label="Color theme"><option value="dark">Dark</option><option value="light">Light</option><option value="contrast">High contrast</option></select></label></header><div class="js-workbench"><aside class="js-outline"><div class="js-panel-head">Types and namespaces</div><input class="js-filter" type="search" placeholder="Filter types" aria-label="Filter types"><div class="js-tree-group">${definitions.length} definitions</div>${definitions.map((item) => `<button class="js-tree-item" data-select="${escapeAttribute(item.pointer)}" aria-current="${item.pointer === definitionPointer}"><span class="js-kind">{ }</span><span>${escapeHtml(item.name)}</span></button>`).join('') || '<div class="js-empty">No reusable types found.</div>'}</aside><section class="js-center"><nav class="js-tabs" role="tablist" aria-label="Editor mode">${(['design', 'graph', 'source'] as const).map((item) => `<button role="tab" data-mode="${item}" aria-selected="${mode === item}">${item[0]!.toUpperCase()}${item.slice(1)}</button>`).join('')}</nav><section class="js-view" ${mode === 'design' ? '' : 'hidden'}>${designView(definition?.name, definition?.type, definition?.description, rows, selectedPointer)}</section><section class="js-view js-graph" ${mode === 'graph' ? '' : 'hidden'}>${graphView(snapshot, selectedPointer)}</section><section class="js-view js-source-view" ${mode === 'source' ? '' : 'hidden'}><div class="js-source" data-source aria-label="JSON source editor"></div></section></section><aside class="js-inspector"><div class="js-panel-head">Inspector</div>${inspector(selectedProperty, definition, selectedDiagnostics)}</aside><section class="js-problems"><div class="js-panel-head">Problems <span style="margin-left:auto">${snapshot.diagnostics.length}</span></div>${problems(snapshot.diagnostics)}</section></div><footer class="js-status"><span>${escapeHtml(snapshot.recovery)}</span><span>${definitions.length} types</span><span>${snapshot.diagnostics.length} diagnostics</span><span>${selectedPointer ? escapeHtml(selectedPointer) : 'No selection'}</span></footer></div>`;
+  return `<div class="js-shell"><header class="js-title"><span class="js-mark" aria-hidden="true"></span><strong>JSON Structure</strong><button class="js-command-trigger" data-show-commands title="Show Commands (Ctrl+Shift+P)" aria-label="Show Commands">&gt;_</button><span class="js-file">${escapeHtml(title)}</span><label class="js-theme-label">Theme <select class="js-theme" data-theme-select aria-label="Color theme"><option value="dark">Dark</option><option value="light">Light</option><option value="contrast">High contrast</option></select></label></header><div class="js-workbench"><aside class="js-outline"><div class="js-panel-head">Types and namespaces</div><input class="js-filter" type="search" placeholder="Filter types" aria-label="Filter types"><div class="js-tree-group">${definitions.length} definitions</div>${definitions.map((item) => `<button class="js-tree-item" data-select="${escapeAttribute(item.pointer)}" aria-current="${item.pointer === definitionPointer}"><span class="js-kind">T</span><span>${escapeHtml(item.name)}</span></button>`).join('') || '<div class="js-empty">No reusable types found.</div>'}</aside><section class="js-center"><nav class="js-tabs" role="tablist" aria-label="Editor mode">${(['design', 'graph', 'source'] as const).map((item) => `<button role="tab" data-mode="${item}" aria-selected="${mode === item}">${item[0]!.toUpperCase()}${item.slice(1)}</button>`).join('')}</nav><section class="js-view" ${mode === 'design' ? '' : 'hidden'}>${designView(definition?.name, definition?.type, definition?.description, rows, selectedPointer)}</section><section class="js-view js-graph" ${mode === 'graph' ? '' : 'hidden'}>${graphView(snapshot, selectedPointer)}</section><section class="js-view js-source-view" ${mode === 'source' ? '' : 'hidden'}><div class="js-source" data-source aria-label="JSON source editor"></div></section></section><aside class="js-inspector"><div class="js-panel-head">Inspector</div>${inspector(selectedProperty, definition, selectedDiagnostics)}</aside><section class="js-problems"><div class="js-panel-head">Problems <span style="margin-left:auto">${snapshot.diagnostics.length}</span></div>${problems(snapshot.diagnostics)}</section></div><footer class="js-status"><span>${escapeHtml(snapshot.recovery)}</span><span>${definitions.length} types</span><span>${snapshot.diagnostics.length} diagnostics</span><span>${selectedPointer ? escapeHtml(selectedPointer) : 'No selection'}</span></footer></div>`;
 }
 
 /*
@@ -1509,12 +1680,12 @@ export function legacyShell(snapshot: DocumentSnapshot, title: string, definitio
 }
 
 */
-export function analysisView(snapshot: DocumentSnapshot, pointer: string | undefined, graph: ReturnType<typeof projectGraph>, impactDirection: ImpactDirection = 'both', refactoringPlan?: RefactoringPlan, refactoringStatus = '', selectedAddIns: readonly string[] = []): string {
+export function analysisView(snapshot: DocumentSnapshot, pointer: string | undefined, graph: ReturnType<typeof projectGraph>, impactDirection: ImpactDirection = 'both', refactoringPlan?: RefactoringPlan, refactoringStatus = '', selectedAddIns: readonly string[] = [], resolvedDocuments: readonly ResolvedSchemaDocument[] = []): string {
   const value = snapshot.recovery === 'valid' ? JSON.parse(snapshot.text) : {};
-  const effective = pointer !== undefined && snapshot.recovery === 'valid' ? resolveEffectiveMembers(value, pointer, { addIns: selectedAddIns }) : undefined;
+  const effective = pointer !== undefined && snapshot.recovery === 'valid' ? resolveEffectiveMembers(value, pointer, { documentUri: snapshot.uri, resolvedDocuments, addIns: selectedAddIns }) : undefined;
   const runtime = new GraphRuntime({ nodes: graph.nodes.map((node) => ({ id: node.id, namespace: node.namespace, label: node.label })), edges: graph.edges.filter((edge) => graph.nodes.some((node) => node.id === edge.from) && graph.nodes.some((node) => node.id === edge.to)).map((edge, index) => ({ id: `${edge.kind}:${index}`, source: edge.from, target: edge.to, label: edge.label })), rootId: graph.nodes.find((node) => node.kind === 'document')?.id });
   const offers = value && typeof value === 'object' && !Array.isArray(value) && value.$offers && typeof value.$offers === 'object' && !Array.isArray(value.$offers) ? Object.keys(value.$offers) : [];
-  const addIns = offers.length ? `<fieldset><legend>Offered add-ins</legend>${offers.map((name) => `<label><input type="checkbox" data-addin value="${escapeAttribute(name)}" ${selectedAddIns.includes(name) ? 'checked' : ''}>${escapeHtml(name)}</label>`).join('')}</fieldset>` : '<p class="js-description">This document offers no add-ins.</p>';
+  const addIns = offers.length ? `<fieldset><legend>Offered add-ins (<span class="js-code">$offers</span> keys)</legend>${offers.map((name) => `<label><input type="checkbox" data-addin value="${escapeAttribute(name)}" ${selectedAddIns.includes(name) ? 'checked' : ''}>${escapeHtml(name)}</label>`).join('')}</fieldset>` : '<p class="js-description">This document has no <span class="js-code">$offers</span> keys.</p>';
   const meta = detectMetaSchemaMode(value);
   const palette = paletteDescriptors(value).flatMap((descriptor) => descriptor.members);
   const impact = pointer ? runtime.analyzeImpact([pointer], { direction: impactDirection }) : [];
@@ -1528,7 +1699,8 @@ export function analysisView(snapshot: DocumentSnapshot, pointer: string | undef
 export function instanceView(text: string, result: InstanceValidationResult | undefined, roots: readonly { readonly pointer: string; readonly label: string }[] = [], rootPointer?: string, selection?: CrossNavigationSelection): string {
   const rootOptions = roots.map((root) => `<option value="${escapeAttribute(root.pointer)}" ${root.pointer === rootPointer ? 'selected' : ''}>${escapeHtml(root.label)}</option>`).join('');
   const diagnostics = result?.diagnostics.map((diagnostic, index) => `<button class="js-problem" data-instance-diagnostic="${index}" data-instance-schema="${escapeAttribute(diagnostic.schemaPointer)}"><span class="js-problem-${diagnostic.severity}">${diagnostic.severity === 'error' ? 'x' : '!'}</span><span>${escapeHtml(diagnostic.message)}</span><span class="js-location">${escapeHtml(diagnostic.instancePointer)} → ${escapeHtml(diagnostic.schemaPointer)}</span></button>`).join('') ?? '';
-  return `<div class="js-sheet js-instance-sheet"><header class="js-type-head"><div><div class="js-eyebrow">Instance workspace</div><h1>Validate sample</h1><p class="js-description">Validate against the complete schema environment and follow each evaluation to its instance and schema locations.</p></div><span class="js-chip">${result?.status ?? 'not run'}</span></header><div class="js-instance-toolbar"><label>Root type<select data-instance-root><option value="" ${rootPointer === '' ? 'selected' : ''}>Document root</option>${rootOptions}</select></label><button data-instance-validate>Validate instance</button></div><div class="js-instance-layout"><label class="js-instance-label">Instance JSON<textarea data-instance-input spellcheck="false">${escapeHtml(text)}</textarea></label><section class="js-trace-panel"><div class="js-section-head"><div><h2>Evaluation trace</h2><span class="js-section-meta">${result?.status ?? 'not run'}</span></div></div>${result ? renderEvaluationTrace(result.trace, selection) : '<div class="js-empty">Run validation to inspect the evaluation trace.</div>'}</section></div><section><div class="js-section-head"><div><h2>Diagnostics</h2><span class="js-section-meta">${result?.diagnostics.length ?? 0}</span></div></div>${diagnostics || '<div class="js-empty">No instance diagnostics.</div>'}</section></div>`;
+  const sampleStatus = text === '{}' ? 'No sample file loaded.' : 'Sample file loaded.';
+  return `<div class="js-sheet js-instance-sheet"><header class="js-type-head"><div><div class="js-eyebrow">Instance workspace</div><h1>Validate sample</h1><p class="js-description">Validate against the complete schema environment and follow each evaluation to its instance and schema locations.</p></div><span class="js-chip">${result?.status ?? 'not run'}</span></header><div class="js-instance-toolbar"><label>Root type<select data-instance-root><option value="" ${rootPointer === '' ? 'selected' : ''}>Document root</option>${rootOptions}</select></label><label>Sample file<input data-instance-input type="file" accept=".json,application/json"><span class="js-description">${sampleStatus}</span></label><button data-instance-validate>Validate instance</button></div><div class="js-instance-layout"><section class="js-trace-panel"><div class="js-section-head"><div><h2>Evaluation trace</h2><span class="js-section-meta">${result?.status ?? 'not run'}</span></div></div>${result ? renderEvaluationTrace(result.trace, selection) : '<div class="js-empty">Load a sample file and run validation to inspect the evaluation trace.</div>'}</section></div><section><div class="js-section-head"><div><h2>Diagnostics</h2><span class="js-section-meta">${result?.diagnostics.length ?? 0}</span></div></div>${diagnostics || '<div class="js-empty">No instance diagnostics.</div>'}</section></div>`;
 }
 
 function renderEvaluationTrace(trace: EvaluationTrace, selection: CrossNavigationSelection | undefined, depth = 0): string {
@@ -1537,9 +1709,9 @@ function renderEvaluationTrace(trace: EvaluationTrace, selection: CrossNavigatio
   return `<details class="js-trace js-trace-${trace.status}" ${depth < 2 || trace.status !== 'valid' ? 'open' : ''} data-trace-depth="${depth}"><summary><span class="js-trace-status" aria-hidden="true">${trace.status === 'valid' ? '✓' : trace.status === 'invalid' ? '×' : '?'}</span><strong>${escapeHtml(trace.keyword)}</strong><span>${escapeHtml(trace.message ?? trace.status)}</span></summary><div class="js-trace-locations" aria-current="${selected}"><button data-trace-instance="${escapeAttribute(trace.instancePointer)}" data-trace-schema="${escapeAttribute(trace.schemaPointer)}">Instance <span class="js-code">${escapeHtml(trace.instancePointer || '/')}</span></button><button data-trace-schema="${escapeAttribute(trace.schemaPointer)}" data-trace-instance="${escapeAttribute(trace.instancePointer)}">Schema <span class="js-code">${escapeHtml(trace.schemaPointer || '/')}</span></button></div>${children ? `<div class="js-trace-children">${children}</div>` : ''}</details>`;
 }
 
-export function designView(name: string | undefined, type: string | undefined, description: string | undefined, rows: readonly PropertyRow[], selectedPointer: string | undefined, identity: readonly string[] = [], relations: readonly import('../model.js').RelationProjection[] = [], memberMode: DesignMemberMode = 'local', effectiveMembers?: EffectiveMembersResult, expandedPropertyPointer?: string, definitions: readonly { readonly name: string; readonly pointer: string }[] = []): string {
+export function designView(name: string | undefined, type: string | undefined, description: string | undefined, rows: readonly PropertyRow[], selectedPointer: string | undefined, identity: readonly string[] = [], relations: readonly import('../model.js').RelationProjection[] = [], memberMode: DesignMemberMode = 'local', effectiveMembers?: EffectiveMembersResult, expandedPropertyPointer?: string, definitions: readonly { readonly name: string; readonly pointer: string }[] = [], document?: unknown): string {
   if (!name && !type) return '<div class="js-empty-state"><span class="js-empty-mark" aria-hidden="true"></span><div class="js-eyebrow">Untitled structure</div><h1>Create your first type</h1><p>Start with a reusable declaration, or switch to Source to author the document directly.</p><div class="js-empty-actions"><button class="js-primary" data-command="definition.add">＋ New type</button><button data-mode="source">Open Source</button></div></div>';
-  const localPropertyRows = rows.map((row) => propertyEditorRow(row, row.pointer === selectedPointer, row.pointer === expandedPropertyPointer, definitions)).join('');
+  const localPropertyRows = rows.map((row) => propertyEditorRow(row, row.pointer === selectedPointer, row.pointer === expandedPropertyPointer, definitions, document)).join('');
   const effectiveRows = effectiveMembers?.members.map((member) => `<div class="js-row js-effective-row" role="row" data-member-origin="${member.provenance}"><div class="js-cell" role="cell"><button class="js-property-link js-code" data-effective-source="${escapeAttribute(member.sourcePointer)}" data-effective-document="${escapeAttribute(member.documentUri)}">${escapeHtml(member.name)}</button></div><div class="js-cell js-code" role="cell">${escapeHtml(displaySchemaType(member.schema))}</div><div class="js-cell ${member.required ? 'js-required' : 'js-optional'}" role="cell">${member.required ? 'required' : 'optional'}</div><div class="js-cell js-description-cell" role="cell"><span class="js-origin-chip">${escapeHtml(member.provenance)}</span>${member.addIn ? ` ${escapeHtml(member.addIn)}` : ''}${member.inheritedVia.length ? `<small>${member.inheritedVia.map(pointerLabel).map(escapeHtml).join(' → ')}</small>` : ''}${member.imports.length ? `<small>${member.imports.map((item) => `${item.keyword} ${item.importSource}`).map(escapeHtml).join(' → ')}</small>` : ''}</div><div class="js-cell js-action-cell" role="cell"><button class="js-row-action" data-effective-source="${escapeAttribute(member.sourcePointer)}" data-effective-document="${escapeAttribute(member.documentUri)}" aria-label="Open declaration of ${escapeAttribute(member.name)}">↗</button></div></div>`).join('') ?? '';
   const propertyRows = memberMode === 'effective' ? effectiveRows : localPropertyRows;
   const conflictView = memberMode === 'effective' && effectiveMembers ? `${effectiveMembers.conflicts.map((conflict) => `<div class="js-conflict"><strong>${escapeHtml(conflict.name)}</strong><span>${escapeHtml(conflict.reason)} · ${escapeHtml(conflict.winner)} wins over ${escapeHtml(conflict.loser)}</span></div>`).join('')}${effectiveMembers.diagnostics.map((diagnostic) => `<div class="js-conflict"><strong>${escapeHtml(diagnostic.code)}</strong><span>${escapeHtml(diagnostic.message)}</span></div>`).join('')}` : '';
@@ -1551,7 +1723,7 @@ export function designView(name: string | undefined, type: string | undefined, d
   return `<div class="js-sheet"><header class="js-type-head"><div><div class="js-eyebrow">${name ? 'Local definition' : 'Document root'}</div><h1>${escapeHtml(name ?? 'Document root')}</h1><p class="js-description">${escapeHtml(description ?? 'No description yet.')}</p></div><span class="js-chip">${escapeHtml(type ?? 'untyped')}</span></header><div class="js-section-head"><div><h2>Properties</h2><span class="js-section-meta">${memberCount} visible</span></div><div class="js-member-mode" role="group" aria-label="Property origin"><button data-member-mode="local" aria-pressed="${memberMode === 'local'}">Local</button><button data-member-mode="effective" aria-pressed="${memberMode === 'effective'}">Effective</button></div>${memberMode === 'local' ? '<button data-command="add">＋ Add property</button>' : ''}</div>${conflictView}<div class="js-grid" role="table" aria-label="Properties"><div class="js-row js-header" role="row"><div class="js-cell" role="columnheader">Name</div><div class="js-cell" role="columnheader">Type</div><div class="js-cell" role="columnheader">Presence</div><div class="js-cell js-description-cell" role="columnheader">${memberMode === 'effective' ? 'Origin' : 'Description'}</div><div class="js-cell" role="columnheader"><span class="js-sr-only">Actions</span></div></div>${propertyRows || (memberMode === 'local' ? '<button class="js-add-row" data-command="add">＋ <span>Add a property</span></button>' : '<div class="js-empty">No effective members.</div>')}</div>${identityView}${relationsView}</div>`;
 }
 
-function propertyEditorRow(row: PropertyRow, selected: boolean, expanded: boolean, definitions: readonly { readonly name: string; readonly pointer: string }[]): string {
+function propertyEditorRow(row: PropertyRow, selected: boolean, expanded: boolean, definitions: readonly { readonly name: string; readonly pointer: string }[], document?: unknown): string {
   const schema = row.schema ?? {};
   const authoredType = inlinePropertyTypeValue(schema);
   const primitiveOptions = inlinePropertyTypes().map((value) => `<option value="type:${escapeAttribute(value)}" ${authoredType === `type:${value}` ? 'selected' : ''}>${escapeHtml(value)}</option>`).join('');
@@ -1559,7 +1731,10 @@ function propertyEditorRow(row: PropertyRow, selected: boolean, expanded: boolea
   const availableTypes = new Set([...inlinePropertyTypes().map((value) => `type:${value}`), ...definitions.map((definition) => `ref:#${definition.pointer}`)]);
   const preservedType = authoredType && !availableTypes.has(authoredType) ? `<option value="${escapeAttribute(authoredType)}" selected>${escapeHtml(inlinePropertyTypeLabel(authoredType))}</option>` : '';
   const detailsId = `property-details-${encodeURIComponent(row.pointer).replace(/%/g, '-')}`;
-  return `<div class="js-property-editor" data-property-editor="${escapeAttribute(row.pointer)}" aria-current="${selected}"><div class="js-row js-inline-property-row" role="row"><div class="js-cell" role="cell"><input class="js-inline-name js-code" data-inline-property="name" data-property-pointer="${escapeAttribute(row.pointer)}" value="${escapeAttribute(row.name)}" aria-label="Property name"></div><div class="js-cell js-inline-type-cell" role="cell" data-type-drop="${escapeAttribute(row.pointer)}"><select class="js-inline-type js-code" data-inline-property="type" data-property-pointer="${escapeAttribute(row.pointer)}" aria-label="Type for ${escapeAttribute(row.name)}">${preservedType}<optgroup label="Primitive types">${primitiveOptions}</optgroup>${referenceOptions ? `<optgroup label="Reusable types">${referenceOptions}</optgroup>` : ''}</select><span class="js-type-drop-zone" aria-hidden="true"></span></div><div class="js-cell js-inline-required-cell" role="cell"><label><input type="checkbox" data-inline-property="required" data-property-pointer="${escapeAttribute(row.pointer)}" ${row.required ? 'checked' : ''}> required</label></div><div class="js-cell js-description-cell" role="cell"><input class="js-inline-description" data-inline-property="description" data-property-pointer="${escapeAttribute(row.pointer)}" value="${escapeAttribute(row.description ?? '')}" placeholder="Add description" aria-label="Description for ${escapeAttribute(row.name)}"></div><div class="js-cell js-action-cell" role="cell"><button class="js-row-action" data-property-details="${escapeAttribute(row.pointer)}" aria-expanded="${expanded}" aria-controls="${detailsId}" aria-label="${expanded ? 'Collapse' : 'Expand'} validation and annotations for ${escapeAttribute(row.name)}">${expanded ? '⌃' : '⌄'}</button></div></div>${expanded ? propertyDetailsPanel(row, detailsId) : ''}</div>`;
+  const requiredControl = row.requiredAlternatives
+    ? `<button class="js-required-sets" data-action-id="property.required-alternatives" data-action-pointer="${escapeAttribute(propertyOwnerPointer(row.pointer))}" title="This type uses alternative required sets">Edit sets</button>`
+    : `<label><input type="checkbox" data-inline-property="required" data-property-pointer="${escapeAttribute(row.pointer)}" ${row.required ? 'checked' : ''}> required</label>`;
+  return `<div class="js-property-editor" data-property-editor="${escapeAttribute(row.pointer)}" aria-current="${selected}"><div class="js-row js-inline-property-row" role="row"><div class="js-cell" role="cell"><input class="js-inline-name js-code" data-inline-property="name" data-property-pointer="${escapeAttribute(row.pointer)}" value="${escapeAttribute(row.name)}" aria-label="Property name"></div><div class="js-cell js-inline-type-cell" role="cell" data-type-drop="${escapeAttribute(row.pointer)}"><select class="js-inline-type js-code" data-inline-property="type" data-property-pointer="${escapeAttribute(row.pointer)}" aria-label="Type for ${escapeAttribute(row.name)}" aria-keyshortcuts="Alt+ArrowDown">${preservedType}<optgroup label="Primitive types">${primitiveOptions}</optgroup>${referenceOptions ? `<optgroup label="Reusable types">${referenceOptions}</optgroup>` : ''}</select><span class="js-type-drop-zone" aria-hidden="true"></span></div><div class="js-cell js-inline-required-cell" role="cell">${requiredControl}</div><div class="js-cell js-description-cell" role="cell"><input class="js-inline-description" data-inline-property="description" data-property-pointer="${escapeAttribute(row.pointer)}" value="${escapeAttribute(row.description ?? '')}" placeholder="Add description" aria-label="Description for ${escapeAttribute(row.name)}"></div><div class="js-cell js-action-cell" role="cell"><button class="js-row-action" data-property-details="${escapeAttribute(row.pointer)}" aria-expanded="${expanded}" aria-controls="${detailsId}" aria-label="${expanded ? 'Collapse' : 'Expand'} validation and annotations for ${escapeAttribute(row.name)}">${expanded ? '⌃' : '⌄'}</button></div></div>${expanded ? propertyDetailsPanel(row, detailsId, document) : ''}</div>`;
 }
 
 function inlinePropertyTypeValue(schema: Readonly<Record<string, unknown>>): string {
@@ -1578,35 +1753,102 @@ function inlinePropertyTypeLabel(value: string): string {
 
 function inlinePropertyTypes(): readonly string[] {
   const control = actionById('core.type')?.control;
-  return control?.kind === 'select' ? control.options.map((option) => option.value) : [];
+  const compound = new Set(['object', 'array', 'map', 'set', 'tuple', 'choice']);
+  return control?.kind === 'select' ? control.options.map((option) => option.value).filter((value) => !compound.has(value)) : [];
 }
 
-function propertyDetailsPanel(row: PropertyRow, id: string): string {
+function propertyDetailsPanel(row: PropertyRow, id: string, document?: unknown): string {
   const schema = row.schema ?? {};
-  const validation = propertyDetailFields(schema, [
+  const validationFields = [
     ['minimum', 'Minimum', 'number'], ['maximum', 'Maximum', 'number'], ['exclusiveMinimum', 'Exclusive minimum', 'number'], ['exclusiveMaximum', 'Exclusive maximum', 'number'], ['multipleOf', 'Multiple of', 'number'],
     ['minLength', 'Minimum length', 'integer'], ['maxLength', 'Maximum length', 'integer'], ['pattern', 'Pattern', 'text'], ['format', 'Format', 'text'],
     ['minItems', 'Minimum items', 'integer'], ['maxItems', 'Maximum items', 'integer'], ['uniqueItems', 'Unique items', 'boolean'], ['minProperties', 'Minimum properties', 'integer'], ['maxProperties', 'Maximum properties', 'integer'], ['minEntries', 'Minimum entries', 'integer'], ['maxEntries', 'Maximum entries', 'integer'],
-  ], row.pointer, 'validation');
-  const annotations = propertyDetailFields(schema, [
-    ['unit', 'Display unit', 'text'], ['ucumUnit', 'UCUM unit', 'text'], ['currency', 'Currency', 'text'], ['semanticRole', 'Semantic role', 'text'], ['derivation', 'Derivation', 'text'], ['referenceRole', 'Reference role', 'text'], ['phenomenonTimeRelation', 'Time relation', 'text'],
-  ], row.pointer, 'annotation');
-  const structured = [
-    ['observedProperty', 'Observed property'], ['concepts', 'Concepts'], ['statistic', 'Statistic'], ['codedValues', 'Coded values'], ['measurementConditioning', 'Measurement conditioning'], ['temporalReferenceSystem', 'Temporal reference system'], ['cadence', 'Cadence'], ['coordinateReferenceSystem', 'Coordinate reference system'], ['altnames', 'Alternate names'],
-  ].map(([keyword, label]) => propertyJsonField(row.pointer, keyword!, label!, schema[keyword!])).join('');
-  return `<section class="js-property-details" id="${id}" aria-label="Validation and annotations for ${escapeAttribute(row.name)}"><div class="js-property-detail-columns"><fieldset><legend>Validation constraints</legend>${validation || '<p class="js-description">No scalar constraints apply.</p>'}</fieldset><fieldset><legend>Annotations</legend>${annotations}${structured}</fieldset></div><details class="js-property-advanced"><summary>Advanced property schema</summary><textarea data-inline-property="schema" data-property-pointer="${escapeAttribute(row.pointer)}" spellcheck="false">${escapeHtml(JSON.stringify(schema, null, 2))}</textarea><button data-inline-property-apply="schema" data-property-pointer="${escapeAttribute(row.pointer)}">Apply schema JSON</button></details><p class="js-inline-status" data-inline-status="${escapeAttribute(row.pointer)}" role="status" aria-live="polite"></p></section>`;
+  ] as const;
+  const annotationFields = [
+    ['symbol', 'Display symbol', 'text'], ['unit', 'Display unit', 'text'], ['ucumUnit', 'UCUM unit', 'text'], ['currency', 'Currency', 'text'], ['semanticRole', 'Semantic role', 'text'], ['derivation', 'Derivation', 'text'], ['referenceRole', 'Reference role', 'text'], ['phenomenonTimeRelation', 'Time relation', 'text'],
+  ] as const;
+  const structuredFields = [
+    ['symbols', 'Localized symbols'], ['observedProperty', 'Observed property'], ['concepts', 'Concepts'], ['statistic', 'Statistic'], ['codedValues', 'Coded values'], ['measurementConditioning', 'Measurement conditioning'], ['temporalReferenceSystem', 'Temporal reference system'], ['cadence', 'Cadence'], ['coordinateReferenceSystem', 'Coordinate reference system'], ['altnames', 'Alternate names'],
+  ] as const;
+  const validation = propertyDetailFields(schema, validationFields, row.pointer, 'validation');
+  const annotations = propertyDetailFields(schema, annotationFields, row.pointer, 'annotation');
+  const structured = structuredFields.filter(([keyword]) => schema[keyword] !== undefined).map(([keyword, label]) => propertyJsonField(row.pointer, keyword, label, schema[keyword])).join('');
+  const validationAdd = propertyDetailAddControl(schema, row.pointer, validationFields.map(([keyword, label]) => [inlineKeywordActionId('validation', keyword), keyword, label] as const), 'constraint', document);
+  const annotationOptions = [
+    ...annotationFields.map(([keyword, label]) => [inlineKeywordActionId('annotation', keyword), keyword, label] as const),
+    ...structuredFields.map(([keyword, label]) => [inlineKeywordActionId('annotation', keyword), keyword, label] as const),
+  ];
+  const annotationAdd = propertyDetailAddControl(schema, row.pointer, annotationOptions, 'annotation', document);
+  return `<section class="js-property-details" id="${id}" aria-label="Validation and annotations for ${escapeAttribute(row.name)}"><div class="js-property-detail-columns"><fieldset><legend>Validation constraints</legend>${validation || '<p class="js-description">No constraints added.</p>'}${validationAdd}</fieldset><fieldset><legend>Annotations</legend>${annotations}${structured || '<p class="js-description">No annotations added.</p>'}${annotationAdd}</fieldset></div><p class="js-inline-status" data-inline-status="${escapeAttribute(row.pointer)}" role="status" aria-live="polite"></p></section>`;
 }
 
 function propertyDetailFields(schema: Readonly<Record<string, unknown>>, fields: readonly (readonly [string, string, 'text' | 'number' | 'integer' | 'boolean'])[], pointer: string, family: string): string {
-  return fields.map(([keyword, label, kind]) => {
+  return fields.filter(([keyword]) => schema[keyword] !== undefined).map(([keyword, label, kind]) => {
     const value = schema[keyword];
-    if (kind === 'boolean') return `<label class="js-detail-check"><input type="checkbox" data-inline-keyword="${keyword}" data-inline-family="${family}" data-property-pointer="${escapeAttribute(pointer)}" data-value-kind="boolean" ${value === true ? 'checked' : ''}> ${label}</label>`;
-    return `<label>${label}<input data-inline-keyword="${keyword}" data-inline-family="${family}" data-property-pointer="${escapeAttribute(pointer)}" data-value-kind="${kind}" type="${kind === 'number' || kind === 'integer' ? 'number' : 'text'}" ${kind === 'integer' ? 'step="1"' : kind === 'number' ? 'step="any"' : ''} value="${escapeAttribute(value === undefined ? '' : String(value))}"></label>`;
+    const removeAction = `${inlineKeywordActionId(family, keyword)}.remove`;
+    if (kind === 'boolean') return `<div class="js-detail-field"><label class="js-detail-check"><input type="checkbox" data-inline-keyword="${keyword}" data-inline-family="${family}" data-property-pointer="${escapeAttribute(pointer)}" data-value-kind="boolean" ${value === true ? 'checked' : ''}> ${label}</label>${propertyDetailRemoveButton(pointer, removeAction, label)}</div>`;
+    const action = actionById(inlineKeywordActionId(family, keyword));
+    const catalog = action && catalogFamilyForAction(action);
+    const stringBacked = action?.control?.kind === 'number' && action.control.schemaNumeric && stringBackedNumericType(typeof schema.type === 'string' ? schema.type : undefined);
+    const numericInput = kind === 'number' || kind === 'integer';
+    const input = `<input data-inline-keyword="${keyword}" data-inline-family="${family}" data-property-pointer="${escapeAttribute(pointer)}" data-value-kind="${kind}" ${catalog ? 'data-catalog-value ' : ''}type="${numericInput && !stringBacked ? 'number' : 'text'}" ${kind === 'integer' ? 'step="1" min="0"' : kind === 'number' && !stringBacked ? 'step="any"' : stringBacked ? 'inputmode="decimal"' : ''} value="${escapeAttribute(value === undefined ? '' : String(value))}">`;
+    const field = catalog ? `<label data-inline-catalog="${escapeAttribute(action.id)}" data-property-pointer="${escapeAttribute(pointer)}">${label}<span class="js-detail-json">${input}<button type="button" data-inline-browse="${keyword}" data-catalog-open aria-label="Browse ${escapeAttribute(label.toLocaleLowerCase())} catalog">Browse</button></span><small class="js-detail-provenance" data-catalog-provenance>Catalog suggestions are advisory.</small></label>` : `<label>${label}${input}</label>`;
+    return `<div class="js-detail-field">${field}${propertyDetailRemoveButton(pointer, removeAction, label)}</div>`;
   }).join('');
 }
 
 function propertyJsonField(pointer: string, keyword: string, label: string, value: unknown): string {
-  return `<label>${label}<span class="js-detail-json"><input data-inline-keyword="${keyword}" data-inline-family="annotation" data-property-pointer="${escapeAttribute(pointer)}" data-value-kind="json" value="${escapeAttribute(value === undefined ? '' : JSON.stringify(value))}" placeholder="JSON or catalog value"><button type="button" data-inline-browse="${keyword}" data-property-pointer="${escapeAttribute(pointer)}">Browse</button></span></label>`;
+  const action = actionById(inlineKeywordActionId('annotation', keyword));
+  const catalog = action && catalogFamilyForAction(action);
+  const raw = value === undefined ? '' : JSON.stringify(value);
+  const summary = structuredValueLabel(value);
+  const remove = propertyDetailRemoveButton(pointer, `${inlineKeywordActionId('annotation', keyword)}.remove`, label);
+  if (!catalog) return `<div class="js-detail-field"><div><span class="js-detail-label">${escapeHtml(label)}</span><span class="js-structured-summary">${escapeHtml(summary)}</span><small>Edit this structured value from its dedicated editor.</small></div>${remove}</div>`;
+  const input = `<input type="hidden" data-inline-keyword="${keyword}" data-inline-family="annotation" data-property-pointer="${escapeAttribute(pointer)}" data-value-kind="json" data-catalog-value value="${escapeAttribute(raw)}"><input data-catalog-display value="${escapeAttribute(summary)}" readonly aria-label="${escapeAttribute(label)}">`;
+  return `<div class="js-detail-field"><label data-inline-catalog="${escapeAttribute(action.id)}" data-property-pointer="${escapeAttribute(pointer)}">${label}<span class="js-detail-json">${input}<button type="button" data-inline-browse="${keyword}" data-catalog-open aria-label="Browse ${escapeAttribute(label.toLocaleLowerCase())} catalog">Browse</button></span><small class="js-detail-provenance" data-catalog-provenance>Catalog suggestions are advisory.</small></label>${remove}</div>`;
+}
+
+function propertyDetailAddControl(schema: Readonly<Record<string, unknown>>, pointer: string, fields: readonly (readonly [string, string, string])[], kind: string, document?: unknown): string {
+  const options = fields.filter(([actionId, keyword]) => {
+    const action = actionById(actionId);
+    return schema[keyword] === undefined && action !== undefined && (document === undefined || actionAvailability(action, pointer, document).enabled);
+  }).map(([actionId, , label]) => `<option value="${escapeAttribute(actionId)}">${escapeHtml(label)}</option>`).join('');
+  if (!options) return '';
+  return `<div class="js-detail-add"><label>Add ${escapeHtml(kind)}<select data-property-detail-select><option value="">Choose ${escapeHtml(kind)}</option>${options}</select></label><button type="button" data-property-detail-add data-property-pointer="${escapeAttribute(pointer)}">Add</button></div>`;
+}
+
+function propertyDetailRemoveButton(pointer: string, actionId: string, label: string): string {
+  return `<button class="js-detail-remove" type="button" data-inline-keyword-remove="${escapeAttribute(actionId)}" data-property-pointer="${escapeAttribute(pointer)}" aria-label="Remove ${escapeAttribute(label.toLocaleLowerCase())}">Remove</button>`;
+}
+
+function structuredValueLabel(value: unknown): string {
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (Array.isArray(value)) return value.map(structuredValueLabel).filter(Boolean).join(', ') || 'Configured list';
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    for (const key of ['label', 'name', 'reference', '$ref', 'code', 'id']) if (typeof record[key] === 'string') return record[key];
+    const scalarEntries = Object.entries(record).filter(([, entry]) => entry === null || ['string', 'number', 'boolean'].includes(typeof entry));
+    if (scalarEntries.length) return scalarEntries.map(([key, entry]) => `${humanizeIdentifier(key)}: ${String(entry)}`).join('; ');
+    return 'Configured value';
+  }
+  return 'Not configured';
+}
+
+function inlineKeywordActionId(family: string, keyword: string): string {
+  if (keyword === 'maxLength') return 'core.max-length';
+  const prefix = family === 'validation' ? 'validation' : ['symbol', 'symbols', 'unit', 'ucumUnit', 'currency'].includes(keyword) ? 'units' : keyword === 'altnames' ? 'alternate-names' : 'semantic';
+  return `${prefix}.${keyword}`;
+}
+
+function stringBackedNumericType(type: string | undefined): boolean {
+  return type !== undefined && ['int64', 'uint64', 'int128', 'uint128', 'decimal'].includes(type);
+}
+
+function effectiveSchemaType(document: unknown, pointer: string): string | undefined {
+  const schema = valueAtPointer(document, pointer);
+  if (!schema || typeof schema !== 'object' || Array.isArray(schema)) return undefined;
+  const effective = effectiveValidationTypes(document, schema as Readonly<Record<string, unknown>>);
+  return effective.determinate && effective.types.length === 1 ? effective.types[0] : undefined;
 }
 
 function displaySchemaType(schema: Readonly<Record<string, unknown>>): string {
@@ -1634,17 +1876,6 @@ function cssAttributeValue(value: string): string {
 function setInlineStatus(root: HTMLElement, pointer: string, message: string): void {
   const status = root.querySelector(`[data-inline-status="${cssAttributeValue(pointer)}"]`);
   if (status) status.textContent = message;
-}
-
-function parseInlineValue(raw: string, kind: string): unknown {
-  if (kind === 'boolean') return raw === 'true';
-  if (kind === 'number' || kind === 'integer') {
-    const value = Number(raw);
-    if (!Number.isFinite(value) || kind === 'integer' && !Number.isInteger(value)) throw new Error('Enter a valid number.');
-    return value;
-  }
-  if (kind === 'json') return JSON.parse(raw);
-  return raw;
 }
 
 export function graphView(graphOrSnapshot: ReturnType<typeof projectGraph> | DocumentSnapshot, navigationOrSelected: GraphNavigationController | string | undefined, selectedPointerOverride?: string | undefined): string {
@@ -1705,7 +1936,7 @@ function renderGraphNode(node: PositionedGraphNode, selectedPointer: string | un
     ? `role="img" aria-label="${escapeAttribute(description)}"`
     : `role="button" tabindex="0" data-graph-select="${escapeAttribute(node.pointer)}" aria-label="${escapeAttribute(description)}" aria-current="${node.pointer === selectedPointer}"`;
   const metadata = status === 'resolved' ? node.namespace : `${status}${node.provenance ? ` | ${node.provenance}` : ''}`;
-  return `<g class="js-node js-node-${node.kind} js-status-${status}" data-graph-node="${escapeAttribute(node.id)}" data-graph-pinned="${node.pinned}" data-search-match="${searchMatch}" ${interaction} aria-current="${selectedById || (!selectedById && node.pointer === selectedPointer)}" transform="translate(${node.x} ${node.y})"><title>${escapeHtml(description)}</title><rect width="150" height="50"></rect><text x="12" y="22">${semanticZoom === 'overview' ? '' : escapeHtml(node.label)}</text><text class="js-node-meta" x="12" y="39">${semanticZoom === 'detail' || status !== 'resolved' ? escapeHtml(metadata) : ''}</text></g>`;
+  return `<g class="js-node js-node-${node.kind} js-status-${status}" data-graph-node="${escapeAttribute(node.id)}" data-graph-pinned="${node.pinned}" data-search-match="${searchMatch}" ${interaction} aria-current="${selectedById || (!selectedById && node.pointer === selectedPointer)}" transform="translate(${node.x} ${node.y})"><title>${escapeHtml(description)}</title><rect class="js-node-hit-target" width="150" height="50"></rect><rect class="js-node-shape" width="150" height="50"></rect><text x="12" y="22">${semanticZoom === 'overview' ? '' : escapeHtml(node.label)}</text><text class="js-node-meta" x="12" y="39">${semanticZoom === 'detail' || status !== 'resolved' ? escapeHtml(metadata) : ''}</text></g>`;
 }
 
 function clampMinimapViewport(viewport: { readonly x: number; readonly y: number; readonly width: number; readonly height: number }, contentWidth: number, contentHeight: number): { readonly x: number; readonly y: number; readonly width: number; readonly height: number } {
@@ -1739,12 +1970,14 @@ function inspectorSection(section: InspectorSection): string {
   return `<section class="js-inspector-section"><div class="js-eyebrow">${escapeHtml(section.label)}</div><dl>${section.fields.map((field) => `<div class="js-inspector-row"><dt>${escapeHtml(field.keyword)}${field.origin === 'effective' ? '<span class="js-origin">effective</span>' : ''}</dt><dd class="js-code">${escapeHtml(field.value)}</dd></div>`).join('')}</dl></section>`;
 }
 
-function problems(diagnostics: readonly Diagnostic[]): string {
-  return diagnostics.map((diagnostic) => `<button class="js-problem" data-problem="${escapeAttribute(diagnostic.location?.pointer ?? '')}"><span class="js-problem-${diagnostic.severity}">${diagnostic.severity === 'error' ? 'x' : '!'}</span><span>${escapeHtml(diagnostic.message)}</span><span class="js-location">${escapeHtml(diagnostic.location?.pointer ?? '')}</span></button>`).join('') || '<div class="js-empty">No problems detected.</div>';
+export function problemsView(diagnostics: readonly Diagnostic[]): string {
+  return diagnostics.map((diagnostic) => `<div class="js-problem-item" role="listitem"><button class="js-problem" data-problem="${escapeAttribute(diagnostic.location?.pointer ?? '')}"><span class="js-problem-${diagnostic.severity}">${diagnostic.severity === 'error' ? 'x' : '!'}</span><span>${escapeHtml(diagnostic.message)}</span><span class="js-location">${escapeHtml(diagnostic.location?.pointer ?? '')}</span></button></div>`).join('') || '<div class="js-empty" role="listitem">No problems detected.</div>';
 }
 
+function problems(diagnostics: readonly Diagnostic[]): string { return problemsView(diagnostics); }
 
-function showActionPalette(root: HTMLElement, pointer: string, session: DocumentSession, catalogs: CatalogRegistry, apply: CommandApply): void {
+
+function showActionPalette(root: HTMLElement, pointer: string, session: DocumentSession, catalogs: CatalogRegistry, apply: CommandApply, openSource: () => void): void {
   const invoker = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
   root.querySelector('.js-command-palette')?.remove();
   const palette = document.createElement('div');
@@ -1767,7 +2000,7 @@ function showActionPalette(root: HTMLElement, pointer: string, session: Document
     if (restore) queueMicrotask(() => invoker?.focus());
   };
   releaseTrap = trapFocus(palette, () => close(true));
-  const choose = (): void => { const action = actionById(select.value); if (action) { const availability = actionAvailability(action, pointer, session.value); if (!availability.enabled) return; close(false); showActionEditor(root, action, availability.pointer, session, catalogs, apply, invoker); } };
+  const choose = (): void => { const action = actionById(select.value); if (action) { const availability = actionAvailability(action, pointer, session.value); if (!availability.enabled) return; close(false); showActionEditor(root, action, availability.pointer, session, catalogs, apply, invoker, openSource); } };
   select.addEventListener('dblclick', choose);
   select.addEventListener('keydown', (event: KeyboardEvent) => {
     if (event.key === 'Enter') { event.preventDefault(); choose(); }
@@ -1794,7 +2027,7 @@ function syncSourceModel(model: MonacoEditor.ITextModel | undefined, text: strin
 
 type CommandApply = (command: { canExecute(context: { session: DocumentSession; documentVersion: number }): boolean; execute(context: { session: DocumentSession; documentVersion: number }): { edits: readonly TextEdit[] } }) => Promise<string | undefined>;
 
-function showActionEditor(root: HTMLElement, action: CommandAction, pointer: string, session: DocumentSession, catalogs: CatalogRegistry, apply: CommandApply, transitionInvoker?: HTMLElement): void {
+function showActionEditor(root: HTMLElement, action: CommandAction, pointer: string, session: DocumentSession, catalogs: CatalogRegistry, apply: CommandApply, transitionInvoker?: HTMLElement, openSource?: () => void): void {
   const invoker = transitionInvoker ?? (document.activeElement instanceof HTMLElement ? document.activeElement : undefined);
   root.querySelector('.js-inline-editor')?.remove();
   const panel = document.createElement('form');
@@ -1804,7 +2037,9 @@ function showActionEditor(root: HTMLElement, action: CommandAction, pointer: str
   panel.setAttribute('aria-labelledby', 'action-title');
   const nameField = action.id.endsWith('.add') ? '<label>Name<input name="name" required></label>' : '';
   const valueField = action.requiresValue === false ? '' : actionControlHtml(action, pointer, session);
-  panel.innerHTML = `<header><div><div class="js-eyebrow">Edit ${escapeHtml(pointerLabel(pointer))}</div><h2 id="action-title">${escapeHtml(action.label)}</h2></div><button class="js-inline-close" type="button" data-cancel aria-label="Cancel" title="Cancel">&times;</button></header><p id="action-help" class="js-description">${escapeHtml(action.help)}</p>${nameField}${valueField}<p class="js-action-status" data-action-status role="status" aria-live="polite"></p><div class="js-actions"><button type="button" data-cancel>Cancel</button><button>Apply</button></div>`;
+  const sourceOnly = action.control?.kind === 'source-only' || action.control?.kind === 'advanced-json' || action.control?.kind === 'structured-object' ||
+    action.control?.kind === 'structured-list' && action.control.item === 'schema' || !action.control && action.requiresValue !== false;
+  panel.innerHTML = `<header><div><div class="js-eyebrow">Edit ${escapeHtml(pointerLabel(pointer))}</div><h2 id="action-title">${escapeHtml(action.label)}</h2></div><button class="js-inline-close" type="button" data-cancel aria-label="Cancel" title="Cancel">&times;</button></header><p id="action-help" class="js-description">${escapeHtml(action.help)}</p>${sourceOnly ? '' : nameField}${valueField}<p class="js-action-status" data-action-status role="status" aria-live="polite"></p><div class="js-actions"><button type="button" data-cancel>${sourceOnly ? 'Close' : 'Cancel'}</button>${sourceOnly ? '<button type="button" data-open-source>Open Source</button>' : '<button>Apply</button>'}</div>`;
   const activeView = [...root.querySelectorAll('.js-view')].find((view) => !(view as HTMLElement).hidden) as HTMLElement | undefined;
   if (!activeView) return;
   activeView.prepend(panel);
@@ -1821,6 +2056,23 @@ function showActionEditor(root: HTMLElement, action: CommandAction, pointer: str
   };
   releaseTrap = trapFocus(panel, close);
   form.querySelectorAll('[data-cancel]').forEach((button: HTMLElement) => button.addEventListener('click', close));
+  form.querySelector('[data-open-source]')?.addEventListener('click', () => {
+    close();
+    openSource?.();
+  });
+  const structuredList = panel.querySelector('[data-structured-list]');
+  const syncStructuredList = (): void => {
+    if (!structuredList) return;
+    const hidden = form.elements.namedItem('value') as HTMLInputElement;
+    const lineInput = structuredList.querySelector('[data-list-lines]') as HTMLTextAreaElement | null;
+    const values = lineInput
+      ? lineInput.value.split(/\r?\n/).map((entry: string) => entry.trim()).filter(Boolean)
+      : [...structuredList.querySelectorAll('option:checked')].map((entry: HTMLElement) => (entry as HTMLInputElement).value);
+    hidden.value = JSON.stringify(values);
+  };
+  structuredList.querySelectorAll('textarea,select').forEach((control: HTMLElement) => control.addEventListener('input', syncStructuredList));
+  structuredList.querySelectorAll('select').forEach((control: HTMLElement) => control.addEventListener('change', syncStructuredList));
+  syncStructuredList();
   const valueList = panel.querySelector('[data-value-list]');
   const syncValueList = (): void => {
     if (!valueList) return;
@@ -1862,9 +2114,10 @@ function showActionEditor(root: HTMLElement, action: CommandAction, pointer: str
   wireCatalogControl(panel, action, session, catalogs, status);
   form.addEventListener('submit', async (event: Event) => {
     event.preventDefault();
+    if (sourceOnly) return;
     try {
       const raw = value?.value.trim() ?? undefined;
-      const parsed = raw === undefined ? undefined : parseActionValue(action, raw, value instanceof HTMLInputElement && value.type === 'checkbox' ? value.checked : false);
+      const parsed = raw === undefined ? undefined : parseActionValue(action, raw, value instanceof HTMLInputElement && value.type === 'checkbox' ? value.checked : false, effectiveSchemaType(session.value, pointer));
       const error = await apply(action.create(pointer, parsed, name?.value.trim()));
       if (error) { status.textContent = error; return; }
       close();
@@ -1873,7 +2126,7 @@ function showActionEditor(root: HTMLElement, action: CommandAction, pointer: str
       value?.reportValidity();
     }
   });
-  (name ?? value)?.focus();
+  (sourceOnly ? panel.querySelector('[data-open-source]') as HTMLElement | null : name ?? value)?.focus();
 }
 
 function createCatalogRegistry(): CatalogRegistry {
@@ -1884,8 +2137,9 @@ function createCatalogRegistry(): CatalogRegistry {
   return registry;
 }
 
-function wireCatalogControl(panel: HTMLElement, action: CommandAction, session: DocumentSession, catalogs: CatalogRegistry, status: HTMLElement): void {
+function wireCatalogControl(panel: HTMLElement, action: CommandAction, session: DocumentSession, catalogs: CatalogRegistry, status: HTMLElement, onValueSelected?: () => void): void {
   const input = panel.querySelector('[data-catalog-value]') as HTMLInputElement | null;
+  const display = panel.querySelector('[data-catalog-display]') as HTMLInputElement | null;
   const open = panel.querySelector('[data-catalog-open]') as HTMLButtonElement | null;
   const provenance = panel.querySelector('[data-catalog-provenance]') as HTMLElement | null;
   const family = catalogFamilyForAction(action);
@@ -1909,8 +2163,10 @@ function wireCatalogControl(panel: HTMLElement, action: CommandAction, session: 
     const suggestion = lastResult?.suggestions[index];
     if (!suggestion) return;
     input.value = typeof suggestion.value === 'string' ? suggestion.value : suggestion.emittedJson;
+    if (display) display.value = suggestion.label;
     provenance.textContent = suggestion.provenance.map((source) => `${source.providerLabel} ${source.version} | ${source.trusted ? 'trusted' : 'advisory'} | ${source.source}`).join('; ');
     close();
+    onValueSelected?.();
   };
   const wireDrawer = (): void => {
     if (!drawer) return;
@@ -1927,8 +2183,10 @@ function wireCatalogControl(panel: HTMLElement, action: CommandAction, session: 
       const custom = (drawer?.querySelector('[data-catalog-custom]') as HTMLInputElement | null)?.value.trim() ?? '';
       if (!custom) return;
       input.value = custom;
+      if (display) display.value = custom;
       provenance.textContent = 'Custom authored value | document | trusted';
       close();
+      onValueSelected?.();
     });
     queryInput?.focus();
   };
@@ -1959,25 +2217,35 @@ function wireCatalogControl(panel: HTMLElement, action: CommandAction, session: 
     drawer.setAttribute('aria-label', `${family} catalog`);
     root.append(drawer);
     releaseTrap = trapFocus(drawer, close);
-    void search(input.value);
+    void search(display?.value ?? input.value);
   });
 }
 
 export function catalogBrowserView(providers: readonly CatalogProviderManifest[], result: CatalogMergeResult, family: string, query: string, activeProviderId = 'all'): string {
   const providerButtons = [{ id: 'all', label: 'All providers', kind: 'host', version: `${providers.length}` }, ...providers.map((provider) => ({ id: provider.id, label: provider.label, kind: provider.kind, version: provider.version }))]
     .map((provider) => `<button class="js-catalog-provider" data-catalog-provider="${escapeAttribute(provider.id)}" aria-pressed="${provider.id === activeProviderId}"><strong>${escapeHtml(provider.label)}</strong><small>${escapeHtml(provider.kind)} · ${escapeHtml(provider.version)}</small></button>`).join('');
-  const suggestions = result.suggestions.map((suggestion, index) => `<button class="js-catalog-result" data-catalog-suggestion="${index}"><span><strong>${escapeHtml(suggestion.label)}</strong>${suggestion.description ? `<small>${escapeHtml(suggestion.description)}</small>` : ''}<code>${escapeHtml(suggestion.emittedJson)}</code></span><span class="js-catalog-sources">${suggestion.provenance.map((source) => `<span class="js-origin-chip" data-trusted="${source.trusted}" title="${escapeAttribute(`${source.source} · ${source.version}${source.stale ? ' · stale' : ''}`)}">${escapeHtml(source.providerLabel)}${source.stale ? ' · stale' : ''}</span>`).join('')}</span></button>`).join('') || '<div class="js-empty">No catalog matches. Custom values remain available.</div>';
+  const suggestions = result.suggestions.map((suggestion, index) => `<button class="js-catalog-result" data-catalog-suggestion="${index}"><span><strong>${escapeHtml(suggestion.label)}</strong>${suggestion.description ? `<small>${escapeHtml(suggestion.description)}</small>` : ''}</span><span class="js-catalog-sources">${suggestion.provenance.map((source) => `<span class="js-origin-chip" data-trusted="${source.trusted}" title="${escapeAttribute(`${source.source} · ${source.version}${source.stale ? ' · stale' : ''}`)}">${escapeHtml(source.providerLabel)}${source.stale ? ' · stale' : ''}</span>`).join('')}</span></button>`).join('') || '<div class="js-empty">No catalog matches. Custom values remain available.</div>';
   const issues = result.providerIssues.map((issue) => `<p class="js-problem-warning">${escapeHtml(issue.providerId)}: ${escapeHtml(issue.message)}</p>`).join('');
-  return `<div class="js-catalog-provider-list"><div class="js-panel-head">Providers</div>${providerButtons}</div><section class="js-catalog-content"><header class="js-catalog-head"><div><strong>${escapeHtml(humanizeIdentifier(family))}</strong><small>Advisory open vocabulary · exact JSON preserved</small></div><button data-catalog-close aria-label="Close catalog">×</button></header><input class="js-catalog-search" data-catalog-query type="search" value="${escapeAttribute(query)}" placeholder="Search values, labels, and aliases" aria-label="Search catalog"><div class="js-catalog-results">${issues}${suggestions}</div><div class="js-catalog-custom"><p>Enter a domain-specific value or JSON value when no catalog entry applies.</p><div><input data-catalog-custom placeholder="Custom value or JSON"><button data-catalog-custom-apply>Apply custom</button></div></div></section>`;
+  return `<div class="js-catalog-provider-list"><div class="js-panel-head">Providers</div>${providerButtons}</div><section class="js-catalog-content"><header class="js-catalog-head"><div><strong>${escapeHtml(humanizeIdentifier(family))}</strong><small>Advisory open vocabulary with canonical source preservation</small></div><button data-catalog-close aria-label="Close catalog">×</button></header><input class="js-catalog-search" data-catalog-query type="search" value="${escapeAttribute(query)}" placeholder="Search values, labels, and aliases" aria-label="Search catalog"><div class="js-catalog-results">${issues}${suggestions}</div><div class="js-catalog-custom"><p>Enter a domain-specific value when no catalog entry applies.</p><div><input data-catalog-custom placeholder="Custom value"><button data-catalog-custom-apply>Apply custom</button></div></div></section>`;
 }
 
 function actionControlHtml(action: CommandAction, pointer: string, session: DocumentSession): string {
   const label = escapeHtml(action.valueLabel ?? 'Value');
   const control = action.control;
-  if (!control) return `<label>${label}<textarea name="value" required aria-describedby="action-help"></textarea></label>`;
+  if (!control || control.kind === 'source-only' || control.kind === 'advanced-json' || control.kind === 'structured-object') {
+    return '<div class="js-empty">This shape is edited in Source so the complete structure remains visible and reviewable.</div>';
+  }
+  if (control.kind === 'text') return `<label>${label}${control.multiline ? '<textarea name="value" required aria-describedby="action-help"></textarea>' : '<input name="value" required aria-describedby="action-help">'}</label>`;
   if (control.kind === 'boolean') return `<label class="js-check"><input name="value" type="checkbox">${label}</label>`;
-  if (control.kind === 'number') return `<label>${label}<input name="value" type="number" ${control.integer ? 'step="1"' : 'step="any"'} ${control.minimum === undefined ? '' : `min="${control.minimum}"`} required></label>`;
+  if (control.kind === 'number') {
+    const stringBacked = control.schemaNumeric && stringBackedNumericType(effectiveSchemaType(session.value, pointer));
+    return `<label>${label}<input name="value" type="${stringBacked ? 'text' : 'number'}" ${stringBacked ? 'inputmode="decimal"' : control.integer ? 'step="1"' : 'step="any"'} ${control.minimum === undefined || stringBacked ? '' : `min="${control.minimum}"`} required></label>`;
+  }
   if (control.kind === 'select') return `<label>${label}<select name="value">${control.options.map((option) => `<option value="${escapeAttribute(option.value)}">${escapeHtml(option.label)}</option>`).join('')}</select></label>`;
+  if (control.kind === 'schema-type') {
+    const types = ['any', 'null', 'boolean', 'string', 'integer', 'number', 'decimal', 'date', 'datetime', 'time', 'duration', 'uuid', 'uri', 'binary', 'jsonpointer', 'object', 'array', 'set', 'map', 'tuple', 'choice'];
+    return `<label>${label}<select name="value">${types.map((type) => `<option value="${type}">${type}</option>`).join('')}</select></label>`;
+  }
   if (control.kind === 'reference-picker') {
     const references = session.snapshot().model?.projections.definitions.filter((definition) => definition.reusable) ?? [];
     return `<label>${label}<select name="value">${references.map((definition) => `<option value="#${escapeAttribute(definition.pointer)}">${escapeHtml(definition.name)}</option>`).join('')}</select></label>`;
@@ -1991,15 +2259,24 @@ function actionControlHtml(action: CommandAction, pointer: string, session: Docu
     return `<fieldset data-value-list><legend>${label}</legend>${orderedProperties.map((property) => `<div class="js-value-item" data-value-item><span class="js-value-order" data-value-order></span><label class="js-check"><input type="checkbox" value="${escapeAttribute(property)}" ${selected.includes(property) ? 'checked' : ''}>${escapeHtml(property)}</label><span class="js-value-actions"><button type="button" data-value-move="up" aria-label="Move ${escapeAttribute(property)} up">↑</button><button type="button" data-value-move="down" aria-label="Move ${escapeAttribute(property)} down">↓</button></span></div>`).join('') || '<p class="js-description">No properties are available.</p>'}<input name="value" type="hidden" value="${escapeAttribute(JSON.stringify(selected))}"></fieldset>`;
   }
   if (control.kind === 'relation-editor') return relationControlHtml(pointer, session);
-  if (control.kind === 'structured-list') return `<label>${label}<textarea name="value" required placeholder='[ ]' aria-describedby="action-help"></textarea></label>`;
-  if (control.kind === 'structured-object') return `<label>${label}<textarea name="value" required placeholder='{ }' aria-describedby="action-help"></textarea></label>`;
+  if (control.kind === 'structured-list') {
+    const target = valueAtPointer(session.value, pointer) as Record<string, unknown> | undefined;
+    const current = action.keyword && target ? target[action.keyword] : action.id === 'core.uses' ? (session.value as Record<string, unknown>).$uses : undefined;
+    const selected = Array.isArray(current) ? current.filter((entry): entry is string => typeof entry === 'string') : typeof current === 'string' ? [current] : [];
+    if (control.item === 'schema') return '<div class="js-empty">Schema branches are edited in Source so each branch remains explicit.</div>';
+    if (control.item === 'reference') {
+      const references = session.snapshot().model?.projections.definitions.filter((definition) => definition.reusable) ?? [];
+      return `<fieldset data-structured-list><legend>${label}</legend><select data-list-options multiple size="${Math.min(8, Math.max(3, references.length))}" aria-describedby="action-help">${references.map((definition) => { const value = `#${definition.pointer}`; return `<option value="${escapeAttribute(value)}" ${selected.includes(value) ? 'selected' : ''}>${escapeHtml(definition.name)}</option>`; }).join('')}</select><input name="value" type="hidden"></fieldset>`;
+    }
+    return `<label data-structured-list>${label}<textarea data-list-lines rows="5" aria-describedby="action-help" placeholder="One value per line">${escapeHtml(selected.join('\n'))}</textarea><input name="value" type="hidden"></label>`;
+  }
   if (control.kind === 'catalog') {
     const target = valueAtPointer(session.value, pointer) as Record<string, unknown> | undefined;
     const current = action.keyword && target ? target[action.keyword] : undefined;
     const value = current === undefined ? '' : typeof current === 'string' ? current : JSON.stringify(current);
-    return `<label>${label}<span class="js-catalog-field"><input name="value" data-catalog-value type="text" value="${escapeAttribute(value)}" autocomplete="off" required><button type="button" data-catalog-open>Browse catalog</button></span></label><p class="js-description" data-catalog-provenance>${current === undefined ? 'No value selected. Catalog suggestions are advisory; custom values are allowed.' : 'Current authored value.'}</p>`;
+    return `<label>${label}<span class="js-catalog-field"><input name="value" data-catalog-value type="hidden" value="${escapeAttribute(value)}"><input data-catalog-display type="text" value="${escapeAttribute(structuredValueLabel(current))}" readonly><button type="button" data-catalog-open>Browse catalog</button></span></label><p class="js-description" data-catalog-provenance>${current === undefined ? 'No value selected. Catalog suggestions are advisory; custom values are allowed.' : 'Current authored value.'}</p>`;
   }
-  return `<details open><summary>Advanced JSON</summary><label>${label}<textarea name="value" required aria-describedby="action-help"></textarea></label></details>`;
+  return '<div class="js-empty">Open Source to edit this value.</div>';
 }
 
 function relationControlHtml(pointer: string, session: DocumentSession): string {
@@ -2018,12 +2295,12 @@ function relationReference(value: unknown): string | undefined {
   return value && typeof value === 'object' && !Array.isArray(value) && typeof (value as Record<string, unknown>).$ref === 'string' ? String((value as Record<string, unknown>).$ref) : undefined;
 }
 
-function collectionPointers(document: unknown): readonly string[] {
+export function collectionPointers(document: unknown): readonly string[] {
   const pointers: string[] = [];
   const visit = (value: unknown, pointer: string): void => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return;
     const record = value as Record<string, unknown>;
-    if (['array', 'set', 'map'].includes(String(record.type))) pointers.push(pointer === '' ? '#' : `#${pointer}`);
+    if (typeof record.type === 'string' && ['array', 'set', 'map'].includes(record.type)) pointers.push(pointer === '' ? '#' : `#${pointer}`);
     for (const [name, child] of Object.entries(record)) visit(child, `${pointer}/${name.replace(/~/g, '~0').replace(/\//g, '~1')}`);
   };
   visit(document, '');
@@ -2043,6 +2320,10 @@ export function mobileModeSelect(mode: Mode): string {
   ];
   const options = (items: readonly { readonly value: Mode; readonly label: string }[]): string => items.map((item) => `<option value="${item.value}" ${item.value === mode ? 'selected' : ''}>${item.label}</option>`).join('');
   return `<label class="js-mobile-mode"><span class="js-sr-only">Workbench view</span><select data-mobile-mode aria-label="Workbench view"><optgroup label="Editor">${options(representations)}</optgroup><optgroup label="Tools">${options(tools)}</optgroup></select></label>`;
+}
+
+export function shouldFitGraphOnEntry(currentMode: Mode, nextMode: Mode, graphEntered: boolean): boolean {
+  return nextMode === 'graph' && currentMode !== 'graph' && !graphEntered;
 }
 
 function enhanceWorkbenchDom(root: HTMLElement, mode: Mode): void {
@@ -2074,18 +2355,58 @@ function closeMobileDrawers(root: HTMLElement): void {
   root.querySelectorAll('[data-mobile-drawer]').forEach((button: HTMLButtonElement) => button.setAttribute('aria-expanded', 'false'));
 }
 
+function compactDrawerMode(): boolean {
+  return typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 1120px)').matches;
+}
+
+export function prefersReducedMotion(matchMedia?: (query: string) => { readonly matches: boolean }): boolean {
+  const query = matchMedia ?? (typeof window !== 'undefined' && typeof window.matchMedia === 'function' ? window.matchMedia.bind(window) : undefined);
+  return query?.('(prefers-reduced-motion: reduce)').matches === true;
+}
+
+function setCompactDrawerModal(root: HTMLElement, panel?: HTMLElement): void {
+  root.querySelectorAll('[data-drawer-inert]').forEach((element: HTMLElement) => {
+    element.removeAttribute('inert');
+    element.removeAttribute('data-drawer-inert');
+  });
+  root.querySelectorAll('[data-drawer-panel]').forEach((element: HTMLElement) => {
+    element.removeAttribute('role');
+    element.removeAttribute('aria-modal');
+  });
+  if (!panel) return;
+  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('aria-modal', 'true');
+  const workbench = panel.closest('.js-workbench');
+  const shell = workbench?.parentElement;
+  [...(shell?.children ?? [])].forEach((element) => {
+    if (element !== workbench) markDrawerSiblingInert(element as HTMLElement);
+  });
+  [...(workbench?.children ?? [])].forEach((element) => {
+    if (element !== panel) markDrawerSiblingInert(element as HTMLElement);
+  });
+}
+
+function markDrawerSiblingInert(element: HTMLElement): void {
+  element.setAttribute('inert', '');
+  element.setAttribute('data-drawer-inert', '');
+}
+
 interface WorkbenchFocusAnchor {
   readonly attribute: string;
   readonly value: string;
   readonly ordinal: number;
 }
 
-const focusIdentityAttributes = [
+export const workbenchFocusIdentityAttributes = [
   'data-select', 'data-mode', 'data-graph-select', 'data-problem', 'data-problems-toggle',
-  'data-mobile-mode', 'data-member-mode', 'data-effective-source', 'data-graph-search', 'data-graph-lens', 'data-graph-edge-select', 'data-conversion-command', 'data-conversion-option', 'data-addin',
-  'data-impact-direction', 'data-command', 'data-action-select', 'data-library-read',
-  'data-library-operation', 'data-library-selector', 'data-library-declaration',
-  'data-inline-property', 'data-inline-keyword', 'data-property-details',
+  'data-mobile-mode', 'data-mobile-drawer', 'data-mobile-drawer-close', 'data-member-mode', 'data-effective-source',
+  'data-graph-search', 'data-graph-lens', 'data-graph-edge-select', 'data-graph-breadcrumb', 'data-graph-back', 'data-graph-forward', 'data-graph-home', 'data-graph-out', 'data-graph-fit', 'data-graph-relayout', 'data-graph-zoom-out', 'data-graph-zoom-in',
+  'data-instance-input', 'data-instance-root', 'data-instance-validate', 'data-instance-diagnostic', 'data-trace-instance', 'data-trace-schema',
+  'data-conversion-command', 'data-conversion-option', 'data-conversion-load', 'data-conversion-source', 'data-conversion-run', 'data-conversion-cancel', 'data-conversion-open',
+  'data-addin', 'data-impact-direction', 'data-command', 'data-show-commands', 'data-theme-select', 'data-action-select', 'data-action-id',
+  'data-libraries-load', 'data-library-read', 'data-library-operation', 'data-library-selector', 'data-library-declaration', 'data-library-provider-filter', 'data-library-search', 'data-library-preview', 'data-library-apply',
+  'data-provider-configure', 'data-local-provider-configure', 'data-provider-remove', 'data-library-publish-preview', 'data-library-publish', 'data-publish-provider', 'data-publish-entry', 'data-publish-version', 'data-publish-source', 'data-publish-epoch', 'data-publish-default',
+  'data-inline-property', 'data-inline-keyword', 'data-property-details', 'data-inline-property-apply', 'data-catalog-open',
 ] as const;
 
 function availablePropertyName(owner: Readonly<Record<string, unknown>>): string {
@@ -2100,7 +2421,7 @@ function availablePropertyName(owner: Readonly<Record<string, unknown>>): string
 
 function captureWorkbenchFocus(root: HTMLElement, active: HTMLElement | null): WorkbenchFocusAnchor | undefined {
   if (!active || !root.contains(active)) return undefined;
-  for (const attribute of focusIdentityAttributes) {
+  for (const attribute of workbenchFocusIdentityAttributes) {
     const owner = active.closest?.(`[${attribute}]`) as HTMLElement | null;
     if (!owner || !root.contains(owner)) continue;
     const value = owner.getAttribute(attribute) ?? '';
@@ -2114,7 +2435,9 @@ function captureWorkbenchFocus(root: HTMLElement, active: HTMLElement | null): W
 function restoreWorkbenchFocus(root: HTMLElement, anchor: WorkbenchFocusAnchor | undefined): void {
   if (!anchor) return;
   const peers = ([...root.querySelectorAll(`[${anchor.attribute}]`)] as HTMLElement[]).filter((candidate) => (candidate.getAttribute(anchor.attribute) ?? '') === anchor.value);
-  (peers[anchor.ordinal] ?? peers[0])?.focus();
+  const target = peers[anchor.ordinal] ?? peers[0];
+  if (target && !target.matches(':disabled') && !target.closest('[inert]')) { target.focus(); return; }
+  if (anchor.attribute.startsWith('data-graph-')) (root.querySelector('[data-graph-canvas]') as HTMLElement | null)?.focus();
 }
 
 function trapFocus(container: HTMLElement, onEscape: () => void): () => void {
@@ -2136,7 +2459,8 @@ function trapFocus(container: HTMLElement, onEscape: () => void): () => void {
 function projectRootProperties(value: unknown): readonly PropertyRow[] {
   if (!isObjectSchema(value) || !isRecord(value.properties)) return [];
   const required = new Set(Array.isArray(value.required) ? value.required.flat() : []);
-  return Object.entries(value.properties).map(([name, schema]) => ({ name, pointer: `/properties/${name.replace(/~/g, '~0').replace(/\//g, '~1')}`, type: typeof schema.type === 'string' ? schema.type : 'unknown', required: required.has(name), description: typeof schema.description === 'string' ? schema.description : undefined, schema }));
+  const requiredAlternatives = Array.isArray(value.required) && value.required.length > 0 && value.required.every(Array.isArray);
+  return Object.entries(value.properties).map(([name, schema]) => ({ name, pointer: `/properties/${name.replace(/~/g, '~0').replace(/\//g, '~1')}`, type: typeof schema.type === 'string' ? schema.type : 'unknown', required: required.has(name), ...(requiredAlternatives ? { requiredAlternatives: true } : {}), description: typeof schema.description === 'string' ? schema.description : undefined, schema }));
 }
 
 function isRecord(value: unknown): value is Record<string, Record<string, unknown>> {

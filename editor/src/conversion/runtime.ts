@@ -6,6 +6,11 @@ import type { ConversionOptionValues } from './types.js';
 import { abortError, type ConversionProgress, type ConversionWarning, type ConversionWorkerTransport, type Lossiness } from './worker.js';
 
 const encoder = new TextEncoder();
+const lossinessRank: Readonly<Record<Lossiness, number>> = { none: 0, formatting: 1, metadata: 2, precision: 3, 'unsupported-feature': 4, 'data-loss': 5 };
+
+function aggregateLossiness(reported: Lossiness, warnings: readonly ConversionWarning[]): Lossiness {
+  return warnings.reduce<Lossiness>((result, warning) => lossinessRank[warning.lossiness] > lossinessRank[result] ? warning.lossiness : result, reported);
+}
 
 export interface ConversionRunRequest {
   operationId: string;
@@ -18,6 +23,7 @@ export interface ConversionRunRequest {
   defaultAutoOpen?: boolean;
   launch?: LaunchPreference;
   signal?: AbortSignal;
+  validateOutput?(files: Readonly<Record<string, Uint8Array>>): void;
   onProgress?(progress: ConversionProgress): void;
 }
 
@@ -60,7 +66,8 @@ export class ConversionRuntime {
       }, { signal, reportProgress: progress => request.onProgress?.(progress) });
       files = result.files;
       warnings = result.warnings;
-      lossiness = result.lossiness;
+      lossiness = aggregateLossiness(result.lossiness, warnings);
+      request.validateOutput?.(files);
       manifest = createOutputManifest(files);
       if (request.preview) {
         lifecycle.transition('completed');

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { resolveLibraryVersion, type LibraryDocument, type LibraryProvider, type LibraryVersionSelector } from './contracts.js';
+import { isSameLibraryUri } from './trust.js';
 
 export interface LibraryCacheProof {
   readonly algorithm: 'sha256';
@@ -25,6 +26,7 @@ export interface PersistentLibraryCache {
   get(providerId: string, entryId: string, version: string): Promise<LibraryCacheRecord | undefined>;
   put(record: LibraryCacheRecord): Promise<void>;
   list(providerId: string, entryId: string): Promise<readonly LibraryCacheRecord[]>;
+  findByUri(uri: string): Promise<LibraryCacheRecord | undefined>;
 }
 
 export interface LibraryCacheLimits {
@@ -52,6 +54,12 @@ export class MemoryLibraryCache implements PersistentLibraryCache {
     return [...this.records.values()]
       .filter((record) => record.providerId === providerId && record.entryId === entryId)
       .sort((left, right) => left.version.localeCompare(right.version));
+  }
+
+  async findByUri(uri: string): Promise<LibraryCacheRecord | undefined> {
+    const record = [...this.records.values()].sort(compareRecords).find((candidate) => candidate.document.uri === uri);
+    if (record) assertReproducibleCacheRecord(record);
+    return record;
   }
 }
 
@@ -81,6 +89,13 @@ export class DurableLibraryCache implements PersistentLibraryCache {
     return [...this.records.values()]
       .filter((record) => record.providerId === providerId && record.entryId === entryId)
       .sort(compareRecords);
+  }
+
+  async findByUri(uri: string): Promise<LibraryCacheRecord | undefined> {
+    await this.ensureLoaded();
+    const record = [...this.records.values()].sort(compareRecords).find((candidate) => candidate.document.uri === uri);
+    if (record) assertReproducibleCacheRecord(record);
+    return record;
   }
 
   private async ensureLoaded(): Promise<void> {
@@ -134,6 +149,9 @@ export interface ResolveCachedLibraryOptions {
   readonly selector: LibraryVersionSelector;
   readonly offline: boolean;
   readonly now?: () => string;
+  readonly versionUris?: ReadonlyMap<string, string>;
+  readonly authorizeDocument?: (uri: string) => Promise<void>;
+  readonly validateDocument?: (document: LibraryDocument) => Promise<void>;
 }
 
 export async function resolveCachedLibrary(options: ResolveCachedLibraryOptions): Promise<ResolvedLibraryDocument> {
@@ -142,12 +160,22 @@ export async function resolveCachedLibrary(options: ResolveCachedLibraryOptions)
   const entry = entries.find((candidate) => candidate.id === options.entryId);
   if (!entry) throw new Error(`Library entry '${options.entryId}' was not found.`);
   const version = resolveLibraryVersion(entry, options.selector);
+  await options.authorizeDocument?.(version.documentUri);
   const document = await options.provider.readDocument(entry.id, version.version);
+  if (!isSameLibraryUri(document.uri, version.documentUri)) throw new Error(`Library provider '${options.provider.id}' changed the immutable URI for '${entry.id}@${version.version}'.`);
+  await options.authorizeDocument?.(document.uri);
+  await options.validateDocument?.(document);
   const proof = createDocumentProof(document.value);
   validateDeclaredIntegrity(version.integrity, proof.digest, `${entry.id}@${version.version}`);
   validateDeclaredIntegrity(document.integrity, proof.digest, `${entry.id}@${version.version}`);
   const storedAt = options.now?.() ?? new Date().toISOString();
   const existing = await options.cache.get(options.provider.id, entry.id, version.version);
+  if (existing) {
+    assertUntamperedCacheRecord(existing);
+    if (existing.proof && existing.proof.digest !== proof.digest) {
+      throw new Error(`Library version '${entry.id}@${version.version}' changed content without changing its version.`);
+    }
+  }
   const lastFloatingResolvedAt = options.selector.kind === 'floating' ? storedAt : existing?.lastFloatingResolvedAt;
   await options.cache.put({
     providerId: options.provider.id,
@@ -172,8 +200,13 @@ export async function resolveCachedLibrary(options: ResolveCachedLibraryOptions)
 
 async function resolveOffline(options: ResolveCachedLibraryOptions): Promise<ResolvedLibraryDocument> {
   if (options.selector.kind === 'pinned') {
+    const expectedUri = options.versionUris?.get(options.selector.version);
+    if (expectedUri) await options.authorizeDocument?.(expectedUri);
     const cached = await options.cache.get(options.provider.id, options.entryId, options.selector.version);
     if (!cached) throw new Error(`Pinned library version '${options.entryId}@${options.selector.version}' is not cached.`);
+    if (expectedUri && !isSameLibraryUri(cached.document.uri, expectedUri)) throw new Error(`Cached library version '${options.entryId}@${options.selector.version}' changed its immutable URI.`);
+    await options.authorizeDocument?.(cached.document.uri);
+    await options.validateDocument?.(cached.document);
     assertReproducibleCacheRecord(cached);
     return {
       document: cached.document,
@@ -186,9 +219,16 @@ async function resolveOffline(options: ResolveCachedLibraryOptions): Promise<Res
       },
     };
   }
+  if (options.versionUris && options.authorizeDocument) {
+    for (const uri of options.versionUris.values()) await options.authorizeDocument(uri);
+  }
   const records = await options.cache.list(options.provider.id, options.entryId);
   const cached = selectFloatingRecord(records);
   if (!cached) throw new Error(`No cached library version is available for '${options.entryId}'.`);
+  const expectedUri = options.versionUris?.get(cached.version);
+  if (options.versionUris && (!expectedUri || !isSameLibraryUri(cached.document.uri, expectedUri))) throw new Error(`Cached library version '${options.entryId}@${cached.version}' changed its immutable URI.`);
+  await options.authorizeDocument?.(cached.document.uri);
+  await options.validateDocument?.(cached.document);
   assertUntamperedCacheRecord(cached);
   return {
     document: cached.document,
@@ -292,6 +332,7 @@ function assertCacheRecord(value: unknown): LibraryCacheRecord {
     version: document.version,
     uri: document.uri,
     value: document.value,
+    ...(isDocumentProvenance(document.provenance) ? { provenance: document.provenance } : {}),
     ...(typeof document.integrity === 'string' ? { integrity: document.integrity } : {}),
     ...(typeof document.epoch === 'string' ? { epoch: document.epoch } : {}),
   };
@@ -310,4 +351,9 @@ function isCacheProof(value: unknown): value is LibraryCacheProof {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const proof = value as Record<string, unknown>;
   return proof.algorithm === 'sha256' && typeof proof.digest === 'string' && /^[a-f0-9]{64}$/.test(proof.digest);
+}
+
+function isDocumentProvenance(value: unknown): value is { readonly sourceUri: string } {
+  return !!value && typeof value === 'object' && !Array.isArray(value) &&
+    typeof (value as Record<string, unknown>).sourceUri === 'string';
 }

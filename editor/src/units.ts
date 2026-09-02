@@ -30,7 +30,7 @@ const NUMERIC_TYPES = new Set([
 const LANGUAGE_TAG = /^(?:[A-Za-z]{2,8})(?:-[A-Za-z0-9]{1,8})*$/;
 const UNIT_TOKEN = "[^\\s*/^]+";
 const UNIT_EXPRESSION = new RegExp(`^${UNIT_TOKEN}(?:\\^-?[0-9]+)?(?:[*/]${UNIT_TOKEN}(?:\\^-?[0-9]+)?)*$`, 'u');
-const UCUM_EXPRESSION = /^(?:[A-Za-z%][A-Za-z0-9%]*|\[[A-Za-z0-9_.]+\])(?:-?[0-9]+)?(?:[./](?:[A-Za-z%][A-Za-z0-9%]*|\[[A-Za-z0-9_.]+\])(?:-?[0-9]+)?)*$/;
+const UCUM_EXPRESSION = /^(?:1|(?:[A-Za-z%][A-Za-z0-9%]*|\[[A-Za-z0-9_.]+\])(?:-?[0-9]+)?(?:[./](?:[A-Za-z%][A-Za-z0-9%]*|\[[A-Za-z0-9_.]+\])(?:-?[0-9]+)?)*)$/;
 const EQUIVALENT_UNITS = new Map<string, string>([
   ['m', 'm'], ['m/s', 'm/s'], ['m/s^2', 'm/s2'], ['kg', 'kg'], ['s', 's'], ['K', 'K'], ['L', 'L'],
   ['J', 'J'], ['W', 'W'], ['A', 'A'], ['cd', 'cd'], ['m^2', 'm2'], ['m^3', 'm3'], ['bar', 'bar'], ['bit/s', 'bit/s']

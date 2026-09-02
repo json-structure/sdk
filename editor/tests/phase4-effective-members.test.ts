@@ -151,6 +151,7 @@ describe('Phase 4 effective members', () => {
       }
     };
     const document = {
+      $schema: 'https://json-structure.org/meta/extended/v0/#',
       definitions: {
         shared: { $importdefs: 'https://example.test/base.struct.json' },
         Local: { type: 'object', $extends: '#/definitions/shared/Audited', properties: { name: { type: 'string' } } }

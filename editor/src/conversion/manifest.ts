@@ -42,6 +42,66 @@ export const BUILTIN_CONVERSION_COMMANDS_MANIFEST: ConversionCommandsManifest = 
           type: 'boolean',
           description: 'Carry Avro logicalType metadata into conversion warnings.',
           default: true
+        },
+        {
+          name: 'mode',
+          type: 'string',
+          description: 'Emit compact wire metadata or the full normative annotation set.',
+          default: 'compact',
+          allowedValues: ['compact', 'full']
+        },
+        {
+          name: 'uses',
+          type: 'string-list',
+          description: 'Ordered add-in names selected from the document $offers map.',
+          default: []
+        },
+        {
+          name: 'additional_properties',
+          type: 'string',
+          description: 'Ignore open records with a warning or reject them during Avro export.',
+          default: 'ignore',
+          allowedValues: ['ignore', 'error']
+        },
+        {
+          name: 'emit_doc',
+          type: 'boolean',
+          description: 'Emit Avro doc attributes from JSON Structure descriptions.',
+          default: true
+        }
+      ]
+    },
+    {
+      id: 'protobuf',
+      displayName: 'Protocol Buffers Generator',
+      version: '1.0.0-node',
+      sourceFormats: ['json-structure'],
+      targetFormats: ['protobuf'],
+      options: [
+        {
+          name: 'uses',
+          type: 'string-list',
+          description: 'Ordered add-in names selected from the document $offers map.',
+          default: []
+        },
+        {
+          name: 'additional_properties',
+          type: 'string',
+          description: 'Ignore open records with a warning or reject them during Protobuf export.',
+          default: 'ignore',
+          allowedValues: ['ignore', 'error']
+        },
+        {
+          name: 'emit_comments',
+          type: 'boolean',
+          description: 'Emit leading comments from JSON Structure descriptions and defaults.',
+          default: true
+        },
+        {
+          name: 'numbers',
+          type: 'string',
+          description: 'Optional version 2 field-number lock as JSON.',
+          default: ''
         }
       ]
     }
@@ -54,7 +114,8 @@ export const BUILTIN_CONVERSION_COMMANDS_MANIFEST: ConversionCommandsManifest = 
       label: 'Import JSON Schema to JSON Structure',
       sourceFormat: 'json-schema',
       targetFormat: 'json-structure',
-      defaultAutoOpen: true
+      defaultAutoOpen: true,
+      optionNames: ['rootName', 'preserveUnknownKeywords']
     },
     {
       id: 'export.json-structure.to-jsonschema',
@@ -63,7 +124,8 @@ export const BUILTIN_CONVERSION_COMMANDS_MANIFEST: ConversionCommandsManifest = 
       label: 'Export JSON Structure to JSON Schema',
       sourceFormat: 'json-structure',
       targetFormat: 'json-schema',
-      defaultAutoOpen: true
+      defaultAutoOpen: true,
+      optionNames: []
     },
     {
       id: 'import.avro.to-json-structure',
@@ -72,7 +134,8 @@ export const BUILTIN_CONVERSION_COMMANDS_MANIFEST: ConversionCommandsManifest = 
       label: 'Import Avro to JSON Structure',
       sourceFormat: 'avro',
       targetFormat: 'json-structure',
-      defaultAutoOpen: true
+      defaultAutoOpen: true,
+      optionNames: ['rootName', 'preserveLogicalType']
     },
     {
       id: 'export.json-structure.to-avro',
@@ -81,7 +144,18 @@ export const BUILTIN_CONVERSION_COMMANDS_MANIFEST: ConversionCommandsManifest = 
       label: 'Export JSON Structure to Avro',
       sourceFormat: 'json-structure',
       targetFormat: 'avro',
-      defaultAutoOpen: true
+      defaultAutoOpen: true,
+      optionNames: ['mode', 'uses', 'additional_properties', 'emit_doc']
+    },
+    {
+      id: 'export.json-structure.to-protobuf',
+      converterId: 'protobuf',
+      direction: 'export',
+      label: 'Export JSON Structure to Protocol Buffers',
+      sourceFormat: 'json-structure',
+      targetFormat: 'protobuf',
+      defaultAutoOpen: false,
+      optionNames: ['uses', 'additional_properties', 'emit_comments', 'numbers']
     }
   ]
 });

@@ -1,9 +1,13 @@
 import * as assert from 'assert';
+import { promises as fs } from 'fs';
+import { tmpdir } from 'os';
+import * as path from 'path';
 import * as vscode from 'vscode';
-import { isWithinUriRoot, validateResourceSize, validateResourceUri } from '../../customEditor';
-import { isWebviewMessage } from '../../customEditorProtocol';
-import { buildOutputManifest, parseWorkerEvent, publishGeneratedFiles, type PublicationFileSystem } from '../../editorServices';
+import { isWithinUriRoot, readWorkspaceResource, validatePrimaryDocument, validateResourceSize, validateResourceUri } from '../../customEditor';
+import { isSerializedMessageWithinBudget, isWebviewMessage } from '../../customEditorProtocol';
+import { buildOutputManifest, effectiveWorkerLossiness, loadConversionCommandsManifest, normalizeConversionOptions, parseWorkerEvent, publishGeneratedFiles, validateGeneratedConversionFiles, validateTemporaryDirectoryForCleanup, VsCodeConversionHost, type PublicationFileSystem } from '../../editorServices';
 import { createPublisherStore, type PublisherState } from '../../libraryPublisherStore';
+import { createVsCodeLibraryRuntime } from '../../libraryRuntime';
 
 suite('JSON Structure custom editor protocol', () => {
     test('accepts versioned resource read requests', () => {
@@ -18,6 +22,32 @@ suite('JSON Structure custom editor protocol', () => {
         assert.strictEqual(isWebviewMessage({ type: 'cancelConversion', protocolVersion: 1, requestId: 'service-1', request: { protocolVersion: 1, requestId: 'convert-1' } }), true);
     });
 
+    test('loads packaged converter options and validates non-default values', async () => {
+        const extensionUri = vscode.Uri.file(path.resolve(__dirname, '../../..'));
+        const manifest = await loadConversionCommandsManifest(extensionUri);
+        assert.deepStrictEqual(manifest.converters.map((converter) => [converter.id, converter.options.map((option) => option.name)]), [
+            ['jsonschema', ['rootName', 'preserveUnknownKeywords']],
+            ['avro', ['rootName', 'preserveLogicalType', 'mode', 'uses', 'additional_properties', 'emit_doc']],
+            ['protobuf', ['uses', 'additional_properties', 'emit_comments', 'numbers']]
+        ]);
+        const request = {
+            protocolVersion: 1 as const,
+            requestId: 'convert-options',
+            kind: 'conversion' as const,
+            documentVersion: 1,
+            commandId: 'import.jsonschema.to-json-structure',
+            sourceName: 'schema.json',
+            sourceText: '{}',
+            options: { rootName: 'Invoice', preserveUnknownKeywords: true }
+        };
+        assert.deepStrictEqual(normalizeConversionOptions(manifest, request), { rootName: 'Invoice', preserveUnknownKeywords: true });
+        assert.deepStrictEqual(normalizeConversionOptions(manifest, { ...request, options: {} }), { rootName: 'Root', preserveUnknownKeywords: false });
+        assert.throws(() => normalizeConversionOptions(manifest, { ...request, options: { unsupported: true } }), /Unknown option/);
+        const avroExport = { ...request, commandId: 'export.json-structure.to-avro', sourceName: 'schema.struct.json', options: { mode: 'full', uses: ['Audit'], additional_properties: 'error', emit_doc: false } };
+        assert.deepStrictEqual(normalizeConversionOptions(manifest, avroExport), avroExport.options);
+        assert.throws(() => normalizeConversionOptions(manifest, { ...avroExport, options: { rootName: 'Ignored' } }), /Unknown option/);
+    });
+
     test('accepts supported generic library requests and rejects malformed operations', () => {
         assert.strictEqual(isWebviewMessage({ type: 'libraryRequest', protocolVersion: 1, requestId: 'service-1', request: { operation: 'listCatalog' } }), true);
         assert.strictEqual(isWebviewMessage({ type: 'libraryRequest', protocolVersion: 1, requestId: 'service-1', request: { operation: 'resolve', payload: { providerId: 'core', entryId: 'types', selector: { kind: 'pinned', version: '1' }, offline: false } } }), true);
@@ -28,6 +58,29 @@ suite('JSON Structure custom editor protocol', () => {
 
     test('accepts offset-based command edit messages', () => {
         assert.ok(isWebviewMessage({ type: 'applyTextEdits', protocolVersion: 1, documentVersion: 4, request: { requestId: 'edit-1', documentVersion: 4, edits: [{ range: { startOffset: 0, endOffset: 2 }, newText: '{}' }] } }));
+    });
+
+    test('rejects aggregate edit and library payload amplification', () => {
+        const chunks = Array.from({ length: 1_000 }, () => 'x'.repeat(5 * 1024));
+        const edits = chunks.map((newText, startOffset) => ({ range: { startOffset, endOffset: startOffset }, newText }));
+        assert.strictEqual(isWebviewMessage({ type: 'applyTextEdits', protocolVersion: 1, request: { requestId: 'amplified-edits', documentVersion: 1, edits } }), false);
+        assert.strictEqual(isWebviewMessage({ type: 'libraryRequest', protocolVersion: 1, requestId: 'amplified-library', request: { operation: 'publish', payload: { chunks } } }), false);
+
+        const nestedMembers = Array.from({ length: 1_000 }, () => Object.fromEntries(Array.from({ length: 11 }, (_, index) => [`member${index}`, index])));
+        assert.strictEqual(isWebviewMessage({ type: 'libraryRequest', protocolVersion: 1, requestId: 'amplified-members', request: { operation: 'publish', payload: { nestedMembers } } }), false);
+        assert.strictEqual(isSerializedMessageWithinBudget({ type: 'serviceResult', result: Array.from({ length: 1_000 }, () => 'x'.repeat(6 * 1024)) }), false);
+        assert.strictEqual(isSerializedMessageWithinBudget({ type: 'serviceResult', result: Array.from({ length: 1_000 }, () => '\u0000'.repeat(900)) }), false);
+
+        const memberHeavyEdits = Array.from({ length: 1_000 }, (_, startOffset) => ({
+            range: { startOffset, endOffset: startOffset },
+            newText: '',
+            metadata: Object.fromEntries(Array.from({ length: 6 }, (_, index) => [`member${index}`, index]))
+        }));
+        assert.strictEqual(isWebviewMessage({ type: 'applyTextEdits', protocolVersion: 1, request: { requestId: 'amplified-edit-members', documentVersion: 1, edits: memberHeavyEdits } }), false);
+
+        let deeplyNestedMetadata: Record<string, unknown> = {};
+        for (let depth = 0; depth < 20; depth += 1) deeplyNestedMetadata = { child: deeplyNestedMetadata };
+        assert.strictEqual(isWebviewMessage({ type: 'applyTextEdits', protocolVersion: 1, request: { requestId: 'deep-edit', documentVersion: 1, edits: [{ range: { startOffset: 0, endOffset: 0 }, newText: '', metadata: deeplyNestedMetadata }] } }), false);
     });
 
     test('rejects malformed or incompatible messages', () => {
@@ -71,6 +124,197 @@ suite('JSON Structure custom editor protocol', () => {
         assert.throws(() => validateResourceSize(4 * 1024 * 1024 + 1), /exceeds/);
     });
 
+    test('rejects oversized or structurally excessive primary documents before mounting', () => {
+        assert.doesNotThrow(() => validatePrimaryDocument('{}'));
+        assert.throws(() => validatePrimaryDocument('x'.repeat(4 * 1024 * 1024 + 1)), /Primary document.*byte limit/);
+        assert.throws(() => validatePrimaryDocument(`${'['.repeat(129)}${']'.repeat(129)}`), /128-level nesting limit/);
+        assert.throws(() => validatePrimaryDocument(`[${'0,'.repeat(100_001)}0]`), /100000-node structural limit/);
+    });
+
+    test('requires trust before consulting library resource readers', async () => {
+        let readerCalled = false;
+        await assert.rejects(readWorkspaceResource(
+            vscode.Uri.parse('file:///workspace/main.struct.json'),
+            vscode.Uri.parse('memory://published/team/types.json'),
+            async () => { readerCalled = true; return { uri: 'memory://published/team/types.json', document: {} }; },
+            false
+        ), /trusted workspace/);
+        assert.strictEqual(readerCalled, false);
+    });
+
+    test('stats and reads the canonical target of a contained symlink', async () => {
+        const root = await fs.mkdtemp(path.join(tmpdir(), 'json-structure-vscode-symlink-'));
+        const targetDirectory = path.join(root, 'target');
+        const linkDirectory = path.join(root, 'linked');
+        await fs.mkdir(targetDirectory);
+        const target = path.join(targetDirectory, 'types.json');
+        await fs.writeFile(target, '{"canonical":true}', 'utf8');
+        await fs.symlink(targetDirectory, linkDirectory, process.platform === 'win32' ? 'junction' : 'dir');
+        const canonicalTarget = await fs.realpath(target);
+        const observed: string[] = [];
+        const fileSystem = {
+            stat: async (uri: vscode.Uri) => { observed.push(uri.fsPath); return vscode.workspace.fs.stat(uri); },
+            readFile: async (uri: vscode.Uri) => { observed.push(uri.fsPath); return vscode.workspace.fs.readFile(uri); }
+        };
+
+        assert.strictEqual(await readWorkspaceResource(
+            vscode.Uri.file(path.join(root, 'main.struct.json')),
+            vscode.Uri.file(path.join(linkDirectory, 'types.json')),
+            undefined,
+            true,
+            fileSystem
+        ), '{"canonical":true}');
+        const comparablePath = (value: string) => process.platform === 'win32' ? path.normalize(value).toLowerCase() : path.normalize(value);
+        assert.deepStrictEqual(observed.map(comparablePath), [comparablePath(canonicalTarget), comparablePath(canonicalTarget)]);
+    });
+
+    test('loads exact library import URIs without weakening fallback scheme checks', async () => {
+        const document = vscode.Uri.parse('file:///workspace/project/main.struct.json');
+        const libraryUri = vscode.Uri.parse('memory://published/team/.published/team/common/1.json');
+        const readLibraryResource = async (uri: string) => uri === libraryUri.toString()
+            ? { uri, document: { name: 'Published', type: 'string' } }
+            : undefined;
+
+        assert.strictEqual(await readWorkspaceResource(document, libraryUri, readLibraryResource), '{"name":"Published","type":"string"}');
+        await assert.rejects(readWorkspaceResource(document, vscode.Uri.parse('memory://published/team/unlisted.json'), readLibraryResource), /Unsupported imported resource scheme/);
+        await assert.rejects(readWorkspaceResource(document, vscode.Uri.parse('https://example.test/types.json'), readLibraryResource), /HTTP and HTTPS imports/);
+    });
+
+    test('loads immutable published and cached xRegistry URIs through the VS Code runtime', async () => {
+        const values = new Map<string, unknown>();
+        const secrets = new Map<string, string>();
+        const context = {
+            globalState: {
+                get: <T>(key: string, fallback?: T): T | undefined => values.has(key) ? values.get(key) as T : fallback,
+                update: async (key: string, value: unknown): Promise<void> => { values.set(key, value); }
+            },
+            secrets: {
+                get: async (key: string): Promise<string | undefined> => secrets.get(key),
+                store: async (key: string, value: string): Promise<void> => { secrets.set(key, value); },
+                delete: async (key: string): Promise<void> => { secrets.delete(key); }
+            }
+        } as unknown as vscode.ExtensionContext;
+        const originalFetch = globalThis.fetch;
+        let online = true;
+        let requestCount = 0;
+        globalThis.fetch = async (input) => {
+            requestCount += 1;
+            if (!online) throw new Error('network disabled');
+            const url = String(input);
+            const body = url.endsWith('/model')
+                ? { links: [{ href: 'https://registry.test/groups/schemas' }] }
+                : url.endsWith('/')
+                    ? { links: [] }
+                    : url.includes('inline=versions')
+                        ? { resources: [{ id: 'remote', defaultVersionId: '1', versions: [{ id: '1' }] }] }
+                        : { document: { name: 'Remote', type: 'string' } };
+            return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+        };
+        try {
+            const bundledPath = vscode.Uri.file(path.resolve(__dirname, '../../../media/libraries/financial-types.struct.json'));
+            const runtime = await createVsCodeLibraryRuntime(context, bundledPath, () => true, async () => ['93.184.216.34']);
+            await runtime.configureProvider({ id: 'local', kind: 'local', location: 'memory://published/local/', entries: [], trusted: true });
+            const source = {
+                $schema: 'https://json-structure.org/meta/core/v0/#',
+                $id: 'urn:test:published',
+                name: 'Published',
+                type: 'string'
+            };
+            const published = await runtime.publish({ providerId: 'local', entryId: 'common', version: '1', document: source, sourceUri: 'file:///outside/source.struct.json' });
+            source.type = 'number';
+            const publishedUri = published.versions['1'].uri;
+            assert.strictEqual(await readWorkspaceResource(vscode.Uri.parse('file:///workspace/main.struct.json'), vscode.Uri.parse(publishedUri), (uri) => runtime.readResource(uri)), JSON.stringify({
+                $schema: 'https://json-structure.org/meta/core/v0/#',
+                $id: 'urn:test:published',
+                name: 'Published',
+                type: 'string'
+            }));
+
+            await runtime.configureProvider({ id: 'registry', kind: 'xregistry', baseUrl: 'https://registry.test', trusted: true });
+            const remote = await runtime.resolve({ providerId: 'registry', entryId: 'remote', selector: { kind: 'pinned', version: '1' }, offline: false });
+            online = false;
+            const requestsBeforeRead = requestCount;
+            assert.strictEqual(await readWorkspaceResource(vscode.Uri.parse('file:///workspace/main.struct.json'), vscode.Uri.parse(remote.documentUri), (uri) => runtime.readResource(uri)), '{"name":"Remote","type":"string"}');
+            assert.strictEqual(requestCount, requestsBeforeRead);
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
+    });
+
+    test('rejects library hostnames resolving to private addresses before fetch', async () => {
+        const values = new Map<string, unknown>();
+        const secretAccesses: string[] = [];
+        const context = {
+            globalState: {
+                get: <T>(key: string, fallback?: T): T | undefined => values.has(key) ? values.get(key) as T : fallback,
+                update: async (key: string, value: unknown): Promise<void> => { values.set(key, value); }
+            },
+            secrets: {
+                get: async (key: string): Promise<string | undefined> => { secretAccesses.push(`get:${key}`); return undefined; },
+                store: async (key: string): Promise<void> => { secretAccesses.push(`store:${key}`); },
+                delete: async (key: string): Promise<void> => { secretAccesses.push(`delete:${key}`); }
+            }
+        } as unknown as vscode.ExtensionContext;
+        const bundledPath = vscode.Uri.file(path.resolve(__dirname, '../../../media/libraries/financial-types.struct.json'));
+        const originalFetch = globalThis.fetch;
+        let fetchCount = 0;
+        globalThis.fetch = async () => { fetchCount += 1; throw new Error('must not fetch'); };
+        try {
+            const runtime = await createVsCodeLibraryRuntime(context, bundledPath, () => true, async () => ['127.0.0.1']);
+            await assert.rejects(runtime.configureProvider({ id: 'registry', kind: 'xregistry', baseUrl: 'https://registry.test', credentialId: 'token', trusted: true }, 'must-not-store'), /private or local network/);
+            assert.strictEqual(fetchCount, 0);
+            assert.deepStrictEqual(secretAccesses, []);
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
+    });
+
+    test('requires a trusted workspace before mutable library operations and non-bundled reads', async () => {
+        const persistedProvider = {
+            id: 'local', kind: 'local' as const, location: 'file:///workspace/libraries/', trusted: true,
+            entries: [{ id: 'common', versions: [{ version: '1', documentUri: 'file:///workspace/libraries/common.json', isDefault: true }] }]
+        };
+        const values = new Map<string, unknown>([['jsonStructure.library.providers', [persistedProvider]]]);
+        const globalWrites: string[] = [];
+        const secretAccesses: string[] = [];
+        const context = {
+            globalState: {
+                get: <T>(key: string, fallback?: T): T | undefined => values.has(key) ? values.get(key) as T : fallback,
+                update: async (key: string, value: unknown): Promise<void> => { globalWrites.push(key); values.set(key, value); }
+            },
+            secrets: {
+                get: async (key: string): Promise<string | undefined> => { secretAccesses.push(`get:${key}`); return undefined; },
+                store: async (key: string): Promise<void> => { secretAccesses.push(`store:${key}`); },
+                delete: async (key: string): Promise<void> => { secretAccesses.push(`delete:${key}`); }
+            }
+        } as unknown as vscode.ExtensionContext;
+        const bundledPath = vscode.Uri.file(path.resolve(__dirname, '../../../media/libraries/financial-types.struct.json'));
+        const originalFetch = globalThis.fetch;
+        let fetchCount = 0;
+        globalThis.fetch = async () => { fetchCount += 1; throw new Error('must not fetch'); };
+        try {
+            const runtime = await createVsCodeLibraryRuntime(context, bundledPath, () => false);
+            const document = {
+                $schema: 'https://json-structure.org/meta/core/v0/#',
+                $id: 'urn:test:blocked',
+                name: 'Blocked',
+                definitions: {}
+            };
+
+            await assert.rejects(runtime.configureProvider({ id: 'remote', kind: 'xregistry', baseUrl: 'https://registry.test', trusted: true }), /not authorized by the host/);
+            await assert.rejects(runtime.removeProvider('local'), /not authorized by the host/);
+            await assert.rejects(runtime.resolve({ providerId: 'local', entryId: 'common', selector: { kind: 'pinned', version: '1' }, offline: false }), /not authorized by the host/);
+            await assert.rejects(runtime.publish({ providerId: 'local', entryId: 'common', version: '2', document, sourceUri: 'file:///workspace/blocked.struct.json' }), /not authorized by the host/);
+            await assert.rejects(runtime.readResource('file:///workspace/libraries/common.json'), /not authorized by the host/);
+
+            assert.deepStrictEqual(globalWrites, []);
+            assert.deepStrictEqual(secretAccesses, []);
+            assert.strictEqual(fetchCount, 0);
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
+    });
+
     test('records conversion output byte sizes and SHA-256 hashes', () => {
         const manifest = buildOutputManifest([
             { path: 'z.json', contentBase64: Buffer.from('z').toString('base64') },
@@ -83,6 +327,123 @@ suite('JSON Structure custom editor protocol', () => {
                 { path: 'z.json', bytes: 1, sha256: '594e519ae499312b29433b7dd8a97ff068defcba9755b6d5d00e84c524d67b06' }
             ]
         });
+    });
+
+    test('derives review lossiness from the strongest worker warning', () => {
+        assert.strictEqual(effectiveWorkerLossiness({
+            lossiness: 'none',
+            warnings: [{ code: 'precision', message: 'Representation changed.', lossiness: 'precision' }]
+        }), 'precision');
+    });
+
+    test('copies the packaged conversion runtime with descriptor and byte parity', async () => {
+        const root = path.resolve(__dirname, '../../../..');
+        const source = path.join(root, 'editor', 'src', 'conversion', 'worker-runtime');
+        const copied = path.join(root, 'vscode', 'media', 'conversion', 'worker-runtime');
+        const sourceDescriptor = JSON.parse((await vscode.workspace.fs.readFile(vscode.Uri.file(path.join(source, 'runtime-descriptor.json')))).toString());
+        const copiedDescriptor = JSON.parse((await vscode.workspace.fs.readFile(vscode.Uri.file(path.join(copied, 'runtime-descriptor.json')))).toString());
+        assert.deepStrictEqual(copiedDescriptor, sourceDescriptor);
+        for (const entry of sourceDescriptor.files as readonly { path: string; sha256: string }[]) {
+            const relativePath = entry.path.replace(/^worker-runtime[\\/]/, '');
+            const sourceBytes = await vscode.workspace.fs.readFile(vscode.Uri.file(path.join(source, relativePath)));
+            const copiedBytes = await vscode.workspace.fs.readFile(vscode.Uri.file(path.join(copied, relativePath)));
+            assert.deepStrictEqual(copiedBytes, sourceBytes);
+            assert.strictEqual(require('crypto').createHash('sha256').update(sourceBytes).digest('hex'), entry.sha256);
+        }
+    });
+
+    test('validates generated conversion identity before publication', () => {
+        const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64');
+        assert.doesNotThrow(() => validateGeneratedConversionFiles('json-structure', [{
+            path: 'Root.struct.json',
+            contentBase64: encode({ $schema: 'https://json-structure.org/meta/core/v0/#', $id: 'urn:test:root', name: 'Root', $root: '#/definitions/Root', definitions: { Root: { type: 'string' } } })
+        }]));
+        assert.throws(() => validateGeneratedConversionFiles('json-structure', [{ path: 'Root.struct.json', contentBase64: encode({ $schema: 'https://json-structure.org/meta/core/v0' }) }]), /non-canonical schema/);
+        assert.throws(() => validateGeneratedConversionFiles('json-structure', [{ path: 'Root.struct.json', contentBase64: encode({ $schema: 'https://json-structure.org/meta/core/v0/#', $id: 'relative', name: 'Root', $root: '#/definitions/Root', definitions: { Root: { type: 'string' } } }) }]), /absolute \$id/);
+        assert.throws(() => validateGeneratedConversionFiles('json-structure', [{ path: 'Root.struct.json', contentBase64: encode({ $schema: 'https://json-structure.org/meta/core/v0/#', $id: 'urn:test:root', name: 'not valid', $root: '#/definitions/Missing', definitions: {} }) }]), /valid name/);
+        assert.throws(() => validateGeneratedConversionFiles('json-structure', [{ path: 'Root.struct.json', contentBase64: encode({ $schema: 'https://json-structure.org/meta/core/v0/#', $id: 'urn:test:root', name: 'Root', $root: '#/definitions/Root', definitions: { Root: { type: { $ref: '#/definitions/Missing' } } } }) }]), /unresolved reference/);
+        assert.throws(() => validateGeneratedConversionFiles('json-schema', [{ path: 'schema.json', contentBase64: encode({ $schema: 'draft-07' }) }]), /unsupported dialect/);
+        assert.throws(() => validateGeneratedConversionFiles('avro', [{ path: 'schema.avsc', contentBase64: encode({ name: 'Root' }) }]), /no root type/);
+        assert.doesNotThrow(() => validateGeneratedConversionFiles('avro', [{ path: 'string.avsc', contentBase64: encode('string') }]));
+        assert.doesNotThrow(() => validateGeneratedConversionFiles('avro', [{ path: 'union.avsc', contentBase64: encode(['null', 'string']) }]));
+        assert.doesNotThrow(() => validateGeneratedConversionFiles('json-structure', [{ path: 'Validated.struct.json', contentBase64: encode({
+            $schema: 'https://json-structure.org/meta/validation/v0/#', $id: 'urn:test:validated', name: 'Validated', $root: '#/definitions/Validated',
+            definitions: { Validated: { type: 'string', minLength: 1 } }
+        }) }]));
+        assert.doesNotThrow(() => validateGeneratedConversionFiles('json-structure', [{ path: 'Composed.struct.json', contentBase64: encode({
+            $schema: 'https://json-structure.org/meta/extended/v0/#', $uses: ['JSONStructureConditionalComposition'], $id: 'urn:test:composed', name: 'Composed', $root: '#/definitions/Composed',
+            definitions: { Composed: { type: 'string', oneOf: [{ type: 'string' }, { type: 'boolean' }] } }
+        }) }]));
+        assert.throws(() => validateGeneratedConversionFiles('json-structure', [{ path: 'Empty.struct.json', contentBase64: encode({
+            $schema: 'https://json-structure.org/meta/core/v0/#', $id: 'urn:test:empty', name: 'Empty', $root: '#/definitions/Empty', definitions: { Empty: { type: 'object', properties: {} } }
+        }) }]), /canonical validation/);
+    });
+
+    test('cancels a VS Code conversion while destination selection is pending', async () => {
+        let releaseDestination: ((value: vscode.Uri) => void) | undefined;
+        const pendingDestination = new Promise<vscode.Uri>((resolve) => { releaseDestination = resolve; });
+        const extensionUri = vscode.Uri.file(path.resolve(__dirname, '../../..'));
+        const host = new VsCodeConversionHost(extensionUri, { selectDestination: () => pendingDestination });
+        const conversion = host.convert({
+            protocolVersion: 1,
+            requestId: 'cancel-picker',
+            kind: 'conversion',
+            documentVersion: 1,
+            commandId: 'import.jsonschema.to-json-structure',
+            sourceName: 'schema.json',
+            sourceText: '{"type":"string"}',
+            options: {}
+        });
+        host.cancel('cancel-picker');
+        releaseDestination?.(vscode.Uri.file(path.join(__dirname, 'unused-output')));
+        const result = await conversion;
+        assert.strictEqual(result.succeeded, false);
+        assert.deepStrictEqual(result.outputs, []);
+        assert.ok(result.diagnostics.some((diagnostic) => (diagnostic as { code?: string }).code === 'conversion.cancelled'));
+    });
+
+    test('uses host UUID operation IDs and a bounded heap for VS Code workers', async () => {
+        const root = await fs.mkdtemp(path.join(tmpdir(), 'json-structure-vscode-worker-'));
+        const extensionRoot = path.join(root, 'extension');
+        const runtimeRoot = path.join(extensionRoot, 'media', 'conversion', 'worker-runtime');
+        const destination = vscode.Uri.file(path.join(root, 'output'));
+        try {
+            await fs.mkdir(runtimeRoot, { recursive: true });
+            await fs.copyFile(path.resolve(__dirname, '../../../../editor/tests/fixtures/conversion-quota-worker.cjs'), path.join(runtimeRoot, 'converter-worker.cjs'));
+            await fs.writeFile(path.join(runtimeRoot, 'commands-manifest.json'), JSON.stringify({
+                schemaVersion: 1,
+                converters: [{ id: 'fixture', displayName: 'Fixture', version: '1', sourceFormats: ['json-structure'], targetFormats: ['json-schema'], options: [] }],
+                commands: [{ id: 'export.fixture', converterId: 'fixture', direction: 'export', label: 'Export fixture', sourceFormat: 'json-structure', targetFormat: 'json-schema', optionNames: [], defaultAutoOpen: false }]
+            }));
+            const host = new VsCodeConversionHost(vscode.Uri.file(extensionRoot), { selectDestination: async () => destination });
+            const rendererRequestId = 'renderer-request-must-not-reach-worker';
+            const result = await host.convert({
+                protocolVersion: 1,
+                requestId: rendererRequestId,
+                kind: 'conversion',
+                documentVersion: 1,
+                commandId: 'export.fixture',
+                sourceName: 'evidence.struct.json',
+                sourceText: '{}',
+                options: {}
+            });
+            assert.strictEqual(result.succeeded, true);
+            const evidence = JSON.parse(await fs.readFile(path.join(destination.fsPath, 'evidence.schema.json'), 'utf8')) as { operationId: string; execArgv: string[] };
+            assert.notStrictEqual(evidence.operationId, rendererRequestId);
+            assert.match(evidence.operationId, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+            assert.ok(evidence.execArgv.includes('--max-old-space-size=128'));
+
+            const baseLimits = { maxExecutionMs: 5_000, maxOldSpaceMb: 32, maxStdoutBytes: 64 * 1024, maxStderrBytes: 1024, maxLineBytes: 64 * 1024, maxFiles: 4, maxWarnings: 4, maxFileBytes: 64 * 1024, maxAggregateFileBytes: 64 * 1024 };
+            const hanging = new VsCodeConversionHost(vscode.Uri.file(extensionRoot), { selectDestination: async () => vscode.Uri.file(path.join(root, 'hang-output')), workerLimits: { ...baseLimits, maxExecutionMs: 25 } });
+            await assert.rejects(hanging.convert({ protocolVersion: 1, requestId: 'renderer-hang', kind: 'conversion', documentVersion: 1, commandId: 'export.fixture', sourceName: 'hang.struct.json', sourceText: '{}', options: {} }), /execution quota/);
+            await assert.rejects(fs.stat(path.join(root, 'hang-output', 'evidence.schema.json')), /ENOENT/);
+
+            const flooding = new VsCodeConversionHost(vscode.Uri.file(extensionRoot), { selectDestination: async () => vscode.Uri.file(path.join(root, 'stdout-output')), workerLimits: { ...baseLimits, maxStdoutBytes: 128, maxLineBytes: 128 } });
+            await assert.rejects(flooding.convert({ protocolVersion: 1, requestId: 'renderer-stdout', kind: 'conversion', documentVersion: 1, commandId: 'export.fixture', sourceName: 'stdout.struct.json', sourceText: '{}', options: {} }), /stdout|line/);
+            await assert.rejects(fs.stat(path.join(root, 'stdout-output', 'evidence.schema.json')), /ENOENT/);
+        } finally {
+            await fs.rm(root, { recursive: true, force: true });
+        }
     });
 
     test('serializes concurrent publisher CAS writes for one provider', async () => {
@@ -105,6 +466,19 @@ suite('JSON Structure custom editor protocol', () => {
         assert.throws(() => parseWorkerEvent('{"type":"progress","operationId":"convert-1","phase":"write","completed":"3","total":4}'), /malformed/);
         assert.throws(() => parseWorkerEvent('{"type":"result","operationId":"convert-1","lossiness":"none","files":[{"path":1,"contentBase64":"e30="}],"warnings":[]}'), /malformed/);
         assert.throws(() => parseWorkerEvent('{"type":"result","operationId":"convert-1","files":[],"warnings":[]}'), /malformed/);
+        const tiny = { maxExecutionMs: 1000, maxOldSpaceMb: 16, maxStdoutBytes: 64, maxStderrBytes: 64, maxLineBytes: 64, maxFiles: 1, maxWarnings: 1, maxFileBytes: 2, maxAggregateFileBytes: 3 };
+        assert.throws(() => parseWorkerEvent('{"type":"result","operationId":"x","lossiness":"none","files":[{"path":"a","contentBase64":"YQ=="},{"path":"b","contentBase64":"Yg=="}],"warnings":[]}', tiny), /file quota/);
+        assert.throws(() => parseWorkerEvent('{"type":"result","operationId":"x","lossiness":"none","files":[],"warnings":[{"code":"a","message":"a","lossiness":"metadata"},{"code":"b","message":"b","lossiness":"metadata"}]}', tiny), /warning quota/);
+        assert.throws(() => parseWorkerEvent('{"type":"result","operationId":"x","lossiness":"none","files":[{"path":"a","contentBase64":"YWJj"}],"warnings":[]}', tiny), /per-file/);
+        assert.throws(() => parseWorkerEvent('{"type":"result","operationId":"x","lossiness":"none","files":[{"path":"a","contentBase64":"YWI="},{"path":"b","contentBase64":"YWI="}],"warnings":[]}', { ...tiny, maxFiles: 2 }), /aggregate/);
+    });
+
+    test('validates canonical temporary parents before recursive cleanup', () => {
+        const parent = vscode.Uri.file(path.join(tmpdir(), 'conversion-cleanup'));
+        const destination = vscode.Uri.joinPath(parent, 'selected');
+        assert.strictEqual(validateTemporaryDirectoryForCleanup(vscode.Uri.joinPath(parent, 'selected.staging-1234'), destination).fsPath, vscode.Uri.joinPath(parent, 'selected.staging-1234').fsPath);
+        assert.throws(() => validateTemporaryDirectoryForCleanup(vscode.Uri.joinPath(parent, 'unrelated'), destination), /unrecognized/);
+        assert.throws(() => validateTemporaryDirectoryForCleanup(vscode.Uri.file(path.join(tmpdir(), 'outside', 'selected.staging-1234')), destination), /canonical conversion parent/);
     });
 
     test('publishes generated files without deleting unrelated destination contents', async () => {

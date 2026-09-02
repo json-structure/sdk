@@ -22,6 +22,9 @@ export interface LibraryDocument {
   readonly version: string;
   readonly uri: string;
   readonly value: unknown;
+  readonly provenance?: {
+    readonly sourceUri: string;
+  };
   readonly integrity?: string;
   readonly epoch?: string;
 }

@@ -1,4 +1,6 @@
-export type MetaSchemaMode = 'core' | 'validation' | 'semantic-annotations' | 'relations' | 'extended' | 'unknown';
+import { CAPABILITY_USES, resolveMetaSchemaCapabilityProfile, type CanonicalMetaSchemaMode } from '../capabilities.js';
+
+export type MetaSchemaMode = CanonicalMetaSchemaMode | 'unknown';
 
 export interface MetaSchemaCapabilities {
   readonly core: true;
@@ -25,24 +27,6 @@ export interface PaletteDescriptor {
   readonly members: readonly string[];
 }
 
-const SCHEMAS: Readonly<Record<string, MetaSchemaMode>> = {
-  'https://json-structure.org/meta/core/v0/#': 'core',
-  'https://json-structure.org/meta/validation/v0/#': 'validation',
-  'https://json-structure.org/meta/semantic-annotations/v0/#': 'semantic-annotations',
-  'https://json-structure.org/meta/relations/v0/#': 'relations',
-  'https://json-structure.org/meta/extended/v0/#': 'extended'
-};
-
-const USES = {
-  validation: 'JSONStructureValidation',
-  conditionalComposition: 'JSONStructureConditionalComposition',
-  units: 'JSONStructureUnits',
-  semanticAnnotations: 'JSONStructureSemanticAnnotations',
-  alternateNames: 'JSONStructureAlternateNames',
-  imports: 'JSONStructureImport',
-  relations: 'JSONStructureRelations'
-} as const;
-
 const PALETTES: readonly PaletteDescriptor[] = [
   { id: 'document', label: 'Document', capability: 'core', members: ['$schema', '$id', 'name', 'description', '$uses', '$offers', '$root', 'definitions'] },
   { id: 'core', label: 'Core declarations', capability: 'core', members: ['type', '$ref', '$extends', 'properties', 'required', 'items', 'values', 'tuple', 'choices', 'enum', 'const'] },
@@ -56,25 +40,21 @@ const PALETTES: readonly PaletteDescriptor[] = [
 ];
 
 export function detectMetaSchemaMode(value: unknown): MetaSchemaDetection {
-  const root = isObject(value) ? value : {};
-  const schema = typeof root.$schema === 'string' ? root.$schema : undefined;
-  const mode = schema ? SCHEMAS[schema] ?? 'unknown' : 'core';
-  const uses = Array.isArray(root.$uses) ? root.$uses.filter((entry): entry is string => typeof entry === 'string') : [];
-  const knownUses = new Set<string>(Object.values(USES));
-  const extended = mode === 'extended';
+  const profile = resolveMetaSchemaCapabilityProfile(value);
+  const { activeUses } = profile;
   return {
-    mode,
-    schema,
+    mode: profile.mode,
+    schema: profile.schema,
     capabilities: {
       core: true,
-      validation: mode === 'validation' || extended && uses.includes(USES.validation),
-      conditionalComposition: mode === 'validation' || extended && uses.includes(USES.conditionalComposition),
-      units: mode === 'validation' || extended && uses.includes(USES.units),
-      semanticAnnotations: mode === 'semantic-annotations' || extended && uses.includes(USES.semanticAnnotations),
-      alternateNames: mode === 'validation' || extended && uses.includes(USES.alternateNames),
-      imports: mode === 'relations' || extended && uses.includes(USES.imports),
-      relations: mode === 'relations' || extended && uses.includes(USES.relations),
-      unknownUses: uses.filter((entry) => !knownUses.has(entry))
+      validation: activeUses.has(CAPABILITY_USES.validation),
+      conditionalComposition: activeUses.has(CAPABILITY_USES.conditionalComposition),
+      units: activeUses.has(CAPABILITY_USES.units),
+      semanticAnnotations: activeUses.has(CAPABILITY_USES.semanticAnnotations),
+      alternateNames: activeUses.has(CAPABILITY_USES.alternateNames),
+      imports: activeUses.has(CAPABILITY_USES.imports),
+      relations: activeUses.has(CAPABILITY_USES.relations),
+      unknownUses: profile.unknownUses
     }
   };
 }
@@ -85,7 +65,3 @@ export function paletteDescriptors(value: unknown): readonly PaletteDescriptor[]
 }
 
 export const describeMetaSchemaPalettes = paletteDescriptors;
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}

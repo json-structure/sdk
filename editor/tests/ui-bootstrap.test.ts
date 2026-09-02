@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { createAlphaEditorController, defaultUntitledDocument, type AlphaEditorSurface, type FileBridge } from '../src/ui/bootstrap.js';
 
-function editor(): AlphaEditorSurface & { text: string } {
-  return { text: '{"version":1}', getText() { return this.text; }, setText(text) { this.text = text; } };
+function editor(): AlphaEditorSurface & { text: string; uri?: string } {
+  return { text: '{"version":1}', getText() { return this.text; }, setText(text) { this.text = text; }, setUri(uri) { this.uri = uri; } };
 }
 
 describe('ALPHA UI bootstrap', () => {
@@ -28,12 +28,14 @@ describe('ALPHA UI bootstrap', () => {
     const controller = createAlphaEditorController(surface, bridge, () => true);
     await controller.open();
     expect(surface.text).toBe('{"opened":true}');
+    expect(surface.uri).toBe('file:///C:/schemas/opened.struct.json');
     expect(controller.path).toBe('C:/schemas/opened.struct.json');
     controller.markDirty();
     await controller.save();
     expect(controller.dirty).toBe(false);
     await controller.saveAs();
     expect(controller.path).toBe('C:/schemas/saved.struct.json');
+    expect(surface.uri).toBe('file:///C:/schemas/saved.struct.json');
     expect(calls).toEqual(['C:/schemas/opened.struct.json:{"opened":true}', 'as:{"opened":true}']);
   });
 
@@ -45,6 +47,101 @@ describe('ALPHA UI bootstrap', () => {
     expect(surface.text).toBe('{"version":1}');
     expect(controller.path).toBeUndefined();
     expect(controller.dirty).toBe(true);
+  });
+
+  it('keeps an edit made during save dirty after the write completes', async () => {
+    const surface = editor();
+    let finishSave: ((value: { path: string }) => void) | undefined;
+    const bridge: FileBridge = {
+      openFile: async () => ({ path: 'C:/schemas/opened.struct.json', text: '{"saved":1}' }),
+      saveFile: async () => new Promise((resolve) => { finishSave = resolve; }),
+      saveFileAs: async () => null,
+      onFileOpened: () => () => undefined,
+      onFileCommand: () => () => undefined
+    };
+    const controller = createAlphaEditorController(surface, bridge, () => true);
+    await controller.open();
+    controller.markDirty();
+    const saving = controller.save();
+    surface.text = '{"saved":2}';
+    controller.markDirty();
+    finishSave?.({ path: 'C:/schemas/opened.struct.json' });
+    await saving;
+
+    expect(controller.dirty).toBe(true);
+    expect(surface.text).toBe('{"saved":2}');
+  });
+
+  it('keeps an edit made during save-as dirty while adopting the selected path', async () => {
+    const surface = editor();
+    let finishSaveAs: ((value: { path: string }) => void) | undefined;
+    const bridge: FileBridge = {
+      openFile: async () => null,
+      saveFile: async (path) => ({ path }),
+      saveFileAs: async () => new Promise((resolve) => { finishSaveAs = resolve; }),
+      onFileOpened: () => () => undefined,
+      onFileCommand: () => () => undefined
+    };
+    const controller = createAlphaEditorController(surface, bridge, () => true);
+    controller.markDirty();
+    const saving = controller.saveAs();
+    surface.text = '{"version":2}';
+    controller.markDirty();
+    finishSaveAs?.({ path: 'C:/schemas/saved.struct.json' });
+    await saving;
+
+    expect(controller.path).toBe('C:/schemas/saved.struct.json');
+    expect(surface.uri).toBe('file:///C:/schemas/saved.struct.json');
+    expect(controller.dirty).toBe(true);
+  });
+
+  it('ignores a late save response after another file opens', async () => {
+    const surface = editor();
+    let finishSave: ((value: { path: string }) => void) | undefined;
+    const bridge: FileBridge = {
+      openFile: async () => ({ path: 'C:/schemas/first.struct.json', text: '{"first":true}' }),
+      saveFile: async () => new Promise((resolve) => { finishSave = resolve; }),
+      saveFileAs: async () => null,
+      onFileOpened: () => () => undefined,
+      onFileCommand: () => () => undefined
+    };
+    const controller = createAlphaEditorController(surface, bridge, () => true);
+    await controller.open();
+    controller.markDirty();
+    const saving = controller.save();
+    await controller.acceptExternalFile({ path: 'C:/schemas/second.struct.json', text: '{"second":true}' });
+
+    finishSave?.({ path: 'C:/schemas/late-save.struct.json' });
+    await saving;
+
+    expect(controller.path).toBe('C:/schemas/second.struct.json');
+    expect(surface.uri).toBe('file:///C:/schemas/second.struct.json');
+    expect(surface.text).toBe('{"second":true}');
+    expect(controller.dirty).toBe(false);
+  });
+
+  it('ignores a late save-as response after another file opens', async () => {
+    const surface = editor();
+    let finishSaveAs: ((value: { path: string }) => void) | undefined;
+    const bridge: FileBridge = {
+      openFile: async () => null,
+      saveFile: async (path) => ({ path }),
+      saveFileAs: async () => new Promise((resolve) => { finishSaveAs = resolve; }),
+      onFileOpened: () => () => undefined,
+      onFileCommand: () => () => undefined
+    };
+    const controller = createAlphaEditorController(surface, bridge, () => true);
+    controller.markDirty();
+    const saving = controller.saveAs();
+    await controller.acceptExternalFile({ path: 'C:/schemas/second.struct.json', text: '{"second":true}' });
+
+    finishSaveAs?.({ path: 'C:/schemas/late-save-as.struct.json' });
+    await saving;
+
+    expect(controller.path).toBe('C:/schemas/second.struct.json');
+    expect(surface.uri).toBe('file:///C:/schemas/second.struct.json');
+    expect(surface.text).toBe('{"second":true}');
+    expect(controller.dirty).toBe(false);
   });
 
   it('subscribes to bridge-delivered external opens and releases the listener', async () => {

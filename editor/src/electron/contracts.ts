@@ -1,4 +1,4 @@
-import type { ConversionRequest, ConversionResult, LibraryOperation, OpenGeneratedOutputRequest, OpenGeneratedOutputResult, ProgressEvent } from '../contracts';
+import type { ConversionRequest, ConversionResult, ConversionSource, LibraryOperation, OpenGeneratedOutputRequest, OpenGeneratedOutputResult, ProgressEvent, SelectConversionSourceRequest } from '../contracts';
 import type { ConversionCommandsManifest } from '../conversion/types';
 import type { LibraryDocument, LibraryEntry } from '../libraries/contracts';
 
@@ -26,6 +26,7 @@ export interface ElectronBridge {
   openExternal(url: string): Promise<void>;
   readResource(uri: string): Promise<{ uri: string; content: string; contentHash: string }>;
   listConversionCommands(): Promise<ConversionCommandsManifest>;
+  selectConversionSource(request: SelectConversionSourceRequest): Promise<ConversionSource | undefined>;
   convert(request: ConversionRequest): Promise<ConversionResult>;
   onConversionProgress(listener: (event: ProgressEvent) => void): () => void;
   cancelConversion(requestId: string): Promise<void>;

@@ -2,10 +2,21 @@ import { describe, expect, it } from 'vitest';
 import { DocumentSession, parseDocument, resolveDocumentReferences, resolveReferences } from '../src/index.js';
 
 function model(uri: string, value: unknown) {
+  const containsKey = (candidate: unknown, keys: ReadonlySet<string>): boolean => {
+    if (!candidate || typeof candidate !== 'object') return false;
+    if (Array.isArray(candidate)) return candidate.some((entry) => containsKey(entry, keys));
+    const object = candidate as Readonly<Record<string, unknown>>;
+    return Object.keys(object).some((key) => keys.has(key)) || Object.values(object).some((entry) => containsKey(entry, keys));
+  };
+  const relations = containsKey(value, new Set(['identity', 'relations']));
+  const imports = containsKey(value, new Set(['$import', '$importdefs']));
   const parsed = parseDocument(uri, JSON.stringify({
-    $schema: 'https://json-structure.org/meta/core/v0/#',
+    $schema: relations
+      ? 'https://json-structure.org/meta/relations/v0/#'
+      : imports ? 'https://json-structure.org/meta/extended/v0/#' : 'https://json-structure.org/meta/core/v0/#',
     $id: uri,
     name: 'TestDocument',
+    ...(relations ? { $uses: ['JSONStructureRelations'] } : {}),
     ...(value as Record<string, unknown>)
   }));
   expect(parsed.model).toBeDefined();
@@ -16,7 +27,7 @@ function model(uri: string, value: unknown) {
 describe('host-neutral reference resolution', () => {
   it('re-resolves a document session when external snapshots change', () => {
     const text = JSON.stringify({
-      $schema: 'https://json-structure.org/meta/core/v0/#',
+      $schema: 'https://json-structure.org/meta/extended/v0/#',
       definitions: { Lib: { $importdefs: 'https://example.org/lib.json' }, Use: { type: { $ref: '#/definitions/Lib/Value' } } }
     });
     const session = new DocumentSession('memory://session-imports', text);
@@ -385,6 +396,33 @@ describe('host-neutral reference resolution', () => {
     expect(resolveReferences(importing('https://example.org/targets.json'), [withIdentity]).diagnostics).toEqual([]);
     const invalid = resolveReferences(importing('https://example.org/no-identity.json'), [withoutIdentity]);
     expect(invalid.references.find((fact) => fact.kind === 'relation-target')?.status).toBe('unresolved');
+  });
+
+  it('resolves relation target identity through inherited and alias chains', () => {
+    const uri = 'memory://effective-relation-identities';
+    const parsed = parseDocument(uri, JSON.stringify({
+      $schema: 'https://json-structure.org/meta/relations/v0/#',
+      $id: uri,
+      name: 'EffectiveRelationIdentities',
+      $uses: ['JSONStructureRelations'],
+      definitions: {
+        Entity: { type: 'object', abstract: true, properties: { id: { type: 'string' } }, identity: ['id'] },
+        Agent: { type: 'object', $extends: '#/definitions/Entity', properties: { name: { type: 'string' } } },
+        AgentAlias: { type: { $ref: '#/definitions/Agent' } },
+        Source: {
+          type: 'object',
+          relations: {
+            inherited: { targettype: { $ref: '#/definitions/Agent' }, cardinality: 'single' },
+            aliased: { targettype: { $ref: '#/definitions/AgentAlias' }, cardinality: 'single' }
+          }
+        }
+      }
+    }));
+    expect(parsed.model).toBeDefined();
+    const document = parsed.model!;
+    const targets = resolveReferences(document).references.filter((fact) => fact.kind === 'relation-target');
+    expect(targets).toHaveLength(2);
+    expect(targets.every((fact) => fact.status === 'resolved')).toBe(true);
   });
 
   it('integrates facts into a new model and ignores $ref-shaped literal payloads', () => {

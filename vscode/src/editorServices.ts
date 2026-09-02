@@ -2,6 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
+import { CONVERSION_WORKER_LIMITS, ConversionWorkerQuotaTracker, parseCommandsManifest, validateGeneratedConversionFiles as validateGeneratedConversionFileRecord, validateOptionValues, validateWorkerOutputQuotas, type ConversionCommandsManifest, type ConversionOptionValues, type ConversionWorkerLimits } from '@json-structure/editor-foundation/conversion-types';
 
 export interface ConversionRequest {
     readonly protocolVersion: 1;
@@ -11,7 +12,7 @@ export interface ConversionRequest {
     readonly commandId: string;
     readonly sourceName: string;
     readonly sourceText: string;
-    readonly options: Readonly<Record<string, string | number | boolean>>;
+    readonly options: ConversionOptionValues;
 }
 export interface HostFile { readonly uri: string; readonly name: string }
 export interface OpenGeneratedOutputRequest { readonly protocolVersion: 1; readonly requestId: string; readonly kind: 'open-generated-output'; readonly outputs: readonly HostFile[] }
@@ -19,19 +20,23 @@ type Lossiness = 'none' | 'formatting' | 'metadata' | 'precision' | 'unsupported
 interface WorkerWarning { readonly code: string; readonly message: string; readonly lossiness: Exclude<Lossiness, 'none'>; readonly sourceLocation?: string; readonly targetPath?: string; readonly details?: Readonly<Record<string, string | number | boolean>> }
 interface WorkerResult { readonly files: readonly { path: string; contentBase64: string }[]; readonly warnings: readonly WorkerWarning[]; readonly lossiness: Lossiness }
 export interface ConversionProgress { readonly phase: string; readonly completed: number; readonly total: number; readonly message?: string }
-export const conversionCommandsManifest = {
-    schemaVersion: 1,
-    converters: [
-        { id: 'jsonschema', displayName: 'JSON Schema Converter', version: '1.0.0-node', sourceFormats: ['json-schema', 'json'], targetFormats: ['json-structure'], options: [] },
-        { id: 'avro', displayName: 'Avro Converter', version: '1.0.0-node', sourceFormats: ['avro', 'json'], targetFormats: ['json-structure'], options: [] },
-    ],
-    commands: [
-        { id: 'import.jsonschema.to-json-structure', converterId: 'jsonschema', direction: 'import', label: 'Import JSON Schema to JSON Structure', sourceFormat: 'json-schema', targetFormat: 'json-structure', defaultAutoOpen: true },
-        { id: 'export.json-structure.to-jsonschema', converterId: 'jsonschema', direction: 'export', label: 'Export JSON Structure to JSON Schema', sourceFormat: 'json-structure', targetFormat: 'json-schema', defaultAutoOpen: true },
-        { id: 'import.avro.to-json-structure', converterId: 'avro', direction: 'import', label: 'Import Avro to JSON Structure', sourceFormat: 'avro', targetFormat: 'json-structure', defaultAutoOpen: true },
-        { id: 'export.json-structure.to-avro', converterId: 'avro', direction: 'export', label: 'Export JSON Structure to Avro', sourceFormat: 'json-structure', targetFormat: 'avro', defaultAutoOpen: true },
-    ],
-} as const;
+const lossinessRank: Readonly<Record<Lossiness, number>> = { none: 0, formatting: 1, metadata: 2, precision: 3, 'unsupported-feature': 4, 'data-loss': 5 };
+
+export function effectiveWorkerLossiness(result: Pick<WorkerResult, 'lossiness' | 'warnings'>): Lossiness {
+    return result.warnings.reduce<Lossiness>((lossiness, warning) => lossinessRank[warning.lossiness] > lossinessRank[lossiness] ? warning.lossiness : lossiness, result.lossiness);
+}
+export async function loadConversionCommandsManifest(extensionUri: vscode.Uri): Promise<ConversionCommandsManifest> {
+    const uri = vscode.Uri.joinPath(extensionUri, 'media', 'conversion', 'worker-runtime', 'commands-manifest.json');
+    const content = await vscode.workspace.fs.readFile(uri);
+    return parseCommandsManifest(JSON.parse(new TextDecoder().decode(content)));
+}
+
+export function normalizeConversionOptions(manifest: ConversionCommandsManifest, request: ConversionRequest): ConversionOptionValues {
+    const command = manifest.commands.find((candidate) => candidate.id === request.commandId);
+    const converter = manifest.converters.find((candidate) => candidate.id === command?.converterId);
+    if (!command || !converter) throw new Error(`Conversion metadata for '${request.commandId}' is unavailable.`);
+    return validateOptionValues(converter, request.options, command.optionNames);
+}
 export interface PublicationFileSystem {
     stat(uri: vscode.Uri): Thenable<vscode.FileStat>;
     createDirectory(uri: vscode.Uri): Thenable<void>;
@@ -61,8 +66,14 @@ export function isConversionRequest(value: unknown): value is ConversionRequest 
     return request.kind === 'conversion' && Number.isInteger(request.documentVersion) && (request.documentVersion as number) >= 0 &&
         typeof request.commandId === 'string' && request.commandId.length > 0 && typeof request.sourceName === 'string' && request.sourceName.length > 0 &&
         request.sourceName.length <= 255 && !/[\\/]/.test(request.sourceName) && typeof request.sourceText === 'string' && request.sourceText.length <= 4 * 1024 * 1024 &&
-        !!request.options && typeof request.options === 'object' && !Array.isArray(request.options) && Object.values(request.options).every((entry) => typeof entry === 'string' || typeof entry === 'boolean' || typeof entry === 'number' && Number.isFinite(entry));
+        isConversionOptionsRecord(request.options);
 }
+
+    function isConversionOptionsRecord(value: unknown): value is ConversionOptionValues {
+        return !!value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length <= 64 && Object.values(value).every((entry) =>
+        typeof entry === 'string' || typeof entry === 'boolean' || typeof entry === 'number' && Number.isFinite(entry) ||
+        Array.isArray(entry) && entry.length <= 256 && entry.every((item) => typeof item === 'string' && item.length > 0 && item.length <= 256));
+    }
 
 export function isProtocolEnvelope(value: unknown): value is { readonly protocolVersion: 1; readonly requestId: string } {
     if (!value || typeof value !== 'object') return false;
@@ -70,25 +81,43 @@ export function isProtocolEnvelope(value: unknown): value is { readonly protocol
     return envelope.protocolVersion === 1 && typeof envelope.requestId === 'string' && envelope.requestId.length > 0 && envelope.requestId.length <= 256;
 }
 
+export interface VsCodeConversionHostOptions {
+    readonly selectDestination?: () => Promise<vscode.Uri | undefined>;
+    readonly workerLimits?: ConversionWorkerLimits;
+}
+
 export class VsCodeConversionHost {
     private readonly committed = new Set<string>();
     private readonly operations = new Map<string, { child?: ChildProcessWithoutNullStreams; controller: AbortController }>();
-    constructor(private readonly extensionUri: vscode.Uri) {}
+    private readonly manifest: Promise<ConversionCommandsManifest>;
+    private readonly workerLimits: ConversionWorkerLimits;
+    constructor(private readonly extensionUri: vscode.Uri, private readonly options: VsCodeConversionHostOptions = {}) {
+        this.manifest = loadConversionCommandsManifest(extensionUri);
+        this.workerLimits = options.workerLimits ?? CONVERSION_WORKER_LIMITS;
+    }
+
+    listCommands(): Promise<ConversionCommandsManifest> { return this.manifest; }
 
     async convert(request: ConversionRequest, onProgress?: (progress: ConversionProgress) => void): Promise<{ protocolVersion: 1; requestId: string; documentVersion: number; succeeded: boolean; outputs: readonly HostFile[]; diagnostics: readonly unknown[]; review?: unknown }> {
-        const selected = await vscode.window.showOpenDialog({ title: 'Choose conversion output directory', canSelectFolders: true, canSelectFiles: false, canSelectMany: false });
-        const destination = selected?.[0];
-        if (!destination) return { protocolVersion: 1, requestId: request.requestId, documentVersion: request.documentVersion, succeeded: false, outputs: [], diagnostics: [{ code: 'conversion.cancelled', message: 'Conversion destination selection was cancelled.', severity: 'info' }] };
         if (this.operations.has(request.requestId)) throw new Error(`Conversion ${request.requestId} is already running.`);
         const controller = new AbortController();
         this.operations.set(request.requestId, { controller });
         try {
-            const result = await this.runWorker(request, onProgress);
-            const outputs = await publishGeneratedFiles(vscode.workspace.fs, destination, result.files, controller.signal);
-            const command = conversionCommandsManifest.commands.find((candidate) => candidate.id === request.commandId);
-            const converter = conversionCommandsManifest.converters.find((candidate) => candidate.id === command?.converterId);
+            const manifest = await this.manifest;
+            const command = manifest.commands.find((candidate) => candidate.id === request.commandId);
+            const converter = manifest.converters.find((candidate) => candidate.id === command?.converterId);
+            const options = normalizeConversionOptions(manifest, request);
             if (!command || !converter) throw new Error(`Conversion metadata for '${request.commandId}' is unavailable.`);
+            if (controller.signal.aborted) return cancelledConversionResult(request);
+            const destination = this.options.selectDestination
+                ? await this.options.selectDestination()
+                : (await vscode.window.showOpenDialog({ title: 'Choose conversion output directory', canSelectFolders: true, canSelectFiles: false, canSelectMany: false }))?.[0];
+            if (!destination || controller.signal.aborted) return cancelledConversionResult(request);
+            const result = await this.runWorker({ ...request, options }, onProgress);
+            validateGeneratedConversionFiles(command.targetFormat, result.files);
+            const outputs = await publishGeneratedFiles(vscode.workspace.fs, destination, result.files, controller.signal);
             for (const output of outputs) this.committed.add(path.resolve(output.uri));
+            const source = Buffer.from(request.sourceText, 'utf8');
             return {
                 protocolVersion: 1,
                 requestId: request.requestId,
@@ -103,8 +132,10 @@ export class VsCodeConversionHost {
                     targetFormat: command.targetFormat,
                     lifecycle: ['idle', 'preparing', 'running', 'publishing', 'completed'],
                     published: true,
-                    lossiness: result.lossiness,
+                    lossiness: effectiveWorkerLossiness(result),
                     warnings: result.warnings,
+                    effectiveOptions: options,
+                    source: { name: request.sourceName, bytes: source.byteLength, sha256: createHash('sha256').update(source).digest('hex') },
                     manifest: buildOutputManifest(result.files),
                 },
             };
@@ -127,36 +158,84 @@ export class VsCodeConversionHost {
     private runWorker(request: ConversionRequest, onProgress?: (progress: ConversionProgress) => void): Promise<WorkerResult> {
         const worker = vscode.Uri.joinPath(this.extensionUri, 'media', 'conversion', 'worker-runtime', 'converter-worker.cjs').fsPath;
         return new Promise((resolve, reject) => {
-            const child = spawn(process.execPath, [worker], { stdio: 'pipe', windowsHide: true, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } });
             const operation = this.operations.get(request.requestId);
-            if (!operation || operation.child) { child.kill(); reject(new Error(`Conversion ${request.requestId} is already running.`)); return; }
+            if (!operation || operation.child) { reject(new Error(`Conversion ${request.requestId} is already running.`)); return; }
+            if (operation.controller.signal.aborted) { reject(abortError()); return; }
+            const operationId = randomUUID();
+            const child = spawn(process.execPath, [`--max-old-space-size=${this.workerLimits.maxOldSpaceMb}`, worker], { stdio: 'pipe', windowsHide: true, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } });
             operation.child = child;
+            const quotas = new ConversionWorkerQuotaTracker(this.workerLimits);
             let carry = '';
+            let stderrCarry = '';
             let result: WorkerResult | undefined;
             let failure: Error | undefined;
+            const fail = (error: unknown): void => {
+                if (!failure) failure = error instanceof Error ? error : new Error(String(error));
+                child.kill('SIGKILL');
+            };
             child.stdout.on('data', (chunk: Buffer) => {
-                const lines = (carry + chunk.toString('utf8')).split(/\r?\n/); carry = lines.pop() ?? '';
-                for (const line of lines) if (line.trim()) {
-                    let event: WorkerEvent;
-                    try { event = parseWorkerEvent(line); }
-                    catch (error) { failure = error instanceof Error ? error : new Error(String(error)); child.kill(); continue; }
-                    if (event.operationId !== request.requestId) continue;
-                    if (event.type === 'progress') onProgress?.({ phase: event.phase, completed: event.completed, total: event.total, message: event.message });
-                    if (event.type === 'result') result = { files: event.files, warnings: event.warnings, lossiness: event.lossiness };
-                    if (event.type === 'error') failure = new Error(`${event.code}: ${event.message}`);
+                try {
+                    quotas.consume('stdout', chunk.byteLength);
+                    const lines = (carry + chunk.toString('utf8')).split(/\r?\n/); carry = lines.pop() ?? '';
+                    quotas.validateLine(carry);
+                    for (const line of lines) if (line.trim()) {
+                        quotas.validateLine(line);
+                        const event = parseWorkerEvent(line, this.workerLimits);
+                        if (event.operationId !== operationId) continue;
+                        if (event.type === 'progress') onProgress?.({ phase: event.phase, completed: event.completed, total: event.total, message: event.message });
+                        if (event.type === 'result') result = { files: event.files, warnings: event.warnings, lossiness: event.lossiness };
+                        if (event.type === 'error') failure = new Error(`${event.code}: ${event.message}`);
+                    }
+                } catch (error) {
+                    fail(error);
                 }
             });
-            child.on('error', reject);
+            child.stderr.on('data', (chunk: Buffer) => {
+                try {
+                    quotas.consume('stderr', chunk.byteLength);
+                    const lines = (stderrCarry + chunk.toString('utf8')).split(/\r?\n/); stderrCarry = lines.pop() ?? '';
+                    quotas.validateLine(stderrCarry);
+                    for (const line of lines) if (line.trim()) quotas.validateLine(line);
+                } catch (error) {
+                    fail(error);
+                }
+            });
+            child.stdin.on('error', fail);
+            const timeout = setTimeout(() => fail(new Error(`Converter exceeded the ${this.workerLimits.maxExecutionMs}ms execution quota.`)), this.workerLimits.maxExecutionMs);
+            timeout.unref();
+            child.on('error', (error) => { clearTimeout(timeout); reject(error); });
             child.on('exit', (code) => {
+                clearTimeout(timeout);
                 operation.child = undefined;
-                if (failure) reject(failure);
+                if (operation.controller.signal.aborted) reject(abortError());
+                else if (failure) reject(failure);
                 else if (code !== 0) reject(new Error(code === null ? 'Conversion cancelled.' : `Converter exited with code ${String(code)}.`));
                 else if (result) resolve(result);
                 else reject(new Error('Converter exited without a result.'));
             });
-            child.stdin.end(JSON.stringify({ type: 'request', requestId: randomUUID(), operationId: request.requestId, commandId: request.commandId, sourceName: request.sourceName, sourceBase64: Buffer.from(request.sourceText).toString('base64'), options: request.options, preview: false }) + '\n');
+            child.stdin.end(JSON.stringify({ type: 'request', requestId: randomUUID(), operationId, commandId: request.commandId, sourceName: request.sourceName, sourceBase64: Buffer.from(request.sourceText).toString('base64'), options: request.options, preview: false }) + '\n');
         });
     }
+}
+
+function cancelledConversionResult(request: ConversionRequest): { protocolVersion: 1; requestId: string; documentVersion: number; succeeded: false; outputs: readonly HostFile[]; diagnostics: readonly unknown[] } {
+    return {
+        protocolVersion: 1,
+        requestId: request.requestId,
+        documentVersion: request.documentVersion,
+        succeeded: false,
+        outputs: [],
+        diagnostics: [{ code: 'conversion.cancelled', message: 'Conversion destination selection was cancelled.', severity: 'info' }]
+    };
+}
+
+export function validateGeneratedConversionFiles(targetFormat: string, files: WorkerResult['files']): void {
+    const decoded: Record<string, Uint8Array> = {};
+    for (const file of files) {
+        if (Object.prototype.hasOwnProperty.call(decoded, file.path)) throw new Error(`Converter produced duplicate output path ${file.path}.`);
+        decoded[file.path] = Buffer.from(file.contentBase64, 'base64');
+    }
+    validateGeneratedConversionFileRecord(targetFormat, decoded);
 }
 
 export async function publishGeneratedFiles(fileSystem: PublicationFileSystem, destination: vscode.Uri, files: WorkerResult['files'], signal: AbortSignal): Promise<HostFile[]> {
@@ -208,12 +287,27 @@ export async function publishGeneratedFiles(fileSystem: PublicationFileSystem, d
         }
         throw error;
     } finally {
-        await fileSystem.delete(staging, { recursive: true, useTrash: false }).then(undefined, () => undefined);
-        await fileSystem.delete(rollback, { recursive: true, useTrash: false }).then(undefined, () => undefined);
+        await removeTemporaryDirectory(fileSystem, staging, destination).then(undefined, () => undefined);
+        await removeTemporaryDirectory(fileSystem, rollback, destination).then(undefined, () => undefined);
     }
 }
 
-export function parseWorkerEvent(line: string): WorkerEvent {
+async function removeTemporaryDirectory(fileSystem: PublicationFileSystem, temporary: vscode.Uri, destination: vscode.Uri): Promise<void> {
+    const canonicalTemporary = validateTemporaryDirectoryForCleanup(temporary, destination);
+    await fileSystem.delete(canonicalTemporary, { recursive: true, useTrash: false });
+}
+
+export function validateTemporaryDirectoryForCleanup(temporary: vscode.Uri, destination: vscode.Uri): vscode.Uri {
+    const canonicalTemporary = path.resolve(temporary.fsPath);
+    const canonicalParent = path.resolve(path.dirname(destination.fsPath));
+    if (path.dirname(canonicalTemporary) !== canonicalParent) throw new Error(`Refusing recursive deletion outside the canonical conversion parent: ${temporary.fsPath}.`);
+    const destinationName = path.basename(destination.fsPath);
+    const temporaryName = path.basename(canonicalTemporary);
+    if (!temporaryName.startsWith(`${destinationName}.staging-`) && !temporaryName.startsWith(`${destinationName}.rollback-`)) throw new Error(`Refusing recursive deletion of an unrecognized conversion directory: ${temporary.fsPath}.`);
+    return vscode.Uri.file(canonicalTemporary);
+}
+
+export function parseWorkerEvent(line: string, limits: ConversionWorkerLimits = CONVERSION_WORKER_LIMITS): WorkerEvent {
     let value: unknown;
     try { value = JSON.parse(line); } catch { throw new Error('Converter emitted invalid JSON.'); }
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Converter event must be an object.');
@@ -225,6 +319,7 @@ export function parseWorkerEvent(line: string): WorkerEvent {
     }
     if (event.type === 'result') {
         if (!Array.isArray(event.files) || !event.files.every(isWorkerFile) || !Array.isArray(event.warnings) || !event.warnings.every(isWorkerWarning) || !isLossiness(event.lossiness)) throw new Error('Converter result event is malformed.');
+        validateWorkerOutputQuotas(event.files, event.warnings, limits);
         return { type: 'result', operationId: event.operationId, files: event.files, warnings: event.warnings, lossiness: event.lossiness };
     }
     if (event.type === 'error') {

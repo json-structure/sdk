@@ -1,10 +1,10 @@
 # JSON Structure Editor Implementation Status
 
-Updated: 2026-08-31 (feature-complete Phase 1 authoring beta)
+Updated: 2026-09-01 (release-hardened Phase 1 authoring beta)
 Branch: `editor-autopilot`
 Worktree: `C:\git\json-structure-sdk-editor`
 
-Blocking findings in this milestone: none. The shared workbench now runs in Electron and a VS Code custom editor. The beta exposes Design, Graph, and Source modes; 86 metadata-driven authoring actions across every implemented command family; inline-root editing; semantic graph zoom, pan, fit, history, selection continuity, and minimap navigation; native File workflows; and host-owned document lifecycle behavior.
+Blocking findings in this milestone: none after independent JSON Structure domain and UX/accessibility reviews. The shared workbench runs in Electron and a VS Code custom editor. The beta exposes Design, Graph, and Source modes; 86 metadata-driven authoring actions across every implemented command family; inline-root editing; semantic graph zoom, pan, fit, history, selection continuity, and minimap navigation; native File workflows; and host-owned document lifecycle behavior. Serialized JSON and curly-brace controls are confined to Source; complex structured operations redirect there instead of exposing raw values in Design.
 
 The Phase 1 coverage inventory contains 536 atomic draft-derived records. Every record has a stable ID, normative source, owning section, requirement, implementation owner, five evidence dimensions, and positive/negative/incomplete/host-parity test facets. The ledger remains conservative: no record is allowed to appear complete while any dimension or applicable test facet is incomplete.
 
@@ -18,7 +18,7 @@ Milestone summary: `altnames`, `altenums`, and `descriptions` now have canonical
 
 Parser traversal is confined to Core-owned schema positions and therefore ignores Alternate Names-shaped content in defaults, descriptions, semantic payloads, relations, and unknown annotations. Inactive keywords receive exact activation diagnostics. Duplicate, stale, incomplete, escaped-key, nested-namespace ownership, anonymous-descendant placement, malformed language-tag, duplicate-variant, duplicate-extension-singleton, wrong-shape, missing-enum, and incomplete/extra enum-map paths are covered by focused parser and command tests.
 
-Milestone summary: Conditional Composition now has typed add/replace/remove commands for `allOf`, `anyOf`, `oneOf`, and `not`, plus atomic `if`/`then`/`else` mutation across every valid branch-key set. Commands enforce capability activation, source uniqueness, stale/incomplete guards, branch shape and dependency rules, schema validity, exact JSON emission, one coordinated minimal edit for conditional replacement, and direct byte-identical inverse edits. The Validation meta-schema activates composition directly; the Extended meta-schema activates it only through exact `JSONStructureConditionalComposition` in `$uses`. The stale `JSONSchemaConditionalComposition` spelling is not accepted.
+Milestone summary: Conditional Composition now has typed add/replace/remove commands for `allOf`, `anyOf`, `oneOf`, and `not`, plus atomic `if`/`then`/`else` mutation across every valid branch-key set. Commands enforce capability activation, source uniqueness, stale/incomplete guards, branch shape and dependency rules, schema validity, exact JSON emission, independent minimal member edits that preserve unrelated source, and direct byte-identical inverse edits. The Validation meta-schema activates composition directly; the Extended meta-schema activates it only through exact `JSONStructureConditionalComposition` in `$uses`. The stale `JSONSchemaConditionalComposition` spelling is not accepted.
 
 Parser projections expose sparse authored/effective inspection and exact JSON previews. Recursive validation recognizes untyped constraint objects at structurally owned root, `definitions` namespace, and Core schema-child positions while excluding defaults, examples, semantic annotations, relations, and unknown payloads. Untyped composition targets are inspectable and editable but remain non-reusable; Core type requirements for reusable and property declarations are unchanged. Inactive composition subtrees remain opaque to schema, semantic, structural, and reference traversal, with exact activation diagnostics at authored composition keywords.
 
@@ -31,6 +31,9 @@ The feature-complete Phase 1 authoring beta is implemented for Electron and VS C
 Implemented:
 
 - Host-neutral browser workbench with Design, Graph, and Source modes.
+- Authored-only property details with selective constraint/annotation Add controls, explicit Remove controls, readable catalog summaries, and Source redirects for complex structures.
+- Workflow-page representation tabs retain a sequentially reachable Design, Graph, or Source tab; Source-only dialogs focus their primary action and hand focus into Monaco after cold loading.
+- Instance validation loads a sample file without displaying its serialized contents and preserves keyboard focus across evaluation rerenders.
 - Contextual inline editors exposing root, definition, property, reference, import, relation, validation, composition, units, alternate-name, binary, and semantic-annotation commands without blocking the workbench.
 - Stateful graph navigation with semantic zoom, pan, fit, Back/Forward history, selection continuity, hit precedence, and minimap navigation.
 - Browser-safe UI package entry and a VS Code `CustomTextEditorProvider` using the same shared workbench.
@@ -101,21 +104,21 @@ Implemented:
 
 ## Validation
 
-Last validation on 2026-08-31 (feature-complete Phase 1 authoring beta):
+Last validation on 2026-09-01 (release-hardened Phase 1 authoring beta):
 
-- `npm test`: passed (20 files, 229 tests), including coverage-gate regression tests and focused UI, graph, lifecycle, import-boundary, and Electron tests.
+- `npm test`: passed (40 files, 534 tests), including coverage-gate regressions and focused capability, nested-schema, import-boundary, conversion, UI, accessibility, lifecycle, and Electron tests.
 - `npm run typecheck`: passed.
-- `npm run build`: passed (ESM, CJS, DTS).
 - `npm run beta:build`: passed (shared package, Vite renderer/webview, and Electron main/preload bundles).
-- VS Code extension host suite passed (200 tests, exit code 0), including custom-editor protocol and resource-boundary tests.
-- Browser acceptance passed for 86 authoring actions, type filtering, synchronized Source diagnostics, mobile Types and Inspector drawers, graph nodes/edges, semantic history, pointer-anchored zoom, minimap navigation, Fit, modal focus, theme synchronization, and 200% reflow without horizontal page overflow.
-- `npm run beta:package`: passed; generated the 0.2.0 Windows NSIS installer and portable executable.
-- VSIX packaging passed without mutating the tracked extension version; generated `artifacts/json-structure-vscode-beta.vsix` (1,519,771 bytes).
-- Packaged Windows executable launch smoke: remained responsive for 10 seconds.
+- Complete VS Code compile and extension-host suite passed with exit code 0, including custom-editor protocol, library publishing, and resource-boundary tests.
+- Independent UX/accessibility review and live Chromium interaction checks passed for property Add controls, workflow-tab reachability, cold Source focus handoff, instance-file focus restoration, and the no-visible-serialized-JSON rule.
+- Independent JSON Structure domain review passed after focused confirmation of Core constraints, active extension traversal, semantic placements, `$offers`, import opacity, native conversion mappings, and union declarations.
+- `npm run beta:package:verified`: passed; generated the 0.2.0 Windows NSIS installer (112,553,670 bytes), portable executable (112,386,480 bytes), executable inventory, 84-file artifact scan, checksums, CycloneDX SBOM, and in-toto provenance.
+- VSIX packaging passed without mutating the tracked extension version; generated `vscode/json-structure-0.1.20.vsix` (1,782,725 bytes).
 - `npm run coverage:generate`: passed; regenerated the ledger, gaps, and Markdown from the checked-in inventory.
 - `npm run coverage:check`: passed with 536 exact inventory records.
 - `git diff --check`: passed.
-- Import policy validation passed: recursive loads are bounded; Electron permits contained `file:` resources, trusted VS Code workspaces permit contained `file:` or `vscode-remote:` host-filesystem resources, and neither host fetches HTTP(S) imports.
+- Runtime parity passed: the editor and VS Code copies of the converter worker and integrity descriptor are byte-identical.
+- Import policy validation passed: recursive loads are bounded and driven by active parser projections; opaque annotation/default payloads cannot trigger reads or resolved-schema imports.
 
 ## Specification coverage
 

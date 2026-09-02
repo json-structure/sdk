@@ -3,11 +3,11 @@ import { createHash } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { realpath } from 'node:fs/promises';
-import { atomicWrite, readFile, readResource } from './file-service';
+import { atomicWrite, readBoundedFile, readFile, readResource } from './file-service';
 import { isConversionRequest, isLibraryOperationRequest, isProtocolEnvelope, PROTOCOL_VERSION, type OpenGeneratedOutputRequest } from '../contracts';
 import { NodeConversionHost } from '../conversion/node-host';
 import { dispatchLibraryOperation, type LibraryHostRuntime } from '../libraries/host-runtime';
-import { createElectronLibraryRuntime } from './library-runtime';
+import { createElectronLibraryRuntime, type ElectronLibraryApprovalRequest } from './library-runtime';
 import { deniedWindowOpen, isAllowedRendererNavigation, isTrustedIpcSender, selectDevelopmentUrl, selectInitialDocumentArgument } from './security';
 
 const currentDirectory = __dirname;
@@ -18,10 +18,12 @@ let pendingPath: string | undefined;
 let openedDocumentRoot: string | undefined;
 let approvedDocumentPath: string | undefined;
 const maxImportedResourceBytes = 4 * 1024 * 1024;
+const maxConversionSourceBytes = 4 * 1024 * 1024;
 const runtimeRoot = app.isPackaged ? join(process.resourcesPath, 'conversion') : join(app.getAppPath(), 'src', 'conversion');
 const coreLibraryPath = app.isPackaged ? join(process.resourcesPath, 'libraries', 'financial-types.struct.json') : join(app.getAppPath(), '..', 'vscode', 'test-fixtures', 'financial-types', 'schema.struct.json');
-const coreLibraryEntry = { id: 'financial-types', name: 'Financial Types', description: 'A bundled JSON Structure type library sample.', versions: [{ version: '1.0.0', documentUri: coreLibraryPath, isDefault: true }] } as const;
+const coreLibraryEntry = { id: 'financial-types', name: 'Financial Types', description: 'A bundled JSON Structure type library sample.', versions: [{ version: '1.0.0', documentUri: pathToFileURL(coreLibraryPath).toString(), isDefault: true }] } as const;
 let libraryRuntime: Promise<LibraryHostRuntime> | undefined;
+const approvedLibraryRequests = new Set<string>();
 const conversionHost = new NodeConversionHost({
   runtimeRoot,
   destination: async () => {
@@ -99,13 +101,21 @@ function registerIpcHandlers(): void {
     await shell.openExternal(url);
   });
   handleTrusted('resource:read', async (_event, uri: string) => {
-    if (!openedDocumentRoot) throw new Error('Open a document before loading imported resources.');
-    const resource = await readResource(uri, openedDocumentRoot, maxImportedResourceBytes);
+    const resource = await readResource(uri, openedDocumentRoot, maxImportedResourceBytes, async (requestedUri) => (await getLibraryRuntime()).readResource(requestedUri));
     return { ...resource, contentHash: createHash('sha256').update(resource.content).digest('hex') };
   });
   handleTrusted('conversion:list', (_event, request: unknown) => {
     if (!isProtocolEnvelope(request)) throw new Error('Invalid conversion command request.');
     return conversionHost.listCommands();
+  });
+  handleTrusted('conversion:source', async (_event, request: unknown) => {
+    if (!isProtocolEnvelope(request)) throw new Error('Invalid conversion source request.');
+    const sourceRequest = request as unknown as Record<string, unknown>;
+    if (sourceRequest.kind !== 'select-conversion-source' || !Array.isArray(sourceRequest.formats) || !sourceRequest.formats.every((format) => typeof format === 'string' && format.length > 0 && format.length <= 64)) throw new Error('Invalid conversion source request.');
+    const result = await dialog.showOpenDialog({ title: 'Choose conversion source', properties: ['openFile'], filters: [{ name: 'Schema and data files', extensions: ['json', 'avsc', 'yaml', 'yml', 'proto', 'xml', 'xsd'] }] });
+    if (result.canceled || !result.filePaths[0]) return undefined;
+    const source = await readBoundedFile(result.filePaths[0], maxConversionSourceBytes);
+    return { uri: pathToFileURL(source.path).toString(), name: source.path.split(/[\\/]/).pop()!, text: source.text };
   });
   handleTrusted('conversion:run', async (_event, request: unknown) => {
     if (!isConversionRequest(request)) throw new Error('Invalid conversion request.');
@@ -153,9 +163,37 @@ function getLibraryRuntime(): Promise<LibraryHostRuntime> {
     bundledRoot: dirname(coreLibraryPath),
     documentRoot: () => openedDocumentRoot,
     safeStorage,
-    bundledProvider: { id: 'financial-types', kind: 'bundled', location: dirname(coreLibraryPath), entries: [coreLibraryEntry] },
+    bundledProvider: { id: 'financial-types', kind: 'bundled', location: pathToFileURL(dirname(coreLibraryPath)).toString(), entries: [coreLibraryEntry] },
+    approve: approveLibraryRequest,
   });
   return libraryRuntime;
+}
+
+async function approveLibraryRequest(request: ElectronLibraryApprovalRequest): Promise<boolean> {
+  if (request.kind === 'operation') return true;
+  const key = JSON.stringify(request);
+  if (approvedLibraryRequests.has(key)) return true;
+  if (!mainWindow) return false;
+  const detail = request.kind === 'provider'
+    ? `Provider: ${request.providerId}`
+    : request.kind === 'origin'
+      ? `Origin: ${request.origin}`
+      : request.kind === 'uri'
+        ? `Provider: ${request.providerId}\nResource: ${request.uri}`
+        : `Credential: ${request.request.credentialId}\nFrom: ${request.request.source.origin}\nTo: ${request.request.target.origin}`;
+  const result = await dialog.showMessageBox(mainWindow, {
+    type: 'warning',
+    title: 'Approve library access',
+    message: request.kind === 'credential-binding' ? 'Allow this provider to use the stored credential?' : 'Trust this library provider or resource for this session?',
+    detail,
+    buttons: ['Cancel', 'Allow'],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+  });
+  if (result.response !== 1) return false;
+  approvedLibraryRequests.add(key);
+  return true;
 }
 
 async function canonicalPath(path: string): Promise<string> {

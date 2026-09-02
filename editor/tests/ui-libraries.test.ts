@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bindPreview, clearCredentialSecret, librariesView, libraryConflictMessage, libraryPublishPreview, loadLibraryCatalog, refactoringPlanCommand, resolveLibrarySelection } from '../src/ui/index.js';
+import { bindPreview, clearCredentialSecret, documentCanPublish, librariesView, libraryConflictMessage, libraryPublishPreview, loadLibraryCatalog, refactoringPlanCommand, resolveLibrarySelection } from '../src/ui/index.js';
 import { planCopyDeclarations, planMaterializeDeclarations, planMoveDefinition } from '../src/phase4/refactoring.js';
 import { DocumentSession } from '../src/session.js';
 import { renderLibraryBrowser } from '../src/ui/library-browser.js';
@@ -42,6 +42,25 @@ describe('library workbench view', () => {
     ]);
   });
 
+  it('keeps same-id catalog entries distinct across providers', () => {
+    const html = renderLibraryBrowser({ requestBacked: true, fallbackAvailable: false }, undefined, 'pinned', undefined, [], 'copy', undefined, '', {
+      providers: [
+        { id: 'one', kind: 'xregistry', location: 'https://one.test', trusted: true, credentialConfigured: false, publishSupported: false },
+        { id: 'two', kind: 'xregistry', location: 'https://two.test', trusted: true, credentialConfigured: false, publishSupported: false },
+      ],
+      catalog: [
+        { providerId: 'one', id: 'common', name: 'Common one', versions: [{ version: '1', documentUri: 'https://one.test/common/1', isDefault: true }] },
+        { providerId: 'two', id: 'common', name: 'Common two', versions: [{ version: '1', documentUri: 'https://two.test/common/1', isDefault: true }] },
+      ],
+      offline: false, documentValid: true, providerFilter: 'all',
+    });
+
+    expect(html).toContain('data-library-catalog-count>2 of 2 entries');
+    expect(html.match(/data-library-entry="common"/g)).toHaveLength(2);
+    expect(html).toContain('data-library-provider="one"');
+    expect(html).toContain('data-library-provider="two"');
+  });
+
   it('renders version policy, trusted provenance, declarations, and materialization preview', () => {
     const entry = { id: 'common', name: 'Common', versions: [{ version: '1.0.0', documentUri: 'memory:common', integrity: 'sha256:value', isDefault: true }] };
     const document = { entryId: 'common', version: '1.0.0', uri: 'memory:common', value: { definitions: { A: { type: 'string' }, B: { type: 'object', properties: { a: { type: { $ref: '#/definitions/A' } } } } } } };
@@ -76,6 +95,7 @@ describe('library workbench view', () => {
       { id: 'team', kind: 'xregistry' as const, location: 'https://registry.test', trusted: true, credentialConfigured: true, publishSupported: false },
     ];
     const resolution = {
+      documentUri: 'https://registry.test/common/2',
       document: { definitions: { A: { type: 'string' } } },
       resolution: { source: 'provider' as const, label: 'online-verified' as const, state: { selector: 'pinned' as const, connectivity: 'online' as const, verification: 'verified' as const } },
       trust: { trusted: true, reasons: [] },
@@ -106,12 +126,36 @@ describe('library workbench view', () => {
     const draft = { providerId: 'local', entryId: 'common', version: '2', sourceUri: 'memory://current', promoteDefault: true, expectedEpoch: '7' };
     const preview = libraryPublishPreview(draft, providers, catalog, true);
     expect(preview.summary).toBe('local:common@2 from memory://current; promoteDefault=true; expectedEpoch=7');
-    expect(preview.collisionRisks).toEqual(['common@2 already exists.', 'Default version will move to 2.']);
+    expect(preview.collisionRisks).toEqual(['Default version will move to 2.']);
     expect(preview.valid).toBe(true);
+    const collision = libraryPublishPreview(draft, providers, [...catalog, { ...catalog[0]!, providerId: 'local' }], true);
+    expect(collision.collisionRisks).toContain('local:common@2 already exists and cannot be overwritten.');
+    expect(collision.valid).toBe(false);
     expect(libraryPublishPreview({ ...draft, providerId: 'core' }, providers, catalog, true).valid).toBe(false);
     expect(libraryPublishPreview({ ...draft, providerId: 'team' }, providers, catalog, true).valid).toBe(false);
     expect(libraryPublishPreview({ ...draft, sourceUri: 'not a uri' }, providers, catalog, true).valid).toBe(false);
     expect(libraryPublishPreview(draft, providers, catalog, false).valid).toBe(false);
+  });
+
+  it('requires a parsed schema model with zero error diagnostics before publishing', () => {
+    const snapshot = new DocumentSession('memory://publishable', '{"$schema":"https://json-structure.org/meta/core/v0/#","$id":"memory://publishable","name":"Publishable","type":"string"}').snapshot();
+    expect(documentCanPublish(snapshot)).toBe(true);
+    expect(documentCanPublish({ ...snapshot, diagnostics: [{ code: 'schema.error', message: 'Invalid schema.', severity: 'error' }] })).toBe(false);
+    expect(documentCanPublish({ ...snapshot, model: undefined })).toBe(false);
+  });
+
+  it('disables publish preview for invalid documents and publish for collision previews', () => {
+    const host = { libraryRequest: async <T>(): Promise<T> => undefined as T };
+    const providers = [{ id: 'local', kind: 'local' as const, location: 'memory://published/', trusted: true, credentialConfigured: false, publishSupported: true }];
+    const draft = { providerId: 'local', entryId: 'common', version: '1', sourceUri: 'memory://current', promoteDefault: false };
+    const invalidDocument = librariesView(host, undefined, 'pinned', undefined, [], 'copy', undefined, '', { providers, catalog: [], offline: false, documentValid: false, publishDraft: draft });
+    const collision = librariesView(host, undefined, 'pinned', undefined, [], 'copy', undefined, '', {
+      providers, catalog: [], offline: false, documentValid: true, publishDraft: draft,
+      publishPreview: libraryPublishPreview(draft, providers, [{ providerId: 'local', id: 'common', name: 'Common', versions: [{ version: '1', documentUri: 'memory://published/common/1', isDefault: true }] }], true),
+    });
+
+    expect(invalidDocument).toContain('data-library-publish-preview disabled');
+    expect(collision).toContain('data-library-publish disabled');
   });
 
   it('keeps epoch conflicts actionable and clears write-only credentials', () => {
@@ -153,5 +197,42 @@ describe('library workbench view', () => {
     const result = refactoringPlanCommand(plan, bindPreview(session.snapshot())).execute({ session, documentVersion: 4 });
     expect(result.edits).toHaveLength(2);
     expect(result.edits.some((edit) => edit.newText.includes('#/definitions/Target/A'))).toBe(true);
+  });
+
+  it('does not insert a leading comma when moving the only member within a container', () => {
+    const source = '{"definitions":{"OldName":{"type":"string"}}}';
+    const session = new DocumentSession('memory:move-only-member', source, 5);
+    const plan = planMoveDefinition(session.value as Record<string, unknown>, {
+      sourcePointer: '/definitions/OldName',
+      targetNamespacePointer: '/definitions',
+      targetName: 'Name',
+    });
+    const result = refactoringPlanCommand(plan, bindPreview(session.snapshot())).execute({ session, documentVersion: 5 });
+    const updated = [...result.edits]
+      .sort((left, right) => (right.range.startOffset ?? 0) - (left.range.startOffset ?? 0))
+      .reduce((text, edit) => text.slice(0, edit.range.startOffset) + edit.newText + text.slice(edit.range.endOffset), source);
+
+    expect(updated).not.toContain('{,');
+    expect(JSON.parse(updated)).toEqual({ definitions: { Name: { type: 'string' } } });
+  });
+
+  it('does not insert a leading comma after materializing the only container member', () => {
+    const source = '{"definitions":{"$importdefs":"memory:common"}}';
+    const session = new DocumentSession('memory:target', source, 5);
+    const plan = planMaterializeDeclarations({
+      sourceDocument: { definitions: { Name: { type: 'string' } } },
+      selectedPointers: ['/definitions/Name'],
+      targetDocument: session.value as Record<string, unknown>,
+      targetNamespacePointer: '/definitions',
+      importPointer: '/definitions/$importdefs',
+      importSource: 'memory:common',
+    });
+    const result = refactoringPlanCommand(plan, bindPreview(session.snapshot())).execute({ session, documentVersion: 5 });
+    const updated = [...result.edits]
+      .sort((left, right) => (right.range.startOffset ?? 0) - (left.range.startOffset ?? 0))
+      .reduce((text, edit) => text.slice(0, edit.range.startOffset) + edit.newText + text.slice(edit.range.endOffset), source);
+
+    expect(updated).not.toContain('{,');
+    expect(JSON.parse(updated)).toEqual({ definitions: { Name: { type: 'string' } } });
   });
 });

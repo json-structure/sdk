@@ -46,6 +46,16 @@ const text = `{
   }
 }`;
 const semanticSchema = 'https://json-structure.org/meta/semantic-annotations/v0/#';
+const extendedSchema = 'https://json-structure.org/meta/extended/v0/#';
+const relationsSchema = 'https://json-structure.org/meta/relations/v0/#';
+
+function withProfile(source: string, schema: string, uses: readonly string[] = []): string {
+  const header = JSON.stringify({ $schema: schema, ...(uses.length > 0 ? { $uses: uses } : {}) });
+  return source === '{}' ? header : `${header.slice(0, -1)},${source.slice(1)}`;
+}
+
+const withRelations = (source: string): string => withProfile(source, relationsSchema, ['JSONStructureRelations']);
+const withImports = (source: string): string => withProfile(source, extendedSchema);
 
 describe('Phase 1 vertical slice', () => {
   it('normalizes pointers and exact source ranges', () => {
@@ -59,7 +69,7 @@ describe('Phase 1 vertical slice', () => {
   });
   it('projects typed definitions, imports, relation semantics, units, validation, composition, and semantic annotations', () => {
     const fixture = `{
-  "$schema": "https://json-structure.org/meta/extended/v0/#",
+  "$schema": "https://json-structure.org/meta/semantic-annotations/v0/#",
   "$uses": ["JSONStructureValidation", "JSONStructureConditionalComposition", "JSONStructureUnits", "JSONStructureSemanticAnnotations"],
   "$import": "https://example.org/root.struct.json",
   "$importdefs": "https://example.org/common.struct.json",
@@ -140,19 +150,39 @@ describe('Phase 1 vertical slice', () => {
   }
 }`;
     const result = parseDocument('memory://typed', fixture);
+    const relationResult = parseDocument('memory://typed-relations', withRelations(JSON.stringify({
+      definitions: {
+        Meta: { type: 'object', properties: { id: { type: 'string' } }, identity: ['id'] },
+        Thing: {
+          type: 'object',
+          properties: { id: { type: 'string' } },
+          identity: ['id'],
+          relations: {
+            owner: {
+              targettype: { $ref: '#/definitions/Meta' },
+              cardinality: 'single',
+              scope: ['#/definitions/Things'],
+              qualifiertype: { $ref: '#/definitions/Meta' }
+            }
+          }
+        },
+        Things: { type: 'array', items: { type: { $ref: '#/definitions/Meta' } } }
+      }
+    })));
     expect(result.recovery).toBe('valid');
     const projections = result.model?.projections;
     const semanticPlacements = projections?.semanticPlacements ?? [];
     expect(projections?.definitions.length).toBeGreaterThanOrEqual(3);
     const thing = projections?.definitions.find((item) => item.pointer === '/definitions/Thing');
+    const relationThing = relationResult.model?.projections.definitions.find((item) => item.pointer === '/definitions/Thing');
     expect(thing?.coreForm).toBe('typed');
     expect(thing?.extends).toEqual(['#/definitions/ObjectBase']);
-    expect(thing?.relations[0]?.name).toBe('owner');
+    expect(relationThing?.relations[0]?.name).toBe('owner');
 
-    expect(thing?.relations[0]?.targetTypeRef).toBe('#/definitions/Meta');
-    expect(thing?.relations[0]?.cardinality).toBe('single');
-    expect(thing?.relations[0]?.scope).toEqual(['#/items']);
-    expect(thing?.relations[0]?.qualifierTypeRef).toBe('#/definitions/Meta');
+    expect(relationThing?.relations[0]?.targetTypeRef).toBe('#/definitions/Meta');
+    expect(relationThing?.relations[0]?.cardinality).toBe('single');
+    expect(relationThing?.relations[0]?.scope).toEqual(['#/definitions/Things']);
+    expect(relationThing?.relations[0]?.qualifierTypeRef).toBe('#/definitions/Meta');
     expect(thing?.units).toEqual({ symbol: 'kg', symbols: { display: 'kg', 'lang:en': 'kilogram' }, currency: 'EUR' });
     expect(result.diagnostics.some((item) => item.location?.pointer === '/definitions/Thing/unit')).toBe(true);
     expect(result.diagnostics.some((item) => item.location?.pointer === '/definitions/Thing/ucumUnit')).toBe(true);
@@ -162,7 +192,7 @@ describe('Phase 1 vertical slice', () => {
     expect(thing?.validation?.exclusiveMaximum).toBeUndefined();
     expect(thing?.validation?.multipleOf).toBeUndefined();
     expect(thing?.validation?.minLength).toBeUndefined();
-    expect(thing?.validation?.maxLength).toBeUndefined();
+    expect(thing?.validation).not.toHaveProperty('maxLength');
     expect(thing?.validation?.pattern).toBeUndefined();
     expect(thing?.validation?.format).toBeUndefined();
     expect(thing?.validation?.minItems).toBeUndefined();
@@ -212,7 +242,7 @@ describe('Phase 1 vertical slice', () => {
     expect(importEntries.every((entry) => !('targetPointer' in (entry as unknown as Record<string, unknown>)))).toBe(true);
     const refs = projections?.references ?? [];
     expect(refs.some((entry) => entry.pointer === '/definitions/Nested/definitions/Inner/type/$ref' && entry.target === '#/definitions/Meta')).toBe(true);
-    expect(refs.some((entry) => entry.pointer === '/definitions/Thing/relations/owner/targettype/$ref' && entry.target === '#/definitions/Meta')).toBe(true);
+    expect(relationResult.model?.projections.references.some((entry) => entry.pointer === '/definitions/Thing/relations/owner/targettype/$ref' && entry.target === '#/definitions/Meta')).toBe(true);
     expect(semanticPlacements.some((entry) => entry.pointer === '/definitions/Thing')).toBe(true);
   });
   it('emits per-keyword diagnostics for malformed companion values and excludes invalid projections', () => {
@@ -220,12 +250,13 @@ describe('Phase 1 vertical slice', () => {
       readonly label: string;
       readonly body: string;
       readonly pointer: string;
+      readonly code?: string;
       readonly scope?: 'root' | 'definition';
       readonly assertDefinition?: (definition: NonNullable<ReturnType<typeof parseDocument>['model']>['projections']['definitions'][number]) => void;
       readonly assertImports?: (imports: NonNullable<ReturnType<typeof parseDocument>['model']>['projections']['imports']) => void;
     }> = [
       { label: 'validation.minimum', body: '"minimum":"zero"', pointer: '/definitions/Thing/minimum', assertDefinition: (d) => expect(d.validation?.minimum).toBeUndefined() },
-      { label: 'validation.maxLength', body: '"maxLength":-1', pointer: '/definitions/Thing/maxLength', assertDefinition: (d) => expect(d.validation?.maxLength).toBeUndefined() },
+      { label: 'core.maxLength', body: '"maxLength":-1', pointer: '/definitions/Thing/maxLength', code: 'core.declaration-invalid', assertDefinition: (d) => expect(d.validation && 'maxLength' in d.validation).toBeFalsy() },
       { label: 'validation.dependentRequired', body: '"dependentRequired":{"id":[1]}', pointer: '/definitions/Thing/dependentRequired', assertDefinition: (d) => expect(d.validation?.dependentRequired).toBeUndefined() },
       { label: 'validation.patternProperties', body: '"patternProperties":{"^x":1}', pointer: '/definitions/Thing/patternProperties', assertDefinition: (d) => expect(d.validation?.patternProperties).toBeUndefined() },
       { label: 'composition.allOf', body: '"allOf":[1]', pointer: '/definitions/Thing/allOf', assertDefinition: (d) => expect(d.composition?.allOf).toBeUndefined() },
@@ -263,18 +294,26 @@ describe('Phase 1 vertical slice', () => {
     for (const testCase of cases) {
       const schema = testCase.label.startsWith('semantic.')
         ? semanticSchema
+        : testCase.label.startsWith('relations.')
+        ? relationsSchema
+        : testCase.label.startsWith('imports.')
+        ? extendedSchema
         : testCase.label.startsWith('validation.')
         ? 'https://json-structure.org/meta/validation/v0/#'
         : 'https://json-structure.org/schema/';
-      const uses = testCase.label.startsWith('units.') ? '"$uses":["JSONStructureUnits"],' : '';
+      const uses = testCase.label.startsWith('semantic.') ? '"$uses":["JSONStructureSemanticAnnotations"],'
+        : testCase.label.startsWith('relations.') ? '"$uses":["JSONStructureRelations"],'
+        : testCase.label.startsWith('units.') ? '"$uses":["JSONStructureUnits"],'
+        : '';
       const effectiveSchema = testCase.label.startsWith('units.') ? 'https://json-structure.org/meta/extended/v0/#' : schema;
       const fixture = testCase.scope === 'root'
         ? `{"$schema":"${effectiveSchema}",${uses}${testCase.body},"definitions":{"Thing":{"type":"object"}}}`
         : `{"$schema":"${effectiveSchema}",${uses}"definitions":{"Thing":{"type":"object",${testCase.body}}}}`;
       const result = parseDocument(`memory://malformed-${testCase.label}`, fixture);
       expect(result.recovery).toBe('valid');
-      const diagnostic = result.diagnostics.find((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === testCase.pointer);
-      expect(diagnostic, `missing json.keyword-invalid for ${testCase.label} at ${testCase.pointer}`).toBeDefined();
+      const diagnosticCode = testCase.code ?? 'json.keyword-invalid';
+      const diagnostic = result.diagnostics.find((item) => item.code === diagnosticCode && item.location?.pointer === testCase.pointer);
+      expect(diagnostic, `missing ${diagnosticCode} for ${testCase.label} at ${testCase.pointer}`).toBeDefined();
       const offendingNode = result.model?.nodes.find((node) => node.pointer === testCase.pointer);
       expect(diagnostic?.location?.range).toEqual(offendingNode?.range);
       const diagnosticRange = diagnostic?.location?.range;
@@ -292,29 +331,29 @@ describe('Phase 1 vertical slice', () => {
     }
   });
   it('accepts normative relation scope fragments only', () => {
-    const valid = parseDocument('memory://scope-valid', '{"definitions":{"Thing":{"type":"object","relations":{"owner":{"targettype":{"$ref":"#/definitions/Thing"},"cardinality":"single","scope":["#","#/definitions/Thing"]}}}}}');
+    const valid = parseDocument('memory://scope-valid', withRelations('{"definitions":{"Thing":{"type":"object","relations":{"owner":{"targettype":{"$ref":"#/definitions/Thing"},"cardinality":"single","scope":["#","#/definitions/Thing"]}}}}}'));
     const relation = valid.model?.projections.definitions[0]?.relations[0];
     expect(relation?.scope).toEqual(['#', '#/definitions/Thing']);
 
-    const invalid = parseDocument('memory://scope-invalid', '{"definitions":{"Thing":{"type":"object","relations":{"owner":{"targettype":{"$ref":"#/definitions/Thing"},"cardinality":"single","scope":"/definitions/Thing"}}}}}');
+    const invalid = parseDocument('memory://scope-invalid', withRelations('{"definitions":{"Thing":{"type":"object","relations":{"owner":{"targettype":{"$ref":"#/definitions/Thing"},"cardinality":"single","scope":"/definitions/Thing"}}}}}'));
     const diagnostic = invalid.diagnostics.find((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/Thing/relations/owner/scope');
     expect(diagnostic).toBeDefined();
   });
   it('accepts singular absolute URI strings for $import and $importdefs only', () => {
-    const valid = parseDocument('memory://imports-valid', '{"$import":"https://example.org/root.json","$importdefs":"https://example.org/defs.json","definitions":{"Thing":{"type":"object"}}}');
+    const valid = parseDocument('memory://imports-valid', withImports('{"$import":"https://example.org/root.json","$importdefs":"https://example.org/defs.json","definitions":{"Thing":{"type":"object"}}}'));
     expect(valid.model?.projections.imports).toHaveLength(2);
 
-    const invalid = parseDocument('memory://imports-invalid', '{"$import":"/relative.json","$importdefs":["https://example.org/defs.json"],"definitions":{"Thing":{"type":"object"}}}');
+    const invalid = parseDocument('memory://imports-invalid', withImports('{"$import":"/relative.json","$importdefs":["https://example.org/defs.json"],"definitions":{"Thing":{"type":"object"}}}'));
     expect(invalid.diagnostics.some((item) => item.location?.pointer === '/$import' && item.code === 'json.keyword-invalid')).toBe(true);
     expect(invalid.diagnostics.some((item) => item.location?.pointer === '/$importdefs' && item.code === 'json.keyword-invalid')).toBe(true);
   });
   it('diagnoses forbidden import placement without projecting it as an effective import', () => {
-    const result = parseDocument('memory://import-placement', '{"definitions":{"Thing":{"type":"object","$import":"https://example.org/invalid.json"}}}');
+    const result = parseDocument('memory://import-placement', withImports('{"definitions":{"Thing":{"type":"object","$import":"https://example.org/invalid.json"}}}'));
     expect(result.diagnostics.some((item) => item.location?.pointer === '/definitions/Thing/$import' && item.code === 'json.keyword-invalid')).toBe(true);
     expect(result.model?.projections.imports).toHaveLength(0);
   });
   it('projects direct definitions and imports nested under namespace objects', () => {
-    const result = parseDocument('memory://nested-namespace', '{"definitions":{"$import":"https://example.org/root-definitions.json","Domain":{"$import":"https://example.org/domain.json","Entity":{"type":"object"},"Nested":{"$importdefs":"https://example.org/nested.json","Value":{"type":"string"}}}}}');
+    const result = parseDocument('memory://nested-namespace', withImports('{"definitions":{"$import":"https://example.org/root-definitions.json","Domain":{"$import":"https://example.org/domain.json","Entity":{"type":"object"},"Nested":{"$importdefs":"https://example.org/nested.json","Value":{"type":"string"}}}}}'));
     const definitions = result.model?.projections.definitions ?? [];
     expect(definitions.some((item) => item.pointer === '/definitions/Domain/Entity' && item.namespacePointer === '/definitions/Domain')).toBe(true);
     expect(definitions.some((item) => item.pointer === '/definitions/Domain/Nested/Value' && item.namespacePointer === '/definitions/Domain/Nested')).toBe(true);
@@ -325,6 +364,8 @@ describe('Phase 1 vertical slice', () => {
   });
   it('diagnoses relation/identity local invariants with exact source pointers', () => {
     const source = JSON.stringify({
+      $schema: relationsSchema,
+      $uses: ['JSONStructureRelations'],
       definitions: {
         Thing: {
           type: 'string',
@@ -358,6 +399,8 @@ describe('Phase 1 vertical slice', () => {
   });
   it('projects ordered object, composite, tuple, root, and nested identities', () => {
     const source = JSON.stringify({
+      $schema: relationsSchema,
+      $uses: ['JSONStructureRelations'],
       type: 'object',
       properties: {
         tenant: { type: 'string' },
@@ -398,7 +441,7 @@ describe('Phase 1 vertical slice', () => {
       ['duplicate-source-identity', '{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"],"identity":["id"]}', '/identity']
     ] as const;
     for (const [label, source, pointer] of cases) {
-      const result = parseDocument(`memory://identity-${label}`, source);
+      const result = parseDocument(`memory://identity-${label}`, withRelations(source));
       expect(result.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === pointer), label).toBe(true);
       expect(result.model?.projections.definitions.find((item) => item.pointer === '')?.identity, label).toBeUndefined();
     }
@@ -409,6 +452,8 @@ describe('Phase 1 vertical slice', () => {
   });
   it('validates identity only in schema-owned locations, not literal instance payloads', () => {
     const source = JSON.stringify({
+      $schema: relationsSchema,
+      $uses: ['JSONStructureRelations'],
       type: 'object',
       properties: {
         valid: { type: 'object', properties: { id: { type: 'string' } }, identity: ['id'] },
@@ -427,7 +472,7 @@ describe('Phase 1 vertical slice', () => {
     expect(result.model?.projections.definitions.find((item) => item.pointer === '/properties/valid')?.identity).toEqual(['id']);
   });
   it('supports identity set/edit/remove with byte-identical undo and rejects invalid identity paths', async () => {
-    const original = '{"definitions":{"Person":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"}}}},"unknown":1}';
+    const original = withRelations('{"definitions":{"Person":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"}}}},"unknown":1}');
     const host = new InMemoryEditorHost('memory://identity', original);
     const session = new DocumentSession('memory://identity', original);
     const set = new SetIdentityCommand('/definitions/Person', ['id']);
@@ -454,13 +499,15 @@ describe('Phase 1 vertical slice', () => {
     expect(JSON.parse((await host.readDocument()).text).definitions.Person.identity).toBeUndefined();
     expect((await host.undo()).text).toContain('"identity"');
 
-    const invalid = new DocumentSession('memory://identity-invalid', '{"definitions":{"Person":{"type":"object","properties":{"id":{"type":"string"}}}}}');
+    const invalid = new DocumentSession('memory://identity-invalid', withRelations('{"definitions":{"Person":{"type":"object","properties":{"id":{"type":"string"}}}}}'));
     expect(new SetIdentityCommand('/definitions/Person', ['missing']).canExecute({ session: invalid, documentVersion: 1 })).toBe(false);
     expect(new SetIdentityCommand('/definitions/Person', ['id', 'id']).canExecute({ session: invalid, documentVersion: 1 })).toBe(false);
+    const inherited = new DocumentSession('memory://identity-inherited', withRelations('{"definitions":{"Base":{"type":"object","properties":{"id":{"type":"string"}}},"Person":{"type":"object","$extends":"#/definitions/Base","properties":{"name":{"type":"string"}}}}}'));
+    expect(new SetIdentityCommand('/definitions/Person', ['id']).canExecute({ session: inherited, documentVersion: 1 })).toBe(false);
     expect(new RemoveIdentityCommand('/definitions/Person').canExecute({ session: invalid, documentVersion: 1 })).toBe(false);
   });
   it('enforces identity command state and returns direct byte-identical set/remove inverses', () => {
-    const withoutIdentity = '{\n  "definitions": {\n    "Person": {"type":"object","properties":{"id":{"type":"string"},"tenant":{"type":"string"}},"x-unknown":{"keep":true}}\n  },\n  "unknown": 7\n}';
+    const withoutIdentity = withRelations('{\n  "definitions": {\n    "Person": {"type":"object","properties":{"id":{"type":"string"},"tenant":{"type":"string"}},"x-unknown":{"keep":true}}\n  },\n  "unknown": 7\n}');
     const setSession = new DocumentSession('memory://identity-direct-set', withoutIdentity);
     const set = new SetIdentityCommand('/definitions/Person', ['tenant', 'id']);
     const setContext = { session: setSession, documentVersion: 1 };
@@ -480,33 +527,33 @@ describe('Phase 1 vertical slice', () => {
     expect(removed.slice(0, removeInverse.range.startOffset) + removeInverse.newText + removed.slice(removeInverse.range.endOffset)).toBe(withIdentity);
     expect(JSON.parse(removed).definitions.Person['x-unknown']).toEqual({ keep: true });
 
-    const tuple = new DocumentSession('memory://identity-tuple-command', '{"type":"tuple","properties":{"x":{"type":"double"}},"tuple":["x"]}');
+    const tuple = new DocumentSession('memory://identity-tuple-command', withRelations('{"type":"tuple","properties":{"x":{"type":"double"}},"tuple":["x"]}'));
     expect(new SetIdentityCommand('', ['x']).canExecute({ session: tuple, documentVersion: 1 })).toBe(true);
     const primitive = new DocumentSession('memory://identity-primitive-command', '{"type":"string","properties":{"id":{"type":"string"}}}');
     expect(new SetIdentityCommand('', ['id']).canExecute({ session: primitive, documentVersion: 1 })).toBe(false);
     const invalid = new DocumentSession('memory://identity-invalid-command', '{"type":');
     expect(new SetIdentityCommand('', ['id']).canExecute({ session: invalid, documentVersion: 1 })).toBe(false);
     expect(new RemoveIdentityCommand('').canExecute({ session: invalid, documentVersion: 1 })).toBe(false);
-    const duplicate = new DocumentSession('memory://identity-duplicate-command', '{"type":"object","properties":{"id":{"type":"string"},"id":{"type":"uuid"}}}');
+    const duplicate = new DocumentSession('memory://identity-duplicate-command', withRelations('{"type":"object","properties":{"id":{"type":"string"},"id":{"type":"uuid"}}}'));
     expect(new SetIdentityCommand('', ['id']).canExecute({ session: duplicate, documentVersion: 1 })).toBe(false);
   });
   it('does not treat default or example targettype payloads as inbound relations', () => {
-    const literalPayload = new DocumentSession('memory://identity-literal-targettype', '{"definitions":{"Person":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]}},"default":{"targettype":{"$ref":"#/definitions/Person"}},"examples":[{"targettype":{"$ref":"#/definitions/Person"}}]}');
+    const literalPayload = new DocumentSession('memory://identity-literal-targettype', withRelations('{"definitions":{"Person":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]}},"default":{"targettype":{"$ref":"#/definitions/Person"}},"examples":[{"targettype":{"$ref":"#/definitions/Person"}}]}'));
     expect(new RemoveIdentityCommand('/definitions/Person').canExecute({ session: literalPayload, documentVersion: 1 })).toBe(true);
   });
   it('treats a schema-owned relation target as an inbound identity dependency', () => {
-    const inbound = new DocumentSession('memory://identity-inbound-targettype', '{"definitions":{"Person":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Book":{"type":"object","relations":{"owner":{"targettype":{"$ref":"#/definitions/Person"},"cardinality":"single"}}}}}');
+    const inbound = new DocumentSession('memory://identity-inbound-targettype', withRelations('{"definitions":{"Person":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Book":{"type":"object","relations":{"owner":{"targettype":{"$ref":"#/definitions/Person"},"cardinality":"single"}}}}}'));
     expect(new RemoveIdentityCommand('/definitions/Person').canExecute({ session: inbound, documentVersion: 1 })).toBe(false);
   });
   it('conservatively blocks ambiguous targettype source within a schema-owned relation', () => {
-    const duplicate = new DocumentSession('memory://identity-duplicate-targettype', '{"definitions":{"Person":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Book":{"type":"object","relations":{"owner":{"targettype":{"$ref":"#/definitions/Book"},"targettype":{"$ref":"#/definitions/Person"},"cardinality":"single"}}}}}');
+    const duplicate = new DocumentSession('memory://identity-duplicate-targettype', withRelations('{"definitions":{"Person":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Book":{"type":"object","relations":{"owner":{"targettype":{"$ref":"#/definitions/Book"},"targettype":{"$ref":"#/definitions/Person"},"cardinality":"single"}}}}}'));
     expect(new RemoveIdentityCommand('/definitions/Person').canExecute({ session: duplicate, documentVersion: 1 })).toBe(false);
 
-    const duplicateReference = new DocumentSession('memory://identity-duplicate-targettype-ref', '{"definitions":{"Person":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Book":{"type":"object","relations":{"owner":{"targettype":{"$ref":"#/definitions/Book","$ref":"#/definitions/Person"},"cardinality":"single"}}}}}');
+    const duplicateReference = new DocumentSession('memory://identity-duplicate-targettype-ref', withRelations('{"definitions":{"Person":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Book":{"type":"object","relations":{"owner":{"targettype":{"$ref":"#/definitions/Book","$ref":"#/definitions/Person"},"cardinality":"single"}}}}}'));
     expect(new RemoveIdentityCommand('/definitions/Person').canExecute({ session: duplicateReference, documentVersion: 1 })).toBe(false);
   });
   it('supports relation add/edit/rename/delete plus typed cardinality/scope/qualifier mutation APIs', async () => {
-    const withLibrary = '{"definitions":{"Person":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Book":{"type":"object","properties":{"isbn":{"type":"string"}},"identity":["isbn"]},"Library":{"type":"array","items":{"type":{"$ref":"#/definitions/Person"}}}}}';
+    const withLibrary = withRelations('{"definitions":{"Person":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Book":{"type":"object","properties":{"isbn":{"type":"string"}},"identity":["isbn"]},"Library":{"type":"array","items":{"type":{"$ref":"#/definitions/Person"}}}}}');
     const host2 = new InMemoryEditorHost('memory://relations2', withLibrary);
     const sessionOk = new DocumentSession('memory://relations2', withLibrary);
     const addOk = new AddRelationCommand('/definitions/Book', 'author', {
@@ -561,12 +608,12 @@ describe('Phase 1 vertical slice', () => {
     await host2.applyTextEdits({ protocolVersion: PROTOCOL_VERSION, requestId: 'relation-delete', documentVersion: 7, edits: removeResult.edits });
     expect(JSON.parse((await host2.readDocument()).text).definitions.Book.relations?.contributors).toBeUndefined();
 
-    const collision = new DocumentSession('memory://relation-collision', '{"type":"object","properties":{"owner":{"type":"string"}},"relations":{"existing":{"targettype":{"$ref":"#/definitions/T"},"cardinality":"single"}}}');
+    const collision = new DocumentSession('memory://relation-collision', withRelations('{"type":"object","properties":{"owner":{"type":"string"}},"relations":{"existing":{"targettype":{"$ref":"#/definitions/T"},"cardinality":"single"}}}'));
     expect(new AddRelationCommand('', 'owner', { targetTypeRef: '#/definitions/T', cardinality: 'single' }).canExecute({ session: collision, documentVersion: 1 })).toBe(false);
     expect(new RenameRelationCommand('/relations/existing', 'owner').canExecute({ session: collision, documentVersion: 1 })).toBe(false);
   });
   it('supports import add/edit/delete at normative placements and rejects invalid placements/forms', async () => {
-    const original = '{"$schema":"https://json-structure.org/schema/","definitions":{"People":{}},"unknown":1}';
+    const original = withImports('{"definitions":{"People":{}},"unknown":1}');
     const host = new InMemoryEditorHost('memory://imports', original);
     const session = new DocumentSession('memory://imports', original);
 
@@ -589,21 +636,21 @@ describe('Phase 1 vertical slice', () => {
     await host.applyTextEdits({ protocolVersion: PROTOCOL_VERSION, requestId: 'import-delete', documentVersion: 3, edits: delDefs.execute({ session: s3, documentVersion: 1 }).edits });
     expect(JSON.parse((await host.readDocument()).text).definitions.People.$importdefs).toBeUndefined();
 
-    const invalidPlacement = new DocumentSession('memory://import-invalid-placement', '{"type":"object","properties":{"x":{"type":"string"}}}');
+    const invalidPlacement = new DocumentSession('memory://import-invalid-placement', withImports('{"type":"object","properties":{"x":{"type":"string"}}}'));
     expect(new SetImportCommand('/properties/x', '$import', 'https://example.org/x').canExecute({ session: invalidPlacement, documentVersion: 1 })).toBe(false);
     expect(new SetImportCommand('', '$import', '/relative').canExecute({ session: invalidPlacement, documentVersion: 1 })).toBe(false);
 
-    const bothKeywords = new DocumentSession('memory://import-both', '{"definitions":{"Ns":{"$import":"https://example.org/a","$importdefs":"https://example.org/b"}}}');
+    const bothKeywords = new DocumentSession('memory://import-both', withImports('{"definitions":{"Ns":{"$import":"https://example.org/a","$importdefs":"https://example.org/b"}}}'));
     expect(new SetImportCommand('/definitions/Ns', '$import', 'https://example.org/c').canExecute({ session: bothKeywords, documentVersion: 1 })).toBe(false);
 
-    const danglingScope = new DocumentSession('memory://relation-dangling-scope', '{"definitions":{"Person":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Book":{"type":"object","properties":{"isbn":{"type":"string"}},"identity":["isbn"]}}}');
+    const danglingScope = new DocumentSession('memory://relation-dangling-scope', withRelations('{"definitions":{"Person":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Book":{"type":"object","properties":{"isbn":{"type":"string"}},"identity":["isbn"]}}}'));
     expect(
       new AddRelationCommand('/definitions/Book', 'author', { targetTypeRef: '#/definitions/Person', cardinality: 'single', scope: '#/definitions/Missing' })
         .canExecute({ session: danglingScope, documentVersion: 1 })
     ).toBe(false);
   });
   it('requires relation scopes to be compatible collections and validates root collection scope', async () => {
-    const original = '{"$root":"#/definitions/RootItems","definitions":{"Target":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Other":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"RootItems":{"type":"array","items":{"type":{"$ref":"#/definitions/Target"}}},"TargetSet":{"type":"set","items":{"type":{"$ref":"#/definitions/Target"}}},"TargetMap":{"type":"map","values":{"type":{"$ref":"#/definitions/Target"}}},"Wrong":{"type":"array","items":{"type":{"$ref":"#/definitions/Other"}}},"Source":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]}}}';
+    const original = withRelations('{"$root":"#/definitions/RootItems","definitions":{"Target":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Other":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"RootItems":{"type":"array","items":{"type":{"$ref":"#/definitions/Target"}}},"TargetSet":{"type":"set","items":{"type":{"$ref":"#/definitions/Target"}}},"TargetMap":{"type":"map","values":{"type":{"$ref":"#/definitions/Target"}}},"Wrong":{"type":"array","items":{"type":{"$ref":"#/definitions/Other"}}},"Source":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]}}}');
     const session = new DocumentSession('memory://compatible-scopes', original);
     const context = { session, documentVersion: 1 };
     for (const scope of ['#', '#/definitions/RootItems', '#/definitions/TargetSet', '#/definitions/TargetMap']) {
@@ -618,7 +665,7 @@ describe('Phase 1 vertical slice', () => {
     const inverse = result.inverseEdits[0];
     expect(changed.slice(0, inverse.range.startOffset) + inverse.newText + changed.slice(inverse.range.endOffset)).toBe(original);
 
-    const inlineRoot = new DocumentSession('memory://inline-root-scope', '{"type":"array","items":{"type":{"$ref":"#/definitions/Target"}},"definitions":{"Target":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Source":{"type":"object"}}}');
+    const inlineRoot = new DocumentSession('memory://inline-root-scope', withRelations('{"type":"array","items":{"type":{"$ref":"#/definitions/Target"}},"definitions":{"Target":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Source":{"type":"object"}}}'));
     expect(new AddRelationCommand('/definitions/Source', 'target', { targetTypeRef: '#/definitions/Target', cardinality: 'single', scope: '#' }).canExecute({ session: inlineRoot, documentVersion: 1 })).toBe(false);
 
     const encodedRoot = new DocumentSession('memory://encoded-root-scope', original.replace('#/definitions/RootItems', '#%2Fdefinitions%2FRootItems'));
@@ -626,16 +673,16 @@ describe('Phase 1 vertical slice', () => {
 
     const parsed = parseDocument('memory://scope-diagnostics', original.replace('#/definitions/Target\"}}},\"TargetSet', '#/definitions/Other\"}}},\"TargetSet'));
     expect(parsed.diagnostics.some((item) => item.location?.pointer === '/definitions/RootItems/items')).toBe(false);
-    const badScope = parseDocument('memory://scope-diagnostics-bad', '{"$root":"#/definitions/Wrong","definitions":{"Target":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Other":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Wrong":{"type":"array","items":{"type":{"$ref":"#/definitions/Other"}}},"Source":{"type":"object","relations":{"target":{"targettype":{"$ref":"#/definitions/Target"},"cardinality":"single","scope":"#"}}}}}');
+    const badScope = parseDocument('memory://scope-diagnostics-bad', withRelations('{"$root":"#/definitions/Wrong","definitions":{"Target":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Other":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Wrong":{"type":"array","items":{"type":{"$ref":"#/definitions/Other"}}},"Source":{"type":"object","relations":{"target":{"targettype":{"$ref":"#/definitions/Target"},"cardinality":"single","scope":"#"}}}}}'));
     expect(badScope.diagnostics.some((item) => item.location?.pointer === '/definitions/Source/relations/target/scope')).toBe(true);
   });
   it('requires unique object relations, reusable valid targets, and reusable qualifiers', () => {
-    const malformed = new DocumentSession('memory://malformed-relation-command', '{"definitions":{"Target":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Source":{"type":"object","relations":{"bad":1}}}}');
+    const malformed = new DocumentSession('memory://malformed-relation-command', withRelations('{"definitions":{"Target":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Source":{"type":"object","relations":{"bad":1}}}}'));
     expect(new DeleteRelationCommand('/definitions/Source/relations/bad').canExecute({ session: malformed, documentVersion: 1 })).toBe(false);
-    const duplicate = new DocumentSession('memory://duplicate-relation-command', '{"definitions":{"Target":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Source":{"type":"object","relations":{"bad":{"targettype":{"$ref":"#/definitions/Target"},"cardinality":"single"},"bad":{"targettype":{"$ref":"#/definitions/Target"},"cardinality":"multiple"}}}}}');
+    const duplicate = new DocumentSession('memory://duplicate-relation-command', withRelations('{"definitions":{"Target":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Source":{"type":"object","relations":{"bad":{"targettype":{"$ref":"#/definitions/Target"},"cardinality":"single"},"bad":{"targettype":{"$ref":"#/definitions/Target"},"cardinality":"multiple"}}}}}'));
     expect(new DeleteRelationCommand('/definitions/Source/relations/bad').canExecute({ session: duplicate, documentVersion: 1 })).toBe(false);
 
-    const targets = new DocumentSession('memory://relation-targets', '{"definitions":{"Good":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"BadIdentity":{"type":"object","properties":{"id":{"type":"string"}},"identity":["missing"]},"Primitive":{"type":"string","identity":["id"]},"Qualifier":{"type":"string"},"Holder":{"type":"object","properties":{"inline":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]}}},"Source":{"type":"object"}}}');
+    const targets = new DocumentSession('memory://relation-targets', withRelations('{"definitions":{"Good":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"BadIdentity":{"type":"object","properties":{"id":{"type":"string"}},"identity":["missing"]},"Primitive":{"type":"string","identity":["id"]},"Qualifier":{"type":"string"},"Holder":{"type":"object","properties":{"inline":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]}}},"Source":{"type":"object"}}}'));
     const targetContext = { session: targets, documentVersion: 1 };
     expect(new AddRelationCommand('/definitions/Source', 'good', { targetTypeRef: '#/definitions/Good', cardinality: 'single', qualifierTypeRef: '#/definitions/Qualifier' }).canExecute(targetContext)).toBe(true);
     expect(new AddRelationCommand('/definitions/Source', 'bad_identity', { targetTypeRef: '#/definitions/BadIdentity', cardinality: 'single' }).canExecute(targetContext)).toBe(false);
@@ -643,19 +690,19 @@ describe('Phase 1 vertical slice', () => {
     expect(new AddRelationCommand('/definitions/Source', 'inline', { targetTypeRef: '#/definitions/Holder/properties/inline', cardinality: 'single' }).canExecute(targetContext)).toBe(false);
     expect(new AddRelationCommand('/definitions/Source', 'inline_qualifier', { targetTypeRef: '#/definitions/Good', cardinality: 'single', qualifierTypeRef: '#/definitions/Holder/properties/inline' }).canExecute(targetContext)).toBe(false);
 
-    const diagnostics = parseDocument('memory://relation-shapes', '{"definitions":{"Good":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"BadIdentity":{"type":"object","properties":{"id":{"type":"string"}},"identity":["missing"]},"Qualifier":{"type":"string"},"Holder":{"type":"object","properties":{"inline":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]}}},"Source":{"type":"object","relations":{"bad-name":{"targettype":{"$ref":"#/definitions/BadIdentity"},"cardinality":"single","qualifiertype":{"$ref":"#/definitions/Holder/properties/inline"}}}},"Broken":{"type":"object","relations":[]}}}');
+    const diagnostics = parseDocument('memory://relation-shapes', withRelations('{"definitions":{"Good":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"BadIdentity":{"type":"object","properties":{"id":{"type":"string"}},"identity":["missing"]},"Qualifier":{"type":"string"},"Holder":{"type":"object","properties":{"inline":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]}}},"Source":{"type":"object","relations":{"bad-name":{"targettype":{"$ref":"#/definitions/BadIdentity"},"cardinality":"single","qualifiertype":{"$ref":"#/definitions/Holder/properties/inline"}}}},"Broken":{"type":"object","relations":[]}}}'));
     for (const pointer of ['/definitions/Source/relations/bad-name', '/definitions/Source/relations/bad-name/targettype/$ref', '/definitions/Source/relations/bad-name/qualifiertype/$ref', '/definitions/Broken/relations']) {
       expect(diagnostics.diagnostics.some((item) => item.location?.pointer === pointer), pointer).toBe(true);
     }
   });
   it('protects identities used by inbound relation targets', () => {
-    const used = new DocumentSession('memory://identity-inbound', '{"definitions":{"Target":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Source":{"type":"object","relations":{"target":{"targettype":{"$ref":"#/definitions/Target"},"cardinality":"single"}}}}}');
+    const used = new DocumentSession('memory://identity-inbound', withRelations('{"definitions":{"Target":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"Source":{"type":"object","relations":{"target":{"targettype":{"$ref":"#/definitions/Target"},"cardinality":"single"}}}}}'));
     expect(new RemoveIdentityCommand('/definitions/Target').canExecute({ session: used, documentVersion: 1 })).toBe(false);
-    const unused = new DocumentSession('memory://identity-unused', '{"definitions":{"Target":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]}}}');
+    const unused = new DocumentSession('memory://identity-unused', withRelations('{"definitions":{"Target":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]}}}'));
     expect(new RemoveIdentityCommand('/definitions/Target').canExecute({ session: unused, documentVersion: 1 })).toBe(true);
   });
   it('uses structural namespace placement for imports and reusable hierarchy for SetRoot', () => {
-    const original = '{"definitions":{"Ns":{"Nested":{},"Type":{"type":"object","properties":{"child":{"type":"object"}}}}}}';
+    const original = withImports('{"definitions":{"Ns":{"Nested":{},"Type":{"type":"object","properties":{"child":{"type":"object"}}}}}}');
     const session = new DocumentSession('memory://structural-placement', original);
     expect(new SetImportCommand('', '$import', 'https://example.org/root').canExecute({ session, documentVersion: 1 })).toBe(true);
     expect(new SetImportCommand('/definitions', '$importdefs', 'https://example.org/defs').canExecute({ session, documentVersion: 1 })).toBe(true);
@@ -673,19 +720,19 @@ describe('Phase 1 vertical slice', () => {
     const inline = new DocumentSession('memory://inline-set-root', '{"type":"object","definitions":{"Type":{"type":"object"}}}');
     expect(new SetRootCommand('/definitions/Type').canExecute({ session: inline, documentVersion: 1 })).toBe(false);
 
-    const parsed = parseDocument('memory://import-structural-diagnostics', '{"definitions":{"Ns":{"$import":"https://example.org/ns","Type":{"type":"object","$import":"https://example.org/type","properties":{"child":{"type":"object","$importdefs":"https://example.org/child"}}}}}}');
+    const parsed = parseDocument('memory://import-structural-diagnostics', withImports('{"definitions":{"Ns":{"$import":"https://example.org/ns","Type":{"type":"object","$import":"https://example.org/type","properties":{"child":{"type":"object","$importdefs":"https://example.org/child"}}}}}}'));
     expect(parsed.diagnostics.some((item) => item.location?.pointer === '/definitions/Ns/$import')).toBe(false);
     expect(parsed.diagnostics.some((item) => item.location?.pointer === '/definitions/Ns/Type/$import')).toBe(true);
     expect(parsed.diagnostics.some((item) => item.location?.pointer === '/definitions/Ns/Type/properties/child/$importdefs')).toBe(true);
   });
   it('rejects duplicate ambiguity on identity, relation members, root, and imports', () => {
-    const duplicateIdentity = new DocumentSession('memory://duplicate-identity-edit', '{"definitions":{"T":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"],"identity":["id"]}}}');
+    const duplicateIdentity = new DocumentSession('memory://duplicate-identity-edit', withRelations('{"definitions":{"T":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"],"identity":["id"]}}}'));
     expect(new SetIdentityCommand('/definitions/T', ['id']).canExecute({ session: duplicateIdentity, documentVersion: 1 })).toBe(false);
     expect(new RemoveIdentityCommand('/definitions/T').canExecute({ session: duplicateIdentity, documentVersion: 1 })).toBe(false);
-    const duplicateIdentityProperty = new DocumentSession('memory://duplicate-identity-property', '{"definitions":{"T":{"type":"object","properties":{"id":{"type":"string"},"id":{"type":"uuid"}}}}}');
+    const duplicateIdentityProperty = new DocumentSession('memory://duplicate-identity-property', withRelations('{"definitions":{"T":{"type":"object","properties":{"id":{"type":"string"},"id":{"type":"uuid"}}}}}'));
     expect(new SetIdentityCommand('/definitions/T', ['id']).canExecute({ session: duplicateIdentityProperty, documentVersion: 1 })).toBe(false);
 
-    const duplicateMembers = new DocumentSession('memory://duplicate-relation-members', '{"definitions":{"T":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"S":{"type":"object","relations":{"r":{"targettype":{"$ref":"#/definitions/T"},"cardinality":"single","cardinality":"multiple","scope":"#/definitions/C","scope":"#/definitions/C","qualifiertype":{"$ref":"#/definitions/T"},"qualifiertype":{"$ref":"#/definitions/T"}}}},"C":{"type":"array","items":{"$ref":"#/definitions/T"}}}}');
+    const duplicateMembers = new DocumentSession('memory://duplicate-relation-members', withRelations('{"definitions":{"T":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"S":{"type":"object","relations":{"r":{"targettype":{"$ref":"#/definitions/T"},"cardinality":"single","cardinality":"multiple","scope":"#/definitions/C","scope":"#/definitions/C","qualifiertype":{"$ref":"#/definitions/T"},"qualifiertype":{"$ref":"#/definitions/T"}}}},"C":{"type":"array","items":{"$ref":"#/definitions/T"}}}}'));
     const memberContext = { session: duplicateMembers, documentVersion: 1 };
     expect(new SetRelationCardinalityCommand('/definitions/S/relations/r', 'single').canExecute(memberContext)).toBe(false);
     expect(new SetRelationScopeCommand('/definitions/S/relations/r', '#/definitions/C').canExecute(memberContext)).toBe(false);
@@ -693,12 +740,12 @@ describe('Phase 1 vertical slice', () => {
 
     const duplicateRoot = new DocumentSession('memory://duplicate-root', '{"$root":"#/definitions/A","$root":"#/definitions/B","definitions":{"A":{"type":"object"},"B":{"type":"object"}}}');
     expect(new SetRootCommand('/definitions/A').canExecute({ session: duplicateRoot, documentVersion: 1 })).toBe(false);
-    const duplicateImport = new DocumentSession('memory://duplicate-import', '{"$import":"https://example.org/a","$import":"https://example.org/b"}');
+    const duplicateImport = new DocumentSession('memory://duplicate-import', withImports('{"$import":"https://example.org/a","$import":"https://example.org/b"}'));
     expect(new SetImportCommand('', '$import', 'https://example.org/c').canExecute({ session: duplicateImport, documentVersion: 1 })).toBe(false);
     expect(new DeleteImportCommand('', '$import').canExecute({ session: duplicateImport, documentVersion: 1 })).toBe(false);
   });
   it('enforces relation identifier grammar in commands and diagnostics', () => {
-    const source = '{"definitions":{"T":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"S":{"type":"object","relations":{"valid_name":{"targettype":{"$ref":"#/definitions/T"},"cardinality":"single"}}}}}';
+    const source = withRelations('{"definitions":{"T":{"type":"object","properties":{"id":{"type":"string"}},"identity":["id"]},"S":{"type":"object","relations":{"valid_name":{"targettype":{"$ref":"#/definitions/T"},"cardinality":"single"}}}}}');
     const session = new DocumentSession('memory://relation-names', source);
     expect(new AddRelationCommand('/definitions/S', '_alsoValid2', { targetTypeRef: '#/definitions/T', cardinality: 'single' }).canExecute({ session, documentVersion: 1 })).toBe(true);
     expect(new AddRelationCommand('/definitions/S', 'bad-name', { targetTypeRef: '#/definitions/T', cardinality: 'single' }).canExecute({ session, documentVersion: 1 })).toBe(false);
@@ -803,94 +850,94 @@ describe('Phase 1 vertical slice', () => {
     expect(result.diagnostics.some((item) => item.location?.pointer === '/definitions/Thing/oneOf' && item.code === 'json.keyword-invalid')).toBe(true);
   });
   it('enforces tensor/frame local constraints for rank and symmetry', () => {
-    const valid = parseDocument('memory://tensor-valid', `{"$schema":"${semanticSchema}","definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom"},{"reference":"urn:frame:a","kind":"custom"}],"components":[{"index":[0,1],"property":"ab"}],"symmetry":"symmetric"}]}}}`);
+    const valid = parseDocument('memory://tensor-valid', `{"$schema":"${semanticSchema}","$uses":["JSONStructureSemanticAnnotations"],"definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom"},{"reference":"urn:frame:a","kind":"custom"}],"components":[{"index":[0,1],"property":"ab"}],"symmetry":"symmetric"}]}}}`);
     expect(valid.diagnostics.some((item) => item.location?.pointer === '/definitions/Thing/tensorReferenceFrames' && item.code === 'json.keyword-invalid')).toBe(false);
 
-    const invalidRank = parseDocument('memory://tensor-rank', `{"$schema":"${semanticSchema}","definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom"},{"reference":"urn:frame:b","kind":"custom"},{"reference":"urn:frame:c","kind":"custom"}],"components":[{"index":[0,1],"property":"ab"}],"symmetry":"none"}]}}}`);
+    const invalidRank = parseDocument('memory://tensor-rank', `{"$schema":"${semanticSchema}","$uses":["JSONStructureSemanticAnnotations"],"definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom"},{"reference":"urn:frame:b","kind":"custom"},{"reference":"urn:frame:c","kind":"custom"}],"components":[{"index":[0,1],"property":"ab"}],"symmetry":"none"}]}}}`);
     expect(invalidRank.diagnostics.some((item) => item.location?.pointer === '/definitions/Thing/tensorReferenceFrames' && item.code === 'json.keyword-invalid')).toBe(true);
 
-    const invalidSymmetry = parseDocument('memory://tensor-symmetry', `{"$schema":"${semanticSchema}","definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom"},{"reference":"urn:frame:b","kind":"custom"}],"components":[{"index":[0,1],"property":"ab"}],"symmetry":"symmetric"}]}}}`);
+    const invalidSymmetry = parseDocument('memory://tensor-symmetry', `{"$schema":"${semanticSchema}","$uses":["JSONStructureSemanticAnnotations"],"definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom"},{"reference":"urn:frame:b","kind":"custom"}],"components":[{"index":[0,1],"property":"ab"}],"symmetry":"symmetric"}]}}}`);
     expect(invalidSymmetry.diagnostics.some((item) => item.location?.pointer === '/definitions/Thing/tensorReferenceFrames' && item.code === 'json.keyword-invalid')).toBe(true);
   });
   it('requires rank-two same-frame tensor symmetry even when symmetry is none', () => {
     const validNone = parseDocument(
       'memory://tensor-symmetry-none-valid',
-      `{"$schema":"${semanticSchema}","definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom"},{"reference":"urn:frame:a","kind":"custom"}],"components":[{"index":[0,0],"property":"aa"}],"symmetry":"none"}]}}}`
+      `{"$schema":"${semanticSchema}","$uses":["JSONStructureSemanticAnnotations"],"definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom"},{"reference":"urn:frame:a","kind":"custom"}],"components":[{"index":[0,0],"property":"aa"}],"symmetry":"none"}]}}}`
     );
     expect(validNone.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/Thing/tensorReferenceFrames')).toBe(false);
 
     const invalidNoneDifferentFrames = parseDocument(
       'memory://tensor-symmetry-none-different-frames',
-      `{"$schema":"${semanticSchema}","definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom"},{"reference":"urn:frame:b","kind":"custom"}],"components":[{"index":[0,0],"property":"aa"}],"symmetry":"none"}]}}}`
+      `{"$schema":"${semanticSchema}","$uses":["JSONStructureSemanticAnnotations"],"definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom"},{"reference":"urn:frame:b","kind":"custom"}],"components":[{"index":[0,0],"property":"aa"}],"symmetry":"none"}]}}}`
     );
     expect(invalidNoneDifferentFrames.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/Thing/tensorReferenceFrames')).toBe(true);
 
     const invalidNoneWrongRank = parseDocument(
       'memory://tensor-symmetry-none-wrong-rank',
-      `{"$schema":"${semanticSchema}","definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom"},{"reference":"urn:frame:a","kind":"custom"},{"reference":"urn:frame:a","kind":"custom"}],"components":[{"index":[0,0,0],"property":"aaa"}],"symmetry":"none"}]}}}`
+      `{"$schema":"${semanticSchema}","$uses":["JSONStructureSemanticAnnotations"],"definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom"},{"reference":"urn:frame:a","kind":"custom"},{"reference":"urn:frame:a","kind":"custom"}],"components":[{"index":[0,0,0],"property":"aaa"}],"symmetry":"none"}]}}}`
     );
     expect(invalidNoneWrongRank.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/Thing/tensorReferenceFrames')).toBe(true);
   });
   it('accepts symmetry when kind:type frame refs are structurally equal but parsed as separate objects', () => {
     const valid = parseDocument(
       'memory://tensor-symmetry-type-ref-structural-equal',
-      `{"$schema":"${semanticSchema}","definitions":{"Frame":{"type":"object"},"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":{"$ref":"#/definitions/Frame"},"kind":"type"},{"reference":{"$ref":"#/definitions/Frame"},"kind":"type"}],"components":[{"index":[0,0],"property":"aa"}],"symmetry":"none"}]}}}`
+      `{"$schema":"${semanticSchema}","$uses":["JSONStructureSemanticAnnotations"],"definitions":{"Frame":{"type":"object"},"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":{"$ref":"#/definitions/Frame"},"kind":"type"},{"reference":{"$ref":"#/definitions/Frame"},"kind":"type"}],"components":[{"index":[0,0],"property":"aa"}],"symmetry":"none"}]}}}`
     );
     expect(valid.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/Thing/tensorReferenceFrames')).toBe(false);
 
     const invalidDifferentRef = parseDocument(
       'memory://tensor-symmetry-type-ref-structural-unequal',
-      `{"$schema":"${semanticSchema}","definitions":{"FrameA":{"type":"object"},"FrameB":{"type":"object"},"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":{"$ref":"#/definitions/FrameA"},"kind":"type"},{"reference":{"$ref":"#/definitions/FrameB"},"kind":"type"}],"components":[{"index":[0,0],"property":"aa"}],"symmetry":"none"}]}}}`
+      `{"$schema":"${semanticSchema}","$uses":["JSONStructureSemanticAnnotations"],"definitions":{"FrameA":{"type":"object"},"FrameB":{"type":"object"},"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":{"$ref":"#/definitions/FrameA"},"kind":"type"},{"reference":{"$ref":"#/definitions/FrameB"},"kind":"type"}],"components":[{"index":[0,0],"property":"aa"}],"symmetry":"none"}]}}}`
     );
     expect(invalidDifferentRef.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/Thing/tensorReferenceFrames')).toBe(true);
   });
   it('requires equal variance (or both omitted) for symmetric tensor frames including explicit symmetry none', () => {
     const validSameVariance = parseDocument(
       'memory://tensor-symmetry-variance-same',
-      `{"$schema":"${semanticSchema}","definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom","variance":"covariant"},{"reference":"urn:frame:a","kind":"custom","variance":"covariant"}],"components":[{"index":[0,0],"property":"aa"}],"symmetry":"none"}]}}}`
+      `{"$schema":"${semanticSchema}","$uses":["JSONStructureSemanticAnnotations"],"definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom","variance":"covariant"},{"reference":"urn:frame:a","kind":"custom","variance":"covariant"}],"components":[{"index":[0,0],"property":"aa"}],"symmetry":"none"}]}}}`
     );
     expect(validSameVariance.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/Thing/tensorReferenceFrames')).toBe(false);
 
     const validBothOmitted = parseDocument(
       'memory://tensor-symmetry-variance-both-omitted',
-      `{"$schema":"${semanticSchema}","definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom"},{"reference":"urn:frame:a","kind":"custom"}],"components":[{"index":[0,0],"property":"aa"}],"symmetry":"none"}]}}}`
+      `{"$schema":"${semanticSchema}","$uses":["JSONStructureSemanticAnnotations"],"definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom"},{"reference":"urn:frame:a","kind":"custom"}],"components":[{"index":[0,0],"property":"aa"}],"symmetry":"none"}]}}}`
     );
     expect(validBothOmitted.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/Thing/tensorReferenceFrames')).toBe(false);
 
     const invalidDifferentVariance = parseDocument(
       'memory://tensor-symmetry-variance-different',
-      `{"$schema":"${semanticSchema}","definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom","variance":"covariant"},{"reference":"urn:frame:a","kind":"custom","variance":"contravariant"}],"components":[{"index":[0,0],"property":"aa"}],"symmetry":"none"}]}}}`
+      `{"$schema":"${semanticSchema}","$uses":["JSONStructureSemanticAnnotations"],"definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom","variance":"covariant"},{"reference":"urn:frame:a","kind":"custom","variance":"contravariant"}],"components":[{"index":[0,0],"property":"aa"}],"symmetry":"none"}]}}}`
     );
     expect(invalidDifferentVariance.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/Thing/tensorReferenceFrames')).toBe(true);
 
     const invalidOneOmitted = parseDocument(
       'memory://tensor-symmetry-variance-one-omitted',
-      `{"$schema":"${semanticSchema}","definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom","variance":"covariant"},{"reference":"urn:frame:a","kind":"custom"}],"components":[{"index":[0,0],"property":"aa"}],"symmetry":"none"}]}}}`
+      `{"$schema":"${semanticSchema}","$uses":["JSONStructureSemanticAnnotations"],"definitions":{"Thing":{"type":"object","tensorReferenceFrames":[{"frames":[{"reference":"urn:frame:a","kind":"custom","variance":"covariant"},{"reference":"urn:frame:a","kind":"custom"}],"components":[{"index":[0,0],"property":"aa"}],"symmetry":"none"}]}}}`
     );
     expect(invalidOneOmitted.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/Thing/tensorReferenceFrames')).toBe(true);
   });
   it('requires exactly two indices for indexed matrix components in frame transforms', () => {
     const validRotationIndexed = parseDocument(
       'memory://frame-transform-rotation-indexed-valid',
-      `{"$schema":"${semanticSchema}","definitions":{"Thing":{"type":"object","frameTransforms":[{"from":{"reference":"urn:frame:a","kind":"custom"},"to":{"reference":"urn:frame:b","kind":"custom"},"encoding":"rotationMatrix","components":[{"index":[0,0],"property":"m00"},{"index":[0,1],"property":"m01"},{"index":[0,2],"property":"m02"},{"index":[1,0],"property":"m10"},{"index":[1,1],"property":"m11"},{"index":[1,2],"property":"m12"},{"index":[2,0],"property":"m20"},{"index":[2,1],"property":"m21"},{"index":[2,2],"property":"m22"}]}]}}}`
+      `{"$schema":"${semanticSchema}","$uses":["JSONStructureSemanticAnnotations"],"definitions":{"Thing":{"type":"object","frameTransforms":[{"from":{"reference":"urn:frame:a","kind":"custom"},"to":{"reference":"urn:frame:b","kind":"custom"},"encoding":"rotationMatrix","components":[{"index":[0,0],"property":"m00"},{"index":[0,1],"property":"m01"},{"index":[0,2],"property":"m02"},{"index":[1,0],"property":"m10"},{"index":[1,1],"property":"m11"},{"index":[1,2],"property":"m12"},{"index":[2,0],"property":"m20"},{"index":[2,1],"property":"m21"},{"index":[2,2],"property":"m22"}]}]}}}`
     );
     expect(validRotationIndexed.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/Thing/frameTransforms')).toBe(false);
 
     const validHomogeneousIndexed = parseDocument(
       'memory://frame-transform-homogeneous-indexed-valid',
-      `{"$schema":"${semanticSchema}","definitions":{"Thing":{"type":"object","frameTransforms":[{"from":{"reference":"urn:frame:a","kind":"custom"},"to":{"reference":"urn:frame:b","kind":"custom"},"encoding":"homogeneousMatrix","components":[{"index":[0,0],"property":"h00"},{"index":[0,1],"property":"h01"},{"index":[0,2],"property":"h02"},{"index":[0,3],"property":"h03"},{"index":[1,0],"property":"h10"},{"index":[1,1],"property":"h11"},{"index":[1,2],"property":"h12"},{"index":[1,3],"property":"h13"},{"index":[2,0],"property":"h20"},{"index":[2,1],"property":"h21"},{"index":[2,2],"property":"h22"},{"index":[2,3],"property":"h23"},{"index":[3,0],"property":"h30"},{"index":[3,1],"property":"h31"},{"index":[3,2],"property":"h32"},{"index":[3,3],"property":"h33"}]}]}}}`
+      `{"$schema":"${semanticSchema}","$uses":["JSONStructureSemanticAnnotations"],"definitions":{"Thing":{"type":"object","frameTransforms":[{"from":{"reference":"urn:frame:a","kind":"custom"},"to":{"reference":"urn:frame:b","kind":"custom"},"encoding":"homogeneousMatrix","components":[{"index":[0,0],"property":"h00"},{"index":[0,1],"property":"h01"},{"index":[0,2],"property":"h02"},{"index":[0,3],"property":"h03"},{"index":[1,0],"property":"h10"},{"index":[1,1],"property":"h11"},{"index":[1,2],"property":"h12"},{"index":[1,3],"property":"h13"},{"index":[2,0],"property":"h20"},{"index":[2,1],"property":"h21"},{"index":[2,2],"property":"h22"},{"index":[2,3],"property":"h23"},{"index":[3,0],"property":"h30"},{"index":[3,1],"property":"h31"},{"index":[3,2],"property":"h32"},{"index":[3,3],"property":"h33"}]}]}}}`
     );
     expect(validHomogeneousIndexed.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/Thing/frameTransforms')).toBe(false);
 
     const invalidOneIndex = parseDocument(
       'memory://frame-transform-indexed-one-index',
-      `{"$schema":"${semanticSchema}","definitions":{"Thing":{"type":"object","frameTransforms":[{"from":{"reference":"urn:frame:a","kind":"custom"},"to":{"reference":"urn:frame:b","kind":"custom"},"encoding":"rotationMatrix","components":[{"index":[0],"property":"m00"}]}]}}}`
+      `{"$schema":"${semanticSchema}","$uses":["JSONStructureSemanticAnnotations"],"definitions":{"Thing":{"type":"object","frameTransforms":[{"from":{"reference":"urn:frame:a","kind":"custom"},"to":{"reference":"urn:frame:b","kind":"custom"},"encoding":"rotationMatrix","components":[{"index":[0],"property":"m00"}]}]}}}`
     );
     expect(invalidOneIndex.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/Thing/frameTransforms')).toBe(true);
 
     const invalidThreeIndices = parseDocument(
       'memory://frame-transform-indexed-three-indices',
-      `{"$schema":"${semanticSchema}","definitions":{"Thing":{"type":"object","frameTransforms":[{"from":{"reference":"urn:frame:a","kind":"custom"},"to":{"reference":"urn:frame:b","kind":"custom"},"encoding":"homogeneousMatrix","components":[{"index":[0,0,0],"property":"h000"}]}]}}}`
+      `{"$schema":"${semanticSchema}","$uses":["JSONStructureSemanticAnnotations"],"definitions":{"Thing":{"type":"object","frameTransforms":[{"from":{"reference":"urn:frame:a","kind":"custom"},"to":{"reference":"urn:frame:b","kind":"custom"},"encoding":"homogeneousMatrix","components":[{"index":[0,0,0],"property":"h000"}]}]}}}`
     );
     expect(invalidThreeIndices.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/Thing/frameTransforms')).toBe(true);
   });
@@ -899,6 +946,7 @@ describe('Phase 1 vertical slice', () => {
       'memory://semantic-placement-scope',
       JSON.stringify({
         $schema: semanticSchema,
+        $uses: ['JSONStructureSemanticAnnotations'],
         definitions: {
           Thing: {
             type: 'object',
@@ -929,8 +977,8 @@ describe('Phase 1 vertical slice', () => {
               }
             },
             anyOf: [
-              { type: 'number', semanticRole: 'resultQuality' },
-              { type: 'string', semanticRole: 'status' }
+              { type: 'number', concepts: [{ reference: 'urn:concept:number', kind: 'custom-concept' }] },
+              { type: 'string', concepts: [{ reference: 'urn:concept:string', kind: 'custom-concept' }] }
             ]
           }
         }
@@ -943,23 +991,28 @@ describe('Phase 1 vertical slice', () => {
     expect(placements.some((entry) => entry.pointer === '/definitions/Thing/items')).toBe(true);
     expect(placements.some((entry) => entry.pointer === '/definitions/Thing/values')).toBe(false);
     expect(placements.some((entry) => entry.pointer === '/definitions/Thing/choices/scalar')).toBe(false);
-    expect(placements.some((entry) => entry.pointer === '/definitions/Thing/anyOf/0')).toBe(false);
-    expect(placements.some((entry) => entry.pointer === '/definitions/Thing/anyOf/1')).toBe(false);
-    expect(result.diagnostics.some((entry) => entry.location?.pointer === '/definitions/Thing/anyOf' && entry.message.includes('requires'))).toBe(true);
+    expect(placements.some((entry) => entry.pointer === '/definitions/Thing/anyOf/0')).toBe(true);
+    expect(placements.some((entry) => entry.pointer === '/definitions/Thing/anyOf/1')).toBe(true);
+    expect(result.diagnostics.some((entry) => entry.location?.pointer === '/definitions/Thing/anyOf' && entry.message.includes('requires'))).toBe(false);
     expect(result.diagnostics.some((entry) => entry.location?.pointer?.startsWith('/definitions/Thing/anyOf/0'))).toBe(false);
     expect(result.diagnostics.some((entry) => entry.location?.pointer === '/definitions/Thing/values/semanticRole')).toBe(true);
     expect(placements.some((entry) => entry.pointer === '/definitions/Thing/unknownPayload')).toBe(false);
   });
   it('validates relation declarations and semantic unions against closed and open vocabularies', () => {
-    const valid = parseDocument('memory://normative-forms', JSON.stringify({ $schema: semanticSchema, definitions: { Thing: {
+    const valid = parseDocument('memory://normative-forms', JSON.stringify({ $schema: semanticSchema, $uses: ['JSONStructureSemanticAnnotations'], definitions: { Thing: {
       type: 'object',
       properties: { value: { type: 'string', enum: ['active'], semanticRole: 'status', derivation: 'statistic', statistic: 'sum', phenomenonTimeRelation: 'accumulation', supportPeriod: { length: 'PT1M', anchor: 'start' }, cadence: { kind: 'onChange' }, codedValues: { reference: 'urn:codes:custom', kind: 'vendor-private' }, temporalReferenceSystem: { reference: 'urn:trs:custom', kind: 'vendor-private' } } },
+    } } }));
+    const relationForms = parseDocument('memory://normative-relation-forms', withRelations(JSON.stringify({ definitions: { Thing: {
+      type: 'object',
+      properties: { id: { type: 'string' } },
+      identity: ['id'],
       relations: {
         owner: { targettype: { $ref: '#/definitions/Thing' }, cardinality: 'single' },
-        peers: { targettype: { $ref: '#/definitions/Thing' }, cardinality: 'multiple', scope: ['#/items'] }
-      },
-    } } }));
-    const thing = valid.model?.projections.definitions[0];
+        peers: { targettype: { $ref: '#/definitions/Thing' }, cardinality: 'multiple' }
+      }
+    } } })));
+    const thing = relationForms.model?.projections.definitions[0];
     const valueSemantic = valid.model?.projections.semanticPlacements.find((entry) => entry.pointer === '/definitions/Thing/properties/value')?.annotations;
     expect(thing?.relations.map((relation) => relation.cardinality)).toEqual(['single', 'multiple']);
     expect(valueSemantic?.statistic).toBe('sum');
@@ -975,7 +1028,9 @@ describe('Phase 1 vertical slice', () => {
       ['type reference form', '"codedValues":{"reference":"urn:codes","kind":"type"}', '/definitions/Thing/codedValues']
     ] as const;
     for (const [label, body, pointer] of invalidCases) {
-      const source = `{"$schema":"${semanticSchema}","definitions":{"Thing":{"type":"object",${body}}}}`;
+      const source = label.startsWith('missing ')
+        ? withRelations(`{"definitions":{"Thing":{"type":"object",${body}}}}`)
+        : `{"$schema":"${semanticSchema}","$uses":["JSONStructureSemanticAnnotations"],"definitions":{"Thing":{"type":"object",${body}}}}`;
       const result = parseDocument(`memory://${label}`, source);
       const diagnostic = result.diagnostics.find((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === pointer);
       expect(diagnostic, label).toBeDefined();
@@ -988,6 +1043,7 @@ describe('Phase 1 vertical slice', () => {
     const session = new DocumentSession('memory://fixture', text);
     const command = new AddPropertyCommand('/definitions/Person', 'name', { type: 'string', description: 'display name' });
     expect(command.canExecute({ session, documentVersion: 1 })).toBe(true);
+    expect(new AddPropertyCommand('/definitions/Person', 'bad-name', { type: 'string' }).canExecute({ session, documentVersion: 1 })).toBe(false);
     const result = command.execute({ session, documentVersion: 1 });
     const applied = await host.applyTextEdits({ protocolVersion: PROTOCOL_VERSION, requestId: 'add-1', documentVersion: 1, edits: result.edits });
     expect(applied.applied).toBe(true);
@@ -1036,18 +1092,19 @@ describe('Phase 1 vertical slice', () => {
     }
   });
   it('renames only the property key and rejects collisions', async () => {
-    const original = '{"type":"object","properties":{"old/name":{"type": "string"},"taken":{"type":"number"}},"unknown":1}';
+    const original = '{"type":"object","properties":{"old_name":{"type": "string"},"taken":{"type":"number"}},"unknown":1}';
     const host = new InMemoryEditorHost('memory://rename', original);
     const session = new DocumentSession('memory://rename', original);
-    const collision = new RenamePropertyCommand('/properties/old~1name', 'taken');
+    const collision = new RenamePropertyCommand('/properties/old_name', 'taken');
     expect(collision.canExecute({ session, documentVersion: 1 })).toBe(false);
-    const command = new RenamePropertyCommand('/properties/old~1name', 'new~name');
+    expect(new RenamePropertyCommand('/properties/old_name', 'bad-name').canExecute({ session, documentVersion: 1 })).toBe(false);
+    const command = new RenamePropertyCommand('/properties/old_name', 'new_name');
     expect(command.canExecute({ session, documentVersion: 1 })).toBe(true);
     const result = command.execute({ session, documentVersion: 1 });
     const applied = await host.applyTextEdits({ protocolVersion: PROTOCOL_VERSION, requestId: 'rename-1', documentVersion: 1, edits: result.edits });
     expect(applied.applied).toBe(true);
     const changed = await host.readDocument();
-    expect(JSON.parse(changed.text).properties['new~name']).toEqual({ type: 'string' });
+    expect(JSON.parse(changed.text).properties.new_name).toEqual({ type: 'string' });
     expect(changed.text).toContain('{"type": "string"}');
     expect(changed.text).toContain('"unknown":1');
     const inverse = result.inverseEdits[0];
@@ -1063,7 +1120,7 @@ describe('Phase 1 vertical slice', () => {
     expect(new RenamePropertyCommand('/properties/id', 'key').canExecute({ session: alternativeRequired, documentVersion: 1 })).toBe(false);
     expect(new DeletePropertyCommand('/properties/id').canExecute({ session: alternativeRequired, documentVersion: 1 })).toBe(false);
 
-    const relationCollision = new DocumentSession('memory://relation-collision', '{"type":"object","properties":{"id":{"type":"string"}},"relations":{"owner":{"targettype":{"type":"object"}}}}');
+    const relationCollision = new DocumentSession('memory://relation-collision', withRelations('{"type":"object","properties":{"id":{"type":"string"}},"relations":{"owner":{"targettype":{"type":"object"}}}}'));
     expect(new RenamePropertyCommand('/properties/id', 'owner').canExecute({ session: relationCollision, documentVersion: 1 })).toBe(false);
 
     const descendant = new DocumentSession('memory://descendant', '{"type":"object","properties":{"id":{"type":"object","properties":{"nested":{"type":"string"}}}}}');
@@ -1082,6 +1139,9 @@ describe('Phase 1 vertical slice', () => {
 
     const duplicateOwner = new DocumentSession('memory://duplicate-owner', '{"definitions":{"Thing":{"type":"object"},"Thing":{"type":"object"}}}');
     expect(new AddPropertyCommand('/definitions/Thing', 'id', { type: 'string' }).canExecute({ session: duplicateOwner, documentVersion: 1 })).toBe(false);
+
+    const inherited = new DocumentSession('memory://rename-inherited', '{"definitions":{"Base":{"type":"object","abstract":true,"properties":{"id":{"type":"string"}}},"Derived":{"type":"object","$extends":"#/definitions/Base","properties":{"name":{"type":"string"}}}}}');
+    expect(new RenamePropertyCommand('/definitions/Derived/properties/name', 'id').canExecute({ session: inherited, documentVersion: 1 })).toBe(false);
   });
   it('renames a property using its exact escaped source key range', async () => {
     const original = '{"type":"object","properties":{"\\u0061\\/b":{"type":"string"}}}';
@@ -1164,6 +1224,8 @@ describe('Phase 1 vertical slice', () => {
     expect(new SetCollectionMemberCommand('/definitions/A', { $ref: '#/definitions/Target' }).canExecute({ session: tupleSession, documentVersion: 1 })).toBe(false);
     expect(new SetCollectionMemberCommand('/definitions/A', { type: { $ref: '#/definitions/Missing' } }).canExecute({ session: tupleSession, documentVersion: 1 })).toBe(false);
     expect(new SetTupleMembersCommand('/definitions/T', { first: { type: 'string' } }, ['missing']).canExecute({ session: tupleSession, documentVersion: 1 })).toBe(false);
+    const inheritedTuple = new DocumentSession('memory://tuple-inherited', '{"definitions":{"Base":{"type":"tuple","abstract":true,"properties":{"x":{"type":"number"}},"tuple":["x"]},"Derived":{"type":"tuple","$extends":"#/definitions/Base","properties":{"y":{"type":"number"}},"tuple":["y"]}}}');
+    expect(new SetTupleMembersCommand('/definitions/Derived', { x: { type: 'string' } }, ['x']).canExecute({ session: inheritedTuple, documentVersion: 1 })).toBe(false);
     const duplicate = new DocumentSession('memory://collection-duplicate', '{"type":"array","items":{"type":"string"},"items":{"type":"number"}}');
     expect(new SetCollectionMemberCommand('', { type: 'boolean' }).canExecute({ session: duplicate, documentVersion: 1 })).toBe(false);
   });
@@ -1300,6 +1362,28 @@ describe('Phase 1 vertical slice', () => {
     expect(parsed.model?.projections.references.filter((entry) => entry.pointer === pointer)).toHaveLength(1);
     expect(parsed.model?.projections.definitions.some((entry) => entry.pointer === '/properties/closed/additionalProperties')).toBe(false);
   });
+  it('validates Core scalar constraints in every nested schema position', () => {
+    const parsed = parseDocument('memory://nested-core-constraints', JSON.stringify({
+      $schema: 'https://json-structure.org/meta/validation/v0/#',
+      $id: 'https://example.test/nested-core-constraints',
+      name: 'NestedCoreConstraints',
+      definitions: {
+        List: { type: 'array', items: { type: 'int8', enum: [999] }, contains: { type: 'string', const: 1 } },
+        Dictionary: { type: 'map', values: { type: 'string', maxLength: -1 } },
+        Open: { type: 'object', properties: { id: { type: 'string' } }, additionalProperties: { type: 'string', const: 1 } },
+        Union: { type: ['null', { type: 'array', items: { type: 'int8', enum: [999] } }] }
+      }
+    }));
+    for (const pointer of [
+      '/definitions/List/items/enum',
+      '/definitions/List/contains/const',
+      '/definitions/Dictionary/values/maxLength',
+      '/definitions/Open/additionalProperties/const',
+      '/definitions/Union/type/1/items/enum'
+    ]) {
+      expect(parsed.diagnostics.some((item) => item.location?.pointer === pointer), pointer).toBe(true);
+    }
+  });
   it('accepts union references and inline collections while rejecting prohibited inline compound members', () => {
     const valid = parseDocument('memory://union-ref', '{"definitions":{"Target":{"type":"string"},"Small":{"type":"int8"},"Half":{"type":"float8"},"Use":{"type":["null",{"$ref":"#/definitions/Target","description":"when present"},{"type":"array","items":{"type":"string"}},{"type":"set","items":{"type":"int32"}},{"type":"map","values":{"type":{"$ref":"#/definitions/Target"}}}]}}}');
     expect(valid.diagnostics.some((entry) => entry.location?.pointer === '/definitions/Use/type/1/$ref')).toBe(false);
@@ -1380,7 +1464,7 @@ describe('Phase 1 vertical slice', () => {
   it('requires an object declaration and rejects relation-name collisions', () => {
     const scalar = new DocumentSession('memory://scalar', '{"type":"string","properties":{}}');
     expect(new AddPropertyCommand('', 'x', { type: 'string' }).canExecute({ session: scalar, documentVersion: 1 })).toBe(false);
-    const relation = new DocumentSession('memory://relation', '{"type":"object","relations":{"x":{}}}');
+    const relation = new DocumentSession('memory://relation', withRelations('{"type":"object","relations":{"x":{}}}'));
     expect(new AddPropertyCommand('', 'x', { type: 'string' }).canExecute({ session: relation, documentVersion: 1 })).toBe(false);
     const nullProperties = new DocumentSession('memory://null-properties', '{"type":"object","properties":null}');
     expect(new AddPropertyCommand('', 'x', { type: 'string' }).canExecute({ session: nullProperties, documentVersion: 1 })).toBe(false);
@@ -1412,6 +1496,8 @@ describe('Phase 1 vertical slice', () => {
     const addSession = new DocumentSession('memory://defs', original);
     const add = new AddDefinitionCommand('', 'Team', { type: 'object', properties: { id: { type: 'string' } } });
     expect(add.canExecute({ session: addSession, documentVersion: 1 })).toBe(true);
+    expect(new AddDefinitionCommand('', 'Invalid', { type: 'not-a-core-type' }).canExecute({ session: addSession, documentVersion: 1 })).toBe(false);
+    expect(new AddDefinitionCommand('', 'bad-name', { type: 'string' }).canExecute({ session: addSession, documentVersion: 1 })).toBe(false);
     const addResult = add.execute({ session: addSession, documentVersion: 1 });
     const addApplied = await addHost.applyTextEdits({ protocolVersion: PROTOCOL_VERSION, requestId: 'add-def', documentVersion: 1, edits: addResult.edits });
     expect(addApplied.applied).toBe(true);
@@ -1425,6 +1511,7 @@ describe('Phase 1 vertical slice', () => {
     const renameSession = new DocumentSession('memory://defs', original);
     const rename = new RenameDefinitionCommand('/definitions/User', 'Profile');
     expect(rename.canExecute({ session: renameSession, documentVersion: 1 })).toBe(true);
+    expect(new RenameDefinitionCommand('/definitions/User', '1Profile').canExecute({ session: renameSession, documentVersion: 1 })).toBe(false);
     const renameResult = rename.execute({ session: renameSession, documentVersion: 1 });
     const renameApplied = await renameHost.applyTextEdits({ protocolVersion: PROTOCOL_VERSION, requestId: 'rename-def', documentVersion: 1, edits: renameResult.edits });
     expect(renameApplied.applied).toBe(true);
@@ -1504,11 +1591,11 @@ describe('Phase 1 vertical slice', () => {
     expect(new RenameDefinitionCommand('/definitions/User', 'Profile').canExecute({ session: extendsRef, documentVersion: 1 })).toBe(false);
     expect(new DeleteDefinitionCommand('/definitions/User').canExecute({ session: extendsRef, documentVersion: 1 })).toBe(false);
 
-    const targetTypeRef = new DocumentSession('memory://targettype-def', '{"definitions":{"User":{"type":"object"},"Team":{"type":"object","relations":{"owner":{"targettype":{"$ref":"#/definitions/User"}}}}}}');
+    const targetTypeRef = new DocumentSession('memory://targettype-def', withRelations('{"definitions":{"User":{"type":"object"},"Team":{"type":"object","relations":{"owner":{"targettype":{"$ref":"#/definitions/User"}}}}}}'));
     expect(new RenameDefinitionCommand('/definitions/User', 'Profile').canExecute({ session: targetTypeRef, documentVersion: 1 })).toBe(false);
     expect(new DeleteDefinitionCommand('/definitions/User').canExecute({ session: targetTypeRef, documentVersion: 1 })).toBe(false);
 
-    const qualifierTypeRef = new DocumentSession('memory://qualifiertype-def', '{"definitions":{"User":{"type":"object"},"Team":{"type":"object","relations":{"owner":{"qualifiertype":{"$ref":"#/definitions/User"}}}}}}');
+    const qualifierTypeRef = new DocumentSession('memory://qualifiertype-def', withRelations('{"definitions":{"User":{"type":"object"},"Team":{"type":"object","relations":{"owner":{"qualifiertype":{"$ref":"#/definitions/User"}}}}}}'));
     expect(new RenameDefinitionCommand('/definitions/User', 'Profile').canExecute({ session: qualifierTypeRef, documentVersion: 1 })).toBe(false);
     expect(new DeleteDefinitionCommand('/definitions/User').canExecute({ session: qualifierTypeRef, documentVersion: 1 })).toBe(false);
 
@@ -1561,7 +1648,10 @@ describe('Phase 1 vertical slice', () => {
       { definitions: { Use: { type: 'object', relations: { target: { qualifiertype: { $ref: reference } } } } } }
     ];
     for (const site of sites) {
-      const document = JSON.stringify({ ...site, definitions: { 'A/B~C': { type: 'object' }, ...(site.definitions ?? {}) } });
+      const value = { ...site, definitions: { 'A/B~C': { type: 'object' }, ...(site.definitions ?? {}) } };
+      const document = Object.prototype.hasOwnProperty.call(site.definitions?.Use ?? {}, 'relations')
+        ? withRelations(JSON.stringify(value))
+        : JSON.stringify(value);
       const session = new DocumentSession('memory://escaped-reference', document);
       expect(new RenameDefinitionCommand(definitionPointer, 'Renamed').canExecute({ session, documentVersion: 1 })).toBe(false);
       expect(new DeleteDefinitionCommand(definitionPointer).canExecute({ session, documentVersion: 1 })).toBe(false);

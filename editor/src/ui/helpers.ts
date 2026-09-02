@@ -10,6 +10,7 @@ export interface PropertyRow {
   readonly pointer: JsonPointer;
   readonly type: string;
   readonly required: boolean;
+  readonly requiredAlternatives?: boolean;
   readonly description?: string;
   readonly schema?: Readonly<Record<string, unknown>>;
 }
@@ -72,11 +73,13 @@ export function pointerLabel(pointer: JsonPointer): string {
 export function projectProperties(definition: DefinitionProjection | undefined): readonly PropertyRow[] {
   if (!definition?.properties) return [];
   const required = new Set(Array.isArray(definition.required) ? definition.required.flat() : []);
+  const requiredAlternatives = Array.isArray(definition.required) && definition.required.length > 0 && definition.required.every(Array.isArray);
   return Object.entries(definition.properties).map(([name, schema]) => ({
     name,
     pointer: `${definition.pointer}/properties/${escapePointer(name)}`,
     type: displayType(schema.type),
     required: required.has(name),
+    ...(requiredAlternatives ? { requiredAlternatives: true } : {}),
     description: typeof schema.description === 'string' ? schema.description : undefined
     , schema
   }));
@@ -277,7 +280,9 @@ function displayType(value: unknown): string {
   if (typeof value === 'string') return value;
   const target = value && typeof value === 'object' && !Array.isArray(value) && typeof (value as Record<string, unknown>).$ref === 'string'
     ? (value as Record<string, string>).$ref : undefined;
-  return target ? pointerLabel(normalizeRef(target) ?? target) : value === undefined ? 'unknown' : JSON.stringify(value);
+  if (target) return pointerLabel(normalizeRef(target) ?? target);
+  if (Array.isArray(value)) return value.map(displayType).join(' or ');
+  return value === undefined ? 'unknown' : displayValue(value);
 }
 
 function namespaceLabel(pointer: JsonPointer): string {
@@ -307,13 +312,13 @@ export function projectInspectorSections(definition: DefinitionProjection | unde
   const sections: InspectorSection[] = [];
   addSection(sections, 'Core', {
     type: definition.type, form: definition.coreForm, '$extends': definition.extends, identity: definition.identity,
-    required: definition.required, items: definition.items, values: definition.values, tuple: definition.tuple
+    required: definition.required, items: definition.items, values: definition.values, tuple: definition.tuple, maxLength: definition.maxLength
   });
   if (definition.properties) addSection(sections, 'Properties', { properties: Object.keys(definition.properties) });
   if (definition.relations.length) addSection(sections, 'Relations', Object.fromEntries(definition.relations.map((relation) => [relation.name, {
     target: relation.targetTypeRef, cardinality: relation.cardinality, scope: relation.scope, qualifier: relation.qualifierTypeRef
   }])));
-  addProjectionSection(sections, 'Validation', definition.validation, new Set(['effectiveMinContains']));
+  addProjectionSection(sections, 'Validation', definition.validation, new Set(['effectiveMinContains', 'maxLength']));
   addProjectionSection(sections, 'Units', definition.units, new Set(['preferredComputationalUnit']));
   addProjectionSection(sections, 'Alternate names', definition.alternateNames, new Set(['inspection']));
   addProjectionSection(sections, 'Composition', definition.composition, new Set(['inspection']));
@@ -330,9 +335,9 @@ export function projectSchemaInspectorSections(schema: unknown): readonly Inspec
   if (!schema || typeof schema !== 'object' || Array.isArray(schema)) return [];
   const value = schema as Record<string, unknown>;
   const groups: readonly [string, readonly string[]][] = [
-    ['Core', ['type', 'description', '$extends', 'abstract', 'identity', 'required', 'items', 'values', 'tuple', 'choices', 'selector']],
+    ['Core', ['type', 'description', '$extends', 'abstract', 'identity', 'required', 'items', 'values', 'tuple', 'choices', 'selector', 'maxLength']],
     ['Relations', ['relations']],
-    ['Validation', ['const', 'enum', 'default', 'minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf', 'minLength', 'maxLength', 'pattern', 'format', 'minItems', 'maxItems', 'uniqueItems', 'contains', 'minContains', 'maxContains']],
+    ['Validation', ['const', 'enum', 'default', 'minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf', 'minLength', 'pattern', 'format', 'minItems', 'maxItems', 'uniqueItems', 'contains', 'minContains', 'maxContains']],
     ['Units', ['unit', 'ucumUnit', 'currency']],
     ['Alternate names', ['altnames']],
     ['Composition', ['allOf', 'anyOf', 'oneOf', 'not', 'if', 'then', 'else']],
@@ -373,5 +378,14 @@ function addEffectiveField<T>(sections: InspectorSection[], label: string, keywo
 }
 
 function displayValue(value: unknown): string {
-  return typeof value === 'string' ? value : JSON.stringify(value);
+  if (typeof value === 'string') return value;
+  if (value === null || typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (Array.isArray(value)) return value.map(displayValue).join(', ');
+  if (value && typeof value === 'object') {
+    const reference = (value as Record<string, unknown>).$ref;
+    if (typeof reference === 'string') return pointerLabel(normalizeRef(reference) ?? reference);
+    const keys = Object.keys(value);
+    return `${keys.length} configured ${keys.length === 1 ? 'field' : 'fields'}`;
+  }
+  return 'Not set';
 }

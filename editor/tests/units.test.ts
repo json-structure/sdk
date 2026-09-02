@@ -70,6 +70,8 @@ describe('Units companion authoring', () => {
     expect(new SetUnitCommand('', 'kg*m/s^2').canExecute({ session: numeric, documentVersion: 1 })).toBe(true);
     expect(new SetUnitCommand('', 'kg m').canExecute({ session: numeric, documentVersion: 1 })).toBe(false);
     expect(new SetUcumUnitCommand('', 'Cel').canExecute({ session: numeric, documentVersion: 1 })).toBe(true);
+    expect(new SetUcumUnitCommand('', '1').canExecute({ session: numeric, documentVersion: 1 })).toBe(true);
+    expect(parseDocument('memory://ucum-unity', active('"type":"number","ucumUnit":"1"')).diagnostics.some((item) => item.location?.pointer === '/ucumUnit')).toBe(false);
     expect(new SetUcumUnitCommand('', 'm/s^2').canExecute({ session: numeric, documentVersion: 1 })).toBe(false);
     expect(new SetCurrencyCommand('', 'private-currency').canExecute({ session: numeric, documentVersion: 1 })).toBe(true);
     const text = new DocumentSession('memory://text', active('"type":"string"'));
@@ -100,7 +102,7 @@ describe('Units companion authoring', () => {
       expect(diagnostic, pointer).toBeDefined();
       expect(diagnostic?.location?.range).toEqual(node?.range);
     }
-    expect(result.diagnostics.some((item) => item.location?.pointer?.startsWith('/default'))).toBe(false);
+    expect(result.diagnostics.some((item) => item.location?.pointer?.startsWith('/default/'))).toBe(false);
     expect(result.model?.projections.definitions.find((item) => item.pointer === '/properties/n')?.units?.unit).toBeUndefined();
   });
 

@@ -20,7 +20,7 @@ describe('VS Code webview client', () => {
       vscode: { postMessage: vi.fn() },
       window: { addEventListener: vi.fn(), removeEventListener: vi.fn() },
       document: { visibilityState: 'visible', addEventListener: vi.fn(), removeEventListener: vi.fn() },
-      mount: () => ({ setText: vi.fn(), setTitle: vi.fn(), getText: () => 'abc', showCommandPalette, dispose: vi.fn() })
+      mount: () => ({ setText: vi.fn(), setTitle: vi.fn(), setUri: vi.fn(), getText: () => 'abc', showCommandPalette, dispose: vi.fn() })
     });
     client.receive({ type: 'init', protocolVersion: 1, uri: 'file:///test.struct.json', title: 'Test', text: 'abc', documentVersion: 1 });
     client.receive({ type: 'showCommands', protocolVersion: 1 });
@@ -33,6 +33,23 @@ describe('VS Code webview client', () => {
     client.receive({ type: 'applyResult', protocolVersion: 1, requestId: request.requestId, result: { protocolVersion: 1, requestId: request.requestId, documentVersion: 2, applied: true, diagnostics: [] } });
     await expect(applied).resolves.toMatchObject({ applied: true });
     await expect(client.host.readDocument()).resolves.toMatchObject({ text: 'aXc', documentVersion: 2 });
+  });
+
+  it('serializes apply requests and advances the second request to the acknowledged version', async () => {
+    const { client, messages } = fixture();
+    const first = client.host.applyTextEdits(request);
+    const secondRequest: ApplyTextEditsRequest = { ...request, requestId: 'edit-2', documentVersion: 2, edits: [{ ...request.edits[0]!, range: { ...request.edits[0]!.range, startOffset: 2, endOffset: 3 }, newText: 'Y' }] };
+    const second = client.host.applyTextEdits(secondRequest);
+
+    await Promise.resolve();
+    expect(messages.filter((message) => message.type === 'applyTextEdits')).toHaveLength(1);
+    client.receive({ type: 'applyResult', protocolVersion: 1, requestId: request.requestId, result: { protocolVersion: 1, requestId: request.requestId, documentVersion: 2, applied: true, diagnostics: [] } });
+    await first;
+    await Promise.resolve();
+    expect(messages.filter((message) => message.type === 'applyTextEdits')).toHaveLength(2);
+    client.receive({ type: 'applyResult', protocolVersion: 1, requestId: secondRequest.requestId, result: { protocolVersion: 1, requestId: secondRequest.requestId, documentVersion: 3, applied: true, diagnostics: [] } });
+    await second;
+    await expect(client.host.readDocument()).resolves.toMatchObject({ text: 'aXY', documentVersion: 3 });
   });
 
   it('round-trips resource reads through the VS Code host protocol', async () => {
@@ -53,6 +70,32 @@ describe('VS Code webview client', () => {
     const requestId = libraryRequest && 'requestId' in libraryRequest ? libraryRequest.requestId : '';
     client.receive({ type: 'serviceResult', protocolVersion: 1, requestId, result: [{ id: 'financial-types' }] });
     await expect(reading).resolves.toEqual([{ id: 'financial-types' }]);
+  });
+
+  it('does not time out an interactive conversion while the host dialog is open', async () => {
+    vi.useFakeTimers();
+    const { client, messages } = fixture();
+    const options = { rootName: 'Invoice', preserveUnknownKeywords: true };
+    const converting = client.host.convert!({ protocolVersion: 1, requestId: 'convert-1', kind: 'conversion', documentVersion: 1, commandId: 'export.test', sourceName: 'test.struct.json', sourceText: '{}', options });
+    const service = messages.at(-1);
+    expect(service).toMatchObject({ type: 'convert', request: { options } });
+    const requestId = service && 'requestId' in service ? service.requestId : '';
+    await vi.advanceTimersByTimeAsync(500);
+    client.receive({ type: 'serviceResult', protocolVersion: 1, requestId, result: { protocolVersion: 1, requestId: 'convert-1', documentVersion: 1, succeeded: false, outputs: [], diagnostics: [] } });
+    await expect(converting).resolves.toMatchObject({ requestId: 'convert-1' });
+    vi.useRealTimers();
+  });
+
+  it('round-trips interactive conversion source selection without a generic timeout', async () => {
+    vi.useFakeTimers();
+    const { client, messages } = fixture();
+    const selecting = client.host.selectConversionSource!({ protocolVersion: 1, requestId: 'source-dialog', kind: 'select-conversion-source', formats: ['avro'] });
+    const service = messages.at(-1);
+    const requestId = service && 'requestId' in service ? service.requestId : '';
+    await vi.advanceTimersByTimeAsync(500);
+    client.receive({ type: 'serviceResult', protocolVersion: 1, requestId, result: { uri: 'file:///order.avsc', name: 'order.avsc', text: '{}' } });
+    await expect(selecting).resolves.toEqual({ uri: 'file:///order.avsc', name: 'order.avsc', text: '{}' });
+    vi.useRealTimers();
   });
 
   it('times out resource reads that receive no host response', async () => {
@@ -98,6 +141,57 @@ describe('VS Code webview client', () => {
     vi.useRealTimers();
   });
 
+  it('rebases text entered while a source edit awaits its acknowledgement', async () => {
+    vi.useFakeTimers();
+    const { client, messages } = fixture();
+    client.replaceDocument('first');
+    await vi.advanceTimersByTimeAsync(300);
+    client.replaceDocument('latest');
+
+    client.receive({ type: 'applyResult', protocolVersion: 1, requestId: 'source-1', result: { protocolVersion: 1, requestId: 'source-1', documentVersion: 2, applied: true, diagnostics: [] } });
+    await Promise.resolve();
+    expect(messages[1]).toEqual({ type: 'applyTextEdits', protocolVersion: 1, request: { protocolVersion: 1, requestId: 'source-2', documentVersion: 2, edits: [{ range: { start: { line: 0, column: 0 }, end: { line: 0, column: 3 }, startOffset: 0, endOffset: 3 }, newText: 'late' }] } });
+    client.receive({ type: 'applyResult', protocolVersion: 1, requestId: 'source-2', result: { protocolVersion: 1, requestId: 'source-2', documentVersion: 3, applied: true, diagnostics: [] } });
+    await expect(client.host.readDocument()).resolves.toMatchObject({ text: 'latest', documentVersion: 3 });
+    vi.useRealTimers();
+  });
+
+  it('preserves and rebases late text when the document update precedes the acknowledgement', async () => {
+    vi.useFakeTimers();
+    const { client, messages } = fixture();
+    client.replaceDocument('first');
+    await vi.advanceTimersByTimeAsync(300);
+    client.replaceDocument('latest');
+
+    client.receive({ type: 'documentChanged', protocolVersion: 1, text: 'first', documentVersion: 2 });
+    client.receive({ type: 'applyResult', protocolVersion: 1, requestId: 'source-1', result: { protocolVersion: 1, requestId: 'source-1', documentVersion: 2, applied: true, diagnostics: [] } });
+    await Promise.resolve();
+    expect(messages[1]).toEqual({ type: 'applyTextEdits', protocolVersion: 1, request: { protocolVersion: 1, requestId: 'source-2', documentVersion: 2, edits: [{ range: { start: { line: 0, column: 0 }, end: { line: 0, column: 3 }, startOffset: 0, endOffset: 3 }, newText: 'late' }] } });
+    client.receive({ type: 'documentChanged', protocolVersion: 1, text: 'latest', documentVersion: 3 });
+    client.receive({ type: 'applyResult', protocolVersion: 1, requestId: 'source-2', result: { protocolVersion: 1, requestId: 'source-2', documentVersion: 3, applied: true, diagnostics: [] } });
+    await expect(client.host.readDocument()).resolves.toMatchObject({ text: 'latest', documentVersion: 3 });
+    vi.useRealTimers();
+  });
+
+  it('waits for a newer document after a stale rejection before rebasing late text', async () => {
+    vi.useFakeTimers();
+    const { client, messages } = fixture();
+    client.replaceDocument('first');
+    await vi.advanceTimersByTimeAsync(300);
+    client.replaceDocument('latest');
+
+    client.receive({ type: 'applyResult', protocolVersion: 1, requestId: 'source-1', result: { protocolVersion: 1, requestId: 'source-1', documentVersion: 2, applied: false, diagnostics: [] } });
+    await Promise.resolve();
+    await client.host.readDocument();
+    expect(messages).toHaveLength(1);
+    client.receive({ type: 'documentChanged', protocolVersion: 1, text: 'external', documentVersion: 2 });
+    await Promise.resolve();
+    expect(messages[1]).toEqual({ type: 'applyTextEdits', protocolVersion: 1, request: { protocolVersion: 1, requestId: 'source-2', documentVersion: 2, edits: [{ range: { start: { line: 0, column: 0 }, end: { line: 0, column: 8 }, startOffset: 0, endOffset: 8 }, newText: 'latest' }] } });
+    client.receive({ type: 'applyResult', protocolVersion: 1, requestId: 'source-2', result: { protocolVersion: 1, requestId: 'source-2', documentVersion: 3, applied: true, diagnostics: [] } });
+    await expect(client.host.readDocument()).resolves.toMatchObject({ text: 'latest', documentVersion: 3 });
+    vi.useRealTimers();
+  });
+
   it('restores authoritative text and version when a source replacement is rejected', async () => {
     vi.useFakeTimers();
     const setText = vi.fn();
@@ -106,7 +200,7 @@ describe('VS Code webview client', () => {
       vscode: { postMessage: (message) => messages.push(message) },
       window: { addEventListener: vi.fn(), removeEventListener: vi.fn() },
       document: { visibilityState: 'visible', addEventListener: vi.fn(), removeEventListener: vi.fn() },
-      mount: () => ({ setText, setTitle: vi.fn(), getText: () => 'abc', showCommandPalette: vi.fn(), dispose: vi.fn() }),
+      mount: () => ({ setText, setTitle: vi.fn(), setUri: vi.fn(), getText: () => 'abc', showCommandPalette: vi.fn(), dispose: vi.fn() }),
       requestTimeoutMs: 50,
       sourceReplaceDelayMs: 300
     });
@@ -140,6 +234,25 @@ describe('VS Code webview client', () => {
     await vi.advanceTimersByTimeAsync(300);
     expect(messages).toEqual([]);
     vi.useRealTimers();
+  });
+
+  it('accepts rejected-document diagnostics and advances the authoritative version', async () => {
+    const setText = vi.fn();
+    const client = createVsCodeWebviewClient({
+      vscode: { postMessage: vi.fn() },
+      window: { addEventListener: vi.fn(), removeEventListener: vi.fn() },
+      document: { visibilityState: 'visible', addEventListener: vi.fn(), removeEventListener: vi.fn() },
+      mount: () => ({ setText, setTitle: vi.fn(), setUri: vi.fn(), getText: () => 'abc', showCommandPalette: vi.fn(), dispose: vi.fn() })
+    });
+    client.receive({ type: 'init', protocolVersion: 1, uri: 'file:///test.struct.json', title: 'Test', text: 'abc', documentVersion: 1 });
+    client.receive({ type: 'documentRejected', protocolVersion: 1, documentVersion: 2, diagnostics: [{ code: 'vscode.document-limit', message: 'too large', severity: 'error' }] });
+    await expect(client.host.readDocument()).resolves.toMatchObject({
+      text: 'abc',
+      documentVersion: 2,
+      recovery: 'invalid',
+      diagnostics: [{ code: 'vscode.document-limit', message: 'too large', severity: 'error' }]
+    });
+    expect(setText).toHaveBeenLastCalledWith('abc', 2);
   });
 
   it('flushes the latest source replacement when the webview becomes hidden', () => {

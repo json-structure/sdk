@@ -48,6 +48,7 @@ describe('analysis workbench view', () => {
     const html = analysisView(snapshot, '/definitions/Document', projectGraph(snapshot), 'both', undefined, '', ['Audited']);
 
     expect(html).toContain('Offered add-ins');
+    expect(html).toContain('<span class="js-code">$offers</span> keys');
     expect(html).toContain('data-addin value="Audited" checked');
     expect(html).toContain('createdBy');
     expect(html).toContain('add-in | Audited');

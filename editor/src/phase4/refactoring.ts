@@ -1,3 +1,5 @@
+import { resolveCapabilities } from '../capabilities.js';
+
 export type JsonObject = Record<string, unknown>;
 
 export interface RefactoringCollision {
@@ -65,20 +67,31 @@ export interface AddImportOptions {
   readonly keyword?: '$import' | '$importdefs';
 }
 
-const REFERENCE_MEMBERS = new Set(['$ref', '$extends', '$root', 'targettype', 'qualifiertype']);
+const CORE_TYPES = new Set([
+  'string', 'number', 'integer', 'boolean', 'null',
+  'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32', 'int64', 'uint64', 'int128', 'uint128',
+  'float8', 'float', 'double', 'decimal', 'date', 'datetime', 'time', 'duration', 'uuid', 'uri', 'binary', 'jsonpointer',
+  'object', 'array', 'map', 'set', 'tuple', 'choice'
+]);
 
 export function planMoveDefinition<T extends JsonObject>(document: T, options: MoveDefinitionOptions): RefactoringPlan<T> {
   const sourceSegments = parsePointer(options.sourcePointer);
   const targetNamespace = options.targetNamespacePointer ?? '/definitions';
   const targetSegments = parsePointer(targetNamespace);
-  if (!sourceSegments || !targetSegments || sourceSegments.length < 2) {
-    return failedPlan(document, invalidPointer(options.sourcePointer));
+  if (!sourceSegments) return failedPlan(document, invalidPointer(options.sourcePointer));
+  if (!targetSegments) return failedPlan(document, invalidPointer(targetNamespace));
+  if (!pointerExists(document, sourceSegments)) return failedPlan(document, missingSource(options.sourcePointer));
+  if (!reusableDefinitionPointer(document, sourceSegments)) {
+    return failedPlan(document, invalidSelection(options.sourcePointer, `Move source must be a reusable definition: ${options.sourcePointer}`));
   }
+  if (pathStartsWith(targetSegments, sourceSegments)) {
+    return failedPlan(document, invalidSelection(targetNamespace, 'A definition cannot be moved into itself or one of its descendants.'));
+  }
+  if (!structuralDefinitionNamespace(document, targetSegments)) return failedPlan(document, invalidPointer(targetNamespace));
   const sourceName = sourceSegments[sourceSegments.length - 1];
   const targetName = options.targetName ?? sourceName;
-  const targetPointer = appendPointer(targetNamespace, targetName);
+  const targetPointer = formatPointer([...targetSegments, targetName]);
   const sourceValue = valueAt(document, sourceSegments);
-  if (sourceValue === undefined) return failedPlan(document, missingSource(options.sourcePointer));
   const targetContainer = valueAt(document, targetSegments);
   if (!isObject(targetContainer)) return failedPlan(document, invalidPointer(targetNamespace));
   if (Object.prototype.hasOwnProperty.call(targetContainer, targetName)) return failedPlan(document, targetExists(targetPointer));
@@ -88,7 +101,7 @@ export function planMoveDefinition<T extends JsonObject>(document: T, options: M
   deleteAt(result, sourceSegments);
   setAt(result, [...targetSegments, targetName], moved);
   const rewrites = { [`#${options.sourcePointer}`]: `#${targetPointer}` };
-  const referenceImpact = rewriteLocalReferences(result, rewrites);
+  const referenceImpact = rewriteLocalReferences(result, rewrites, '', referenceTraversalFor(document));
   const impact: RefactoringImpact[] = [
     { kind: 'remove', pointer: options.sourcePointer, from: clone(sourceValue) },
     { kind: 'add', pointer: targetPointer, to: clone(moved) },
@@ -126,7 +139,9 @@ export function planCopyDeclarations(options: CopyDeclarationsOptions): Refactor
   const targetNamespace = options.targetNamespacePointer ?? '/definitions';
   const targetSegments = parsePointer(targetNamespace);
   const targetDocument = options.targetDocument ?? options.sourceDocument;
-  if (!targetSegments || !isObject(valueAt(targetDocument, targetSegments))) {
+  const sameDocument = targetDocument === options.sourceDocument;
+  const traversal = referenceTraversalFor(options.sourceDocument);
+  if (!targetSegments || !structuralDefinitionNamespace(targetDocument, targetSegments)) {
     return failedPlan(targetDocument, invalidPointer(targetNamespace));
   }
 
@@ -137,39 +152,54 @@ export function planCopyDeclarations(options: CopyDeclarationsOptions): Refactor
   while (queue.length > 0) {
     const pointer = queue.shift()!;
     const segments = parsePointer(pointer);
-    const declaration = segments ? valueAt(options.sourceDocument, segments) : undefined;
-    if (!segments || !isObject(declaration)) {
-      collisions.push(segments ? missingSource(pointer) : invalidPointer(pointer));
+    if (!segments) {
+      collisions.push(invalidPointer(pointer));
       continue;
     }
+    if (!pointerExists(options.sourceDocument, segments)) {
+      collisions.push(missingSource(pointer));
+      continue;
+    }
+    if (!reusableDefinitionPointer(options.sourceDocument, segments)) {
+      collisions.push(invalidSelection(pointer, `Copy source must be a reusable definition: ${pointer}`));
+      continue;
+    }
+    const declaration = valueAt(options.sourceDocument, segments) as JsonObject;
     if (ordered.includes(pointer)) continue;
     ordered.push(pointer);
-    for (const dependency of collectLocalDefinitionReferences(declaration)) {
+    if (sameDocument && pathsEqual(segments, [...targetSegments, segments[segments.length - 1]])) continue;
+    for (const dependency of collectLocalDefinitionReferences(declaration, traversal)) {
       if (!selected.has(dependency) && !ordered.includes(dependency)) queue.push(dependency);
     }
   }
 
   const destinations = new Map<string, string>();
+  const plannedTargets = new Set<string>();
   for (const sourcePointer of ordered) {
     const segments = parsePointer(sourcePointer)!;
     const name = segments[segments.length - 1];
-    const targetPointer = appendPointer(targetNamespace, name);
+    const target = [...targetSegments, name];
+    const targetPointer = formatPointer(target);
     destinations.set(sourcePointer, targetPointer);
-    const existing = valueAt(targetDocument, [...targetSegments, name]);
-    if (existing !== undefined && sourcePointer !== targetPointer) collisions.push(targetExists(targetPointer));
+    if (plannedTargets.has(targetPointer)) collisions.push(targetExists(targetPointer));
+    plannedTargets.add(targetPointer);
+    if (pointerExists(targetDocument, target) && !(sameDocument && pathsEqual(segments, target))) collisions.push(targetExists(targetPointer));
   }
   if (collisions.length > 0) return failedPlan(targetDocument, ...collisions);
 
   const result = clone(targetDocument);
   const rewrites: Record<string, string> = {};
-  for (const [source, target] of destinations) rewrites[`#${source}`] = `#${target}`;
+  for (const [source, target] of destinations) {
+    if (!sameDocument || !pathsEqual(parsePointer(source)!, parsePointer(target)!)) rewrites[`#${source}`] = `#${target}`;
+  }
   const impact: RefactoringImpact[] = [];
   const provenance: DeclarationProvenance[] = [];
   for (const sourcePointer of ordered) {
     const targetPointer = destinations.get(sourcePointer)!;
     const target = parsePointer(targetPointer)!;
+    if (sameDocument && pathsEqual(parsePointer(sourcePointer)!, target)) continue;
     const declaration = clone(valueAt(options.sourceDocument, parsePointer(sourcePointer)!)!);
-    rewriteLocalReferences(declaration, rewrites, targetPointer);
+    rewriteLocalReferences(declaration, rewrites, targetPointer, traversal);
     setAt(result, target, declaration);
     impact.push({ kind: 'add', pointer: targetPointer, to: clone(declaration) });
     provenance.push({ sourcePointer, targetPointer, reason: selected.has(sourcePointer) ? 'selected' : 'dependency' });
@@ -182,15 +212,32 @@ export function planMaterializeDeclarations(options: MaterializeDeclarationsOpti
   const targetDocument = options.targetDocument ?? options.sourceDocument;
   const authoredImport = importSegments ? valueAt(targetDocument, importSegments) : undefined;
   if (!importSegments) return failedPlan(targetDocument, invalidPointer(options.importPointer));
+  const importContext = materializationImportContext(importSegments);
+  if (!importContext || !namespaceImportPlacement(targetDocument, importContext.namespaceSegments)) {
+    return failedPlan(targetDocument, invalidSelection(options.importPointer, 'Materialization requires an authored $import or $importdefs at a namespace location.'));
+  }
+  if (options.selectedPointers.length === 0) {
+    return failedPlan(targetDocument, invalidSelection(options.importPointer, 'Materialization requires at least one declaration.'));
+  }
   if (authoredImport !== options.importSource) {
-    return failedPlan(targetDocument, {
-      pointer: options.importPointer,
-      kind: 'invalid-selection',
-      message: `Materialization requires an authored import of '${options.importSource}' at ${options.importPointer}.`
-    });
+    return failedPlan(targetDocument, invalidSelection(options.importPointer, `Materialization requires an authored import of '${options.importSource}' at ${options.importPointer}.`));
   }
   const copy = planCopyDeclarations(options);
   if (!copy.applicable) return copy;
+  const uncopiedDependencies = collectDocumentLocalDefinitionReferences(targetDocument, referenceTraversalFor(targetDocument))
+    .map((pointer) => importedSourceDependency(options.sourceDocument, pointer, importContext))
+    .filter((dependency): dependency is ImportedSourceDependency => dependency !== undefined)
+    .filter((dependency) => {
+      return !hasAuthoredTypeDeclaration(targetDocument, dependency.targetPointer) &&
+        !copy.provenance.some((entry) => entry.targetPointer === dependency.targetPointer);
+    });
+  if (uncopiedDependencies.length > 0) {
+    const unique = [...new Map(uncopiedDependencies.map((dependency) => [dependency.targetPointer, dependency])).values()];
+    return failedPlan(targetDocument, ...unique.map((dependency) => invalidSelection(
+      dependency.targetPointer,
+      `Materialization cannot remove '${options.importSource}'; target references uncopied source declaration ${dependency.sourcePointer || '<document root>'}.`
+    )));
+  }
   const result = clone(copy.resultingDocument);
   deleteAt(result, importSegments);
   const removeImport: RefactoringImpact = { kind: 'remove', pointer: options.importPointer, from: authoredImport };
@@ -202,12 +249,16 @@ export function planAddImport<T extends JsonObject>(document: T, options: AddImp
   const destination = destinationSegments ? valueAt(document, destinationSegments) : undefined;
   const keyword = options.keyword ?? '$importdefs';
   if (!destinationSegments || !isObject(destination)) return failedPlan(document, invalidPointer(options.destinationPointer));
-  if (!options.source.trim()) return failedPlan(document, missingSource(options.source));
+  if (!namespaceImportPlacement(document, destinationSegments)) return failedPlan(document, invalidPointer(options.destinationPointer));
+  if (keyword !== '$import' && keyword !== '$importdefs') return failedPlan(document, invalidSelection(options.destinationPointer, `Unsupported import keyword: ${String(keyword)}`));
+  if (typeof options.source !== 'string' || !absoluteUri(options.source)) return failedPlan(document, missingSource(String(options.source)));
   const targetPointer = appendPointer(options.destinationPointer, keyword);
-  if (Object.prototype.hasOwnProperty.call(destination, keyword)) return failedPlan(document, targetExists(targetPointer));
+  if (Object.prototype.hasOwnProperty.call(destination, '$import') || Object.prototype.hasOwnProperty.call(destination, '$importdefs')) {
+    return failedPlan(document, targetExists(targetPointer));
+  }
   const result = clone(document);
-  setAt(result, [...destinationSegments, keyword], options.source.trim());
-  return successfulPlan(result as T, [{ kind: 'add', pointer: targetPointer, to: options.source.trim() }], [{ sourcePointer: options.source.trim(), targetPointer, reason: 'import' }], {});
+  setAt(result, [...destinationSegments, keyword], options.source);
+  return successfulPlan(result as T, [{ kind: 'add', pointer: targetPointer, to: options.source }], [{ sourcePointer: options.source, targetPointer, reason: 'import' }], {});
 }
 
 export function planLocalShadow<T extends JsonObject>(document: T, options: LocalShadowOptions): RefactoringPlan<T> {
@@ -231,30 +282,189 @@ export function previewRefactoringImpact(plan: RefactoringPlan): readonly Refact
   return plan.impact;
 }
 
-function collectLocalDefinitionReferences(value: unknown): string[] {
+function collectLocalDefinitionReferences(value: unknown, traversal: ReferenceTraversal): string[] {
   const references = new Set<string>();
-  visit(value, (member, candidate) => {
-    if (!REFERENCE_MEMBERS.has(member)) return;
+  visitSchemaReferences(value, (_container, _key, candidate) => {
     for (const reference of typeof candidate === 'string' ? [candidate] : Array.isArray(candidate) ? candidate : []) {
       const pointer = localReferencePointer(reference);
       if (pointer?.startsWith('/definitions/')) references.add(pointer);
     }
-  });
+  }, [], traversal);
   return [...references];
 }
 
-function rewriteLocalReferences(value: unknown, rewrites: Readonly<Record<string, string>>, basePointer = ''): RefactoringImpact[] {
+function rewriteLocalReferences(
+  value: unknown,
+  rewrites: Readonly<Record<string, string>>,
+  basePointer = '',
+  traversal: ReferenceTraversal = ALL_REFERENCE_POSITIONS,
+): RefactoringImpact[] {
   const impact: RefactoringImpact[] = [];
-  walk(value, [], (container, key, candidate, path) => {
-    if (!REFERENCE_MEMBERS.has(key)) return;
+  const rewrite = (container: JsonObject, key: string, candidate: unknown, path: string[]): void => {
     const rewrite = (entry: unknown): unknown => typeof entry === 'string' ? rewriteReference(entry, rewrites) : entry;
     const rewritten = Array.isArray(candidate) ? candidate.map(rewrite) : rewrite(candidate);
     if (!deepEqual(candidate, rewritten)) {
       container[key] = rewritten;
       impact.push({ kind: 'rewrite-reference', pointer: `${basePointer}${formatPointer(path)}`, from: candidate, to: rewritten });
     }
-  });
+  };
+  if (basePointer === '') visitDocumentReferences(value, rewrite, traversal);
+  else visitSchemaReferences(value, rewrite, [], traversal);
   return impact;
+}
+
+type SchemaReferenceVisitor = (container: JsonObject, key: string, value: unknown, path: string[]) => void;
+
+interface ReferenceTraversal {
+  readonly validation: boolean;
+  readonly composition: boolean;
+  readonly relations: boolean;
+}
+
+const ALL_REFERENCE_POSITIONS: ReferenceTraversal = { validation: true, composition: true, relations: true };
+const CORE_SCHEMA_MEMBERS = ['items', 'values', 'additionalProperties'] as const;
+const CORE_SCHEMA_MAP_MEMBERS = ['properties', 'choices'] as const;
+const VALIDATION_SCHEMA_MEMBERS = ['contains', 'propertyNames', 'keyNames', 'has'] as const;
+const VALIDATION_SCHEMA_MAP_MEMBERS = ['patternProperties', 'patternKeys'] as const;
+const COMPOSITION_SCHEMA_MEMBERS = ['not', 'if', 'then', 'else'] as const;
+const COMPOSITION_SCHEMA_ARRAY_MEMBERS = ['allOf', 'anyOf', 'oneOf'] as const;
+
+function visitSchemaReferences(value: unknown, visitor: SchemaReferenceVisitor, path: string[], traversal: ReferenceTraversal): void {
+  if (!isObject(value)) return;
+  for (const [member, nested] of Object.entries(value)) {
+    const memberPath = [...path, member];
+    if (member === '$ref' || member === '$root' || member === '$extends') {
+      visitor(value, member, nested, memberPath);
+    } else if (member === 'type') {
+      visitTypeReferences(nested, visitor, memberPath, traversal);
+    } else if ((CORE_SCHEMA_MEMBERS as readonly string[]).includes(member)) {
+      visitSchemaReferences(nested, visitor, memberPath, traversal);
+    } else if ((CORE_SCHEMA_MAP_MEMBERS as readonly string[]).includes(member) && isObject(nested)) {
+      for (const [name, schema] of Object.entries(nested)) visitSchemaReferences(schema, visitor, [...memberPath, name], traversal);
+    } else if (traversal.validation && (VALIDATION_SCHEMA_MEMBERS as readonly string[]).includes(member)) {
+      visitSchemaReferences(nested, visitor, memberPath, traversal);
+    } else if (traversal.validation && (VALIDATION_SCHEMA_MAP_MEMBERS as readonly string[]).includes(member) && isObject(nested)) {
+      for (const [name, schema] of Object.entries(nested)) visitSchemaReferences(schema, visitor, [...memberPath, name], traversal);
+    } else if (traversal.composition && (COMPOSITION_SCHEMA_MEMBERS as readonly string[]).includes(member)) {
+      visitSchemaReferences(nested, visitor, memberPath, traversal);
+    } else if (traversal.composition && (COMPOSITION_SCHEMA_ARRAY_MEMBERS as readonly string[]).includes(member) && Array.isArray(nested)) {
+      nested.forEach((schema, index) => visitSchemaReferences(schema, visitor, [...memberPath, String(index)], traversal));
+    } else if (traversal.relations && member === 'relations' && isObject(nested)) {
+      for (const [name, relation] of Object.entries(nested)) {
+        if (!isObject(relation)) continue;
+        visitReferenceWrapper(relation.targettype, visitor, [...memberPath, name, 'targettype'], traversal);
+        visitReferenceWrapper(relation.qualifiertype, visitor, [...memberPath, name, 'qualifiertype'], traversal);
+      }
+    }
+  }
+}
+
+function visitTypeReferences(value: unknown, visitor: SchemaReferenceVisitor, path: string[], traversal: ReferenceTraversal): void {
+  if (Array.isArray(value)) {
+    value.forEach((entry, index) => visitTypeReferences(entry, visitor, [...path, String(index)], traversal));
+  } else {
+    visitReferenceWrapper(value, visitor, path, traversal);
+  }
+}
+
+function visitReferenceWrapper(value: unknown, visitor: SchemaReferenceVisitor, path: string[], traversal: ReferenceTraversal): void {
+  if (isObject(value)) visitSchemaReferences(value, visitor, path, traversal);
+}
+
+function visitDocumentReferences(value: unknown, visitor: SchemaReferenceVisitor, traversal: ReferenceTraversal): void {
+  visitSchemaReferences(value, visitor, [], traversal);
+  if (!isObject(value)) return;
+  const offers = value.$offers;
+  if (isObject(offers)) {
+    for (const [name, offer] of Object.entries(offers)) visitor(offers, name, offer, ['$offers', name]);
+  }
+  visitDefinitionNamespace(value.definitions, visitor, ['definitions'], traversal);
+}
+
+function visitDefinitionNamespace(value: unknown, visitor: SchemaReferenceVisitor, path: string[], traversal: ReferenceTraversal): void {
+  if (!isObject(value)) return;
+  for (const [name, entry] of Object.entries(value)) {
+    if (name === '$import' || name === '$importdefs' || !isObject(entry)) continue;
+    const entryPath = [...path, name];
+    if (isSchemaDeclaration(entry, traversal)) visitSchemaReferences(entry, visitor, entryPath, traversal);
+    else visitDefinitionNamespace(entry, visitor, entryPath, traversal);
+  }
+}
+
+function collectDocumentLocalDefinitionReferences(value: unknown, traversal: ReferenceTraversal): string[] {
+  const references = new Set<string>();
+  visitDocumentReferences(value, (_container, _key, candidate) => {
+    const values = typeof candidate === 'string' ? [candidate] : Array.isArray(candidate) ? candidate : [];
+    for (const reference of values) {
+      const pointer = typeof reference === 'string' ? localReferencePointer(reference) : undefined;
+      if (pointer?.startsWith('/definitions/')) references.add(pointer);
+    }
+  }, traversal);
+  return [...references];
+}
+
+function isSchemaDeclaration(value: JsonObject, traversal: ReferenceTraversal): boolean {
+  return Object.prototype.hasOwnProperty.call(value, 'type') || Object.prototype.hasOwnProperty.call(value, '$ref') ||
+    Object.prototype.hasOwnProperty.call(value, '$extends') ||
+    traversal.composition && [...COMPOSITION_SCHEMA_MEMBERS, ...COMPOSITION_SCHEMA_ARRAY_MEMBERS]
+      .some((member) => Object.prototype.hasOwnProperty.call(value, member));
+}
+
+function referenceTraversalFor(document: unknown): ReferenceTraversal {
+  if (!isObject(document) || typeof document.$schema !== 'string') return ALL_REFERENCE_POSITIONS;
+  const capabilities = resolveCapabilities(document);
+  return {
+    validation: capabilities.validationActive,
+    composition: capabilities.conditionalCompositionActive,
+    relations: capabilities.relationsActive,
+  };
+}
+
+interface MaterializationImportContext {
+  readonly keyword: '$import' | '$importdefs';
+  readonly namespaceSegments: readonly string[];
+  readonly destinationPointer: string;
+}
+
+interface ImportedSourceDependency {
+  readonly sourcePointer: string;
+  readonly targetPointer: string;
+}
+
+function materializationImportContext(importSegments: readonly string[]): MaterializationImportContext | undefined {
+  const keyword = importSegments.at(-1);
+  if (keyword !== '$import' && keyword !== '$importdefs') return undefined;
+  const namespaceSegments = importSegments.slice(0, -1);
+  const namespacePointer = formatPointer(namespaceSegments);
+  return {
+    keyword,
+    namespaceSegments,
+    destinationPointer: namespacePointer === '' || namespacePointer === '/definitions' ? '/definitions' : namespacePointer,
+  };
+}
+
+function importedSourceDependency(
+  sourceDocument: JsonObject,
+  targetPointer: string,
+  context: MaterializationImportContext,
+): ImportedSourceDependency | undefined {
+  if (targetPointer.startsWith(`${context.destinationPointer}/`)) {
+    const sourcePointer = `/definitions${targetPointer.slice(context.destinationPointer.length)}`;
+    return { sourcePointer, targetPointer };
+  }
+  if (context.keyword !== '$import' || typeof sourceDocument.name !== 'string') return undefined;
+  const importedRootPointer = `${context.destinationPointer}/${escapePointerPart(sourceDocument.name)}`;
+  if (targetPointer === importedRootPointer || targetPointer.startsWith(`${importedRootPointer}/`)) {
+    return { sourcePointer: '', targetPointer };
+  }
+  return undefined;
+}
+
+function hasAuthoredTypeDeclaration(document: JsonObject, pointer: string): boolean {
+  const segments = parsePointer(pointer);
+  if (!segments || !pointerExists(document, segments)) return false;
+  const value = valueAt(document, segments);
+  return isObject(value) && validTypeValue(value.type);
 }
 
 function rewriteReference(reference: string, rewrites: Readonly<Record<string, string>>): string {
@@ -308,6 +518,16 @@ function valueAt(root: unknown, segments: readonly string[]): unknown {
   return current;
 }
 
+function pointerExists(root: unknown, segments: readonly string[]): boolean {
+  let current = root;
+  for (const segment of segments) {
+    if (!isObject(current) && !Array.isArray(current)) return false;
+    if (!Object.prototype.hasOwnProperty.call(current, segment)) return false;
+    current = (current as Record<string, unknown>)[segment];
+  }
+  return true;
+}
+
 function setAt(root: unknown, segments: readonly string[], value: unknown): void {
   const parent = valueAt(root, segments.slice(0, -1));
   if (!isObject(parent) && !Array.isArray(parent)) throw new Error(`Cannot set ${formatPointer(segments)}.`);
@@ -317,28 +537,6 @@ function setAt(root: unknown, segments: readonly string[], value: unknown): void
 function deleteAt(root: unknown, segments: readonly string[]): void {
   const parent = valueAt(root, segments.slice(0, -1));
   if (isObject(parent)) delete parent[segments[segments.length - 1]];
-}
-
-function visit(value: unknown, visitor: (member: string, value: unknown) => void): void {
-  if (Array.isArray(value)) {
-    for (const entry of value) visit(entry, visitor);
-  } else if (isObject(value)) {
-    for (const [member, entry] of Object.entries(value)) {
-      visitor(member, entry);
-      visit(entry, visitor);
-    }
-  }
-}
-
-function walk(value: unknown, path: string[], visitor: (container: JsonObject, key: string, value: unknown, path: string[]) => void): void {
-  if (Array.isArray(value)) {
-    value.forEach((entry, index) => walk(entry, [...path, String(index)], visitor));
-  } else if (isObject(value)) {
-    for (const [key, entry] of Object.entries(value)) {
-      visitor(value, key, entry, [...path, key]);
-      walk(value[key], [...path, key], visitor);
-    }
-  }
 }
 
 function clone<T>(value: T): T {
@@ -371,4 +569,75 @@ function missingSource(pointer: string): RefactoringCollision {
 
 function targetExists(pointer: string): RefactoringCollision {
   return { pointer, kind: 'target-exists', message: `Target declaration already exists: ${pointer}` };
+}
+
+function invalidSelection(pointer: string, message: string): RefactoringCollision {
+  return { pointer, kind: 'invalid-selection', message };
+}
+
+function namespaceImportPlacement(document: JsonObject, segments: readonly string[]): boolean {
+  if (segments.length === 0) return true;
+  if (segments[0] !== 'definitions') return false;
+  let current: unknown = document.definitions;
+  if (!isObject(current)) return false;
+  if (segments.length === 1) return true;
+  for (const segment of segments.slice(1)) {
+    current = current[segment];
+    if (!isObject(current) || isTypeDeclaration(current)) return false;
+  }
+  return true;
+}
+
+function structuralDefinitionNamespace(document: JsonObject, segments: readonly string[]): boolean {
+  return segments.length > 0 && namespaceImportPlacement(document, segments);
+}
+
+function reusableDefinitionPointer(document: JsonObject, segments: readonly string[]): boolean {
+  if (segments.length < 2 || segments[0] !== 'definitions' || !isObject(document.definitions)) return false;
+  let current: unknown = document.definitions;
+  for (let index = 1; index < segments.length; index++) {
+    current = (current as JsonObject)[segments[index]];
+    if (!isObject(current) || index < segments.length - 1 && isTypeDeclaration(current)) return false;
+  }
+  return isTypeDeclaration(current as JsonObject);
+}
+
+function pathStartsWith(path: readonly string[], prefix: readonly string[]): boolean {
+  return path.length >= prefix.length && prefix.every((segment, index) => path[index] === segment);
+}
+
+function pathsEqual(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && pathStartsWith(left, right);
+}
+
+function isTypeDeclaration(value: JsonObject): boolean {
+  return validTypeValue(value.type);
+}
+
+function validTypeValue(value: unknown): boolean {
+  if (typeof value === 'string') return CORE_TYPES.has(value);
+  if (typeReferenceValue(value) !== undefined) return true;
+  return Array.isArray(value) && value.length > 0 && value.every((member) =>
+    typeof member === 'string' ? CORE_TYPES.has(member) : validUnionObjectMember(member));
+}
+
+function validUnionObjectMember(value: unknown): boolean {
+  if (typeReferenceValue(value) !== undefined) return true;
+  if (!isObject(value) || typeof value.type !== 'string') return false;
+  if ((value.type === 'array' || value.type === 'set') && isObject(value.items)) return validTypeValue(value.items.type);
+  return value.type === 'map' && isObject(value.values) && validTypeValue(value.values.type);
+}
+
+function typeReferenceValue(value: unknown): string | undefined {
+  if (!isObject(value) || !Object.keys(value).every((key) => key === '$ref' || key === 'description')) return undefined;
+  return typeof value.$ref === 'string' && localReferencePointer(value.$ref) !== undefined &&
+    (value.description === undefined || typeof value.description === 'string') ? value.$ref : undefined;
+}
+
+function absoluteUri(value: string): boolean {
+  try {
+    return /^[A-Za-z][A-Za-z0-9+.-]*:/.test(value) && new URL(value).href.length > 0;
+  } catch {
+    return false;
+  }
 }

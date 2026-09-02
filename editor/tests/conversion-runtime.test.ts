@@ -7,7 +7,7 @@ import { ConversionLifecycle } from '../src/conversion/lifecycle.js';
 import { NodeFilesystemConversionStorage } from '../src/conversion/node-host.js';
 import { ConversionRuntime } from '../src/conversion/runtime.js';
 import { publishAtomically, type ConversionStorage } from '../src/conversion/storage.js';
-import { parseCommandsManifest, validateOptionValues } from '../src/conversion/types.js';
+import { conversionOptionsForCommand, parseCommandsManifest, validateOptionValues } from '../src/conversion/types.js';
 import { DeterministicInProcessWorker, PackagedExecutableWorkerAdapter, type ConversionWorkerResult } from '../src/conversion/worker.js';
 
 const encoder = new TextEncoder();
@@ -53,6 +53,18 @@ describe('conversion metadata and packaged runtime', () => {
     expect(() => parseCommandsManifest({ schemaVersion: 1, converters: [], commands: [{ converterId: 'missing' }] })).toThrow('unknown converter');
   });
 
+  it('scopes options to a command and preserves ordered string lists', () => {
+    const manifest = parseCommandsManifest({ schemaVersion: 1, converters: [{
+      id: 'fixture', displayName: 'Fixture', version: '1', sourceFormats: ['a'], targetFormats: ['b'],
+      options: [{ name: 'importOnly', type: 'boolean', default: true }, { name: 'uses', type: 'string-list', default: [] }],
+    }], commands: [{ id: 'export.fixture', converterId: 'fixture', direction: 'export', label: 'Export', sourceFormat: 'a', targetFormat: 'b', optionNames: ['uses'] }] });
+    const command = manifest.commands[0];
+    const converter = manifest.converters[0];
+    expect(conversionOptionsForCommand(converter, command).map((option) => option.name)).toEqual(['uses']);
+    expect(validateOptionValues(converter, { uses: ['Second', 'First'] }, command.optionNames)).toEqual({ uses: ['Second', 'First'] });
+    expect(() => validateOptionValues(converter, { importOnly: false }, command.optionNames)).toThrow('Unknown option');
+  });
+
   it('requires integrity hashes and explicitly prohibits system Python', async () => {
     expect(() => parsePackagedRuntimeDescriptor({ schemaVersion: 1, kind: 'packaged-executable', executable: 'python.exe', files: [] })).toThrow('System Python');
     const executable = encoder.encode('standalone');
@@ -93,6 +105,14 @@ describe('conversion lifecycle and worker transports', () => {
     await worker.execute({ operationId: '1', commandId: 'x', sourceName: 'x', source: encoder.encode('x'), options: {}, preview: false }, { signal: new AbortController().signal, reportProgress: vi.fn() });
     expect(invocations).toEqual([['--json-lines']]);
     expect(() => new PackagedExecutableWorkerAdapter('python.exe', launcher)).toThrow('non-Python');
+  });
+
+  it('never reports lossiness none when a worker returns a lossy warning', async () => {
+    const result = await new ConversionRuntime({ worker: successfulWorker({
+      lossiness: 'none',
+      warnings: [{ code: 'omitted', message: 'Metadata was omitted.', lossiness: 'metadata' }],
+    }) }).run({ operationId: 'lossiness', commandId: 'x', sourceName: 'x', source: encoder.encode('{}'), preview: true });
+    expect(result.lossiness).toBe('metadata');
   });
 });
 
@@ -174,6 +194,23 @@ describe('conversion publication and preview', () => {
     await expect(publishAtomically(storage, 'output', 'unsafe', { '../escape.json': encoder.encode('x') }, encoder.encode('{}'), new AbortController().signal)).rejects.toThrow('Unsafe output path');
     await expect(publishAtomically(storage, 'output', 'collision', { 'A.json': encoder.encode('x'), 'a.json': encoder.encode('y') }, encoder.encode('{}'), new AbortController().signal)).rejects.toThrow('case-colliding');
     expect(storage.directories.size).toBe(0);
+  });
+
+  it('only recursively removes staging directories created beneath the canonical destination parent', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'json-structure-conversion-cleanup-'));
+    const destination = join(root, 'selected');
+    const unrelated = join(root, 'unrelated');
+    const storage = new NodeFilesystemConversionStorage();
+    try {
+      await mkdir(unrelated);
+      const staging = await storage.createStagingDirectory(destination, 'renderer-controlled');
+      expect(staging).not.toContain('renderer-controlled');
+      await expect(storage.removeDirectory(unrelated)).rejects.toThrow('registered staging parent');
+      await expect(readFile(unrelated)).rejects.toMatchObject({ code: 'EISDIR' });
+      await storage.removeDirectory(staging);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it('rolls back publication when cancellation is observed between files', async () => {

@@ -3,6 +3,7 @@ import { ConversionRuntime, type ConversionRunResult } from './runtime.js';
 import { cloneBuiltInCommandsManifest } from './manifest.js';
 import type { ConversionStorage } from './storage.js';
 import { validateOptionValues, type ConversionCommand, type ConversionCommandsManifest, type ConversionOptionValues, type ConverterMetadata } from './types.js';
+import { validateGeneratedConversionFiles } from './validation.js';
 import type { ConversionProgress, ConversionWarning, ConversionWorkerTransport } from './worker.js';
 
 export interface ConversionServiceDependencies {
@@ -27,6 +28,7 @@ export interface ConversionExecutionRequest {
 export interface ConversionExecutionResult {
   command: ConversionCommand;
   converter: ConverterMetadata;
+  effectiveOptions: ConversionOptionValues;
   runtime: ConversionRunResult;
   diagnostics: readonly Diagnostic[];
 }
@@ -49,7 +51,7 @@ export class ConversionService {
     if (!command) throw new Error(`Unknown conversion command: ${request.commandId}.`);
     const converter = this.manifest.converters.find((item) => item.id === command.converterId);
     if (!converter) throw new Error(`Conversion command ${request.commandId} references unknown converter ${command.converterId}.`);
-    const options = validateOptionValues(converter, request.optionValues ?? {});
+    const options = validateOptionValues(converter, request.optionValues ?? {}, command.optionNames);
     const runtime = await this.runtime.run({
       operationId: request.operationId,
       commandId: command.id,
@@ -61,9 +63,10 @@ export class ConversionService {
       defaultAutoOpen: command.defaultAutoOpen,
       launch: request.launch,
       signal: request.signal,
+      validateOutput: files => validateGeneratedConversionFiles(command.targetFormat, files),
       onProgress: request.onProgress,
     });
-    return { command, converter, runtime, diagnostics: diagnosticsFromRun(runtime) };
+    return { command, converter, effectiveOptions: options, runtime, diagnostics: diagnosticsFromRun(runtime) };
   }
 }
 

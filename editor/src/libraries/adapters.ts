@@ -1,4 +1,5 @@
 import { type SecretCredential } from './providers.js';
+import { canonicalLibraryOrigin, canonicalLibraryUri } from './trust.js';
 
 export interface CredentialSecretStore {
   getSecret(key: string): Promise<string | undefined>;
@@ -7,6 +8,7 @@ export interface CredentialSecretStore {
 export interface TrustedProviderStore {
   isTrustedProvider(providerId: string): Promise<boolean>;
   isTrustedOrigin?(origin: string): Promise<boolean>;
+  isTrustedUri?(providerId: string, uri: string): Promise<boolean>;
 }
 
 export interface CredentialStoreEntry {
@@ -43,16 +45,11 @@ export class PolicyTrustAdapter implements TrustAdapter {
   constructor(private readonly trust: TrustedProviderStore) {}
 
   async isTrusted(providerId: string, url: string): Promise<boolean> {
+    let uri: string;
+    try { uri = canonicalLibraryUri(url); }
+    catch { return false; }
     if (!await this.trust.isTrustedProvider(providerId)) return false;
-    if (!this.trust.isTrustedOrigin) return true;
-    return this.trust.isTrustedOrigin(originFromUrl(url));
-  }
-}
-
-function originFromUrl(url: string): string {
-  try {
-    return new URL(url).origin;
-  } catch {
-    return '';
+    if (this.trust.isTrustedOrigin && !await this.trust.isTrustedOrigin(canonicalLibraryOrigin(uri))) return false;
+    return !this.trust.isTrustedUri || this.trust.isTrustedUri(providerId, uri);
   }
 }

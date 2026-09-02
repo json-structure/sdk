@@ -1,13 +1,16 @@
 import * as vscode from 'vscode';
 import { realpath } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
-import { customEditorProtocolVersion as protocolVersion, isWebviewMessage, type TextEditMessage } from './customEditorProtocol';
-import { conversionCommandsManifest, isConversionRequest, isProtocolEnvelope, VsCodeConversionHost, type OpenGeneratedOutputRequest } from './editorServices';
+import { customEditorProtocolVersion as protocolVersion, isSerializedMessageWithinBudget, isWebviewMessage, type TextEditMessage } from './customEditorProtocol';
+import { isConversionRequest, isProtocolEnvelope, VsCodeConversionHost, type OpenGeneratedOutputRequest } from './editorServices';
 import { dispatchLibraryOperation, type LibraryCatalogEntry, type LibraryHostResolution, type LibraryHostRuntime, type LibraryOperation } from '@json-structure/editor-foundation/library-host-runtime';
 import { createVsCodeLibraryRuntime } from './libraryRuntime';
 
 export const jsonStructureEditorViewType = 'jsonStructure.editor';
 const maxImportedResourceBytes = 4 * 1024 * 1024;
+const maxPrimaryDocumentBytes = 4 * 1024 * 1024;
+const maxPrimaryDocumentDepth = 128;
+const maxPrimaryDocumentNodes = 100_000;
 
 interface PanelState {
     readonly panel: vscode.WebviewPanel;
@@ -17,6 +20,7 @@ interface PanelState {
 
 export class JsonStructureCustomEditorProvider implements vscode.CustomTextEditorProvider {
     private readonly panels = new Set<PanelState>();
+    private readonly documentEditQueues = new Map<string, Promise<void>>();
     private activePanel: PanelState | undefined;
     private readonly conversionHost: VsCodeConversionHost;
     private readonly libraryRuntime: Promise<LibraryHostRuntime>;
@@ -27,10 +31,18 @@ export class JsonStructureCustomEditorProvider implements vscode.CustomTextEdito
     }
 
     showCommands(): void {
-        void this.activePanel?.webview.postMessage({ type: 'showCommands', protocolVersion });
+        if (this.activePanel) postWebviewMessage(this.activePanel.webview, { type: 'showCommands', protocolVersion });
     }
 
     async resolveCustomTextEditor(document: vscode.TextDocument, webviewPanel: vscode.WebviewPanel): Promise<void> {
+        const initialText = document.getText();
+        try {
+            validatePrimaryDocument(initialText);
+            assertWebviewMessageBudget(createDocumentMessage('init', document, initialText));
+        } catch (error) {
+            void vscode.window.showErrorMessage(`JSON Structure editor: ${error instanceof Error ? error.message : String(error)}`);
+            throw error;
+        }
         const webview = webviewPanel.webview;
         const state: PanelState = { panel: webviewPanel, webview, disposables: [] };
         this.panels.add(state);
@@ -42,21 +54,22 @@ export class JsonStructureCustomEditorProvider implements vscode.CustomTextEdito
         webviewPanel.webview.html = this.renderHtml(webview);
 
         const postDocument = (type: 'init' | 'documentChanged'): void => {
-            void webview.postMessage({
-                type,
-                protocolVersion,
-                uri: document.uri.toString(),
-                title: vscode.workspace.asRelativePath(document.uri, false),
-                text: document.getText(),
-                documentVersion: document.version
-            });
+            const text = document.getText();
+            try {
+                validatePrimaryDocument(text);
+                postWebviewMessage(webview, createDocumentMessage(type, document, text));
+            } catch (error) {
+                const message = error instanceof Error ? error.message : String(error);
+                void vscode.window.showErrorMessage(`JSON Structure editor: ${message}`);
+                postWebviewMessage(webview, { type: 'documentRejected', protocolVersion, documentVersion: document.version, diagnostics: [{ code: 'vscode.document-limit', message, severity: 'error' }] });
+            }
         };
         state.disposables.push(vscode.workspace.onDidChangeTextDocument((event) => {
             if (event.document.uri.toString() === document.uri.toString()) postDocument('documentChanged');
         }));
         state.disposables.push(vscode.workspace.onDidSaveTextDocument((saved) => {
             if (saved.uri.toString() === document.uri.toString()) {
-                void webview.postMessage({ type: 'documentSaved', protocolVersion, documentVersion: saved.version });
+                postWebviewMessage(webview, { type: 'documentSaved', protocolVersion, documentVersion: saved.version });
             }
         }));
         state.disposables.push(webviewPanel.onDidChangeViewState((event) => {
@@ -67,29 +80,35 @@ export class JsonStructureCustomEditorProvider implements vscode.CustomTextEdito
             if (message.type === 'readResource') {
                 try {
                     const uri = vscode.Uri.parse(message.uri, true);
-                    const content = await readWorkspaceResource(document.uri, uri);
-                    void webview.postMessage({ type: 'resourceResult', protocolVersion, requestId: message.requestId, result: { protocolVersion, requestId: message.requestId, uri: uri.toString(), content, contentHash: '' } });
+                    const content = await readWorkspaceResource(document.uri, uri, async (requestedUri) => (await this.libraryRuntime).readResource(requestedUri));
+                    postWebviewMessage(webview, { type: 'resourceResult', protocolVersion, requestId: message.requestId, result: { protocolVersion, requestId: message.requestId, uri: uri.toString(), content, contentHash: '' } });
                 } catch (error) {
-                    void webview.postMessage({ type: 'resourceResult', protocolVersion, requestId: message.requestId, error: error instanceof Error ? error.message : String(error) });
+                    postWebviewMessage(webview, { type: 'resourceResult', protocolVersion, requestId: message.requestId, error: error instanceof Error ? error.message : String(error) });
                 }
                 return;
             }
             if (message.type !== 'applyTextEdits') {
                 try {
                     const result = await this.handleServiceRequest(message.type, message.request, webview);
-                    void webview.postMessage({ type: 'serviceResult', protocolVersion, requestId: message.requestId, result });
+                    postWebviewMessage(webview, { type: 'serviceResult', protocolVersion, requestId: message.requestId, result });
                 } catch (error) {
-                    void webview.postMessage({ type: 'serviceResult', protocolVersion, requestId: message.requestId, error: error instanceof Error ? error.message : String(error) });
+                    postWebviewMessage(webview, { type: 'serviceResult', protocolVersion, requestId: message.requestId, error: error instanceof Error ? error.message : String(error) });
                 }
                 return;
             }
-            const documentVersion = message.request.documentVersion;
-            if (documentVersion !== document.version) {
-                this.postApplyResult(webview, message.request.requestId, document, false, 'The document changed before this edit could be applied.');
-                return;
-            }
-            const applied = await this.applyTextEdits(document, message.request.edits);
-            this.postApplyResult(webview, message.request.requestId, document, applied, applied ? undefined : 'The document edit was rejected by VS Code.');
+            await this.enqueueDocumentEdit(document.uri.toString(), async () => {
+                const documentVersion = message.request.documentVersion;
+                if (documentVersion !== document.version) {
+                    this.postApplyResult(webview, message.request.requestId, document, false, 'The document changed before this edit could be applied.');
+                    return;
+                }
+                try {
+                    const applied = await this.applyTextEdits(document, message.request.edits);
+                    this.postApplyResult(webview, message.request.requestId, document, applied, applied ? undefined : 'The document edit was rejected by VS Code.');
+                } catch (error) {
+                    this.postApplyResult(webview, message.request.requestId, document, false, error instanceof Error ? error.message : String(error));
+                }
+            });
         }));
         const disposeSubscription = webviewPanel.onDidDispose(() => {
             this.panels.delete(state);
@@ -100,17 +119,38 @@ export class JsonStructureCustomEditorProvider implements vscode.CustomTextEdito
         postDocument('init');
     }
 
+    private enqueueDocumentEdit(uri: string, operation: () => Promise<void>): Promise<void> {
+        const previous = this.documentEditQueues.get(uri) ?? Promise.resolve();
+        const current = previous.then(operation, operation);
+        const settled = current.then(() => undefined, () => undefined);
+        this.documentEditQueues.set(uri, settled);
+        void settled.finally(() => { if (this.documentEditQueues.get(uri) === settled) this.documentEditQueues.delete(uri); });
+        return current;
+    }
+
     private async applyTextEdits(document: vscode.TextDocument, edits: readonly TextEditMessage['request']['edits'][number][]): Promise<boolean> {
+        const currentText = document.getText();
+        validatePrimaryDocument(currentText);
+        const orderedEdits = [...edits].sort((left, right) => left.range.startOffset - right.range.startOffset || left.range.endOffset - right.range.endOffset);
+        const parts: string[] = [];
+        let cursor = 0;
+        for (const edit of orderedEdits) {
+            if (edit.range.startOffset < cursor || edit.range.endOffset < edit.range.startOffset || edit.range.endOffset > currentText.length) return false;
+            parts.push(currentText.slice(cursor, edit.range.startOffset), edit.newText);
+            cursor = edit.range.endOffset;
+        }
+        parts.push(currentText.slice(cursor));
+        validatePrimaryDocument(parts.join(''));
+
         const workspaceEdit = new vscode.WorkspaceEdit();
         for (const edit of edits) {
-            if (edit.range.startOffset < 0 || edit.range.endOffset < edit.range.startOffset || edit.range.endOffset > document.getText().length) return false;
             workspaceEdit.replace(document.uri, new vscode.Range(document.positionAt(edit.range.startOffset), document.positionAt(edit.range.endOffset)), edit.newText);
         }
         return vscode.workspace.applyEdit(workspaceEdit);
     }
 
     private postApplyResult(webview: vscode.Webview, requestId: string, document: vscode.TextDocument, applied: boolean, message?: string): void {
-        void webview.postMessage({
+        postWebviewMessage(webview, {
             type: 'applyResult',
             protocolVersion,
             requestId,
@@ -124,8 +164,20 @@ export class JsonStructureCustomEditorProvider implements vscode.CustomTextEdito
         });
     }
 
-    private async handleServiceRequest(type: 'listConversionCommands' | 'convert' | 'cancelConversion' | 'openGeneratedOutput' | 'libraryRequest' | 'listLibraryEntries' | 'readLibraryDocument', request: unknown, webview?: vscode.Webview): Promise<unknown> {
-        if (type === 'listConversionCommands') return conversionCommandsManifest;
+    private async handleServiceRequest(type: 'listConversionCommands' | 'selectConversionSource' | 'convert' | 'cancelConversion' | 'openGeneratedOutput' | 'libraryRequest' | 'listLibraryEntries' | 'readLibraryDocument', request: unknown, webview?: vscode.Webview): Promise<unknown> {
+        if (type === 'listConversionCommands') return this.conversionHost.listCommands();
+        if (type === 'selectConversionSource') {
+            const sourceRequest = request as { protocolVersion?: unknown; requestId?: unknown; kind?: unknown; formats?: unknown } | undefined;
+            if (sourceRequest?.protocolVersion !== protocolVersion || typeof sourceRequest.requestId !== 'string' || sourceRequest.kind !== 'select-conversion-source' || !Array.isArray(sourceRequest.formats) || !sourceRequest.formats.every((format) => typeof format === 'string' && format.length > 0 && format.length <= 64)) throw new Error('Invalid conversion source request.');
+            const selected = await vscode.window.showOpenDialog({ title: 'Choose conversion source', canSelectFiles: true, canSelectFolders: false, canSelectMany: false, filters: { 'Schema and data files': ['json', 'avsc', 'yaml', 'yml', 'proto', 'xml', 'xsd'] } });
+            const uri = selected?.[0];
+            if (!uri) return undefined;
+            const stat = await vscode.workspace.fs.stat(uri);
+            if ((stat.type & vscode.FileType.File) === 0 || stat.size > maxImportedResourceBytes) throw new Error(`Conversion source exceeds the ${maxImportedResourceBytes}-byte limit.`);
+            const bytes = await vscode.workspace.fs.readFile(uri);
+            if (bytes.byteLength > maxImportedResourceBytes) throw new Error(`Conversion source exceeds the ${maxImportedResourceBytes}-byte limit.`);
+            return { uri: uri.toString(), name: uri.path.slice(uri.path.lastIndexOf('/') + 1), text: new TextDecoder().decode(bytes) };
+        }
         if (type === 'libraryRequest') {
             const value = request as { operation: LibraryOperation; payload?: unknown };
             return dispatchLibraryOperation(await this.libraryRuntime, value.operation, value.payload);
@@ -136,7 +188,7 @@ export class JsonStructureCustomEditorProvider implements vscode.CustomTextEdito
         }
         if (type === 'convert') {
             if (!isConversionRequest(request)) throw new Error('Invalid conversion request.');
-            return this.conversionHost.convert(request, (progress) => { void webview?.postMessage({ type: 'conversionProgress', protocolVersion, requestId: request.requestId, documentVersion: request.documentVersion, phase: progress.phase, percent: progress.total > 0 ? Math.max(0, Math.min(100, progress.completed / progress.total * 100)) : undefined, message: progress.message }); });
+            return this.conversionHost.convert(request, (progress) => { if (webview) postWebviewMessage(webview, { type: 'conversionProgress', protocolVersion, requestId: request.requestId, documentVersion: request.documentVersion, phase: progress.phase, percent: progress.total > 0 ? Math.max(0, Math.min(100, progress.completed / progress.total * 100)) : undefined, message: progress.message }); });
         }
         if (type === 'cancelConversion') {
             if (!isProtocolEnvelope(request)) throw new Error('Invalid conversion cancellation request.');
@@ -158,7 +210,7 @@ export class JsonStructureCustomEditorProvider implements vscode.CustomTextEdito
         const entry = catalog.find((candidate) => candidate.id === value.entryId && candidate.versions.some((version) => version.version === value.version));
         if (!entry) throw new Error('Requested library document is not available.');
         const resolved = await dispatchLibraryOperation(await this.libraryRuntime, 'resolve', { providerId: entry.providerId, entryId: value.entryId, selector: { kind: 'pinned', version: value.version }, offline: false }) as LibraryHostResolution;
-        return { entryId: value.entryId, version: value.version, uri: resolved.provenance.sourceUri, value: resolved.document };
+        return { entryId: value.entryId, version: value.version, uri: resolved.documentUri, value: resolved.document };
     }
 
     private renderHtml(webview: vscode.Webview): string {
@@ -168,25 +220,79 @@ export class JsonStructureCustomEditorProvider implements vscode.CustomTextEdito
     }
 }
 
-export async function readWorkspaceResource(documentUri: vscode.Uri, resourceUri: vscode.Uri): Promise<string> {
+export type LibraryResourceReader = (uri: string) => Promise<{ readonly uri: string; readonly document: unknown } | undefined>;
+export type WorkspaceResourceFileSystem = Pick<typeof vscode.workspace.fs, 'stat' | 'readFile'>;
+
+export async function readWorkspaceResource(documentUri: vscode.Uri, resourceUri: vscode.Uri, readLibraryResource?: LibraryResourceReader, trusted = vscode.workspace.isTrusted, fileSystem: WorkspaceResourceFileSystem = vscode.workspace.fs): Promise<string> {
+    if (!trusted) throw new Error('Imported resources require a trusted workspace.');
+    const libraryResource = await readLibraryResource?.(resourceUri.toString());
+    if (libraryResource) {
+        const content = JSON.stringify(libraryResource.document);
+        if (content === undefined) throw new Error('Imported library resource is not representable as JSON.');
+        validateResourceSize(new TextEncoder().encode(content).byteLength);
+        return content;
+    }
     const workspaceRoots = (vscode.workspace.workspaceFolders ?? []).map((folder) => folder.uri);
-    validateResourceUri(documentUri, resourceUri, workspaceRoots, vscode.workspace.isTrusted);
+    validateResourceUri(documentUri, resourceUri, workspaceRoots, trusted);
+    let readUri = resourceUri;
     if (resourceUri.scheme === 'file') {
         const canonicalResource = vscode.Uri.parse(pathToFileURL(await realpath(resourceUri.fsPath)).toString());
         const localRoots = [...workspaceRoots, vscode.Uri.joinPath(documentUri, '..')].filter((root) => root.scheme === 'file');
         const canonicalRoots = await Promise.all(localRoots.map(async (root) => vscode.Uri.parse(pathToFileURL(await realpath(root.fsPath)).toString())));
         if (!canonicalRoots.some((root) => isWithinUriRoot(canonicalResource, root))) throw new Error('Imported resources must remain inside a workspace folder or the opened document directory.');
+        readUri = canonicalResource;
     }
-    const stats = await vscode.workspace.fs.stat(resourceUri);
+    const stats = await fileSystem.stat(readUri);
     if ((stats.type & vscode.FileType.File) === 0) throw new Error('Imported resource is not a file.');
     validateResourceSize(stats.size);
-    const bytes = await vscode.workspace.fs.readFile(resourceUri);
+    const bytes = await fileSystem.readFile(readUri);
     validateResourceSize(bytes.byteLength);
     return new TextDecoder().decode(bytes);
 }
 
 export function validateResourceSize(size: number): void {
     if (size > maxImportedResourceBytes) throw new Error(`Imported resource exceeds the ${maxImportedResourceBytes}-byte limit.`);
+}
+
+export function validatePrimaryDocument(text: string): void {
+    const bytes = Buffer.byteLength(text, 'utf8');
+    if (bytes > maxPrimaryDocumentBytes) throw new Error(`Primary document exceeds the ${maxPrimaryDocumentBytes}-byte limit (received ${bytes} bytes).`);
+
+    let depth = 0;
+    let nodes = 0;
+    let inString = false;
+    let escaped = false;
+    let inPrimitive = false;
+    const addNode = (): void => {
+        nodes += 1;
+        if (nodes > maxPrimaryDocumentNodes) throw new Error(`Primary document exceeds the ${maxPrimaryDocumentNodes}-node structural limit.`);
+    };
+    for (const character of text) {
+        if (inString) {
+            if (escaped) escaped = false;
+            else if (character === '\\') escaped = true;
+            else if (character === '"') inString = false;
+            continue;
+        }
+        if (character === '"') {
+            addNode();
+            inString = true;
+            inPrimitive = false;
+        } else if (character === '{' || character === '[') {
+            addNode();
+            depth += 1;
+            if (depth > maxPrimaryDocumentDepth) throw new Error(`Primary document exceeds the ${maxPrimaryDocumentDepth}-level nesting limit.`);
+            inPrimitive = false;
+        } else if (character === '}' || character === ']') {
+            depth = Math.max(0, depth - 1);
+            inPrimitive = false;
+        } else if (character === ',' || character === ':' || /\s/.test(character)) {
+            inPrimitive = false;
+        } else if (!inPrimitive) {
+            addNode();
+            inPrimitive = true;
+        }
+    }
 }
 
 export function validateResourceUri(documentUri: vscode.Uri, resourceUri: vscode.Uri, workspaceRoots: readonly vscode.Uri[], trusted: boolean): void {
@@ -211,5 +317,25 @@ export function isWithinUriRoot(resource: vscode.Uri, root: vscode.Uri): boolean
 function createNonce(): string {
     const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
     return Array.from({ length: 32 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('');
+}
+
+function postWebviewMessage(webview: vscode.Webview, message: unknown): void {
+    assertWebviewMessageBudget(message);
+    void webview.postMessage(message);
+}
+
+function assertWebviewMessageBudget(message: unknown): void {
+    if (!isSerializedMessageWithinBudget(message)) throw new Error('VS Code webview message exceeds the aggregate serialization budget.');
+}
+
+function createDocumentMessage(type: 'init' | 'documentChanged', document: vscode.TextDocument, text: string): unknown {
+    return {
+        type,
+        protocolVersion,
+        uri: document.uri.toString(),
+        title: vscode.workspace.asRelativePath(document.uri, false),
+        text,
+        documentVersion: document.version
+    };
 }
 

@@ -46,6 +46,18 @@ describe('Conditional Composition authoring', () => {
     }
   });
 
+  it('treats maxLength inside composition as Core-owned when Validation is inactive', () => {
+    const session = new DocumentSession('memory://composition-core-max-length', JSON.stringify({
+      $schema: extended,
+      $uses: ['JSONStructureConditionalComposition'],
+      type: 'string'
+    }));
+    expect(session.capabilities.conditionalCompositionActive).toBe(true);
+    expect(session.capabilities.validationActive).toBe(false);
+    expect(new SetAllOfCommand('', [{ type: 'string', maxLength: 32 }]).canExecute({ session, documentVersion: 1 })).toBe(true);
+    expect(new SetAllOfCommand('', [{ type: 'string', maxLength: -1 }]).canExecute({ session, documentVersion: 1 })).toBe(false);
+  });
+
   it('provides typed add, replace, and remove commands with byte-identical inverses', () => {
     const original = `{"$schema":"${validation}","type":"string","unknown":{"keep":"\\u0061"}}`;
     const cases = [
@@ -92,7 +104,7 @@ describe('Conditional Composition authoring', () => {
     expect(removedValue).toHaveProperty('x-note', true);
   });
 
-  it('atomically transitions every valid conditional branch-key set with one byte-identical inverse', () => {
+  it('atomically transitions every valid conditional branch-key set with byte-identical inverse edits', () => {
     const branches = {
       if: { type: 'string' },
       then: { type: 'number' },
@@ -110,8 +122,8 @@ describe('Conditional Composition authoring', () => {
         const command = new SetConditionalCompositionCommand('', desired);
         expect(command.canExecute({ session, documentVersion: 1 })).toBe(true);
         const result = command.execute({ session, documentVersion: 1 });
-        expect(result.edits).toHaveLength(1);
-        expect(result.inverseEdits).toHaveLength(1);
+        expect(result.edits.length).toBeGreaterThan(0);
+        expect(result.inverseEdits.length).toBeGreaterThan(0);
         const changed = applyEdits(original, result.edits);
         expect(applyEdits(changed, result.inverseEdits)).toBe(original);
         expect(JSON.parse(changed)).toMatchObject({ ...desired, untouched: { spelling: 'a' } });
@@ -120,6 +132,21 @@ describe('Conditional Composition authoring', () => {
         }
       }
     }
+  });
+
+  it('does not replace unrelated source text between conditional members', () => {
+    const original = `{"$schema":"${validation}","type":"string","if":{"type":"string"},"x-note":{"spelling":"\\u0061"},"then":{"type":"number"}}`;
+    const session = new DocumentSession('memory://conditional-minimal', original);
+    const result = new SetConditionalCompositionCommand('', {
+      if: { type: 'boolean' },
+      else: { type: 'null' }
+    }).execute({ session, documentVersion: 1 });
+    const noteStart = original.indexOf('"x-note"');
+    const noteEnd = original.indexOf(',"then"');
+    expect(result.edits.every((edit) => edit.range.endOffset! <= noteStart || edit.range.startOffset! >= noteEnd)).toBe(true);
+    const changed = applyEdits(original, result.edits);
+    expect(changed).toContain('"x-note":{"spelling":"\\u0061"}');
+    expect(applyEdits(changed, result.inverseEdits)).toBe(original);
   });
 
   it('accepts untyped composition constraints and rejects malformed or unsafe edits', () => {
@@ -153,6 +180,13 @@ describe('Conditional Composition authoring', () => {
     expect(inactive.model?.projections.references.some((item) => item.pointer.startsWith('/allOf'))).toBe(false);
     expect(inactive.model?.projections.semanticPlacements.some((item) => item.pointer.startsWith('/allOf'))).toBe(false);
     expect(inactive.model?.projections.definitions[0]?.composition).toBeUndefined();
+
+    const validationOwned = parseDocument('memory://composition-in-validation', JSON.stringify({
+      $schema: validation,
+      type: 'array',
+      contains: { type: 'string', then: { type: 'number' } }
+    }));
+    expect(validationOwned.diagnostics.some((item) => item.location?.pointer === '/contains/then' && item.message.includes('requires an if'))).toBe(true);
 
     const malformed = parseDocument('memory://composition-malformed', `{"$schema":"${validation}","type":"string","allOf":[],"anyOf":{},"oneOf":[1],"not":[],"if":{"type":"string"},"then":1}`);
     for (const pointer of ['/allOf', '/anyOf', '/oneOf', '/not', '/then']) {

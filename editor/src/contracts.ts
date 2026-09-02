@@ -89,7 +89,11 @@ export interface WriteResourceRequest extends ProtocolEnvelope { readonly kind: 
 /**
  * Defines the conversion request shape.
  */
-export interface ConversionRequest extends ProtocolEnvelope { readonly kind: 'conversion'; readonly documentVersion: DocumentVersion; readonly commandId: string; readonly sourceName: string; readonly sourceText: string; readonly options: Readonly<Record<string, string | number | boolean>>; }
+export interface ConversionRequest extends ProtocolEnvelope { readonly kind: 'conversion'; readonly documentVersion: DocumentVersion; readonly commandId: string; readonly sourceName: string; readonly sourceText: string; readonly options: import('./conversion/types.js').ConversionOptionValues; }
+/** Defines a user-selected conversion input file. */
+export interface ConversionSource { readonly uri: string; readonly name: string; readonly text: string; }
+/** Defines a request for a conversion input file. */
+export interface SelectConversionSourceRequest extends ProtocolEnvelope { readonly kind: 'select-conversion-source'; readonly formats: readonly string[]; }
 /** Type alias for conversion lossiness classifications. */
 export type ConversionLossiness = 'none' | 'formatting' | 'metadata' | 'precision' | 'unsupported-feature' | 'data-loss';
 /** Defines one structured conversion warning retained for review. */
@@ -105,6 +109,8 @@ export interface ConversionReviewWarning {
 export interface ConversionIntegrityEntry { readonly path: string; readonly sha256: string; readonly bytes: number; }
 /** Defines the deterministic output integrity manifest. */
 export interface ConversionOutputManifest { readonly algorithm: 'sha256'; readonly files: readonly ConversionIntegrityEntry[]; }
+/** Identifies the exact conversion source without retaining its contents. */
+export interface ConversionSourceEvidence { readonly name: string; readonly bytes: number; readonly sha256: string; }
 /** Defines review evidence retained across editor hosts. */
 export interface ConversionReview {
   readonly commandId: string;
@@ -115,6 +121,8 @@ export interface ConversionReview {
   readonly published: boolean;
   readonly lossiness: ConversionLossiness;
   readonly warnings: readonly ConversionReviewWarning[];
+  readonly effectiveOptions?: import('./conversion/types.js').ConversionOptionValues;
+  readonly source?: ConversionSourceEvidence;
   readonly manifest?: ConversionOutputManifest;
 }
 /**
@@ -146,6 +154,7 @@ export interface EditorHost {
   applyTextEdits(request: ApplyTextEditsRequest): Promise<ApplyResult>;
   readResource?(uri: string): Promise<ResourceSnapshot>;
   listConversionCommands?(): Promise<import('./conversion/types.js').ConversionCommandsManifest>;
+  selectConversionSource?(request: SelectConversionSourceRequest): Promise<ConversionSource | undefined>;
   convert?(request: ConversionRequest): Promise<ConversionResult>;
   onConversionProgress?(listener: (event: ProgressEvent) => void): () => void;
   cancelConversion?(requestId: string): Promise<void>;
@@ -199,7 +208,7 @@ export function isConversionRequest(value: unknown): value is ConversionRequest 
   return request.kind === 'conversion' && Number.isInteger(request.documentVersion) && (request.documentVersion as number) >= 0 &&
     typeof request.commandId === 'string' && request.commandId.trim().length > 0 &&
     typeof request.sourceName === 'string' && request.sourceName.length > 0 && request.sourceName.length <= 255 && !/[\\/]/.test(request.sourceName) &&
-    typeof request.sourceText === 'string' && request.sourceText.length <= 4 * 1024 * 1024 && isScalarRecord(request.options);
+    typeof request.sourceText === 'string' && request.sourceText.length <= 4 * 1024 * 1024 && isConversionOptionsRecord(request.options);
 }
 
 /** Returns whether a value is a well-formed conversion result. */
@@ -222,8 +231,16 @@ function isConversionReview(value: unknown): value is ConversionReview {
     typeof (converter as Record<string, unknown>).id === 'string' && typeof (converter as Record<string, unknown>).displayName === 'string' && typeof (converter as Record<string, unknown>).version === 'string' &&
     typeof review.sourceFormat === 'string' && typeof review.targetFormat === 'string' && Array.isArray(review.lifecycle) && review.lifecycle.every((state) => lifecycle.has(String(state))) &&
     typeof review.published === 'boolean' && lossiness.has(review.lossiness as ConversionLossiness) && Array.isArray(review.warnings) && review.warnings.every(isConversionReviewWarning) &&
+    (review.effectiveOptions === undefined || isConversionOptionsRecord(review.effectiveOptions)) && (review.source === undefined || isConversionSourceEvidence(review.source)) &&
     (manifest === undefined || isConversionOutputManifest(manifest));
 }
+
+  function isConversionSourceEvidence(value: unknown): value is ConversionSourceEvidence {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    const source = value as Record<string, unknown>;
+    return typeof source.name === 'string' && source.name.length > 0 && source.name.length <= 255 &&
+    Number.isInteger(source.bytes) && (source.bytes as number) >= 0 && typeof source.sha256 === 'string' && /^[a-f0-9]{64}$/i.test(source.sha256);
+  }
 
 function isConversionReviewWarning(value: unknown): value is ConversionReviewWarning {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
@@ -246,6 +263,12 @@ function isConversionOutputManifest(value: unknown): value is ConversionOutputMa
 function isScalarRecord(value: unknown): value is Readonly<Record<string, string | number | boolean>> {
   return !!value && typeof value === 'object' && !Array.isArray(value) && Object.values(value).every((item) =>
     typeof item === 'string' || typeof item === 'boolean' || typeof item === 'number' && Number.isFinite(item));
+}
+
+function isConversionOptionsRecord(value: unknown): value is import('./conversion/types.js').ConversionOptionValues {
+  return !!value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length <= 64 && Object.values(value).every((item) =>
+    typeof item === 'string' || typeof item === 'boolean' || typeof item === 'number' && Number.isFinite(item) ||
+    Array.isArray(item) && item.length <= 256 && item.every((entry) => typeof entry === 'string' && entry.length > 0 && entry.length <= 256));
 }
 
 function isSerializableValue(value: unknown, depth: number): boolean {

@@ -15,16 +15,18 @@ export type ActionTarget = 'document' | 'namespace' | 'declaration' | 'property'
 export interface ActionOption { readonly value: string; readonly label: string; }
 export type ActionControl =
   | { readonly kind: 'text'; readonly multiline?: boolean }
-  | { readonly kind: 'number'; readonly integer?: boolean; readonly minimum?: number }
+  | { readonly kind: 'number'; readonly integer?: boolean; readonly minimum?: number; readonly schemaNumeric?: boolean }
   | { readonly kind: 'boolean' }
   | { readonly kind: 'select'; readonly options: readonly ActionOption[] }
+  | { readonly kind: 'schema-type' }
   | { readonly kind: 'reference-picker' }
   | { readonly kind: 'property-multi-select' }
   | { readonly kind: 'relation-editor' }
   | { readonly kind: 'catalog'; readonly family: string }
   | { readonly kind: 'structured-list'; readonly item: 'text' | 'number' | 'reference' | 'schema' }
   | { readonly kind: 'structured-object'; readonly family?: string }
-  | { readonly kind: 'advanced-json' };
+  | { readonly kind: 'advanced-json' }
+  | { readonly kind: 'source-only' };
 
 export interface CommandAction {
   readonly id: string;
@@ -64,7 +66,7 @@ const coreActions = [
   core('uses', '$uses', 'Set document uses', { kind: 'structured-list', item: 'text' }, ['document']),
   core('offers', '$offers', 'Set document offers', { kind: 'structured-object', family: 'offers' }, ['document']),
   core('type', 'type', 'Set type', { kind: 'select', options: [
-    'null', 'boolean', 'string', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32', 'int64', 'uint64', 'int128', 'uint128', 'integer', 'float8', 'float', 'double', 'decimal',
+    'any', 'null', 'boolean', 'string', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32', 'int64', 'uint64', 'int128', 'uint128', 'integer', 'float8', 'float', 'double', 'decimal',
     'number', 'date', 'datetime', 'time', 'duration', 'uuid', 'uri', 'binary', 'jsonpointer', 'object', 'array', 'map', 'set', 'tuple', 'choice'
   ].map((value) => ({ value, label: value })) }),
   core('enum', 'enum', 'Set enum', { kind: 'structured-list', item: 'text' }),
@@ -77,6 +79,7 @@ const coreActions = [
   { ...core('additional-properties', 'additionalProperties', 'Set additional properties', { kind: 'advanced-json' }), schemaTypes: ['object'] },
   { ...core('precision', 'precision', 'Set precision', { kind: 'number', integer: true, minimum: 0 }), schemaTypes: ['number', 'decimal'] },
   { ...core('scale', 'scale', 'Set scale', { kind: 'number', integer: true, minimum: 0 }), schemaTypes: ['number', 'decimal'] },
+  { ...core('max-length', 'maxLength', 'Set maximum length', { kind: 'number', integer: true, minimum: 0 }), schemaTypes: ['string'] },
   { ...core('properties', 'properties', 'Set properties', { kind: 'structured-object', family: 'properties' }), schemaTypes: ['object', 'tuple'] },
   { ...core('required', 'required', 'Set required', { kind: 'property-multi-select' }), schemaTypes: ['object'] },
   { ...core('items', 'items', 'Set items', { kind: 'structured-object', family: 'schema' }), schemaTypes: ['array', 'set'] },
@@ -90,20 +93,21 @@ export const commandActions: readonly CommandAction[] = [
   ...coreActions.flatMap((action) => [action, remove(action, action.keyword!)]),
   { id: 'root.set', group: 'Root', label: 'Set document root', help: 'Use the selected reusable definition as the document root.', requiresValue: false, targets: ['declaration'], create: (pointer) => new SetRootCommand(pointer) },
   { id: 'namespace.add', group: 'Definitions', label: 'Add namespace', help: 'Add a named namespace under definitions.', valueLabel: 'Namespace name', control: { kind: 'text' }, capability: 'core', targets: ['document', 'namespace'], operation: 'add', create: (pointer, value, name) => new AddNamespaceCommand(pointer, name ?? String(value)) },
-  { id: 'definition.add', group: 'Definitions', label: 'Add definition', help: 'Add a named schema to the selected namespace.', valueLabel: 'Schema JSON', targets: ['document', 'namespace'], create: named(AddDefinitionCommand as unknown as CommandConstructor) },
-  { id: 'definition.rename', group: 'Definitions', label: 'Rename definition', help: 'Rename the selected reusable definition when it has no references.', valueLabel: 'New name', targets: ['declaration'], create: (pointer, value) => new RenameDefinitionCommand(pointer, String(value)) },
+  { id: 'definition.add', group: 'Definitions', label: 'Add definition', help: 'Add a named schema to the selected namespace.', valueLabel: 'Type', control: { kind: 'schema-type' }, targets: ['document', 'namespace'], create: named(AddDefinitionCommand as unknown as CommandConstructor) },
+  { id: 'definition.rename', group: 'Definitions', label: 'Rename definition', help: 'Rename the selected reusable definition when it has no references.', valueLabel: 'New name', control: { kind: 'text' }, targets: ['declaration'], create: (pointer, value) => new RenameDefinitionCommand(pointer, String(value)) },
   { id: 'definition.delete', group: 'Definitions', label: 'Delete definition', help: 'Delete the selected reusable definition when it has no references.', requiresValue: false, targets: ['declaration'], create: (pointer) => new DeleteDefinitionCommand(pointer) },
-  { id: 'property.add', group: 'Properties', label: 'Add property', help: 'Add a named property schema to the selected object.', valueLabel: 'Schema JSON', targets: ['document', 'declaration'], schemaTypes: ['object'], create: named(AddPropertyCommand as unknown as CommandConstructor) },
-  { id: 'property.rename', group: 'Properties', label: 'Rename property', help: 'Rename the selected property.', valueLabel: 'New name', targets: ['property'], create: (pointer, value) => new RenamePropertyCommand(pointer, String(value)) },
-  { id: 'property.edit', group: 'Properties', label: 'Edit property', help: 'Replace the selected property schema.', valueLabel: 'Schema JSON', targets: ['property'], create: (pointer, value) => new EditPropertyCommand(pointer, value as never) },
+  { id: 'property.add', group: 'Properties', label: 'Add property', help: 'Add a named property schema to the selected object.', valueLabel: 'Type', control: { kind: 'schema-type' }, targets: ['document', 'declaration'], schemaTypes: ['object'], create: named(AddPropertyCommand as unknown as CommandConstructor) },
+  { id: 'property.rename', group: 'Properties', label: 'Rename property', help: 'Rename the selected property.', valueLabel: 'New name', control: { kind: 'text' }, targets: ['property'], create: (pointer, value) => new RenamePropertyCommand(pointer, String(value)) },
+  { id: 'property.edit', group: 'Properties', label: 'Edit property', help: 'Use the structured property controls, or open Source for the complete schema.', valueLabel: 'Property schema', control: { kind: 'source-only' }, targets: ['property'], create: (pointer, value) => new EditPropertyCommand(pointer, value as never) },
   { id: 'property.delete', group: 'Properties', label: 'Delete property', help: 'Delete the selected property.', requiresValue: false, targets: ['property'], create: (pointer) => new DeletePropertyCommand(pointer) },
-  { id: 'property.required', group: 'Properties', label: 'Set required properties', help: 'Set the selected object required property list.', valueLabel: 'Required names JSON', targets: ['document', 'declaration'], schemaTypes: ['object'], create: (pointer, value) => new SetRequiredCommand(pointer, value as never) },
-  { id: 'property.description', group: 'Properties', label: 'Set description', help: 'Set or remove a schema description.', valueLabel: 'Description', targets: ['document', 'declaration', 'property'], create: (pointer, value) => new SetDescriptionCommand(pointer, value === undefined ? undefined : String(value)) },
-  { id: 'property.collection-member', group: 'Properties', label: 'Set collection member', help: 'Set items or values for the selected collection.', valueLabel: 'Schema JSON', targets: ['document', 'declaration', 'property'], schemaTypes: ['array', 'set', 'map'], create: (pointer, value) => new SetCollectionMemberCommand(pointer, value as never) },
-  { id: 'property.tuple-members', group: 'Properties', label: 'Set tuple members', help: 'Set tuple properties and their order.', valueLabel: 'Tuple JSON: {"properties":{},"order":[]}', targets: ['document', 'declaration', 'property'], schemaTypes: ['tuple'], create: (pointer, value) => { const tuple = value as { properties: Record<string, Record<string, unknown>>; order: string[] }; return new SetTupleMembersCommand(pointer, tuple.properties, tuple.order); } },
+  { id: 'property.required', group: 'Properties', label: 'Set required properties', help: 'Choose and order the required properties.', valueLabel: 'Required properties', control: { kind: 'property-multi-select' }, targets: ['document', 'declaration'], schemaTypes: ['object'], create: (pointer, value) => new SetRequiredCommand(pointer, value as never) },
+  { id: 'property.required-alternatives', group: 'Properties', label: 'Edit alternative required sets', help: 'Open Source to author alternative required-property sets.', valueLabel: 'Alternative required sets', control: { kind: 'source-only' }, targets: ['document', 'declaration'], schemaTypes: ['object'], create: (pointer, value) => new SetRequiredCommand(pointer, value as never) },
+  { id: 'property.description', group: 'Properties', label: 'Set description', help: 'Set or remove a schema description.', valueLabel: 'Description', control: { kind: 'text', multiline: true }, targets: ['document', 'declaration', 'property'], create: (pointer, value) => new SetDescriptionCommand(pointer, value === undefined ? undefined : String(value)) },
+  { id: 'property.collection-member', group: 'Properties', label: 'Set collection member', help: 'Choose the item or value type for the selected collection.', valueLabel: 'Member type', control: { kind: 'schema-type' }, targets: ['document', 'declaration', 'property'], schemaTypes: ['array', 'set', 'map'], create: (pointer, value) => new SetCollectionMemberCommand(pointer, value as never) },
+  { id: 'property.tuple-members', group: 'Properties', label: 'Set tuple members', help: 'Open Source to author tuple member schemas; use Design to reorder existing members.', valueLabel: 'Tuple members', control: { kind: 'source-only' }, targets: ['document', 'declaration', 'property'], schemaTypes: ['tuple'], create: (pointer, value) => { const tuple = value as { properties: Record<string, Record<string, unknown>>; order: string[] }; return new SetTupleMembersCommand(pointer, tuple.properties, tuple.order); } },
   { id: 'reference.type', group: 'References', label: 'Set type reference', help: 'Set the selected declaration type to a reusable local reference.', valueLabel: 'Reference', control: { kind: 'reference-picker' }, capability: 'core', targets: ['declaration', 'property'], operation: 'set', create: (pointer, value) => new SetTypeReferenceCommand(pointer, String(value)) },
-  { id: 'import.set', group: 'Imports', label: 'Set import', help: 'Set $import or $importdefs on the selected namespace.', valueLabel: 'Import JSON: {"keyword":"$import","source":"https://..."}', capability: 'import', targets: ['document', 'namespace'], create: (pointer, value) => { const importValue = value as { keyword: '$import' | '$importdefs'; source: string }; return new SetImportCommand(pointer, importValue.keyword, importValue.source); } },
-  { id: 'import.delete', group: 'Imports', label: 'Delete import', help: 'Remove an import from the selected namespace.', valueLabel: 'Keyword', capability: 'import', targets: ['document', 'namespace'], create: (pointer, value) => new DeleteImportCommand(pointer, String(value) as '$import' | '$importdefs') },
+  { id: 'import.set', group: 'Imports', label: 'Set import', help: 'Open Source to set an import on the selected namespace.', valueLabel: 'Import', control: { kind: 'source-only' }, capability: 'import', targets: ['document', 'namespace'], create: (pointer, value) => { const importValue = value as { keyword: '$import' | '$importdefs'; source: string }; return new SetImportCommand(pointer, importValue.keyword, importValue.source); } },
+  { id: 'import.delete', group: 'Imports', label: 'Delete import', help: 'Remove an import from the selected namespace.', valueLabel: 'Import kind', control: { kind: 'select', options: [{ value: '$import', label: 'Document import' }, { value: '$importdefs', label: 'Definition import' }] }, capability: 'import', targets: ['document', 'namespace'], create: (pointer, value) => new DeleteImportCommand(pointer, String(value) as '$import' | '$importdefs') },
   { id: 'relation.add', group: 'Relations', label: 'Add relation', help: 'Add a named relation to the selected object.', valueLabel: 'Relation', control: { kind: 'relation-editor' }, capability: 'relations', targets: ['document', 'declaration'], schemaTypes: ['object', 'tuple'], create: named(AddRelationCommand as unknown as CommandConstructor) },
   { id: 'relation.edit', group: 'Relations', label: 'Edit relation', help: 'Replace the selected relation.', valueLabel: 'Relation', control: { kind: 'relation-editor' }, capability: 'relations', targets: ['relation'], create: (pointer, value) => new EditRelationCommand(pointer, value as never) },
   { id: 'relation.rename', group: 'Relations', label: 'Rename relation', help: 'Rename the selected relation.', valueLabel: 'New name', capability: 'relations', targets: ['relation'], create: (pointer, value) => new RenameRelationCommand(pointer, String(value)) },
@@ -113,7 +117,7 @@ export const commandActions: readonly CommandAction[] = [
   { id: 'relation.cardinality', group: 'Relations', label: 'Set relation cardinality', help: 'Set a relation to single or multiple.', valueLabel: 'Cardinality', control: { kind: 'select', options: [{ value: 'single', label: 'single' }, { value: 'multiple', label: 'multiple' }] }, capability: 'relations', targets: ['relation'], operation: 'set', keyword: 'cardinality', create: (pointer, value) => new SetRelationCardinalityCommand(pointer, String(value) as 'single' | 'multiple') },
   { id: 'relation.scope', group: 'Relations', label: 'Set relation scope', help: 'Choose one or more collection locations that contain relation targets.', valueLabel: 'Scope', control: { kind: 'structured-list', item: 'reference' }, capability: 'relations', targets: ['relation'], operation: 'set', keyword: 'scope', create: (pointer, value) => new SetRelationScopeCommand(pointer, value as never) },
   { id: 'relation.qualifier', group: 'Relations', label: 'Set relation qualifier', help: 'Set a reusable qualifier type reference.', valueLabel: 'Qualifier type', control: { kind: 'reference-picker' }, capability: 'relations', targets: ['relation'], operation: 'set', keyword: 'qualifiertype', create: (pointer, value) => new SetRelationQualifierCommand(pointer, String(value)) },
-  ...keywordActions('Validation', 'validation', ['minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf', 'minLength', 'maxLength', 'pattern', 'format', 'minItems', 'maxItems', 'uniqueItems', 'minContains', 'maxContains', 'minProperties', 'maxProperties', 'minEntries', 'maxEntries', 'default', 'contains', 'propertyNames', 'keyNames', 'has', 'dependentRequired', 'patternProperties', 'patternKeys'], SetValidationKeywordCommand as unknown as CommandConstructor),
+  ...keywordActions('Validation', 'validation', ['minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf', 'minLength', 'pattern', 'format', 'minItems', 'maxItems', 'uniqueItems', 'minContains', 'maxContains', 'minProperties', 'maxProperties', 'minEntries', 'maxEntries', 'default', 'contains', 'propertyNames', 'keyNames', 'has', 'dependentRequired', 'patternProperties', 'patternKeys'], SetValidationKeywordCommand as unknown as CommandConstructor),
   ...keywordActions('Composition', 'composition', ['allOf', 'anyOf', 'oneOf', 'not'], SetCompositionKeywordCommand as unknown as CommandConstructor),
   { id: 'composition.conditional', group: 'Composition', label: 'Set conditional composition', help: 'Set if, then, and else as one structured value.', valueLabel: 'Conditional composition', control: { kind: 'structured-object', family: 'conditional-composition' }, capability: 'conditional-composition', targets: ['declaration', 'property'], operation: 'set', removesActionId: 'composition.conditional.remove', create: (pointer, value) => new SetConditionalCompositionCommand(pointer, value as never) },
   { id: 'composition.conditional.remove', group: 'Composition', label: 'Remove conditional composition', help: 'Remove if, then, and else from the selected schema.', requiresValue: false, capability: 'conditional-composition', targets: ['declaration', 'property'], operation: 'remove', create: (pointer) => new SetConditionalCompositionCommand(pointer, undefined) },
@@ -132,13 +136,15 @@ function keywordActions(group: ActionGroup, prefix: string, keywords: readonly s
     prefix.startsWith('alternate') || prefix === 'localized-descriptions' ? 'alternate-names' : prefix === 'semantic' ? 'semantic-annotations' : 'core';
   return keywords.flatMap((keyword) => {
     const control: ActionControl = keyword === 'uniqueItems' ? { kind: 'boolean' } :
-      ['minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf', 'minLength', 'maxLength', 'minItems', 'maxItems', 'minContains', 'maxContains', 'minProperties', 'maxProperties', 'minEntries', 'maxEntries'].includes(keyword)
-        ? { kind: 'number' } :
+      ['minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf'].includes(keyword)
+        ? { kind: 'number', schemaNumeric: true } :
+      ['minLength', 'minItems', 'maxItems', 'minContains', 'maxContains', 'minProperties', 'maxProperties', 'minEntries', 'maxEntries'].includes(keyword)
+        ? { kind: 'number', integer: true, minimum: 0 } :
       ['ucumUnit', 'currency', 'observedProperty', 'semanticRole', 'derivation', 'statistic', 'codedValues', 'measurementConditioning', 'referenceRole', 'phenomenonTimeRelation', 'temporalReferenceSystem', 'cadence', 'coordinateReferenceSystem', 'vectorReferenceFrames', 'tensorReferenceFrames', 'frameTransforms', 'linearReferenceSystem', 'colorSpaces', 'audioChannels', 'spectralBands'].includes(keyword) ? { kind: 'catalog', family: keyword } :
       ['format', 'contentEncoding', 'contentCompression', 'pattern', 'symbol', 'unit', 'contentMediaType'].includes(keyword) ? { kind: 'text' } :
-      ['allOf', 'anyOf', 'oneOf', 'concepts'].includes(keyword) ? { kind: 'structured-list', item: keyword === 'concepts' ? 'text' : 'schema' } :
-      ['not', 'contains', 'propertyNames', 'keyNames', 'has'].includes(keyword) ? { kind: 'structured-object', family: 'schema' } :
-      { kind: 'advanced-json' };
+      keyword === 'concepts' ? { kind: 'structured-list', item: 'text' } :
+      ['allOf', 'anyOf', 'oneOf', 'not', 'contains', 'propertyNames', 'keyNames', 'has', 'dependentRequired', 'patternProperties', 'patternKeys', 'default'].includes(keyword) ? { kind: 'source-only' } :
+      { kind: 'source-only' };
     const action: CommandAction = { id: `${prefix}.${keyword}`, group, label: `Set ${keyword}`, help: `Set ${keyword} on the selected schema.`, valueLabel: `Set ${keyword}`, control, capability, targets: ['declaration', 'property'], schemaTypes: schemaTypesForKeyword(prefix, keyword), operation: 'set', removesActionId: `${prefix}.${keyword}.remove`, create: set(Command, keyword) };
     return [action, remove(action, keyword, Command)];
   });
@@ -146,10 +152,10 @@ function keywordActions(group: ActionGroup, prefix: string, keywords: readonly s
 
 function schemaTypesForKeyword(prefix: string, keyword: string): readonly string[] | undefined {
   if (prefix === 'binary') return ['binary'];
-  if (prefix === 'units') return ['number', 'integer', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32', 'int64', 'uint64', 'int128', 'uint128', 'float8', 'float', 'double', 'decimal'];
+  if (prefix === 'units' && (keyword === 'unit' || keyword === 'ucumUnit')) return ['number', 'integer', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32', 'int64', 'uint64', 'int128', 'uint128', 'float8', 'float', 'double', 'decimal'];
   if (prefix !== 'validation' || keyword === 'default') return undefined;
   if (['minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf'].includes(keyword)) return ['number', 'integer', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32', 'int64', 'uint64', 'int128', 'uint128', 'float8', 'float', 'double', 'decimal'];
-  if (['minLength', 'maxLength', 'pattern', 'format'].includes(keyword)) return ['string'];
+  if (['minLength', 'pattern', 'format'].includes(keyword)) return ['string'];
   if (['minItems', 'maxItems', 'minContains', 'maxContains', 'contains'].includes(keyword)) return ['array', 'set'];
   if (keyword === 'uniqueItems') return ['array'];
   if (['minProperties', 'maxProperties', 'propertyNames', 'dependentRequired', 'patternProperties'].includes(keyword)) return ['object'];

@@ -125,15 +125,16 @@
     "version": "node scripts/update-version.js",
     "vscode:prepublish": "npm run build:editor && npm run esbuild-base -- --minify",
     "esbuild-base": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
-    "build:editor": "npm --prefix ../editor run build:vscode && node scripts/copy-editor-assets.js",
+    "build:editor-foundation": "node scripts/build-editor-foundation.js",
+    "build:editor": "npm run build:editor-foundation && npm --prefix ../editor run build:vscode && node scripts/copy-editor-assets.js",
     "compile": "npm run build:editor && npm run esbuild-base -- --sourcemap",
-    "compile-tests": "tsc -p . --outDir dist",
+    "compile-tests": "npm run build:editor-foundation && tsc -p . --outDir dist",
     "watch": "npm run esbuild-base -- --sourcemap --watch",
     "pretest": "npm run compile && npm run compile-tests",
     "test": "node ./dist/test/runTest.js",
     "test:coverage": "c8 --include=dist/**/*.js --exclude=dist/test/**/*.js node ./dist/test/runTest.js",
     "lint": "eslint src --ext ts",
-    "package": "vsce package"
+    "package": "vsce package --no-dependencies"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.6",

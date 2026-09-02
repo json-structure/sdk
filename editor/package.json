@@ -44,6 +44,11 @@
   },
   "main": "dist-electron/main.cjs",
   "exports": {
+    "./conversion-types": {
+      "types": "./dist/conversion/types.d.ts",
+      "import": "./dist/conversion/types.js",
+      "require": "./dist/conversion/types.cjs"
+    },
     "./library-host-runtime": {
       "types": "./dist/libraries/host-runtime.d.ts",
       "import": "./dist/libraries/host-runtime.js",
@@ -52,6 +57,9 @@
   },
   "typesVersions": {
     "*": {
+      "conversion-types": [
+        "dist/conversion/types.d.ts"
+      ],
       "library-host-runtime": [
         "dist/libraries/host-runtime.d.ts"
       ]
@@ -100,6 +108,7 @@
   },
   "dependencies": {
     "d3-force": "^3.0.0",
-    "monaco-editor": "^0.56.0"
+    "monaco-editor": "^0.56.0",
+    "re2js": "^2.8.6"
   }
 }

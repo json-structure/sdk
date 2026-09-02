@@ -1,3 +1,6 @@
+import { coreScalarValueValid } from '../parser.js';
+import { resolveCapabilities } from '../capabilities.js';
+import { compileSafeRegex, MAX_SAFE_REGEX_INPUT_LENGTH, MAX_SAFE_REGEX_PATTERN_LENGTH, type SafeRegexCompilation } from '../safe-regex.js';
 import { resolveEffectiveMembers } from './effective-members.js';
 import { ResolvedSchemaContext, type ResolvedSchemaDocument } from './resolved-schema.js';
 
@@ -55,8 +58,33 @@ interface Evaluation {
   readonly trace: EvaluationTrace;
 }
 
+interface SchemaOrigin {
+  readonly documentUri: string;
+  readonly schemaPointer: string;
+}
+
+interface EffectiveRelation {
+  readonly schema: Readonly<Record<string, unknown>>;
+  readonly origin: SchemaOrigin;
+}
+
+interface EffectiveRelations {
+  readonly identity?: readonly string[];
+  readonly identityOrigin?: SchemaOrigin;
+  readonly relations: ReadonlyMap<string, EffectiveRelation>;
+}
+
+interface EffectiveConstraintLayer {
+  readonly schema: Readonly<Record<string, unknown>>;
+  readonly origin: SchemaOrigin;
+}
+
+interface ScopeCandidate {
+  readonly value: unknown;
+  readonly instancePointer: string;
+}
+
 const INTEGER_TEXT = /^-?(?:0|[1-9]\d*)$/;
-const UNSIGNED_INTEGER_TEXT = /^(?:0|[1-9]\d*)$/;
 const DECIMAL_TEXT = /^-?(?:0|[1-9]\d*)\.\d+$/;
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
@@ -83,10 +111,16 @@ function statusOf(evaluations: readonly Evaluation[]): EvaluationStatus {
 
 function numericParts(value: number | string): { coefficient: bigint; scale: number } | undefined {
   const text = String(value);
-  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(text);
+  const match = /^(-?)(\d+)(?:\.(\d+))?(?:[eE]([+-]?\d+))?$/.exec(text);
   if (!match) return undefined;
   const fraction = match[3] ?? '';
-  return { coefficient: BigInt(`${match[1]}${match[2]}${fraction}`), scale: fraction.length };
+  let coefficient = BigInt(`${match[1]}${match[2]}${fraction}`);
+  let scale = fraction.length - Number(match[4] ?? 0);
+  if (scale < 0) {
+    coefficient *= 10n ** BigInt(-scale);
+    scale = 0;
+  }
+  return { coefficient, scale };
 }
 
 function compareNumeric(left: number | string, right: number | string): number | undefined {
@@ -107,13 +141,6 @@ function multipleOf(value: number | string, divisor: number | string): boolean |
   return (a.coefficient * 10n ** BigInt(scale - a.scale)) % (b.coefficient * 10n ** BigInt(scale - b.scale)) === 0n;
 }
 
-function validDate(value: string): boolean {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  if (!match) return false;
-  const date = new Date(`${value}T00:00:00Z`);
-  return !Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === value;
-}
-
 function validFormat(value: string, format: string): boolean | undefined {
   switch (format) {
     case 'ipv4': return /^(?:\d{1,3}\.){3}\d{1,3}$/.test(value) && value.split('.').every((part) => Number(part) <= 255);
@@ -126,42 +153,25 @@ function validFormat(value: string, format: string): boolean | undefined {
     case 'iri-reference': try { new URL(value, 'https://example.invalid/'); return true; } catch { return false; }
     case 'uri-template': return !/[\s]/u.test(value);
     case 'relative-json-pointer': return /^(?:0|[1-9]\d*)(?:#|(?:\/(?:[^~/]|~[01])*)*)$/.test(value);
-    case 'regex': try { new RegExp(value); return true; } catch { return false; }
+    case 'regex': {
+      const compilation = compileSafeRegex(value);
+      return compilation.status === 'ready' || compilation.status === 'unsupported';
+    }
     default: return undefined;
   }
 }
 
-function validScalar(value: unknown, type: string): boolean {
+function validScalar(value: unknown, type: string, declaration: Readonly<Record<string, unknown>>): boolean {
   if (type === 'any') return true;
-  if (type === 'null') return value === null;
-  if (type === 'boolean') return typeof value === 'boolean';
-  if (type === 'string') return typeof value === 'string';
-  if (type === 'number') return typeof value === 'number' && Number.isFinite(value);
-  if (type === 'integer' || type === 'int32') return typeof value === 'number' && Number.isInteger(value) && value >= -2147483648 && value <= 2147483647;
-  if (type === 'int8') return typeof value === 'number' && Number.isInteger(value) && value >= -128 && value <= 127;
-  if (type === 'uint8') return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 255;
-  if (type === 'int16') return typeof value === 'number' && Number.isInteger(value) && value >= -32768 && value <= 32767;
-  if (type === 'uint16') return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 65535;
-  if (type === 'uint32') return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 4294967295;
-  if (type === 'float8') return typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= 3.4e3;
-  if (type === 'float') return typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= 3.4e38;
-  if (type === 'double') return typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= 1.7e308;
-  if (type === 'int64') return typeof value === 'string' && INTEGER_TEXT.test(value) && BigInt(value) >= -(2n ** 63n) && BigInt(value) < 2n ** 63n;
-  if (type === 'uint64') return typeof value === 'string' && UNSIGNED_INTEGER_TEXT.test(value) && BigInt(value) < 2n ** 64n;
-  if (type === 'int128') return typeof value === 'string' && INTEGER_TEXT.test(value) && BigInt(value) >= -(2n ** 127n) && BigInt(value) < 2n ** 127n;
-  if (type === 'uint128') return typeof value === 'string' && UNSIGNED_INTEGER_TEXT.test(value) && BigInt(value) < 2n ** 128n;
-  if (type === 'decimal') return typeof value === 'string' && DECIMAL_TEXT.test(value);
-  if (type === 'binary') return typeof value === 'string' && /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value);
-  if (type === 'date') return typeof value === 'string' && validDate(value);
-  if (type === 'datetime') return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value) && !Number.isNaN(Date.parse(value));
-  if (type === 'time') return typeof value === 'string' && /^(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/.test(value);
-  if (type === 'duration') return typeof value === 'string' && /^P(?=\d|T\d)(?:\d+Y)?(?:\d+M)?(?:\d+D)?(?:T(?:\d+H)?(?:\d+M)?(?:\d+(?:\.\d+)?S)?)?$/.test(value);
-  if (type === 'uuid') return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
-  if (type === 'uri') { if (typeof value !== 'string') return false; try { new URL(value, 'https://example.invalid/'); return true; } catch { return false; } }
-  if (type === 'jsonpointer') return typeof value === 'string' && (value === '' || /^(?:\/(?:[^~/]|~[01])*)+$/.test(value));
   if (type === 'object' || type === 'map' || type === 'choice') return isRecord(value);
   if (type === 'array' || type === 'set' || type === 'tuple') return Array.isArray(value);
-  return false;
+  return coreScalarValueValid(type, value, declaration);
+}
+
+function patternCompilationMessage(compilation: Exclude<SafeRegexCompilation, { readonly status: 'ready' }>): string {
+  if (compilation.status === 'invalid') return 'Schema pattern is invalid.';
+  if (compilation.status === 'pattern-too-long') return `Schema pattern exceeds the ${MAX_SAFE_REGEX_PATTERN_LENGTH}-code-unit safety limit.`;
+  return 'Schema pattern uses ECMAScript features that the non-backtracking regular-expression engine cannot evaluate safely.';
 }
 
 export class InstanceWorkspace {
@@ -170,12 +180,18 @@ export class InstanceWorkspace {
   private readonly schemaOptions: Pick<InstanceWorkspaceOptions, 'documentUri' | 'resolvedDocuments'>;
   private readonly selectedAddIns: readonly string[];
   private readonly externalRelationResolver?: ExternalRelationResolver;
+  private readonly capabilities;
+  private readonly effectiveSchemaCache = new Map<string, Readonly<Record<string, unknown>>>();
+  private readonly propertyOrigins = new WeakMap<Readonly<Record<string, unknown>>, ReadonlyMap<string, SchemaOrigin>>();
+  private readonly relationOrigins = new WeakMap<Readonly<Record<string, unknown>>, ReadonlyMap<string, SchemaOrigin>>();
+  private readonly inheritedConstraintLayers = new WeakMap<Readonly<Record<string, unknown>>, readonly EffectiveConstraintLayer[]>();
   private currentSelection: CrossNavigationSelection = { source: 'instance', instancePointer: '', schemaPointer: '' };
   private lastResult?: InstanceValidationResult;
 
   constructor(readonly schema: Readonly<Record<string, unknown>>, readonly instance: unknown, options: InstanceWorkspaceOptions = {}) {
     this.depthBudget = Math.max(0, options.depthBudget ?? 64);
     this.schemaContext = new ResolvedSchemaContext(schema, options);
+    this.capabilities = resolveCapabilities(schema);
     this.schemaOptions = { documentUri: options.documentUri, resolvedDocuments: options.resolvedDocuments };
     this.selectedAddIns = isRecord(instance) && Array.isArray(instance.$uses) && instance.$uses.every((entry) => typeof entry === 'string') ? instance.$uses : [];
     this.externalRelationResolver = options.externalRelationResolver;
@@ -184,7 +200,22 @@ export class InstanceWorkspace {
   get selection(): CrossNavigationSelection { return this.currentSelection; }
 
   validate(): InstanceValidationResult {
-    const evaluation = this.evaluate(this.schema, this.instance, '', '', 0, new Set(), this.schemaContext.rootUri);
+    const rootRef = typeof this.schema.$root === 'string' ? this.schema.$root : undefined;
+    const root = rootRef ? this.schemaContext.resolve(rootRef) : undefined;
+    if (rootRef && !root) {
+      const evaluation = this.failure('instance.root-unresolved', `Document root ${rootRef} cannot be resolved.`, '', '/$root', '$root', 'indeterminate');
+      this.lastResult = evaluation;
+      return evaluation;
+    }
+    const rootSchema = root ? this.effectiveSchema(root.schema, root.effectivePointer, root.documentUri) : this.schema;
+    const rootPointer = root?.effectivePointer ?? '';
+    const rootDocumentUri = root?.documentUri ?? this.schemaContext.rootUri;
+    if (rootSchema.abstract === true) {
+      const evaluation = this.failure('instance.root-abstract', 'An abstract declaration cannot be used as the instance root.', '', rootPointer, '$root');
+      this.lastResult = evaluation;
+      return evaluation;
+    }
+    const evaluation = this.evaluate(rootSchema, this.instance, '', rootPointer, 0, new Set(), rootDocumentUri);
     this.lastResult = evaluation;
     return evaluation;
   }
@@ -213,11 +244,17 @@ export class InstanceWorkspace {
 
   private evaluate(schema: Readonly<Record<string, unknown>>, instance: unknown, instancePointer: string, schemaPointer: string, depth: number, active: Set<string>, documentUri: string): Evaluation {
     if (depth > this.depthBudget) return this.failure('instance.depth-budget', 'Evaluation depth budget was exhausted.', instancePointer, schemaPointer, 'depth', 'indeterminate');
-    const activeKey = `${schemaPointer}\u0000${instancePointer}`;
+    const activeKey = `${documentUri}\u0000${schemaPointer}\u0000${instancePointer}`;
     if (active.has(activeKey)) return this.failure('instance.cycle', 'A recursive schema evaluation cycle was detected.', instancePointer, schemaPointer, '$ref', 'indeterminate');
     const nextActive = new Set(active);
     nextActive.add(activeKey);
     const evaluations: Evaluation[] = [];
+
+    if (typeof schema.$ref === 'string') {
+      const resolved = this.schemaContext.resolve(schema.$ref, documentUri);
+      if (!resolved) return this.failure('instance.ref-unresolved', `Local reference ${schema.$ref} cannot be resolved.`, instancePointer, childPointer(schemaPointer, '$ref'), '$ref', 'indeterminate');
+      return this.evaluate(this.effectiveSchema(resolved.schema, resolved.effectivePointer, resolved.documentUri), instance, instancePointer, resolved.effectivePointer, depth + 1, nextActive, resolved.documentUri);
+    }
 
     const type = schema.type;
     if (isRecord(type) && typeof type.$ref === 'string') {
@@ -225,24 +262,39 @@ export class InstanceWorkspace {
       if (!resolved) {
         evaluations.push(this.failure('instance.ref-unresolved', `Local reference ${type.$ref} cannot be resolved.`, instancePointer, childPointer(childPointer(schemaPointer, 'type'), '$ref'), '$ref', 'indeterminate'));
       } else {
-        evaluations.push(this.evaluate(this.effectiveSchema(resolved.schema, resolved.effectivePointer), instance, instancePointer, resolved.effectivePointer, depth + 1, nextActive, resolved.documentUri));
+        evaluations.push(this.evaluate(this.effectiveSchema(resolved.schema, resolved.effectivePointer, resolved.documentUri), instance, instancePointer, resolved.effectivePointer, depth + 1, nextActive, resolved.documentUri));
       }
     } else if (Array.isArray(type)) {
-      const branches = type.map((entry, index) => this.evaluate({ type: entry }, instance, instancePointer, childPointer(childPointer(schemaPointer, 'type'), index), depth + 1, nextActive, documentUri));
+      const branches = type.map((entry, index) => this.evaluate(
+        isRecord(entry) && typeof entry.$ref !== 'string' ? entry : { type: entry },
+        instance,
+        instancePointer,
+        childPointer(childPointer(schemaPointer, 'type'), index),
+        depth + 1,
+        nextActive,
+        documentUri
+      ));
       evaluations.push(this.combineAny('type', branches, instancePointer, childPointer(schemaPointer, 'type')));
     } else if (typeof type === 'string') {
-      if (!validScalar(instance, type)) evaluations.push(this.failure('instance.type', `Value is not in the ${type} value space.`, instancePointer, childPointer(schemaPointer, 'type'), 'type'));
+      if (!validScalar(instance, type, schema)) evaluations.push(this.failure('instance.type', `Value is not in the ${type} value space.`, instancePointer, childPointer(schemaPointer, 'type'), 'type'));
       else evaluations.push(this.result('type', 'valid', instancePointer, childPointer(schemaPointer, 'type')));
     }
 
+    const effectiveSchema = this.effectiveSchema(schema, schemaPointer, documentUri);
     const baseStatus = statusOf(evaluations);
     if (baseStatus !== 'invalid') {
-      const effectiveSchema = this.effectiveSchema(schema, schemaPointer);
       evaluations.push(...this.evaluateShape(effectiveSchema, instance, instancePointer, schemaPointer, depth, nextActive, documentUri));
       evaluations.push(...this.evaluateValueConstraints(effectiveSchema, instance, instancePointer, schemaPointer, depth, nextActive, documentUri));
-      evaluations.push(...this.evaluateRelations(effectiveSchema, instance, instancePointer, schemaPointer, depth, nextActive, documentUri));
+      for (const layer of this.inheritedConstraintLayers.get(effectiveSchema) ?? []) {
+        evaluations.push(...this.evaluateAdditionalProperties(layer.schema, effectiveSchema, instance, instancePointer, layer.origin.schemaPointer, depth, nextActive, layer.origin.documentUri));
+        evaluations.push(...this.evaluateValueConstraints(layer.schema, instance, instancePointer, layer.origin.schemaPointer, depth, nextActive, layer.origin.documentUri));
+      }
+      if (this.capabilities.relationsActive) evaluations.push(...this.evaluateRelations(effectiveSchema, instance, instancePointer, schemaPointer, depth, nextActive, documentUri));
     }
-    evaluations.push(...this.evaluateComposition(schema, instance, instancePointer, schemaPointer, depth, nextActive, documentUri));
+    if (this.capabilities.conditionalCompositionActive) {
+      evaluations.push(...this.evaluateComposition(schema, instance, instancePointer, schemaPointer, depth, nextActive, documentUri));
+      for (const layer of this.inheritedConstraintLayers.get(effectiveSchema) ?? []) evaluations.push(...this.evaluateComposition(layer.schema, instance, instancePointer, layer.origin.schemaPointer, depth, nextActive, layer.origin.documentUri));
+    }
     const status = statusOf(evaluations);
     return this.result('schema', status, instancePointer, schemaPointer, evaluations.map((entry) => entry.trace), evaluations.flatMap((entry) => entry.diagnostics));
   }
@@ -252,8 +304,10 @@ export class InstanceWorkspace {
     const type = schema.type;
     if ((type === 'object' || schema.properties !== undefined || schema.required !== undefined) && isRecord(instance)) {
       const properties = isRecord(schema.properties) ? schema.properties : {};
+      const origins = this.propertyOrigins.get(schema);
       for (const [name, propertySchema] of Object.entries(properties)) {
-        if (hasOwn(instance, name) && isRecord(propertySchema)) results.push(this.evaluate(propertySchema, instance[name], childPointer(instancePointer, name), childPointer(childPointer(schemaPointer, 'properties'), name), depth + 1, active, documentUri));
+        const origin = origins?.get(name);
+        if (hasOwn(instance, name) && isRecord(propertySchema)) results.push(this.evaluate(propertySchema, instance[name], childPointer(instancePointer, name), origin?.schemaPointer ?? childPointer(childPointer(schemaPointer, 'properties'), name), depth + 1, active, origin?.documentUri ?? documentUri));
       }
       if (Array.isArray(schema.required)) {
         const alternatives = schema.required.every(Array.isArray);
@@ -264,12 +318,7 @@ export class InstanceWorkspace {
           for (const name of schema.required) if (typeof name === 'string' && !hasOwn(instance, name)) results.push(this.failure('instance.required', `Required property ${name} is missing.`, childPointer(instancePointer, name), childPointer(schemaPointer, 'required'), 'required'));
         }
       }
-      const declared = new Set(Object.keys(properties));
-      for (const [name, value] of Object.entries(instance)) {
-        if (declared.has(name) || (instancePointer === '' && name === '$uses')) continue;
-        if (schema.additionalProperties === false) results.push(this.failure('instance.additional-property', `Property ${name} is not declared.`, childPointer(instancePointer, name), childPointer(schemaPointer, 'additionalProperties'), 'additionalProperties'));
-        else if (isRecord(schema.additionalProperties)) results.push(this.evaluate(schema.additionalProperties, value, childPointer(instancePointer, name), childPointer(schemaPointer, 'additionalProperties'), depth + 1, active, documentUri));
-      }
+      results.push(...this.evaluateAdditionalProperties(schema, schema, instance, instancePointer, schemaPointer, depth, active, documentUri));
     }
     if ((type === 'array' || type === 'set') && Array.isArray(instance) && isRecord(schema.items)) {
       instance.forEach((item, index) => results.push(this.evaluate(schema.items as Readonly<Record<string, unknown>>, item, childPointer(instancePointer, index), childPointer(schemaPointer, 'items'), depth + 1, active, documentUri)));
@@ -284,10 +333,24 @@ export class InstanceWorkspace {
       if (instance.length !== schema.tuple.length) results.push(this.failure('instance.tuple-length', `Tuple requires ${schema.tuple.length} elements.`, instancePointer, childPointer(schemaPointer, 'tuple'), 'tuple'));
       schema.tuple.forEach((name, index) => {
         const member = typeof name === 'string' ? (schema.properties as Readonly<Record<string, unknown>>)[name] : undefined;
-        if (index < instance.length && isRecord(member)) results.push(this.evaluate(member, instance[index], childPointer(instancePointer, index), childPointer(childPointer(schemaPointer, 'properties'), name as string), depth + 1, active, documentUri));
+        const origin = typeof name === 'string' ? this.propertyOrigins.get(schema)?.get(name) : undefined;
+        if (index < instance.length && isRecord(member)) results.push(this.evaluate(member, instance[index], childPointer(instancePointer, index), origin?.schemaPointer ?? childPointer(childPointer(schemaPointer, 'properties'), name as string), depth + 1, active, origin?.documentUri ?? documentUri));
       });
     }
     if (type === 'choice' && isRecord(instance) && isRecord(schema.choices)) results.push(this.evaluateChoice(schema, instance, instancePointer, schemaPointer, depth, active, documentUri));
+    return results;
+  }
+
+  private evaluateAdditionalProperties(constraintSchema: Readonly<Record<string, unknown>>, effectiveSchema: Readonly<Record<string, unknown>>, instance: unknown, instancePointer: string, schemaPointer: string, depth: number, active: Set<string>, documentUri: string): Evaluation[] {
+    if (!isRecord(instance) || !hasOwn(constraintSchema, 'additionalProperties')) return [];
+    const results: Evaluation[] = [];
+    const properties = isRecord(effectiveSchema.properties) ? effectiveSchema.properties : {};
+    const declared = new Set([...Object.keys(properties), ...(isRecord(effectiveSchema.relations) ? Object.keys(effectiveSchema.relations) : [])]);
+    for (const [name, value] of Object.entries(instance)) {
+      if (declared.has(name) || (instancePointer === '' && name === '$uses')) continue;
+      if (constraintSchema.additionalProperties === false) results.push(this.failure('instance.additional-property', `Property ${name} is not declared.`, childPointer(instancePointer, name), childPointer(schemaPointer, 'additionalProperties'), 'additionalProperties'));
+      else if (isRecord(constraintSchema.additionalProperties)) results.push(this.evaluate(constraintSchema.additionalProperties, value, childPointer(instancePointer, name), childPointer(schemaPointer, 'additionalProperties'), depth + 1, active, documentUri));
+    }
     return results;
   }
 
@@ -312,6 +375,8 @@ export class InstanceWorkspace {
     const check = (keyword: string, valid: boolean, message: string): void => { if (!valid) results.push(this.failure(`instance.${keyword}`, message, instancePointer, childPointer(schemaPointer, keyword), keyword)); };
     if (hasOwn(schema, 'const')) check('const', deepEqual(instance, schema.const), 'Value does not equal const.');
     if (Array.isArray(schema.enum)) check('enum', schema.enum.some((value) => deepEqual(value, instance)), 'Value is not one of the enumerated values.');
+    if (typeof instance === 'string' && typeof schema.maxLength === 'number') check('maxLength', [...instance].length <= schema.maxLength, 'String is longer than maxLength.');
+    if (!this.capabilities.validationActive) return results;
     if ((typeof instance === 'number' || (typeof instance === 'string' && (INTEGER_TEXT.test(instance) || DECIMAL_TEXT.test(instance))))) {
       for (const [keyword, relation] of [['minimum', (value: number) => value >= 0], ['maximum', (value: number) => value <= 0], ['exclusiveMinimum', (value: number) => value > 0], ['exclusiveMaximum', (value: number) => value < 0]] as const) {
         const bound = schema[keyword];
@@ -321,8 +386,15 @@ export class InstanceWorkspace {
     }
     if (typeof instance === 'string') {
       if (typeof schema.minLength === 'number') check('minLength', [...instance].length >= schema.minLength, 'String is shorter than minLength.');
-      if (typeof schema.maxLength === 'number') check('maxLength', [...instance].length <= schema.maxLength, 'String is longer than maxLength.');
-      if (typeof schema.pattern === 'string') { try { check('pattern', new RegExp(schema.pattern, 'u').test(instance), 'String does not match pattern.'); } catch { results.push(this.failure('instance.pattern-indeterminate', 'Schema pattern is invalid.', instancePointer, childPointer(schemaPointer, 'pattern'), 'pattern', 'indeterminate')); } }
+      if (typeof schema.pattern === 'string') {
+        const compilation = compileSafeRegex(schema.pattern);
+        if (compilation.status !== 'ready') results.push(this.failure('instance.pattern-indeterminate', patternCompilationMessage(compilation), instancePointer, childPointer(schemaPointer, 'pattern'), 'pattern', 'indeterminate'));
+        else {
+          const match = compilation.test(instance, true);
+          if (match.status === 'indeterminate') results.push(this.failure('instance.pattern-indeterminate', match.reason === 'input-too-long' ? `Pattern input exceeds the ${MAX_SAFE_REGEX_INPUT_LENGTH}-code-unit safety limit.` : 'The non-backtracking regular-expression engine could not evaluate the pattern.', instancePointer, childPointer(schemaPointer, 'pattern'), 'pattern', 'indeterminate'));
+          else check('pattern', match.status === 'matched', 'String does not match pattern.');
+        }
+      }
       if (typeof schema.format === 'string') { const valid = validFormat(instance, schema.format); if (valid === undefined) results.push(this.failure('instance.format-indeterminate', `Format ${schema.format} is not supported.`, instancePointer, childPointer(schemaPointer, 'format'), 'format', 'indeterminate')); else check('format', valid, `String does not match format ${schema.format}.`); }
     }
     if (Array.isArray(instance)) {
@@ -350,7 +422,19 @@ export class InstanceWorkspace {
     if (typeof schema.minEntries === 'number') check('minEntries', count >= schema.minEntries, 'Map has fewer than minEntries entries.');
     if (typeof schema.maxEntries === 'number') check('maxEntries', count <= schema.maxEntries, 'Map has more than maxEntries entries.');
     if (isRecord(schema.dependentRequired)) for (const [name, dependencies] of Object.entries(schema.dependentRequired)) if (hasOwn(instance, name) && Array.isArray(dependencies)) for (const dependency of dependencies) if (typeof dependency === 'string' && !hasOwn(instance, dependency)) results.push(this.failure('instance.dependentRequired', `${name} requires ${dependency}.`, childPointer(instancePointer, dependency), childPointer(childPointer(schemaPointer, 'dependentRequired'), name), 'dependentRequired'));
-    for (const [keyword, patterns] of [['patternProperties', schema.patternProperties], ['patternKeys', schema.patternKeys]] as const) if (isRecord(patterns)) for (const [pattern, memberSchema] of Object.entries(patterns)) if (isRecord(memberSchema)) { let expression: RegExp; try { expression = new RegExp(pattern, 'u'); } catch { results.push(this.failure('instance.pattern-indeterminate', `Pattern ${pattern} is invalid.`, instancePointer, childPointer(childPointer(schemaPointer, keyword), pattern), keyword, 'indeterminate')); continue; } for (const [name, value] of Object.entries(instance)) if (expression.test(name)) results.push(this.evaluate(memberSchema, value, childPointer(instancePointer, name), childPointer(childPointer(schemaPointer, keyword), pattern), depth + 1, active, documentUri)); }
+    for (const [keyword, patterns] of [['patternProperties', schema.patternProperties], ['patternKeys', schema.patternKeys]] as const) if (isRecord(patterns)) for (const [pattern, memberSchema] of Object.entries(patterns)) if (isRecord(memberSchema)) {
+      const compilation = compileSafeRegex(pattern);
+      const patternPointer = childPointer(childPointer(schemaPointer, keyword), pattern);
+      if (compilation.status !== 'ready') {
+        results.push(this.failure('instance.pattern-indeterminate', patternCompilationMessage(compilation), instancePointer, patternPointer, keyword, 'indeterminate'));
+        continue;
+      }
+      for (const [name, value] of Object.entries(instance)) {
+        const match = compilation.test(name);
+        if (match.status === 'indeterminate') results.push(this.failure('instance.pattern-indeterminate', match.reason === 'input-too-long' ? `Pattern input exceeds the ${MAX_SAFE_REGEX_INPUT_LENGTH}-code-unit safety limit.` : 'The non-backtracking regular-expression engine could not evaluate the pattern.', childPointer(instancePointer, name), patternPointer, keyword, 'indeterminate'));
+        else if (match.status === 'matched') results.push(this.evaluate(memberSchema, value, childPointer(instancePointer, name), patternPointer, depth + 1, active, documentUri));
+      }
+    }
     for (const [keyword, nameSchema] of [['propertyNames', schema.propertyNames], ['keyNames', schema.keyNames]] as const) if (isRecord(nameSchema)) for (const name of Object.keys(instance)) results.push(this.evaluate(nameSchema, name, childPointer(instancePointer, name), childPointer(schemaPointer, keyword), depth + 1, active, documentUri));
     if (isRecord(schema.has)) {
       const matches = Object.entries(instance).map(([name, value]) => this.evaluate(schema.has as Readonly<Record<string, unknown>>, value, childPointer(instancePointer, name), childPointer(schemaPointer, 'has'), depth + 1, active, documentUri));
@@ -358,19 +442,86 @@ export class InstanceWorkspace {
     }
   }
 
-  private effectiveSchema(schema: Readonly<Record<string, unknown>>, schemaPointer: string): Readonly<Record<string, unknown>> {
-    if ((schema.type !== 'object' && schema.type !== 'tuple') || !schemaPointer.startsWith('/definitions/')) return schema;
-    const result = resolveEffectiveMembers(this.schema, `#${schemaPointer}`, {
+  private effectiveSchema(schema: Readonly<Record<string, unknown>>, schemaPointer: string, documentUri: string): Readonly<Record<string, unknown>> {
+    if (schema.type !== 'object' && schema.type !== 'tuple') return schema;
+    const targetPointer = this.schemaContext.declarations().find((location) => location.documentUri === documentUri && location.schema === schema)?.effectivePointer ?? schemaPointer;
+    const cacheKey = `${documentUri}\u0000${targetPointer}`;
+    const cached = this.effectiveSchemaCache.get(cacheKey);
+    if (cached) return cached;
+    const result = targetPointer.startsWith('/definitions/') ? resolveEffectiveMembers(this.schema, `#${targetPointer}`, {
       ...this.schemaOptions,
       addIns: this.selectedAddIns
-    });
-    if (result.members.length === 0) return schema;
-    return {
+    }) : undefined;
+    const effectiveRelations = this.resolveEffectiveRelations(schema, targetPointer, documentUri);
+    const targetLocation = this.schemaContext.declarations().find((location) => location.documentUri === documentUri && location.schema === schema && location.effectivePointer === targetPointer);
+    const constraintLayers = this.resolveInheritedConstraintLayers(schema, targetPointer, targetLocation?.sourcePointer ?? schemaPointer, documentUri);
+    if ((!result || result.members.length === 0) && effectiveRelations.identity === undefined && effectiveRelations.relations.size === 0 && constraintLayers.length === 0) return schema;
+    const authoredAlternatives = Array.isArray(schema.required) && schema.required.length > 0 && schema.required.every((entry) => Array.isArray(entry));
+    const effective = {
       ...schema,
-      properties: Object.fromEntries(result.members.map((member) => [member.name, member.schema])),
-      ...(result.required.length > 0 ? { required: result.required } : { required: undefined }),
-      ...(schema.type === 'tuple' ? { tuple: result.tuple } : {})
+      ...(result && result.members.length > 0 ? { properties: Object.fromEntries(result.members.map((member) => [member.name, member.schema])) } : {}),
+      ...(authoredAlternatives ? { required: schema.required } : result && result.required.length > 0 ? { required: result.required } : {}),
+      ...(schema.type === 'tuple' && result ? { tuple: result.tuple } : {}),
+      ...(effectiveRelations.identity === undefined ? {} : { identity: effectiveRelations.identity }),
+      ...(effectiveRelations.relations.size === 0 ? {} : { relations: Object.fromEntries([...effectiveRelations.relations].map(([name, relation]) => [name, relation.schema])) })
     };
+    if (result) this.propertyOrigins.set(effective, new Map(result.members.map((member) => [member.name, { documentUri: member.documentUri, schemaPointer: member.declaredAt }])));
+    this.relationOrigins.set(effective, new Map([...effectiveRelations.relations].map(([name, relation]) => [name, relation.origin])));
+    this.inheritedConstraintLayers.set(effective, constraintLayers);
+    this.effectiveSchemaCache.set(cacheKey, effective);
+    return effective;
+  }
+
+  private resolveInheritedConstraintLayers(schema: Readonly<Record<string, unknown>>, effectivePointer: string, sourcePointer: string, documentUri: string, stack: readonly string[] = [], seen = new Set<string>()): readonly EffectiveConstraintLayer[] {
+    const layers: EffectiveConstraintLayer[] = [];
+    const bases = typeof schema.$extends === 'string' ? [schema.$extends] : Array.isArray(schema.$extends) && schema.$extends.every((entry) => typeof entry === 'string') ? schema.$extends : [];
+    for (const baseReference of bases) {
+      const base = this.schemaContext.resolve(baseReference, documentUri);
+      if (!base) continue;
+      const identity = `${base.documentUri}\u0000${base.sourcePointer}`;
+      if (stack.includes(identity)) continue;
+      const basePointer = this.inheritedEffectivePointer(effectivePointer, sourcePointer, base.effectivePointer);
+      layers.push(...this.resolveInheritedConstraintLayers(base.schema, basePointer, base.sourcePointer, base.documentUri, [...stack, identity], seen));
+      if (seen.has(identity)) continue;
+      seen.add(identity);
+      layers.push({ schema: base.schema, origin: { documentUri: base.documentUri, schemaPointer: basePointer } });
+    }
+    return layers;
+  }
+
+  private inheritedEffectivePointer(ownerEffectivePointer: string, ownerSourcePointer: string, basePointer: string): string {
+    if (ownerEffectivePointer === ownerSourcePointer || !ownerSourcePointer.startsWith('/definitions/') || !basePointer.startsWith('/definitions/')) return basePointer;
+    const ownerSuffix = ownerSourcePointer.slice('/definitions'.length);
+    return ownerEffectivePointer.endsWith(ownerSuffix)
+      ? `${ownerEffectivePointer.slice(0, -ownerSuffix.length)}${basePointer.slice('/definitions'.length)}`
+      : basePointer;
+  }
+
+  private resolveEffectiveRelations(schema: Readonly<Record<string, unknown>>, schemaPointer: string, documentUri: string, stack: readonly string[] = []): EffectiveRelations {
+    const key = `${documentUri}\u0000${schemaPointer}`;
+    if (stack.includes(key)) return { relations: new Map() };
+    const relations = new Map<string, EffectiveRelation>();
+    let identity: readonly string[] | undefined;
+    let identityOrigin: SchemaOrigin | undefined;
+    const bases = typeof schema.$extends === 'string' ? [schema.$extends] : Array.isArray(schema.$extends) && schema.$extends.every((entry) => typeof entry === 'string') ? schema.$extends : [];
+    for (const baseReference of bases) {
+      const base = this.schemaContext.resolve(baseReference, documentUri);
+      if (!base) continue;
+      const inherited = this.resolveEffectiveRelations(base.schema, base.effectivePointer, base.documentUri, [...stack, key]);
+      if (identity === undefined && inherited.identity !== undefined) {
+        identity = inherited.identity;
+        identityOrigin = inherited.identityOrigin;
+      }
+      for (const [name, relation] of inherited.relations) if (!relations.has(name)) relations.set(name, relation);
+    }
+    if (Array.isArray(schema.identity) && schema.identity.every((entry) => typeof entry === 'string')) {
+      identity = schema.identity;
+      identityOrigin = { documentUri, schemaPointer: childPointer(schemaPointer, 'identity') };
+    }
+    if (isRecord(schema.relations)) for (const [name, relation] of Object.entries(schema.relations)) if (isRecord(relation)) {
+      relations.set(name, { schema: relation, origin: { documentUri, schemaPointer: childPointer(childPointer(schemaPointer, 'relations'), name) } });
+    }
+    return { ...(identity === undefined ? {} : { identity }), ...(identityOrigin === undefined ? {} : { identityOrigin }), relations };
   }
 
   private evaluateRelations(schema: Readonly<Record<string, unknown>>, instance: unknown, instancePointer: string, schemaPointer: string, depth: number, active: Set<string>, documentUri: string): Evaluation[] {
@@ -378,20 +529,23 @@ export class InstanceWorkspace {
     const results: Evaluation[] = [];
     for (const [relationName, relationValue] of Object.entries(schema.relations)) {
       if (!hasOwn(instance, relationName) || !isRecord(relationValue)) continue;
-      const relationPointer = childPointer(childPointer(schemaPointer, 'relations'), relationName);
+      const relationOrigin = this.relationOrigins.get(schema)?.get(relationName) ?? { documentUri, schemaPointer: childPointer(childPointer(schemaPointer, 'relations'), relationName) };
+      const relationPointer = relationOrigin.schemaPointer;
       const targetRef = isRecord(relationValue.targettype) && typeof relationValue.targettype.$ref === 'string' ? relationValue.targettype.$ref : undefined;
-      const target = targetRef ? this.schemaContext.resolve(targetRef, documentUri) : undefined;
-      if (!target || !Array.isArray(target.schema.identity) || !target.schema.identity.every((name) => typeof name === 'string')) {
+      const target = targetRef ? this.schemaContext.resolve(targetRef, relationOrigin.documentUri) : undefined;
+      const targetRelations = target ? this.resolveEffectiveRelations(target.schema, target.effectivePointer, target.documentUri) : undefined;
+      if (!target || !targetRelations?.identity) {
         results.push(this.failure('instance.relation-target', 'Relation target and ordered identity could not be resolved.', childPointer(instancePointer, relationName), childPointer(relationPointer, 'targettype'), 'relations', 'indeterminate'));
         continue;
       }
+      const targetSchema = this.effectiveSchema(target.schema, target.effectivePointer, target.documentUri);
       const relationInstance = instance[relationName];
       const entries = relationValue.cardinality === 'multiple' ? relationInstance : [relationInstance];
       if (relationValue.cardinality === 'multiple' ? !Array.isArray(relationInstance) : !isRecord(relationInstance)) {
         results.push(this.failure('instance.relation-cardinality', `Relation ${relationName} requires ${relationValue.cardinality === 'multiple' ? 'an array' : 'an object'}.`, childPointer(instancePointer, relationName), childPointer(relationPointer, 'cardinality'), 'relations'));
         continue;
       }
-      const identities = target.schema.identity as readonly string[];
+      const identities = targetRelations.identity;
       for (let index = 0; index < (entries as readonly unknown[]).length; index++) {
         const entry = (entries as readonly unknown[])[index];
         const entryPointer = relationValue.cardinality === 'multiple' ? childPointer(childPointer(instancePointer, relationName), index) : childPointer(instancePointer, relationName);
@@ -405,12 +559,13 @@ export class InstanceWorkspace {
           continue;
         }
         for (let identityIndex = 0; identityIndex < identities.length; identityIndex++) {
-          const propertySchema = isRecord(target.schema.properties) ? target.schema.properties[identities[identityIndex]!] : undefined;
-          if (isRecord(propertySchema)) results.push(this.evaluate(propertySchema, identityValues[identityIndex], childPointer(childPointer(entryPointer, 'identity'), identityIndex), childPointer(childPointer(target.effectivePointer, 'properties'), identities[identityIndex]!), depth + 1, active, target.documentUri));
+          const propertySchema = isRecord(targetSchema.properties) ? targetSchema.properties[identities[identityIndex]!] : undefined;
+          const propertyOrigin = this.propertyOrigins.get(targetSchema)?.get(identities[identityIndex]!);
+          if (isRecord(propertySchema)) results.push(this.evaluate(propertySchema, identityValues[identityIndex], childPointer(childPointer(entryPointer, 'identity'), identityIndex), propertyOrigin?.schemaPointer ?? childPointer(childPointer(target.effectivePointer, 'properties'), identities[identityIndex]!), depth + 1, active, propertyOrigin?.documentUri ?? target.documentUri));
         }
         const qualifierRef = isRecord(relationValue.qualifiertype) && typeof relationValue.qualifiertype.$ref === 'string' ? relationValue.qualifiertype.$ref : undefined;
         if (qualifierRef) {
-          const qualifier = this.schemaContext.resolve(qualifierRef, documentUri);
+          const qualifier = this.schemaContext.resolve(qualifierRef, relationOrigin.documentUri);
           if (!qualifier) results.push(this.failure('instance.relation-qualifier', 'Relation qualifier type could not be resolved.', childPointer(entryPointer, 'qualifier'), childPointer(relationPointer, 'qualifiertype'), 'relations', 'indeterminate'));
           else if (!hasOwn(entry, 'qualifier')) results.push(this.failure('instance.relation-qualifier', 'Qualified relation requires qualifier.', childPointer(entryPointer, 'qualifier'), childPointer(relationPointer, 'qualifiertype'), 'relations'));
           else results.push(this.evaluate(qualifier.schema, entry.qualifier, childPointer(entryPointer, 'qualifier'), qualifier.effectivePointer, depth + 1, active, qualifier.documentUri));
@@ -421,23 +576,89 @@ export class InstanceWorkspace {
           if (status !== 'valid') results.push(this.failure(status === 'invalid' ? 'instance.relation-external-missing' : 'instance.relation-external-indeterminate', status === 'invalid' ? 'External relation target was not found.' : 'External relation resolution is indeterminate.', entryPointer, relationPointer, 'relations', status));
           continue;
         }
-        const candidates = scopes.flatMap((scope) => this.scopeCandidates(scope));
-        const matches = candidates.filter((candidate) => isRecord(candidate) && identities.every((name, identityIndex) => deepEqual(candidate[name], identityValues[identityIndex])));
+        const candidates = [...new Map(scopes.flatMap((scope) => this.scopeCandidates(scope, relationOrigin.documentUri)).map((candidate) => [candidate.instancePointer, candidate])).values()];
+        for (let candidateIndex = 0; candidateIndex < candidates.length; candidateIndex++) {
+          const candidateIdentity = this.instanceIdentity(targetSchema, candidates[candidateIndex]!.value, identities);
+          if (!candidateIdentity) continue;
+          const duplicate = candidates.slice(0, candidateIndex).some((candidate) => {
+            const previousIdentity = this.instanceIdentity(targetSchema, candidate.value, identities);
+            return previousIdentity !== undefined && deepEqual(previousIdentity, candidateIdentity);
+          });
+          if (duplicate) results.push(this.failure('instance.identity-duplicate', 'Identity values must be unique within the declared relation scope.', candidates[candidateIndex]!.instancePointer, targetRelations.identityOrigin?.schemaPointer ?? childPointer(target.effectivePointer, 'identity'), 'identity'));
+        }
+        const matches = candidates.filter((candidate) => deepEqual(this.instanceIdentity(targetSchema, candidate.value, identities), identityValues));
         if (matches.length !== 1) results.push(this.failure(matches.length === 0 ? 'instance.relation-scope-missing' : 'instance.relation-scope-ambiguous', `Scoped relation identity matched ${matches.length} targets.`, entryPointer, childPointer(relationPointer, 'scope'), 'relations'));
       }
     }
     return results;
   }
 
-  private scopeCandidates(scope: string): readonly unknown[] {
-    const schemaLocation = this.schemaContext.resolve(scope);
-    if (!schemaLocation) return [];
+  private scopeCandidates(scope: string, fromDocumentUri: string): readonly ScopeCandidate[] {
     const rootRef = typeof this.schema.$root === 'string' ? this.schema.$root : undefined;
-    const root = rootRef ? this.schemaContext.resolve(rootRef) : undefined;
+    const root = rootRef
+      ? this.schemaContext.resolve(rootRef)
+      : { documentUri: this.schemaContext.rootUri, sourcePointer: '', effectivePointer: '', schema: this.schema, imports: [] };
     if (!root) return [];
-    const relative = schemaLocation.effectivePointer.startsWith(`${root.effectivePointer}/properties/`) ? schemaLocation.effectivePointer.slice(`${root.effectivePointer}/properties/`.length) : undefined;
-    const collection = relative && isRecord(this.instance) ? this.instance[relative.replace(/~1/g, '/').replace(/~0/g, '~')] : scope === '#' ? this.instance : undefined;
-    return Array.isArray(collection) ? collection : isRecord(collection) ? Object.values(collection) : [];
+    const schemaLocation = scope === '#' ? root : this.schemaContext.resolveSchema(scope, fromDocumentUri);
+    if (!schemaLocation) return [];
+    const candidates: ScopeCandidate[] = [];
+    this.walkScope(root.schema, this.instance, '', root.effectivePointer, root.documentUri, schemaLocation.schema, candidates, new Set(), 0);
+    return candidates;
+  }
+
+  private walkScope(schema: Readonly<Record<string, unknown>>, instance: unknown, instancePointer: string, schemaPointer: string, documentUri: string, targetSchema: Readonly<Record<string, unknown>>, candidates: ScopeCandidate[], active: Set<string>, depth: number): void {
+    if (depth > this.depthBudget) return;
+    let currentSchema = schema;
+    let currentPointer = schemaPointer;
+    let currentDocumentUri = documentUri;
+    const targetAtLocation = currentSchema === targetSchema;
+    const reference = typeof currentSchema.$ref === 'string' ? currentSchema.$ref : isRecord(currentSchema.type) && typeof currentSchema.type.$ref === 'string' ? currentSchema.type.$ref : undefined;
+    if (reference) {
+      const resolved = this.schemaContext.resolve(reference, currentDocumentUri);
+      if (!resolved) return;
+      currentSchema = resolved.schema;
+      currentPointer = resolved.effectivePointer;
+      currentDocumentUri = resolved.documentUri;
+    }
+    const activeKey = `${currentDocumentUri}\u0000${currentPointer}\u0000${instancePointer}`;
+    if (active.has(activeKey)) return;
+    const nextActive = new Set(active);
+    nextActive.add(activeKey);
+    const effective = this.effectiveSchema(currentSchema, currentPointer, currentDocumentUri);
+    const type = effective.type;
+    if (targetAtLocation || currentSchema === targetSchema) {
+      if ((type === 'array' || type === 'set') && Array.isArray(instance)) instance.forEach((value, index) => candidates.push({ value, instancePointer: childPointer(instancePointer, index) }));
+      else if (type === 'map' && isRecord(instance)) for (const [name, value] of Object.entries(instance)) candidates.push({ value, instancePointer: childPointer(instancePointer, name) });
+    }
+    if ((type === 'array' || type === 'set') && Array.isArray(instance) && isRecord(effective.items)) {
+      instance.forEach((value, index) => this.walkScope(effective.items as Readonly<Record<string, unknown>>, value, childPointer(instancePointer, index), childPointer(currentPointer, 'items'), currentDocumentUri, targetSchema, candidates, nextActive, depth + 1));
+    } else if (type === 'map' && isRecord(instance) && isRecord(effective.values)) {
+      for (const [name, value] of Object.entries(instance)) this.walkScope(effective.values, value, childPointer(instancePointer, name), childPointer(currentPointer, 'values'), currentDocumentUri, targetSchema, candidates, nextActive, depth + 1);
+    } else if (type === 'object' && isRecord(instance) && isRecord(effective.properties)) {
+      for (const [name, propertySchema] of Object.entries(effective.properties)) if (hasOwn(instance, name) && isRecord(propertySchema)) {
+        const origin = this.propertyOrigins.get(effective)?.get(name);
+        this.walkScope(propertySchema, instance[name], childPointer(instancePointer, name), origin?.schemaPointer ?? childPointer(childPointer(currentPointer, 'properties'), name), origin?.documentUri ?? currentDocumentUri, targetSchema, candidates, nextActive, depth + 1);
+      }
+    } else if (type === 'tuple' && Array.isArray(instance) && Array.isArray(effective.tuple) && isRecord(effective.properties)) {
+      const properties = effective.properties;
+      effective.tuple.forEach((name, index) => {
+        const propertySchema = typeof name === 'string' ? properties[name] : undefined;
+        if (index >= instance.length || !isRecord(propertySchema)) return;
+        const origin = this.propertyOrigins.get(effective)?.get(name as string);
+        this.walkScope(propertySchema, instance[index], childPointer(instancePointer, index), origin?.schemaPointer ?? childPointer(childPointer(currentPointer, 'properties'), name as string), origin?.documentUri ?? currentDocumentUri, targetSchema, candidates, nextActive, depth + 1);
+      });
+    }
+  }
+
+  private instanceIdentity(schema: Readonly<Record<string, unknown>>, instance: unknown, identities: readonly string[]): readonly unknown[] | undefined {
+    if (schema.type === 'tuple') {
+      if (!Array.isArray(instance) || !Array.isArray(schema.tuple)) return undefined;
+      const positions = new Map(schema.tuple.map((name, index) => [name, index]));
+      const values = identities.map((name) => positions.get(name));
+      return values.every((index): index is number => index !== undefined && index < instance.length) ? values.map((index) => instance[index]) : undefined;
+    }
+    if (!isRecord(instance) || !identities.every((name) => hasOwn(instance, name))) return undefined;
+    return identities.map((name) => instance[name]);
   }
 
   private evaluateComposition(schema: Readonly<Record<string, unknown>>, instance: unknown, instancePointer: string, schemaPointer: string, depth: number, active: Set<string>, documentUri: string): Evaluation[] {

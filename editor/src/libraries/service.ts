@@ -26,6 +26,8 @@ export interface LibraryProviderBinding {
   readonly provider: LibraryProvider;
   readonly trustPolicy?: LibraryTrustPolicy;
   readonly metadata?: Readonly<Record<string, string>>;
+  readonly authorizeProvider?: () => Promise<void>;
+  readonly authorizeUri?: (uri: string) => Promise<void>;
 }
 
 export interface LibraryProviderState {
@@ -89,6 +91,7 @@ export interface BuildPublishPlanRequest {
   readonly expectedEpoch?: string;
   readonly promoteDefault?: boolean;
   readonly sourceUri: string;
+  readonly documentUri?: string;
 }
 
 export interface PublishExecutionRequest {
@@ -108,6 +111,8 @@ export class LibraryService {
       provider: binding.provider,
       ...(binding.trustPolicy ? { trustPolicy: binding.trustPolicy } : {}),
       metadata: binding.metadata ?? {},
+      ...(binding.authorizeProvider ? { authorizeProvider: binding.authorizeProvider } : {}),
+      ...(binding.authorizeUri ? { authorizeUri: binding.authorizeUri } : {}),
     });
   }
 
@@ -122,41 +127,57 @@ export class LibraryService {
   }
 
   async listCatalog(): Promise<readonly LibraryListing[]> {
-    const listings = await Promise.all([...this.providers.values()].map(async (binding) => ({
-      provider: {
-        providerId: binding.provider.id,
-        metadata: binding.metadata ?? {},
-      },
-      entries: await binding.provider.listEntries(),
-    })));
+    const listings = await Promise.all([...this.providers.values()].map(async (binding) => {
+      await binding.authorizeProvider?.();
+      const entries = await binding.provider.listEntries();
+      if (binding.authorizeUri) {
+        for (const entry of entries) for (const version of entry.versions) await binding.authorizeUri(version.documentUri);
+      }
+      return {
+        provider: {
+          providerId: binding.provider.id,
+          metadata: binding.metadata ?? {},
+        },
+        entries,
+      };
+    }));
     return listings.sort((left, right) => left.provider.providerId.localeCompare(right.provider.providerId));
   }
 
   async resolve(request: LibraryResolutionRequest): Promise<ResolvedLibraryWithTrust> {
     const binding = this.requireProvider(request.providerId);
+    await binding.authorizeProvider?.();
     const entries = await binding.provider.listEntries();
     const entry = entries.find((candidate) => candidate.id === request.entryId);
     if (!entry) throw new Error(`Library entry '${request.entryId}' was not found in provider '${request.providerId}'.`);
     const version = selectVersion(entry, request.selector);
+    const versionUris = new Map(entry.versions.map((candidate) => [candidate.version, candidate.documentUri]));
+    const trustPolicy = binding.trustPolicy ?? {};
     const resolved = await resolveCachedLibrary({
       provider: binding.provider,
       cache: this.options.cache,
       entryId: request.entryId,
       selector: request.selector,
       offline: request.offline,
+      versionUris,
+      ...(binding.authorizeUri ? { authorizeDocument: binding.authorizeUri } : {}),
+      validateDocument: async (document) => {
+        const decision = evaluateLibraryTrust(binding.provider.id, document, trustPolicy);
+        if (!decision.trusted) throw new Error(decision.reasons.join(' ') || `Library provider '${binding.provider.id}' returned an untrusted document.`);
+      },
     });
     const provenance: LibraryProvenance = {
       providerId: binding.provider.id,
       entryId: entry.id,
       version: version.version,
-      sourceUri: resolved.document.uri,
+      sourceUri: resolved.document.provenance?.sourceUri ?? resolved.document.uri,
     };
-    const trust = evaluateLibraryTrust(binding.provider.id, resolved.document, binding.trustPolicy ?? {});
+    const trust = evaluateLibraryTrust(binding.provider.id, resolved.document, trustPolicy);
     return { providerId: binding.provider.id, entry, version, resolved, trust, provenance };
   }
 
   buildImportPlan(request: BuildImportPlanRequest): ImportPlan {
-    return planLibraryImport(request.source, request.destinationPointer, request.resolution.provenance, request.keyword ?? '$importdefs');
+    return planLibraryImport(request.resolution.resolved.document.uri, request.destinationPointer, request.resolution.provenance, request.keyword ?? '$importdefs');
   }
 
   buildCopyPlan(request: BuildCopyPlanRequest): CopyPlan {
@@ -177,6 +198,7 @@ export class LibraryService {
       request.destinationBase,
       request.importPointer,
       request.resolution.provenance,
+      request.resolution.resolved.document.uri,
     );
   }
 
@@ -194,6 +216,7 @@ export class LibraryService {
       },
       request.expectedEpoch,
       request.promoteDefault ?? false,
+      request.documentUri,
     );
   }
 
@@ -226,8 +249,9 @@ function toLibraryDocument(plan: PublishPlan): LibraryDocument {
   return {
     entryId: plan.entryId,
     version: plan.version,
-    uri: plan.provenance.sourceUri,
+    uri: plan.documentUri,
     value: plan.document,
+    provenance: { sourceUri: plan.provenance.sourceUri },
     ...(plan.expectedEpoch ? { epoch: plan.expectedEpoch } : {}),
   };
 }

@@ -1,3 +1,5 @@
+import { compileSafeRegex, MAX_SAFE_REGEX_PATTERN_LENGTH } from './safe-regex.js';
+
 /**
  * Defines the validation keyword map shape.
  */
@@ -44,7 +46,7 @@ export interface ValidationIssue { readonly keyword: ValidationKeyword; readonly
  */
 export const VALIDATION_KEYWORDS = [
   'minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf',
-  'minLength', 'maxLength', 'pattern', 'format',
+  'minLength', 'pattern', 'format',
   'minItems', 'maxItems', 'uniqueItems', 'minContains', 'maxContains',
   'minProperties', 'maxProperties', 'minEntries', 'maxEntries', 'default',
   'contains', 'propertyNames', 'keyNames', 'has', 'dependentRequired',
@@ -72,7 +74,8 @@ function isNonNegativeInteger(value: unknown): value is number {
 }
 function validPattern(value: unknown): value is string {
   if (typeof value !== 'string') return false;
-  try { new RegExp(value); return true; } catch { return false; }
+  const compilation = compileSafeRegex(value);
+  return compilation.status === 'ready' || compilation.status === 'unsupported';
 }
 function validSchema(value: unknown): value is Readonly<Record<string, unknown>> {
   return isRecord(value) && Object.prototype.hasOwnProperty.call(value, 'type');
@@ -177,8 +180,9 @@ export function validationKeywordIssue(
     return numericValue(value, typeName, keyword === 'multipleOf') ? undefined :
       `${keyword} must use the numeric value representation of the declaration type${keyword === 'multipleOf' ? ' and be greater than zero' : ''}.`;
   }
-  if (keyword === 'minLength' || keyword === 'maxLength') return typeName === 'string' && isNonNegativeInteger(value) ? undefined : `${keyword} requires a string declaration and a non-negative integer value.`;
-  if (keyword === 'pattern') return typeName === 'string' && validPattern(value) ? undefined : 'pattern requires a string declaration and a valid ECMAScript regular expression.';
+  if (keyword === 'minLength') return typeName === 'string' && isNonNegativeInteger(value) ? undefined : 'minLength requires a string declaration and a non-negative integer value.';
+  if (keyword === 'maxLength') return typeName === 'string' && isNonNegativeInteger(value) ? undefined : 'maxLength requires a string declaration and a non-negative integer value.';
+  if (keyword === 'pattern') return typeName === 'string' && validPattern(value) ? undefined : `pattern requires a string declaration and a valid ECMAScript regular expression no longer than ${MAX_SAFE_REGEX_PATTERN_LENGTH} UTF-16 code units.`;
   if (keyword === 'format') return typeName === 'string' && typeof value === 'string' && FORMATS.has(value) ? undefined : 'format requires a string declaration and a format named by the Validation specification.';
   if (keyword === 'minItems' || keyword === 'maxItems' || keyword === 'minContains' || keyword === 'maxContains') return (typeName === 'array' || typeName === 'set') && isNonNegativeInteger(value) ? undefined : `${keyword} requires an array or set declaration and a non-negative integer value.`;
   if (keyword === 'uniqueItems') return typeName === 'array' && typeof value === 'boolean' ? undefined : 'uniqueItems requires an array declaration and a boolean value.';

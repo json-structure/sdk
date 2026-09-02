@@ -87,12 +87,15 @@ export function catalogFamilyForAction(action: CommandAction): CatalogFamily | u
   return CATALOG_ALIASES[family] ?? (CATALOG_FAMILIES.has(family as CatalogFamily) ? family as CatalogFamily : undefined);
 }
 
-export function parseActionValue(action: CommandAction, raw: string, checked = false): unknown {
+export function parseActionValue(action: CommandAction, raw: string, checked = false, schemaType?: string): unknown {
   const control = action.control;
   if (!control) return raw.trim() === '' ? undefined : JSON.parse(raw);
   switch (control.kind) {
     case 'boolean': return checked;
+    case 'schema-type': return { type: raw };
+    case 'source-only': return undefined;
     case 'number': {
+      if (control.schemaNumeric && ['int64', 'uint64', 'int128', 'uint128', 'decimal'].includes(schemaType ?? '')) return raw;
       const value = Number(raw);
       if (!Number.isFinite(value) || control.integer && !Number.isInteger(value) || control.minimum !== undefined && value < control.minimum) {
         throw new Error('Enter a valid number.');

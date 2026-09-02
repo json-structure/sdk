@@ -50,7 +50,7 @@ function fixtureResult(request: ConversionWorkerRequest): ConversionWorkerResult
         targetPath: '/definitions/Root/properties/value',
       }],
       files: {
-        'Root.struct.json': encoder.encode('{"$schema":"https://json-structure.org/meta/core/v0"}\n'),
+        'Root.struct.json': encoder.encode('{"$schema":"https://json-structure.org/meta/core/v0/#","$id":"urn:test:root","name":"Root","$root":"#/definitions/Root","definitions":{"Root":{"type":"object","properties":{"id":{"type":"string"}}}}}\n'),
       },
     };
   }
@@ -73,7 +73,7 @@ function fixtureResult(request: ConversionWorkerRequest): ConversionWorkerResult
         targetPath: '/definitions/Order/properties/id',
       }],
       files: {
-        'Order.struct.json': encoder.encode('{"$schema":"https://json-structure.org/meta/core/v0"}\n'),
+        'Order.struct.json': encoder.encode('{"$schema":"https://json-structure.org/meta/core/v0/#","$id":"urn:test:order","name":"Order","$root":"#/definitions/Order","definitions":{"Order":{"type":"object","properties":{"id":{"type":"string"}}}}}\n'),
       },
     };
   }
@@ -91,6 +91,16 @@ function fixtureResult(request: ConversionWorkerRequest): ConversionWorkerResult
       },
     };
   }
+  if (request.commandId === 'export.json-structure.to-protobuf') {
+    return {
+      lossiness: 'none',
+      warnings: [],
+      files: {
+        'order.proto': encoder.encode('syntax = "proto3";\n\nmessage Order {\n  string id = 1;\n}\n'),
+        'proto-numbers.json': encoder.encode('{"version":2,"messages":{"Order":{"fields":{"id":1}}},"enums":{}}\n'),
+      },
+    };
+  }
   throw new Error(`Unsupported fixture command ${request.commandId}.`);
 }
 
@@ -104,6 +114,7 @@ describe('Phase 5 conversion service', () => {
       'export.json-structure.to-jsonschema',
       'import.avro.to-json-structure',
       'export.json-structure.to-avro',
+      'export.json-structure.to-protobuf',
     ]);
   });
 
@@ -139,7 +150,7 @@ describe('Phase 5 conversion service', () => {
       preview: false,
       destination: 'out/order-avro',
       launch: { autoOpen: false },
-      optionValues: { rootName: 'Order' },
+      optionValues: { mode: 'compact' },
     });
     expect(result.runtime.state).toBe('completed');
     expect(result.runtime.published).toBe(true);
@@ -200,5 +211,63 @@ describe('Phase 5 conversion service', () => {
       preview: true,
       optionValues: { preserveUnknownKeywords: 'yes' as unknown as boolean },
     })).rejects.toThrow('must be a boolean');
+  });
+
+  it('rejects invalid generated output before publication', async () => {
+    const storage = new MemoryStorage();
+    const worker = new DeterministicInProcessWorker(() => ({
+      files: { 'Root.struct.json': encoder.encode('{"$schema":"https://json-structure.org/meta/core/v0"}') },
+      warnings: [],
+      lossiness: 'none',
+    }));
+    const service = new ConversionService({ worker, storage });
+    const result = await service.execute({
+      operationId: 'invalid-generated-output',
+      commandId: 'import.jsonschema.to-json-structure',
+      sourceName: 'schema.json',
+      source: encoder.encode('{}'),
+      preview: false,
+      destination: 'output',
+    });
+    expect(result.runtime.state).toBe('failed');
+    expect(result.runtime.published).toBe(false);
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({ code: 'conversion.runtime.failed', severity: 'error' }));
+    expect(storage.directories.size).toBe(0);
+  });
+
+  it('runs canonical full-schema validation before publication', async () => {
+    const storage = new MemoryStorage();
+    const worker = new DeterministicInProcessWorker(() => ({
+      files: { 'Root.struct.json': encoder.encode('{"$schema":"https://json-structure.org/meta/core/v0/#","$id":"urn:test:root","name":"Root","$root":"#/definitions/Root","definitions":{"Root":{"type":"object","properties":{}}}}') },
+      warnings: [],
+      lossiness: 'none',
+    }));
+    const result = await new ConversionService({ worker, storage }).execute({
+      operationId: 'canonical-validation',
+      commandId: 'import.jsonschema.to-json-structure',
+      sourceName: 'schema.json',
+      source: encoder.encode('{}'),
+      preview: false,
+      destination: 'output',
+    });
+    expect(result.runtime.state).toBe('failed');
+    expect(result.runtime.error?.message).toContain('failed canonical validation');
+    expect(storage.directories.size).toBe(0);
+  });
+
+  it('accepts valid primitive and union Avro roots', async () => {
+    for (const [operationId, output] of [['primitive-avro', '"string"'], ['union-avro', '["null","string"]']] as const) {
+      const worker = new DeterministicInProcessWorker(() => ({
+        files: { 'schema.avsc': encoder.encode(output) }, warnings: [], lossiness: 'none',
+      }));
+      const result = await new ConversionService({ worker }).execute({
+        operationId,
+        commandId: 'export.json-structure.to-avro',
+        sourceName: 'schema.struct.json',
+        source: encoder.encode('{"type":"string"}'),
+        preview: true,
+      });
+      expect(result.runtime.state).toBe('completed');
+    }
   });
 });

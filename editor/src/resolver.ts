@@ -353,7 +353,7 @@ function resolveSite(
   const entries = effective.declarations.get(parsed.pointer) ?? [];
   if (entries.length === 1) {
     const entry = entries[0];
-    if (site.kind === 'relation-target' && !entry.definition.identity) {
+    if (site.kind === 'relation-target' && !effectiveIdentity(entry, effective)) {
       return {
         ...site,
         normalizedTarget: parsed.pointer,
@@ -382,6 +382,39 @@ function resolveSite(
     return { ...site, normalizedTarget: parsed.pointer, status: 'indeterminate', importOrigins: [], reason: unresolvedImport.reason };
   }
   return { ...site, normalizedTarget: parsed.pointer, status: 'unresolved', importOrigins: [], reason: 'No reusable declaration exists at the target path.' };
+}
+
+function effectiveIdentity(
+  declaration: EffectiveDeclaration,
+  effective: EffectiveDocument,
+  seen = new Set<string>()
+): readonly string[] | undefined {
+  const key = `${declaration.documentUri}#${declaration.sourcePointer}`;
+  if (seen.has(key)) return undefined;
+  const nextSeen = new Set(seen).add(key);
+  if (declaration.definition.identity && declaration.definition.identity.length > 0) return declaration.definition.identity;
+  const prefix = declaration.pointer === '' ? '' : declaration.pointer;
+  const alias = effective.references.find((site) => site.kind === 'ref' && site.pointer === `${prefix}/type/$ref`);
+  if (alias) {
+    const target = effectiveDeclarationForSite(alias, effective);
+    return target ? effectiveIdentity(target, effective, nextSeen) : undefined;
+  }
+  const inherited = effective.references
+    .filter((site) => site.kind === 'extends' && (site.pointer === `${prefix}/$extends` || site.pointer.startsWith(`${prefix}/$extends/`)))
+    .flatMap((site) => {
+      const target = effectiveDeclarationForSite(site, effective);
+      const identity = target ? effectiveIdentity(target, effective, nextSeen) : undefined;
+      return identity ? [identity] : [];
+    });
+  const distinct = new Map(inherited.map((identity) => [JSON.stringify(identity), identity]));
+  return distinct.size === 1 ? distinct.values().next().value : undefined;
+}
+
+function effectiveDeclarationForSite(site: EffectiveReferenceSite, effective: EffectiveDocument): EffectiveDeclaration | undefined {
+  const parsed = parsePointerFragment(site.target);
+  if (parsed.pointer === undefined) return undefined;
+  const entries = effective.declarations.get(parsed.pointer) ?? [];
+  return entries.length === 1 ? entries[0] : undefined;
 }
 
 function parsePointerFragment(value: string): { pointer?: JsonPointer; reason?: string } {

@@ -4,7 +4,7 @@ import { DurableLibraryCache, JsonLibraryCachePersistence, MemoryLibraryCache, r
 import { PolicyTrustAdapter, SecretStorageCredentialAdapter } from '../src/libraries/adapters.js';
 import { normalizeLibraryEntry } from '../src/libraries/contracts.js';
 import { CopyCollisionError, planLibraryCopy, planLibraryImport, planLibraryMaterialization, planLibraryPublish } from '../src/libraries/planning.js';
-import { EpochConflictError, MemoryLibraryPublisherStore, publishLibraryVersion, type LibraryPublisherStore, type PublishedLibraryEntry } from '../src/libraries/publishing.js';
+import { EpochConflictError, MemoryLibraryPublisherStore, publishLibraryVersion, publishedLibraryDocumentUri, type LibraryPublisherStore, type PublishedLibraryEntry } from '../src/libraries/publishing.js';
 import { createLibraryServiceFacade } from '../src/libraries/facade.js';
 import { LocalDocumentLibraryProvider, StaticDocumentLibraryProvider, XRegistryApiLibraryProvider, discoverXRegistryProvider } from '../src/libraries/providers.js';
 import { LibraryService } from '../src/libraries/service.js';
@@ -46,6 +46,7 @@ describe('Phase 6 library runtime', () => {
     await resolveCachedLibrary({
       provider, cache: new DurableLibraryCache(persistence), entryId: 'common', selector: { kind: 'pinned', version: '1.0.0' }, offline: false,
     });
+
     persisted = persisted.replace('"trusted": true', '"trusted": false');
     await expect(resolveCachedLibrary({
       provider, cache: new DurableLibraryCache(persistence), entryId: 'common', selector: { kind: 'pinned', version: '1.0.0' }, offline: true,
@@ -59,6 +60,23 @@ describe('Phase 6 library runtime', () => {
     await expect(resolveCachedLibrary({
       provider, cache: legacy, entryId: 'common', selector: { kind: 'pinned', version: '1.0.0' }, offline: true,
     })).rejects.toThrow('has no verification proof');
+    await expect(legacy.findByUri('memory:common')).rejects.toThrow('has no verification proof');
+  });
+
+  it('rejects changed online content for an already cached immutable version', async () => {
+    let value: Record<string, unknown> = { stable: true };
+    const provider = new StaticDocumentLibraryProvider('static', manifest, async () => value);
+    const cache = new MemoryLibraryCache();
+    await resolveCachedLibrary({
+      provider, cache, entryId: 'common', selector: { kind: 'pinned', version: '1.0.0' }, offline: false,
+    });
+    value = { stable: false };
+    await expect(resolveCachedLibrary({
+      provider, cache, entryId: 'common', selector: { kind: 'pinned', version: '1.0.0' }, offline: false,
+    })).rejects.toThrow('changed content without changing its version');
+    await expect(resolveCachedLibrary({
+      provider, cache, entryId: 'common', selector: { kind: 'pinned', version: '1.0.0' }, offline: true,
+    })).resolves.toMatchObject({ document: { value: { stable: true } } });
   });
 
   it('persists proof so matching pinned bytes remain reproducible offline', async () => {
@@ -187,8 +205,8 @@ describe('Phase 6 library runtime', () => {
     const provider = new XRegistryApiLibraryProvider({
       id: 'registry', baseUrl: 'https://registry.example.test', group: 'groups', resource: 'schemas',
       transport: async () => ({ status: 200, body: { resources: [{ id: 'common', defaultVersionId: '2', versions: [
-        { id: '1', documentUri: 'https://registry.example.test/common/1' },
-        { id: '2', documentUri: 'https://registry.example.test/common/2' },
+        { id: '1', documentUri: 'https://registry.example.test/groups/schemas/common/versions/1' },
+        { id: '2', documentUri: 'https://registry.example.test/groups/schemas/common/versions/2' },
       ] }] } }),
     });
     expect(await provider.listEntries()).toEqual([expect.objectContaining({
@@ -223,7 +241,7 @@ describe('Phase 6 library runtime', () => {
         if (request.url.includes('inline=versions')) {
           return {
             status: 200,
-            body: { resources: [{ id: 'common', defaultVersionId: '1', versions: [{ id: '1', documentUri: 'https://registry.example.test/common/1' }] }] },
+            body: { resources: [{ id: 'common', defaultVersionId: '1', versions: [{ id: '1', documentUri: 'https://registry.example.test/schemagroups/schemas/common/versions/1' }] }] },
           };
         }
         return { status: 404, body: {} };
@@ -271,12 +289,206 @@ describe('Phase 6 library runtime', () => {
     expect(publishPlan).toMatchObject({ kind: 'publish', entryId: 'common', version: '3.0.0', expectedEpoch: '2', promoteDefault: true });
   });
 
+  it('copies and rewrites only schema-owned references while preserving opaque payloads', () => {
+    const provenance = { providerId: 'static', entryId: 'common', version: '2', sourceUri: 'memory:common' };
+    const source = {
+      $schema: 'https://json-structure.org/meta/relations/v0/#',
+      $uses: ['JSONStructureRelations', 'JSONStructureValidation', 'JSONStructureConditionalComposition'],
+      definitions: {
+      Selected: {
+        type: 'object',
+        properties: { next: { type: { $ref: '#/definitions/Structural' } } },
+        additionalProperties: { type: { $ref: '#/definitions/Additional' } },
+        allOf: [{ type: { $ref: '#/definitions/Composed' } }],
+        patternProperties: { '^x': { type: { $ref: '#/definitions/Validated' } } },
+        relations: { owner: {
+          targettype: { $ref: '#/definitions/Target' },
+          qualifiertype: { $ref: '#/definitions/Qualifier' },
+        } },
+        default: { $ref: '#/definitions/Structural' },
+        const: { $ref: '#/definitions/OpaqueLiteral' },
+        examples: [{ $ref: '#/definitions/OpaqueExample' }],
+        annotations: { nested: { $ref: '#/definitions/OpaqueAnnotation' } },
+      },
+      Structural: { type: 'string', $extends: '#/definitions/Base' },
+      Additional: { type: 'string' },
+      Base: { type: 'string' },
+      Composed: { type: 'string' },
+      Validated: { type: 'string' },
+      Target: { type: 'object', properties: {} },
+      Qualifier: { type: 'string' },
+      OpaqueLiteral: { type: 'string' },
+      OpaqueExample: { type: 'string' },
+      OpaqueAnnotation: { type: 'string' },
+    } };
+
+    const plan = planLibraryCopy(source, { definitions: { Local: {} } }, ['/definitions/Selected'], '/definitions/Local', provenance);
+    expect(plan.operations.map((operation) => operation.sourcePointer)).toEqual([
+      '/definitions/Selected',
+      '/definitions/Structural',
+      '/definitions/Additional',
+      '/definitions/Composed',
+      '/definitions/Validated',
+      '/definitions/Target',
+      '/definitions/Qualifier',
+      '/definitions/Base',
+    ]);
+    const copied = plan.operations[0]?.value as Record<string, unknown>;
+    expect(copied).toMatchObject({
+      properties: { next: { type: { $ref: '#/definitions/Local/Structural' } } },
+      additionalProperties: { type: { $ref: '#/definitions/Local/Additional' } },
+      allOf: [{ type: { $ref: '#/definitions/Local/Composed' } }],
+      patternProperties: { '^x': { type: { $ref: '#/definitions/Local/Validated' } } },
+      relations: { owner: {
+        targettype: { $ref: '#/definitions/Local/Target' },
+        qualifiertype: { $ref: '#/definitions/Local/Qualifier' },
+      } },
+      default: { $ref: '#/definitions/Structural' },
+      const: { $ref: '#/definitions/OpaqueLiteral' },
+      examples: [{ $ref: '#/definitions/OpaqueExample' }],
+      annotations: { nested: { $ref: '#/definitions/OpaqueAnnotation' } },
+    });
+  });
+
+  it('ignores extension-owned reference shapes when their capabilities are inactive', () => {
+    const provenance = { providerId: 'static', entryId: 'common', version: '2', sourceUri: 'memory:common' };
+    const source = {
+      $schema: 'https://json-structure.org/meta/core/v0/#',
+      definitions: {
+        A: {
+          type: 'object',
+          properties: { active: { type: { $ref: '#/definitions/B' } } },
+          contains: { type: { $ref: '#/definitions/ValidationPayload' } },
+          allOf: [{ type: { $ref: '#/definitions/CompositionPayload' } }],
+          relations: { owner: { targettype: { $ref: '#/definitions/RelationPayload' } } },
+        },
+        B: { type: 'string' },
+        ValidationPayload: { type: 'string' },
+        CompositionPayload: { type: 'string' },
+        RelationPayload: { type: 'string' },
+      },
+    };
+    const plan = planLibraryCopy(source, { definitions: { Local: {} } }, ['/definitions/A'], '/definitions/Local', provenance);
+    expect(plan.operations.map((operation) => operation.sourcePointer)).toEqual(['/definitions/A', '/definitions/B']);
+    expect(plan.operations[0]?.value).toMatchObject({
+      properties: { active: { type: { $ref: '#/definitions/Local/B' } } },
+      contains: { type: { $ref: '#/definitions/ValidationPayload' } },
+      allOf: [{ type: { $ref: '#/definitions/CompositionPayload' } }],
+      relations: { owner: { targettype: { $ref: '#/definitions/RelationPayload' } } },
+    });
+  });
+
+  it('rejects empty and unsafe partial materialization selections', () => {
+    const provenance = { providerId: 'static', entryId: 'common', version: '2', sourceUri: 'memory:common' };
+    const source = { definitions: { A: { type: 'string' }, B: { type: 'string' } } };
+    const importedTarget = {
+      definitions: {
+        $importdefs: 'memory:common',
+        UsesB: { type: 'object', properties: { value: { type: { $ref: '#/definitions/B' } } } },
+      },
+    };
+    expect(() => planLibraryMaterialization(source, importedTarget, [], '/definitions', '/definitions/$importdefs', provenance))
+      .toThrow(/at least one declaration/i);
+    expect(() => planLibraryMaterialization(source, importedTarget, ['/definitions/A'], '/definitions', '/definitions/$importdefs', provenance))
+      .toThrow(/uncopied.*\/definitions\/B/i);
+
+    const opaqueTarget = {
+      definitions: {
+        $importdefs: 'memory:common',
+        Literal: { type: 'jsonpointer', default: { $ref: '#/definitions/B' } },
+      },
+    };
+    expect(planLibraryMaterialization(source, opaqueTarget, ['/definitions/A'], '/definitions', '/definitions/$importdefs', provenance).operations)
+      .toHaveLength(1);
+
+    const nestedTarget = {
+      definitions: {
+        Shared: {
+          $importdefs: 'memory:common',
+          UsesB: { type: 'object', properties: { value: { type: { $ref: '#/definitions/Shared/B' } } } },
+        },
+      },
+    };
+    expect(() => planLibraryMaterialization(source, nestedTarget, ['/definitions/A'], '/definitions/Shared', '/definitions/Shared/$importdefs', provenance))
+      .toThrow(/uncopied.*\/definitions\/B/i);
+    expect(planLibraryMaterialization(source, nestedTarget, ['/definitions/B'], '/definitions/Shared', '/definitions/Shared/$importdefs', provenance).operations)
+      .toHaveLength(1);
+
+    const transitiveSource = { definitions: { $importdefs: 'memory:base', A: { type: 'string' } } };
+    expect(() => planLibraryMaterialization(transitiveSource, importedTarget, ['/definitions/A'], '/definitions', '/definitions/$importdefs', provenance))
+      .toThrow(/uncopied.*\/definitions\/B/i);
+
+    const shadowedTarget = {
+      definitions: {
+        $importdefs: 'memory:common',
+        B: { type: 'string' },
+        UsesB: { type: 'object', properties: { value: { type: { $ref: '#/definitions/B' } } } },
+      },
+    };
+    expect(planLibraryMaterialization(source, shadowedTarget, ['/definitions/A'], '/definitions', '/definitions/$importdefs', provenance).operations)
+      .toHaveLength(1);
+
+    const offersTarget = {
+      $offers: { Single: '#/definitions/B', Bundle: ['#/definitions/B'] },
+      definitions: { $importdefs: 'memory:common' },
+    };
+    expect(() => planLibraryMaterialization(source, offersTarget, ['/definitions/A'], '/definitions', '/definitions/$importdefs', provenance))
+      .toThrow(/uncopied.*\/definitions\/B/i);
+  });
+
   it('rejects existing and intra-plan copy collisions', () => {
     const provenance = { providerId: 'static', entryId: 'common', version: '2', sourceUri: 'memory:common' };
     expect(() => planLibraryCopy({ definitions: { A: {} } }, { definitions: { A: {} } }, ['/definitions/A'], '/definitions', provenance))
       .toThrow(CopyCollisionError);
     expect(() => planLibraryCopy({ one: { A: {} }, two: { A: {} } }, {}, ['/one/A', '/two/A'], '', provenance))
       .toThrow("/A");
+  });
+
+  it('copies and materializes a named document root introduced by $import', () => {
+    const provenance = { providerId: 'static', entryId: 'root', version: '1', sourceUri: 'file:///workspace/source.struct.json' };
+    const publishedUri = 'memory://published/static/root/1';
+    const source = {
+      $schema: 'https://json-structure.org/meta/core/v0/#',
+      $id: 'https://example.test/root.struct.json',
+      name: 'NamedRoot',
+      type: 'object',
+      properties: { child: { type: { $ref: '#/definitions/Child' } } },
+      definitions: { Child: { type: 'string' } },
+    };
+    const copy = planLibraryCopy(source, { definitions: {} }, [''], '/definitions', provenance);
+    expect(copy.operations.map((operation) => [operation.sourcePointer, operation.destinationPointer])).toEqual([
+      ['', '/definitions/NamedRoot'],
+      ['/definitions/Child', '/definitions/Child'],
+    ]);
+    expect(copy.operations[0]?.value).toMatchObject({
+      name: 'NamedRoot',
+      properties: { child: { type: { $ref: '#/definitions/Child' } } },
+    });
+    expect(copy.operations[0]?.value).not.toHaveProperty('$schema');
+    expect(copy.operations[0]?.value).not.toHaveProperty('$id');
+    expect(copy.operations[0]?.value).not.toHaveProperty('definitions');
+
+    const materialized = planLibraryMaterialization(
+      source,
+      { $import: publishedUri, $root: '#/definitions/NamedRoot' },
+      [''],
+      '/definitions',
+      '/$import',
+      provenance,
+      publishedUri,
+    );
+    expect(materialized.operations[0]).toMatchObject({ sourcePointer: '', destinationPointer: '/definitions/NamedRoot' });
+    expect(() => planLibraryMaterialization(
+      source,
+      { $import: publishedUri, $root: '#/definitions/NamedRoot' },
+      ['/definitions/Child'],
+      '/definitions',
+      '/$import',
+      provenance,
+      publishedUri,
+    )).toThrow(/uncopied.*document root/i);
+    expect(() => planLibraryCopy({ type: 'string' }, { definitions: {} }, [''], '/definitions', provenance))
+      .toThrow('requires a document name');
   });
 
   it('evaluates provider, origin, and integrity trust without executing host behavior', () => {
@@ -289,9 +501,18 @@ describe('Phase 6 library runtime', () => {
 
   it('publishes with optimistic epochs, optional promotion, and conflict rejection', async () => {
     const store = new MemoryLibraryPublisherStore();
-    const document = { entryId: 'common', version: '1', uri: 'memory:common', value: {} };
+    const sourceValue = { stable: true };
+    const document = { entryId: 'common', version: '1', uri: 'memory:provider/.published/provider-team/entry-common/version-1.json', provenance: { sourceUri: 'file:///workspace/source.json' }, value: sourceValue };
     const first = await publishLibraryVersion(store, { entryId: 'common', version: '1', document, promoteDefault: true });
     expect(first).toMatchObject({ epoch: '1', defaultVersion: '1' });
+    sourceValue.stable = false;
+    (first.versions['1']!.value as { stable: boolean }).stable = false;
+    expect((await store.read('common'))?.versions['1']).toMatchObject({
+      uri: 'memory:provider/.published/provider-team/entry-common/version-1.json',
+      provenance: { sourceUri: 'file:///workspace/source.json' },
+      value: { stable: true },
+    });
+    expect(publishedLibraryDocumentUri('memory://published/', 'team', '..', '1.0/rc')).toBe('memory://published/.published/provider-team/entry-../version-1.0%2Frc.json');
     const second = await publishLibraryVersion(store, {
       entryId: 'common', version: '2', expectedEpoch: first.epoch,
       document: { ...document, version: '2' },
@@ -303,6 +524,7 @@ describe('Phase 6 library runtime', () => {
 
     const racingStore: LibraryPublisherStore = {
       read: async () => undefined,
+      list: async () => [],
       write: async (_entry: PublishedLibraryEntry) => false,
     };
     await expect(publishLibraryVersion(racingStore, { entryId: 'race', version: '1', document }))
@@ -352,11 +574,15 @@ describe('Phase 6 library runtime', () => {
 
     const importPlan = facade.service.buildImportPlan({
       resolution,
-      source: resolution.resolved.document.uri,
+      source: 'file:///workspace/original.struct.json',
       destinationPointer: '/definitions',
       keyword: '$importdefs',
     });
-    expect(importPlan).toMatchObject({ kind: 'import', provenance: expect.objectContaining({ providerId: 'static', entryId: 'common' }) });
+    expect(importPlan).toMatchObject({
+      kind: 'import',
+      source: resolution.resolved.document.uri,
+      provenance: expect.objectContaining({ providerId: 'static', entryId: 'common', sourceUri: resolution.resolved.document.uri }),
+    });
 
     const copyPlan = facade.service.buildCopyPlan({
       resolution,

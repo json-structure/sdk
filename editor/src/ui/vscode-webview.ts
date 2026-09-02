@@ -22,6 +22,13 @@ interface DocumentChangedMessage {
   readonly documentVersion: number;
 }
 
+interface DocumentRejectedMessage {
+  readonly type: 'documentRejected';
+  readonly protocolVersion: typeof protocolVersion;
+  readonly documentVersion: number;
+  readonly diagnostics: DocumentSnapshot['diagnostics'];
+}
+
 interface ApplyResultMessage {
   readonly type: 'applyResult';
   readonly protocolVersion: typeof protocolVersion;
@@ -48,10 +55,10 @@ interface ResourceResultMessage {
 }
 interface ServiceResultMessage { readonly type: 'serviceResult'; readonly protocolVersion: typeof protocolVersion; readonly requestId: string; readonly result?: unknown; readonly error?: string }
 interface ConversionProgressMessage extends ProgressEvent { readonly type: 'conversionProgress' }
-export type HostMessage = InitMessage | DocumentChangedMessage | ApplyResultMessage | DocumentSavedMessage | ShowCommandsMessage | ResourceResultMessage | ServiceResultMessage | ConversionProgressMessage;
+export type HostMessage = InitMessage | DocumentChangedMessage | DocumentRejectedMessage | ApplyResultMessage | DocumentSavedMessage | ShowCommandsMessage | ResourceResultMessage | ServiceResultMessage | ConversionProgressMessage;
 export type WebviewMessage = { readonly type: 'applyTextEdits'; readonly protocolVersion: typeof protocolVersion; readonly request: ApplyTextEditsRequest } |
   { readonly type: 'readResource'; readonly protocolVersion: typeof protocolVersion; readonly requestId: string; readonly uri: string } |
-  { readonly type: 'listConversionCommands' | 'convert' | 'cancelConversion' | 'openGeneratedOutput' | 'libraryRequest' | 'listLibraryEntries' | 'readLibraryDocument'; readonly protocolVersion: typeof protocolVersion; readonly requestId: string; readonly request?: unknown };
+  { readonly type: 'listConversionCommands' | 'selectConversionSource' | 'convert' | 'cancelConversion' | 'openGeneratedOutput' | 'libraryRequest' | 'listLibraryEntries' | 'readLibraryDocument'; readonly protocolVersion: typeof protocolVersion; readonly requestId: string; readonly request?: unknown };
 
 const protocolVersion = PROTOCOL_VERSION;
 
@@ -73,7 +80,8 @@ export interface VsCodeWebviewClientOptions {
 }
 
 interface PendingRequest { readonly request: ApplyTextEditsRequest; readonly resolve: (result: ApplyResult) => void; readonly reject: (error: Error) => void; readonly timeout: ReturnType<typeof setTimeout>; }
-interface PendingReplacement { readonly text: string; readonly documentVersion: number; }
+interface QueuedApply { readonly request: ApplyTextEditsRequest; readonly resolve: (result: ApplyResult) => void; readonly reject: (error: Error) => void; }
+interface PendingReplacement { readonly text: string; }
 
 export interface VsCodeWebviewClient { readonly host: EditorHost; receive(message: unknown): void; replaceDocument(text: string): void; dispose(): void; }
 
@@ -84,13 +92,18 @@ export function createVsCodeWebviewClient(options: VsCodeWebviewClientOptions): 
   const timeoutDelay = options.requestTimeoutMs ?? requestTimeoutMs;
   const pending = new Map<string, PendingRequest>();
   const pendingResources = new Map<string, { readonly resolve: (result: ResourceSnapshot) => void; readonly reject: (error: Error) => void; readonly timeout: ReturnType<typeof setTimeout> }>();
-  const pendingServices = new Map<string, { readonly resolve: (result: unknown) => void; readonly reject: (error: Error) => void; readonly timeout: ReturnType<typeof setTimeout> }>();
+  const pendingServices = new Map<string, { readonly resolve: (result: unknown) => void; readonly reject: (error: Error) => void; readonly timeout?: ReturnType<typeof setTimeout> }>();
   let editor: JsonStructureEditorHandle | undefined;
   let snapshot: DocumentSnapshot | undefined;
   let synchronizing = false;
   let replacement: PendingReplacement | undefined;
   let replaceTimer: ReturnType<typeof setTimeout> | undefined;
+  let replacementFlush: Promise<void> | undefined;
+  let replacementInFlight = false;
+  let replacementAwaitingVersion: number | undefined;
   let sourceRequest = 0;
+  const applyQueue: QueuedApply[] = [];
+  let applyInFlight = false;
   let disposed = false;
   const progressListeners = new Set<(event: ProgressEvent) => void>();
 
@@ -101,27 +114,72 @@ export function createVsCodeWebviewClient(options: VsCodeWebviewClientOptions): 
       entry.reject(new Error(message));
     }
     pending.clear();
+    for (const entry of applyQueue.splice(0)) entry.reject(new Error(message));
+    applyInFlight = false;
   }
 
-  async function flushReplacement(): Promise<void> {
-    if (replaceTimer !== undefined) { cancel(replaceTimer); replaceTimer = undefined; }
-    const next = replacement;
-    replacement = undefined;
-    if (!disposed && snapshot && next && next.documentVersion === snapshot.documentVersion && next.text !== snapshot.text) {
+  function startNextApply(): void {
+    if (disposed || applyInFlight) return;
+    const entry = applyQueue.shift();
+    if (!entry) return;
+    applyInFlight = true;
+    const timeout = schedule(() => {
+      pending.delete(entry.request.requestId);
+      applyInFlight = false;
+      entry.reject(new Error(`Timed out waiting for apply result: ${entry.request.requestId}`));
+      startNextApply();
+    }, timeoutDelay);
+    pending.set(entry.request.requestId, { ...entry, timeout });
+    options.vscode.postMessage({ type: 'applyTextEdits', protocolVersion, request: entry.request });
+  }
+
+  async function drainReplacement(): Promise<void> {
+    while (!disposed && snapshot && replacement) {
+      if (replacementAwaitingVersion !== undefined && snapshot.documentVersion < replacementAwaitingVersion) return;
+      if (replacement.text === snapshot.text) { replacement = undefined; return; }
+      const submitted = replacement;
+      const baseSnapshot = snapshot;
+      replacementInFlight = true;
       try {
-        const result = await host.applyTextEdits({ protocolVersion, requestId: `source-${++sourceRequest}`, documentVersion: next.documentVersion, edits: [minimalReplacement(snapshot.text, next.text)] });
-        if (!result.applied && snapshot) editor?.setText(snapshot.text, snapshot.documentVersion);
+        const result = await host.applyTextEdits({ protocolVersion, requestId: `source-${++sourceRequest}`, documentVersion: baseSnapshot.documentVersion, edits: [minimalReplacement(baseSnapshot.text, submitted.text)] });
+        if (!result.applied) {
+          if (result.documentVersion > snapshot.documentVersion) {
+            replacementAwaitingVersion = result.documentVersion;
+            return;
+          }
+          if (replacement === submitted && snapshot.documentVersion === baseSnapshot.documentVersion && snapshot.text === baseSnapshot.text) {
+            replacement = undefined;
+            editor?.setText(snapshot.text, snapshot.documentVersion);
+            return;
+          }
+        }
       } catch {
+        replacement = undefined;
         if (snapshot) editor?.setText(snapshot.text, snapshot.documentVersion);
+        return;
+      } finally {
+        replacementInFlight = false;
       }
     }
   }
 
+  function flushReplacement(): Promise<void> {
+    if (replaceTimer !== undefined) { cancel(replaceTimer); replaceTimer = undefined; }
+    if (replacementFlush) return replacementFlush;
+    const running = drainReplacement().finally(() => {
+      if (replacementFlush !== running) return;
+      replacementFlush = undefined;
+      if (!disposed && snapshot && replacement && replacementAwaitingVersion === undefined && replacement.text !== snapshot.text) void flushReplacement();
+    });
+    replacementFlush = running;
+    return running;
+  }
+
   function replaceDocument(text: string): void {
-    if (disposed || synchronizing || !snapshot || text === snapshot.text) return;
-    replacement = { text, documentVersion: snapshot.documentVersion };
+    if (disposed || synchronizing || !snapshot || text === snapshot.text && !replacementInFlight && !replacement) return;
+    replacement = { text };
     if (replaceTimer !== undefined) cancel(replaceTimer);
-    replaceTimer = schedule(flushReplacement, replaceDelay);
+    if (!replacementFlush) replaceTimer = schedule(() => { void flushReplacement(); }, replaceDelay);
   }
 
   const host: EditorHost = {
@@ -134,12 +192,8 @@ export function createVsCodeWebviewClient(options: VsCodeWebviewClientOptions): 
     applyTextEdits(request) {
       if (disposed) return Promise.reject(new Error('The VS Code webview has been disposed.'));
       return new Promise<ApplyResult>((resolve, reject) => {
-        const timeout = schedule(() => {
-          pending.delete(request.requestId);
-          reject(new Error(`Timed out waiting for apply result: ${request.requestId}`));
-        }, timeoutDelay);
-        pending.set(request.requestId, { request, resolve, reject, timeout });
-        options.vscode.postMessage({ type: 'applyTextEdits', protocolVersion, request });
+        applyQueue.push({ request, resolve, reject });
+        startNextApply();
       });
     },
     readResource(uri) {
@@ -155,6 +209,7 @@ export function createVsCodeWebviewClient(options: VsCodeWebviewClientOptions): 
       });
     },
     listConversionCommands: () => requestService('listConversionCommands'),
+    selectConversionSource: (request) => requestService('selectConversionSource', request),
     convert: (request) => requestService('convert', request),
     onConversionProgress(listener) { progressListeners.add(listener); return () => progressListeners.delete(listener); },
     cancelConversion: (requestId) => requestService('cancelConversion', { protocolVersion, requestId }),
@@ -164,12 +219,12 @@ export function createVsCodeWebviewClient(options: VsCodeWebviewClientOptions): 
     readLibraryDocument: (entryId, version) => requestService('readLibraryDocument', { entryId, version })
   };
 
-  function requestService<T>(type: 'listConversionCommands' | 'convert' | 'cancelConversion' | 'openGeneratedOutput' | 'libraryRequest' | 'listLibraryEntries' | 'readLibraryDocument', request?: unknown): Promise<T> {
+  function requestService<T>(type: 'listConversionCommands' | 'selectConversionSource' | 'convert' | 'cancelConversion' | 'openGeneratedOutput' | 'libraryRequest' | 'listLibraryEntries' | 'readLibraryDocument', request?: unknown): Promise<T> {
     if (disposed) return Promise.reject(new Error('The VS Code webview has been disposed.'));
     const requestId = `service-${++sourceRequest}`;
     return new Promise<T>((resolve, reject) => {
-      const timeout = schedule(() => { pendingServices.delete(requestId); reject(new Error(`Timed out waiting for service result: ${requestId}`)); }, timeoutDelay);
-      pendingServices.set(requestId, { resolve: resolve as (result: unknown) => void, reject, timeout });
+      const timeout = type === 'convert' || type === 'selectConversionSource' ? undefined : schedule(() => { pendingServices.delete(requestId); reject(new Error(`Timed out waiting for service result: ${requestId}`)); }, timeoutDelay);
+      pendingServices.set(requestId, { resolve: resolve as (result: unknown) => void, reject, ...(timeout === undefined ? {} : { timeout }) });
       options.vscode.postMessage({ type, protocolVersion, requestId, request });
     });
   }
@@ -191,7 +246,7 @@ export function createVsCodeWebviewClient(options: VsCodeWebviewClientOptions): 
       const entry = pendingServices.get(value.requestId);
       if (!entry) return;
       pendingServices.delete(value.requestId);
-      cancel(entry.timeout);
+      if (entry.timeout !== undefined) cancel(entry.timeout);
       if (value.error) entry.reject(new Error(value.error)); else entry.resolve(value.result);
       return;
     }
@@ -201,18 +256,38 @@ export function createVsCodeWebviewClient(options: VsCodeWebviewClientOptions): 
       pending.delete(value.requestId);
       cancel(entry.timeout);
       if (value.result.applied && snapshot && snapshot.documentVersion < value.result.documentVersion) snapshot = { ...snapshot, text: applyEdits(snapshot.text, entry.request.edits), documentVersion: value.result.documentVersion };
+      applyInFlight = false;
       entry.resolve(value.result);
+      startNextApply();
       return;
     }
+    if (value.type === 'documentRejected') {
+      if (!snapshot || value.documentVersion < snapshot.documentVersion) return;
+      if (replaceTimer !== undefined) { cancel(replaceTimer); replaceTimer = undefined; }
+      replacement = undefined;
+      replacementAwaitingVersion = undefined;
+      snapshot = { ...snapshot, documentVersion: value.documentVersion, recovery: 'invalid', diagnostics: value.diagnostics };
+      rejectPending('The VS Code document was rejected by the host.');
+      synchronizing = true;
+      editor?.setText(snapshot.text, snapshot.documentVersion);
+      synchronizing = false;
+      return;
+    }
+    const preserveReplacement = value.type === 'documentChanged' && (replacementInFlight || replacementAwaitingVersion !== undefined);
     if (replaceTimer !== undefined) { cancel(replaceTimer); replaceTimer = undefined; }
-    replacement = undefined;
+    if (!preserveReplacement || replacement?.text === value.text) replacement = undefined;
     const uri = value.type === 'init' ? value.uri : snapshot?.uri ?? '';
     snapshot = { uri, text: value.text, documentVersion: value.documentVersion, recovery: 'valid', diagnostics: [] };
+    if (!replacement) replacementAwaitingVersion = undefined;
+    else if (replacementAwaitingVersion !== undefined && value.documentVersion >= replacementAwaitingVersion) {
+      replacementAwaitingVersion = undefined;
+      void flushReplacement();
+    }
     if (value.type === 'init') {
       rejectPending('The VS Code webview was reinitialized.');
       editor?.dispose();
       editor = options.mount?.(value, host, replaceDocument);
-    } else {
+    } else if (!replacement) {
       synchronizing = true;
       editor?.setText(value.text, value.documentVersion);
       synchronizing = false;
@@ -231,7 +306,7 @@ export function createVsCodeWebviewClient(options: VsCodeWebviewClientOptions): 
     rejectPending('The VS Code webview was disposed.');
     for (const entry of pendingResources.values()) { cancel(entry.timeout); entry.reject(new Error('The VS Code webview was disposed.')); }
     pendingResources.clear();
-    for (const entry of pendingServices.values()) { cancel(entry.timeout); entry.reject(new Error('The VS Code webview was disposed.')); }
+    for (const entry of pendingServices.values()) { if (entry.timeout !== undefined) cancel(entry.timeout); entry.reject(new Error('The VS Code webview was disposed.')); }
     pendingServices.clear();
     progressListeners.clear();
     editor?.dispose();
@@ -262,6 +337,7 @@ function isHostMessage(value: unknown): value is HostMessage {
   if (message.type === 'serviceResult') return typeof message.requestId === 'string' && ('result' in message || typeof message.error === 'string');
   if (message.type === 'applyResult') return typeof message.requestId === 'string' && !!message.result;
   if (message.type === 'documentSaved') return Number.isInteger(message.documentVersion);
+  if (message.type === 'documentRejected') return Number.isInteger(message.documentVersion) && Array.isArray(message.diagnostics);
   if (typeof message.text !== 'string' || !Number.isInteger(message.documentVersion)) return false;
   if (message.type === 'init') return typeof message.uri === 'string' && typeof message.title === 'string';
   if (message.type === 'documentChanged') return true;

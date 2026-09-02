@@ -13,9 +13,24 @@ const manifest: ConversionCommandsManifest = {
 };
 
 describe('conversion workbench view', () => {
+  it('requires a selected external source for import commands', () => {
+    const importManifest: ConversionCommandsManifest = {
+      ...manifest,
+      commands: [{ ...manifest.commands[0]!, id: 'import.fixture', direction: 'import', sourceFormat: 'avro', targetFormat: 'json-structure' }],
+    };
+    const host = { listConversionCommands: async () => importManifest, selectConversionSource: async () => undefined, convert: async () => { throw new Error('not called'); } };
+    const empty = conversionView(host, importManifest, 'import.fixture', undefined, undefined, '');
+    const selected = conversionView(host, importManifest, 'import.fixture', { uri: 'file:///order.avsc', name: 'order.avsc', text: '{}' }, undefined, 'Selected order.avsc.');
+    expect(empty).toContain('data-conversion-source');
+    expect(empty).toContain('No file selected');
+    expect(empty).toContain('data-conversion-run disabled');
+    expect(selected).toContain('order.avsc');
+    expect(selected).not.toContain('data-conversion-run disabled');
+  });
+
   it('renders typed options and committed result details', () => {
     const host = { listConversionCommands: async () => manifest, convert: async () => { throw new Error('not called'); }, openGeneratedOutput: async () => ({ protocolVersion: 1 as const, requestId: 'open', opened: true }) };
-    const html = conversionView(host, manifest, 'convert.fixture', {
+    const html = conversionView(host, manifest, 'convert.fixture', undefined, {
       protocolVersion: 1,
       requestId: 'result',
       documentVersion: 1,
@@ -54,7 +69,7 @@ describe('conversion workbench view', () => {
     expect(html).toContain('Committed atomically');
     expect(html).toContain('data-state="publishing"');
     expect(html).toContain('/properties/value');
-    expect(html).toContain('&quot;keyword&quot;: &quot;x-source&quot;');
+    expect(html).toContain('Keyword: x-source');
     expect(html).toContain('42 B');
     expect(html).toContain('a'.repeat(64));
   });
@@ -65,7 +80,7 @@ describe('conversion workbench view', () => {
       convert: async () => { throw new Error('not called'); },
       cancelConversion: async () => undefined
     };
-    const active = conversionView(host, manifest, 'convert.fixture', undefined, 'Writing outputs', {
+    const active = conversionView(host, manifest, 'convert.fixture', undefined, undefined, 'Writing outputs', {
       protocolVersion: 1,
       requestId: 'convert-1',
       documentVersion: 2,
@@ -73,12 +88,24 @@ describe('conversion workbench view', () => {
       percent: 75,
       message: 'Writing outputs'
     }, 'convert-1');
-    const idle = conversionView(host, manifest, 'convert.fixture', undefined, 'Ready');
+    const idle = conversionView(host, manifest, 'convert.fixture', undefined, undefined, 'Ready');
 
     expect(active).toContain('<progress max="100" value="75"');
     expect(active).toContain('data-conversion-cancel');
     expect(active).toContain('data-conversion-run disabled');
     expect(idle).not.toContain('data-conversion-cancel');
     expect(idle).not.toContain('<progress');
+  });
+
+  it('renders only options selected by the active command', () => {
+    const scoped: ConversionCommandsManifest = {
+      ...manifest,
+      commands: [{ ...manifest.commands[0]!, optionNames: ['dialect'] }],
+    };
+    const host = { listConversionCommands: async () => scoped, convert: async () => { throw new Error('not called'); } };
+    const html = conversionView(host, scoped, 'convert.fixture', undefined, undefined, '');
+    expect(html).toContain('data-conversion-option="dialect"');
+    expect(html).not.toContain('data-conversion-option="strict"');
+    expect(html).not.toContain('data-conversion-option="depth"');
   });
 });

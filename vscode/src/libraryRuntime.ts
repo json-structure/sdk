@@ -1,7 +1,10 @@
 import * as vscode from 'vscode';
+import { lookup } from 'node:dns/promises';
 import {
     createBoundedHttpsTransport,
     createLibraryHostRuntime,
+    requirePublicLibraryNetworkUri,
+    type LibraryHostAddressResolver,
     type LibraryHostRuntime,
     type SerializableLibraryProviderConfig
 } from '@json-structure/editor-foundation/library-host-runtime';
@@ -14,7 +17,12 @@ const publisherKey = 'jsonStructure.library.publisher';
 const secretPrefix = 'jsonStructure.library.secret.';
 const maxResponseBytes = 4 * 1024 * 1024;
 
-export function createVsCodeLibraryRuntime(context: vscode.ExtensionContext, bundledPath: vscode.Uri): Promise<LibraryHostRuntime> {
+export function createVsCodeLibraryRuntime(
+    context: vscode.ExtensionContext,
+    bundledPath: vscode.Uri,
+    isWorkspaceTrusted: () => boolean = () => vscode.workspace.isTrusted,
+    resolveHost: LibraryHostAddressResolver = resolveHostAddresses
+): Promise<LibraryHostRuntime> {
     const bundledRoot = vscode.Uri.joinPath(bundledPath, '..');
     const bundledProvider = {
         id: 'financial-types',
@@ -23,6 +31,9 @@ export function createVsCodeLibraryRuntime(context: vscode.ExtensionContext, bun
         entries: [{ id: 'financial-types', name: 'Financial Types', description: 'A bundled JSON Structure type library sample.', versions: [{ version: '1.0.0', documentUri: bundledPath.toString(), isDefault: true }] }]
     } as const;
     const publisherQueues = new Map<string, Promise<void>>();
+    const bundledUri = bundledPath.toString();
+    const bundledRootUri = bundledRoot.toString();
+    const httpTransport = createBoundedHttpsTransport(fetch, resolveHost);
     return createLibraryHostRuntime({
         requiredBundledProviders: [bundledProvider],
         cacheStore: {
@@ -38,24 +49,29 @@ export function createVsCodeLibraryRuntime(context: vscode.ExtensionContext, bun
             setSecret: async (key, secret) => context.secrets.store(`${secretPrefix}${key}`, secret),
             deleteSecret: async (key) => context.secrets.delete(`${secretPrefix}${key}`)
         },
-        isTrustedProvider: async (providerId) => providerId === bundledProvider.id || vscode.workspace.isTrusted,
-        isTrustedOrigin: async (origin) => origin === 'null' || vscode.workspace.isTrusted && isHttps(origin),
-        readJsonResource: (uri) => readLibraryJson(uri, bundledRoot),
-        httpTransport: createBoundedHttpsTransport(fetch),
-        resolvePublisherStore: async (providerId) => {
-            const configs = context.globalState.get<readonly SerializableLibraryProviderConfig[]>(providersKey, []);
-            if (!configs.some((config) => config.id === providerId && config.kind !== 'bundled' && config.kind !== 'xregistry')) return undefined;
-            return createPublisherStore({
+        authorizeOperation: async (request) => {
+            if (!['configureProvider', 'removeProvider', 'resolve', 'publish', 'readResource'].includes(request.operation)) return true;
+            return isWorkspaceTrusted();
+        },
+        isTrustedProvider: async (providerId) => providerId === bundledProvider.id || isWorkspaceTrusted(),
+        isTrustedOrigin: async (origin) => origin === 'null' || isWorkspaceTrusted() && isHttps(origin),
+        isTrustedUri: async (providerId, uri) => {
+            if (isHttps(uri)) await requirePublicLibraryNetworkUri(uri, resolveHost);
+            return providerId === bundledProvider.id ? uri === bundledUri || uri === bundledRootUri : isWorkspaceTrusted();
+        },
+        readJsonResource: (uri) => readLibraryJson(uri, bundledRoot, isWorkspaceTrusted, httpTransport),
+        httpTransport,
+        resolvePublisherStore: async (providerId) => createPublisherStore({
                 read: () => context.globalState.get<PublisherState>(publisherKey, {}),
                 write: (state) => context.globalState.update(publisherKey, state)
-            }, providerId, publisherQueues);
-        }
+            }, providerId, publisherQueues)
     });
 }
 
-async function readLibraryJson(value: string, bundledRoot: vscode.Uri): Promise<unknown> {
+async function readLibraryJson(value: string, bundledRoot: vscode.Uri, isWorkspaceTrusted: () => boolean, httpTransport: ReturnType<typeof createBoundedHttpsTransport>): Promise<unknown> {
+    if (!isWorkspaceTrusted()) throw new Error('Library file and network reads require a trusted workspace.');
     if (isHttps(value)) {
-        const response = await createBoundedHttpsTransport(fetch)({ method: 'GET', url: value, headers: { accept: 'application/json' } });
+        const response = await httpTransport({ method: 'GET', url: value, headers: { accept: 'application/json' } });
         if (response.status < 200 || response.status >= 300) throw new Error(`HTTP ${response.status}`);
         return response.body;
     }
@@ -70,6 +86,9 @@ async function readLibraryJson(value: string, bundledRoot: vscode.Uri): Promise<
     if (bytes.byteLength > maxResponseBytes) throw new Error(`Library resource exceeds the ${maxResponseBytes}-byte limit.`);
     return JSON.parse(new TextDecoder().decode(bytes)) as unknown;
 }
+
+const resolveHostAddresses: LibraryHostAddressResolver = async (hostname) =>
+    (await lookup(hostname, { all: true, verbatim: true })).map((result) => result.address);
 
 function isHttps(value: string): boolean {
     try { const url = new URL(value); return url.protocol === 'https:' && !url.username && !url.password; }

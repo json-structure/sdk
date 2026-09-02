@@ -46,6 +46,8 @@ export interface AttachDiscoveredXRegistryRequest {
   readonly reference?: XRegistryProviderReference;
   readonly trustPolicy?: LibraryProviderBinding['trustPolicy'];
   readonly metadata?: LibraryProviderBinding['metadata'];
+  readonly authorizeProvider?: LibraryProviderBinding['authorizeProvider'];
+  readonly authorizeUri?: LibraryProviderBinding['authorizeUri'];
 }
 
 export async function attachDiscoveredXRegistryProvider(request: AttachDiscoveredXRegistryRequest): Promise<XRegistryDiscoveredProvider> {
@@ -66,6 +68,8 @@ export async function attachDiscoveredXRegistryProvider(request: AttachDiscovere
     provider: discovered.provider,
     ...(request.trustPolicy ? { trustPolicy: request.trustPolicy } : {}),
     ...(request.metadata ? { metadata: request.metadata } : {}),
+    ...(request.authorizeProvider ? { authorizeProvider: request.authorizeProvider } : {}),
+    ...(request.authorizeUri ? { authorizeUri: request.authorizeUri } : {}),
   });
   return discovered;
 }

@@ -7,10 +7,20 @@ import {
   type CompositionKeywordMap,
   type ConditionalCompositionGroup
 } from './composition.js';
-import { rangeFor, semanticAnnotationCandidateValid, semanticAnnotationSetValid, type SemanticAnnotationKeyword, type SemanticAnnotationKeywordMap } from './parser.js';
+import {
+  coreScalarValueValid,
+  deeplyUniqueJsonValues,
+  effectiveCorePrimitiveType,
+  rangeFor,
+  semanticAnnotationCandidateValid,
+  semanticAnnotationSetValid,
+  type SemanticAnnotationKeyword,
+  type SemanticAnnotationKeywordMap
+} from './parser.js';
 import { effectiveValidationTypes, validationIssues, validationValueIsSchemaBacked, type ValidationKeyword, type ValidationKeywordMap } from './validation.js';
 import { unitsValueValid, type UnitsKeyword, type UnitsKeywordMap } from './units.js';
 import { alternateNamesPlacementValid, alternateNamesValueValid, type AlternateNamesKeyword, type AlternateNamesKeywordMap } from './alternate-names.js';
+import { ResolvedSchemaContext } from './phase4/resolved-schema.js';
 
 /**
  * Type alias for schema type value.
@@ -106,9 +116,9 @@ function hasUniquePointerPath(session: DocumentSession, pointer: string): boolea
 function hasDuplicatePointerDiagnostic(session: DocumentSession, pointer: string): boolean {
   return session.snapshot().diagnostics.some((diagnostic) => diagnostic.code === 'json.duplicate-pointer' && diagnostic.location?.pointer === pointer);
 }
-function isReferencedProperty(owner: Record<string, unknown>, propertyName: string): boolean {
+function isReferencedProperty(owner: Record<string, unknown>, propertyName: string, relationsActive: boolean): boolean {
   const containsName = (value: unknown): boolean => value === propertyName || (Array.isArray(value) && value.some(containsName));
-  return containsName(owner.required) || (Array.isArray(owner.identity) && owner.identity.includes(propertyName));
+  return containsName(owner.required) || (relationsActive && Array.isArray(owner.identity) && owner.identity.includes(propertyName));
 }
 function definitionsContext(session: DocumentSession, definitionPointer: string): {
   namespacePointer: string;
@@ -151,12 +161,13 @@ function definitionReferenceSites(session: DocumentSession, definitionPointer: s
     const pointer = node.pointer;
     if (pointer === definitionPointer) continue;
     const outsideDeletedSubtree = !(pointer === definitionPointer || pointer.startsWith(subtree));
+    const relationReference = pointer.endsWith('/targettype/$ref') || pointer.endsWith('/qualifiertype/$ref');
 
     if (pointer === '/$root' && outsideDeletedSubtree) {
       if (session.model?.rootPointer === definitionPointer) sites.add(pointer);
     }
 
-    if (pointer.endsWith('/$ref') && outsideDeletedSubtree) {
+    if (pointer.endsWith('/$ref') && outsideDeletedSubtree && (session.capabilities.relationsActive || !relationReference)) {
       const ref = pointerValue(session.value, pointer);
       if (typeof ref === 'string' && (ref === definitionRef || ref === definitionPointer)) sites.add(pointer);
     }
@@ -167,12 +178,12 @@ function definitionReferenceSites(session: DocumentSession, definitionPointer: s
       if (isStringArray(extendsValue) && extendsValue.some((entry) => entry === definitionRef || entry === definitionPointer)) sites.add(pointer);
     }
 
-    if (pointer.endsWith('/targettype/$ref') && outsideDeletedSubtree) {
+    if (session.capabilities.relationsActive && pointer.endsWith('/targettype/$ref') && outsideDeletedSubtree) {
       const targetRef = pointerValue(session.value, pointer);
       if (typeof targetRef === 'string' && (targetRef === definitionRef || targetRef === definitionPointer)) sites.add(pointer);
     }
 
-    if (pointer.endsWith('/qualifiertype/$ref') && outsideDeletedSubtree) {
+    if (session.capabilities.relationsActive && pointer.endsWith('/qualifiertype/$ref') && outsideDeletedSubtree) {
       const qualifierRef = pointerValue(session.value, pointer);
       if (typeof qualifierRef === 'string' && (qualifierRef === definitionRef || qualifierRef === definitionPointer)) sites.add(pointer);
     }
@@ -181,9 +192,10 @@ function definitionReferenceSites(session: DocumentSession, definitionPointer: s
 }
 function canSetRoot(session: DocumentSession, rootPointer: string): boolean {
   const root = pointerValue(session.value, '');
+  const target = effectiveDeclarationForReference(session, `#${rootPointer}`)?.schema;
   return isObjectLike(root) && !Object.prototype.hasOwnProperty.call(root, 'type') &&
     (!Object.prototype.hasOwnProperty.call(root, '$root') || objectMemberContext(session, '', '$root') !== undefined) &&
-    reusableDeclarationPointer(session, rootPointer);
+    target !== undefined && target.abstract !== true;
 }
 function sourceOffsets(range: TextRange, message: string): { start: number; end: number } {
   if (range.startOffset === undefined || range.endOffset === undefined) throw new Error(message);
@@ -192,27 +204,43 @@ function sourceOffsets(range: TextRange, message: string): { start: number; end:
 
 function applyTextEdits(source: string, edits: readonly TextEdit[]): string {
   return [...edits]
-    .sort((left, right) => sourceOffsets(right.range, 'Edit source range is unavailable.').start - sourceOffsets(left.range, 'Edit source range is unavailable.').start)
+    .sort((left, right) => {
+      const leftOffsets = sourceOffsets(left.range, 'Edit source range is unavailable.');
+      const rightOffsets = sourceOffsets(right.range, 'Edit source range is unavailable.');
+      return rightOffsets.start - leftOffsets.start || rightOffsets.end - leftOffsets.end;
+    })
     .reduce((text, edit) => {
       const offsets = sourceOffsets(edit.range, 'Edit source range is unavailable.');
       return text.slice(0, offsets.start) + edit.newText + text.slice(offsets.end);
     }, source);
 }
 
-function minimalReplacementCommandResult(source: string, changed: string): CommandResult {
-  let start = 0;
-  while (start < source.length && start < changed.length && source[start] === changed[start]) start++;
-  let sourceEnd = source.length;
-  let changedEnd = changed.length;
-  while (sourceEnd > start && changedEnd > start && source[sourceEnd - 1] === changed[changedEnd - 1]) {
-    sourceEnd--;
-    changedEnd--;
+function commandResultForEdits(source: string, edits: readonly TextEdit[]): CommandResult {
+  const ascending = [...edits].sort((left, right) =>
+    sourceOffsets(left.range, 'Edit source range is unavailable.').start - sourceOffsets(right.range, 'Edit source range is unavailable.').start);
+  const changed = applyTextEdits(source, ascending);
+  let delta = 0;
+  const inverseEdits = ascending.map((edit) => {
+    const offsets = sourceOffsets(edit.range, 'Edit source range is unavailable.');
+    const start = offsets.start + delta;
+    const oldText = source.slice(offsets.start, offsets.end);
+    delta += edit.newText.length - oldText.length;
+    return { range: rangeFor(changed, start, start + edit.newText.length), newText: oldText };
+  });
+  const mergedInverseEdits: TextEdit[] = [];
+  for (const edit of inverseEdits) {
+    const previous = mergedInverseEdits.at(-1);
+    if (previous && previous.range.startOffset === edit.range.startOffset) {
+      const end = Math.max(previous.range.endOffset!, edit.range.endOffset!);
+      mergedInverseEdits[mergedInverseEdits.length - 1] = {
+        range: rangeFor(changed, edit.range.startOffset!, end),
+        newText: previous.newText + edit.newText
+      };
+    } else mergedInverseEdits.push(edit);
   }
-  return {
-    edits: [{ range: rangeFor(source, start, sourceEnd), newText: changed.slice(start, changedEnd) }],
-    inverseEdits: [{ range: rangeFor(changed, start, changedEnd), newText: source.slice(start, sourceEnd) }]
-  };
+  return { edits: ascending, inverseEdits: mergedInverseEdits };
 }
+
 function chooseInsertRange(session: DocumentSession, pointer: string): TextRange | undefined {
   return objectRange(session, pointer);
 }
@@ -224,7 +252,7 @@ function isObjectOrTupleDeclaration(value: Record<string, unknown>): boolean {
 }
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const CORE_TYPES = new Set([
-  'string', 'number', 'integer', 'boolean', 'null',
+  'any', 'string', 'number', 'integer', 'boolean', 'null',
   'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32', 'int64', 'uint64', 'int128', 'uint128',
   'float8', 'float', 'double', 'decimal', 'date', 'datetime', 'time', 'duration', 'uuid', 'uri', 'binary', 'jsonpointer',
   'object', 'array', 'map', 'set', 'tuple', 'choice'
@@ -232,7 +260,7 @@ const CORE_TYPES = new Set([
 export const CORE_DOCUMENT_MEMBERS = [
   '$schema', '$id', 'name', 'description', '$uses', '$offers', '$root', 'definitions', 'type', 'enum', 'const',
   'abstract', '$extends', 'properties', 'required', 'additionalProperties', 'items', 'values', 'tuple', 'choices',
-  'selector', 'precision', 'scale'
+  'selector', 'precision', 'scale', 'maxLength'
 ] as const;
 export type CoreDocumentMember = typeof CORE_DOCUMENT_MEMBERS[number];
 const CORE_DOCUMENT_MEMBER_SET = new Set<string>(CORE_DOCUMENT_MEMBERS);
@@ -364,69 +392,149 @@ function resolvesUniquePointer(session: DocumentSession, pointer: string): boole
   return direct === 1 && hasUniquePointerPath(session, pointer) && !hasDuplicatePointerDiagnostic(session, pointer);
 }
 function referenceResolvesLocally(session: DocumentSession, reference: string): boolean {
-  if (!isLocalPointerRef(reference)) return true;
-  return resolvesUniquePointer(session, reference.slice(1));
+  return effectiveDeclarationForReference(session, reference) !== undefined;
 }
 function scopeResolvesLocally(session: DocumentSession, scope: RelationScope | undefined): boolean {
   if (scope === undefined) return true;
   const entries = typeof scope === 'string' ? [scope] : scope;
-  return entries.every((entry) => !isLocalPointerRef(entry) || resolvesUniquePointer(session, entry.slice(1)));
-}
-function localIdentityValid(session: DocumentSession, pointer: string, value: unknown): boolean {
-  if (!isObjectLike(value) || !isObjectOrTupleDeclaration(value) || !reusableDeclarationPointer(session, pointer)) return false;
-  const identity = value.identity;
-  const properties = value.properties;
-  if (!Array.isArray(identity) || identity.length === 0 || !isObjectLike(properties) || new Set(identity).size !== identity.length) return false;
-  if (!objectMemberContext(session, pointer, 'identity') || !objectMemberContext(session, pointer, 'properties')) return false;
-  return identity.every((entry) => typeof entry === 'string' && entry.length > 0 && Object.prototype.hasOwnProperty.call(properties, entry) &&
-    objectMemberContext(session, `${pointer}/properties`, entry) !== undefined);
+  const context = resolvedSchemaContext(session);
+  return entries.every((entry) => effectiveScopeReference(session, entry) !== undefined &&
+    context.resolveSchema(effectiveScopeReference(session, entry)!) !== undefined);
 }
 function localTargetTypeHasIdentity(session: DocumentSession, reference: string): boolean {
-  if (!isLocalPointerRef(reference)) return true;
-  const pointer = reference.slice(1);
-  return resolvesUniquePointer(session, pointer) && localIdentityValid(session, pointer, pointerValue(session.value, pointer));
+  const context = resolvedSchemaContext(session);
+  const declaration = context.resolve(reference);
+  const concrete = declaration && context.dereference(declaration);
+  return !!concrete && concrete.schema.abstract !== true && isObjectOrTupleDeclaration(concrete.schema) &&
+    context.effectiveIdentity(reference) !== undefined;
 }
 function localQualifierIsReusable(session: DocumentSession, reference: string): boolean {
-  return !isLocalPointerRef(reference) || reusableDeclarationPointer(session, reference.slice(1));
-}
-function schemaReference(value: unknown): string | undefined {
-  if (!isObjectLike(value)) return undefined;
-  return isObjectLike(value.type) && Object.keys(value.type).length === 1 && typeof value.type.$ref === 'string' ? value.type.$ref : undefined;
+  const declaration = effectiveDeclarationForReference(session, reference);
+  return declaration !== undefined && declaration.schema.abstract !== true;
 }
 function relationTypeReference(value: unknown): string | undefined {
   return isObjectLike(value) && Object.keys(value).length === 1 && typeof value.$ref === 'string' ? value.$ref : undefined;
 }
-function referenceCompatible(session: DocumentSession, candidate: string, target: string, seen = new Set<string>()): boolean {
-  if (candidate === target) return true;
-  if (!isLocalPointerRef(candidate) || !isLocalPointerRef(target) || seen.has(candidate)) return false;
-  seen.add(candidate);
-  const declaration = pointerValue(session.value, candidate.slice(1));
-  if (!isObjectLike(declaration)) return false;
-  const bases = typeof declaration.$extends === 'string' ? [declaration.$extends] : Array.isArray(declaration.$extends) ? declaration.$extends : [];
-  return bases.some((base) => typeof base === 'string' && referenceCompatible(session, base, target, seen));
-}
-function compatibleCollection(session: DocumentSession, collection: unknown, targetRef: string): boolean {
-  if (!isObjectLike(collection) || !['array', 'set', 'map'].includes(String(collection.type))) return false;
-  const member = collection.type === 'map' ? collection.values : collection.items;
-  const memberRef = schemaReference(member);
-  return memberRef !== undefined && referenceCompatible(session, memberRef, targetRef);
-}
 function relationScopeCompatible(session: DocumentSession, scope: RelationScope | undefined, targetRef: string): boolean {
   if (scope === undefined) return true;
   const entries = typeof scope === 'string' ? [scope] : scope;
+  const context = resolvedSchemaContext(session);
   return entries.every((entry) => {
-    if (entry === '#') {
-      const root = pointerValue(session.value, '');
-      const rootPointer = isObjectLike(root) && typeof root.$root === 'string' ? decodeLocalPointerFragment(root.$root) : undefined;
-      if (!isObjectLike(root) || Object.prototype.hasOwnProperty.call(root, 'type') || rootPointer === undefined) return false;
-      return reusableDeclarationPointer(session, rootPointer) && compatibleCollection(session, pointerValue(session.value, rootPointer), targetRef);
-    }
-    if (!isLocalPointerRef(entry) || !resolvesUniquePointer(session, entry.slice(1))) return false;
-    return compatibleCollection(session, pointerValue(session.value, entry.slice(1)), targetRef);
+    const reference = effectiveScopeReference(session, entry);
+    return reference !== undefined && context.collectionAccepts(reference, targetRef);
   });
 }
+
+function resolvedSchemaContext(session: DocumentSession): ResolvedSchemaContext {
+  return new ResolvedSchemaContext(session.value as Readonly<Record<string, unknown>>, {
+    documentUri: session.uri,
+    resolvedDocuments: session.resolvedSchemaDocuments
+  });
+}
+
+function effectiveScopeReference(session: DocumentSession, scope: string): string | undefined {
+  if (scope !== '#') return isLocalPointerRef(scope) ? scope : undefined;
+  const root = pointerValue(session.value, '');
+  if (!isObjectLike(root) || Object.prototype.hasOwnProperty.call(root, 'type') || typeof root.$root !== 'string') return undefined;
+  return decodeLocalPointerFragment(root.$root) === undefined ? undefined : root.$root;
+}
+
+function effectiveMemberNames(session: DocumentSession, pointer: string, keyword: 'properties' | 'relations'): ReadonlySet<string> {
+  if (keyword === 'relations' && !session.capabilities.relationsActive) return new Set();
+  const context = resolvedSchemaContext(session);
+  const reference = pointer === '' ? '#' : `#${pointer}`;
+  return (keyword === 'properties' ? context.effectivePropertyNames(reference) : context.effectiveRelationNames(reference)) ?? new Set();
+}
+
+function effectiveDeclarationForReference(session: DocumentSession, reference: string) {
+  const pointer = decodeLocalPointerFragment(reference);
+  if (pointer === undefined || !pointer.startsWith('/definitions/')) return undefined;
+  const declaration = session.effectiveDeclarations.find((candidate) => candidate.effectivePointer === pointer);
+  if (!declaration) return undefined;
+  if (declaration.documentUri === session.uri && declaration.imports.length === 0 && !reusableDeclarationPointer(session, pointer)) return undefined;
+  return declaration;
+}
+function concreteReusableReference(session: DocumentSession, reference: string): boolean {
+  const target = effectiveDeclarationForReference(session, reference)?.schema;
+  return target !== undefined && target.abstract !== true;
+}
+function rebaseImportedReference(
+  location: ReturnType<typeof effectiveDeclarationForReference> extends infer T ? Exclude<T, undefined> : never,
+  reference: string
+): string {
+  const pointer = decodeLocalPointerFragment(reference);
+  if (pointer === undefined || !pointer.startsWith('/definitions/') || location.imports.length === 0 || !location.sourcePointer.startsWith('/definitions/')) return reference;
+  const sourceSuffix = location.sourcePointer.slice('/definitions'.length);
+  if (!location.effectivePointer.endsWith(sourceSuffix)) return reference;
+  const destination = location.effectivePointer.slice(0, -sourceSuffix.length);
+  return `#${destination}${pointer.slice('/definitions'.length)}`;
+}
+function effectiveReferenceResolver(session: DocumentSession) {
+  return (reference: string, from?: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> | undefined => {
+    const owner = from === undefined ? undefined : session.effectiveDeclarations.find((candidate) => candidate.schema === from);
+    const effectiveReference = owner ? rebaseImportedReference(owner, reference) : reference;
+    return effectiveDeclarationForReference(session, effectiveReference)?.schema;
+  };
+}
+function coreValueMembersValid(session: DocumentSession, declaration: Readonly<Record<string, unknown>>): boolean {
+  const primitive = effectiveCorePrimitiveType(declaration, effectiveReferenceResolver(session));
+  if (Object.prototype.hasOwnProperty.call(declaration, 'enum')) {
+    if (!Array.isArray(declaration.enum) || declaration.enum.length === 0 || !deeplyUniqueJsonValues(declaration.enum)) return false;
+    if (!primitive.determinate || primitive.type === undefined || !declaration.enum.every((value) => coreScalarValueValid(primitive.type!, value, declaration))) return false;
+  }
+  if (Object.prototype.hasOwnProperty.call(declaration, 'const') &&
+      (!primitive.determinate || primitive.type === undefined || !coreScalarValueValid(primitive.type, declaration.const, declaration))) return false;
+  if (Object.prototype.hasOwnProperty.call(declaration, 'maxLength') &&
+      (typeof declaration.maxLength !== 'number' || !Number.isInteger(declaration.maxLength) || declaration.maxLength < 0 ||
+       primitive.determinate && primitive.type !== 'string')) return false;
+  return true;
+}
+function inheritedPropertyNames(
+  session: DocumentSession,
+  references: readonly string[],
+  seen = new Set<string>()
+): Set<string> {
+  const names = new Set<string>();
+  for (const reference of references) {
+    const location = effectiveDeclarationForReference(session, reference);
+    if (!location || seen.has(location.effectivePointer)) continue;
+    const nextSeen = new Set(seen).add(location.effectivePointer);
+    if (isObjectLike(location.schema.properties)) for (const name of Object.keys(location.schema.properties)) names.add(name);
+    const bases = typeof location.schema.$extends === 'string' ? [location.schema.$extends] :
+      isStringArray(location.schema.$extends) ? location.schema.$extends : [];
+    const rebased = bases.map((base) => rebaseImportedReference(location, base));
+    for (const name of inheritedPropertyNames(session, rebased, nextSeen)) names.add(name);
+  }
+  return names;
+}
+function declarationInheritedPropertyNames(session: DocumentSession, declaration: Readonly<Record<string, unknown>>): Set<string> {
+  const references = typeof declaration.$extends === 'string' ? [declaration.$extends] :
+    isStringArray(declaration.$extends) ? declaration.$extends : [];
+  return inheritedPropertyNames(session, references);
+}
+function inheritanceValueValid(session: DocumentSession, declaration: Readonly<Record<string, unknown>>, value: unknown): boolean {
+  const references = typeof value === 'string' ? [value] : isStringArray(value) && value.length > 0 ? value : [];
+  if (references.length === 0 || new Set(references).size !== references.length || !['object', 'tuple', 'choice'].includes(String(declaration.type))) return false;
+  for (const reference of references) {
+    const base = effectiveDeclarationForReference(session, reference)?.schema;
+    if (!base || base.abstract !== true) return false;
+    if (declaration.type === 'choice' ? base.type !== 'object' : base.type !== declaration.type) return false;
+  }
+  const inheritedNames = inheritedPropertyNames(session, references);
+  return !isObjectLike(declaration.properties) || Object.keys(declaration.properties).every((name) => !inheritedNames.has(name));
+}
 function identityHasInboundRelation(session: DocumentSession, targetPointer: string): boolean {
-  const targetRef = `#${targetPointer}`;
+  const root = session.value;
+  if (!isObjectLike(root)) return true;
+  const withoutIdentity = JSON.parse(JSON.stringify(root)) as Record<string, unknown>;
+  const changedTarget = pointerValue(withoutIdentity, targetPointer);
+  if (!isObjectLike(changedTarget)) return true;
+  delete changedTarget.identity;
+  const before = resolvedSchemaContext(session);
+  const after = new ResolvedSchemaContext(withoutIdentity, {
+    documentUri: session.uri,
+    resolvedDocuments: session.resolvedSchemaDocuments
+  });
   for (const schema of session.model?.projections.definitions ?? []) {
     const declaration = pointerValue(session.value, schema.pointer);
     if (!isObjectLike(declaration) || !isObjectOrTupleDeclaration(declaration) || !isObjectLike(declaration.relations)) continue;
@@ -440,7 +548,11 @@ function identityHasInboundRelation(session: DocumentSession, targetPointer: str
       if (!isObjectLike(targetType) || !Object.prototype.hasOwnProperty.call(targetType, '$ref')) continue;
       const referencePointer = `${targetTypePointer}/$ref`;
       if (!hasUniquePointerPath(session, referencePointer) || hasDuplicatePointerDiagnostic(session, referencePointer)) return true;
-      if (pointerValue(session.value, referencePointer) === targetRef) return true;
+      const reference = pointerValue(session.value, referencePointer);
+      if (typeof reference !== 'string') continue;
+      const beforeIdentity = before.effectiveIdentity(reference);
+      const afterIdentity = after.effectiveIdentity(reference);
+      if (beforeIdentity !== undefined && JSON.stringify(beforeIdentity) !== JSON.stringify(afterIdentity)) return true;
     }
   }
   return false;
@@ -625,7 +737,9 @@ function coreMemberValueValid(keyword: CoreDocumentMember, value: unknown): bool
     case 'name': return typeof value === 'string' && IDENTIFIER.test(value);
     case 'description': case 'selector': return typeof value === 'string';
     case '$uses': return isStringArray(value) && new Set(value).size === value.length;
-    case '$offers': return isObjectLike(value) && Object.values(value).every((entry) => typeReferenceValue(entry) !== undefined);
+    case '$offers': return isObjectLike(value) && Object.values(value).every((entry) =>
+      typeof entry === 'string' && validPointerFragment(entry) ||
+      isStringArray(entry) && entry.length > 0 && new Set(entry).size === entry.length && entry.every(validPointerFragment));
     case '$root': return typeof value === 'string' && validPointerFragment(value);
     case 'type': return validTypeValue(value);
     case 'abstract': return typeof value === 'boolean';
@@ -633,10 +747,10 @@ function coreMemberValueValid(keyword: CoreDocumentMember, value: unknown): bool
     case '$extends': return (typeof value === 'string' && value.length > 0) || (isStringArray(value) && value.length > 0);
     case 'required': return Array.isArray(value);
     case 'tuple': return isStringArray(value) && new Set(value).size === value.length;
-    case 'precision': case 'scale': return Number.isInteger(value) && (value as number) >= 0;
+    case 'precision': case 'scale': case 'maxLength': return Number.isInteger(value) && (value as number) >= 0;
     case 'definitions': case 'properties': case 'choices': return isObjectLike(value);
     case 'items': case 'values': return isObjectLike(value) && validTypeValue(value.type);
-    case 'enum': return Array.isArray(value) && value.length > 0;
+    case 'enum': return Array.isArray(value) && value.length > 0 && deeplyUniqueJsonValues(value);
     case 'const': return value !== undefined;
   }
 }
@@ -656,15 +770,31 @@ export class SetCoreMemberCommand implements EditorCommand {
     if (!target || !coreMemberPlacementValid(session, this.targetPointer, this.keyword) || !coreMemberValueValid(this.keyword, this.value)) return false;
     if ((this.keyword === 'properties' || this.keyword === 'choices') &&
       !Object.values(this.value as Record<string, unknown>).every((schema) => validSchemaValue(session, schema))) return false;
+    if (this.keyword === 'properties' && Object.keys(this.value as Record<string, unknown>).some((name) => declarationInheritedPropertyNames(session, target).has(name))) return false;
     if ((this.keyword === 'items' || this.keyword === 'values') && !validSchemaValue(session, this.value)) return false;
+    if (this.keyword === 'type') {
+      const references: string[] = [];
+      const collect = (candidate: unknown): void => {
+        const reference = typeReferenceValue(candidate);
+        if (reference !== undefined) references.push(reference);
+        else if (Array.isArray(candidate)) candidate.forEach(collect);
+      };
+      collect(this.value);
+      if (!references.every((reference) => concreteReusableReference(session, reference))) return false;
+    }
     if (this.keyword === 'required' && (!isObjectLike(target.properties) || !validRequired(target.properties, this.value as RequiredProperties))) return false;
     if (this.keyword === 'tuple' && (!isObjectLike(target.properties) || !(this.value as string[]).every((name) => Object.prototype.hasOwnProperty.call(target.properties, name)))) return false;
     if ((this.keyword === 'choices' || this.keyword === 'selector') && target.type !== 'choice') return false;
     if (this.keyword === 'additionalProperties' && target.type !== 'object') return false;
     if ((this.keyword === 'precision' || this.keyword === 'scale') && target.type !== 'number' && target.type !== 'decimal') return false;
+    if (this.keyword === 'maxLength') {
+      const primitive = effectiveCorePrimitiveType(target, effectiveReferenceResolver(session));
+      if (!primitive.determinate || primitive.type !== 'string') return false;
+    }
+    if ((this.keyword === 'enum' || this.keyword === 'const') && !coreValueMembersValid(session, { ...target, [this.keyword]: this.value })) return false;
+    if (this.keyword === 'abstract' && target.type !== 'object' && target.type !== 'tuple') return false;
     if (this.keyword === '$extends') {
-      const references = typeof this.value === 'string' ? [this.value] : this.value as string[];
-      if (!references.every((reference) => referenceResolvesLocally(session, reference))) return false;
+      if (!inheritanceValueValid(session, target, this.value)) return false;
     }
     const authored = Object.prototype.hasOwnProperty.call(target, this.keyword);
     return !authored || objectMemberContext(session, this.targetPointer, this.keyword) !== undefined;
@@ -720,8 +850,8 @@ function validSchemaValue(session: DocumentSession, value: unknown): boolean {
       else if (isObjectLike(candidate) && candidate.type !== undefined) collect(candidate.type);
     };
     collect(schema.type);
-    if (!references.every((reference) => referenceResolvesLocally(session, reference) &&
-      (!isLocalPointerRef(reference) || reusableDeclarationPointer(session, reference.slice(1))))) return false;
+    if (!references.every((reference) => concreteReusableReference(session, reference))) return false;
+    if (!coreValueMembersValid(session, schema)) return false;
     const hasValidationKeywords = Object.keys(schema).some((key) => VALIDATION_KEYWORDS_FOR_COMMANDS.has(key));
     const effectiveTypes = effectiveValidationTypes(root, schema);
     if (hasValidationKeywords && (!effectiveTypes.determinate || effectiveTypes.types.length !== 1 || validationIssues(schema, effectiveTypes).length !== 0)) return false;
@@ -742,9 +872,10 @@ function validCompositionSchemaValue(session: DocumentSession, value: unknown, v
   if (Object.prototype.hasOwnProperty.call(value, '$ref')) {
     const reference = typeReferenceValue(value);
     return reference !== undefined && Object.keys(value).every((key) => key === '$ref' || key === 'description') &&
-      referenceResolvesLocally(session, reference) && (!isLocalPointerRef(reference) || reusableDeclarationPointer(session, reference.slice(1)));
+      concreteReusableReference(session, reference);
   }
   if (Object.prototype.hasOwnProperty.call(value, 'type') && !validTypeValue(value.type)) return false;
+  if (Object.prototype.hasOwnProperty.call(value, 'type') && !coreValueMembersValid(session, value)) return false;
   if (Object.prototype.hasOwnProperty.call(value, 'properties')) {
     if (!isObjectLike(value.properties) || !Object.values(value.properties).every((schema) => validSchemaValue(session, schema))) return false;
   }
@@ -768,7 +899,7 @@ function validCompositionSchemaValue(session: DocumentSession, value: unknown, v
   return true;
 }
 const VALIDATION_KEYWORDS_FOR_COMMANDS = new Set<string>([
-  'minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf', 'minLength', 'maxLength', 'pattern', 'format',
+  'minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf', 'minLength', 'pattern', 'format',
   'minItems', 'maxItems', 'uniqueItems', 'minContains', 'maxContains', 'minProperties', 'maxProperties', 'minEntries', 'maxEntries',
   'contains', 'propertyNames', 'keyNames', 'has', 'dependentRequired', 'patternProperties', 'patternKeys'
 ]);
@@ -840,6 +971,7 @@ export class SetTupleMembersCommand implements EditorCommand {
     if (!declaration || declaration.type !== 'tuple' || !isObjectLike(this.properties)) return false;
     if (new Set(this.order).size !== this.order.length || this.order.length !== Object.keys(this.properties).length) return false;
     if (!this.order.every((name) => Object.prototype.hasOwnProperty.call(this.properties, name)) || !Object.values(this.properties).every((schema) => validSchemaValue(session, schema))) return false;
+    if (Object.keys(this.properties).some((name) => declarationInheritedPropertyNames(session, declaration).has(name))) return false;
     return ['properties', 'tuple'].every((keyword) => !Object.prototype.hasOwnProperty.call(declaration, keyword) || objectMemberContext(session, this.targetPointer, keyword) !== undefined);
   }
 
@@ -915,14 +1047,19 @@ export class SetValidationKeywordCommand<K extends ValidationKeyword> implements
 
   canExecute({ session, documentVersion }: CommandContext): boolean {
     if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid') return false;
-    if (!session.capabilities.validationActive) return false;
+    if (this.keyword !== 'maxLength' && !session.capabilities.validationActive) return false;
     const declaration = editableDeclaration(session, this.targetPointer);
     if (!declaration) return false;
+    const authored = Object.prototype.hasOwnProperty.call(declaration, this.keyword);
+    if (authored && !objectMemberContext(session, this.targetPointer, this.keyword)) return false;
+    if (this.keyword === 'maxLength') {
+      const primitive = effectiveCorePrimitiveType(declaration, effectiveReferenceResolver(session));
+      if (!primitive.determinate || primitive.type !== 'string') return false;
+      return this.value === undefined ? authored : Number.isInteger(this.value) && (this.value as number) >= 0;
+    }
     const root = pointerValue(session.value, '');
     const effectiveTypes = effectiveValidationTypes(root, declaration);
     if (!effectiveTypes.determinate || effectiveTypes.types.length !== 1) return false;
-    const authored = Object.prototype.hasOwnProperty.call(declaration, this.keyword);
-    if (authored && !objectMemberContext(session, this.targetPointer, this.keyword)) return false;
     if (this.value === undefined) {
       if (!authored) return false;
       const candidate = { ...declaration };
@@ -1009,7 +1146,7 @@ export class SetConditionalCompositionCommand implements EditorCommand {
     if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid' || !session.capabilities.conditionalCompositionActive) return false;
     const declaration = editableCompositionTarget(session, this.targetPointer);
     if (!declaration) return false;
-    const authored = ['if', 'then', 'else'].filter((keyword) => Object.prototype.hasOwnProperty.call(declaration, keyword));
+    const authored = (['if', 'then', 'else'] as const).filter((keyword) => Object.prototype.hasOwnProperty.call(declaration, keyword));
     if (authored.some((keyword) => !objectMemberContext(session, this.targetPointer, keyword))) return false;
     if (this.value === undefined) return authored.length > 0;
     return conditionalCompositionGroupValid(this.value, (schema) => validCompositionSchemaValue(session, schema));
@@ -1019,27 +1156,30 @@ export class SetConditionalCompositionCommand implements EditorCommand {
     if (!this.canExecute(context)) throw new Error('SetConditionalComposition command preconditions are not satisfied.');
     const session = context.session;
     const declaration = editableCompositionTarget(session, this.targetPointer)!;
-    const authored = ['if', 'then', 'else'].filter((keyword) => Object.prototype.hasOwnProperty.call(declaration, keyword));
+    const authored = (['if', 'then', 'else'] as const).filter((keyword) => Object.prototype.hasOwnProperty.call(declaration, keyword));
     if (this.value !== undefined && authored.length === 0) {
       const range = objectRange(session, this.targetPointer);
       if (!range) throw new Error('Target source range is unavailable.');
       return addMembersCommandResult(session.snapshot().text, range, { ...this.value });
     }
     if (this.value === undefined) return removeMembersCommandResult(session, this.targetPointer, authored);
-    const removed = removeMembersCommandResult(session, this.targetPointer, authored);
     const source = session.snapshot().text;
-    const withoutConditional = applyTextEdits(source, removed.edits);
-    const originalRange = objectRange(session, this.targetPointer);
-    if (!originalRange) throw new Error('Target source range is unavailable.');
-    const originalOffsets = sourceOffsets(originalRange, 'Target source range is unavailable.');
-    const removedLength = removed.edits.reduce((total, edit) => {
-      const offsets = sourceOffsets(edit.range, 'Conditional branch source range is unavailable.');
-      return total + offsets.end - offsets.start;
-    }, 0);
-    const range = rangeFor(withoutConditional, originalOffsets.start, originalOffsets.end - removedLength);
-    const added = addMembersCommandResult(withoutConditional, range, { ...this.value });
-    const changed = applyTextEdits(withoutConditional, added.edits);
-    return minimalReplacementCommandResult(source, changed);
+    const desired = this.value;
+    const desiredKeywords = (['if', 'then', 'else'] as const).filter((keyword) => Object.prototype.hasOwnProperty.call(desired, keyword));
+    const edits: TextEdit[] = [];
+    const removed = authored.filter((keyword) => !Object.prototype.hasOwnProperty.call(desired, keyword));
+    if (removed.length > 0) edits.push(...removeMembersCommandResult(session, this.targetPointer, removed).edits);
+    for (const keyword of authored.filter((entry) => Object.prototype.hasOwnProperty.call(desired, entry))) {
+      const member = objectMemberContext(session, this.targetPointer, keyword)!;
+      edits.push(...replaceMemberCommandResult(source, member.valueRange, desired[keyword]).edits);
+    }
+    const added = desiredKeywords.filter((keyword) => !authored.includes(keyword));
+    if (added.length > 0) {
+      const range = objectRange(session, this.targetPointer);
+      if (!range) throw new Error('Target source range is unavailable.');
+      edits.push(...addMembersCommandResult(source, range, Object.fromEntries(added.map((keyword) => [keyword, desired[keyword]]))).edits);
+    }
+    return commandResultForEdits(source, edits);
   }
 }
 
@@ -1159,12 +1299,30 @@ const SEMANTIC_RECORD_ONLY = new Set<SemanticAnnotationKeyword>([
   'coordinateReferenceSystem', 'vectorReferenceFrames', 'tensorReferenceFrames', 'frameTransforms',
   'linearReferenceSystem', 'colorSpaces', 'audioChannels', 'spectralBands'
 ]);
-function semanticPlacementValid(pointer: string, declaration: Record<string, unknown>, keyword: SemanticAnnotationKeyword): boolean {
+function semanticMemberPosition(session: DocumentSession, pointer: string): 'property' | 'collection' | undefined {
+  for (const [marker, ownerTypes, position] of [
+    ['/properties/', ['object', 'tuple'], 'property'],
+    ['/choices/', ['choice'], 'collection']
+  ] as const) {
+    const index = pointer.lastIndexOf(marker);
+    if (index >= 0 && !pointer.slice(index + marker.length).includes('/')) {
+      const owner = pointerValue(session.value, pointer.slice(0, index));
+      if (isObjectLike(owner) && ownerTypes.includes(owner.type as never)) return position;
+    }
+  }
+  for (const [suffix, ownerTypes] of [['/items', ['array', 'set']], ['/values', ['map']]] as const) {
+    if (!pointer.endsWith(suffix)) continue;
+    const owner = pointerValue(session.value, pointer.slice(0, -suffix.length));
+    if (isObjectLike(owner) && ownerTypes.includes(owner.type as never)) return 'collection';
+  }
+  return undefined;
+}
+function semanticPlacementValid(session: DocumentSession, pointer: string, declaration: Record<string, unknown>, keyword: SemanticAnnotationKeyword): boolean {
   if (keyword === 'concepts') return true;
-  const property = /\/properties\/[^/]+$/.test(pointer);
-  if (SEMANTIC_PROPERTY_ONLY.has(keyword)) return property;
+  const memberPosition = semanticMemberPosition(session, pointer);
+  if (SEMANTIC_PROPERTY_ONLY.has(keyword)) return memberPosition === 'property';
   if (SEMANTIC_PROPERTY_OR_COLLECTION.has(keyword)) {
-    return property || SEMANTIC_COLLECTION_TYPES.has(String(declaration.type)) ||
+    return memberPosition !== undefined || SEMANTIC_COLLECTION_TYPES.has(String(declaration.type)) ||
       ((declaration.type === 'object' || declaration.type === 'tuple') && (keyword === 'observedProperty' || keyword === 'temporalReferenceSystem'));
   }
   return SEMANTIC_RECORD_ONLY.has(keyword) && (declaration.type === 'object' || declaration.type === 'tuple');
@@ -1179,16 +1337,16 @@ export class SetSemanticAnnotationCommand<K extends SemanticAnnotationKeyword> i
   canExecute({ session, documentVersion }: CommandContext): boolean {
     if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid' || !session.capabilities.semanticAnnotationsActive) return false;
     const declaration = editableDeclaration(session, this.targetPointer);
-    if (!declaration || !semanticPlacementValid(this.targetPointer, declaration, this.keyword)) return false;
+    if (!declaration || !semanticPlacementValid(session, this.targetPointer, declaration, this.keyword)) return false;
     const authored = Object.prototype.hasOwnProperty.call(declaration, this.keyword);
     if (authored && !objectMemberContext(session, this.targetPointer, this.keyword)) return false;
     if (this.value === undefined) {
       if (!authored) return false;
       const candidate = { ...declaration };
       delete candidate[this.keyword];
-      return semanticAnnotationSetValid(candidate, pointerValue(session.value, '') as Record<string, unknown>, this.targetPointer);
+      return semanticAnnotationSetValid(candidate, pointerValue(session.value, '') as Record<string, unknown>, this.targetPointer, undefined, effectiveReferenceResolver(session));
     }
-    return semanticAnnotationCandidateValid(declaration, this.keyword, this.value, pointerValue(session.value, '') as Record<string, unknown>, this.targetPointer);
+    return semanticAnnotationCandidateValid(declaration, this.keyword, this.value, pointerValue(session.value, '') as Record<string, unknown>, this.targetPointer, effectiveReferenceResolver(session));
   }
 
   execute(context: CommandContext): CommandResult {
@@ -1321,7 +1479,7 @@ export class SetTypeReferenceCommand implements EditorCommand {
   canExecute({ session, documentVersion }: CommandContext): boolean {
     if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid' || this.targetPointer === '') return false;
     const declaration = editableDeclaration(session, this.targetPointer);
-    if (!declaration || !isLocalPointerRef(this.reference) || !reusableDeclarationPointer(session, this.reference.slice(1))) return false;
+    if (!declaration || !concreteReusableReference(session, this.reference)) return false;
     return objectMemberContext(session, this.targetPointer, 'type') !== undefined;
   }
 
@@ -1364,7 +1522,7 @@ export class AddDefinitionCommand implements EditorCommand {
 
   canExecute({ session, documentVersion }: CommandContext): boolean {
     if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid') return false;
-    if (this.definitionName.length === 0 || typeof this.schema.type !== 'string') return false;
+    if (!IDENTIFIER.test(this.definitionName) || !validSchemaValue(session, this.schema)) return false;
     const namespace = pointerValue(session.value, this.namespacePointer);
     if (!isNamespaceObject(namespace) || !hasUniquePointerPath(session, this.namespacePointer) || hasDuplicatePointerDiagnostic(session, this.namespacePointer)) return false;
     const definitions = (namespace as Record<string, unknown>).definitions;
@@ -1408,7 +1566,7 @@ export class RenameDefinitionCommand implements EditorCommand {
   canExecute({ session, documentVersion }: CommandContext): boolean {
     if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid') return false;
     const context = definitionsContext(session, this.definitionPointer);
-    if (!context || this.newName.length === 0) return false;
+    if (!context || !IDENTIFIER.test(this.newName)) return false;
     if (context.definitionName === this.newName) return true;
     if (Object.prototype.hasOwnProperty.call(context.definitions, this.newName)) return false;
     const oldRef = `#${this.definitionPointer}`;
@@ -1526,13 +1684,14 @@ export class AddPropertyCommand implements EditorCommand {
     const target = pointerValue(session.value, this.targetPointer);
     const namespace = target && typeof target === 'object' && !Array.isArray(target) ? (target as Record<string, unknown>).properties : undefined;
     const hasProperties = !!target && typeof target === 'object' && !Array.isArray(target) && Object.prototype.hasOwnProperty.call(target, 'properties');
-    const relations = target && typeof target === 'object' && !Array.isArray(target) ? (target as Record<string, unknown>).relations : undefined;
+    const relationNames = effectiveMemberNames(session, this.targetPointer, 'relations');
     return !!target && typeof target === 'object' && !Array.isArray(target) &&
       hasUniquePointerPath(session, this.targetPointer) &&
       (!hasProperties || (!!namespace && typeof namespace === 'object' && !Array.isArray(namespace) && hasUniquePointerPath(session, `${this.targetPointer}/properties`))) &&
-      (target as Record<string, unknown>).type === 'object' && this.propertyName.length > 0 &&
+      (target as Record<string, unknown>).type === 'object' && IDENTIFIER.test(this.propertyName) &&
+      !declarationInheritedPropertyNames(session, target as Record<string, unknown>).has(this.propertyName) &&
       (!namespace || (typeof namespace === 'object' && !Array.isArray(namespace) && !Object.prototype.hasOwnProperty.call(namespace, this.propertyName))) &&
-      (!relations || (typeof relations === 'object' && !Array.isArray(relations) && !Object.prototype.hasOwnProperty.call(relations, this.propertyName))) &&
+      !relationNames.has(this.propertyName) &&
       validSchemaValue(session, this.schema);
   }
   execute(context: CommandContext): CommandResult {
@@ -1598,7 +1757,7 @@ export class DeletePropertyCommand implements EditorCommand {
   canExecute({ session, documentVersion }: CommandContext): boolean {
     if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid') return false;
     const context = propertyContext(session, this.propertyPointer);
-    return context !== undefined && !isReferencedProperty(context.owner, context.propertyName);
+    return context !== undefined && !isReferencedProperty(context.owner, context.propertyName, session.capabilities.relationsActive);
   }
 
   execute(context: CommandContext): CommandResult {
@@ -1643,9 +1802,10 @@ export class RenamePropertyCommand implements EditorCommand {
   canExecute({ session, documentVersion }: CommandContext): boolean {
     if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid') return false;
     const context = propertyContext(session, this.propertyPointer);
-    if (!context || this.newName.length === 0 || isReferencedProperty(context.owner, context.propertyName)) return false;
-    const relations = context.owner.relations;
-    const relationCollision = !!relations && typeof relations === 'object' && !Array.isArray(relations) && Object.prototype.hasOwnProperty.call(relations, this.newName);
+    if (!context || !IDENTIFIER.test(this.newName) || isReferencedProperty(context.owner, context.propertyName, session.capabilities.relationsActive)) return false;
+    if (declarationInheritedPropertyNames(session, context.owner).has(this.newName)) return false;
+    const ownerPointer = this.propertyPointer.slice(0, this.propertyPointer.lastIndexOf('/properties/'));
+    const relationCollision = effectiveMemberNames(session, ownerPointer, 'relations').has(this.newName);
     return !relationCollision && (context.propertyName === this.newName || !Object.prototype.hasOwnProperty.call(context.properties, this.newName));
   }
 
@@ -1671,13 +1831,14 @@ export class SetIdentityCommand implements EditorCommand {
   constructor(readonly targetPointer: string, readonly identity: readonly string[]) {}
 
   canExecute({ session, documentVersion }: CommandContext): boolean {
-    if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid') return false;
+    if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid' || !session.capabilities.relationsActive) return false;
     if (!Array.isArray(this.identity) || this.identity.length === 0 || this.identity.some((entry) => typeof entry !== 'string' || entry.length === 0)) return false;
     if (new Set(this.identity).size !== this.identity.length) return false;
     const owner = relationOwnerContext(session, this.targetPointer);
-    if (!owner || !owner.properties) return false;
+    if (!owner) return false;
     if (Object.prototype.hasOwnProperty.call(owner.owner, 'identity') && !objectMemberContext(session, this.targetPointer, 'identity')) return false;
-    return this.identity.every((entry) => Object.prototype.hasOwnProperty.call(owner.properties, entry) &&
+    if (!owner.properties) return false;
+    return this.identity.every((entry) => Object.prototype.hasOwnProperty.call(owner.properties!, entry) &&
       objectMemberContext(session, `${this.targetPointer}/properties`, entry) !== undefined);
   }
 
@@ -1708,7 +1869,7 @@ export class RemoveIdentityCommand implements EditorCommand {
   constructor(readonly targetPointer: string) {}
 
   canExecute({ session, documentVersion }: CommandContext): boolean {
-    if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid') return false;
+    if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid' || !session.capabilities.relationsActive) return false;
     const owner = relationOwnerContext(session, this.targetPointer);
     if (!owner) return false;
     return !identityHasInboundRelation(session, this.targetPointer) && objectMemberContext(session, this.targetPointer, 'identity') !== undefined;
@@ -1731,12 +1892,12 @@ export class AddRelationCommand implements EditorCommand {
   constructor(readonly targetPointer: string, readonly relationName: string, readonly schema: RelationSchema) {}
 
   canExecute({ session, documentVersion }: CommandContext): boolean {
-    if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid') return false;
+    if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid' || !session.capabilities.relationsActive) return false;
     if (!IDENTIFIER.test(this.relationName) || !relationSchemaValid(this.schema)) return false;
     const owner = relationOwnerContext(session, this.targetPointer);
     if (!owner) return false;
-    if (owner.relations && Object.prototype.hasOwnProperty.call(owner.relations, this.relationName)) return false;
-    if (owner.properties && Object.prototype.hasOwnProperty.call(owner.properties, this.relationName)) return false;
+    if (effectiveMemberNames(session, this.targetPointer, 'relations').has(this.relationName)) return false;
+    if (effectiveMemberNames(session, this.targetPointer, 'properties').has(this.relationName)) return false;
     if (!referenceResolvesLocally(session, this.schema.targetTypeRef)) return false;
     if (!localTargetTypeHasIdentity(session, this.schema.targetTypeRef)) return false;
     if (!scopeResolvesLocally(session, this.schema.scope) || !relationScopeCompatible(session, this.schema.scope, this.schema.targetTypeRef)) return false;
@@ -1767,7 +1928,7 @@ export class EditRelationCommand implements EditorCommand {
   constructor(readonly relationPointer: string, readonly schema: RelationSchema) {}
 
   canExecute({ session, documentVersion }: CommandContext): boolean {
-    if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid') return false;
+    if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid' || !session.capabilities.relationsActive) return false;
     if (!relationSchemaValid(this.schema)) return false;
     const relation = relationContext(session, this.relationPointer);
     if (!relation) return false;
@@ -1799,13 +1960,12 @@ export class RenameRelationCommand implements EditorCommand {
   constructor(readonly relationPointer: string, readonly newName: string) {}
 
   canExecute({ session, documentVersion }: CommandContext): boolean {
-    if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid') return false;
+    if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid' || !session.capabilities.relationsActive) return false;
     const relation = relationContext(session, this.relationPointer);
     if (!relation || !IDENTIFIER.test(this.newName)) return false;
     if (relation.relationName === this.newName) return true;
-    if (Object.prototype.hasOwnProperty.call(relation.relations, this.newName)) return false;
-    const properties = relation.owner.properties;
-    return !(isObjectLike(properties) && Object.prototype.hasOwnProperty.call(properties, this.newName));
+    if (effectiveMemberNames(session, relation.ownerPointer, 'relations').has(this.newName)) return false;
+    return !effectiveMemberNames(session, relation.ownerPointer, 'properties').has(this.newName);
   }
 
   execute(context: CommandContext): CommandResult {
@@ -1829,7 +1989,7 @@ export class DeleteRelationCommand implements EditorCommand {
   constructor(readonly relationPointer: string) {}
 
   canExecute({ session, documentVersion }: CommandContext): boolean {
-    if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid') return false;
+    if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid' || !session.capabilities.relationsActive) return false;
     return relationContext(session, this.relationPointer) !== undefined;
   }
 
@@ -1851,7 +2011,7 @@ export class SetRelationCardinalityCommand implements EditorCommand {
   constructor(readonly relationPointer: string, readonly cardinality: RelationCardinality) {}
 
   canExecute({ session, documentVersion }: CommandContext): boolean {
-    if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid') return false;
+    if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid' || !session.capabilities.relationsActive) return false;
     if (!cardinalityValid(this.cardinality)) return false;
     const relation = relationContext(session, this.relationPointer);
     if (!relation) return false;
@@ -1887,7 +2047,7 @@ export class SetRelationScopeCommand implements EditorCommand {
   constructor(readonly relationPointer: string, readonly scope: RelationScope | undefined) {}
 
   canExecute({ session, documentVersion }: CommandContext): boolean {
-    if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid') return false;
+    if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid' || !session.capabilities.relationsActive) return false;
     if (this.scope !== undefined && !validRelationScope(this.scope)) return false;
     const relation = relationContext(session, this.relationPointer);
     if (!relation) return false;
@@ -1931,7 +2091,7 @@ export class SetRelationQualifierCommand implements EditorCommand {
   constructor(readonly relationPointer: string, readonly qualifierTypeRef: string | undefined) {}
 
   canExecute({ session, documentVersion }: CommandContext): boolean {
-    if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid') return false;
+    if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid' || !session.capabilities.relationsActive) return false;
     if (this.qualifierTypeRef !== undefined && (this.qualifierTypeRef.length === 0 || !referenceResolvesLocally(session, this.qualifierTypeRef) || !localQualifierIsReusable(session, this.qualifierTypeRef))) return false;
     const relation = relationContext(session, this.relationPointer);
     if (!relation) return false;
@@ -1973,7 +2133,7 @@ export class SetImportCommand implements EditorCommand {
   constructor(readonly namespacePointer: string, readonly keyword: ImportKeyword, readonly sourceUri: string) {}
 
   canExecute({ session, documentVersion }: CommandContext): boolean {
-    if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid') return false;
+    if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid' || !session.capabilities.importActive) return false;
     if (!absoluteUri(this.sourceUri) || !namespaceImportPlacement(session, this.namespacePointer)) return false;
     const target = pointerValue(session.value, this.namespacePointer);
     if (!isObjectLike(target) || !hasUniquePointerPath(session, this.namespacePointer) || hasDuplicatePointerDiagnostic(session, this.namespacePointer)) return false;
@@ -2008,7 +2168,7 @@ export class DeleteImportCommand implements EditorCommand {
   constructor(readonly namespacePointer: string, readonly keyword: ImportKeyword) {}
 
   canExecute({ session, documentVersion }: CommandContext): boolean {
-    if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid') return false;
+    if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid' || !session.capabilities.importActive) return false;
     if (!namespaceImportPlacement(session, this.namespacePointer)) return false;
     const namespace = pointerValue(session.value, this.namespacePointer);
     if (!isObjectLike(namespace) || !hasUniquePointerPath(session, this.namespacePointer) || hasDuplicatePointerDiagnostic(session, this.namespacePointer)) return false;

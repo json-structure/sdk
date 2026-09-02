@@ -19,6 +19,7 @@ export interface FileBridge {
   onFileCommand(listener: (command: HostCommand) => void): () => void;
   readResource?(uri: string): Promise<{ uri: string; content: string; contentHash: string }>;
   listConversionCommands?: EditorHost['listConversionCommands'];
+  selectConversionSource?: EditorHost['selectConversionSource'];
   convert?: EditorHost['convert'];
   onConversionProgress?: EditorHost['onConversionProgress'];
   cancelConversion?: EditorHost['cancelConversion'];
@@ -32,6 +33,7 @@ export interface FileBridge {
 export interface AlphaEditorSurface {
   getText(): string;
   setText(text: string): void;
+  setUri?(uri: string): void;
 }
 
 /** State and commands that connect an editor surface to an optional file bridge. */
@@ -58,12 +60,17 @@ export function createAlphaEditorController(editor: AlphaEditorSurface, bridge: 
   let path: string | undefined;
   let dirty = false;
   let replacing = false;
+  let revision = 0;
+  let documentGeneration = 0;
   const replace = async (file: { path: string; text: string }): Promise<void> => {
     // An external open is allowed only after the user accepts losing dirty text.
     if (dirty && !confirmReplace(`Replace unsaved changes with ${fileName(file.path)}?`)) return;
     replacing = true;
+    documentGeneration += 1;
+    revision += 1;
     path = file.path;
     dirty = false;
+    editor.setUri?.(filePathUri(file.path));
     editor.setText(file.text);
     replacing = false;
     onStateChange();
@@ -75,10 +82,32 @@ export function createAlphaEditorController(editor: AlphaEditorSurface, bridge: 
     get dirty() { return dirty; },
     get replacing() { return replacing; },
     async open() { if (bridge) { const file = await bridge.openFile(); if (file) await replace(file); } },
-    async save() { if (bridge && path) { path = (await bridge.saveFile(path, editor.getText())).path; dirty = false; onStateChange(); } else await this.saveAs(); },
-    async saveAs() { if (bridge) { const saved = await bridge.saveFileAs(editor.getText()); if (saved) { path = saved.path; dirty = false; onStateChange(); } } },
+    async save() {
+      if (!bridge || !path) { await this.saveAs(); return; }
+      const savedGeneration = documentGeneration;
+      const savedRevision = revision;
+      const savedText = editor.getText();
+      const saved = await bridge.saveFile(path, savedText);
+      if (documentGeneration !== savedGeneration) return;
+      path = saved.path;
+      if (revision === savedRevision) dirty = editor.getText() !== savedText;
+      onStateChange();
+    },
+    async saveAs() {
+      if (!bridge) return;
+      const savedGeneration = documentGeneration;
+      const savedRevision = revision;
+      const savedText = editor.getText();
+      const saved = await bridge.saveFileAs(savedText);
+      if (saved && documentGeneration === savedGeneration) {
+        path = saved.path;
+        editor.setUri?.(filePathUri(saved.path));
+        if (revision === savedRevision) dirty = editor.getText() !== savedText;
+        onStateChange();
+      }
+    },
     acceptExternalFile: replace,
-    markDirty() { dirty = true; onStateChange(); },
+    markDirty() { revision += 1; dirty = true; onStateChange(); },
     dispose() { unsubscribe?.(); }
   };
 }
@@ -126,4 +155,10 @@ export function bootstrapJsonStructureEditor(container: HTMLElement, demoText: s
 
 function fileName(path: string): string {
   return path.replace(/^.*[\\/]/, '');
+}
+
+function filePathUri(path: string): string {
+  const normalized = path.replace(/\\/g, '/');
+  if (normalized.startsWith('//')) return `file:${encodeURI(normalized)}`;
+  return `file://${normalized.startsWith('/') ? '' : '/'}${encodeURI(normalized)}`;
 }
