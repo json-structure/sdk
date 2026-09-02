@@ -102,7 +102,9 @@ describe('workbench interaction markup', () => {
     expect(html).not.toContain('<button class="js-cell js-code" role="cell"');
     expect(html).not.toContain('<button class="js-cell js-row-action" role="cell"');
     expect(html).toContain('data-inline-property="name"');
-    expect(html).toContain('data-inline-property="type"');
+    expect(html).toContain('data-inline-type-add');
+    expect(html).toContain('data-inline-type-remove="type:uuid"');
+    expect(html).toContain('data-inline-property="nullable"');
     expect(html).toContain('data-inline-property="required"');
     expect(html).toContain('data-inline-property="description"');
     expect(html).toContain('<optgroup label="Primitive types">');
@@ -124,8 +126,11 @@ describe('workbench interaction markup', () => {
     const localHtml = designView('Place', 'object', undefined, [{
       name: 'latitude', pointer, type: 'double or null', required: false, schema: { type: ['double', 'null'] },
     }], pointer);
-    expect(localHtml).toContain('selected>double or null</option>');
-    expect(localHtml).not.toContain('<option value="type:any" selected>');
+    expect(localHtml).toContain('data-inline-type-remove="type:double"');
+    expect(localHtml).toContain('data-inline-property="nullable"');
+    expect(localHtml).toContain('checked> nullable');
+    expect(localHtml).not.toContain('data-inline-type-remove="type:null"');
+    expect(localHtml).not.toContain('<span class="js-type-member"><span>null</span>');
 
     const document = {
       definitions: {
@@ -134,7 +139,8 @@ describe('workbench interaction markup', () => {
     };
     const effective = resolveEffectiveMembers(document, '#/definitions/Place');
     const effectiveHtml = designView('Place', 'object', undefined, [], pointer, [], [], 'effective', effective);
-    expect(effectiveHtml).toContain('double or null');
+    expect(effectiveHtml).toContain('>double</div>');
+    expect(effectiveHtml).toContain('<div class="js-cell js-nullable-indicator" role="cell">yes</div>');
   });
 
   it('renders the annotations panel directly below its property row', () => {
