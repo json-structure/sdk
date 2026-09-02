@@ -1110,17 +1110,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
         const nodeId = target.dataset.graphNode;
         if (!nodeId) return;
         const pending = pendingGraphActivation;
-        if (pending && pending.nodeId === nodeId) {
-          clearTimeout(pending.timer);
-          pendingGraphActivation = undefined;
-          const view = semanticGraph.openNode(nodeId);
-          selectedPointer = view.selection?.pointer || undefined;
-          mode = 'graph';
-          lastRepresentationMode = 'graph';
-          fitGraphAfterRender = true;
-          render();
-          return;
-        }
+        if (pending?.nodeId === nodeId) return;
         if (pendingGraphActivation) clearTimeout(pendingGraphActivation.timer);
         const timer = setTimeout(() => {
           if (disposed || pendingGraphActivation?.timer !== timer) return;
@@ -1128,6 +1118,20 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
           activate();
         }, 240);
         pendingGraphActivation = { nodeId, timer };
+      });
+      target.addEventListener('dblclick', (event: Event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const nodeId = target.dataset.graphNode;
+        if (!nodeId) return;
+        if (pendingGraphActivation) clearTimeout(pendingGraphActivation.timer);
+        pendingGraphActivation = undefined;
+        const view = semanticGraph.openNode(nodeId);
+        selectedPointer = view.selection?.pointer || undefined;
+        mode = 'graph';
+        lastRepresentationMode = 'graph';
+        fitGraphAfterRender = true;
+        render();
       });
       target.addEventListener('keydown', (event: KeyboardEvent) => {
         if (event.key === 'Enter') {
@@ -1284,6 +1288,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     const activePointers = new Map<number, { readonly x: number; readonly y: number }>();
     let pinchDistance: number | undefined;
     canvas.addEventListener('pointerdown', (event: PointerEvent) => {
+      if ((event.target as SVGElement).closest('[data-graph-node],[data-graph-edge-select],[data-minimap]')) return;
       if (event.pointerType !== 'mouse') {
         activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
         canvas.setPointerCapture(event.pointerId);
@@ -1294,7 +1299,6 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
           return;
         }
       }
-      if ((event.target as SVGElement).closest('[data-minimap]')) return;
       lastPoint = { x: event.clientX, y: event.clientY };
       canvas.setPointerCapture(event.pointerId);
       canvas.classList.add('js-panning');
