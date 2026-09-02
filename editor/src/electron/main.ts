@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, safeStorage, shell, type IpcMainInvokeEvent, type MenuItemConstructorOptions, type OpenDialogOptions } from 'electron';
+import type { WindowCommand } from './contracts';
 import { createHash } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -39,6 +40,10 @@ function sendHostCommand(command: 'open' | 'save' | 'save-as' | 'show-commands')
 }
 
 function installApplicationMenu(): void {
+  if (process.platform !== 'darwin') {
+    Menu.setApplicationMenu(null);
+    return;
+  }
   const template: MenuItemConstructorOptions[] = [
     {
       label: 'File',
@@ -99,6 +104,34 @@ function registerIpcHandlers(): void {
   handleTrusted('external:open', async (_event, url: string) => {
     if (new URL(url).protocol !== 'https:') throw new Error('Only HTTPS external links are allowed.');
     await shell.openExternal(url);
+  });
+  handleTrusted('window:command', (event, command: WindowCommand) => {
+    const contents = event.sender;
+    const commands: Record<WindowCommand, () => void> = {
+      undo: () => contents.undo(),
+      redo: () => contents.redo(),
+      cut: () => contents.cut(),
+      copy: () => contents.copy(),
+      paste: () => contents.paste(),
+      'select-all': () => contents.selectAll(),
+      'reset-zoom': () => contents.setZoomFactor(1),
+      'zoom-in': () => contents.setZoomFactor(Math.min(3, contents.getZoomFactor() + 0.1)),
+      'zoom-out': () => contents.setZoomFactor(Math.max(0.5, contents.getZoomFactor() - 0.1)),
+      'toggle-fullscreen': () => mainWindow?.setFullScreen(!mainWindow.isFullScreen()),
+      quit: () => app.quit(),
+    };
+    const execute = commands[command];
+    if (!execute) throw new Error('Unknown window command.');
+    execute();
+  });
+  handleTrusted('window:titlebar-theme', (_event, theme: 'dark' | 'light' | 'contrast') => {
+    if (!['dark', 'light', 'contrast'].includes(theme)) throw new Error('Unknown title-bar theme.');
+    const colors = theme === 'light'
+      ? { color: '#f3f3f3', symbolColor: '#333333' }
+      : theme === 'contrast'
+        ? { color: '#000000', symbolColor: '#ffffff' }
+        : { color: '#181818', symbolColor: '#cccccc' };
+    mainWindow?.setTitleBarOverlay({ ...colors, height: 35 });
   });
   handleTrusted('resource:read', async (_event, uri: string) => {
     const resource = await readResource(uri, openedDocumentRoot, maxImportedResourceBytes, async (requestedUri) => (await getLibraryRuntime()).readResource(requestedUri));
@@ -205,6 +238,9 @@ async function createWindow(): Promise<void> {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'hidden',
+    ...(process.platform === 'darwin' ? {} : { titleBarOverlay: { color: '#181818', symbolColor: '#cccccc', height: 35 } }),
+    backgroundColor: '#181818',
     webPreferences: {
       preload: join(currentDirectory, 'preload.cjs'),
       sandbox: true,

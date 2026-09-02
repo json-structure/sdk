@@ -97,6 +97,26 @@ export const editorStyles = `
 .js-sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
 .js-spacer { flex:1; }
 .js-shell { height:100%; min-height:0; display:grid; grid-template-rows:44px 36px minmax(0,1fr) 22px; overflow:hidden; background:var(--js-bg); }
+.js-shell.js-chrome-integrated { grid-template-rows:35px 36px minmax(0,1fr) 22px; }
+.js-shell.js-chrome-embedded { grid-template-rows:36px minmax(0,1fr) 22px; }
+.js-titlebar { position:relative; min-width:0; height:35px; border-bottom:1px solid var(--js-line); background:var(--js-chrome); color:var(--js-text); user-select:none; -webkit-app-region:drag; }
+.js-titlebar-drag { position:absolute; inset-block:0; inset-inline-start:env(titlebar-area-x,0); width:env(titlebar-area-width,calc(100% - 138px)); display:grid; grid-template-columns:auto minmax(120px,520px) 1fr; align-items:center; gap:8px; min-width:0; padding-inline:6px; }
+.js-titlebar-icon { width:22px; height:22px; display:grid; place-items:center; }
+.js-titlebar-icon .js-product-logo { width:18px; height:18px; }
+.js-menubar { display:flex; align-self:stretch; align-items:center; gap:0; -webkit-app-region:no-drag; }
+.js-app-menu { position:relative; height:100%; }
+.js-app-menu>summary { height:100%; display:flex; align-items:center; padding:0 7px; color:var(--js-muted); cursor:default; list-style:none; }
+.js-app-menu>summary::-webkit-details-marker { display:none; }
+.js-app-menu>summary:hover,.js-app-menu[open]>summary { background:var(--js-raised); color:var(--js-text); }
+.js-app-menu-popup { position:absolute; z-index:30; inset-block-start:34px; inset-inline-start:0; width:max-content; min-width:240px; padding:4px; border:1px solid var(--js-line-strong); border-radius:4px; background:var(--js-panel); box-shadow:0 8px 24px rgba(0,0,0,.35); }
+.js-app-menu-popup button { width:100%; min-height:28px; display:grid; grid-template-columns:minmax(0,1fr) auto; gap:24px; align-items:center; border:0; border-radius:3px; padding:0 8px; background:transparent; color:var(--js-text); text-align:start; }
+.js-app-menu-popup button:hover,.js-app-menu-popup button:focus-visible { background:var(--js-selected); }
+.js-app-menu-popup kbd { color:var(--js-quiet); font:11px/1 Consolas,"Cascadia Code",monospace; }
+.js-app-menu-popup hr { height:1px; margin:4px 6px; border:0; background:var(--js-line); }
+.js-command-center { min-width:0; height:24px; display:flex; align-items:center; justify-content:center; gap:7px; border:1px solid var(--js-line); border-radius:4px; padding:0 10px; background:var(--js-panel); color:var(--js-muted); -webkit-app-region:no-drag; }
+.js-command-center:hover { border-color:var(--js-line-strong); background:var(--js-raised); color:var(--js-text); }
+.js-command-center span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.js-command-center .js-icon { width:14px; height:14px; }
 .js-title,.js-document-toolbar,.js-status { display:flex; align-items:center; background:var(--js-chrome); }
 .js-title { min-width:0; padding:0 10px; gap:9px; border-bottom:1px solid var(--js-line); user-select:none; }
 .js-product-logo { width:24px; height:24px; flex:0 0 auto; }
@@ -698,4 +718,16 @@ export const editorStyles = `
   .js-catalog-head button { min-width:44px; }
 }
 @media (prefers-reduced-motion:reduce) { .js-workbench { transition:none; } }
+.js-shell.js-chrome-integrated { grid-template-rows:35px 36px minmax(0,1fr) 22px; }
+.js-shell.js-chrome-embedded { grid-template-rows:36px minmax(0,1fr) 22px; }
+@media (max-width:620px) {
+  .js-titlebar-drag { grid-template-columns:auto minmax(0,1fr); }
+  .js-menubar { display:none; }
+  .js-shell.js-chrome-integrated { grid-template-rows:35px 40px minmax(0,1fr) 22px; }
+  .js-shell.js-chrome-embedded { grid-template-rows:40px minmax(0,1fr) 22px; }
+}
+@media (pointer:coarse) {
+  .js-shell.js-chrome-integrated { grid-template-rows:35px 44px minmax(0,1fr) 44px; }
+  .js-shell.js-chrome-embedded { grid-template-rows:44px minmax(0,1fr) 44px; }
+}
 `;

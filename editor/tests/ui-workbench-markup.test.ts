@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { catalogBrowserView, designView, graphView, instanceView, mobileModeSelect, prefersReducedMotion, problemsView, shouldFitGraphOnEntry, workbenchFocusIdentityAttributes } from '../src/ui/index.js';
+import { catalogBrowserView, designView, graphView, instanceView, mobileModeSelect, prefersReducedMotion, problemsView, shouldFitGraphOnEntry, workbenchFocusIdentityAttributes, workbenchTitleChrome } from '../src/ui/index.js';
 import { BUNDLED_SEMANTIC_PROVIDER, CatalogRegistry, bundledCatalogResult } from '../src/catalogs.js';
 import { DocumentSession } from '../src/session.js';
 import { resolveEffectiveMembers } from '../src/phase4/effective-members.js';
@@ -39,6 +39,16 @@ function contrast(foreground: Rgb, background: Rgb): number {
 }
 
 describe('workbench interaction markup', () => {
+  it('renders VS Code-style integrated Electron chrome without duplicate product or theme rows', () => {
+    const html = workbenchTitleChrome('example.struct.json', 'integrated');
+    expect(html).toContain('class="js-titlebar"');
+    expect(html).toContain('role="menubar"');
+    expect(html).toContain('class="js-command-center"');
+    expect(html).toContain('data-theme-choice="dark"');
+    expect(html).not.toContain('class="js-theme"');
+    expect(workbenchTitleChrome('example.struct.json', 'embedded')).toBe('');
+  });
+
   it('keeps every representation and workflow reachable from the compact mode selector', () => {
     const html = mobileModeSelect('conversion');
     for (const mode of ['design', 'graph', 'source', 'analysis', 'instance', 'conversion', 'libraries']) expect(html).toContain(`value="${mode}"`);

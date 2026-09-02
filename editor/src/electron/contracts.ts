@@ -17,9 +17,11 @@ export interface FileOpenedEvent {
 }
 
 export type HostCommand = 'open' | 'save' | 'save-as' | 'show-commands';
+export type WindowCommand = 'undo' | 'redo' | 'cut' | 'copy' | 'paste' | 'select-all' | 'reset-zoom' | 'zoom-in' | 'zoom-out' | 'toggle-fullscreen' | 'quit';
 
 /** Renderer-safe bridge for file workflows and opening links outside the app. */
 export interface ElectronBridge {
+  readonly platform: NodeJS.Platform;
   openFile(): Promise<OpenFileResult | null>;
   saveFile(path: string, text: string): Promise<SaveFileResult>;
   saveFileAs(text: string): Promise<SaveFileResult | null>;
@@ -36,4 +38,6 @@ export interface ElectronBridge {
   readLibraryDocument(entryId: string, version: string): Promise<LibraryDocument>;
   onFileOpened(listener: (file: FileOpenedEvent) => void): () => void;
   onFileCommand(listener: (command: HostCommand) => void): () => void;
+  executeWindowCommand(command: WindowCommand): Promise<void>;
+  setTitleBarTheme(theme: 'dark' | 'light' | 'contrast'): Promise<void>;
 }

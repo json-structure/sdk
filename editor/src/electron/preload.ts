@@ -10,6 +10,7 @@ function libraryRequest<T>(operation: LibraryOperation, payload?: unknown): Prom
 }
 
 const bridge: ElectronBridge = {
+  platform: process.platform,
   openFile: () => ipcRenderer.invoke('file:open'),
   saveFile: (path, text) => ipcRenderer.invoke('file:save', { path, text }),
   saveFileAs: (text) => ipcRenderer.invoke('file:save-as', { text }),
@@ -44,6 +45,8 @@ const bridge: ElectronBridge = {
     ipcRenderer.on('file:command', handler);
     return () => ipcRenderer.removeListener('file:command', handler);
   },
+  executeWindowCommand: (command) => ipcRenderer.invoke('window:command', command),
+  setTitleBarTheme: (theme) => ipcRenderer.invoke('window:titlebar-theme', theme),
 };
 
 // Expose a narrow, typed API; the renderer never receives Node.js or Electron primitives.

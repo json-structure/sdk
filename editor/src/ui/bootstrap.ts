@@ -9,14 +9,19 @@ export const defaultUntitledDocument = JSON.stringify({
 }, null, 2);
 
 export type HostCommand = 'open' | 'save' | 'save-as' | 'show-commands';
+export type WindowCommand = 'undo' | 'redo' | 'cut' | 'copy' | 'paste' | 'select-all' | 'reset-zoom' | 'zoom-in' | 'zoom-out' | 'toggle-fullscreen' | 'quit';
 
 /** Renderer-safe file bridge shape consumed by the shared UI bootstrap. */
 export interface FileBridge {
+  readonly platform?: string;
   openFile(): Promise<{ path: string; text: string } | null>;
   saveFile(path: string, text: string): Promise<{ path: string }>;
   saveFileAs(text: string): Promise<{ path: string } | null>;
+  openExternal?(url: string): Promise<void>;
   onFileOpened(listener: (file: { path: string; text: string }) => void): () => void;
   onFileCommand(listener: (command: HostCommand) => void): () => void;
+  executeWindowCommand?(command: WindowCommand): Promise<void>;
+  setTitleBarTheme?(theme: 'dark' | 'light' | 'contrast'): Promise<void>;
   readResource?(uri: string): Promise<{ uri: string; content: string; contentHash: string }>;
   listConversionCommands?: EditorHost['listConversionCommands'];
   selectConversionSource?: EditorHost['selectConversionSource'];
@@ -124,6 +129,16 @@ export function bootstrapJsonStructureEditor(container: HTMLElement, demoText: s
   const editor = mountJsonStructureEditor(mountPoint, {
     text: demoText,
     services: bridge,
+    chrome: bridge?.platform === 'darwin' ? 'document' : 'integrated',
+    onChromeCommand: (command) => {
+      if (command === 'open') return controller?.open();
+      if (command === 'save') return controller?.save();
+      if (command === 'save-as') return controller?.saveAs();
+      if (command === 'show-commands') { editor.showCommandPalette(); return; }
+      if (command === 'website') return bridge?.openExternal?.('https://json-structure.org/');
+      return bridge?.executeWindowCommand?.(command);
+    },
+    onThemeChange: (theme) => bridge?.setTitleBarTheme?.(theme),
     readResource: bridge?.readResource ? async (uri) => ({ protocolVersion: 1, requestId: `resource-${Date.now()}`, ...await bridge.readResource!(uri) }) : undefined,
     onChange: () => { if (!controller?.replacing) { controller?.markDirty(); renderFileState(); } }
   });

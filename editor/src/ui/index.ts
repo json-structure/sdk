@@ -120,6 +120,12 @@ export interface JsonStructureEditorOptions {
   readonly onChange?: (text: string, snapshot: DocumentSnapshot) => void;
   /** CSP nonce applied to the editor's injected style element in webview hosts. */
   readonly styleNonce?: string;
+  /** Window chrome rendered by the shared workbench. Embedded hosts provide their own chrome. */
+  readonly chrome?: 'integrated' | 'document' | 'embedded';
+  /** Executes Electron window and file commands exposed by integrated chrome. */
+  readonly onChromeCommand?: (command: 'open' | 'save' | 'save-as' | 'show-commands' | 'website' | 'undo' | 'redo' | 'cut' | 'copy' | 'paste' | 'select-all' | 'reset-zoom' | 'zoom-in' | 'zoom-out' | 'toggle-fullscreen' | 'quit') => void | Promise<void>;
+  /** Synchronizes native title-bar colors with the workbench theme. */
+  readonly onThemeChange?: (theme: 'dark' | 'light' | 'contrast') => void | Promise<void>;
 }
 
 /** Imperative handle returned by {@link mountJsonStructureEditor}. */
@@ -384,7 +390,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     semanticGraphBySnapshot.set(snapshot, semanticGraph);
     graphLayout.reconcile(semanticGraphView.projection.nodes, semanticGraphView.projection.edges);
     forceGraphLayoutBySnapshot.set(snapshot, graphLayout);
-    root.innerHTML = structuredWorkbenchShell(snapshot, documentTitle, typeDefinitions, definitionPointer, rows, selectedPointer, mode, problemsOpen, designMemberMode, effectiveMembers, expandedPropertyPointer);
+    root.innerHTML = structuredWorkbenchShell(snapshot, documentTitle, typeDefinitions, definitionPointer, rows, selectedPointer, mode, problemsOpen, designMemberMode, effectiveMembers, expandedPropertyPointer, options.chrome ?? 'document');
     mountAdvancedViews(root, snapshot, definitionPointer, graph, mode, instanceText, instanceResult, impactDirection, selectedAddIns, refactoringPlan, refactoringStatus, services, conversionManifest, conversionCommandId, conversionSource, conversionResult, conversionStatus, conversionProgress, conversionRequestId, libraryEntries, librarySelector, libraryDocument, librarySelection, libraryOperation, libraryPlan, libraryStatus, { providers: libraryProviders, catalog: libraryCatalog, resolution: libraryResolution, offline: libraryOffline, publishDraft: libraryPublishDraft, publishPreview: libraryPublishPreviewState, publishedEpoch: libraryPublishedEpoch, documentValid: documentCanPublish(snapshot), providerFilter: libraryProviderFilter, search: librarySearch, currentDocumentUri: snapshot.uri }, instanceRoots, instanceRootPointer, instanceSelection, session.resolvedSchemaDocuments);
     root.dataset.theme = themeName;
     const nextSource = root.querySelector('[data-source]');
@@ -468,7 +474,20 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       themeName = theme.value as typeof themeName;
       root.dataset.theme = themeName;
       void import('./monaco.js').then(({ setJsonEditorTheme }) => setJsonEditorTheme(themeName));
+      void options.onThemeChange?.(themeName);
     });
+    root.querySelectorAll('[data-theme-choice]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
+      themeName = button.dataset.themeChoice as typeof themeName;
+      root.dataset.theme = themeName;
+      void import('./monaco.js').then(({ setJsonEditorTheme }) => setJsonEditorTheme(themeName));
+      void options.onThemeChange?.(themeName);
+      closeApplicationMenus(root);
+    }));
+    root.querySelectorAll('[data-chrome-command]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
+      void options.onChromeCommand?.(button.dataset.chromeCommand as Parameters<NonNullable<JsonStructureEditorOptions['onChromeCommand']>>[0]);
+      closeApplicationMenus(root);
+    }));
+    wireApplicationMenus(root);
     const filter = root.querySelector('.js-filter') as HTMLInputElement | null;
     filter?.addEventListener('input', () => filterTypeButtons(root, filter.value));
     root.querySelectorAll('[data-mobile-drawer]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
@@ -1598,7 +1617,7 @@ function pointerTokens(pointer: string): string[] {
 
 function formatPointer(tokens: readonly string[]): string { return tokens.length ? `/${tokens.map((token) => token.replace(/~/g, '~0').replace(/\//g, '~1')).join('/')}` : ''; }
 
-function structuredWorkbenchShell(snapshot: DocumentSnapshot, title: string, definitions: readonly { readonly name: string; readonly pointer: string; readonly namespace: string; readonly imported?: boolean; readonly documentUri?: string; readonly sourcePointer?: string }[], definitionPointer: string | undefined, rows: readonly PropertyRow[], selectedPointer: string | undefined, mode: Mode, problemsOpen: boolean, memberMode: DesignMemberMode, effectiveMembers: EffectiveMembersResult | undefined, expandedPropertyPointer: string | undefined): string {
+function structuredWorkbenchShell(snapshot: DocumentSnapshot, title: string, definitions: readonly { readonly name: string; readonly pointer: string; readonly namespace: string; readonly imported?: boolean; readonly documentUri?: string; readonly sourcePointer?: string }[], definitionPointer: string | undefined, rows: readonly PropertyRow[], selectedPointer: string | undefined, mode: Mode, problemsOpen: boolean, memberMode: DesignMemberMode, effectiveMembers: EffectiveMembersResult | undefined, expandedPropertyPointer: string | undefined, chrome: NonNullable<JsonStructureEditorOptions['chrome']> = 'document'): string {
   const definition = snapshot.model?.projections.definitions.find((item) => item.pointer === definitionPointer);
   const selectedProperty = rows.find((row) => row.pointer === selectedPointer);
   const selectedRelation = definition?.relations.find((relation) => relation.pointer === selectedPointer);
@@ -1621,8 +1640,9 @@ function structuredWorkbenchShell(snapshot: DocumentSnapshot, title: string, def
   const activities = advancedModes.map((item) => `<button class="js-activity-button" data-mode="${item.mode}" aria-label="${item.label}" title="${item.label}" aria-pressed="${mode === item.mode}">${fluentIcon(item.icon)}</button>`).join('');
   const breadcrumbSeparator = fluentIcon('chevronRight', 'js-chevron');
   const breadcrumbs = `<span data-document-title>${escapeHtml(title)}</span>${definition ? `<span aria-hidden="true">${breadcrumbSeparator}</span><strong>${escapeHtml(definition.name)}</strong>` : ''}${selectedProperty ? `<span aria-hidden="true">${breadcrumbSeparator}</span><strong>${escapeHtml(selectedProperty.name)}</strong>` : ''}${selectedRelation ? `<span aria-hidden="true">${breadcrumbSeparator}</span><strong>${escapeHtml(selectedRelation.name)}</strong>` : ''}`;
-  return `<div class="js-shell">
-    <header class="js-title">${jsonStructureLogo()}<strong>JSON Structure</strong><span class="js-file" data-document-title>${escapeHtml(title)}</span><button class="js-command-trigger" data-show-commands title="Show Commands (Ctrl+Shift+P)" aria-label="Show Commands">${fluentIcon('console')}</button><label class="js-theme-label"><span class="js-sr-only">Color theme</span><select class="js-theme" data-theme-select aria-label="Color theme"><option value="dark">Dark</option><option value="light">Light</option><option value="contrast">High contrast</option></select></label></header>
+  const titleChrome = workbenchTitleChrome(title, chrome);
+  return `<div class="js-shell js-chrome-${chrome}">
+    ${titleChrome}
     <div class="js-document-toolbar" role="toolbar" aria-label="Document actions"><button class="js-mobile-toggle" data-mobile-drawer="types" aria-controls="js-outline" aria-haspopup="dialog" aria-expanded="false">Types</button><button data-command="definition.add" title="New type">${fluentIcon('add')}<span>Type</span></button><button data-mode="conversion" title="Convert this structure">${fluentIcon('arrowSwap')}<span>Convert</span></button><button data-mode="instance" title="Validate an instance">${fluentIcon('checkmarkCircle')}<span>Validate</span></button><span class="js-spacer"></span><span class="js-chip">${escapeHtml(profile.mode)}</span>${activeCompanions ? `<span class="js-chip">${activeCompanions} companions</span>` : ''}<div class="js-tabs" role="tablist" aria-label="Document representation">${representations}</div><button class="js-mobile-toggle" data-mobile-drawer="inspector" aria-controls="js-inspector" aria-haspopup="dialog" aria-expanded="false">Inspector</button></div>
     <div class="js-workbench" data-problems-open="${problemsOpen}">
       <nav class="js-activity" aria-label="Workbench views"><button class="js-activity-button js-activity-primary" data-mobile-drawer="types" aria-label="Schema explorer" title="Schema explorer">${fluentIcon('documentData')}</button>${activities}</nav>
@@ -1633,6 +1653,54 @@ function structuredWorkbenchShell(snapshot: DocumentSnapshot, title: string, def
     </div>
     <footer class="js-status"><button data-problems-toggle aria-controls="js-problem-list" aria-expanded="${problemsOpen}" title="Toggle Problems"><span>${fluentIcon('errorCircle')}${errors}</span><span>${fluentIcon('warning')}${warnings}</span></button><span>JSON Structure ${escapeHtml(profile.mode)}</span><span class="js-spacer"></span><span>${definitions.length} type${definitions.length === 1 ? '' : 's'}</span><span>${documentStatus}</span></footer>
   </div>`;
+}
+
+export function workbenchTitleChrome(title: string, chrome: NonNullable<JsonStructureEditorOptions['chrome']>): string {
+  if (chrome === 'embedded') return '';
+  if (chrome === 'document') return `<header class="js-title">${jsonStructureLogo()}<strong>JSON Structure</strong><span class="js-file" data-document-title>${escapeHtml(title)}</span><button class="js-command-trigger" data-show-commands title="Show Commands (Ctrl+Shift+P)" aria-label="Show Commands">${fluentIcon('console')}</button><label class="js-theme-label"><span class="js-sr-only">Color theme</span><select class="js-theme" data-theme-select aria-label="Color theme"><option value="dark">Dark</option><option value="light">Light</option><option value="contrast">High contrast</option></select></label></header>`;
+  return `<header class="js-titlebar">
+    <div class="js-titlebar-drag"><span class="js-titlebar-icon" title="JSON Structure">${jsonStructureLogo()}</span>
+      <nav class="js-menubar" role="menubar" aria-label="Application menu">
+        ${applicationMenu('File', '<button role="menuitem" data-chrome-command="open">Open...<kbd>Ctrl+O</kbd></button><button role="menuitem" data-chrome-command="save">Save<kbd>Ctrl+S</kbd></button><button role="menuitem" data-chrome-command="save-as">Save As...<kbd>Ctrl+Shift+S</kbd></button><hr><button role="menuitem" data-chrome-command="quit">Exit</button>')}
+        ${applicationMenu('Edit', '<button role="menuitem" data-chrome-command="undo">Undo<kbd>Ctrl+Z</kbd></button><button role="menuitem" data-chrome-command="redo">Redo<kbd>Ctrl+Y</kbd></button><hr><button role="menuitem" data-chrome-command="cut">Cut<kbd>Ctrl+X</kbd></button><button role="menuitem" data-chrome-command="copy">Copy<kbd>Ctrl+C</kbd></button><button role="menuitem" data-chrome-command="paste">Paste<kbd>Ctrl+V</kbd></button><button role="menuitem" data-chrome-command="select-all">Select All<kbd>Ctrl+A</kbd></button>')}
+        ${applicationMenu('View', '<button role="menuitem" data-chrome-command="show-commands">Command Palette...<kbd>Ctrl+Shift+P</kbd></button><hr><button role="menuitem" data-theme-choice="dark">Dark Theme</button><button role="menuitem" data-theme-choice="light">Light Theme</button><button role="menuitem" data-theme-choice="contrast">High Contrast Theme</button><hr><button role="menuitem" data-chrome-command="reset-zoom">Reset Zoom</button><button role="menuitem" data-chrome-command="zoom-in">Zoom In</button><button role="menuitem" data-chrome-command="zoom-out">Zoom Out</button><button role="menuitem" data-chrome-command="toggle-fullscreen">Toggle Full Screen<kbd>F11</kbd></button>')}
+        ${applicationMenu('Help', '<button role="menuitem" data-chrome-command="website">JSON Structure Website</button>')}
+      </nav>
+      <button class="js-command-center" data-show-commands title="Search files and run commands (Ctrl+Shift+P)" aria-label="Search files and run commands">${fluentIcon('console')}<span data-document-title>${escapeHtml(title)}</span></button>
+    </div>
+  </header>`;
+}
+
+function applicationMenu(label: string, content: string): string {
+  return `<details class="js-app-menu"><summary role="menuitem" aria-haspopup="menu">${label}</summary><div class="js-app-menu-popup" role="menu" aria-label="${label} menu">${content}</div></details>`;
+}
+
+function closeApplicationMenus(root: HTMLElement): void {
+  root.querySelectorAll('.js-app-menu[open]').forEach((menu: HTMLElement) => menu.removeAttribute('open'));
+}
+
+function wireApplicationMenus(root: HTMLElement): void {
+  const menus = [...root.querySelectorAll('.js-app-menu')] as HTMLElement[];
+  menus.forEach((menu, index) => {
+    menu.addEventListener('toggle', () => {
+      if (!menu.hasAttribute('open')) return;
+      menus.forEach((other) => { if (other !== menu) other.removeAttribute('open'); });
+      queueMicrotask(() => (menu.querySelector('[role="menuitem"]') as HTMLElement | null)?.focus());
+    });
+    menu.querySelector('summary')?.addEventListener('keydown', (event: KeyboardEvent) => {
+      const offset = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+      if (!offset) return;
+      event.preventDefault();
+      menu.removeAttribute('open');
+      (menus[(index + offset + menus.length) % menus.length]?.querySelector('summary') as HTMLElement | null)?.focus();
+    });
+    menu.querySelector('.js-app-menu-popup')?.addEventListener('keydown', (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      menu.removeAttribute('open');
+      (menu.querySelector('summary') as HTMLElement | null)?.focus();
+    });
+  });
 }
 
 export function workbenchShell(snapshot: DocumentSnapshot, title: string, definitions: readonly { readonly name: string; readonly pointer: string; readonly namespace: string }[], definitionPointer: string | undefined, rows: readonly PropertyRow[], selectedPointer: string | undefined, mode: Mode, problemsOpen: boolean): string {

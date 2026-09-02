@@ -320,7 +320,7 @@ export function startVsCodeWebview(): VsCodeWebviewClient {
   return createVsCodeWebviewClient({
     vscode: acquireVsCodeApi(), window, document,
     mount: (initial, host, onChange) => mountJsonStructureEditor(document.querySelector('#editor') as HTMLElement, {
-      text: initial.text, uri: initial.uri, title: initial.title, documentVersion: initial.documentVersion, host, onChange, styleNonce
+      text: initial.text, uri: initial.uri, title: initial.title, documentVersion: initial.documentVersion, host, onChange, styleNonce, chrome: 'embedded'
     })
   });
 }
