@@ -2,7 +2,12 @@
 'use strict';
 
 const { stdin, stdout } = process;
+const { spawnSync } = require('node:child_process');
+const { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } = require('node:fs');
+const { tmpdir } = require('node:os');
+const { basename, join, relative } = require('node:path');
 const { generateProto } = require('./proto-generator.cjs');
+const commandsManifest = require('./commands-manifest.json');
 
 const CORE_SCHEMA_URI = 'https://json-structure.org/meta/core/v0/#';
 const EXTENDED_SCHEMA_URI = 'https://json-structure.org/meta/extended/v0/#';
@@ -1465,6 +1470,58 @@ function convertJsonStructureToProto(sourceText, sourceName, options) {
   return { files, warnings, lossiness: aggregateLossiness(warnings) };
 }
 
+function readGeneratedFiles(root, directory = root) {
+  const files = {};
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) Object.assign(files, readGeneratedFiles(root, path));
+    else if (entry.isFile()) files[relative(root, path).replace(/\\/g, '/')] = readFileSync(path).toString('base64');
+  }
+  return files;
+}
+
+function runStructurize(command, sourceName, sourceText, options) {
+  const workspace = mkdtempSync(join(tmpdir(), 'json-structure-convert-'));
+  try {
+    const inputPath = join(workspace, sourceName.endsWith('.struct.json') ? basename(sourceName) : 'schema.struct.json');
+    writeFileSync(inputPath, sourceText, 'utf8');
+    const outputRoot = join(workspace, 'output');
+    const outputPath = command.outputKind === 'directory' ? outputRoot : join(outputRoot, command.outputName);
+    mkdirSync(command.outputKind === 'directory' ? outputPath : outputRoot, { recursive: true });
+    const args = [command.cliCommand, inputPath, '--out', outputPath];
+    for (const [name, value] of Object.entries(options)) {
+      const flag = `--${name}`;
+      if (typeof value === 'boolean') {
+        if (value) args.push(flag);
+      } else if (Array.isArray(value)) {
+        for (const item of value) args.push(flag, item);
+      } else if (value !== '') {
+        args.push(flag, String(value));
+      }
+    }
+    const candidates = process.env.STRUCTURIZE_EXECUTABLE
+      ? [process.env.STRUCTURIZE_EXECUTABLE]
+      : process.platform === 'win32' ? ['structurize.exe', 'avrotize.exe'] : ['structurize', 'avrotize'];
+    let result;
+    for (const executable of candidates) {
+      result = spawnSync(executable, args, { cwd: workspace, encoding: 'utf8', windowsHide: true, maxBuffer: 1024 * 1024 });
+      if (!result.error || result.error.code !== 'ENOENT') break;
+    }
+    if (result?.error) throw result.error;
+    if (!result || result.status !== 0) {
+      const detail = result?.stderr?.trim() || result?.stdout?.trim() || `exit code ${String(result?.status)}`;
+      throw new Error(`Structurize ${command.cliCommand} failed: ${detail}`);
+    }
+    const files = command.outputKind === 'directory'
+      ? readGeneratedFiles(outputPath)
+      : existsSync(outputPath) ? { [command.outputName]: readFileSync(outputPath).toString('base64') } : {};
+    if (Object.keys(files).length === 0) throw new Error(`Structurize ${command.cliCommand} produced no output files.`);
+    return { files, warnings: [], lossiness: 'none' };
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+}
+
 function runConversion(commandId, sourceName, sourceText, options, preview) {
   if (commandId === 'import.jsonschema.to-json-structure') {
     return convertJsonSchemaToJsonStructure(sourceText, sourceName, options, preview);
@@ -1481,6 +1538,8 @@ function runConversion(commandId, sourceName, sourceText, options, preview) {
   if (commandId === 'export.json-structure.to-protobuf') {
     return convertJsonStructureToProto(sourceText, sourceName, options);
   }
+  const command = commandsManifest.commands.find((candidate) => candidate.id === commandId && candidate.cliCommand);
+  if (command) return runStructurize(command, sourceName, sourceText, options);
   throw new Error(`Unsupported command id: ${commandId}`);
 }
 

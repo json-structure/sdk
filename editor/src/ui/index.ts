@@ -26,6 +26,7 @@ import { effectiveValidationTypes } from '../validation.js';
 import type { editor as MonacoEditor } from 'monaco-editor';
 import { fluentIcon, type FluentIconName } from './fluent-icons.js';
 import { jsonStructureLogo } from './brand-logo.js';
+import { technologyIcon } from './technology-icons.js';
 
 export { diagnosticsForPointer, pointerLabel, projectGraph, projectProperties } from './helpers.js';
 
@@ -253,7 +254,9 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     render();
     void services.listConversionCommands().then((manifest) => {
       conversionManifest = manifest;
-      conversionCommandId = manifest.commands.some((command) => command.id === conversionCommandId) ? conversionCommandId : manifest.commands[0]?.id;
+      conversionCommandId = manifest.commands.some((command) => command.id === conversionCommandId)
+        ? conversionCommandId
+        : manifest.commands.find((command) => command.direction === 'export')?.id ?? manifest.commands[0]?.id;
       conversionResult = undefined;
       conversionStatus = manifest.commands.length ? '' : 'No conversion commands are installed.';
     }, (error) => {
@@ -1482,7 +1485,9 @@ function mountAdvancedViews(root: HTMLElement, snapshot: DocumentSnapshot, defin
 
 export function conversionView(host: EditorServices | undefined, manifest: ConversionCommandsManifest | undefined, commandId: string | undefined, source: ConversionSource | undefined, result: ConversionResult | undefined, status: string, progress?: ProgressEvent, requestId?: string): string {
   if (!host?.listConversionCommands || !host.convert) return '<div class="js-sheet"><h1>Conversion</h1><p class="js-description">This host does not provide conversion tools.</p></div>';
-  const selected = manifest?.commands.find((command) => command.id === commandId) ?? manifest?.commands[0];
+  const selected = manifest?.commands.find((command) => command.id === commandId)
+    ?? manifest?.commands.find((command) => command.direction === 'export')
+    ?? manifest?.commands[0];
   const converter = manifest?.converters.find((item) => item.id === selected?.converterId);
   const diagnostics = result?.diagnostics.map((diagnostic) => `<div class="js-problem"><span class="js-problem-${diagnostic.severity}">${fluentIcon(diagnostic.severity === 'error' ? 'errorCircle' : 'warning')}</span><span><span class="js-code">${escapeHtml(diagnostic.code)}</span> ${escapeHtml(diagnostic.message)}</span></div>`).join('') ?? '';
   const outputs = result?.outputs.map((output) => `<div class="js-analysis-row"><span>${escapeHtml(output.name)}</span><span class="js-code">${escapeHtml(output.uri)}</span></div>`).join('') ?? '';
@@ -1491,7 +1496,10 @@ export function conversionView(host: EditorServices | undefined, manifest: Conve
   const commandGroups = manifest ? (['export', 'import'] as const).map((direction) => {
     const commands = manifest.commands.filter((command) => command.direction === direction);
     if (!commands.length) return '';
-    return `<section class="js-conversion-group"><h2>${direction === 'export' ? 'Export from JSON Structure' : 'Import into JSON Structure'}</h2><div class="js-conversion-tiles">${commands.map((command) => `<button class="js-conversion-tile" data-conversion-command="${escapeAttribute(command.id)}" aria-pressed="${command.id === selected?.id}"><span class="js-format-icon" aria-hidden="true">${escapeHtml(formatInitials(command.direction === 'export' ? command.targetFormat : command.sourceFormat))}</span><span class="js-conversion-tile-copy"><strong>${escapeHtml(command.label)}</strong><span>${escapeHtml(conversionCommandDescription(command))}</span><small>${escapeHtml(command.sourceFormat)} <span aria-hidden="true">${fluentIcon('arrowRight', 'js-chevron')}</span> ${escapeHtml(command.targetFormat)}</small></span></button>`).join('')}</div></section>`;
+    return `<section class="js-conversion-group"><h2>${direction === 'export' ? 'Export from JSON Structure' : 'Import into JSON Structure'}</h2><div class="js-conversion-tiles">${commands.map((command) => {
+      const format = command.direction === 'export' ? command.targetFormat : command.sourceFormat;
+      return `<button class="js-conversion-tile" data-conversion-command="${escapeAttribute(command.id)}" aria-pressed="${command.id === selected?.id}"><span class="js-format-icon" data-format="${escapeAttribute(format)}" aria-hidden="true">${technologyIcon(format)}</span><span class="js-conversion-tile-copy"><strong>${escapeHtml(command.label)}</strong><span>${escapeHtml(conversionCommandDescription(command))}</span><small>${command.cliCommand ? `<code>${escapeHtml(command.cliCommand)}</code><span aria-hidden="true"> · </span>` : ''}${escapeHtml(conversionFormatName(command.sourceFormat))} <span aria-hidden="true">${fluentIcon('arrowRight', 'js-chevron')}</span> ${escapeHtml(conversionFormatName(command.targetFormat))}</small></span></button>`;
+    }).join('')}</div></section>`;
   }).join('') : '';
   const sourcePicker = selected?.direction === 'import' ? `<div class="js-conversion-source"><span>Source file</span><strong>${escapeHtml(source?.name ?? 'No file selected')}</strong><button data-conversion-source ${host.selectConversionSource ? '' : 'disabled'}>${source ? 'Change' : 'Choose file'}</button></div>` : '';
   const commandOptions = selected && converter ? conversionOptionsForCommand(converter, selected) : [];
@@ -1523,13 +1531,41 @@ function conversionCommandAction(command: import('../conversion/types.js').Conve
 }
 
 function conversionFormatName(format: string): string {
-  const known: Readonly<Record<string, string>> = { 'json-schema': 'JSON Schema', 'json-structure': 'JSON Structure', avro: 'Avro', protobuf: 'Protocol Buffers' };
+  const known: Readonly<Record<string, string>> = {
+    asn1: 'ASN.1',
+    avro: 'Apache Avro',
+    capnp: "Cap'n Proto",
+    cassandra: 'Apache Cassandra',
+    cddl: 'CDDL',
+    cpp: 'C++',
+    csharp: 'C#',
+    'csv-schema': 'CSV schema',
+    cue: 'CUE',
+    'data-package': 'Data Package',
+    flatbuffers: 'FlatBuffers',
+    go: 'Go',
+    graphql: 'GraphQL',
+    iceberg: 'Apache Iceberg',
+    java: 'Java',
+    javascript: 'JavaScript',
+    'json-schema': 'JSON Schema',
+    'json-structure': 'JSON Structure',
+    jtd: 'JSON Type Definition',
+    kusto: 'Kusto',
+    markdown: 'Markdown',
+    parquet: 'Apache Parquet',
+    protobuf: 'Protocol Buffers',
+    python: 'Python',
+    raml: 'RAML',
+    rust: 'Rust',
+    smithy: 'Smithy',
+    sql: 'SQL',
+    thrift: 'Apache Thrift',
+    tmsl: 'TMSL',
+    typescript: 'TypeScript',
+    xsd: 'XML Schema',
+  };
   return known[format.toLocaleLowerCase()] ?? format;
-}
-
-function formatInitials(format: string): string {
-  const words = format.match(/[A-Za-z0-9]+/g) ?? [];
-  return (words.length > 1 ? words.map((word) => word[0]).join('') : words[0]?.slice(0, 3) ?? '?').toUpperCase();
 }
 
 function conversionOptionControl(option: import('../conversion/types.js').ConversionOption): string {
@@ -1759,20 +1795,22 @@ function structuredWorkbenchShell(snapshot: DocumentSnapshot, title: string, def
   const documentValue = snapshot.recovery === 'valid' ? JSON.parse(snapshot.text) : {};
   const profile = detectMetaSchemaMode(documentValue);
   const activeCompanions = Object.entries(profile.capabilities).filter(([name, active]) => name !== 'core' && name !== 'unknownUses' && active === true).length;
-  const primaryModes: readonly { readonly mode: Extract<Mode, 'design' | 'graph' | 'source' | 'instance'>; readonly icon: FluentIconName; readonly label: string }[] = [
+  const primaryModes: readonly { readonly mode: Extract<Mode, 'design' | 'graph' | 'source' | 'instance' | 'conversion'>; readonly icon: FluentIconName; readonly label: string }[] = [
     { mode: 'design', icon: 'documentData', label: 'Document' },
     { mode: 'graph', icon: 'cube', label: 'Graph' },
     { mode: 'source', icon: 'document', label: 'Source' },
     { mode: 'instance', icon: 'checkmarkCircle', label: 'Validate' },
+    { mode: 'conversion', icon: 'arrowSwap', label: 'Convert' },
   ];
   const typeTree = renderTypeTree(definitions, definitionPointer);
   const activities = primaryModes.map((item) => `<button class="js-activity-button" data-mode="${item.mode}" aria-label="${item.label}" title="${item.label}" aria-pressed="${mode === item.mode}">${fluentIcon(item.icon)}</button>`).join('');
   const breadcrumbSeparator = fluentIcon('chevronRight', 'js-chevron');
-  const breadcrumbs = `<span data-document-title>${escapeHtml(title)}</span>${definition ? `<span aria-hidden="true">${breadcrumbSeparator}</span><strong>${escapeHtml(definition.name)}</strong>` : ''}${selectedProperty ? `<span aria-hidden="true">${breadcrumbSeparator}</span><strong>${escapeHtml(selectedProperty.name)}</strong>` : ''}${selectedRelation ? `<span aria-hidden="true">${breadcrumbSeparator}</span><strong>${escapeHtml(selectedRelation.name)}</strong>` : ''}`;
+  const showSelectionBreadcrumb = mode === 'design' || mode === 'graph';
+  const breadcrumbs = `<span data-document-title>${escapeHtml(title)}</span>${showSelectionBreadcrumb && definition ? `<span aria-hidden="true">${breadcrumbSeparator}</span><strong>${escapeHtml(definition.name)}</strong>` : ''}${showSelectionBreadcrumb && selectedProperty ? `<span aria-hidden="true">${breadcrumbSeparator}</span><strong>${escapeHtml(selectedProperty.name)}</strong>` : ''}${showSelectionBreadcrumb && selectedRelation ? `<span aria-hidden="true">${breadcrumbSeparator}</span><strong>${escapeHtml(selectedRelation.name)}</strong>` : ''}`;
   const titleChrome = workbenchTitleChrome(title, chrome);
   return `<div class="js-shell js-chrome-${chrome}">
     ${titleChrome}
-    <div class="js-document-toolbar" role="toolbar" aria-label="Document status"><button class="js-mobile-toggle" data-mobile-drawer="types" aria-controls="js-outline" aria-haspopup="dialog" aria-expanded="false">Types</button><span class="js-chip">${escapeHtml(profile.mode)}</span>${activeCompanions ? `<span class="js-chip">${activeCompanions} companions</span>` : ''}<span class="js-spacer"></span><button data-mode="conversion" title="Convert this structure">${fluentIcon('arrowSwap')}<span>Convert</span></button><button class="js-mobile-toggle" data-mobile-drawer="inspector" aria-controls="js-inspector" aria-haspopup="dialog" aria-expanded="false">Inspector</button></div>
+    <div class="js-document-toolbar" role="toolbar" aria-label="Document status"><button class="js-mobile-toggle" data-mobile-drawer="types" aria-controls="js-outline" aria-haspopup="dialog" aria-expanded="false" ${mode === 'design' || mode === 'graph' ? '' : 'hidden'}>Types</button><span class="js-chip">${escapeHtml(profile.mode)}</span>${activeCompanions ? `<span class="js-chip">${activeCompanions} companions</span>` : ''}<span class="js-spacer"></span><button class="js-mobile-toggle" data-mobile-drawer="inspector" aria-controls="js-inspector" aria-haspopup="dialog" aria-expanded="false" ${mode === 'design' ? '' : 'hidden'}>Inspector</button></div>
     <div class="js-workbench" data-problems-open="${problemsOpen}" data-active-mode="${mode}">
       <nav class="js-activity" aria-label="Editor modes">${activities}</nav>
       <aside class="js-outline" id="js-outline" data-drawer-panel="types" aria-label="Types"><div class="js-panel-head"><span>Types</span><span class="js-spacer"></span><button data-command="definition.add" title="Add type" aria-label="Add type">${fluentIcon('add')}</button><button data-library-open title="Import type library" aria-label="Import type library">${fluentIcon('library')}</button><button class="js-drawer-close" data-mobile-drawer-close aria-label="Close Types">${fluentIcon('dismiss')}</button></div><input class="js-filter" type="search" placeholder="Filter types" aria-label="Filter types"><div class="js-tree" role="tree" aria-label="Types by namespace"><div class="js-tree-group">${definitions.length} definitions</div>${typeTree}</div></aside>
@@ -2531,7 +2569,7 @@ function isObjectSchema(value: unknown): value is Record<string, unknown> {
 
 export function mobileModeSelect(mode: Mode): string {
   const modes: readonly { readonly value: Mode; readonly label: string }[] = [
-    { value: 'design', label: 'Document' }, { value: 'graph', label: 'Graph' }, { value: 'source', label: 'Source' }, { value: 'instance', label: 'Validate' },
+    { value: 'design', label: 'Document' }, { value: 'graph', label: 'Graph' }, { value: 'source', label: 'Source' }, { value: 'instance', label: 'Validate' }, { value: 'conversion', label: 'Convert' },
   ];
   const options = (items: readonly { readonly value: Mode; readonly label: string }[]): string => items.map((item) => `<option value="${item.value}" ${item.value === mode ? 'selected' : ''}>${item.label}</option>`).join('');
   return `<label class="js-mobile-mode"><span class="js-sr-only">Editor mode</span><select data-mobile-mode aria-label="Editor mode">${options(modes)}</select></label>`;

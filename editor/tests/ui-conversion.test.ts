@@ -52,6 +52,8 @@ describe('conversion workbench view', () => {
 
     expect(html).toContain('data-option-type="boolean" checked');
     expect(html).toContain('class="js-conversion-tile"');
+    expect(html).toContain('class="js-technology-icon"');
+    expect(html).not.toContain('>B</span>');
     expect(html).toContain('data-conversion-command="convert.fixture" aria-pressed="true"');
     expect(html).toContain('Create b files from the current structure.');
     expect(html).toContain('Convert to b');

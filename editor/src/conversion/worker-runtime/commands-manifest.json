@@ -5,8 +5,13 @@
       "id": "jsonschema",
       "displayName": "JSON Schema Converter",
       "version": "1.0.0-node",
-      "sourceFormats": ["json-schema", "json"],
-      "targetFormats": ["json-structure"],
+      "sourceFormats": [
+        "json-schema",
+        "json"
+      ],
+      "targetFormats": [
+        "json-structure"
+      ],
       "options": [
         {
           "name": "rootName",
@@ -26,8 +31,13 @@
       "id": "avro",
       "displayName": "Avro Converter",
       "version": "1.0.0-node",
-      "sourceFormats": ["avro", "json"],
-      "targetFormats": ["json-structure"],
+      "sourceFormats": [
+        "avro",
+        "json"
+      ],
+      "targetFormats": [
+        "json-structure"
+      ],
       "options": [
         {
           "name": "rootName",
@@ -46,7 +56,10 @@
           "type": "string",
           "description": "Emit compact wire metadata or the full normative annotation set.",
           "default": "compact",
-          "allowedValues": ["compact", "full"]
+          "allowedValues": [
+            "compact",
+            "full"
+          ]
         },
         {
           "name": "uses",
@@ -59,7 +72,10 @@
           "type": "string",
           "description": "Ignore open records with a warning or reject them during Avro export.",
           "default": "ignore",
-          "allowedValues": ["ignore", "error"]
+          "allowedValues": [
+            "ignore",
+            "error"
+          ]
         },
         {
           "name": "emit_doc",
@@ -73,8 +89,12 @@
       "id": "protobuf",
       "displayName": "Protocol Buffers Generator",
       "version": "1.0.0-node",
-      "sourceFormats": ["json-structure"],
-      "targetFormats": ["protobuf"],
+      "sourceFormats": [
+        "json-structure"
+      ],
+      "targetFormats": [
+        "protobuf"
+      ],
       "options": [
         {
           "name": "uses",
@@ -87,7 +107,10 @@
           "type": "string",
           "description": "Ignore open records with a warning or reject them during Protobuf export.",
           "default": "ignore",
-          "allowedValues": ["ignore", "error"]
+          "allowedValues": [
+            "ignore",
+            "error"
+          ]
         },
         {
           "name": "emit_comments",
@@ -102,6 +125,64 @@
           "default": ""
         }
       ]
+    },
+    {
+      "id": "structurize-cli",
+      "displayName": "Structurize CLI",
+      "version": "external",
+      "sourceFormats": [
+        "json-structure"
+      ],
+      "targetFormats": [
+        "asn1",
+        "flatbuffers",
+        "kusto",
+        "sql",
+        "iceberg",
+        "parquet",
+        "tmsl",
+        "csharp",
+        "python",
+        "cpp",
+        "csv-schema",
+        "rust",
+        "typescript",
+        "java",
+        "javascript",
+        "go",
+        "graphql",
+        "data-package",
+        "cassandra",
+        "jtd",
+        "xsd",
+        "cddl",
+        "markdown",
+        "cue",
+        "thrift",
+        "smithy",
+        "capnp",
+        "raml"
+      ],
+      "options": [
+        {
+          "name": "dialect",
+          "type": "string",
+          "description": "SQL dialect used by the s2sql exporter.",
+          "default": "postgres",
+          "allowedValues": [
+            "mysql",
+            "mariadb",
+            "postgres",
+            "sqlserver",
+            "oracle",
+            "sqlite",
+            "bigquery",
+            "snowflake",
+            "redshift",
+            "db2"
+          ]
+        }
+      ]
     }
   ],
   "commands": [
@@ -113,7 +194,10 @@
       "sourceFormat": "json-schema",
       "targetFormat": "json-structure",
       "defaultAutoOpen": true,
-      "optionNames": ["rootName", "preserveUnknownKeywords"]
+      "optionNames": [
+        "rootName",
+        "preserveUnknownKeywords"
+      ]
     },
     {
       "id": "export.json-structure.to-jsonschema",
@@ -123,7 +207,8 @@
       "sourceFormat": "json-structure",
       "targetFormat": "json-schema",
       "defaultAutoOpen": true,
-      "optionNames": []
+      "optionNames": [],
+      "cliCommand": "s2j"
     },
     {
       "id": "import.avro.to-json-structure",
@@ -133,7 +218,10 @@
       "sourceFormat": "avro",
       "targetFormat": "json-structure",
       "defaultAutoOpen": true,
-      "optionNames": ["rootName", "preserveLogicalType"]
+      "optionNames": [
+        "rootName",
+        "preserveLogicalType"
+      ]
     },
     {
       "id": "export.json-structure.to-avro",
@@ -143,7 +231,13 @@
       "sourceFormat": "json-structure",
       "targetFormat": "avro",
       "defaultAutoOpen": true,
-      "optionNames": ["mode", "uses", "additional_properties", "emit_doc"]
+      "optionNames": [
+        "mode",
+        "uses",
+        "additional_properties",
+        "emit_doc"
+      ],
+      "cliCommand": "s2a"
     },
     {
       "id": "export.json-structure.to-protobuf",
@@ -153,7 +247,379 @@
       "sourceFormat": "json-structure",
       "targetFormat": "protobuf",
       "defaultAutoOpen": false,
-      "optionNames": ["uses", "additional_properties", "emit_comments", "numbers"]
+      "optionNames": [
+        "uses",
+        "additional_properties",
+        "emit_comments",
+        "numbers"
+      ],
+      "cliCommand": "s2p"
+    },
+    {
+      "id": "export.structurize.s2asn",
+      "converterId": "structurize-cli",
+      "direction": "export",
+      "label": "Export JSON Structure to ASN.1",
+      "sourceFormat": "json-structure",
+      "targetFormat": "asn1",
+      "defaultAutoOpen": true,
+      "optionNames": [],
+      "cliCommand": "s2asn",
+      "outputKind": "file",
+      "outputName": "schema.asn"
+    },
+    {
+      "id": "export.structurize.s2fbs",
+      "converterId": "structurize-cli",
+      "direction": "export",
+      "label": "Export JSON Structure to FlatBuffers",
+      "sourceFormat": "json-structure",
+      "targetFormat": "flatbuffers",
+      "defaultAutoOpen": true,
+      "optionNames": [],
+      "cliCommand": "s2fbs",
+      "outputKind": "file",
+      "outputName": "schema.fbs"
+    },
+    {
+      "id": "export.structurize.s2k",
+      "converterId": "structurize-cli",
+      "direction": "export",
+      "label": "Export JSON Structure to Kusto table schemas",
+      "sourceFormat": "json-structure",
+      "targetFormat": "kusto",
+      "defaultAutoOpen": true,
+      "optionNames": [],
+      "cliCommand": "s2k",
+      "outputKind": "file",
+      "outputName": "schema.kql"
+    },
+    {
+      "id": "export.structurize.s2sql",
+      "converterId": "structurize-cli",
+      "direction": "export",
+      "label": "Export JSON Structure to SQL schema",
+      "sourceFormat": "json-structure",
+      "targetFormat": "sql",
+      "defaultAutoOpen": true,
+      "optionNames": [
+        "dialect"
+      ],
+      "cliCommand": "s2sql",
+      "outputKind": "file",
+      "outputName": "schema.sql"
+    },
+    {
+      "id": "export.structurize.s2ib",
+      "converterId": "structurize-cli",
+      "direction": "export",
+      "label": "Export JSON Structure to Apache Iceberg schema",
+      "sourceFormat": "json-structure",
+      "targetFormat": "iceberg",
+      "defaultAutoOpen": true,
+      "optionNames": [],
+      "cliCommand": "s2ib",
+      "outputKind": "file",
+      "outputName": "schema.iceberg.json"
+    },
+    {
+      "id": "export.structurize.s2pq",
+      "converterId": "structurize-cli",
+      "direction": "export",
+      "label": "Export JSON Structure to Apache Parquet schema",
+      "sourceFormat": "json-structure",
+      "targetFormat": "parquet",
+      "defaultAutoOpen": true,
+      "optionNames": [],
+      "cliCommand": "s2pq",
+      "outputKind": "file",
+      "outputName": "schema.parquet"
+    },
+    {
+      "id": "export.structurize.s2tsml",
+      "converterId": "structurize-cli",
+      "direction": "export",
+      "label": "Export JSON Structure to Tabular Model Scripting Language",
+      "sourceFormat": "json-structure",
+      "targetFormat": "tmsl",
+      "defaultAutoOpen": true,
+      "optionNames": [],
+      "cliCommand": "s2tsml",
+      "outputKind": "file",
+      "outputName": "schema.tmsl.json"
+    },
+    {
+      "id": "export.structurize.s2cs",
+      "converterId": "structurize-cli",
+      "direction": "export",
+      "label": "Export JSON Structure to C# classes",
+      "sourceFormat": "json-structure",
+      "targetFormat": "csharp",
+      "defaultAutoOpen": false,
+      "optionNames": [],
+      "cliCommand": "s2cs",
+      "outputKind": "directory",
+      "outputName": "csharp"
+    },
+    {
+      "id": "export.structurize.s2py",
+      "converterId": "structurize-cli",
+      "direction": "export",
+      "label": "Export JSON Structure to Python classes",
+      "sourceFormat": "json-structure",
+      "targetFormat": "python",
+      "defaultAutoOpen": false,
+      "optionNames": [],
+      "cliCommand": "s2py",
+      "outputKind": "directory",
+      "outputName": "python"
+    },
+    {
+      "id": "export.structurize.s2cpp",
+      "converterId": "structurize-cli",
+      "direction": "export",
+      "label": "Export JSON Structure to C++ classes",
+      "sourceFormat": "json-structure",
+      "targetFormat": "cpp",
+      "defaultAutoOpen": false,
+      "optionNames": [],
+      "cliCommand": "s2cpp",
+      "outputKind": "directory",
+      "outputName": "cpp"
+    },
+    {
+      "id": "export.structurize.s2csv",
+      "converterId": "structurize-cli",
+      "direction": "export",
+      "label": "Export JSON Structure to CSV schema",
+      "sourceFormat": "json-structure",
+      "targetFormat": "csv-schema",
+      "defaultAutoOpen": true,
+      "optionNames": [],
+      "cliCommand": "s2csv",
+      "outputKind": "file",
+      "outputName": "schema.csv"
+    },
+    {
+      "id": "export.structurize.s2rust",
+      "converterId": "structurize-cli",
+      "direction": "export",
+      "label": "Export JSON Structure to Rust classes",
+      "sourceFormat": "json-structure",
+      "targetFormat": "rust",
+      "defaultAutoOpen": false,
+      "optionNames": [],
+      "cliCommand": "s2rust",
+      "outputKind": "directory",
+      "outputName": "rust"
+    },
+    {
+      "id": "export.structurize.s2ts",
+      "converterId": "structurize-cli",
+      "direction": "export",
+      "label": "Export JSON Structure to TypeScript classes",
+      "sourceFormat": "json-structure",
+      "targetFormat": "typescript",
+      "defaultAutoOpen": false,
+      "optionNames": [],
+      "cliCommand": "s2ts",
+      "outputKind": "directory",
+      "outputName": "typescript"
+    },
+    {
+      "id": "export.structurize.s2java",
+      "converterId": "structurize-cli",
+      "direction": "export",
+      "label": "Export JSON Structure to Java classes",
+      "sourceFormat": "json-structure",
+      "targetFormat": "java",
+      "defaultAutoOpen": false,
+      "optionNames": [],
+      "cliCommand": "s2java",
+      "outputKind": "directory",
+      "outputName": "java"
+    },
+    {
+      "id": "export.structurize.s2js",
+      "converterId": "structurize-cli",
+      "direction": "export",
+      "label": "Export JSON Structure to JavaScript classes",
+      "sourceFormat": "json-structure",
+      "targetFormat": "javascript",
+      "defaultAutoOpen": false,
+      "optionNames": [],
+      "cliCommand": "s2js",
+      "outputKind": "directory",
+      "outputName": "javascript"
+    },
+    {
+      "id": "export.structurize.s2go",
+      "converterId": "structurize-cli",
+      "direction": "export",
+      "label": "Export JSON Structure to Go structs",
+      "sourceFormat": "json-structure",
+      "targetFormat": "go",
+      "defaultAutoOpen": false,
+      "optionNames": [],
+      "cliCommand": "s2go",
+      "outputKind": "directory",
+      "outputName": "go"
+    },
+    {
+      "id": "export.structurize.s2graphql",
+      "converterId": "structurize-cli",
+      "direction": "export",
+      "label": "Export JSON Structure to GraphQL schema",
+      "sourceFormat": "json-structure",
+      "targetFormat": "graphql",
+      "defaultAutoOpen": true,
+      "optionNames": [],
+      "cliCommand": "s2graphql",
+      "outputKind": "file",
+      "outputName": "schema.graphql"
+    },
+    {
+      "id": "export.structurize.s2dp",
+      "converterId": "structurize-cli",
+      "direction": "export",
+      "label": "Export JSON Structure to Data Package schema",
+      "sourceFormat": "json-structure",
+      "targetFormat": "data-package",
+      "defaultAutoOpen": true,
+      "optionNames": [],
+      "cliCommand": "s2dp",
+      "outputKind": "file",
+      "outputName": "datapackage.json"
+    },
+    {
+      "id": "export.structurize.s2cassandra",
+      "converterId": "structurize-cli",
+      "direction": "export",
+      "label": "Export JSON Structure to Apache Cassandra schema",
+      "sourceFormat": "json-structure",
+      "targetFormat": "cassandra",
+      "defaultAutoOpen": true,
+      "optionNames": [],
+      "cliCommand": "s2cassandra",
+      "outputKind": "file",
+      "outputName": "schema.cql"
+    },
+    {
+      "id": "export.structurize.s2jtd",
+      "converterId": "structurize-cli",
+      "direction": "export",
+      "label": "Export JSON Structure to JSON Type Definition",
+      "sourceFormat": "json-structure",
+      "targetFormat": "jtd",
+      "defaultAutoOpen": true,
+      "optionNames": [],
+      "cliCommand": "s2jtd",
+      "outputKind": "file",
+      "outputName": "schema.jtd.json"
+    },
+    {
+      "id": "export.structurize.s2x",
+      "converterId": "structurize-cli",
+      "direction": "export",
+      "label": "Export JSON Structure to XML Schema",
+      "sourceFormat": "json-structure",
+      "targetFormat": "xsd",
+      "defaultAutoOpen": true,
+      "optionNames": [],
+      "cliCommand": "s2x",
+      "outputKind": "file",
+      "outputName": "schema.xsd"
+    },
+    {
+      "id": "export.structurize.s2cddl",
+      "converterId": "structurize-cli",
+      "direction": "export",
+      "label": "Export JSON Structure to CDDL schema",
+      "sourceFormat": "json-structure",
+      "targetFormat": "cddl",
+      "defaultAutoOpen": true,
+      "optionNames": [],
+      "cliCommand": "s2cddl",
+      "outputKind": "file",
+      "outputName": "schema.cddl"
+    },
+    {
+      "id": "export.structurize.s2md",
+      "converterId": "structurize-cli",
+      "direction": "export",
+      "label": "Export JSON Structure to Markdown documentation",
+      "sourceFormat": "json-structure",
+      "targetFormat": "markdown",
+      "defaultAutoOpen": true,
+      "optionNames": [],
+      "cliCommand": "s2md",
+      "outputKind": "file",
+      "outputName": "schema.md"
+    },
+    {
+      "id": "export.structurize.s2cue",
+      "converterId": "structurize-cli",
+      "direction": "export",
+      "label": "Export JSON Structure to CUE schema",
+      "sourceFormat": "json-structure",
+      "targetFormat": "cue",
+      "defaultAutoOpen": true,
+      "optionNames": [],
+      "cliCommand": "s2cue",
+      "outputKind": "file",
+      "outputName": "schema.cue"
+    },
+    {
+      "id": "export.structurize.s2thrift",
+      "converterId": "structurize-cli",
+      "direction": "export",
+      "label": "Export JSON Structure to Apache Thrift IDL",
+      "sourceFormat": "json-structure",
+      "targetFormat": "thrift",
+      "defaultAutoOpen": true,
+      "optionNames": [],
+      "cliCommand": "s2thrift",
+      "outputKind": "file",
+      "outputName": "schema.thrift"
+    },
+    {
+      "id": "export.structurize.s2smithy",
+      "converterId": "structurize-cli",
+      "direction": "export",
+      "label": "Export JSON Structure to Smithy IDL",
+      "sourceFormat": "json-structure",
+      "targetFormat": "smithy",
+      "defaultAutoOpen": true,
+      "optionNames": [],
+      "cliCommand": "s2smithy",
+      "outputKind": "file",
+      "outputName": "schema.smithy"
+    },
+    {
+      "id": "export.structurize.s2capnp",
+      "converterId": "structurize-cli",
+      "direction": "export",
+      "label": "Export JSON Structure to Cap'n Proto schema",
+      "sourceFormat": "json-structure",
+      "targetFormat": "capnp",
+      "defaultAutoOpen": true,
+      "optionNames": [],
+      "cliCommand": "s2capnp",
+      "outputKind": "file",
+      "outputName": "schema.capnp"
+    },
+    {
+      "id": "export.structurize.s2raml",
+      "converterId": "structurize-cli",
+      "direction": "export",
+      "label": "Export JSON Structure to RAML Data Types",
+      "sourceFormat": "json-structure",
+      "targetFormat": "raml",
+      "defaultAutoOpen": true,
+      "optionNames": [],
+      "cliCommand": "s2raml",
+      "outputKind": "file",
+      "outputName": "schema.raml"
     }
   ]
 }

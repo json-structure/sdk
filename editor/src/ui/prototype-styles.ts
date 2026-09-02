@@ -473,7 +473,17 @@ export const editorStyles = `
 .js-conversion-tile { min-width:0; min-height:96px; display:grid; grid-template-columns:44px minmax(0,1fr); gap:10px; align-items:start; border:1px solid var(--js-line); border-radius:4px; padding:11px; background:var(--js-panel); color:var(--js-muted); text-align:start; }
 .js-conversion-tile:hover { border-color:var(--js-line-strong); background:var(--js-raised); color:var(--js-text); }
 .js-conversion-tile[aria-pressed="true"] { border-color:var(--js-accent); background:var(--js-selected); box-shadow:inset 2px 0 var(--js-accent); color:var(--js-text); }
-.js-format-icon { width:42px; height:42px; display:grid; place-items:center; border:1px solid var(--js-line-strong); border-radius:3px; color:var(--js-accent-strong); font:700 11px/1 Consolas,monospace; }
+.js-format-icon { width:42px; height:42px; display:grid; place-items:center; border:1px solid var(--js-line-strong); border-radius:3px; color:var(--js-accent-strong); }
+.js-technology-icon { width:25px; height:25px; fill:currentColor; }
+.js-format-icon[data-format="avro"] { color:#d89b37; }
+.js-format-icon[data-format="csharp"],.js-format-icon[data-format="tmsl"] { color:#7377d5; }
+.js-format-icon[data-format="go"] { color:#00add8; }
+.js-format-icon[data-format="java"] { color:#e76f00; }
+.js-format-icon[data-format="javascript"] { color:#f0db4f; }
+.js-format-icon[data-format="markdown"] { color:var(--js-text); }
+.js-format-icon[data-format="python"] { color:#3776ab; }
+.js-format-icon[data-format="rust"] { color:#ce412b; }
+.js-format-icon[data-format="sql"],.js-format-icon[data-format="kusto"],.js-format-icon[data-format="cassandra"] { color:#4e95d9; }
 .js-conversion-tile-copy { min-width:0; display:grid; gap:3px; }
 .js-conversion-tile-copy strong { overflow:hidden; display:-webkit-box; color:var(--js-text); line-height:1.3; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
 .js-conversion-tile-copy>span { line-height:1.35; }

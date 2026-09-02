@@ -113,6 +113,8 @@
     }
   },
   "dependencies": {
+    "@fortawesome/free-brands-svg-icons": "^7.3.1",
+    "@fortawesome/free-solid-svg-icons": "^7.3.1",
     "d3-force": "^3.0.0",
     "monaco-editor": "^0.56.0",
     "re2js": "^2.8.6"

@@ -34,8 +34,9 @@ describe('Phase 5 packaged process runtime', () => {
   it('parses bundled commands manifest from packaged assets', async () => {
     const manifest = parseBundledCommandsManifest(await readFile(PACKAGED_COMMANDS_MANIFEST_PATH));
     expect(manifest.schemaVersion).toBe(1);
-    expect(manifest.converters.map((converter) => converter.id)).toEqual(['jsonschema', 'avro', 'protobuf']);
-    expect(manifest.commands).toHaveLength(5);
+    expect(manifest.converters.map((converter) => converter.id)).toEqual(['jsonschema', 'avro', 'protobuf', 'structurize-cli']);
+    expect(manifest.commands).toHaveLength(33);
+    expect(manifest.commands.filter((command) => command.direction === 'export')).toHaveLength(31);
   });
 
   it('keeps the packaged runtime descriptor hashes in parity with its assets', async () => {

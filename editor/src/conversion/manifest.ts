@@ -1,5 +1,36 @@
 import { parseCommandsManifest, type ConversionCommandsManifest } from './types.js';
 
+const structurizeExportCommands = [
+  ['s2asn', 'asn1', 'ASN.1', 'file', 'schema.asn'],
+  ['s2fbs', 'flatbuffers', 'FlatBuffers', 'file', 'schema.fbs'],
+  ['s2k', 'kusto', 'Kusto table schemas', 'file', 'schema.kql'],
+  ['s2sql', 'sql', 'SQL schema', 'file', 'schema.sql'],
+  ['s2ib', 'iceberg', 'Apache Iceberg schema', 'file', 'schema.iceberg.json'],
+  ['s2pq', 'parquet', 'Apache Parquet schema', 'file', 'schema.parquet'],
+  ['s2tsml', 'tmsl', 'Tabular Model Scripting Language', 'file', 'schema.tmsl.json'],
+  ['s2cs', 'csharp', 'C# classes', 'directory', 'csharp'],
+  ['s2py', 'python', 'Python classes', 'directory', 'python'],
+  ['s2cpp', 'cpp', 'C++ classes', 'directory', 'cpp'],
+  ['s2csv', 'csv-schema', 'CSV schema', 'file', 'schema.csv'],
+  ['s2rust', 'rust', 'Rust classes', 'directory', 'rust'],
+  ['s2ts', 'typescript', 'TypeScript classes', 'directory', 'typescript'],
+  ['s2java', 'java', 'Java classes', 'directory', 'java'],
+  ['s2js', 'javascript', 'JavaScript classes', 'directory', 'javascript'],
+  ['s2go', 'go', 'Go structs', 'directory', 'go'],
+  ['s2graphql', 'graphql', 'GraphQL schema', 'file', 'schema.graphql'],
+  ['s2dp', 'data-package', 'Data Package schema', 'file', 'datapackage.json'],
+  ['s2cassandra', 'cassandra', 'Apache Cassandra schema', 'file', 'schema.cql'],
+  ['s2jtd', 'jtd', 'JSON Type Definition', 'file', 'schema.jtd.json'],
+  ['s2x', 'xsd', 'XML Schema', 'file', 'schema.xsd'],
+  ['s2cddl', 'cddl', 'CDDL schema', 'file', 'schema.cddl'],
+  ['s2md', 'markdown', 'Markdown documentation', 'file', 'schema.md'],
+  ['s2cue', 'cue', 'CUE schema', 'file', 'schema.cue'],
+  ['s2thrift', 'thrift', 'Apache Thrift IDL', 'file', 'schema.thrift'],
+  ['s2smithy', 'smithy', 'Smithy IDL', 'file', 'schema.smithy'],
+  ['s2capnp', 'capnp', "Cap'n Proto schema", 'file', 'schema.capnp'],
+  ['s2raml', 'raml', 'RAML Data Types', 'file', 'schema.raml'],
+] as const;
+
 export const BUILTIN_CONVERSION_COMMANDS_MANIFEST: ConversionCommandsManifest = parseCommandsManifest({
   schemaVersion: 1,
   converters: [
@@ -104,6 +135,22 @@ export const BUILTIN_CONVERSION_COMMANDS_MANIFEST: ConversionCommandsManifest = 
           default: ''
         }
       ]
+    },
+    {
+      id: 'structurize-cli',
+      displayName: 'Structurize CLI',
+      version: 'external',
+      sourceFormats: ['json-structure'],
+      targetFormats: structurizeExportCommands.map(([, format]) => format),
+      options: [
+        {
+          name: 'dialect',
+          type: 'string',
+          description: 'SQL dialect used by the s2sql exporter.',
+          default: 'postgres',
+          allowedValues: ['mysql', 'mariadb', 'postgres', 'sqlserver', 'oracle', 'sqlite', 'bigquery', 'snowflake', 'redshift', 'db2']
+        }
+      ]
     }
   ],
   commands: [
@@ -125,7 +172,8 @@ export const BUILTIN_CONVERSION_COMMANDS_MANIFEST: ConversionCommandsManifest = 
       sourceFormat: 'json-structure',
       targetFormat: 'json-schema',
       defaultAutoOpen: true,
-      optionNames: []
+      optionNames: [],
+      cliCommand: 's2j'
     },
     {
       id: 'import.avro.to-json-structure',
@@ -145,7 +193,8 @@ export const BUILTIN_CONVERSION_COMMANDS_MANIFEST: ConversionCommandsManifest = 
       sourceFormat: 'json-structure',
       targetFormat: 'avro',
       defaultAutoOpen: true,
-      optionNames: ['mode', 'uses', 'additional_properties', 'emit_doc']
+      optionNames: ['mode', 'uses', 'additional_properties', 'emit_doc'],
+      cliCommand: 's2a'
     },
     {
       id: 'export.json-structure.to-protobuf',
@@ -155,8 +204,22 @@ export const BUILTIN_CONVERSION_COMMANDS_MANIFEST: ConversionCommandsManifest = 
       sourceFormat: 'json-structure',
       targetFormat: 'protobuf',
       defaultAutoOpen: false,
-      optionNames: ['uses', 'additional_properties', 'emit_comments', 'numbers']
-    }
+      optionNames: ['uses', 'additional_properties', 'emit_comments', 'numbers'],
+      cliCommand: 's2p'
+    },
+    ...structurizeExportCommands.map(([cliCommand, targetFormat, displayName, outputKind, outputName]) => ({
+      id: `export.structurize.${cliCommand}`,
+      converterId: 'structurize-cli',
+      direction: 'export' as const,
+      label: `Export JSON Structure to ${displayName}`,
+      sourceFormat: 'json-structure',
+      targetFormat,
+      defaultAutoOpen: outputKind === 'file',
+      optionNames: cliCommand === 's2sql' ? ['dialect'] : [],
+      cliCommand,
+      outputKind,
+      outputName,
+    }))
   ]
 });
 

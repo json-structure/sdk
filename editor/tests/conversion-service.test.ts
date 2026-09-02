@@ -109,13 +109,11 @@ describe('Phase 5 conversion service', () => {
     const service = new ConversionService({ worker: conversionFixtureWorker() });
     const manifest = service.listCommands();
     expect(manifest.schemaVersion).toBe(1);
-    expect(manifest.commands.map((command) => command.id)).toEqual([
-      'import.jsonschema.to-json-structure',
-      'export.json-structure.to-jsonschema',
-      'import.avro.to-json-structure',
-      'export.json-structure.to-avro',
-      'export.json-structure.to-protobuf',
+    expect(manifest.commands.filter((command) => command.direction === 'export').map((command) => command.cliCommand)).toEqual([
+      's2j', 's2a', 's2p', 's2asn', 's2fbs', 's2k', 's2sql', 's2ib', 's2pq', 's2tsml', 's2cs', 's2py', 's2cpp', 's2csv', 's2rust', 's2ts', 's2java', 's2js', 's2go', 's2graphql', 's2dp', 's2cassandra', 's2jtd', 's2x', 's2cddl', 's2md', 's2cue', 's2thrift', 's2smithy', 's2capnp', 's2raml',
     ]);
+    expect(manifest.commands.filter((command) => command.direction === 'export')).toHaveLength(31);
+    expect(manifest.commands.find((command) => command.cliCommand === 's2sql')?.optionNames).toEqual(['dialect']);
   });
 
   it('runs import preview with progress and lossiness diagnostics without publishing', async () => {

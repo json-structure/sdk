@@ -49,10 +49,10 @@ describe('workbench interaction markup', () => {
     expect(workbenchTitleChrome('example.struct.json', 'embedded')).toBe('');
   });
 
-  it('uses the compact selector for the four primary editor modes', () => {
+  it('uses the compact selector for the five primary editor modes', () => {
     const html = mobileModeSelect('graph');
-    for (const mode of ['design', 'graph', 'source', 'instance']) expect(html).toContain(`value="${mode}"`);
-    for (const mode of ['analysis', 'conversion', 'libraries']) expect(html).not.toContain(`value="${mode}"`);
+    for (const mode of ['design', 'graph', 'source', 'instance', 'conversion']) expect(html).toContain(`value="${mode}"`);
+    for (const mode of ['analysis', 'libraries']) expect(html).not.toContain(`value="${mode}"`);
     expect(html).toContain('value="graph" selected');
   });
 
@@ -76,9 +76,10 @@ describe('workbench interaction markup', () => {
     const html = workbenchShell(snapshot, 'navigation.struct.json', definitions, '/definitions/Domain/Person', [], '/definitions/Domain/Person', 'graph', false);
 
     expect(html).toContain('<nav class="js-activity" aria-label="Editor modes">');
-    for (const mode of ['design', 'graph', 'source', 'instance']) expect(html).toContain(`data-mode="${mode}"`);
+    for (const mode of ['design', 'graph', 'source', 'instance', 'conversion']) expect(html).toContain(`data-mode="${mode}"`);
     expect(html).not.toContain('data-mode="libraries"');
     expect(html).not.toContain('class="js-tabs"');
+    expect(html).not.toContain('title="Convert this structure"');
     expect(html).toContain('data-command="definition.add" title="Add type"');
     expect(html).toContain('data-library-open title="Import type library"');
     expect(html).toContain('role="tree" aria-label="Types by namespace"');
@@ -86,6 +87,11 @@ describe('workbench interaction markup', () => {
     expect(html).toContain('<span>Domain</span><small>2</small>');
     expect(html).toContain('<span>Shared</span><small>1</small>');
     expect(html).toContain('data-select="/definitions/Domain/Person"');
+
+    const convertHtml = workbenchShell(snapshot, 'navigation.struct.json', definitions, '/definitions/Domain/Person', [], '/definitions/Domain/Person', 'conversion', false);
+    expect(convertHtml).toContain('data-mobile-drawer="types" aria-controls="js-outline" aria-haspopup="dialog" aria-expanded="false" hidden');
+    expect(convertHtml).toContain('data-mobile-drawer="inspector" aria-controls="js-inspector" aria-haspopup="dialog" aria-expanded="false" hidden');
+    expect(convertHtml).not.toContain('<strong>Person</strong>');
   });
 
   it('renders native inline property controls inside table cells', () => {

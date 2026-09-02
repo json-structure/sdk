@@ -24,6 +24,9 @@ export interface ConversionCommand {
   targetFormat: string;
   defaultAutoOpen: boolean;
   optionNames?: readonly string[];
+  cliCommand?: string;
+  outputKind?: 'file' | 'directory';
+  outputName?: string;
 }
 
 export interface ConversionCommandsManifest {
@@ -189,6 +192,11 @@ export function parseCommandsManifest(value: unknown): ConversionCommandsManifes
       targetFormat: text(item.targetFormat, `manifest.commands[${index}].targetFormat`),
       defaultAutoOpen: item.defaultAutoOpen ?? true,
       optionNames,
+      cliCommand: item.cliCommand === undefined ? undefined : text(item.cliCommand, `manifest.commands[${index}].cliCommand`),
+      outputKind: item.outputKind === undefined ? undefined : item.outputKind === 'file' || item.outputKind === 'directory'
+        ? item.outputKind
+        : (() => { throw new Error(`manifest.commands[${index}].outputKind must be file or directory.`); })(),
+      outputName: item.outputName === undefined ? undefined : text(item.outputName, `manifest.commands[${index}].outputName`),
     };
   });
   if (new Set(commands.map(({ id }) => id)).size !== commands.length) throw new Error('Command ids must be unique.');

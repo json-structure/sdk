@@ -4,6 +4,7 @@ const CORE_SCHEMA_URI = 'https://json-structure.org/meta/core/v0/#';
 const EXTENDED_SCHEMA_URI = 'https://json-structure.org/meta/extended/v0/#';
 const VALIDATION_SCHEMA_URI = 'https://json-structure.org/meta/validation/v0/#';
 const JSON_SCHEMA_URI = 'https://json-schema.org/draft/2020-12/schema';
+const JSON_OUTPUT_FORMATS = new Set(['avro', 'data-package', 'iceberg', 'json-schema', 'json-structure', 'jtd', 'tmsl']);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -40,11 +41,13 @@ export function validateGeneratedConversionFiles(targetFormat: string, files: Re
   const entries = Object.entries(files);
   if (entries.length === 0) throw new Error('Converter produced no output files.');
   for (const [path, content] of entries) {
+    if (content.byteLength === 0) throw new Error(`Generated output ${path} is empty.`);
     if (targetFormat === 'protobuf' && path.endsWith('.proto')) {
       const text = new TextDecoder().decode(content);
       if (!/^syntax = "proto3";\n/.test(text) || !/\n(?:message|enum) [A-Za-z_][A-Za-z0-9_]* \{\n/.test(text) || !text.endsWith('\n')) throw new Error(`Generated Protobuf output ${path} is not a canonical proto3 source file.`);
       continue;
     }
+    if (!JSON_OUTPUT_FORMATS.has(targetFormat) && targetFormat !== 'protobuf') continue;
     let value: unknown;
     const text = new TextDecoder().decode(content);
     try { value = JSON.parse(text); }
