@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "artifact": {
+    "path": "coverage/corpus-baseline.json",
+    "version": 1,
+    "canonicalization": "json-stable-v1",
+    "sha256": "1938439e907ec45018ab3d319a6b541479f1102386c361493e05cd2a2432c8b0"
+  },
+  "review": {
+    "version": 1,
+    "status": "independent-review-required",
+    "changePolicy": "Corpus baseline changes require a separate reviewed baseline-update workflow; inventory changes cannot update this digest.",
+    "authorizedWorkflow": "coverage-baseline-update",
+    "tokenEnvironment": "JSON_STRUCTURE_BASELINE_UPDATE_TOKEN",
+    "requiredMetadata": ["reviewId", "reason", "approvedBy"]
+  }
+}

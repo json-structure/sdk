@@ -145,11 +145,31 @@ describe('phase 4 graph runtime', () => {
     expect(runtime.assignEdgeLabelLanes()).toEqual(lanes);
   });
 
+  it('keeps adjacent vertical label bands collision-free', () => {
+    const runtime = new GraphRuntime({
+      nodes: [
+        { id: 'a', position: { x: 0, y: 15 } },
+        { id: 'b', position: { x: 100, y: 15 } },
+        { id: 'c', position: { x: 0, y: 16 } },
+        { id: 'd', position: { x: 100, y: 16 } },
+      ],
+      edges: [
+        { id: 'lower', source: 'a', target: 'b', label: 'overlap' },
+        { id: 'upper', source: 'c', target: 'd', label: 'overlap' },
+      ],
+    });
+    const lanes = runtime.assignEdgeLabelLanes();
+    expect(lanes.map(({ edgeId, lane }) => ({ edgeId, lane }))).toEqual([
+      { edgeId: 'lower', lane: 0 },
+      { edgeId: 'upper', lane: 1 },
+    ]);
+  });
   it('validates malformed graphs and reports explicit performance budget violations', () => {
     expect(() => new GraphRuntime({ nodes: [{ id: 'a' }, { id: 'a' }], edges: [] })).toThrow(/unique/);
     expect(() => new GraphRuntime({ nodes: [{ id: 'a' }], edges: [{ id: 'bad', source: 'a', target: 'b' }] }))
       .toThrow(/missing endpoint/);
     const runtime = new GraphRuntime(fixture());
+    expect(() => runtime.assignEdgeLabelLanes(7, 16, { operationBudget: 0 })).toThrow(/operation budget/);
     expect(runtime.evaluateBudget({ maxNodes: 4, maxEdges: 3 })).toEqual({
       withinBudget: false,
       violations: ['nodeCount', 'edgeCount']
@@ -184,5 +204,26 @@ describe('phase 4 graph runtime', () => {
     })).toEqual({ withinBudget: true, violations: [] });
     expect(runtime.queryViewport({ x: 0, y: 0, width: 1_000, height: 800 }, { maxNodes: 100 }).nodes.length)
       .toBeLessThanOrEqual(100);
-  }, 10_000);
+    const laneStarted = Date.now();
+    const lanes = runtime.assignEdgeLabelLanes(7, 16, { operationBudget: 50_000_000 });
+    const laneElapsed = Date.now() - laneStarted;
+    expect(lanes).toHaveLength(20_000);
+    expect(runtime.labelLaneMetrics()).toMatchObject({ labelCount: 20_000, operationBudget: 50_000_000 });
+    expect(runtime.labelLaneMetrics().operationCount).toBeLessThan(50_000_000);
+    expect(laneElapsed).toBeLessThan(10_000);
+  }, 30_000);
+  it('retains relation provenance metadata while exposing deterministic neighbors by direction', () => {
+    const runtime = new GraphRuntime({
+      nodes: [{ id: 'source' }, { id: 'target' }, { id: 'qualifier' }, { id: 'incoming' }],
+      edges: [
+        { id: 'relation', source: 'source', target: 'target', kind: 'relation', cardinality: 'multiple', scope: ['#/definitions/Items'], semanticBinding: 'hasTarget', targetIdentity: { reference: '#/definitions/Target', status: 'resolved' }, relation: { name: 'target', target: { status: 'resolved', value: '/definitions/Target' }, cardinality: { status: 'resolved', value: 'multiple' }, scope: { status: 'resolved', value: ['/definitions/Items'] } } },
+        { id: 'qualifier', source: 'source', target: 'qualifier', kind: 'relation-qualifier', status: 'external', documentUri: 'https://example.test/qualifier.json' },
+        { id: 'back', source: 'incoming', target: 'source', kind: 'relation' },
+      ],
+    });
+    expect(runtime.edge('relation')).toMatchObject({ cardinality: 'multiple', scope: ['#/definitions/Items'], semanticBinding: 'hasTarget', targetIdentity: { status: 'resolved' }, relation: { name: 'target' } });
+    expect(runtime.neighbors('source', 'outgoing')).toEqual(['qualifier', 'target']);
+    expect(runtime.neighbors('source', 'incoming')).toEqual(['incoming']);
+    expect(runtime.neighbors('source', 'both')).toEqual(['incoming', 'qualifier', 'target']);
+  });
 });

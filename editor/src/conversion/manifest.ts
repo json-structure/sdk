@@ -1,5 +1,32 @@
 import { parseCommandsManifest, type ConversionCommandsManifest } from './types.js';
 
+interface StructurizeImportCommand {
+  readonly cliCommand: string;
+  readonly sourceFormat: string;
+  readonly displayName: string;
+  readonly sourceExtensions: readonly string[];
+  readonly options: readonly string[];
+  readonly availability?: 'external-service';
+  readonly availabilityMessage?: string;
+}
+
+const structurizeImportCommands: readonly StructurizeImportCommand[] = [
+  { cliCommand: 'fbs2s', sourceFormat: 'flatbuffers', displayName: 'FlatBuffers', sourceExtensions: ['.fbs'], options: ['namespace'] },
+  { cliCommand: 'j2s', sourceFormat: 'json-schema', displayName: 'JSON Schema', sourceExtensions: ['.json', '.jsons'], options: ['namespace', 'root_class_name'] },
+  { cliCommand: 'k2s', sourceFormat: 'kusto', displayName: 'Kusto', sourceExtensions: ['.kusto'], options: ['kusto_uri', 'kusto_database', 'table_name', 'base_id', 'emit_cloudevents', 'emit_xregistry', 'sample_size', 'infer_choices', 'choice_depth', 'infer_enums'], availability: 'external-service', availabilityMessage: 'Kusto import requires a configured cluster URI, database, and table; local file conversion is not supported.' },
+  { cliCommand: 'json2s', sourceFormat: 'json', displayName: 'JSON data', sourceExtensions: ['.json', '.jsonl', '.ndjson'], options: ['type_name', 'base_id', 'sample_size', 'infer_choices', 'choice_depth', 'infer_enums'] },
+  { cliCommand: 'xml2s', sourceFormat: 'xml', displayName: 'XML data', sourceExtensions: ['.xml'], options: ['type_name', 'base_id', 'sample_size'] },
+  { cliCommand: 'a2s', sourceFormat: 'avro', displayName: 'Avro', sourceExtensions: ['.avsc'], options: ['naming', 'avro_encoding'] },
+  { cliCommand: 'jtd2s', sourceFormat: 'jtd', displayName: 'JSON Type Definition', sourceExtensions: ['.jtd.json', '.jtd'], options: ['namespace'] },
+  { cliCommand: 'cddl2s', sourceFormat: 'cddl', displayName: 'CDDL', sourceExtensions: ['.cddl'], options: ['namespace'] },
+  { cliCommand: 'oas2s', sourceFormat: 'openapi', displayName: 'OpenAPI', sourceExtensions: ['.yaml', '.yml', '.json'], options: ['namespace', 'preserve_composition', 'detect_discriminators', 'lift_inline_schemas'] },
+  { cliCommand: 'cue2s', sourceFormat: 'cue', displayName: 'CUE', sourceExtensions: ['.cue'], options: ['namespace'] },
+  { cliCommand: 'thrift2s', sourceFormat: 'thrift', displayName: 'Apache Thrift', sourceExtensions: ['.thrift'], options: ['namespace'] },
+  { cliCommand: 'smithy2s', sourceFormat: 'smithy', displayName: 'Smithy', sourceExtensions: ['.smithy'], options: ['namespace'] },
+  { cliCommand: 'capnp2s', sourceFormat: 'capnp', displayName: "Cap'n Proto", sourceExtensions: ['.capnp'], options: ['namespace', 'naming', 'avro_encoding'] },
+  { cliCommand: 'raml2s', sourceFormat: 'raml', displayName: 'RAML', sourceExtensions: ['.raml'], options: ['namespace'] },
+];
+
 const structurizeExportCommands = [
   ['s2asn', 'asn1', 'ASN.1', 'file', 'schema.asn'],
   ['s2fbs', 'flatbuffers', 'FlatBuffers', 'file', 'schema.fbs'],
@@ -140,20 +167,49 @@ export const BUILTIN_CONVERSION_COMMANDS_MANIFEST: ConversionCommandsManifest = 
       id: 'structurize-cli',
       displayName: 'Structurize CLI',
       version: 'external',
-      sourceFormats: ['json-structure'],
-      targetFormats: structurizeExportCommands.map(([, format]) => format),
+      sourceFormats: ['json-structure', ...structurizeImportCommands.map((item) => item.sourceFormat)],
+      targetFormats: [...structurizeExportCommands.map(([, format]) => format), 'json-structure'],
       options: [
-        {
-          name: 'dialect',
-          type: 'string',
-          description: 'SQL dialect used by the s2sql exporter.',
-          default: 'postgres',
-          allowedValues: ['mysql', 'mariadb', 'postgres', 'sqlserver', 'oracle', 'sqlite', 'bigquery', 'snowflake', 'redshift', 'db2']
-        }
+        { name: 'dialect', type: 'string', description: 'SQL dialect used by the s2sql exporter.', default: 'postgres', allowedValues: ['mysql', 'mariadb', 'postgres', 'sqlserver', 'oracle', 'sqlite', 'bigquery', 'snowflake', 'redshift', 'db2'] },
+        { name: 'namespace', type: 'string', description: 'Namespace for generated declarations.', default: '' },
+        { name: 'root_class_name', type: 'string', description: 'Root class name used by the j2s converter.', default: 'document' },
+        { name: 'type_name', type: 'string', description: 'Root type name used by inference converters.', default: 'Document' },
+        { name: 'base_id', type: 'string', description: 'Base URI used for inferred schema identity.', default: 'https://example.com/' },
+        { name: 'sample_size', type: 'number', description: 'Maximum number of samples (0 means all).', default: 0, minimum: 0, maximum: 100000 },
+        { name: 'choice_depth', type: 'number', description: 'Maximum nested choice inference depth.', default: 1, minimum: 1, maximum: 64 },
+        { name: 'infer_choices', type: 'boolean', description: 'Infer discriminated choices from samples.', default: false },
+        { name: 'infer_enums', type: 'boolean', description: 'Infer enums from repeated values.', default: false },
+        { name: 'preserve_composition', type: 'boolean', description: 'Preserve composition keywords where supported.', default: false },
+        { name: 'detect_inheritance', type: 'boolean', description: 'Detect inheritance patterns in JSON Schema.', default: true },
+        { name: 'detect_discriminators', type: 'boolean', description: 'Detect discriminator patterns.', default: true },
+        { name: 'lift_inline_schemas', type: 'boolean', description: 'Lift inline OpenAPI schemas into definitions.', default: false },
+        { name: 'convert_empty_objects_to_maps', type: 'boolean', description: 'Convert empty JSON Schema objects to maps.', default: true },
+        { name: 'naming', type: 'string', description: 'Type naming convention.', default: 'default', allowedValues: ['snake', 'camel', 'pascal', 'default'] },
+        { name: 'avro_encoding', type: 'boolean', description: 'Enable Avro encoding for unions.', default: false },
+        { name: 'kusto_uri', type: 'string', description: 'Kusto cluster URI.', default: '' },
+        { name: 'kusto_database', type: 'string', description: 'Kusto database name.', default: '' },
+        { name: 'table_name', type: 'string', description: 'Kusto table name.', default: '' },
+        { name: 'emit_cloudevents', type: 'boolean', description: 'Emit CloudEvents declarations.', default: false },
+        { name: 'emit_xregistry', type: 'boolean', description: 'Emit an xRegistry manifest.', default: false },
       ]
     }
   ],
   commands: [
+    ...structurizeImportCommands.map((item) => ({
+      id: `import.structurize.${item.cliCommand}`,
+      converterId: 'structurize-cli',
+      direction: 'import' as const,
+      label: `Import ${item.displayName} to JSON Structure`,
+      sourceFormat: item.sourceFormat,
+      targetFormat: 'json-structure',
+      defaultAutoOpen: true,
+      optionNames: item.options,
+      cliCommand: item.cliCommand,
+      outputKind: 'file' as const,
+      outputName: 'schema.struct.json',
+      sourceExtensions: item.sourceExtensions,
+      ...(item.availability ? { availability: item.availability, availabilityMessage: item.availabilityMessage } : {}),
+    })),
     {
       id: 'import.jsonschema.to-json-structure',
       converterId: 'jsonschema',

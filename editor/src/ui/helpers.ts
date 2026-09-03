@@ -1,4 +1,5 @@
 import type { Diagnostic, DocumentSnapshot, JsonPointer } from '../contracts.js';
+import type { GraphRelationMetadata, GraphTargetIdentity } from '../graph.js';
 import type { DefinitionProjection, ImportResolutionFact, ReferenceResolutionFact, ResolvedReferenceKind, ResolutionStatus } from '../model.js';
 import { resolveReferences } from '../resolver.js';
 
@@ -27,6 +28,8 @@ export interface GraphNode {
   readonly documentUri?: string;
   readonly provenance?: 'import' | 'importdefs';
   readonly selectable?: boolean;
+  readonly contextDimmed?: boolean;
+  readonly memberCount?: number;
 }
 
 /** A directed graph edge derived from inheritance, references, and relations. */
@@ -44,15 +47,39 @@ export interface GraphEdge {
   readonly provenance?: 'import' | 'importdefs';
   readonly reason?: string;
   readonly selectable?: boolean;
+  readonly relationPointer?: JsonPointer;
+  readonly relationName?: string;
+  readonly cardinality?: 'single' | 'multiple';
+  readonly scope?: JsonPointer | readonly JsonPointer[];
+  readonly normalizedScopes?: readonly JsonPointer[];
+  readonly scopeForm?: 'scalar' | 'array';
+  readonly qualifierReference?: string;
+  readonly declaringSource?: JsonPointer;
+  readonly relation?: GraphRelationMetadata;
+  readonly targetIdentity?: GraphTargetIdentity;
+  readonly qualifierIdentity?: GraphTargetIdentity;
+  readonly targetIdentityProperties?: readonly string[];
+  readonly qualifierIdentityProperties?: readonly string[];
+  readonly memberEdgeIds?: readonly string[];
+  readonly memberPointers?: readonly JsonPointer[];
+  readonly contextDimmed?: boolean;
 }
 
 export interface GraphProjection { readonly nodes: readonly GraphNode[]; readonly edges: readonly GraphEdge[]; }
 
+/** Stable graph identity for the authored document root, including inline schemas. */
+export const GRAPH_DOCUMENT_NODE_ID = 'graph:document-root' as const;
+
 /** Returns whether a document value is an inline Core type declaration. */
 export function isInlineRootSchema(value: unknown): value is Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const type = (value as Record<string, unknown>).type;
-  return typeof type === 'string' ? type.length > 0 : !!type && typeof type === 'object' && !Array.isArray(type) && typeof (type as Record<string, unknown>).$ref === 'string';
+  const record = value as Record<string, unknown>;
+  const type = record.type;
+  if (typeof type === 'string') return type.length > 0;
+  if (Array.isArray(type)) return type.length > 0;
+  if (type && typeof type === 'object' && !Array.isArray(type) && typeof (type as Record<string, unknown>).$ref === 'string') return true;
+  // Composition-only roots have no `type`, but are still editable schemas.
+  return ['allOf', 'anyOf', 'oneOf', 'not', 'if', 'then', 'else'].some((keyword) => Object.prototype.hasOwnProperty.call(record, keyword));
 }
 
 /** Filters visible reusable types by name and namespace without changing selection. */
@@ -107,25 +134,67 @@ export function projectGraph(snapshot: DocumentSnapshot): GraphProjection {
   for (const definition of definitions) addNamespaceNodes(nodes, nodeIds, definition.namespacePointer, model.uri);
   const resolution = model.projections.resolution ?? resolveReferences(model);
   resolution.imports.forEach((fact) => projectImportFact(snapshot, fact, nodes, nodeIds, edges));
-  resolution.references.forEach((fact) => projectReferenceFact(snapshot, definitions, fact, nodes, nodeIds, edges));
+  resolution.references.forEach((fact) => projectReferenceFact(snapshot, definitions, fact, resolution.references, nodes, nodeIds, edges));
   return { nodes, edges };
 }
 
-function projectReferenceFact(snapshot: DocumentSnapshot, definitions: readonly DefinitionProjection[], fact: ReferenceResolutionFact, nodes: GraphNode[], nodeIds: Set<string>, edges: GraphEdge[]): void {
+function projectReferenceFact(snapshot: DocumentSnapshot, definitions: readonly DefinitionProjection[], fact: ReferenceResolutionFact, facts: readonly ReferenceResolutionFact[], nodes: GraphNode[], nodeIds: Set<string>, edges: GraphEdge[]): void {
   const owner = fact.kind === 'root' ? ensureDocumentNode(snapshot, nodes, nodeIds) : owningNode(definitions, nodes, fact.pointer) ?? (snapshotHasInlineRoot(snapshot) ? ensureDocumentNode(snapshot, nodes, nodeIds) : undefined);
   if (!owner) return;
   const status = graphStatus(snapshot, fact.status, fact.targetDocumentUri);
   const targetId = targetNode(fact, status, nodes, nodeIds);
+  const definition = owningDefinition(definitions, fact.pointer);
+  const relation = definition?.relations.find((candidate) => fact.pointer === `${candidate.pointer}/targettype/$ref` || fact.pointer === `${candidate.pointer}/qualifiertype/$ref`);
+  const qualifierFact = relation ? facts.find((candidate) => candidate.pointer === `${relation.pointer}/qualifiertype/$ref`) : undefined;
+  const qualifierStatus = qualifierFact ? graphStatus(snapshot, qualifierFact.status, qualifierFact.targetDocumentUri) : undefined;
+  const cardinality = relation?.cardinality === 'single' || relation?.cardinality === 'multiple' ? relation.cardinality : undefined;
+  const normalizedScope = normalizeRelationScope(relation?.scope);
+  const normalizedScopes = normalizeRelationScopes(relation?.scope);
+  const targetIdentity = graphTargetIdentity(fact, status);
+  const qualifierIdentity = qualifierFact && qualifierStatus ? graphTargetIdentity(qualifierFact, qualifierStatus) : relation?.qualifierTypeRef
+    ? { reference: relation.qualifierTypeRef, status: 'unresolved' as const }
+    : undefined;
+  const relationMetadata = relation ? {
+    name: relation.name,
+    target: graphValue(fact, status),
+    ...(qualifierFact && qualifierStatus ? { qualifier: graphValue(qualifierFact, qualifierStatus) } : {}),
+    ...(cardinality ? { cardinality: { status: 'resolved' as const, value: cardinality } } : {}),
+    ...(normalizedScope !== undefined ? { scope: { status: 'resolved' as const, value: normalizedScope } } : {}),
+  } satisfies GraphRelationMetadata : undefined;
   edges.push({
     id: `${owner}:${edgeKind(fact.kind)}:${fact.pointer}:${targetId}`,
-    from: owner, to: targetId, pointer: edgePointer(fact), label: referenceLabel(fact), kind: edgeKind(fact.kind), status,
+    from: owner, to: targetId, pointer: edgePointer(fact),
+    label: relation && fact.kind === 'relation-target'
+      ? relation.name
+      : relation && fact.kind === 'relation-qualifier'
+        ? `${relation.name} qualifier`
+        : referenceLabel(fact),
+    kind: edgeKind(fact.kind), status,
     target: fact.target, targetPointer: fact.targetPointer, documentUri: fact.targetDocumentUri,
-    provenance: fact.importOrigins.at(-1)?.provenance, reason: fact.reason
+    provenance: fact.importOrigins.at(-1)?.provenance, reason: fact.reason,
+    ...(relation ? {
+      relationPointer: relation.pointer,
+      relationName: relation.name,
+      declaringSource: definition?.pointer,
+      targetIdentity,
+      ...(cardinality ? { cardinality } : {}),
+      ...(normalizedScope !== undefined ? { scope: normalizedScope } : {}),
+      ...(normalizedScopes ? { normalizedScopes } : {}),
+      ...(relation.scope !== undefined ? { scopeForm: Array.isArray(relation.scope) ? 'array' as const : 'scalar' as const } : {}),
+      ...(relation.qualifierTypeRef ? { qualifierReference: relation.qualifierTypeRef } : {}),
+      ...(relationMetadata ? { relation: relationMetadata } : {}),
+      ...(qualifierIdentity ? { qualifierIdentity } : {}),
+      ...(identityForReference(definitions, fact.normalizedTarget) ? { targetIdentityProperties: identityForReference(definitions, fact.normalizedTarget) } : {}),
+      ...(identityForReference(definitions, qualifierFact?.normalizedTarget) ? { qualifierIdentityProperties: identityForReference(definitions, qualifierFact?.normalizedTarget) } : {}),
+    } : {}),
   });
 }
 
 function projectImportFact(snapshot: DocumentSnapshot, fact: ImportResolutionFact, nodes: GraphNode[], nodeIds: Set<string>, edges: GraphEdge[]): void {
   const namespace = importDestination(fact.namespacePointer);
+  const source = namespace === '/definitions'
+    ? ensureDocumentNode(snapshot, nodes, nodeIds)
+    : namespace;
   addNamespaceNodes(nodes, nodeIds, namespace, snapshot.uri);
   const status = graphStatus(snapshot, fact.status, fact.documentUri);
   const targets = fact.importedPointers.length ? fact.importedPointers : [`graph:import:${fact.pointer}`];
@@ -134,7 +203,7 @@ function projectImportFact(snapshot: DocumentSnapshot, fact: ImportResolutionFac
       nodes.push({
         id: target, pointer: target.startsWith('/') ? target : fact.pointer,
         label: target.startsWith('/') ? pointerLabel(target) : fact.source,
-        namespace: namespaceLabel(namespace), kind: target.startsWith('/') ? 'type' : 'target', status,
+        namespace: namespace === '/definitions' ? 'root' : namespaceLabel(namespace), kind: target.startsWith('/') ? 'type' : 'target', status,
         target: fact.source, documentUri: fact.documentUri, provenance: fact.provenance, selectable: false
       });
       nodeIds.add(target);
@@ -143,7 +212,7 @@ function projectImportFact(snapshot: DocumentSnapshot, fact: ImportResolutionFac
       nodes[index] = { ...nodes[index]!, status, documentUri: fact.documentUri, provenance: fact.provenance, target: fact.source };
     }
     edges.push({
-      id: `${namespace}:import:${fact.pointer}:${target}`, from: namespace, to: target,
+      id: `${source}:import:${fact.pointer}:${target}`, from: source, to: target,
       pointer: fact.pointer, label: fact.provenance === 'import' ? '$import' : '$importdefs', kind: 'import', status,
       target: fact.source, documentUri: fact.documentUri, provenance: fact.provenance, reason: fact.reason
     });
@@ -159,7 +228,47 @@ export function projectLegacyFacts(snapshot: DocumentSnapshot, definitions: read
     if (relation.targetTypeRef) facts.push(legacyRelationFact(relation.pointer, relation.targetTypeRef, 'relation-target', nodeIds));
     if (relation.qualifierTypeRef) facts.push(legacyRelationFact(relation.pointer, relation.qualifierTypeRef, 'relation-qualifier', nodeIds));
   }
-  facts.forEach((fact) => projectReferenceFact(snapshot, definitions, fact, nodes, nodeIds, edges));
+  facts.forEach((fact) => projectReferenceFact(snapshot, definitions, fact, facts, nodes, nodeIds, edges));
+}
+
+function owningDefinition(definitions: readonly DefinitionProjection[], pointer: JsonPointer): DefinitionProjection | undefined {
+  return definitions
+    .filter((definition) => pointer === definition.pointer || pointer.startsWith(`${definition.pointer}/`))
+    .sort((left, right) => right.pointer.length - left.pointer.length)[0];
+}
+
+function normalizeRelationScope(scope: string | readonly string[] | undefined): JsonPointer | readonly JsonPointer[] | undefined {
+  if (scope === undefined) return undefined;
+  return typeof scope === 'string' ? normalizeScopePointer(scope) : scope.map(normalizeScopePointer);
+}
+
+function normalizeRelationScopes(scope: string | readonly string[] | undefined): readonly JsonPointer[] | undefined {
+  if (scope === undefined) return undefined;
+  return (Array.isArray(scope) ? scope : [scope]).map(normalizeScopePointer);
+}
+
+function normalizeScopePointer(scope: string): JsonPointer {
+  return scope === '#' ? '' : scope.startsWith('#') ? scope.slice(1) : scope;
+}
+
+function graphTargetIdentity(fact: ReferenceResolutionFact, status: GraphResolutionStatus): GraphTargetIdentity {
+  return {
+    reference: fact.target,
+    status,
+    ...(fact.targetPointer ? { pointer: fact.targetPointer } : {}),
+    ...(fact.targetDocumentUri ? { documentUri: fact.targetDocumentUri } : {}),
+    ...(fact.importOrigins.at(-1)?.provenance ? { provenance: fact.importOrigins.at(-1)!.provenance } : {}),
+  };
+}
+
+function graphValue(fact: ReferenceResolutionFact, status: GraphResolutionStatus): GraphRelationMetadata['target'] {
+  return status === 'resolved' || status === 'external'
+    ? { status, value: fact.normalizedTarget ?? fact.targetPointer ?? normalizeRef(fact.target) ?? '' }
+    : { status, raw: fact.target, reason: fact.reason };
+}
+
+function identityForReference(definitions: readonly DefinitionProjection[], pointer: string | undefined): readonly string[] | undefined {
+  return pointer ? definitions.find((definition) => definition.pointer === pointer)?.identity : undefined;
 }
 
 function legacyRelationFact(pointer: string, target: string, kind: 'relation-target' | 'relation-qualifier', nodeIds: ReadonlySet<string>): ReferenceResolutionFact {
@@ -200,13 +309,13 @@ function addNamespaceNodes(nodes: GraphNode[], nodeIds: Set<string>, pointer: Js
   for (let index = 0; index < segments.length; index++) {
     const id = `/definitions/${segments.slice(0, index + 1).join('/')}`;
     if (nodeIds.has(id)) continue;
-    nodes.push({ id, pointer: id, label: pointerLabel(id), namespace: namespaceLabel(id.slice(0, id.lastIndexOf('/'))), kind: 'namespace', status: 'resolved', documentUri, selectable: true });
+    nodes.push({ id, pointer: id, label: pointerLabel(id), namespace: pointerLabel(id), kind: 'namespace', status: 'resolved', documentUri, selectable: true });
     nodeIds.add(id);
   }
 }
 
 function ensureDocumentNode(snapshot: DocumentSnapshot, nodes: GraphNode[], nodeIds: Set<string>): string {
-  const id = 'graph:document';
+  const id = GRAPH_DOCUMENT_NODE_ID;
   if (!nodeIds.has(id)) {
     nodes.unshift({ id, pointer: '', label: snapshot.model?.name ?? 'Document', namespace: 'document', kind: 'document', status: 'resolved', documentUri: snapshot.uri, selectable: true });
     nodeIds.add(id);

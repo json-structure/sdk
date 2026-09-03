@@ -33,6 +33,10 @@
   "contributes": {
     "commands": [
       {
+        "command": "jsonStructure.newDocument",
+        "title": "JSON Structure: New Document"
+      },
+      {
         "command": "jsonStructure.clearCache",
         "title": "JSON Structure: Clear Schema Cache"
       },
@@ -134,7 +138,8 @@
     "test": "node ./dist/test/runTest.js",
     "test:coverage": "c8 --include=dist/**/*.js --exclude=dist/test/**/*.js node ./dist/test/runTest.js",
     "lint": "eslint src --ext ts",
-    "package": "vsce package --no-dependencies"
+    "package": "vsce package --no-dependencies",
+    "test:artifact": "npm run compile-tests && node -e \"require('./dist/test/artifact-integrity.js').assertRendererArtifactIntegrity().catch(error => { console.error(error); process.exitCode = 1; })\""
   },
   "devDependencies": {
     "@types/mocha": "^10.0.6",

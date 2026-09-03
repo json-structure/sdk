@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -83,6 +84,27 @@ describe('release integrity foundations', () => {
     expect(await verifyUpdateManifest(manifest, root, () => false)).toEqual(['update metadata signature is invalid']);
     await writeFile(path.join(root, 'nested', 'app.txt'), 'tampered');
     expect(await verifyUpdateManifest(manifest, root, () => true)).toEqual(expect.arrayContaining([expect.stringContaining('mismatch')]));
+  });
+
+  it('fails release verification when the corpus trust digest is stale', async () => {
+    const root = await fixture();
+    const coverage = path.join(root, 'coverage');
+    await mkdir(coverage);
+    const baseline = { version: 1 };
+    const baselineText = JSON.stringify(baseline, null, 2) + '\n';
+    await writeFile(path.join(coverage, 'corpus-baseline.json'), baselineText);
+    const digest = createHash('sha256').update(baselineText, 'utf8').digest('hex');
+    await writeFile(path.join(coverage, 'release-integrity.json'), JSON.stringify({
+      schemaVersion: 1,
+      artifact: { path: 'coverage/corpus-baseline.json', version: 1, canonicalization: 'json-stable-v1', sha256: digest },
+      review: { version: 1, status: 'independent-review-required', changePolicy: 'separate review', authorizedWorkflow: 'coverage-baseline-update', tokenEnvironment: 'JSON_STRUCTURE_BASELINE_UPDATE_TOKEN', requiredMetadata: ['reviewId', 'reason', 'approvedBy'] }
+    }, null, 2) + '\n');
+    const script = path.join(process.cwd(), 'scripts', 'release-integrity.mjs');
+    expect(spawnSync(process.execPath, [script, 'scan', root], { encoding: 'utf8' }).status).toBe(0);
+    await writeFile(path.join(coverage, 'corpus-baseline.json'), JSON.stringify({ version: 1, changed: true }, null, 2) + '\n');
+    const stale = spawnSync(process.execPath, [script, 'scan', root], { encoding: 'utf8' });
+    expect(stale.status).toBe(1);
+    expect(stale.stderr).toContain('canonical SHA-256 differs from release integrity manifest');
   });
 
   it('runs the release script contract against generated artifacts', async () => {

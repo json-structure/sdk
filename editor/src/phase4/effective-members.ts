@@ -236,10 +236,21 @@ function missingResult(target: string): MutableResult {
 }
 
 function effectiveBasePointer(owner: ResolvedSchemaLocation, base: ResolvedSchemaLocation): string {
-  if (owner.imports.length === 0 || !owner.sourcePointer.startsWith('/definitions/') || !base.effectivePointer.startsWith('/definitions/')) return base.effectivePointer;
-  const ownerSuffix = owner.sourcePointer.slice('/definitions'.length);
-  if (!owner.effectivePointer.endsWith(ownerSuffix)) return base.effectivePointer;
-  return `${owner.effectivePointer.slice(0, -ownerSuffix.length)}${base.effectivePointer.slice('/definitions'.length)}`;
+  if (owner.imports.length === 0 || !base.effectivePointer.startsWith('/definitions/')) return base.effectivePointer;
+  if (owner.sourcePointer.startsWith('/definitions/')) {
+    const ownerSuffix = owner.sourcePointer.slice('/definitions'.length);
+    if (owner.effectivePointer.endsWith(ownerSuffix)) {
+      return `${owner.effectivePointer.slice(0, -ownerSuffix.length)}${base.effectivePointer.slice('/definitions'.length)}`;
+    }
+    return base.effectivePointer;
+  }
+  if (owner.sourcePointer === '') {
+    const separator = owner.effectivePointer.lastIndexOf('/');
+    if (separator >= '/definitions'.length) {
+      return `${owner.effectivePointer.slice(0, separator)}${base.effectivePointer.slice('/definitions'.length)}`;
+    }
+  }
+  return base.effectivePointer;
 }
 
 function normalizeTarget(target: string): string {

@@ -1,14 +1,27 @@
 import { describe, expect, it } from 'vitest';
 import {
+  BUNDLED_CATALOGS,
+  BUNDLED_CATALOG_PROVIDERS,
+  BUNDLED_CF_STANDARD_NAME_ENTRIES,
+  BUNDLED_DCTERMS_ENTRIES,
   BUNDLED_ISO_4217_ENTRIES,
   BUNDLED_ISO_4217_PROVIDER,
+  BUNDLED_JSON_STRUCTURE_UNITS_ENTRIES,
+  BUNDLED_QUDT_QUANTITY_KIND_ENTRIES,
+  BUNDLED_SCHEMA_ORG_ENTRIES,
   BUNDLED_SEMANTIC_ENTRIES,
   BUNDLED_SEMANTIC_PROVIDER,
+  BUNDLED_SKOS_PROV_ENTRIES,
+  BUNDLED_SOSA_ENTRIES,
   BUNDLED_UCUM_ENTRIES,
   BUNDLED_UCUM_PROVIDER,
   CatalogRegistry,
   PROTOCOL_VERSION,
   bundledCatalogResult,
+  catalogCustomValueKind,
+  createBundledCatalogProvider,
+  createCatalogRegistry,
+  type CatalogFamily,
   type CatalogProviderManifest,
   type CatalogProviderResult,
   type CatalogSearchRequest
@@ -26,6 +39,70 @@ function result(request: ReturnType<CatalogRegistry['createRequest']>, providerI
 }
 
 describe('host-neutral annotation catalogs', () => {
+  it('registers the exact offline built-in provider inventory with versioned provenance and counts', () => {
+    const registry = createCatalogRegistry();
+    expect(registry.listProviders().map((provider) => provider.id)).toEqual([
+      'bundled.cf-standard-names',
+      'bundled.dublin-core-terms',
+      'bundled.iso-4217',
+      'bundled.json-structure-units',
+      'bundled.qudt-quantity-kinds',
+      'bundled.schema-org',
+      'bundled.semantic-annotations',
+      'bundled.skos-prov-o',
+      'bundled.sosa',
+      'bundled.ucum'
+    ]);
+    expect(BUNDLED_CATALOG_PROVIDERS).toHaveLength(10);
+    expect(Object.fromEntries(BUNDLED_CATALOGS.map(({ manifest, entries }) => [manifest.id, entries.length]))).toEqual({
+      'bundled.json-structure-units': 22,
+      'bundled.ucum': 113,
+      'bundled.iso-4217': 179,
+      'bundled.qudt-quantity-kinds': 13,
+      'bundled.cf-standard-names': 6,
+      'bundled.sosa': 7,
+      'bundled.schema-org': 9,
+      'bundled.dublin-core-terms': 8,
+      'bundled.skos-prov-o': 7,
+      'bundled.semantic-annotations': 67
+    });
+    for (const provider of registry.listProviders()) {
+      expect(provider.kind).toBe('bundled');
+      expect(provider.source).toMatch(/^[a-z][a-z0-9+.-]*:/i);
+      expect(provider.version).not.toBe('');
+      expect(provider.entryCount).toBeGreaterThan(0);
+    }
+  });
+
+  it('ships representative exact values and semantic kinds in each distinct provider', () => {
+    expect(BUNDLED_JSON_STRUCTURE_UNITS_ENTRIES).toContainEqual(expect.objectContaining({ family: 'unit', value: 'm/s^2', label: 'metres per second squared' }));
+    expect(BUNDLED_QUDT_QUANTITY_KIND_ENTRIES).toContainEqual(expect.objectContaining({
+      family: 'semanticConcept', value: { reference: 'http://qudt.org/vocab/quantitykind/Length', kind: 'qudt-quantity-kind' }
+    }));
+    expect(BUNDLED_CF_STANDARD_NAME_ENTRIES).toContainEqual(expect.objectContaining({
+      family: 'observedProperty', value: { reference: expect.stringContaining('#air_temperature'), kind: 'cf-standard-name' }
+    }));
+    expect(BUNDLED_SOSA_ENTRIES).toContainEqual(expect.objectContaining({ value: { reference: 'http://www.w3.org/ns/sosa/Sensor', kind: 'owl-class' } }));
+    expect(BUNDLED_SCHEMA_ORG_ENTRIES).toContainEqual(expect.objectContaining({ value: { reference: 'https://schema.org/name', kind: 'rdf-property' } }));
+    expect(BUNDLED_DCTERMS_ENTRIES).toContainEqual(expect.objectContaining({ value: { reference: 'http://purl.org/dc/terms/title', kind: 'dcterms-property' } }));
+    expect(BUNDLED_SKOS_PROV_ENTRIES).toContainEqual(expect.objectContaining({ value: { reference: 'http://www.w3.org/ns/prov#wasDerivedFrom', kind: 'owl-object-property' } }));
+  });
+
+  it('uses one generic bundled provider adapter and exposes custom values only for open families', async () => {
+    const registry = createCatalogRegistry();
+    const request = registry.createRequest('generic-bundled', 1, 'semanticConcept', 'length');
+    const provider = createBundledCatalogProvider('bundled.qudt-quantity-kinds');
+    const result = await registry.search(request, [provider]);
+    expect(result.suggestions[0]).toMatchObject({
+      label: 'Length',
+      value: { reference: 'http://qudt.org/vocab/quantitykind/Length', kind: 'qudt-quantity-kind' }
+    });
+    expect(() => createBundledCatalogProvider('missing')).toThrow('Unknown bundled catalog provider');
+    expect((['unit', 'ucumUnit', 'currency'] as CatalogFamily[]).map(catalogCustomValueKind)).toEqual(['string', 'string', 'string']);
+    expect((['semanticConcept', 'observedProperty'] as CatalogFamily[]).map(catalogCustomValueKind)).toEqual(['reference', 'reference']);
+    expect((['semanticRole', 'derivation', 'statistic', 'cadence'] as CatalogFamily[]).map(catalogCustomValueKind)).toEqual(['closed', 'closed', 'closed', 'closed']);
+  });
+
   it('registers bundled, workspace, HTTPS, and host manifests without an I/O API', () => {
     const registry = new CatalogRegistry();
     manifests.forEach((manifest) => registry.register(manifest));
@@ -268,16 +345,15 @@ describe('host-neutral annotation catalogs', () => {
 
   it('ships semantic families through the existing advisory provider contract', () => {
     const families = new Set(BUNDLED_SEMANTIC_ENTRIES.map((entry) => entry.family));
-    expect(BUNDLED_SEMANTIC_ENTRIES).toHaveLength(73);
+    expect(BUNDLED_SEMANTIC_ENTRIES).toHaveLength(67);
     expect(families).toEqual(new Set(BUNDLED_SEMANTIC_PROVIDER.families));
     expect(families).toEqual(new Set([
-      'semanticConcept', 'observedProperty', 'semanticRole', 'derivation', 'statistic',
-      'codedValues', 'measurementConditioning', 'referenceRole', 'phenomenonTimeRelation',
+      'semanticRole', 'derivation', 'statistic', 'codedValues', 'measurementConditioning', 'referenceRole', 'phenomenonTimeRelation',
       'temporalReferenceSystem', 'cadence', 'coordinateReferenceSystem', 'vectorReferenceFrame',
       'tensorReferenceFrame', 'frameTransform', 'linearReferenceSystem', 'colorSpace',
       'audioChannelLayout', 'spectralBandSet'
     ]));
-    expect(BUNDLED_SEMANTIC_PROVIDER.trusted).toBe(false);
+    expect(BUNDLED_SEMANTIC_PROVIDER.trusted).toBe(true);
   });
 
   it('ranks semantic object values deterministically and emits exact JSON previews', () => {

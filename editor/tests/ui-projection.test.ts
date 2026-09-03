@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DocumentSession } from '../src/session.js';
-import { diagnosticsForPointer, filterTypes, isInlineRootSchema, pointerLabel, projectGraph, projectInspectorSections, projectProperties, projectSchemaInspectorSections } from '../src/ui/helpers.js';
+import { diagnosticsForPointer, filterTypes, GRAPH_DOCUMENT_NODE_ID, isInlineRootSchema, pointerLabel, projectGraph, projectInspectorSections, projectProperties, projectSchemaInspectorSections } from '../src/ui/helpers.js';
 import { propertySchemaWithTypes } from '../src/ui/index.js';
 
 const text = `{
@@ -115,9 +115,9 @@ describe('UI projection helpers', () => {
 
   it('includes inline roots and the references they own in the graph', () => {
     const graph = projectGraph(new DocumentSession('memory://inline-graph', '{"type":"object","properties":{"manager":{"type":{"$ref":"#/definitions/Person"}}},"definitions":{"Person":{"type":"object","$extends":"#/definitions/Base"},"Base":{"type":"object"}}}').snapshot());
-    expect(graph.nodes).toContainEqual(expect.objectContaining({ id: 'graph:document', pointer: '', kind: 'document' }));
+    expect(graph.nodes).toContainEqual(expect.objectContaining({ id: GRAPH_DOCUMENT_NODE_ID, pointer: '', kind: 'document' }));
     expect(graph.edges).toEqual(expect.arrayContaining([
-      expect.objectContaining({ from: 'graph:document', kind: 'reference', label: 'manager', to: '/definitions/Person' }),
+      expect.objectContaining({ from: GRAPH_DOCUMENT_NODE_ID, kind: 'reference', label: 'manager', to: '/definitions/Person' }),
       expect.objectContaining({ from: '/definitions/Person', kind: 'inheritance', to: '/definitions/Base' })
     ]));
   });

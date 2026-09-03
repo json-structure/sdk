@@ -78,7 +78,8 @@ function validPattern(value: unknown): value is string {
   return compilation.status === 'ready' || compilation.status === 'unsupported';
 }
 function validSchema(value: unknown): value is Readonly<Record<string, unknown>> {
-  return isRecord(value) && Object.prototype.hasOwnProperty.call(value, 'type');
+  return isRecord(value) && (Object.prototype.hasOwnProperty.call(value, 'type') ||
+    ['allOf', 'anyOf', 'oneOf', 'not', 'if', 'then', 'else'].some((keyword) => Object.prototype.hasOwnProperty.call(value, keyword)));
 }
 function validSchemaMap(value: unknown): value is Readonly<Record<string, Readonly<Record<string, unknown>>>> {
   return isRecord(value) && Object.entries(value).every(([pattern, schema]) => validPattern(pattern) && validSchema(schema));

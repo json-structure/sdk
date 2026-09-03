@@ -114,6 +114,8 @@ describe('Phase 5 conversion service', () => {
     ]);
     expect(manifest.commands.filter((command) => command.direction === 'export')).toHaveLength(31);
     expect(manifest.commands.find((command) => command.cliCommand === 's2sql')?.optionNames).toEqual(['dialect']);
+    expect(manifest.commands.find((command) => command.cliCommand === 'oas2s')?.optionNames).toEqual(['namespace', 'preserve_composition', 'detect_discriminators', 'lift_inline_schemas']);
+    expect(service.prepare('import.structurize.oas2s', { detect_discriminators: false }).effectiveOptions.detect_discriminators).toBe(false);
   });
 
   it('runs import preview with progress and lossiness diagnostics without publishing', async () => {
@@ -268,4 +270,82 @@ describe('Phase 5 conversion service', () => {
       expect(result.runtime.state).toBe('completed');
     }
   });
+
+  it('uses the typed effective-import capability only when imports are declared', async () => {
+    const resolveImports = vi.fn(async (request: { source: Uint8Array }) => {
+      expect(new TextDecoder().decode(request.source)).toContain('$import');
+      return encoder.encode('{"name":"Order","type":"object","properties":{}}');
+    });
+    const service = new ConversionService({ worker: conversionFixtureWorker(), effectiveImports: { resolve: resolveImports } });
+    const result = await service.execute({
+      operationId: 'effective-imports',
+      commandId: 'export.json-structure.to-avro',
+      sourceName: 'order.struct.json',
+      source: encoder.encode('{"$import":"https://example.test/base.struct.json","$root":"#/definitions/Order"}'),
+      preview: true,
+    });
+    expect(result.runtime.state).toBe('completed');
+    expect(resolveImports).toHaveBeenCalledTimes(1);
+  });
+
+  it('discovers only root and namespace-definition imports, not payload literal keys', async () => {
+    const resolveImports = vi.fn(async () => encoder.encode('{"name":"Order","type":"object","properties":{}}'));
+    const service = new ConversionService({ worker: conversionFixtureWorker(), effectiveImports: { resolve: resolveImports } });
+    const payload = await service.execute({
+      operationId: 'payload-import-literals',
+      commandId: 'export.json-structure.to-avro',
+      sourceName: 'payload.struct.json',
+      source: encoder.encode(JSON.stringify({ name: 'Order', type: 'object', properties: { payload: { type: 'string', default: { $import: 'literal' }, const: { $importdefs: 'literal' } } } })),
+      preview: true,
+    });
+    expect(payload.runtime.state).toBe('completed');
+    expect(resolveImports).not.toHaveBeenCalled();
+
+    const namespace = await service.execute({
+      operationId: 'namespace-import',
+      commandId: 'export.json-structure.to-avro',
+      sourceName: 'namespace.struct.json',
+      source: encoder.encode(JSON.stringify({ definitions: { Api: { $import: 'https://example.test/api.struct.json' } }, $root: '#/definitions/Api' })),
+      preview: true,
+    });
+    expect(namespace.runtime.state).toBe('completed');
+    expect(resolveImports).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns cancellation state when effective-import resolution is aborted and permits retry', async () => {
+    let calls = 0;
+    const resolveImports = vi.fn(({ signal }: { signal: AbortSignal }) => {
+      calls++;
+      if (calls === 1) return new Promise<Uint8Array>((_resolve, reject) => signal.addEventListener('abort', () => { const error = new Error('deferred import aborted'); error.name = 'AbortError'; reject(error); }, { once: true }));
+      return Promise.resolve(encoder.encode('{"name":"Order","type":"object","properties":{}}'));
+    });
+    const service = new ConversionService({ worker: conversionFixtureWorker(), effectiveImports: { resolve: resolveImports } });
+    const controller = new AbortController();
+    const pending = service.execute({
+      operationId: 'deferred-import-cancel',
+      commandId: 'export.json-structure.to-avro',
+      sourceName: 'deferred.struct.json',
+      source: encoder.encode('{"$import":"https://example.test/base.struct.json","$root":"#/definitions/Order"}'),
+      preview: true,
+      signal: controller.signal,
+    });
+    await Promise.resolve();
+    controller.abort();
+    const cancelled = await pending;
+    expect(cancelled.runtime.state).toBe('cancelled');
+    expect(cancelled.runtime.states).toEqual(['idle', 'preparing', 'cancelled']);
+    expect(cancelled.diagnostics).toContainEqual(expect.objectContaining({ code: 'conversion.runtime.cancelled', severity: 'info' }));
+
+    const retry = await service.execute({
+      operationId: 'deferred-import-retry',
+      commandId: 'export.json-structure.to-avro',
+      sourceName: 'deferred.struct.json',
+      source: encoder.encode('{"$import":"https://example.test/base.struct.json","$root":"#/definitions/Order"}'),
+      preview: true,
+      signal: new AbortController().signal,
+    });
+    expect(retry.runtime.state).toBe('completed');
+    expect(resolveImports).toHaveBeenCalledTimes(2);
+  });
+
 });

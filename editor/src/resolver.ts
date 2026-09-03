@@ -30,7 +30,24 @@ export type ExternalDocumentInput = NormalizedDocument | DocumentSnapshot | Exte
 export interface ResolveReferencesResult extends ReferenceResolutionProjection {
   readonly diagnostics: readonly Diagnostic[];
 }
+/** Describes a declaration in the effective import namespace while retaining its source identity. */
+export interface EffectiveDeclarationProjection {
+  readonly pointer: JsonPointer;
+  readonly sourcePointer: JsonPointer;
+  readonly documentUri: string;
+  readonly definition: DefinitionProjection;
+  readonly importOrigins: readonly ImportOrigin[];
+}
 
+/** Result supplied to integrations that need import-resolved declarations and diagnostics. */
+export interface EffectiveDocumentResolution extends ReferenceResolutionProjection {
+  readonly status: ResolutionStatus;
+  readonly declarations: readonly EffectiveDeclarationProjection[];
+  readonly diagnostics: readonly Diagnostic[];
+}
+
+/** Callback contract for integrations that need the effective import namespace. */
+export type EffectiveDocumentResolver = (document: NormalizedDocument, externalDocuments?: readonly ExternalDocumentInput[]) => EffectiveDocumentResolution;
 /**
  * Resolves document references for the current document.
  */
@@ -62,13 +79,7 @@ interface SuppliedDocument {
   readonly model?: NormalizedDocument;
   readonly status: 'available' | 'unavailable' | 'stale' | 'incomplete';
 }
-interface EffectiveDeclaration {
-  readonly pointer: JsonPointer;
-  readonly sourcePointer: JsonPointer;
-  readonly documentUri: string;
-  readonly definition: DefinitionProjection;
-  readonly importOrigins: readonly ImportOrigin[];
-}
+type EffectiveDeclaration = EffectiveDeclarationProjection;
 interface EffectiveDocument {
   readonly declarations: ReadonlyMap<JsonPointer, readonly EffectiveDeclaration[]>;
   readonly references: readonly EffectiveReferenceSite[];
@@ -83,10 +94,8 @@ interface EffectiveReferenceSite {
   readonly reason?: string;
 }
 
-/**
- * Resolves references for the current document.
- */
-export function resolveReferences(document: NormalizedDocument, externalDocuments: readonly ExternalDocumentInput[] = []): ResolveReferencesResult {
+/** Resolves the effective declaration namespace for integrations such as outbound converters. */
+export function resolveEffectiveDocument(document: NormalizedDocument, externalDocuments: readonly ExternalDocumentInput[] = []): EffectiveDocumentResolution {
   const supplied = suppliedDocuments(externalDocuments);
   const cache = new Map<string, EffectiveDocument>();
   const effective = buildEffectiveDocument(document, supplied, cache, []);
@@ -99,14 +108,31 @@ export function resolveReferences(document: NormalizedDocument, externalDocument
     ...effective.imports.flatMap((fact) => importDiagnostic(document, fact)),
     ...references.flatMap((fact) => referenceDiagnostic(document, fact))
   ];
-  return { references, imports: effective.imports, diagnostics };
+  const declarations = [...effective.declarations.values()]
+    .flatMap((entries) => entries)
+    .sort((left, right) => left.pointer.localeCompare(right.pointer) || left.documentUri.localeCompare(right.documentUri) || left.sourcePointer.localeCompare(right.sourcePointer));
+  const referencesStatus: ResolutionStatus = references.some((reference) => reference.status === 'unresolved') ? 'unresolved' :
+    references.some((reference) => reference.status === 'indeterminate') ? 'indeterminate' : 'resolved';
+  return {
+    status: cyclicSites.size > 0 ? 'unresolved' : mergeStatus(effective.status, referencesStatus),
+    declarations,
+    references,
+    imports: effective.imports,
+    diagnostics
+  };
+}
+
+/** Resolves references for the current document. */
+export function resolveReferences(document: NormalizedDocument, externalDocuments: readonly ExternalDocumentInput[] = []): ResolveReferencesResult {
+  const resolution = resolveEffectiveDocument(document, externalDocuments);
+  return { references: resolution.references, imports: resolution.imports, diagnostics: resolution.diagnostics };
 }
 
 function suppliedDocuments(inputs: readonly ExternalDocumentInput[]): ReadonlyMap<string, readonly SuppliedDocument[]> {
   const result = new Map<string, SuppliedDocument[]>();
   for (const input of inputs) {
     const supplied = suppliedDocument(input);
-    const identities = [supplied.uri, supplied.model?.documentId].filter((value): value is string => typeof value === 'string');
+    const identities = [supplied.uri, supplied.model?.uri, supplied.model?.documentId].filter((value): value is string => typeof value === 'string');
     for (const key of new Set(identities.flatMap(uriKeys))) {
       const entries = result.get(key) ?? [];
       entries.push(supplied);
@@ -140,10 +166,11 @@ function buildEffectiveDocument(
   cache: Map<string, EffectiveDocument>,
   stack: readonly string[]
 ): EffectiveDocument {
-  const cached = cache.get(document.uri);
+  const documentKey = canonicalDocumentUri(document.uri);
+  const cached = cache.get(documentKey);
   if (cached) return cached;
   // Track active import stack separately from memoization so cycles become unresolved facts, not recursion faults.
-  if (stack.includes(document.uri)) return { declarations: new Map(), references: [], imports: [], status: 'unresolved', reason: 'Import cycle detected.' };
+  if (stack.includes(documentKey)) return { declarations: new Map(), references: [], imports: [], status: 'unresolved', reason: 'Import cycle detected.' };
 
   const declarations = new Map<JsonPointer, EffectiveDeclaration[]>();
   const references: EffectiveReferenceSite[] = referenceSites(document);
@@ -165,7 +192,7 @@ function buildEffectiveDocument(
   let documentStatus: ResolutionStatus = 'resolved';
   let documentReason: string | undefined;
   for (const projection of document.projections.imports) {
-    const sourceKey = canonicalDocumentUri(projection.source);
+    const sourceKey = canonicalDocumentUri(resolveImportUri(document.uri, projection.source));
     const candidates = supplied.get(sourceKey) ?? [];
     let status: ResolutionStatus = 'resolved';
     let reason: string | undefined;
@@ -185,11 +212,11 @@ function buildEffectiveDocument(
       if (external.status !== 'available' || !external.model) {
         status = 'indeterminate';
         reason = external.status === 'stale' ? 'The supplied external document is stale.' : 'The supplied external document is incomplete or invalid.';
-      } else if (stack.includes(external.model.uri) || external.model.uri === document.uri) {
+      } else if (stack.includes(canonicalDocumentUri(external.model.uri)) || canonicalDocumentUri(external.model.uri) === documentKey) {
         status = 'unresolved';
         reason = 'Import cycle detected.';
       } else {
-        const externalEffective = buildEffectiveDocument(external.model, supplied, cache, [...stack, document.uri]);
+        const externalEffective = buildEffectiveDocument(external.model, supplied, cache, [...stack, documentKey]);
         if (externalEffective.status !== 'resolved') {
           status = externalEffective.status;
           reason = externalEffective.reason;
@@ -236,7 +263,7 @@ function buildEffectiveDocument(
     }
   }
   const result = { declarations, references, imports: importFacts, status: documentStatus, reason: documentReason };
-  cache.set(document.uri, result);
+  cache.set(documentKey, result);
   return result;
 }
 
@@ -259,7 +286,7 @@ function importedDeclarations(
   }
   if (keyword === '$import') {
     const root = external.projections.definitions.find((definition) => definition.pointer === '');
-    if (root && external.name) {
+    if (root && root.coreForm === 'typed' && external.name) {
       const pointer = `${destination}/${escapePointerPart(external.name)}`;
       result.push(withImportOrigin({ pointer: '', sourcePointer: '', documentUri: external.uri, definition: root, importOrigins: [] }, pointer, importSource, importPointer, keyword));
     }
@@ -471,6 +498,13 @@ function referenceDiagnostic(document: NormalizedDocument, fact: ReferenceResolu
     severity: fact.status === 'indeterminate' ? 'indeterminate' : 'error',
     location: diagnosticLocation(document, fact.pointer)
   }];
+}
+
+function resolveImportUri(documentUri: string, source: string): string {
+  const resource = source.split('#', 1)[0] ?? '';
+  if (!resource) return canonicalDocumentUri(documentUri);
+  try { return new URL(resource, documentUri).href; }
+  catch { return resource; }
 }
 
 function canonicalDocumentUri(value: string): string {

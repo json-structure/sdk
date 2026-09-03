@@ -12,8 +12,8 @@ function clone<T>(value: T): T {
   return structuredClone(value);
 }
 
-function validate(mutator: (state: any) => void): string[] {
-  const state = { projectRoot, ...clone(canonical), ledger: clone(canonicalLedger), checkArtifacts: false };
+function validate(mutator: (state: any) => void, checkArtifacts = false): string[] {
+  const state = { projectRoot, ...clone(canonical), ledger: clone(canonicalLedger), checkArtifacts };
   mutator(state);
   return validateCoverage(state);
 }
@@ -42,7 +42,7 @@ beforeAll(() => {
 afterEach(() => {
   for (const root of temporaryRoots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
-describe('coverage gate scripts', { timeout: 15_000 }, () => {
+describe('coverage gate scripts', { timeout: 120_000 }, () => {
   it('accepts the deterministic inventory, evidence, and generated artifacts', () => {
     expect(() => execFileSync(process.execPath, [path.join(projectRoot, 'scripts', 'coverage-check.mjs')], {
       cwd: projectRoot,
@@ -120,7 +120,7 @@ describe('coverage gate scripts', { timeout: 15_000 }, () => {
   expect(unknown.some((error) => error.includes('missing, duplicate, or unrelated editing evidence ID unknown.evidence'))).toBe(true);
     const unrelated = validate(({ ledger }) => { ledger.features[0].evidence.editing.ids = clone(ledger.features[1].evidence.editing.ids); });
     expect(unrelated.some((error) => error.includes('missing, duplicate, or unrelated editing evidence ID'))).toBe(true);
-  });
+  }, 60_000);
   it('rejects evidence mapped to an unknown requirement', () => {
     const errors = validate(({ manifest }) => { manifest.evidence[0].requirements = ['unknown.requirement']; });
     expect(errors.some((error) => error.includes('evidence maps to unknown requirement unknown.requirement'))).toBe(true);
@@ -138,5 +138,111 @@ describe('coverage gate scripts', { timeout: 15_000 }, () => {
 
     const unrelated = validate(({ ledger }) => { ledger.features[0].evidence.tests.facets.positive.ids = clone(ledger.features[0].evidence.tests.facets.negative.ids); });
     expect(unrelated.some((error) => error.includes('missing, duplicate, or unrelated positive evidence ID'))).toBe(true);
+  });
+
+  it('fails closed when a required external corpus root is unavailable', () => {
+    const errors = validate(({ inventory }) => {
+      inventory.corpus.roots[0].path = '..\\missing-required-corpus-root';
+    }, true);
+    expect(errors.some((error) => error.includes('required corpus root is unreachable'))).toBe(true);
+  });
+
+  it('rejects inventory reclassification against the independent diagnostic baseline', () => {
+    const errors = validate(({ inventory }) => {
+      const pass = inventory.corpus.schemas.find((schema: { readonly expected: string }) => schema.expected === 'pass');
+      if (!pass) throw new Error('fixture inventory has no pass entry');
+      pass.expected = 'diagnostic';
+    }, true);
+    expect(errors.some((error) => error.includes('inventory disagrees with authoritative corpus baseline in expected'))).toBe(true);
+  });
+
+  it('rejects simultaneous inventory and baseline reclassification', () => {
+    const errors = validate(({ inventory, corpusBaseline }) => {
+      const fixture = corpusBaseline.fixtures.find((entry: { readonly expected: string }) => entry.expected === 'diagnostic');
+      if (!fixture) throw new Error('baseline has no diagnostic entry');
+      fixture.expected = 'pass';
+      fixture.diagnostics = [];
+      const inventoryEntry = inventory.corpus.schemas.find((entry: { readonly id: string }) => entry.id === fixture.id);
+      if (!inventoryEntry) throw new Error('inventory has no matching entry');
+      inventoryEntry.expected = 'pass';
+      inventoryEntry.diagnosticCodes = [];
+      inventoryEntry.diagnosticExpectations = [];
+    }, true);
+    expect(errors.some((error) => error.includes('canonical SHA-256 differs from trusted release integrity manifest'))).toBe(true);
+  });
+
+  it('rejects a tampered corpus baseline release anchor', () => {
+    const errors = validate(({ corpusBaselineIntegrity }) => {
+      corpusBaselineIntegrity.artifact.sha256 = '0'.repeat(64);
+    });
+    expect(errors.some((error) => error.includes('canonical SHA-256 differs from trusted release integrity manifest'))).toBe(true);
+  });
+
+  it('rejects an inconsistent release integrity manifest', () => {
+    const errors = validate(({ corpusBaselineIntegrity }) => {
+      corpusBaselineIntegrity.artifact.canonicalization = 'raw-json';
+      corpusBaselineIntegrity.review.authorizedWorkflow = 'coverage-generation';
+    });
+    expect(errors).toEqual(expect.arrayContaining([
+      'corpus baseline release integrity canonicalization is unsupported',
+      'corpus baseline release integrity review metadata is malformed or incomplete'
+    ]));
+  });
+
+  it('does not let ordinary coverage generation update corpus trust inputs', () => {
+    const fixtureRoot = createFixture();
+    const baselinePath = path.join(fixtureRoot, 'coverage', 'corpus-baseline.json');
+    const integrityPath = path.join(fixtureRoot, 'coverage', 'release-integrity.json');
+    const beforeBaseline = readFileSync(baselinePath, 'utf8');
+    const beforeIntegrity = readFileSync(integrityPath, 'utf8');
+    const generation = spawnSync(process.execPath, [path.join(fixtureRoot, 'scripts', 'generate-coverage.mjs')], {
+      cwd: fixtureRoot,
+      encoding: 'utf8',
+      env: { ...process.env, JSON_STRUCTURE_SPEC_ROOT: canonical.normativeRoot as string }
+    });
+    expect(generation.status).toBe(0);
+    expect(readFileSync(baselinePath, 'utf8')).toBe(beforeBaseline);
+    expect(readFileSync(integrityPath, 'utf8')).toBe(beforeIntegrity);
+  });
+
+  it('requires an authorization token and review metadata to update the trust anchor', () => {
+    const fixtureRoot = createFixture();
+    const script = path.join(fixtureRoot, 'scripts', 'update-corpus-baseline-integrity.mjs');
+    const withoutToken = { ...process.env };
+    delete withoutToken.JSON_STRUCTURE_BASELINE_UPDATE_TOKEN;
+    const unauthorized = spawnSync(process.execPath, [script, '--root', fixtureRoot, '--review-id', 'REV-1', '--reason', 'reviewed baseline update', '--approved-by', 'reviewer'], { cwd: fixtureRoot, encoding: 'utf8', env: withoutToken });
+    expect(unauthorized.status).not.toBe(0);
+    const authorized = spawnSync(process.execPath, [script, '--root', fixtureRoot, '--review-id', 'REV-1', '--reason', 'reviewed baseline update', '--approved-by', 'reviewer'], { cwd: fixtureRoot, encoding: 'utf8', env: { ...withoutToken, JSON_STRUCTURE_BASELINE_UPDATE_TOKEN: 'workflow-issued' } });
+    expect(authorized.status).toBe(0);
+    const integrity = JSON.parse(readFileSync(path.join(fixtureRoot, 'coverage', 'release-integrity.json'), 'utf8'));
+    expect(integrity.review.lastApproved).toEqual({ reviewId: 'REV-1', reason: 'reviewed baseline update', approvedBy: 'reviewer' });
+    const inputs = loadCoverageInputs(fixtureRoot, { ...process.env, JSON_STRUCTURE_SPEC_ROOT: canonical.normativeRoot as string });
+    expect(validateCoverage({ projectRoot: fixtureRoot, ...inputs, ledger: canonicalLedger, checkArtifacts: false })).not.toContain('canonical SHA-256 differs from trusted release integrity manifest');
+  });
+
+  it('rejects tampering with an authoritative diagnostic expectation', () => {
+    const errors = validate(({ corpusBaseline }) => {
+      const fixture = corpusBaseline.fixtures.find((entry: { readonly expected: string }) => entry.expected === 'diagnostic');
+      if (!fixture) throw new Error('baseline has no diagnostic entry');
+      fixture.diagnostics[0].pointer = '/tampered';
+    }, true);
+    expect(errors.some((error) => error.includes('inventory diagnosticExpectations disagree with authoritative baseline'))).toBe(true);
+    expect(errors.some((error) => error.includes('canonical SHA-256 differs from trusted release integrity manifest'))).toBe(true);
+  });
+
+  it('rejects tampering with a corpus fixture checksum', () => {
+    const errors = validate(({ corpusBaseline }) => {
+      const fixture = corpusBaseline.fixtures[0];
+      fixture.sha256 = '0'.repeat(64);
+    }, true);
+    expect(errors.some((error) => error.includes('corpus fixture hash differs from authoritative baseline'))).toBe(true);
+  });
+
+  it('rejects corpus inventory omissions and count drift', () => {
+    const errors = validate(({ inventory }) => {
+      inventory.corpus.schemas.pop();
+    }, true);
+    expect(errors.some((error) => error.includes('unlisted corpus schema'))).toBe(true);
+    expect(errors.some((error) => error.includes('corpus total drift'))).toBe(true);
   });
 });

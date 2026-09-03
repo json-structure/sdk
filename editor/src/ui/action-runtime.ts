@@ -46,6 +46,15 @@ const CATALOG_ALIASES: Readonly<Record<string, CatalogFamily>> = {
   spectralBands: 'spectralBandSet'
 };
 
+const TYPE_REQUIRED_SHAPE_MEMBERS: Readonly<Record<string, readonly string[]>> = {
+  object: ['properties'],
+  array: ['items'],
+  set: ['items'],
+  map: ['values'],
+  tuple: ['properties', 'tuple'],
+  choice: ['choices']
+};
+
 export function actionAvailability(action: CommandAction, selectedPointer: string, document: unknown): ActionAvailability {
   const pointer = action.targets?.length === 1 && action.targets[0] === 'document' ? '' : selectedPointer;
   if (action.capability && action.capability !== 'core') {
@@ -75,8 +84,21 @@ export function actionAvailability(action: CommandAction, selectedPointer: strin
       return { enabled: false, pointer, reason: `This command requires a ${action.schemaTypes.join(' or ')} schema.` };
     }
   }
-  if (action.operation === 'remove' && action.keyword && !hasObjectMember(document, pointer, action.keyword)) {
-    return { enabled: false, pointer, reason: `${action.keyword} is not set on the selected object.` };
+  if (action.operation === 'remove' && action.keyword) {
+    if (pointer === '' && (action.keyword === '$schema' || action.keyword === '$id' || action.keyword === 'name')) {
+      return { enabled: false, pointer, reason: 'Required document headers cannot be removed.' };
+    }
+    const value = valueAtPointer(document, pointer);
+    if (action.keyword === 'type' && value && typeof value === 'object' && !Array.isArray(value) && Object.prototype.hasOwnProperty.call(value, 'type')) {
+      return { enabled: false, pointer, reason: 'type is required on the selected declaration.' };
+    }
+    if (value && typeof value === 'object' && !Array.isArray(value) && typeof (value as Record<string, unknown>).type === 'string' &&
+      TYPE_REQUIRED_SHAPE_MEMBERS[String((value as Record<string, unknown>).type)]?.includes(action.keyword)) {
+      return { enabled: false, pointer, reason: `${action.keyword} is required for the selected schema type.` };
+    }
+    if (!hasObjectMember(document, pointer, action.keyword)) {
+      return { enabled: false, pointer, reason: `${action.keyword} is not set on the selected object.` };
+    }
   }
   return { enabled: true, pointer };
 }
@@ -116,6 +138,7 @@ function targetForPointer(pointer: string, document: unknown): ActionTarget {
   if (pointer === '') return 'document';
   if (/(?:^|\/)relations\/(?:[^/]+)$/.test(pointer)) return 'relation';
   if (/(?:^|\/)properties\/(?:[^/]+)$/.test(pointer)) return 'property';
+  if (/(?:^|\/)choices\/(?:[^/]+)$/.test(pointer)) return 'choice';
   const value = valueAtPointer(document, pointer);
   if (value && typeof value === 'object' && !Array.isArray(value) && !Object.prototype.hasOwnProperty.call(value, 'type')) return 'namespace';
   return 'declaration';

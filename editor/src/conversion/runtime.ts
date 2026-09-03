@@ -48,6 +48,21 @@ export interface ConversionRuntimeDependencies {
 export class ConversionRuntime {
   constructor(private readonly dependencies: ConversionRuntimeDependencies) {}
 
+  cancelled(error: unknown = abortError()): ConversionRunResult {
+    const lifecycle = new ConversionLifecycle();
+    lifecycle.transition('preparing');
+    lifecycle.transition('cancelled');
+    return {
+      state: 'cancelled',
+      states: lifecycle.states,
+      files: {},
+      warnings: [],
+      lossiness: 'none',
+      published: false,
+      error: asError(error),
+    };
+  }
+
   async run(request: ConversionRunRequest): Promise<ConversionRunResult> {
     const lifecycle = new ConversionLifecycle();
     let files: Readonly<Record<string, Uint8Array>> = {};

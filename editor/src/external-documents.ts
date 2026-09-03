@@ -1,5 +1,6 @@
 import { PROTOCOL_VERSION, type ResourceSnapshot } from './contracts.js';
 import { parseDocument } from './parser.js';
+import { resolveCapabilities } from './capabilities.js';
 import type { ExternalDocumentDescriptor } from './resolver.js';
 
 export type ResourceReader = (uri: string) => Promise<ResourceSnapshot>;
@@ -42,12 +43,14 @@ export async function loadExternalDocuments(documentUri: string, sources: readon
       }
       totalBytes += contentBytes;
       const parsed = parseDocument(resource.uri, resource.content);
+      const importedSources = discoverImportSources(parsed.value);
       if (!parsed.model || parsed.recovery !== 'valid' || parsed.diagnostics.some((diagnostic) => diagnostic.severity === 'error')) {
         results.push({ uri, snapshot: { uri: resource.uri, text: resource.content, documentVersion: 1, recovery: parsed.recovery, diagnostics: parsed.diagnostics }, availability: 'stale' });
+        for (const source of importedSources) pending.push({ uri: resolveResourceUri(resource.uri, source), depth: depth + 1 });
         continue;
       }
       results.push({ uri, model: parsed.model, value: parsed.value as Readonly<Record<string, unknown>>, availability: 'available' });
-      for (const imported of parsed.model.projections.imports) pending.push({ uri: resolveResourceUri(resource.uri, imported.source), depth: depth + 1 });
+      for (const source of importedSources) pending.push({ uri: resolveResourceUri(resource.uri, source), depth: depth + 1 });
     } catch {
       results.push({ uri, availability: 'unavailable' });
     }
@@ -55,6 +58,41 @@ export async function loadExternalDocuments(documentUri: string, sources: readon
   return results;
 }
 
+/** Returns import sources found at active namespace locations without interpreting schema payloads. */
+export function discoverImportSources(value: unknown): readonly string[] {
+  if (!isRecord(value) || !resolveCapabilities(value).importActive) return [];
+  const sources: string[] = [];
+  const visit = (candidate: Readonly<Record<string, unknown>>, pointer: string): void => {
+    for (const keyword of ['$import', '$importdefs'] as const) {
+      if (typeof candidate[keyword] === 'string') sources.push(candidate[keyword]);
+    }
+    if (pointer === '') {
+      if (isRecord(candidate.definitions)) visit(candidate.definitions, '/definitions');
+      return;
+    }
+    if (pointer !== '/definitions' && !pointer.startsWith('/definitions/')) return;
+    for (const [name, child] of Object.entries(candidate)) {
+      if (name.startsWith('$') || !isRecord(child) || isSchemaDeclaration(child)) continue;
+      visit(child, `${pointer}/${escapePointerPart(name)}`);
+    }
+  };
+  visit(value, '');
+  return [...new Set(sources)];
+}
+
+function isSchemaDeclaration(value: Readonly<Record<string, unknown>>): boolean {
+  return Object.prototype.hasOwnProperty.call(value, 'type') ||
+    Object.prototype.hasOwnProperty.call(value, '$ref') ||
+    ['allOf', 'anyOf', 'oneOf', 'not', 'if', 'then', 'else'].some((keyword) => Object.prototype.hasOwnProperty.call(value, keyword));
+}
+
+function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function escapePointerPart(value: string): string {
+  return value.replace(/~/g, '~0').replace(/\//g, '~1');
+}
 function hasSupportedScheme(uri: string, supportedSchemes: ReadonlySet<string>): boolean {
   try { return supportedSchemes.has(new URL(uri).protocol.slice(0, -1).toLowerCase()); }
   catch { return false; }

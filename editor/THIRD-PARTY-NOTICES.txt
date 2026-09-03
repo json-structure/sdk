@@ -33,3 +33,13 @@ Font Awesome Free icons are licensed under the Creative Commons Attribution
 https://creativecommons.org/licenses/by/4.0/
 
 Copyright Fonticons, Inc.
+
+-------------------------------------------------------------------------------
+
+Bundled Structurize runtime
+
+The packaged conversion runtime includes Avrotize under the MIT License and
+CPython under the Python Software Foundation License. The build-time runtime
+staging script copies the corresponding license files and dependency metadata
+to the runtime resource directory. See the generated runtime
+THIRD-PARTY-NOTICES.txt and package .dist-info license records for the

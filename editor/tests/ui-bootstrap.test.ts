@@ -61,6 +61,7 @@ describe('ALPHA UI bootstrap', () => {
     };
     const controller = createAlphaEditorController(surface, bridge, () => true);
     await controller.open();
+    surface.text = '{"saved":0}';
     controller.markDirty();
     const saving = controller.save();
     surface.text = '{"saved":2}';
@@ -70,6 +71,12 @@ describe('ALPHA UI bootstrap', () => {
 
     expect(controller.dirty).toBe(true);
     expect(surface.text).toBe('{"saved":2}');
+    surface.text = '{"saved":0}';
+    controller.syncDirty();
+    expect(controller.dirty).toBe(false);
+    surface.text = '{"saved":1}';
+    controller.syncDirty();
+    expect(controller.dirty).toBe(true);
   });
 
   it('keeps an edit made during save-as dirty while adopting the selected path', async () => {
@@ -83,6 +90,7 @@ describe('ALPHA UI bootstrap', () => {
       onFileCommand: () => () => undefined
     };
     const controller = createAlphaEditorController(surface, bridge, () => true);
+    surface.text = '{"version":0}';
     controller.markDirty();
     const saving = controller.saveAs();
     surface.text = '{"version":2}';
@@ -92,6 +100,12 @@ describe('ALPHA UI bootstrap', () => {
 
     expect(controller.path).toBe('C:/schemas/saved.struct.json');
     expect(surface.uri).toBe('file:///C:/schemas/saved.struct.json');
+    expect(controller.dirty).toBe(true);
+    surface.text = '{"version":0}';
+    controller.syncDirty();
+    expect(controller.dirty).toBe(false);
+    surface.text = '{"version":1}';
+    controller.syncDirty();
     expect(controller.dirty).toBe(true);
   });
 
@@ -144,6 +158,49 @@ describe('ALPHA UI bootstrap', () => {
     expect(controller.dirty).toBe(false);
   });
 
+  it('activates accepted staged files and discards cancelled selections', async () => {
+    const surface = editor();
+    const activated: string[] = [];
+    const discarded: string[] = [];
+    const bridge: FileBridge = {
+      openFile: async () => null,
+      saveFile: async (path) => ({ path }),
+      saveFileAs: async () => null,
+      activateDocument: async (path, token) => { activated.push(`${path}:${token}`); },
+      discardDocument: async (token) => { discarded.push(token); },
+      onFileOpened: () => () => undefined,
+      onFileCommand: () => () => undefined
+    };
+    const controller = createAlphaEditorController(surface, bridge, () => true);
+    await controller.acceptExternalFile({ path: 'C:/schemas/accepted.struct.json', text: '{"accepted":true}', uri: 'file:///C:/schemas/accepted.struct.json', activationToken: 'accepted' });
+    expect(activated).toEqual(['C:/schemas/accepted.struct.json:accepted']);
+    expect(surface.uri).toBe('file:///C:/schemas/accepted.struct.json');
+
+    const declined = createAlphaEditorController(surface, bridge, () => false);
+    declined.markDirty();
+    await declined.acceptExternalFile({ path: 'C:/schemas/declined.struct.json', text: '{}', activationToken: 'declined' });
+    expect(discarded).toEqual(['declined']);
+    declined.dispose();
+  });
+
+  it('creates an untitled document through the host bridge', async () => {
+    const surface = editor();
+    const bridge: FileBridge = {
+      openFile: async () => null,
+      saveFile: async (path) => ({ path }),
+      saveFileAs: async () => null,
+      newDocument: async () => ({ uri: 'untitled:json-structure-test.struct.json', title: 'Untitled JSON Structure' }),
+      onFileOpened: () => () => undefined,
+      onFileCommand: () => () => undefined
+    };
+    const controller = createAlphaEditorController(surface, bridge, () => true);
+    controller.markDirty();
+    await controller.newDocument();
+    expect(controller.path).toBeUndefined();
+    expect(controller.dirty).toBe(false);
+    expect(surface.uri).toBe('untitled:json-structure-test.struct.json');
+    expect(JSON.parse(surface.text)).toMatchObject({ definitions: {} });
+  });
   it('subscribes to bridge-delivered external opens and releases the listener', async () => {
     const surface = editor();
     let listener: ((file: { path: string; text: string }) => void) | undefined;

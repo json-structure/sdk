@@ -84,8 +84,13 @@ without suppressing valid results from other providers. Cancellation is bound to
 the opaque invocation in a `CatalogSearchRequest`, so overlapping reuse of a
 caller request ID cannot cancel the wrong search. Duplicate provider/value pairs
 and provenance are canonicalized before deterministic ranking.
-The bundled advisory seeds contain 113 common UCUM entries and 179 ISO 4217
-currency, fund, and special-purpose entries.
+The renderer bundles ten distinct offline providers: JSON Structure Units
+recommendations (22 entries), UCUM (113), ISO 4217 (179), QUDT quantity kinds
+(13), CF Standard Names (6), SOSA (7), Schema.org (9), Dublin Core Terms (8),
+SKOS + PROV-O (7), and JSON Structure Semantic Presets (67). The semantic
+providers emit complete reference objects. Concepts are additive, observed
+properties remain singular, and closed JSON Structure value families do not
+offer arbitrary custom values.
 
 Under the Extended meta-schema, Units capabilities activate only through the
 normative `JSONStructureUnits` value in `$uses`. `JSONSchemaUnits` is not treated

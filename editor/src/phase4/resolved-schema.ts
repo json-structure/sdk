@@ -1,9 +1,14 @@
+import type { Diagnostic } from '../contracts.js';
 import { validCoreTypeValue } from '../parser.js';
 import { resolveCapabilities } from '../capabilities.js';
+
+const DUAL_IMPORT_DIAGNOSTIC_CODE = 'json.keyword-invalid';
+const DUAL_IMPORT_DIAGNOSTIC_MESSAGE = 'Only one of $import or $importdefs is permitted at a single namespace location.';
 
 export interface ResolvedSchemaDocument {
   readonly uri: string;
   readonly document: Readonly<Record<string, unknown>>;
+  readonly diagnostics?: readonly Diagnostic[];
 }
 
 export interface ImportProvenance {
@@ -22,25 +27,50 @@ export interface ResolvedSchemaLocation {
   readonly imports: readonly ImportProvenance[];
 }
 
+export interface ResolvedSchemaCollision {
+  readonly effectivePointer: string;
+  readonly locations: readonly ResolvedSchemaLocation[];
+}
+
 export interface ResolvedSchemaOptions {
   readonly documentUri?: string;
   readonly resolvedDocuments?: readonly ResolvedSchemaDocument[];
+  readonly diagnostics?: readonly Diagnostic[];
+}
+
+export interface ResolvedSchemaImportLocation {
+  readonly documentUri: string;
+  readonly namespacePointer: string;
+  readonly importPointer: string;
+  readonly importSource?: string;
+  readonly keyword: '$import' | '$importdefs';
+}
+
+export interface ResolvedSchemaImportCollision {
+  readonly documentUri: string;
+  readonly namespacePointer: string;
+  readonly imports: readonly ResolvedSchemaImportLocation[];
+  readonly diagnostic: Diagnostic;
 }
 
 interface IndexedDocument {
   readonly declarations: ReadonlyMap<string, readonly ResolvedSchemaLocation[]>;
   readonly indeterminate: boolean;
+  readonly importCollisions: readonly ResolvedSchemaImportCollision[];
+  readonly diagnostics: readonly Diagnostic[];
+  readonly collisions: readonly ResolvedSchemaCollision[];
 }
 
 export class ResolvedSchemaContext {
   private readonly documents = new Map<string, ResolvedSchemaDocument>();
   private readonly ambiguousDocuments = new Set<string>();
   private readonly indexes = new Map<string, IndexedDocument>();
+  private readonly importParentDocuments = new WeakMap<ImportProvenance, string>();
   readonly rootUri: string;
 
   constructor(readonly root: Readonly<Record<string, unknown>>, options: ResolvedSchemaOptions = {}) {
     this.rootUri = options.documentUri ?? 'memory://root';
-    this.add({ uri: this.rootUri, document: root });
+    this.add({ uri: this.rootUri, document: root, diagnostics: options.diagnostics });
     for (const document of options.resolvedDocuments ?? []) this.add(document);
   }
 
@@ -141,7 +171,24 @@ export class ResolvedSchemaContext {
       .sort((left, right) => left.effectivePointer.localeCompare(right.effectivePointer));
   }
 
+  documentFor(documentUri = this.rootUri): Readonly<Record<string, unknown>> | undefined {
+    return this.documents.get(canonicalUri(documentUri))?.document;
+  }
+
+  capabilitiesFor(documentUri = this.rootUri): ReturnType<typeof resolveCapabilities> {
+    return resolveCapabilities(this.documents.get(canonicalUri(documentUri))?.document ?? {});
+  }
+
+  importingDocumentFor(origin: ImportProvenance): string | undefined {
+    return this.importParentDocuments.get(origin);
+  }
+
   get indeterminate(): boolean { return this.index(this.rootUri).indeterminate; }
+  get importCollisions(): readonly ResolvedSchemaImportCollision[] { return this.index(this.rootUri).importCollisions; }
+
+  get diagnostics(): readonly Diagnostic[] { return this.index(this.rootUri).diagnostics; }
+
+  get collisions(): readonly ResolvedSchemaCollision[] { return this.index(this.rootUri).collisions; }
 
   private dereferenceLocation(location: ResolvedSchemaLocation, seen: Set<string>): ResolvedSchemaLocation | undefined {
     const identity = locationIdentity(location);
@@ -230,6 +277,18 @@ export class ResolvedSchemaContext {
       const child = schemaChildLocation(concrete, `choices/${escapePointer(name)}`, concrete.schema.choices[name] as Readonly<Record<string, unknown>>);
       return this.walkSchemaPath(child, rest);
     }
+    if (['allOf', 'anyOf', 'oneOf'].includes(keyword) && name !== undefined && Array.isArray(concrete.schema[keyword])) {
+      const index = Number(name);
+      const branches = concrete.schema[keyword];
+      if (Number.isInteger(index) && index >= 0 && index < branches.length && isRecord(branches[index])) {
+        const child = schemaChildLocation(concrete, `${keyword}/${name}`, branches[index]);
+        return this.walkSchemaPath(child, rest);
+      }
+    }
+    if (['not', 'if', 'then', 'else'].includes(keyword) && name === undefined && isRecord(concrete.schema[keyword])) {
+      const child = schemaChildLocation(concrete, keyword, concrete.schema[keyword]);
+      return this.walkSchemaPath(child, rest);
+    }
     return undefined;
   }
 
@@ -237,8 +296,9 @@ export class ResolvedSchemaContext {
     const identity = `${locationIdentity(location)}\u0000property:${name}`;
     if (seen.has(identity)) return undefined;
     const nextSeen = new Set(seen).add(identity);
-    if (isRecord(location.schema.properties) && isRecord(location.schema.properties[name])) {
-      return schemaChildLocation(location, `properties/${escapePointer(name)}`, location.schema.properties[name] as Readonly<Record<string, unknown>>);
+    const authored = isRecord(location.schema.properties) ? ownValue(location.schema.properties, name) : undefined;
+    if (isRecord(authored)) {
+      return schemaChildLocation(location, `properties/${escapePointer(name)}`, authored);
     }
     const alias = directTypeReference(location.schema.type);
     if (alias !== undefined) {
@@ -269,11 +329,15 @@ export class ResolvedSchemaContext {
     const key = canonicalUri(uri);
     const cached = this.indexes.get(key);
     if (cached) return cached;
-    if (this.ambiguousDocuments.has(key)) return { declarations: new Map(), indeterminate: true };
+    if (this.ambiguousDocuments.has(key)) return { declarations: new Map(), indeterminate: true, collisions: [], importCollisions: [], diagnostics: [] };
     const supplied = this.documents.get(key);
-    if (!supplied || stack.includes(key)) return { declarations: new Map(), indeterminate: true };
+    if (!supplied || stack.includes(key)) return { declarations: new Map(), indeterminate: true, collisions: [], importCollisions: [], diagnostics: [] };
 
     const declarations = new Map<string, ResolvedSchemaLocation[]>();
+    const importCollisions: ResolvedSchemaImportCollision[] = [];
+    const diagnostics: Diagnostic[] = [];
+    const capabilities = resolveCapabilities(supplied.document);
+    const compositionActive = capabilities.conditionalCompositionActive;
     let indeterminate = false;
     const add = (effectivePointer: string, documentUri: string, sourcePointer: string, schema: unknown, imports: readonly ImportProvenance[]): void => {
       if (!isRecord(schema)) return;
@@ -282,8 +346,37 @@ export class ResolvedSchemaContext {
       declarations.set(effectivePointer, entries);
     };
 
-    const visitImports = (candidate: unknown, pointer: string): void => {
-      if (!isRecord(candidate)) return;
+    const activeNamespace = (pointer: string): boolean => {
+      if (pointer === '') return true;
+      if (pointer === '/definitions') return isRecord(supplied.document.definitions);
+      if (!pointer.startsWith('/definitions/') || !isRecord(supplied.document.definitions)) return false;
+      let current: unknown = supplied.document.definitions;
+      for (const part of pointer.slice('/definitions/'.length).split('/').map(unescapePointer)) {
+        if (!isRecord(current)) return false;
+        current = ownValue(current, part);
+        if (!isRecord(current) || validCoreTypeValue(current.type)) return false;
+      }
+      return true;
+    };
+    const visitImportKeywords = (candidate: Readonly<Record<string, unknown>>, pointer: string): void => {
+      if (!activeNamespace(pointer)) return;
+      const importKeywords = (['$import', '$importdefs'] as const).filter((keyword) => candidate[keyword] !== undefined);
+      if (importKeywords.length === 2) {
+        const imports = importKeywords.map((keyword) => {
+          const source = candidate[keyword];
+          return {
+            documentUri: supplied.uri,
+            namespacePointer: pointer,
+            importPointer: importPointer(pointer, keyword),
+            ...(typeof source === 'string' ? { importSource: source } : {}),
+            keyword
+          };
+        });
+        const diagnostic = parserDualImportDiagnostic(supplied, pointer);
+        importCollisions.push({ documentUri: supplied.uri, namespacePointer: pointer, imports, diagnostic });
+        diagnostics.push(diagnostic);
+        indeterminate = true;
+      }
       for (const keyword of ['$import', '$importdefs'] as const) {
         const source = candidate[keyword];
         if (typeof source !== 'string') continue;
@@ -295,31 +388,80 @@ export class ResolvedSchemaContext {
         }
         const externalIndex = this.index(external.uri, [...stack, key]);
         indeterminate ||= externalIndex.indeterminate;
+        importCollisions.push(...externalIndex.importCollisions);
+        diagnostics.push(...externalIndex.diagnostics);
         const destination = pointer === '' || pointer === '/definitions' ? '/definitions' : pointer;
         for (const locations of externalIndex.declarations.values()) for (const location of locations) {
+          if (!hasType(location.schema)) continue;
           let suffix: string | undefined;
           if (location.effectivePointer.startsWith('/definitions/')) suffix = location.effectivePointer.slice('/definitions'.length);
-          else if (keyword === '$import' && location.effectivePointer === '' && typeof external.document.name === 'string') suffix = `/${escapePointer(external.document.name)}`;
+          else if (keyword === '$import' && location.effectivePointer === '' && typeof external.document.name === 'string') suffix = '/' + escapePointer(external.document.name);
           if (suffix === undefined) continue;
-          const effectivePointer = `${destination}${suffix}`;
+          const effectivePointer = destination + suffix;
           const origin: ImportProvenance = {
             documentUri: location.documentUri,
             pointer: location.sourcePointer,
             importSource: source,
-            importPointer: pointer === '' ? `/${keyword}` : `${pointer}/${keyword}`,
+            importPointer: pointer === '' ? '/' + keyword : pointer + '/' + keyword,
             keyword
           };
+          this.importParentDocuments.set(origin, supplied.uri);
           add(effectivePointer, location.documentUri, location.sourcePointer, location.schema, [...location.imports, origin]);
         }
       }
+    };
+    const visitSchema = (candidate: unknown, pointer: string): void => {
+      if (!isRecord(candidate)) return;
+      visitImportKeywords(candidate, pointer);
+      if (isRecord(candidate.definitions)) visitNamespace(candidate.definitions, pointer + '/definitions');
+      visitSchemaMap(candidate.properties, pointer + '/properties');
+      if (isRecord(candidate.additionalProperties)) visitSchema(candidate.additionalProperties, pointer + '/additionalProperties');
+      visitSchemaValue(candidate.items, pointer + '/items');
+      visitSchemaValue(candidate.values, pointer + '/values');
+      visitSchemaMap(candidate.choices, pointer + '/choices');
+      if (capabilities.validationActive) {
+        visitSchemaValue(candidate.contains, pointer + '/contains');
+        visitSchemaValue(candidate.propertyNames, pointer + '/propertyNames');
+        visitSchemaValue(candidate.keyNames, pointer + '/keyNames');
+        visitSchemaValue(candidate.has, pointer + '/has');
+        visitSchemaMap(candidate.patternProperties, pointer + '/patternProperties');
+        visitSchemaMap(candidate.patternKeys, pointer + '/patternKeys');
+      }
+      if (capabilities.conditionalCompositionActive) {
+        visitSchemaArray(candidate.allOf, pointer + '/allOf');
+        visitSchemaArray(candidate.anyOf, pointer + '/anyOf');
+        visitSchemaArray(candidate.oneOf, pointer + '/oneOf');
+        visitSchemaValue(candidate.not, pointer + '/not');
+        visitSchemaValue(candidate.if, pointer + '/if');
+        visitSchemaValue(candidate.then, pointer + '/then');
+        visitSchemaValue(candidate.else, pointer + '/else');
+      }
+      if (Array.isArray(candidate.type)) candidate.type.forEach((entry, index) => visitSchema(entry, pointer + '/type/' + index));
+    };
+    const visitNamespace = (candidate: unknown, pointer: string): void => {
+      if (!isRecord(candidate) || !activeNamespace(pointer)) return;
+      visitImportKeywords(candidate, pointer);
       for (const [name, child] of Object.entries(candidate)) {
-        if (name === 'definitions' && pointer === '') visitImports(child, '/definitions');
-        else if (!name.startsWith('$') && (pointer === '/definitions' || pointer.startsWith('/definitions/')) && isRecord(child) && !isSchemaDeclaration(child)) {
-          visitImports(child, `${pointer}/${escapePointer(name)}`);
-        }
+        if (name === '$import' || name === '$importdefs' || !isRecord(child)) continue;
+        const childPointer = pointer + '/' + escapePointer(name);
+        if (name === 'definitions') visitNamespace(child, childPointer);
+        else if (isSchemaDeclaration(child)) visitSchema(child, childPointer);
+        else visitNamespace(child, childPointer);
       }
     };
-    if (resolveCapabilities(supplied.document).importActive) visitImports(supplied.document, '');
+    const visitSchemaMap = (candidate: unknown, pointer: string): void => {
+      if (!isRecord(candidate)) return;
+      for (const [name, child] of Object.entries(candidate)) visitSchema(child, pointer + '/' + escapePointer(name));
+    };
+    const visitSchemaArray = (candidate: unknown, pointer: string): void => {
+      if (!Array.isArray(candidate)) return;
+      candidate.forEach((entry, index) => visitSchema(entry, pointer + '/' + index));
+    };
+    const visitSchemaValue = (candidate: unknown, pointer: string): void => {
+      if (Array.isArray(candidate)) visitSchemaArray(candidate, pointer);
+      else visitSchema(candidate, pointer);
+    };
+    if (capabilities.importActive) visitSchema(supplied.document, '');
 
     const visitDefinitions = (candidate: unknown, pointer: string): void => {
       if (!isRecord(candidate)) return;
@@ -327,21 +469,383 @@ export class ResolvedSchemaContext {
         if (name.startsWith('$') || !isRecord(declaration)) continue;
         const declarationPointer = `${pointer}/${escapePointer(name)}`;
         if (hasType(declaration)) {
-          declarations.set(declarationPointer, []);
+          if (!declarations.has(declarationPointer)) declarations.set(declarationPointer, []);
           add(declarationPointer, supplied.uri, declarationPointer, declaration, []);
         } else visitDefinitions(declaration, declarationPointer);
       }
     };
     visitDefinitions(supplied.document.definitions, '/definitions');
-    if (hasType(supplied.document)) add('', supplied.uri, '', supplied.document, []);
+    if (hasType(supplied.document) || compositionActive && isCompositionDeclaration(supplied.document)) add('', supplied.uri, '', supplied.document, []);
     pruneDanglingLocalTypeReferences(declarations, supplied.uri);
+    const collisions = [...declarations.entries()]
+      .filter(([, locations]) => locations.length > 1)
+      .map(([effectivePointer, locations]) => ({ effectivePointer, locations: [...locations] }));
+    indeterminate ||= collisions.length > 0;
 
-    const result = { declarations, indeterminate };
+    const uniqueImportCollisions = uniqueImportCollisionEntries(importCollisions);
+    const uniqueDiagnostics = uniqueDiagnosticsEntries(diagnostics);
+    const result = { declarations, indeterminate, collisions, importCollisions: uniqueImportCollisions, diagnostics: uniqueDiagnostics };
     this.indexes.set(key, result);
     return result;
   }
 }
 
+/** Materializes declarations supplied by effective imports for converters that cannot resolve imports themselves. */
+export function materializeEffectiveImports(root: Readonly<Record<string, unknown>>, context: ResolvedSchemaContext): Readonly<Record<string, unknown>> {
+  if (context.indeterminate) {
+    const importCollisions = context.importCollisions;
+    const collisions = context.collisions;
+    const detail = [
+      importCollisions.length > 0 ? ` Import collisions: ${importCollisions.map(formatImportCollision).join('; ')}` : '',
+      collisions.length > 0 ? ` Declaration collisions: ${collisions.map(formatCollision).join('; ')}` : ''
+    ].join('');
+    throw new Error(`Effective imports are indeterminate; verify every imported document is available and unambiguous before conversion.${detail}`);
+  }
+  const mappings = new Map<string, string>();
+  for (const location of context.declarations()) {
+    const key = materializationMappingKey(importScopeKey(location.imports), location.documentUri, location.sourcePointer);
+    if (!mappings.has(key)) mappings.set(key, location.effectivePointer);
+    for (let index = 0; index < location.imports.length; index++) {
+      const visiblePointer = pointerVisibleAtImport(location, index);
+      if (visiblePointer === undefined) continue;
+      const parentImports = location.imports.slice(index + 1);
+      const parentUri = context.importingDocumentFor(location.imports[index]!) ?? context.rootUri;
+      const visibleKey = materializationMappingKey(importScopeKey(parentImports), parentUri, visiblePointer);
+      if (!mappings.has(visibleKey)) mappings.set(visibleKey, location.effectivePointer);
+    }
+  }
+  const capabilities = resolveCapabilities(root);
+  const result = materializeSchemaNode(root, '', context.rootUri, [], mappings, root, capabilities);
+  if (!isRecord(result)) throw new Error('The conversion source must be a JSON object.');
+  for (const location of context.declarations()) {
+    if (location.imports.length === 0 || !location.effectivePointer.startsWith('/definitions/')) continue;
+    const sourceRoot = context.documentFor(location.documentUri) ?? location.schema;
+    const materialized = materializeSchemaNode(
+      location.schema,
+      location.sourcePointer,
+      location.documentUri,
+      location.imports,
+      mappings,
+      sourceRoot,
+      context.capabilitiesFor(location.documentUri)
+    );
+    setPointerValue(result, location.effectivePointer, materialized);
+  }
+  return result;
+}
+
+function materializeSchemaNode(
+  value: unknown,
+  pointer: string,
+  documentUri: string,
+  imports: readonly ImportProvenance[],
+  mappings: ReadonlyMap<string, string>,
+  namespaceRoot: Readonly<Record<string, unknown>>,
+  capabilities: ReturnType<typeof resolveCapabilities>
+): unknown {
+  if (!isRecord(value)) return value;
+  const directReference = isTypeReference(value);
+  const result: Record<string, unknown> = {};
+  const namespace = capabilities.importActive && activeNamespacePointer(namespaceRoot, pointer);
+  for (const [key, child] of Object.entries(value)) {
+    if (namespace && (key === '$import' || key === '$importdefs')) continue;
+    let transformed: unknown = child;
+    if (key === '$root' && pointer === '' && typeof child === 'string') {
+      transformed = rewriteReference(child, documentUri, imports, mappings);
+    } else if (key === '$ref' && directReference && typeof child === 'string') {
+      transformed = rewriteReference(child, documentUri, imports, mappings);
+    } else if (key === '$extends' || key === '$addins') {
+      transformed = rewriteReferenceValue(child, documentUri, imports, mappings);
+    } else if (key === 'type') {
+      transformed = materializeTypeValue(child, pointer + '/type', documentUri, imports, mappings, namespaceRoot, capabilities);
+    } else if (key === 'definitions' && isRecord(child)) {
+      transformed = materializeNamespace(child, pointer + '/definitions', documentUri, imports, mappings, namespaceRoot, capabilities);
+    } else if (key === 'properties' && isRecord(child)) {
+      transformed = materializeSchemaMap(child, pointer + '/properties', documentUri, imports, mappings, namespaceRoot, capabilities);
+    } else if (key === 'additionalProperties' && isRecord(child)) {
+      transformed = materializeSchemaNode(child, pointer + '/additionalProperties', documentUri, imports, mappings, namespaceRoot, capabilities);
+    } else if (key === 'items' || key === 'values') {
+      transformed = materializeSchemaValue(child, pointer + '/' + key, documentUri, imports, mappings, namespaceRoot, capabilities);
+    } else if (key === 'choices' && isRecord(child)) {
+      transformed = materializeSchemaMap(child, pointer + '/choices', documentUri, imports, mappings, namespaceRoot, capabilities);
+    } else if (capabilities.validationActive && (key === 'contains' || key === 'propertyNames' || key === 'keyNames' || key === 'has')) {
+      transformed = materializeSchemaValue(child, pointer + '/' + key, documentUri, imports, mappings, namespaceRoot, capabilities);
+    } else if (capabilities.validationActive && (key === 'patternProperties' || key === 'patternKeys') && isRecord(child)) {
+      transformed = materializeSchemaMap(child, pointer + '/' + key, documentUri, imports, mappings, namespaceRoot, capabilities);
+    } else if (capabilities.conditionalCompositionActive && (key === 'allOf' || key === 'anyOf' || key === 'oneOf' || key === 'not' || key === 'if' || key === 'then' || key === 'else')) {
+      transformed = materializeSchemaValue(child, pointer + '/' + key, documentUri, imports, mappings, namespaceRoot, capabilities);
+    } else if (capabilities.relationsActive && key === 'relations' && isRecord(child)) {
+      transformed = materializeRelationMap(child, documentUri, imports, mappings);
+    }
+    defineOwnProperty(result, key, transformed);
+  }
+  return result;
+}
+
+function materializeNamespace(
+  value: Readonly<Record<string, unknown>>,
+  pointer: string,
+  documentUri: string,
+  imports: readonly ImportProvenance[],
+  mappings: ReadonlyMap<string, string>,
+  namespaceRoot: Readonly<Record<string, unknown>>,
+  capabilities: ReturnType<typeof resolveCapabilities>
+): Readonly<Record<string, unknown>> {
+  const result: Record<string, unknown> = {};
+  const namespace = capabilities.importActive && activeNamespacePointer(namespaceRoot, pointer);
+  for (const [key, child] of Object.entries(value)) {
+    if (namespace && (key === '$import' || key === '$importdefs')) continue;
+    if (key === 'definitions' && isRecord(child)) {
+      defineOwnProperty(result, key, materializeNamespace(child, pointer + '/definitions', documentUri, imports, mappings, namespaceRoot, capabilities));
+    } else if (isRecord(child)) {
+      const childPointer = pointer + '/' + escapePointer(key);
+      defineOwnProperty(result, key, isSchemaDeclaration(child)
+        ? materializeSchemaNode(child, childPointer, documentUri, imports, mappings, namespaceRoot, capabilities)
+        : materializeNamespace(child, childPointer, documentUri, imports, mappings, namespaceRoot, capabilities));
+    } else {
+      defineOwnProperty(result, key, child);
+    }
+  }
+  return result;
+}
+
+function materializeSchemaMap(
+  value: Readonly<Record<string, unknown>>,
+  pointer: string,
+  documentUri: string,
+  imports: readonly ImportProvenance[],
+  mappings: ReadonlyMap<string, string>,
+  namespaceRoot: Readonly<Record<string, unknown>>,
+  capabilities: ReturnType<typeof resolveCapabilities>
+): Readonly<Record<string, unknown>> {
+  const result: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(value)) {
+    defineOwnProperty(result, key, isRecord(child)
+      ? materializeSchemaNode(child, pointer + '/' + escapePointer(key), documentUri, imports, mappings, namespaceRoot, capabilities)
+      : child);
+  }
+  return result;
+}
+
+function materializeSchemaValue(
+  value: unknown,
+  pointer: string,
+  documentUri: string,
+  imports: readonly ImportProvenance[],
+  mappings: ReadonlyMap<string, string>,
+  namespaceRoot: Readonly<Record<string, unknown>>,
+  capabilities: ReturnType<typeof resolveCapabilities>
+): unknown {
+  if (Array.isArray(value)) {
+    return value.map((child, index) => isRecord(child)
+      ? materializeSchemaNode(child, pointer + '/' + index, documentUri, imports, mappings, namespaceRoot, capabilities)
+      : child);
+  }
+  return isRecord(value)
+    ? materializeSchemaNode(value, pointer, documentUri, imports, mappings, namespaceRoot, capabilities)
+    : value;
+}
+
+function materializeTypeValue(
+  value: unknown,
+  pointer: string,
+  documentUri: string,
+  imports: readonly ImportProvenance[],
+  mappings: ReadonlyMap<string, string>,
+  namespaceRoot: Readonly<Record<string, unknown>>,
+  capabilities: ReturnType<typeof resolveCapabilities>
+): unknown {
+  if (isTypeReference(value)) return materializeTypeReference(value, documentUri, imports, mappings);
+  if (!Array.isArray(value)) return value;
+  return value.map((entry, index) => {
+    if (isTypeReference(entry)) return materializeTypeReference(entry, documentUri, imports, mappings);
+    return isRecord(entry)
+      ? materializeSchemaNode(entry, pointer + '/' + index, documentUri, imports, mappings, namespaceRoot, capabilities)
+      : entry;
+  });
+}
+
+function materializeTypeReference(
+  value: Readonly<Record<string, unknown>>,
+  documentUri: string,
+  imports: readonly ImportProvenance[],
+  mappings: ReadonlyMap<string, string>
+): Readonly<Record<string, unknown>> {
+  if (typeof value.$ref !== 'string') return value;
+  const reference = rewriteReference(value.$ref, documentUri, imports, mappings);
+  return reference === value.$ref ? value : { ...value, $ref: reference };
+}
+
+function materializeRelationMap(
+  value: Readonly<Record<string, unknown>>,
+  documentUri: string,
+  imports: readonly ImportProvenance[],
+  mappings: ReadonlyMap<string, string>
+): Readonly<Record<string, unknown>> {
+  const result: Record<string, unknown> = {};
+  for (const [name, relation] of Object.entries(value)) {
+    if (!isRecord(relation)) {
+      defineOwnProperty(result, name, relation);
+      continue;
+    }
+    const transformed: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(relation)) {
+      defineOwnProperty(transformed, key, (key === 'targettype' || key === 'qualifiertype') && isTypeReference(child)
+        ? materializeTypeReference(child, documentUri, imports, mappings)
+        : child);
+    }
+    defineOwnProperty(result, name, transformed);
+  }
+  return result;
+}
+
+function rewriteReferenceValue(
+  value: unknown,
+  documentUri: string,
+  imports: readonly ImportProvenance[],
+  mappings: ReadonlyMap<string, string>
+): unknown {
+  if (typeof value === 'string') return rewriteReference(value, documentUri, imports, mappings);
+  if (Array.isArray(value) && value.every((entry) => typeof entry === 'string')) {
+    return value.map((entry) => rewriteReference(entry, documentUri, imports, mappings));
+  }
+  return value;
+}
+
+function rewriteReference(
+  reference: string,
+  documentUri: string,
+  imports: readonly ImportProvenance[],
+  mappings: ReadonlyMap<string, string>
+): string {
+  const pointer = referencePointer(reference);
+  if (pointer === undefined) return reference;
+  const mapped = mappings.get(materializationMappingKey(importScopeKey(imports), documentUri, pointer));
+  return mapped === undefined ? reference : '#' + mapped;
+}
+
+function isTypeReference(value: unknown): value is Readonly<Record<string, unknown>> {
+  return isRecord(value) && typeof value.$ref === 'string' &&
+    Object.keys(value).every((key) => key === '$ref' || key === 'description') &&
+    (value.description === undefined || typeof value.description === 'string');
+}
+
+function pointerVisibleAtImport(location: ResolvedSchemaLocation, importIndex: number): string | undefined {
+  let pointer = location.sourcePointer;
+  if (pointer === '') {
+    if (typeof location.schema.name !== 'string') return undefined;
+    pointer = '/' + escapePointer(location.schema.name);
+  }
+  for (let index = 0; index <= importIndex; index++) {
+    const origin = location.imports[index];
+    if (!origin) return undefined;
+    const marker = origin.importPointer.lastIndexOf('/$');
+    if (marker < 0) return undefined;
+    const namespacePointer = origin.importPointer.slice(0, marker);
+    const destination = namespacePointer === '' || namespacePointer === '/definitions' ? '/definitions' : namespacePointer;
+    if (!pointer.startsWith('/definitions/')) {
+      if (origin.keyword !== '$import') return undefined;
+      pointer = destination + pointer;
+    } else {
+      pointer = destination + pointer.slice('/definitions'.length);
+    }
+  }
+  return pointer;
+}
+
+function importScopeKey(imports: readonly ImportProvenance[]): string {
+  return imports.map((origin) => [origin.importSource, origin.importPointer, origin.keyword].join('\u0001')).join('\u0002');
+}
+
+function materializationMappingKey(scope: string, documentUri: string, sourcePointer: string): string {
+  return scope + '\u0000' + canonicalUri(documentUri) + '#' + sourcePointer;
+}
+
+function activeNamespacePointer(root: Readonly<Record<string, unknown>>, pointer: string): boolean {
+  if (pointer === '') return true;
+  if (pointer === '/definitions') return isRecord(root.definitions);
+  if (!pointer.startsWith('/definitions/') || !isRecord(root.definitions)) return false;
+  let current: unknown = root.definitions;
+  for (const part of pointer.slice('/definitions/'.length).split('/').map(unescapePointer)) {
+    if (!isRecord(current)) return false;
+    current = ownValue(current, part);
+    if (!isRecord(current) || validCoreTypeValue(current.type)) return false;
+  }
+  return true;
+}
+
+function defineOwnProperty(target: Record<string, unknown>, key: string, value: unknown): void {
+  Object.defineProperty(target, key, { value, writable: true, enumerable: true, configurable: true });
+}
+
+function importPointer(namespacePointer: string, keyword: '$import' | '$importdefs'): string {
+  return namespacePointer === '' ? '/' + keyword : namespacePointer + '/' + keyword;
+}
+
+function parserDualImportDiagnostic(document: ResolvedSchemaDocument, pointer: string): Diagnostic {
+  const existing = document.diagnostics?.find((diagnostic) =>
+    diagnostic.code === DUAL_IMPORT_DIAGNOSTIC_CODE && diagnostic.location?.pointer === pointer);
+  return existing ?? {
+    code: DUAL_IMPORT_DIAGNOSTIC_CODE,
+    message: DUAL_IMPORT_DIAGNOSTIC_MESSAGE,
+    severity: 'error',
+    location: { uri: document.uri, pointer }
+  };
+}
+
+function uniqueImportCollisionEntries(collisions: readonly ResolvedSchemaImportCollision[]): readonly ResolvedSchemaImportCollision[] {
+  const seen = new Set<string>();
+  return collisions.filter((collision) => {
+    const key = `${canonicalUri(collision.documentUri)}#${collision.namespacePointer}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function uniqueDiagnosticsEntries(diagnostics: readonly Diagnostic[]): readonly Diagnostic[] {
+  const seen = new Set<string>();
+  return diagnostics.filter((diagnostic) => {
+    const location = diagnostic.location;
+    const key = [diagnostic.code, diagnostic.message, location?.uri ?? '', location?.pointer ?? ''].join('\u0000');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function formatImportCollision(collision: ResolvedSchemaImportCollision): string {
+  const imports = collision.imports.map((entry) =>
+    `${entry.importPointer} (${entry.keyword}${entry.importSource === undefined ? '' : `: ${entry.importSource}`})`).join(', ');
+  return `${collision.documentUri}#${collision.namespacePointer} (${imports}): ${collision.diagnostic.message}`;
+}
+
+function formatCollision(collision: ResolvedSchemaCollision): string {
+  const declarations = collision.locations.map((location) => {
+    const origin = location.imports.length === 0
+      ? `${location.documentUri}#${location.sourcePointer}`
+      : `${location.documentUri}#${location.sourcePointer} via ${location.imports.map((entry) => entry.importPointer).join(' -> ')}`;
+    return origin;
+  }).join(', ');
+  return `${collision.effectivePointer} (${declarations})`;
+}
+
+function setPointerValue(root: Record<string, unknown>, pointer: string, value: unknown): void {
+  const tokens = pointer.slice(1).split('/').map(unescapePointer);
+  if (tokens.length < 2 || tokens[0] !== 'definitions') return;
+  let current = root;
+  for (const token of tokens.slice(0, -1)) {
+    const existing = Object.prototype.hasOwnProperty.call(current, token) ? current[token] : undefined;
+    if (isRecord(existing)) current = existing;
+    else {
+      const next: Record<string, unknown> = {};
+      defineOwnProperty(current, token, next);
+      current = next;
+    }
+  }
+  const leaf = tokens[tokens.length - 1];
+  if (leaf !== undefined && !Object.prototype.hasOwnProperty.call(current, leaf)) defineOwnProperty(current, leaf, value);
+}
 export function referencePointer(reference: string): string | undefined {
   if (!reference.startsWith('#')) return undefined;
   try {
@@ -356,10 +860,18 @@ function hasType(value: Readonly<Record<string, unknown>>): boolean {
   return validCoreTypeValue(value.type) && coreTypeReferences(value.type).every((reference) => referencePointer(reference) !== undefined);
 }
 
+function isCompositionDeclaration(value: Readonly<Record<string, unknown>>): boolean {
+  return ['allOf', 'anyOf', 'oneOf', 'not', 'if', 'then', 'else'].some((keyword) => Object.prototype.hasOwnProperty.call(value, keyword));
+}
+
 function isSchemaDeclaration(value: Readonly<Record<string, unknown>>): boolean {
-  return Object.prototype.hasOwnProperty.call(value, 'type') ||
-    Object.prototype.hasOwnProperty.call(value, '$ref') ||
-    ['allOf', 'anyOf', 'oneOf', 'not', 'if', 'then', 'else'].some((keyword) => Object.prototype.hasOwnProperty.call(value, keyword));
+  if (Object.prototype.hasOwnProperty.call(value, 'type')) return true;
+  if (typeof value.$ref === 'string' || typeof value.$extends === 'string' || Array.isArray(value.$extends)) return true;
+  return [
+    'definitions', 'properties', 'items', 'values', 'choices',
+    'allOf', 'anyOf', 'oneOf', 'not', 'if', 'then', 'else',
+    'contains', 'propertyNames', 'keyNames', 'has', 'patternProperties', 'patternKeys'
+  ].some((keyword) => Object.prototype.hasOwnProperty.call(value, keyword));
 }
 function pruneDanglingLocalTypeReferences(declarations: Map<string, ResolvedSchemaLocation[]>, documentUri: string): void {
   let changed: boolean;
@@ -424,6 +936,7 @@ function pointerValue(root: unknown, pointer: string): unknown {
   return current;
 }
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> { return value !== null && typeof value === 'object' && !Array.isArray(value); }
+function ownValue(value: Readonly<Record<string, unknown>>, key: string): unknown { return Object.prototype.hasOwnProperty.call(value, key) ? value[key] : undefined; }
 function escapePointer(value: string): string { return value.replace(/~/g, '~0').replace(/\//g, '~1'); }
 function canonicalUri(value: string): string { try { const uri = new URL(value); uri.hash = ''; return uri.href; } catch { return value; } }
 function resolveUri(base: string, source: string): string { try { return new URL(source.split('#', 1)[0] ?? source, base).href; } catch { return source; } }

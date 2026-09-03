@@ -1111,14 +1111,14 @@ describe('Phase 1 vertical slice', () => {
     expect(changed.text.slice(0, inverse.range.startOffset) + inverse.newText + changed.text.slice(inverse.range.endOffset)).toBe(original);
     expect((await host.undo()).text).toBe(original);
   });
-  it('rejects unsafe property rename and delete operations', () => {
+  it('updates required and identity members atomically while still rejecting ambiguous property operations', () => {
     const referenced = new DocumentSession('memory://referenced', '{"type":"object","properties":{"id":{"type":"string"}},"required":["id"],"identity":["id"]}');
-    expect(new RenamePropertyCommand('/properties/id', 'key').canExecute({ session: referenced, documentVersion: 1 })).toBe(false);
-    expect(new DeletePropertyCommand('/properties/id').canExecute({ session: referenced, documentVersion: 1 })).toBe(false);
+    expect(new RenamePropertyCommand('/properties/id', 'key').canExecute({ session: referenced, documentVersion: 1 })).toBe(true);
+    expect(new DeletePropertyCommand('/properties/id').canExecute({ session: referenced, documentVersion: 1 })).toBe(true);
 
     const alternativeRequired = new DocumentSession('memory://alternative-required', '{"type":"object","properties":{"id":{"type":"string"},"email":{"type":"string"}},"required":[["id"],["email"]]}');
-    expect(new RenamePropertyCommand('/properties/id', 'key').canExecute({ session: alternativeRequired, documentVersion: 1 })).toBe(false);
-    expect(new DeletePropertyCommand('/properties/id').canExecute({ session: alternativeRequired, documentVersion: 1 })).toBe(false);
+    expect(new RenamePropertyCommand('/properties/id', 'key').canExecute({ session: alternativeRequired, documentVersion: 1 })).toBe(true);
+    expect(new DeletePropertyCommand('/properties/id').canExecute({ session: alternativeRequired, documentVersion: 1 })).toBe(true);
 
     const relationCollision = new DocumentSession('memory://relation-collision', withRelations('{"type":"object","properties":{"id":{"type":"string"}},"relations":{"owner":{"targettype":{"type":"object"}}}}'));
     expect(new RenamePropertyCommand('/properties/id', 'owner').canExecute({ session: relationCollision, documentVersion: 1 })).toBe(false);
@@ -1584,19 +1584,19 @@ describe('Phase 1 vertical slice', () => {
     expect(new RenameDefinitionCommand('/definitions/User', 'Profile').canExecute({ session: collision, documentVersion: 1 })).toBe(false);
 
     const referenced = new DocumentSession('memory://referenced-def', '{"definitions":{"User":{"type":"object"},"Team":{"type":{"$ref":"#/definitions/User"}}}}');
-    expect(new RenameDefinitionCommand('/definitions/User', 'Profile').canExecute({ session: referenced, documentVersion: 1 })).toBe(false);
+    expect(new RenameDefinitionCommand('/definitions/User', 'Profile').canExecute({ session: referenced, documentVersion: 1 })).toBe(true);
     expect(new DeleteDefinitionCommand('/definitions/User').canExecute({ session: referenced, documentVersion: 1 })).toBe(false);
 
     const extendsRef = new DocumentSession('memory://extends-def', '{"definitions":{"User":{"type":"object"},"Team":{"$extends":["#/definitions/User"]}}}');
-    expect(new RenameDefinitionCommand('/definitions/User', 'Profile').canExecute({ session: extendsRef, documentVersion: 1 })).toBe(false);
+    expect(new RenameDefinitionCommand('/definitions/User', 'Profile').canExecute({ session: extendsRef, documentVersion: 1 })).toBe(true);
     expect(new DeleteDefinitionCommand('/definitions/User').canExecute({ session: extendsRef, documentVersion: 1 })).toBe(false);
 
     const targetTypeRef = new DocumentSession('memory://targettype-def', withRelations('{"definitions":{"User":{"type":"object"},"Team":{"type":"object","relations":{"owner":{"targettype":{"$ref":"#/definitions/User"}}}}}}'));
-    expect(new RenameDefinitionCommand('/definitions/User', 'Profile').canExecute({ session: targetTypeRef, documentVersion: 1 })).toBe(false);
+    expect(new RenameDefinitionCommand('/definitions/User', 'Profile').canExecute({ session: targetTypeRef, documentVersion: 1 })).toBe(true);
     expect(new DeleteDefinitionCommand('/definitions/User').canExecute({ session: targetTypeRef, documentVersion: 1 })).toBe(false);
 
     const qualifierTypeRef = new DocumentSession('memory://qualifiertype-def', withRelations('{"definitions":{"User":{"type":"object"},"Team":{"type":"object","relations":{"owner":{"qualifiertype":{"$ref":"#/definitions/User"}}}}}}'));
-    expect(new RenameDefinitionCommand('/definitions/User', 'Profile').canExecute({ session: qualifierTypeRef, documentVersion: 1 })).toBe(false);
+    expect(new RenameDefinitionCommand('/definitions/User', 'Profile').canExecute({ session: qualifierTypeRef, documentVersion: 1 })).toBe(true);
     expect(new DeleteDefinitionCommand('/definitions/User').canExecute({ session: qualifierTypeRef, documentVersion: 1 })).toBe(false);
 
     const rootRef = new DocumentSession('memory://root-ref', '{"$root":"#/definitions/User","definitions":{"User":{"type":"object"}}}');
@@ -1619,7 +1619,7 @@ describe('Phase 1 vertical slice', () => {
     expect(() => new DeleteDefinitionCommand('/definitions/User').canExecute({ session: malformedRootRef, documentVersion: 1 })).not.toThrow();
 
     const nestedNamespaceRef = new DocumentSession('memory://nested-ref', '{"definitions":{"Container":{"type":"object","definitions":{"Inner":{"type":"object"},"Use":{"type":{"$ref":"#/definitions/Container/definitions/Inner"}}}}}}');
-    expect(new RenameDefinitionCommand('/definitions/Container/definitions/Inner', 'Renamed').canExecute({ session: nestedNamespaceRef, documentVersion: 1 })).toBe(false);
+    expect(new RenameDefinitionCommand('/definitions/Container/definitions/Inner', 'Renamed').canExecute({ session: nestedNamespaceRef, documentVersion: 1 })).toBe(true);
     expect(new DeleteDefinitionCommand('/definitions/Container/definitions/Inner').canExecute({ session: nestedNamespaceRef, documentVersion: 1 })).toBe(false);
 
     const nestedNamespace = new DocumentSession('memory://nested-ns', '{"definitions":{"Container":{"type":"object","definitions":{"Inner":{"type":"object"}}}}}');
@@ -1659,13 +1659,12 @@ describe('Phase 1 vertical slice', () => {
         : JSON.stringify(value);
       const session = new DocumentSession('memory://escaped-reference', document);
       const rename = new RenameDefinitionCommand(definitionPointer, 'Renamed');
-      expect(rename.canExecute({ session, documentVersion: 1 })).toBe(Object.prototype.hasOwnProperty.call(site, '$root'));
-      if (Object.prototype.hasOwnProperty.call(site, '$root')) {
-        const renamed = [...rename.execute({ session, documentVersion: 1 }).edits]
-          .sort((left, right) => right.range.startOffset! - left.range.startOffset!)
-          .reduce((text, edit) => text.slice(0, edit.range.startOffset) + edit.newText + text.slice(edit.range.endOffset), document);
-        expect(JSON.parse(renamed).$root).toBe('#/definitions/Renamed');
-      }
+      expect(rename.canExecute({ session, documentVersion: 1 })).toBe(true);
+      const renamed = [...rename.execute({ session, documentVersion: 1 }).edits]
+        .sort((left, right) => right.range.startOffset! - left.range.startOffset!)
+        .reduce((text, edit) => text.slice(0, edit.range.startOffset) + edit.newText + text.slice(edit.range.endOffset), document);
+      expect(renamed).not.toContain(reference);
+      expect(renamed).toContain('#/definitions/Renamed');
       expect(new DeleteDefinitionCommand(definitionPointer).canExecute({ session, documentVersion: 1 })).toBe(false);
     }
   });

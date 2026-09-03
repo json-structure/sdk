@@ -16,6 +16,29 @@ describe('action runtime', () => {
     expect(actionAvailability(action, '', { type: 'decimal', scale: 2 }).enabled).toBe(true);
   });
 
+  it('does not offer invariant-breaking type or required shape removal actions', () => {
+    expect(actionById('core.type.remove')).toBeUndefined();
+    expect(actionById('core.choice.remove')).toBeUndefined();
+    for (const [actionId, document] of [
+      ['core.properties.remove', { type: 'object', properties: {} }],
+      ['core.items.remove', { type: 'array', items: { type: 'string' } }],
+      ['core.items.remove', { type: 'set', items: { type: 'string' } }],
+      ['core.values.remove', { type: 'map', values: { type: 'string' } }],
+      ['core.properties.remove', { type: 'tuple', properties: {}, tuple: [] }],
+      ['core.tuple.remove', { type: 'tuple', properties: {}, tuple: [] }],
+      ['core.choices.remove', { type: 'choice', choices: { text: { type: 'string' } } }],
+    ] as const) {
+      expect(actionAvailability(actionById(actionId)!, '', document), actionId).toMatchObject({ enabled: false });
+    }
+  });
+
+  it('keeps mandatory document headers out of the removal surface', () => {
+    const document = { $schema: 'https://json-structure.org/meta/core/v0/#', $id: 'urn:test', name: 'Test' };
+    for (const keyword of ['$schema', '$id', 'name']) {
+      const action = actionById(`core.${keyword === '$schema' ? 'schema' : keyword === '$id' ? 'id' : keyword}.remove`)!;
+      expect(actionAvailability(action, '', document)).toMatchObject({ enabled: false, pointer: '' });
+    }
+  });
   it('converts typed values and rejects invalid constrained numbers', () => {
     expect(parseActionValue(actionById('core.abstract')!, '', true)).toBe(true);
     expect(parseActionValue(actionById('core.precision')!, '12')).toBe(12);
@@ -27,10 +50,13 @@ describe('action runtime', () => {
   });
 
   it('maps catalog controls to supported catalog families', () => {
+    expect(catalogFamilyForAction(actionById('units.unit')!)).toBe('unit');
     expect(catalogFamilyForAction(actionById('units.ucumUnit')!)).toBe('ucumUnit');
+    expect(catalogFamilyForAction(actionById('semantic.concepts')!)).toBe('semanticConcept');
     expect(catalogFamilyForAction(actionById('validation.format')!)).toBeUndefined();
     expect(catalogFamilyForAction(actionById('semantic.semanticRole')!)).toBe('semanticRole');
     expect(parseActionValue(actionById('semantic.semanticRole')!, '{"reference":"urn:test"}')).toEqual({ reference: 'urn:test' });
+    expect(parseActionValue(actionById('semantic.concepts')!, '[{"reference":"urn:test","kind":"custom"}]')).toEqual([{ reference: 'urn:test', kind: 'custom' }]);
   });
 
   it('resolves escaped JSON pointers', () => {

@@ -11,13 +11,15 @@ import {
   coreScalarValueValid,
   deeplyUniqueJsonValues,
   effectiveCorePrimitiveType,
+  parseDocument,
   rangeFor,
+  SEMANTIC_ANNOTATION_KEYWORDS,
   semanticAnnotationCandidateValid,
   semanticAnnotationSetValid,
   type SemanticAnnotationKeyword,
   type SemanticAnnotationKeywordMap
 } from './parser.js';
-import { effectiveValidationTypes, validationIssues, validationValueIsSchemaBacked, type ValidationKeyword, type ValidationKeywordMap } from './validation.js';
+import { effectiveValidationTypes, VALIDATION_KEYWORDS, validationIssues, validationValueIsSchemaBacked, type ValidationKeyword, type ValidationKeywordMap } from './validation.js';
 import { unitsValueValid, type UnitsKeyword, type UnitsKeywordMap } from './units.js';
 import { alternateNamesPlacementValid, alternateNamesValueValid, type AlternateNamesKeyword, type AlternateNamesKeywordMap } from './alternate-names.js';
 import { ResolvedSchemaContext } from './phase4/resolved-schema.js';
@@ -104,6 +106,24 @@ function propertyContext(session: DocumentSession, propertyPointer: string): {
       !Object.prototype.hasOwnProperty.call(properties, propertyName) || !hasUniquePointerPath(session, propertyPointer) || nodes.length !== 1 || !node?.keyRange || !node.range) return undefined;
   return { owner: owner as Record<string, unknown>, properties: properties as Record<string, unknown>, propertyName, keyRange: node.keyRange, valueRange: node.range };
 }
+function choiceContext(session: DocumentSession, choicePointer: string): {
+  ownerPointer: string; owner: Record<string, unknown>; choices: Record<string, unknown>; choiceName: string; keyRange: TextRange; valueRange: TextRange;
+} | undefined {
+  const split = choicePointer.lastIndexOf('/');
+  if (split < 0) return undefined;
+  const choicesPointer = choicePointer.slice(0, split);
+  if (choicesPointer === '' || !choicesPointer.endsWith('/choices')) return undefined;
+  const ownerPointer = choicesPointer.slice(0, -'/choices'.length);
+  const owner = pointerValue(session.value, ownerPointer);
+  const choices = pointerValue(session.value, choicesPointer);
+  const choiceName = decodePointerPart(choicePointer.slice(split + 1));
+  const nodes = session.model?.nodes.filter((candidate) => candidate.pointer === choicePointer) ?? [];
+  const node = nodes[0];
+  if (!isObjectLike(owner) || owner.type !== 'choice' || !isObjectLike(choices) ||
+    !Object.prototype.hasOwnProperty.call(choices, choiceName) || !hasUniquePointerPath(session, choicePointer) ||
+    hasDuplicatePointerDiagnostic(session, choicePointer) || nodes.length !== 1 || !node?.keyRange || !node.range) return undefined;
+  return { ownerPointer, owner, choices, choiceName, keyRange: node.keyRange, valueRange: node.range };
+}
 function hasUniquePointerPath(session: DocumentSession, pointer: string): boolean {
   if (pointer === '') return session.model?.nodes.filter((candidate) => candidate.pointer === '').length === 1;
   const segments = pointer.slice(1).split('/');
@@ -116,9 +136,54 @@ function hasUniquePointerPath(session: DocumentSession, pointer: string): boolea
 function hasDuplicatePointerDiagnostic(session: DocumentSession, pointer: string): boolean {
   return session.snapshot().diagnostics.some((diagnostic) => diagnostic.code === 'json.duplicate-pointer' && diagnostic.location?.pointer === pointer);
 }
-function isReferencedProperty(owner: Record<string, unknown>, propertyName: string, relationsActive: boolean): boolean {
-  const containsName = (value: unknown): boolean => value === propertyName || (Array.isArray(value) && value.some(containsName));
-  return containsName(owner.required) || (relationsActive && Array.isArray(owner.identity) && owner.identity.includes(propertyName));
+function schemaOwnedReferencePointers(session: DocumentSession): ReadonlySet<string> {
+  const pointers = new Set((session.model?.projections.references ?? []).map((reference) => reference.pointer));
+  const offers = pointerValue(session.value, '/$offers');
+  if (isObjectLike(offers)) {
+    for (const [name, value] of Object.entries(offers)) {
+      const pointer = `/$offers/${encodePointerPart(name)}`;
+      if (typeof value === 'string') pointers.add(pointer);
+      else if (isStringArray(value)) value.forEach((_entry, index) => pointers.add(`${pointer}/${index}`));
+    }
+  }
+  for (const definition of session.model?.projections.definitions ?? []) {
+    for (const relation of definition.relations) {
+      if (typeof relation.scope === 'string') pointers.add(`${relation.pointer}/scope`);
+      else if (Array.isArray(relation.scope)) relation.scope.forEach((_entry, index) => pointers.add(`${relation.pointer}/scope/${index}`));
+    }
+  }
+  return pointers;
+}
+function pointerReferenceMatches(value: string, pointer: string): boolean {
+  const authored = value.startsWith('#') ? value.slice(1) : value;
+  let normalized = authored;
+  try { normalized = decodeURIComponent(authored); } catch { return false; }
+  return normalized === pointer || normalized.startsWith(`${pointer}/`);
+}
+function rewritePointerReference(value: string, from: string, to: string): string {
+  const prefix = value.startsWith('#') ? '#' : '';
+  const authored = prefix ? value.slice(1) : value;
+  let normalized = authored;
+  try { normalized = decodeURIComponent(authored); } catch { return value; }
+  return pointerReferenceMatches(value, from) ? `${prefix}${to}${normalized.slice(from.length)}` : value;
+}
+function referenceSites(session: DocumentSession, pointer: string, excludePointer?: string): readonly { readonly pointer: string; readonly range: TextRange; readonly value: string }[] {
+  const excludedPrefix = excludePointer ? `${excludePointer}/` : undefined;
+  const ownedPointers = schemaOwnedReferencePointers(session);
+  return (session.model?.nodes ?? []).flatMap((node) => {
+    if (!node.range || !ownedPointers.has(node.pointer) ||
+      excludePointer && (node.pointer === excludePointer || node.pointer.startsWith(excludedPrefix!))) return [];
+    const value = pointerValue(session.value, node.pointer);
+    return typeof value === 'string' && pointerReferenceMatches(value, pointer)
+      ? [{ pointer: node.pointer, range: node.range, value }]
+      : [];
+  });
+}
+function referenceRewriteEdits(session: DocumentSession, from: string, to: string, excludePointer?: string): readonly TextEdit[] {
+  return referenceSites(session, from, excludePointer).map((site) => ({
+    range: site.range,
+    newText: JSON.stringify(rewritePointerReference(site.value, from, to))
+  }));
 }
 function definitionsContext(session: DocumentSession, definitionPointer: string): {
   namespacePointer: string;
@@ -131,8 +196,11 @@ function definitionsContext(session: DocumentSession, definitionPointer: string)
   const split = definitionPointer.lastIndexOf('/');
   if (split < 0) return undefined;
   const definitionsPointer = definitionPointer.slice(0, split);
-  if (definitionsPointer === '' || !definitionsPointer.endsWith('/definitions')) return undefined;
-  const namespacePointer = definitionsContextNamespace(definitionsPointer);
+  if (definitionsPointer === '' ||
+    !definitionsPointer.endsWith('/definitions') && !namespaceImportPlacement(session, definitionsPointer)) return undefined;
+  const namespacePointer = definitionsPointer.endsWith('/definitions')
+    ? definitionsContextNamespace(definitionsPointer)
+    : definitionsPointer;
   const definitions = pointerValue(session.value, definitionsPointer);
   const definitionName = decodePointerPart(definitionPointer.slice(split + 1));
   const nodes = session.model?.nodes.filter((candidate) => candidate.pointer === definitionPointer) ?? [];
@@ -146,49 +214,40 @@ function definitionsContext(session: DocumentSession, definitionPointer: string)
 function definitionsContextNamespace(definitionsPointer: string): string {
   return definitionsPointer === '/definitions' ? '' : definitionsPointer.slice(0, -'/definitions'.length);
 }
+function namespaceContext(session: DocumentSession, namespacePointer: string): {
+  parentPointer: string;
+  namespaceName: string;
+  namespace: Record<string, unknown>;
+  keyRange: TextRange;
+  valueRange: TextRange;
+} | undefined {
+  if (!namespacePointer.startsWith('/definitions/')) return undefined;
+  const split = namespacePointer.lastIndexOf('/');
+  const parentPointer = namespacePointer.slice(0, split);
+  const namespaceName = decodePointerPart(namespacePointer.slice(split + 1));
+  const parent = pointerValue(session.value, parentPointer);
+  const namespace = pointerValue(session.value, namespacePointer);
+  const nodes = session.model?.nodes.filter((candidate) => candidate.pointer === namespacePointer) ?? [];
+  const node = nodes[0];
+  if (!isNamespaceObject(parent) || !isNamespaceObject(namespace) || isTypeDeclaration(namespace) ||
+    !Object.prototype.hasOwnProperty.call(parent, namespaceName) || !hasUniquePointerPath(session, namespacePointer) ||
+    hasDuplicatePointerDiagnostic(session, namespacePointer) || nodes.length !== 1 || !node?.keyRange || !node.range) return undefined;
+  return { parentPointer, namespaceName, namespace, keyRange: node.keyRange, valueRange: node.range };
+}
+function namespaceContainsDeclarations(namespace: Record<string, unknown>): boolean {
+  return Object.entries(namespace).some(([key, value]) => {
+    if (key === 'definitions') return isObjectLike(value) && Object.keys(value).length > 0;
+    return key === '$import' || key === '$importdefs' || isObjectLike(value);
+  });
+}
 function isNamespaceObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === 'string');
 }
-function definitionReferenceSites(session: DocumentSession, definitionPointer: string, definitionRef: string): string[] {
-  const root = pointerValue(session.value, '');
-  if (!isNamespaceObject(root)) return [];
-  const sites = new Set<string>();
-  const subtree = `${definitionPointer}/`;
-  for (const node of session.model?.nodes ?? []) {
-    const pointer = node.pointer;
-    if (pointer === definitionPointer) continue;
-    const outsideDeletedSubtree = !(pointer === definitionPointer || pointer.startsWith(subtree));
-    const relationReference = pointer.endsWith('/targettype/$ref') || pointer.endsWith('/qualifiertype/$ref');
-
-    if (pointer === '/$root' && outsideDeletedSubtree) {
-      if (session.model?.rootPointer === definitionPointer) sites.add(pointer);
-    }
-
-    if (pointer.endsWith('/$ref') && outsideDeletedSubtree && (session.capabilities.relationsActive || !relationReference)) {
-      const ref = pointerValue(session.value, pointer);
-      if (typeof ref === 'string' && (ref === definitionRef || ref === definitionPointer)) sites.add(pointer);
-    }
-
-    if (pointer.endsWith('/$extends') && outsideDeletedSubtree) {
-      const extendsValue = pointerValue(session.value, pointer);
-      if (typeof extendsValue === 'string' && (extendsValue === definitionRef || extendsValue === definitionPointer)) sites.add(pointer);
-      if (isStringArray(extendsValue) && extendsValue.some((entry) => entry === definitionRef || entry === definitionPointer)) sites.add(pointer);
-    }
-
-    if (session.capabilities.relationsActive && pointer.endsWith('/targettype/$ref') && outsideDeletedSubtree) {
-      const targetRef = pointerValue(session.value, pointer);
-      if (typeof targetRef === 'string' && (targetRef === definitionRef || targetRef === definitionPointer)) sites.add(pointer);
-    }
-
-    if (session.capabilities.relationsActive && pointer.endsWith('/qualifiertype/$ref') && outsideDeletedSubtree) {
-      const qualifierRef = pointerValue(session.value, pointer);
-      if (typeof qualifierRef === 'string' && (qualifierRef === definitionRef || qualifierRef === definitionPointer)) sites.add(pointer);
-    }
-  }
-  return [...sites];
+function definitionReferenceSites(session: DocumentSession, definitionPointer: string): string[] {
+  return referenceSites(session, definitionPointer, definitionPointer).map((site) => site.pointer);
 }
 function canSetRoot(session: DocumentSession, rootPointer: string): boolean {
   const root = pointerValue(session.value, '');
@@ -216,8 +275,27 @@ function applyTextEdits(source: string, edits: readonly TextEdit[]): string {
 }
 
 function commandResultForEdits(source: string, edits: readonly TextEdit[]): CommandResult {
-  const ascending = [...edits].sort((left, right) =>
-    sourceOffsets(left.range, 'Edit source range is unavailable.').start - sourceOffsets(right.range, 'Edit source range is unavailable.').start);
+  const positioned = edits.map((edit, index) => {
+    const offsets = sourceOffsets(edit.range, 'Edit source range is unavailable.');
+    if (!Number.isInteger(offsets.start) || !Number.isInteger(offsets.end) || offsets.start < 0 || offsets.end < offsets.start || offsets.end > source.length) throw new Error('Edit source range is invalid.');
+    return { edit, index, offsets };
+  }).sort((left, right) => left.offsets.start - right.offsets.start || left.offsets.end - right.offsets.end || left.index - right.index);
+  const normalized: TextEdit[] = [];
+  for (const current of positioned) {
+    const previous = normalized.at(-1);
+    const currentOffsets = current.offsets;
+    if (previous) {
+      const previousOffsets = sourceOffsets(previous.range, 'Edit source range is unavailable.');
+      const overlaps = previousOffsets.start < currentOffsets.end && currentOffsets.start < previousOffsets.end;
+      if (overlaps) throw new Error('Overlapping text edits are not supported.');
+      if (previousOffsets.start === previousOffsets.end && currentOffsets.start === currentOffsets.end && previousOffsets.start === currentOffsets.start) {
+        normalized[normalized.length - 1] = { range: previous.range, newText: previous.newText + current.edit.newText };
+        continue;
+      }
+    }
+    normalized.push(current.edit);
+  }
+  const ascending = normalized;
   const changed = applyTextEdits(source, ascending);
   let delta = 0;
   const inverseEdits = ascending.map((edit) => {
@@ -241,8 +319,8 @@ function commandResultForEdits(source: string, edits: readonly TextEdit[]): Comm
   return { edits: ascending, inverseEdits: mergedInverseEdits };
 }
 
-function chooseInsertRange(session: DocumentSession, pointer: string): TextRange | undefined {
-  return objectRange(session, pointer);
+function namespaceContentPointer(namespacePointer: string): string {
+  return namespacePointer === '' || namespacePointer === '/definitions' ? '/definitions' : namespacePointer;
 }
 function isObjectLike(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -264,6 +342,8 @@ export const CORE_DOCUMENT_MEMBERS = [
 ] as const;
 export type CoreDocumentMember = typeof CORE_DOCUMENT_MEMBERS[number];
 const CORE_DOCUMENT_MEMBER_SET = new Set<string>(CORE_DOCUMENT_MEMBERS);
+const REQUIRED_DOCUMENT_HEADERS = new Set(['$schema', '$id', 'name']);
+const COLLECTION_TYPE_NAMES = new Set(['array', 'set', 'map']);
 
 function isTypeDeclaration(value: unknown): value is Record<string, unknown> {
   return isObjectLike(value) && validTypeValue(value.type);
@@ -288,8 +368,9 @@ function validPointerFragment(value: string): boolean {
 function validTypeValue(value: unknown): boolean {
   if (typeof value === 'string') return CORE_TYPES.has(value);
   if (typeReferenceValue(value) !== undefined) return true;
-  return Array.isArray(value) && value.length > 0 && value.every((member) =>
-    typeof member === 'string' ? CORE_TYPES.has(member) : validUnionObjectMember(member));
+  return Array.isArray(value) && value.length > 0 &&
+    new Set(value.map((member) => JSON.stringify(member))).size === value.length &&
+    value.every((member) => typeof member === 'string' ? CORE_TYPES.has(member) : validUnionObjectMember(member));
 }
 
 function validUnionObjectMember(value: unknown): boolean {
@@ -682,7 +763,159 @@ function removeMemberCommandResult(session: DocumentSession, targetPointer: stri
   if (!targetRange) throw new Error('Target source range is unavailable.');
   return deleteMemberCommandResult(source, targetRange, member.keyRange, member.valueRange);
 }
-function removeMembersCommandResult(session: DocumentSession, targetPointer: string, keywords: readonly string[]): CommandResult {
+const REMOVE_MEMBER = Symbol('remove-member');
+type MemberMutation = unknown | typeof REMOVE_MEMBER;
+function memberMutationEdits(session: DocumentSession, targetPointer: string, mutations: ReadonlyMap<string, MemberMutation>): readonly TextEdit[] {
+  const source = session.snapshot().text;
+  const edits: TextEdit[] = [];
+  const additions: Record<string, unknown> = {};
+  const removals: string[] = [];
+  for (const [keyword, value] of mutations) {
+    const member = objectMemberContext(session, targetPointer, keyword);
+    if (value === REMOVE_MEMBER) {
+      if (member) removals.push(keyword);
+      continue;
+    }
+    if (member) edits.push({ range: member.valueRange, newText: JSON.stringify(value) });
+    else additions[keyword] = value;
+  }
+  if (removals.length > 0) edits.push(...removeMembersCommandResult(session, targetPointer, removals).edits);
+  if (Object.keys(additions).length > 0) {
+    const targetRange = objectRange(session, targetPointer);
+    if (!targetRange) throw new Error('Target source range is unavailable.');
+    edits.push(...addMembersCommandResult(source, targetRange, additions).edits);
+  }
+  return edits;
+}
+function renamedPropertyList(value: unknown, oldName: string, newName: string | undefined): unknown {
+  if (!Array.isArray(value)) return value;
+  const rewritten = value.map((entry) => {
+    if (Array.isArray(entry)) return entry.filter((name) => newName !== undefined || name !== oldName).map((name) => name === oldName ? newName : name);
+    return entry === oldName ? newName : entry;
+  }).filter((entry) => entry !== undefined);
+  return value.every(Array.isArray) ? rewritten.filter((entry) => Array.isArray(entry) && entry.length > 0) : rewritten;
+}
+function rewriteStringArray(value: unknown, oldName: string, newName: string | undefined): unknown {
+  if (!Array.isArray(value)) return value;
+  const rewritten = value.flatMap((entry) => entry === oldName ? newName === undefined ? [] : [newName] : [entry]);
+  return rewritten.length > 0 ? rewritten : undefined;
+}
+function rewritePropertyBoundAnnotation(keyword: string, value: unknown, oldName: string, newName: string | undefined): unknown {
+  if (!isObjectLike(value) && !Array.isArray(value)) return value;
+  const clone: unknown = JSON.parse(JSON.stringify(value));
+  const rewriteScalar = (record: Record<string, unknown>, key: string, required = false): boolean => {
+    if (record[key] !== oldName) return true;
+    if (newName === undefined) {
+      if (required) return false;
+      delete record[key];
+    } else record[key] = newName;
+    return true;
+  };
+  const rewriteArray = (record: Record<string, unknown>, key: string, required = true): boolean => {
+    if (!Array.isArray(record[key])) return true;
+    const next = rewriteStringArray(record[key], oldName, newName);
+    if (next === undefined) {
+      if (required) return false;
+      delete record[key];
+    } else record[key] = next;
+    return true;
+  };
+  if (keyword === 'temporalReferenceSystem' && isObjectLike(clone)) return rewriteScalar(clone, 'position', true) ? clone : undefined;
+  if (keyword === 'coordinateReferenceSystem' && isObjectLike(clone)) return rewriteArray(clone, 'coordinates') ? clone : undefined;
+  if (keyword === 'vectorReferenceFrames' && Array.isArray(clone)) {
+    return clone.every((entry) => isObjectLike(entry) && rewriteArray(entry, 'components')) ? clone : undefined;
+  }
+  if (keyword === 'tensorReferenceFrames' && Array.isArray(clone)) {
+    for (const frame of clone) {
+      if (!isObjectLike(frame)) continue;
+      if (frame.components === oldName) {
+        if (newName === undefined) return undefined;
+        frame.components = newName;
+      } else if (Array.isArray(frame.components)) {
+        const next = frame.components.filter((entry) => !(newName === undefined && isObjectLike(entry) && entry.property === oldName));
+        for (const entry of next) if (isObjectLike(entry) && entry.property === oldName) entry.property = newName;
+        if (next.length === 0) return undefined;
+        frame.components = next;
+      }
+    }
+    return clone;
+  }
+  if (keyword === 'frameTransforms' && Array.isArray(clone)) {
+    for (const transform of clone) {
+      if (!isObjectLike(transform)) continue;
+      if (transform.components === oldName) {
+        if (newName === undefined) return undefined;
+        transform.components = newName;
+      } else if (!rewriteArray(transform, 'components')) return undefined;
+      if (!rewriteArray(transform, 'translation', false)) return undefined;
+    }
+    return clone;
+  }
+  if (keyword === 'linearReferenceSystem' && isObjectLike(clone)) {
+    return ['linearElement', 'measure', 'measureEnd', 'direction'].every((key) => rewriteScalar(clone, key, key === 'linearElement' || key === 'measure')) ? clone : undefined;
+  }
+  if (keyword === 'colorSpaces' && Array.isArray(clone)) {
+    return clone.every((entry) => isObjectLike(entry) && rewriteArray(entry, 'channels') && rewriteScalar(entry, 'alpha')) ? clone : undefined;
+  }
+  if (keyword === 'audioChannels' && Array.isArray(clone)) {
+    return clone.every((entry) => isObjectLike(entry) && rewriteArray(entry, 'channels')) ? clone : undefined;
+  }
+  if (keyword === 'spectralBands' && Array.isArray(clone)) {
+    return clone.every((entry) => isObjectLike(entry) && rewriteArray(entry, 'bands')) ? clone : undefined;
+  }
+  return value;
+}
+function propertyOwnerMutations(owner: Record<string, unknown>, oldName: string, newName: string | undefined): ReadonlyMap<string, MemberMutation> {
+  const mutations = new Map<string, MemberMutation>();
+  for (const keyword of ['required', 'identity', 'tuple'] as const) {
+    if (!Object.prototype.hasOwnProperty.call(owner, keyword)) continue;
+    const next = renamedPropertyList(owner[keyword], oldName, newName);
+    if (JSON.stringify(next) !== JSON.stringify(owner[keyword])) mutations.set(keyword, Array.isArray(next) && next.length === 0 && keyword !== 'tuple' ? REMOVE_MEMBER : next);
+  }
+  if (isObjectLike(owner.dependentRequired)) {
+    const next: Record<string, unknown> = {};
+    for (const [name, required] of Object.entries(owner.dependentRequired)) {
+      if (newName === undefined && name === oldName) continue;
+      const key = name === oldName ? newName! : name;
+      const rewritten = renamedPropertyList(required, oldName, newName);
+      const unique = Array.isArray(rewritten) ? [...new Set(rewritten)] : rewritten;
+      const existing = next[key];
+      next[key] = Array.isArray(existing) && Array.isArray(unique)
+        ? [...new Set([...existing, ...unique])]
+        : unique;
+    }
+    if (JSON.stringify(next) !== JSON.stringify(owner.dependentRequired)) mutations.set('dependentRequired', Object.keys(next).length ? next : REMOVE_MEMBER);
+  }
+  for (const keyword of [
+    'temporalReferenceSystem', 'coordinateReferenceSystem', 'vectorReferenceFrames', 'tensorReferenceFrames',
+    'frameTransforms', 'linearReferenceSystem', 'colorSpaces', 'audioChannels', 'spectralBands'
+  ]) {
+    if (!Object.prototype.hasOwnProperty.call(owner, keyword)) continue;
+    const next = rewritePropertyBoundAnnotation(keyword, owner[keyword], oldName, newName);
+    if (JSON.stringify(next) !== JSON.stringify(owner[keyword])) mutations.set(keyword, next === undefined ? REMOVE_MEMBER : next);
+  }
+  return mutations;
+}
+function memberMutationsHaveSource(session: DocumentSession, targetPointer: string, mutations: ReadonlyMap<string, MemberMutation>): boolean {
+  return [...mutations.keys()].every((keyword) =>
+    !Object.prototype.hasOwnProperty.call(pointerValue(session.value, targetPointer) as Record<string, unknown>, keyword) ||
+    objectMemberContext(session, targetPointer, keyword) !== undefined);
+}
+function scopeDeletionEdits(session: DocumentSession, deletedPointer: string): readonly TextEdit[] {
+  const edits: TextEdit[] = [];
+  const deletedSubtree = `${deletedPointer}/`;
+  for (const node of session.model?.nodes ?? []) {
+    if (!node.pointer.endsWith('/scope') || node.pointer === deletedPointer || node.pointer.startsWith(deletedSubtree) || !node.range) continue;
+    const value = pointerValue(session.value, node.pointer);
+    const values = typeof value === 'string' ? [value] : isStringArray(value) ? value : [];
+    const next = values.filter((entry) => !pointerReferenceMatches(entry, deletedPointer));
+    if (next.length === values.length) continue;
+    const relationPointer = node.pointer.slice(0, -'/scope'.length);
+    if (next.length === 0) edits.push(...removeMemberCommandResult(session, relationPointer, 'scope').edits);
+    else edits.push({ range: node.range, newText: JSON.stringify(typeof value === 'string' ? next[0] : next) });
+  }
+  return edits;
+}function removeMembersCommandResult(session: DocumentSession, targetPointer: string, keywords: readonly string[]): CommandResult {
   const source = session.snapshot().text;
   const targetRange = objectRange(session, targetPointer);
   if (!targetRange) throw new Error('Target source range is unavailable.');
@@ -754,10 +987,121 @@ function coreMemberValueValid(keyword: CoreDocumentMember, value: unknown): bool
     case 'const': return value !== undefined;
   }
 }
+function jsonValueValid(value: unknown, seen = new Set<object>()): boolean {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return true;
+  if (typeof value === 'number') return Number.isFinite(value);
+  if (!value || typeof value !== 'object' || seen.has(value)) return false;
+  seen.add(value);
+  const valid = Array.isArray(value)
+    ? value.every((entry) => jsonValueValid(entry, seen))
+    : Object.values(value).every((entry) => jsonValueValid(entry, seen));
+  seen.delete(value);
+  return valid;
+}
+function parserDiagnosticKey(diagnostic: { readonly code: string; readonly message: string; readonly location?: { readonly pointer: string } }): string {
+  return `${diagnostic.code}\u0000${diagnostic.location?.pointer ?? ''}\u0000${diagnostic.message}`;
+}
+function definitionsValueValid(session: DocumentSession, value: unknown): boolean {
+  const root = pointerValue(session.value, '');
+  if (!isObjectLike(root) || !isObjectLike(value) || !jsonValueValid(value)) return false;
+  const currentText = JSON.stringify(root);
+  const candidateText = JSON.stringify({ ...root, definitions: value });
+  if (currentText === undefined || candidateText === undefined) return false;
+  const baseline = parseDocument(session.uri, currentText);
+  const candidate = parseDocument(session.uri, candidateText);
+  const baselineDiagnostics = new Set(baseline.diagnostics.map(parserDiagnosticKey));
+  return candidate.recovery === 'valid' && candidate.diagnostics.every((diagnostic) => {
+    const pointer = diagnostic.location?.pointer;
+    return pointer !== '/definitions' && !pointer?.startsWith('/definitions/') && baselineDiagnostics.has(parserDiagnosticKey(diagnostic));
+  });
+}
 function coreMemberPlacementValid(session: DocumentSession, pointer: string, keyword: CoreDocumentMember): boolean {
   if (['$schema', '$id', 'name', '$uses', '$offers', '$root'].includes(keyword)) return pointer === '';
   if (keyword === 'definitions') return namespaceImportPlacement(session, pointer);
   return pointer === '' || editableCompositionTarget(session, pointer) !== undefined;
+}
+const DECLARATION_STRUCTURE_MEMBERS = ['properties', 'required', 'additionalProperties', 'items', 'values', 'tuple', 'choices', 'selector'] as const;
+const NUMERIC_DECLARATION_TYPES = new Set(['number', 'integer', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32', 'int64', 'uint64', 'int128', 'uint128', 'float8', 'float', 'double', 'decimal']);
+function declarationAfterTypeMutation(session: DocumentSession, targetPointer: string, declaration: Readonly<Record<string, unknown>>, type: unknown): Record<string, unknown> {
+  const next: Record<string, unknown> = { ...declaration, type };
+  const oldType = typeof declaration.type === 'string' ? declaration.type : undefined;
+  const newType = typeof type === 'string' ? type : undefined;
+  for (const keyword of DECLARATION_STRUCTURE_MEMBERS) delete next[keyword];
+
+  if (newType === 'object' || newType === 'tuple') {
+    const properties = (oldType === 'object' || oldType === 'tuple') && isObjectLike(declaration.properties) ? declaration.properties : {};
+    next.properties = properties;
+    if (newType === 'object' && oldType === 'object' && declaration.required !== undefined) next.required = declaration.required;
+    if (newType === 'object' && oldType === 'object' && declaration.additionalProperties !== undefined) next.additionalProperties = declaration.additionalProperties;
+    if (newType === 'tuple') {
+      const authoredOrder = oldType === 'tuple' && isStringArray(declaration.tuple) ? declaration.tuple : Object.keys(properties);
+      next.tuple = authoredOrder.filter((name) => Object.prototype.hasOwnProperty.call(properties, name));
+    }
+  } else if (newType === 'array' || newType === 'set') {
+    next.items = (oldType === 'array' || oldType === 'set') && isObjectLike(declaration.items) && validSchemaValue(session, declaration.items)
+      ? declaration.items
+      : { type: 'string' };
+  } else if (newType === 'map') {
+    next.values = oldType === 'map' && isObjectLike(declaration.values) && validSchemaValue(session, declaration.values)
+      ? declaration.values
+      : { type: 'string' };
+  } else if (newType === 'choice') {
+    next.choices = oldType === 'choice' && isObjectLike(declaration.choices) ? declaration.choices : {};
+    if (oldType === 'choice' && typeof declaration.selector === 'string') next.selector = declaration.selector;
+  }
+
+  if (newType !== 'object' && newType !== 'tuple') {
+    delete next.identity;
+    delete next.relations;
+    delete next.abstract;
+  }
+  if (oldType !== newType) delete next.$extends;
+  if (newType !== 'number' && newType !== 'decimal') {
+    delete next.precision;
+    delete next.scale;
+  }
+  if (newType !== 'string') delete next.maxLength;
+  if (!newType || !NUMERIC_DECLARATION_TYPES.has(newType)) {
+    delete next.unit;
+    delete next.ucumUnit;
+  }
+  if (newType !== 'binary') {
+    delete next.contentEncoding;
+    delete next.contentCompression;
+    delete next.contentMediaType;
+  }
+  if (newType !== 'object' && newType !== 'tuple') {
+    for (const keyword of ['coordinateReferenceSystem', 'vectorReferenceFrames', 'tensorReferenceFrames', 'frameTransforms', 'linearReferenceSystem', 'colorSpaces', 'audioChannels', 'spectralBands']) delete next[keyword];
+    if (isObjectLike(next.temporalReferenceSystem) && typeof next.temporalReferenceSystem.position === 'string') delete next.temporalReferenceSystem;
+  }
+
+  const effectiveTypes = effectiveValidationTypes(pointerValue(session.value, ''), next);
+  if (!effectiveTypes.determinate || effectiveTypes.types.length !== 1) {
+    for (const keyword of VALIDATION_KEYWORDS) if (keyword !== 'default') delete next[keyword];
+  } else {
+    for (const issue of validationIssues(next, effectiveTypes)) delete next[issue.keyword];
+  }
+  const primitive = effectiveCorePrimitiveType(next, effectiveReferenceResolver(session));
+  if (primitive.determinate && primitive.type !== undefined) {
+    if (Array.isArray(next.enum) && !next.enum.every((value) => coreScalarValueValid(primitive.type!, value, next))) delete next.enum;
+    if (Object.prototype.hasOwnProperty.call(next, 'const') && !coreScalarValueValid(primitive.type, next.const, next)) delete next.const;
+  } else {
+    delete next.enum;
+    delete next.const;
+  }
+  if (Object.prototype.hasOwnProperty.call(next, 'altenums') &&
+      (!Array.isArray(next.enum) || !alternateNamesValueValid(next, 'altenums', next.altenums, true))) delete next.altenums;
+  for (const keyword of SEMANTIC_ANNOTATION_KEYWORDS) {
+    if (Object.prototype.hasOwnProperty.call(next, keyword) && !semanticPlacementValid(session, targetPointer, next, keyword)) delete next[keyword];
+  }
+  return next;
+}
+function typeMutationCommandResult(session: DocumentSession, targetPointer: string, type: unknown): CommandResult {
+  const declaration = editableCoreObject(session, targetPointer);
+  if (!declaration) throw new Error('Declaration source range is unavailable.');
+  const range = objectRange(session, targetPointer);
+  if (!range) throw new Error('Declaration source range is unavailable.');
+  return replaceMemberCommandResult(session.snapshot().text, range, declarationAfterTypeMutation(session, targetPointer, declaration, type));
 }
 
 /** Command that safely sets a supported Core declaration or document object member. */
@@ -768,6 +1112,8 @@ export class SetCoreMemberCommand implements EditorCommand {
     if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid' || !CORE_DOCUMENT_MEMBER_SET.has(this.keyword)) return false;
     const target = editableCoreObject(session, this.targetPointer);
     if (!target || !coreMemberPlacementValid(session, this.targetPointer, this.keyword) || !coreMemberValueValid(this.keyword, this.value)) return false;
+    if (this.keyword === 'definitions' && !definitionsValueValid(session, this.value)) return false;
+    if (this.keyword === 'type' && typeof this.value === 'string' && COLLECTION_TYPE_NAMES.has(this.value) && isScalarCoreType(target.type)) return false;
     if ((this.keyword === 'properties' || this.keyword === 'choices') &&
       !Object.values(this.value as Record<string, unknown>).every((schema) => validSchemaValue(session, schema))) return false;
     if (this.keyword === 'properties' && Object.keys(this.value as Record<string, unknown>).some((name) => declarationInheritedPropertyNames(session, target).has(name))) return false;
@@ -781,6 +1127,8 @@ export class SetCoreMemberCommand implements EditorCommand {
       };
       collect(this.value);
       if (!references.every((reference) => concreteReusableReference(session, reference))) return false;
+      const desired = declarationAfterTypeMutation(session, this.targetPointer, target, this.value);
+      if (!validSchemaValue(session, desired) || !objectRange(session, this.targetPointer)) return false;
     }
     if (this.keyword === 'required' && (!isObjectLike(target.properties) || !validRequired(target.properties, this.value as RequiredProperties))) return false;
     if (this.keyword === 'tuple' && (!isObjectLike(target.properties) || !(this.value as string[]).every((name) => Object.prototype.hasOwnProperty.call(target.properties, name)))) return false;
@@ -802,6 +1150,7 @@ export class SetCoreMemberCommand implements EditorCommand {
 
   execute(context: CommandContext): CommandResult {
     if (!this.canExecute(context)) throw new Error('SetCoreMember command preconditions are not satisfied.');
+    if (this.keyword === 'type') return typeMutationCommandResult(context.session, this.targetPointer, this.value);
     return setMemberCommandResult(context.session, this.targetPointer, this.keyword, this.value);
   }
 }
@@ -814,6 +1163,7 @@ export class RemoveObjectMemberCommand implements EditorCommand {
     if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid' || this.keyword.length === 0) return false;
     const target = pointerValue(session.value, this.targetPointer);
     if (this.keyword === 'type' && isTypeDeclaration(target)) return false;
+    if (this.targetPointer === '' && REQUIRED_DOCUMENT_HEADERS.has(this.keyword)) return false;
     if (isObjectLike(target)) {
       const requiredShapeMembers: Readonly<Record<string, readonly string[]>> = {
         object: ['properties'], array: ['items'], set: ['items'], map: ['values'], tuple: ['properties', 'tuple'], choice: ['choices']
@@ -1025,7 +1375,7 @@ export class SetDescriptionCommand implements EditorCommand {
 
   canExecute({ session, documentVersion }: CommandContext): boolean {
     if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid') return false;
-    const declaration = editableDeclaration(session, this.targetPointer);
+    const declaration = editableCoreObject(session, this.targetPointer);
     if (!declaration || (this.description !== undefined && typeof this.description !== 'string')) return false;
     if (Object.prototype.hasOwnProperty.call(declaration, 'description') && !objectMemberContext(session, this.targetPointer, 'description')) return false;
     return this.description !== undefined || Object.prototype.hasOwnProperty.call(declaration, 'description');
@@ -1480,12 +1830,14 @@ export class SetTypeReferenceCommand implements EditorCommand {
     if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid' || this.targetPointer === '') return false;
     const declaration = editableDeclaration(session, this.targetPointer);
     if (!declaration || !concreteReusableReference(session, this.reference)) return false;
-    return objectMemberContext(session, this.targetPointer, 'type') !== undefined;
+    const desired = declarationAfterTypeMutation(session, this.targetPointer, declaration, { $ref: this.reference });
+    return objectMemberContext(session, this.targetPointer, 'type') !== undefined &&
+      validSchemaValue(session, desired) && objectRange(session, this.targetPointer) !== undefined;
   }
 
   execute(context: CommandContext): CommandResult {
     if (!this.canExecute(context)) throw new Error('SetTypeReference command preconditions are not satisfied.');
-    return setMemberCommandResult(context.session, this.targetPointer, 'type', { $ref: this.reference });
+    return typeMutationCommandResult(context.session, this.targetPointer, { $ref: this.reference });
   }
 }
 
@@ -1497,20 +1849,71 @@ export class AddNamespaceCommand implements EditorCommand {
     if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid' || !IDENTIFIER.test(this.namespaceName)) return false;
     const namespace = pointerValue(session.value, this.namespacePointer);
     if (!isNamespaceObject(namespace) || !namespaceImportPlacement(session, this.namespacePointer)) return false;
-    const definitions = namespace.definitions;
-    return definitions === undefined || isNamespaceObject(definitions) && hasUniquePointerPath(session, objectMemberPointer(this.namespacePointer, 'definitions')) &&
-      !Object.prototype.hasOwnProperty.call(definitions, this.namespaceName);
+    const targetPointer = namespaceContentPointer(this.namespacePointer);
+    const target = pointerValue(session.value, targetPointer);
+    if (target === undefined) return this.namespacePointer === '';
+    return isNamespaceObject(target) && hasUniquePointerPath(session, targetPointer) &&
+      !hasDuplicatePointerDiagnostic(session, targetPointer) && !Object.prototype.hasOwnProperty.call(target, this.namespaceName);
   }
 
   execute(context: CommandContext): CommandResult {
     if (!this.canExecute(context)) throw new Error('AddNamespace command preconditions are not satisfied.');
-    const namespace = pointerValue(context.session.value, this.namespacePointer) as Record<string, unknown>;
-    if (isNamespaceObject(namespace.definitions)) {
-      const range = objectRange(context.session, objectMemberPointer(this.namespacePointer, 'definitions'));
-      if (!range) throw new Error('Definitions source range is unavailable.');
-      return addMemberCommandResult(context.session.snapshot().text, range, this.namespaceName, {});
-    }
-    return setMemberCommandResult(context.session, this.namespacePointer, 'definitions', { [this.namespaceName]: {} });
+    const targetPointer = namespaceContentPointer(this.namespacePointer);
+    const target = pointerValue(context.session.value, targetPointer);
+    if (target === undefined && this.namespacePointer === '') return setMemberCommandResult(context.session, '', 'definitions', { [this.namespaceName]: {} });
+    const range = objectRange(context.session, targetPointer);
+    if (!range) throw new Error('Namespace source range is unavailable.');
+    return addMemberCommandResult(context.session.snapshot().text, range, this.namespaceName, {});
+  }
+}
+
+/** Command that atomically renames a namespace and every local reference into it. */
+export class RenameNamespaceCommand implements EditorCommand {
+  constructor(readonly namespacePointer: string, readonly newName: string) {}
+
+  canExecute({ session, documentVersion }: CommandContext): boolean {
+    if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid' || !IDENTIFIER.test(this.newName)) return false;
+    const context = namespaceContext(session, this.namespacePointer);
+    if (!context) return false;
+    if (context.namespaceName === this.newName) return true;
+    const parent = pointerValue(session.value, context.parentPointer);
+    return isObjectLike(parent) && !Object.prototype.hasOwnProperty.call(parent, this.newName);
+  }
+
+  execute(context: CommandContext): CommandResult {
+    if (!this.canExecute(context)) throw new Error('RenameNamespace command preconditions are not satisfied.');
+    const source = context.session.snapshot().text;
+    const namespace = namespaceContext(context.session, this.namespacePointer)!;
+    const keyOffsets = sourceOffsets(namespace.keyRange, 'Namespace name source range is unavailable.');
+    const renamedPointer = `${namespace.parentPointer}/${encodePointerPart(this.newName)}`;
+    return commandResultForEdits(source, [
+      { range: namespace.keyRange, newText: JSON.stringify(this.newName) },
+      ...referenceRewriteEdits(context.session, this.namespacePointer, renamedPointer)
+    ].filter((edit) => edit.range.startOffset !== keyOffsets.start || edit.range.endOffset !== keyOffsets.end || edit.newText !== source.slice(keyOffsets.start, keyOffsets.end)));
+  }
+}
+
+/**
+ * Command that deletes an empty namespace, or explicitly deletes an
+ * unreferenced namespace subtree when deleteContents is true.
+ */
+export class DeleteNamespaceCommand implements EditorCommand {
+  constructor(readonly namespacePointer: string, readonly deleteContents = false) {}
+
+  canExecute({ session, documentVersion }: CommandContext): boolean {
+    if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid') return false;
+    const context = namespaceContext(session, this.namespacePointer);
+    if (!context) return false;
+    if (namespaceContainsDeclarations(context.namespace) && !this.deleteContents) return false;
+    return referenceSites(session, this.namespacePointer, this.namespacePointer).length === 0;
+  }
+
+  execute(context: CommandContext): CommandResult {
+    if (!this.canExecute(context)) throw new Error('DeleteNamespace command preconditions are not satisfied.');
+    const namespace = namespaceContext(context.session, this.namespacePointer)!;
+    const parentRange = objectRange(context.session, namespace.parentPointer);
+    if (!parentRange) throw new Error('Namespace parent source range is unavailable.');
+    return deleteMemberCommandResult(context.session.snapshot().text, parentRange, namespace.keyRange, namespace.valueRange);
   }
 }
 
@@ -1525,35 +1928,22 @@ export class AddDefinitionCommand implements EditorCommand {
     if (!IDENTIFIER.test(this.definitionName) || !validSchemaValue(session, this.schema)) return false;
     const namespace = pointerValue(session.value, this.namespacePointer);
     if (!isNamespaceObject(namespace) || !hasUniquePointerPath(session, this.namespacePointer) || hasDuplicatePointerDiagnostic(session, this.namespacePointer)) return false;
-    const definitions = (namespace as Record<string, unknown>).definitions;
-    if (definitions !== undefined && (!isNamespaceObject(definitions) || !hasUniquePointerPath(session, `${this.namespacePointer}/definitions`))) return false;
-    const definitionsObject = isNamespaceObject(definitions) ? definitions : undefined;
-    return !definitionsObject || !Object.prototype.hasOwnProperty.call(definitionsObject, this.definitionName);
+    const targetPointer = namespaceContentPointer(this.namespacePointer);
+    const target = pointerValue(session.value, targetPointer);
+    if (target === undefined) return this.namespacePointer === '';
+    if (!isNamespaceObject(target) || !hasUniquePointerPath(session, targetPointer) || hasDuplicatePointerDiagnostic(session, targetPointer)) return false;
+    return !Object.prototype.hasOwnProperty.call(target, this.definitionName);
   }
 
   execute(context: CommandContext): CommandResult {
     if (!this.canExecute(context)) throw new Error('AddDefinition command preconditions are not satisfied.');
     const { session } = context;
-    const namespace = pointerValue(session.value, this.namespacePointer) as Record<string, unknown>;
-    const definitions = namespace.definitions;
-    const targetPointer = definitions === undefined ? this.namespacePointer : `${this.namespacePointer}/definitions`;
-    const range = chooseInsertRange(session, targetPointer);
-    if (!range?.startOffset && range?.startOffset !== 0) throw new Error('Target source range is unavailable.');
-    const close = (range.endOffset ?? 0) - 1;
-    const source = session.snapshot().text;
-    const body = source.slice((range.startOffset ?? 0) + 1, close);
-    const valueText = JSON.stringify(this.schema);
-    const multiline = body.includes('\n');
-    const indent = multiline ? (body.match(/\n([ \t]*)\S/)?.[1] ?? '  ') : '';
-    const entry = `"${escapeJson(this.definitionName)}":${multiline ? ' ' : ''}${valueText}`;
-    const insertion = definitions === undefined
-      ? (body.trim() === '' ? `"definitions":{${entry}}` : `${multiline ? ',\n' + indent : ','}"definitions":{${entry}}`)
-      : (body.trim() === '' ? (multiline ? `\n${indent}${entry}\n${indent.slice(0, Math.max(0, indent.length - 2))}` : entry) :
-      (multiline ? `,\n${indent}"${escapeJson(this.definitionName)}": ${valueText}` : `,"${escapeJson(this.definitionName)}":${valueText}`));
-    const edit: TextEdit = { range: rangeFor(source, close, close), newText: insertion };
-    const editedSource = source.slice(0, close) + insertion + source.slice(close);
-    const inverse: TextEdit = { range: rangeFor(editedSource, close, close + insertion.length), newText: '' };
-    return { edits: [edit], inverseEdits: [inverse] };
+    const targetPointer = namespaceContentPointer(this.namespacePointer);
+    const target = pointerValue(session.value, targetPointer);
+    if (target === undefined && this.namespacePointer === '') return setMemberCommandResult(session, '', 'definitions', { [this.definitionName]: this.schema });
+    const range = objectRange(session, targetPointer);
+    if (!range) throw new Error('Target source range is unavailable.');
+    return addMemberCommandResult(session.snapshot().text, range, this.definitionName, this.schema);
   }
 }
 
@@ -1568,9 +1958,7 @@ export class RenameDefinitionCommand implements EditorCommand {
     const context = definitionsContext(session, this.definitionPointer);
     if (!context || !IDENTIFIER.test(this.newName)) return false;
     if (context.definitionName === this.newName) return true;
-    if (Object.prototype.hasOwnProperty.call(context.definitions, this.newName)) return false;
-    const oldRef = `#${this.definitionPointer}`;
-    return definitionReferenceSites(session, this.definitionPointer, oldRef).every((pointer) => pointer === '/$root');
+    return !Object.prototype.hasOwnProperty.call(context.definitions, this.newName);
   }
 
   execute(context: CommandContext): CommandResult {
@@ -1581,14 +1969,12 @@ export class RenameDefinitionCommand implements EditorCommand {
     const oldText = source.slice(keyOffsets.start, keyOffsets.end);
     const start = keyOffsets.start;
     const newText = JSON.stringify(this.newName);
-    const edits: TextEdit[] = [{ range: rangeFor(source, start, start + oldText.length), newText }];
-    if (context.session.model?.rootPointer === this.definitionPointer) {
-      const rootNode = context.session.model.nodes.find((node) => node.pointer === '/$root');
-      if (!rootNode?.range) throw new Error('Root source range is unavailable.');
-      const namespacePointer = this.definitionPointer.slice(0, this.definitionPointer.lastIndexOf('/'));
-      const renamedPointer = `${namespacePointer}/${encodePointerPart(this.newName)}`;
-      edits.push({ range: rootNode.range, newText: JSON.stringify(`#${renamedPointer}`) });
-    }
+    const namespacePointer = this.definitionPointer.slice(0, this.definitionPointer.lastIndexOf('/'));
+    const renamedPointer = `${namespacePointer}/${encodePointerPart(this.newName)}`;
+    const edits: TextEdit[] = [
+      { range: rangeFor(source, start, start + oldText.length), newText },
+      ...referenceRewriteEdits(context.session, this.definitionPointer, renamedPointer)
+    ];
     return commandResultForEdits(source, edits);
   }
 }
@@ -1603,8 +1989,7 @@ export class DeleteDefinitionCommand implements EditorCommand {
     if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid') return false;
     const context = definitionsContext(session, this.definitionPointer);
     if (!context) return false;
-    const ref = `#${this.definitionPointer}`;
-    return definitionReferenceSites(session, this.definitionPointer, ref).length === 0;
+    return definitionReferenceSites(session, this.definitionPointer).length === 0;
   }
 
   execute(context: CommandContext): CommandResult {
@@ -1693,11 +2078,14 @@ export class AddPropertyCommand implements EditorCommand {
     return !!target && typeof target === 'object' && !Array.isArray(target) &&
       hasUniquePointerPath(session, this.targetPointer) &&
       (!hasProperties || (!!namespace && typeof namespace === 'object' && !Array.isArray(namespace) && hasUniquePointerPath(session, `${this.targetPointer}/properties`))) &&
-      (target as Record<string, unknown>).type === 'object' && IDENTIFIER.test(this.propertyName) &&
+      ((target as Record<string, unknown>).type === 'object' || (target as Record<string, unknown>).type === 'tuple') && IDENTIFIER.test(this.propertyName) &&
       !declarationInheritedPropertyNames(session, target as Record<string, unknown>).has(this.propertyName) &&
       (!namespace || (typeof namespace === 'object' && !Array.isArray(namespace) && !Object.prototype.hasOwnProperty.call(namespace, this.propertyName))) &&
       !relationNames.has(this.propertyName) &&
-      validSchemaValue(session, this.schema);
+      validSchemaValue(session, this.schema) &&
+      ((target as Record<string, unknown>).type !== 'tuple' ||
+        isStringArray((target as Record<string, unknown>).tuple) &&
+        objectMemberContext(session, this.targetPointer, 'tuple') !== undefined);
   }
   execute(context: CommandContext): CommandResult {
     if (!this.canExecute(context)) throw new Error('AddProperty command preconditions are not satisfied.');
@@ -1718,10 +2106,14 @@ export class AddPropertyCommand implements EditorCommand {
       ? (body.trim() === '' ? `"properties":{${propertyEntry}}` : `${multiline ? ',\n' + indent : ','}"properties":{${propertyEntry}}`)
       : (body.trim() === '' ? (multiline ? `\n${indent}${propertyEntry}\n${indent.slice(0, Math.max(0, indent.length - 2))}` : propertyEntry) :
       (multiline ? `,\n${indent}"${escapeJson(this.propertyName)}": ${valueText}` : `,"${escapeJson(this.propertyName)}":${valueText}`));
-    const edit: TextEdit = { range: rangeFor(source, close, close), newText: insertion };
-    const editedSource = source.slice(0, close) + insertion + source.slice(close);
-    const inverse: TextEdit = { range: rangeFor(editedSource, close, close + insertion.length), newText: '' };
-    return { edits: [edit], inverseEdits: [inverse] };
+    const edits: TextEdit[] = [{ range: rangeFor(source, close, close), newText: insertion }];
+    if (target.type === 'tuple') {
+      const tuple = target.tuple as string[];
+      const tupleMember = objectMemberContext(session, this.targetPointer, 'tuple');
+      if (!tupleMember) throw new Error('Tuple order source range is unavailable.');
+      edits.push({ range: tupleMember.valueRange, newText: JSON.stringify([...tuple, this.propertyName]) });
+    }
+    return commandResultForEdits(source, edits);
   }
 }
 
@@ -1733,7 +2125,12 @@ export class EditPropertyCommand implements EditorCommand {
 
   canExecute({ session, documentVersion }: CommandContext): boolean {
     if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid') return false;
-    return propertyContext(session, this.propertyPointer) !== undefined && validSchemaValue(session, this.schema);
+    const current = pointerValue(session.value, this.propertyPointer);
+    const direct = propertyContext(session, this.propertyPointer) !== undefined || choiceContext(session, this.propertyPointer) !== undefined;
+    const nested = this.propertyPointer !== '' && editableCompositionTarget(session, this.propertyPointer) !== undefined;
+    if ((!direct && !nested) || !isObjectLike(current)) return false;
+    if (isScalarCoreType(current.type) && isCollectionTypeName(this.schema.type) && !hasExplicitCollectionMember(this.schema)) return false;
+    return validSchemaValue(session, normalizedEditedSchema(session, this.propertyPointer, current, this.schema));
   }
 
   execute(context: CommandContext): CommandResult {
@@ -1741,7 +2138,8 @@ export class EditPropertyCommand implements EditorCommand {
     const source = context.session.snapshot().text;
     const range = objectRange(context.session, this.propertyPointer)!;
     const offsets = sourceOffsets(range, 'Property source range is unavailable.');
-    const newText = JSON.stringify(this.schema);
+    const current = pointerValue(context.session.value, this.propertyPointer) as Record<string, unknown>;
+    const newText = JSON.stringify(normalizedEditedSchema(context.session, this.propertyPointer, current, this.schema));
     const oldText = source.slice(offsets.start, offsets.end);
     const edit: TextEdit = { range, newText };
     const editedSource = source.slice(0, offsets.start) + newText + source.slice(offsets.end);
@@ -1753,6 +2151,32 @@ export class EditPropertyCommand implements EditorCommand {
   }
 }
 
+function isCollectionTypeName(value: unknown): value is 'array' | 'set' | 'map' {
+  return typeof value === 'string' && COLLECTION_TYPE_NAMES.has(value);
+}
+
+function isScalarCoreType(value: unknown): boolean {
+  if (typeof value === 'string') return !COLLECTION_TYPE_NAMES.has(value) && !['object', 'tuple', 'choice'].includes(value);
+  return Array.isArray(value) && value.length > 0 && value.every((member) => typeof member === 'string' && !COLLECTION_TYPE_NAMES.has(member) && !['object', 'tuple', 'choice'].includes(member));
+}
+
+function hasExplicitCollectionMember(schema: PropertySchema): boolean {
+  if (!isCollectionTypeName(schema.type)) return true;
+  const member = schema[schema.type === 'map' ? 'values' : 'items'];
+  return isObjectLike(member) && validTypeValue(member.type);
+}
+
+function normalizedEditedSchema(
+  session: DocumentSession,
+  pointer: string,
+  current: Readonly<Record<string, unknown>>,
+  requested: PropertySchema
+): Record<string, unknown> {
+  const normalized = declarationAfterTypeMutation(session, pointer, requested, requested.type);
+  if (JSON.stringify(current.type) !== JSON.stringify(requested.type)) delete normalized.$extends;
+  return normalized;
+}
+
 /**
  * Command that deletes property from a schema declaration.
  */
@@ -1762,7 +2186,15 @@ export class DeletePropertyCommand implements EditorCommand {
   canExecute({ session, documentVersion }: CommandContext): boolean {
     if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid') return false;
     const context = propertyContext(session, this.propertyPointer);
-    return context !== undefined && !isReferencedProperty(context.owner, context.propertyName, session.capabilities.relationsActive);
+    if (!context || !isObjectOrTupleDeclaration(context.owner)) return false;
+    if (session.capabilities.relationsActive && Array.isArray(context.owner.identity) &&
+      context.owner.identity.length === 1 && context.owner.identity[0] === context.propertyName &&
+      identityHasInboundRelation(session, this.propertyPointer.slice(0, this.propertyPointer.lastIndexOf('/properties/')))) return false;
+    const blockingReferences = referenceSites(session, this.propertyPointer, this.propertyPointer)
+      .filter((site) => !/\/scope(?:\/\d+)?$/.test(site.pointer));
+    if (blockingReferences.length > 0) return false;
+    const ownerPointer = this.propertyPointer.slice(0, this.propertyPointer.lastIndexOf('/properties/'));
+    return memberMutationsHaveSource(session, ownerPointer, propertyOwnerMutations(context.owner, context.propertyName, undefined));
   }
 
   execute(context: CommandContext): CommandResult {
@@ -1790,11 +2222,13 @@ export class DeletePropertyCommand implements EditorCommand {
       if (source[after] === ',') end = after + 1;
     }
 
-    const oldText = source.slice(start, end);
-    const edit: TextEdit = { range: rangeFor(source, start, end), newText: '' };
-    const editedSource = source.slice(0, start) + source.slice(end);
-    const inverse: TextEdit = { range: rangeFor(editedSource, start, start), newText: oldText };
-    return { edits: [edit], inverseEdits: [inverse] };
+    const ownerPointer = this.propertyPointer.slice(0, this.propertyPointer.lastIndexOf('/properties/'));
+    const edits: TextEdit[] = [
+      { range: rangeFor(source, start, end), newText: '' },
+      ...memberMutationEdits(context.session, ownerPointer, propertyOwnerMutations(property.owner, property.propertyName, undefined)),
+      ...scopeDeletionEdits(context.session, this.propertyPointer)
+    ];
+    return commandResultForEdits(source, edits);
   }
 }
 
@@ -1807,11 +2241,13 @@ export class RenamePropertyCommand implements EditorCommand {
   canExecute({ session, documentVersion }: CommandContext): boolean {
     if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid') return false;
     const context = propertyContext(session, this.propertyPointer);
-    if (!context || !IDENTIFIER.test(this.newName) || isReferencedProperty(context.owner, context.propertyName, session.capabilities.relationsActive)) return false;
+    if (!context || !isObjectOrTupleDeclaration(context.owner) || !IDENTIFIER.test(this.newName)) return false;
     if (declarationInheritedPropertyNames(session, context.owner).has(this.newName)) return false;
     const ownerPointer = this.propertyPointer.slice(0, this.propertyPointer.lastIndexOf('/properties/'));
     const relationCollision = effectiveMemberNames(session, ownerPointer, 'relations').has(this.newName);
-    return !relationCollision && (context.propertyName === this.newName || !Object.prototype.hasOwnProperty.call(context.properties, this.newName));
+    return !relationCollision &&
+      (context.propertyName === this.newName || !Object.prototype.hasOwnProperty.call(context.properties, this.newName)) &&
+      memberMutationsHaveSource(session, ownerPointer, propertyOwnerMutations(context.owner, context.propertyName, this.newName));
   }
 
   execute(context: CommandContext): CommandResult {
@@ -1822,10 +2258,76 @@ export class RenamePropertyCommand implements EditorCommand {
     const oldText = source.slice(keyOffsets.start, keyOffsets.end);
     const start = keyOffsets.start;
     const newText = JSON.stringify(this.newName);
-    const edit: TextEdit = { range: rangeFor(source, start, start + oldText.length), newText };
-    const editedSource = source.slice(0, start) + newText + source.slice(start + oldText.length);
-    const inverse: TextEdit = { range: rangeFor(editedSource, start, start + newText.length), newText: oldText };
-    return { edits: [edit], inverseEdits: [inverse] };
+    const ownerPointer = this.propertyPointer.slice(0, this.propertyPointer.lastIndexOf('/properties/'));
+    const nextPointer = `${ownerPointer}/properties/${encodePointerPart(this.newName)}`;
+    const edits: TextEdit[] = [
+      { range: rangeFor(source, start, start + oldText.length), newText },
+      ...memberMutationEdits(context.session, ownerPointer, propertyOwnerMutations(property.owner, property.propertyName, this.newName)),
+      ...referenceRewriteEdits(context.session, this.propertyPointer, nextPointer)
+    ];
+    return commandResultForEdits(source, edits);
+  }
+}
+
+/** Command that adds a named alternative to a choice declaration. */
+export class AddChoiceCommand implements EditorCommand {
+  constructor(readonly targetPointer: string, readonly choiceName: string, readonly schema: PropertySchema) {}
+
+  canExecute({ session, documentVersion }: CommandContext): boolean {
+    if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid' || !IDENTIFIER.test(this.choiceName) || !validSchemaValue(session, this.schema)) return false;
+    const owner = editableDeclaration(session, this.targetPointer);
+    if (!owner || owner.type !== 'choice') return false;
+    return isObjectLike(owner.choices) && objectMemberContext(session, this.targetPointer, 'choices') !== undefined &&
+      !Object.prototype.hasOwnProperty.call(owner.choices, this.choiceName);
+  }
+
+  execute(context: CommandContext): CommandResult {
+    if (!this.canExecute(context)) throw new Error('AddChoice command preconditions are not satisfied.');
+    const choicesPointer = `${this.targetPointer}/choices`;
+    const choicesRange = objectRange(context.session, choicesPointer);
+    if (!choicesRange) throw new Error('Choices source range is unavailable.');
+    return addMemberCommandResult(context.session.snapshot().text, choicesRange, this.choiceName, this.schema);
+  }
+}
+
+/** Command that atomically renames a choice alternative and local references to it. */
+export class RenameChoiceCommand implements EditorCommand {
+  constructor(readonly choicePointer: string, readonly newName: string) {}
+
+  canExecute({ session, documentVersion }: CommandContext): boolean {
+    if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid' || !IDENTIFIER.test(this.newName)) return false;
+    const context = choiceContext(session, this.choicePointer);
+    return !!context && (context.choiceName === this.newName || !Object.prototype.hasOwnProperty.call(context.choices, this.newName));
+  }
+
+  execute(context: CommandContext): CommandResult {
+    if (!this.canExecute(context)) throw new Error('RenameChoice command preconditions are not satisfied.');
+    const source = context.session.snapshot().text;
+    const choice = choiceContext(context.session, this.choicePointer)!;
+    const nextPointer = `${choice.ownerPointer}/choices/${encodePointerPart(this.newName)}`;
+    return commandResultForEdits(source, [
+      { range: choice.keyRange, newText: JSON.stringify(this.newName) },
+      ...referenceRewriteEdits(context.session, this.choicePointer, nextPointer)
+    ]);
+  }
+}
+
+/** Command that deletes an unreferenced choice alternative. */
+export class DeleteChoiceCommand implements EditorCommand {
+  constructor(readonly choicePointer: string) {}
+
+  canExecute({ session, documentVersion }: CommandContext): boolean {
+    if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid') return false;
+    return choiceContext(session, this.choicePointer) !== undefined &&
+      referenceSites(session, this.choicePointer, this.choicePointer).length === 0;
+  }
+
+  execute(context: CommandContext): CommandResult {
+    if (!this.canExecute(context)) throw new Error('DeleteChoice command preconditions are not satisfied.');
+    const choice = choiceContext(context.session, this.choicePointer)!;
+    const choicesRange = objectRange(context.session, `${choice.ownerPointer}/choices`);
+    if (!choicesRange) throw new Error('Choices source range is unavailable.');
+    return deleteMemberCommandResult(context.session.snapshot().text, choicesRange, choice.keyRange, choice.valueRange);
   }
 }
 
@@ -2005,6 +2507,12 @@ export class DeleteRelationCommand implements EditorCommand {
     const relationsPointer = `${relation.ownerPointer}/relations`;
     const relationsRange = objectRange(context.session, relationsPointer);
     if (!relationsRange) throw new Error('Relations source range is unavailable.');
+    if (Object.keys(relation.relations).length === 1) {
+      const ownerRange = objectRange(context.session, relation.ownerPointer);
+      const relationsMember = objectMemberContext(context.session, relation.ownerPointer, 'relations');
+      if (!ownerRange || !relationsMember) throw new Error('Relations source range is unavailable.');
+      return deleteMemberCommandResult(source, ownerRange, relationsMember.keyRange, relationsMember.valueRange);
+    }
     return deleteMemberCommandResult(source, relationsRange, relation.keyRange, relation.valueRange);
   }
 }

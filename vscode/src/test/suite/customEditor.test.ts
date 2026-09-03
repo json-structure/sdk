@@ -22,13 +22,20 @@ suite('JSON Structure custom editor protocol', () => {
         assert.strictEqual(isWebviewMessage({ type: 'cancelConversion', protocolVersion: 1, requestId: 'service-1', request: { protocolVersion: 1, requestId: 'convert-1' } }), true);
     });
 
+    test('accepts renderer readiness handshake messages', () => {
+        assert.strictEqual(isWebviewMessage({ type: 'rendererReady', protocolVersion: 1, requestId: 'renderer-1', phase: 'mounted' }), true);
+        assert.strictEqual(isWebviewMessage({ type: 'rendererReady', protocolVersion: 1, requestId: 'renderer-1', phase: 'confirmed' }), true);
+        assert.strictEqual(isWebviewMessage({ type: 'rendererReady', protocolVersion: 1, requestId: 'renderer-1', phase: 'failed' }), false);
+    });
+
     test('loads packaged converter options and validates non-default values', async () => {
         const extensionUri = vscode.Uri.file(path.resolve(__dirname, '../../..'));
         const manifest = await loadConversionCommandsManifest(extensionUri);
         assert.deepStrictEqual(manifest.converters.map((converter) => [converter.id, converter.options.map((option) => option.name)]), [
             ['jsonschema', ['rootName', 'preserveUnknownKeywords']],
             ['avro', ['rootName', 'preserveLogicalType', 'mode', 'uses', 'additional_properties', 'emit_doc']],
-            ['protobuf', ['uses', 'additional_properties', 'emit_comments', 'numbers']]
+            ['protobuf', ['uses', 'additional_properties', 'emit_comments', 'numbers']],
+            ['structurize-cli', ['dialect', 'namespace', 'root_class_name', 'type_name', 'base_id', 'sample_size', 'choice_depth', 'infer_choices', 'infer_enums', 'preserve_composition', 'detect_inheritance', 'detect_discriminators', 'lift_inline_schemas', 'convert_empty_objects_to_maps', 'naming', 'avro_encoding', 'kusto_uri', 'kusto_database', 'table_name', 'emit_cloudevents', 'emit_xregistry']]
         ]);
         const request = {
             protocolVersion: 1 as const,
@@ -400,6 +407,72 @@ suite('JSON Structure custom editor protocol', () => {
         assert.strictEqual(result.succeeded, false);
         assert.deepStrictEqual(result.outputs, []);
         assert.ok(result.diagnostics.some((diagnostic) => (diagnostic as { code?: string }).code === 'conversion.cancelled'));
+    });
+
+    test('normalizes cancellation while a VS Code worker is deferred', async () => {
+        const root = await fs.mkdtemp(path.join(tmpdir(), 'json-structure-vscode-cancel-worker-'));
+        const extensionRoot = path.join(root, 'extension');
+        const runtimeRoot = path.join(extensionRoot, 'media', 'conversion', 'worker-runtime');
+        const destination = vscode.Uri.file(path.join(root, 'output'));
+        try {
+            await fs.mkdir(runtimeRoot, { recursive: true });
+            await fs.copyFile(path.resolve(__dirname, '../../../../editor/tests/fixtures/conversion-quota-worker.cjs'), path.join(runtimeRoot, 'converter-worker.cjs'));
+            await fs.writeFile(path.join(runtimeRoot, 'commands-manifest.json'), JSON.stringify({
+                schemaVersion: 1,
+                converters: [{ id: 'fixture', displayName: 'Fixture', version: '1', sourceFormats: ['json-structure'], targetFormats: ['json-schema'], options: [] }],
+                commands: [{ id: 'export.fixture', converterId: 'fixture', direction: 'export', label: 'Export fixture', sourceFormat: 'json-structure', targetFormat: 'json-schema', optionNames: [], defaultAutoOpen: false }]
+            }));
+            const host = new VsCodeConversionHost(vscode.Uri.file(extensionRoot), { selectDestination: async () => destination });
+            const conversion = host.convert({ protocolVersion: 1, requestId: 'renderer-deferred-cancel', kind: 'conversion', documentVersion: 1, commandId: 'export.fixture', sourceName: 'hang.struct.json', sourceText: '{}', options: {} });
+            await new Promise(resolve => setTimeout(resolve, 100));
+            host.cancel('renderer-deferred-cancel');
+            const result = await conversion;
+            assert.strictEqual(result.succeeded, false);
+            assert.deepStrictEqual(result.outputs, []);
+            assert.ok(result.diagnostics.some((diagnostic) => (diagnostic as { code?: string }).code === 'conversion.cancelled'));
+            await assert.rejects(fs.stat(path.join(destination.fsPath, 'evidence.schema.json')));
+        } finally {
+            await fs.rm(root, { recursive: true, force: true });
+        }
+    });
+
+    test('normalizes publication cancellation after rolling back staged outputs', async () => {
+        const root = await fs.mkdtemp(path.join(tmpdir(), 'json-structure-vscode-cancel-publish-'));
+        const extensionRoot = path.join(root, 'extension');
+        const runtimeRoot = path.join(extensionRoot, 'media', 'conversion', 'worker-runtime');
+        const destination = vscode.Uri.file(path.join(root, 'output'));
+        let host: VsCodeConversionHost | undefined;
+        try {
+            await fs.mkdir(runtimeRoot, { recursive: true });
+            await fs.copyFile(path.resolve(__dirname, '../../../../editor/tests/fixtures/conversion-quota-worker.cjs'), path.join(runtimeRoot, 'converter-worker.cjs'));
+            await fs.writeFile(path.join(runtimeRoot, 'commands-manifest.json'), JSON.stringify({
+                schemaVersion: 1,
+                converters: [{ id: 'fixture', displayName: 'Fixture', version: '1', sourceFormats: ['json-structure'], targetFormats: ['json-schema'], options: [] }],
+                commands: [{ id: 'export.fixture', converterId: 'fixture', direction: 'export', label: 'Export fixture', sourceFormat: 'json-structure', targetFormat: 'json-schema', optionNames: [], defaultAutoOpen: false }]
+            }));
+            const cancellingFileSystem: PublicationFileSystem = {
+                stat: (uri) => vscode.workspace.fs.stat(uri),
+                createDirectory: async (uri) => {
+                    await vscode.workspace.fs.createDirectory(uri);
+                    if (uri.fsPath.includes('.rollback-')) host?.cancel('renderer-publication-cancel');
+                },
+                writeFile: (uri, content) => vscode.workspace.fs.writeFile(uri, content),
+                copy: (source, target, options) => vscode.workspace.fs.copy(source, target, options),
+                rename: async (source, target, options) => {
+                    await vscode.workspace.fs.rename(source, target, options);
+                },
+                delete: (uri, options) => vscode.workspace.fs.delete(uri, options)
+            };
+            host = new VsCodeConversionHost(vscode.Uri.file(extensionRoot), { selectDestination: async () => destination, publicationFileSystem: cancellingFileSystem });
+            const result = await host.convert({ protocolVersion: 1, requestId: 'renderer-publication-cancel', kind: 'conversion', documentVersion: 1, commandId: 'export.fixture', sourceName: 'cancel.struct.json', sourceText: '{}', options: {} });
+            assert.strictEqual(result.succeeded, false);
+            assert.deepStrictEqual(result.outputs, []);
+            assert.ok(result.diagnostics.some((diagnostic) => (diagnostic as { code?: string }).code === 'conversion.cancelled'));
+            await assert.rejects(fs.stat(path.join(destination.fsPath, 'evidence.schema.json')));
+            await assert.rejects(fs.stat(path.join(destination.fsPath, 'conversion-output-manifest.json')));
+        } finally {
+            await fs.rm(root, { recursive: true, force: true });
+        }
     });
 
     test('uses host UUID operation IDs and a bounded heap for VS Code workers', async () => {

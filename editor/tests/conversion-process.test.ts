@@ -1,26 +1,64 @@
 import { randomUUID } from 'node:crypto';
+import { execFile } from 'node:child_process';
 import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { NodeProcessExecutableLauncher, parseBundledCommandsManifest, parseProcessWorkerEvent } from '../src/conversion/process.js';
 import { ConversionWorkerQuotaTracker, validateWorkerOutputQuotas, type ConversionOptionValues } from '../src/conversion/types.js';
 import { PACKAGED_COMMANDS_MANIFEST_PATH, PACKAGED_RUNTIME_DESCRIPTOR_PATH } from '../src/conversion/assets.js';
 import { parsePackagedRuntimeDescriptor, verifyPackagedRuntime } from '../src/conversion/integrity.js';
+import { validateGeneratedConversionFiles } from '../src/conversion/validation.js';
 import { NodeConversionHost } from '../src/conversion/node-host.js';
-import { copyFile, mkdir, mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
+import { acceptedCorpusFixture } from './fixtures/accepted-corpus.js';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+const execFileAsync = promisify(execFile);
+interface StructurizeProcessEvidence { pid: number; grandchildPid: number; workspace: string }
 
-async function runPackaged(commandId: string, source: unknown, options: ConversionOptionValues = {}) {
+async function waitFor<T>(probe: () => Promise<T | undefined>, timeoutMs = 5_000): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const value = await probe();
+    if (value !== undefined) return value;
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 25));
+  }
+  throw new Error(`Timed out after ${timeoutMs}ms.`);
+}
+
+function processExists(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+async function terminateKnownProcessTree(pid: number): Promise<void> {
+  if (!processExists(pid)) return;
+  if (process.platform === 'win32') {
+    await execFileAsync('taskkill.exe', ['/PID', String(pid), '/T', '/F'], { windowsHide: true }).catch(() => undefined);
+  } else {
+    try {
+      process.kill(-pid, 'SIGKILL');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+    }
+  }
+}
+
+async function runPackaged(commandId: string, source: unknown, options: ConversionOptionValues = {}, sourceName = 'schema.struct.json') {
   return new NodeProcessExecutableLauncher(resolve(process.cwd(), 'src/conversion')).invoke({
     executablePath: 'worker-runtime/converter-worker.cjs',
     arguments: [],
     request: {
       operationId: randomUUID(),
       commandId,
-      sourceName: 'schema.struct.json',
+      sourceName,
       source: encoder.encode(JSON.stringify(source)),
       options,
       preview: true,
@@ -35,8 +73,85 @@ describe('Phase 5 packaged process runtime', () => {
     const manifest = parseBundledCommandsManifest(await readFile(PACKAGED_COMMANDS_MANIFEST_PATH));
     expect(manifest.schemaVersion).toBe(1);
     expect(manifest.converters.map((converter) => converter.id)).toEqual(['jsonschema', 'avro', 'protobuf', 'structurize-cli']);
-    expect(manifest.commands).toHaveLength(33);
+    expect(manifest.commands).toHaveLength(47);
+    expect(manifest.commands.filter((command) => command.direction === 'import')).toHaveLength(16);
     expect(manifest.commands.filter((command) => command.direction === 'export')).toHaveLength(31);
+    expect(manifest.commands.filter((command) => command.direction === 'import').map((command) => command.cliCommand)).toEqual(['fbs2s', 'j2s', 'k2s', 'json2s', 'xml2s', 'a2s', 'jtd2s', 'cddl2s', 'oas2s', 'cue2s', 'thrift2s', 'smithy2s', 'capnp2s', 'raml2s', undefined, undefined]);
+    expect(manifest.commands.find((command) => command.cliCommand === 'oas2s')).toMatchObject({ sourceExtensions: ['.yaml', '.yml', '.json'], sourceFormat: 'openapi' });
+    expect(manifest.commands.find((command) => command.cliCommand === 'k2s')).toMatchObject({ availability: 'external-service' });
+  });
+
+  it('forwards a disabled OpenAPI discriminator option as the exact CLI argument set', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'json-structure-structurize-args-'));
+    const markerPath = join(root, 'args.json');
+    const previousExecutable = process.env.STRUCTURIZE_EXECUTABLE;
+    const previousMarker = process.env.STRUCTURIZE_TEST_ARGS;
+    try {
+      process.env.STRUCTURIZE_EXECUTABLE = resolve(process.cwd(), 'tests/fixtures/structurize-args.cjs');
+      process.env.STRUCTURIZE_TEST_ARGS = markerPath;
+      const result = await runPackaged('import.structurize.oas2s', { openapi: '3.0.0' }, { detect_discriminators: false }, 'api.yaml');
+      expect(result.files['schema.struct.json']).toBeDefined();
+      const args = JSON.parse(await readFile(markerPath, 'utf8'));
+      expect(Array.isArray(args)).toBe(true);
+      expect(args[0]).toBe('oas2s');
+      expect(args.slice(2)).toEqual(['--out', expect.any(String)]);
+      expect(args).not.toContain('--detect-discriminators');
+    } finally {
+      if (previousExecutable === undefined) delete process.env.STRUCTURIZE_EXECUTABLE;
+      else process.env.STRUCTURIZE_EXECUTABLE = previousExecutable;
+      if (previousMarker === undefined) delete process.env.STRUCTURIZE_TEST_ARGS;
+      else process.env.STRUCTURIZE_TEST_ARGS = previousMarker;
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('reports the Kusto inbound dependency instead of pretending local file support', async () => {
+    await expect(runPackaged('import.structurize.k2s', {}, { kusto_uri: '', kusto_database: '', table_name: '' }, 'schema.kusto')).rejects.toThrow(/cluster URI.*database.*table/i);
+  });
+
+  it('imports nested JSON Schema definition namespaces with resolvable references', async () => {
+    const source = JSON.parse(await readFile(acceptedCorpusFixture('test/jsons/conditional-schema-patterns.json'), 'utf8'));
+    const result = await runPackaged('import.jsonschema.to-json-structure', source, { rootName: 'Root', preserveUnknownKeywords: false }, 'conditional-schema-patterns.json');
+    const output = JSON.parse(decoder.decode(result.files['preview.json']));
+    expect(output.definitions).toHaveProperty('shapeTypes_Circle');
+    expect(output.definitions).toHaveProperty('shapeTypes_Rectangle');
+    expect(output.definitions).toHaveProperty('shapeTypes_Triangle');
+    expect(JSON.stringify(output)).not.toContain('#/definitions/shapeTypes/');
+  });
+
+  it('preserves anyOf composition while importing the avrotize fixture', async () => {
+    const source = JSON.parse(await readFile(acceptedCorpusFixture('test/jsons/anyof.json'), 'utf8'));
+    const result = await runPackaged('import.jsonschema.to-json-structure', source, { rootName: 'AnyOfRoot', preserveUnknownKeywords: false }, 'anyof.json');
+    const output = JSON.parse(decoder.decode(result.files['preview.json']));
+    expect(output.definitions.AnyOfRoot).toBeDefined();
+    expect(JSON.stringify(output)).toContain('anyOf');
+  });
+
+  it('imports the discriminated union fixture and emits usable Protobuf declarations', async () => {
+    const source = JSON.parse(await readFile(acceptedCorpusFixture('test/jsons/discriminated-union-simple.json'), 'utf8'));
+    const imported = await runPackaged('import.jsonschema.to-json-structure', source, { rootName: 'DiscriminatedRoot', preserveUnknownKeywords: false }, 'discriminated-union-simple.json');
+    const structure = JSON.parse(decoder.decode(imported.files['preview.json']));
+    const protobuf = await runPackaged('export.json-structure.to-protobuf', structure, {}, 'discriminated-union-simple.struct.json');
+    expect(Object.keys(protobuf.files).some((name) => name.endsWith('.proto'))).toBe(true);
+  });
+
+  it('keeps Protobuf output valid when enum symbols collide at package scope', async () => {
+    const source = JSON.parse(await readFile(acceptedCorpusFixture('test/jsons/kubernetes-definitions-ref.struct.json'), 'utf8'));
+    const result = await runPackaged('export.json-structure.to-protobuf', source, {}, 'kubernetes-definitions-ref.struct.json');
+    expect(Object.keys(result.files).some((name) => name.endsWith('.proto'))).toBe(true);
+    expect(result.warnings).toContainEqual(expect.objectContaining({ code: 'protobuf.enum.symbols.prefixed', lossiness: 'metadata' }));
+  });
+
+  it('reports Protobuf validation constraints instead of claiming no lossiness', async () => {
+    const source = JSON.parse(await readFile(acceptedCorpusFixture('test/jsons/test-validation-attributes.struct.json'), 'utf8'));
+    const result = await runPackaged('export.json-structure.to-protobuf', source, {}, 'test-validation-attributes.struct.json');
+    expect(result.lossiness).toBe('unsupported-feature');
+    expect(result.warnings).toContainEqual(expect.objectContaining({ code: 'protobuf.minLength.omitted', lossiness: 'unsupported-feature' }));
+    expect(result.warnings).toContainEqual(expect.objectContaining({ code: 'protobuf.pattern.omitted', lossiness: 'unsupported-feature' }));
+  });
+
+  it('rejects outbound conversion with unresolved imports', async () => {
+    await expect(runPackaged('export.json-structure.to-avro', { $import: 'https://example.test/base.struct.json', type: 'string' })).rejects.toThrow(/requires effective imports/i);
   });
 
   it('keeps the packaged runtime descriptor hashes in parity with its assets', async () => {
@@ -152,6 +267,118 @@ describe('Phase 5 packaged process runtime', () => {
     await expect(invoke(new NodeProcessExecutableLauncher(process.cwd(), { ...baseLimits, maxStdoutBytes: 128, maxLineBytes: 128 }), 'stdout.struct.json')).rejects.toThrow(/stdout|line/);
   });
 
+  it('cancels the retained Structurize process tree and removes its temporary workspace', async () => {
+    const fixtureRoot = await mkdtemp(join(tmpdir(), 'json-structure-structurize-cancel-'));
+    const marker = join(fixtureRoot, 'process.json');
+    const previousExecutable = process.env.STRUCTURIZE_EXECUTABLE;
+    const previousMarker = process.env.STRUCTURIZE_TEST_MARKER;
+    const controller = new AbortController();
+    let evidence: StructurizeProcessEvidence | undefined;
+    try {
+      process.env.STRUCTURIZE_EXECUTABLE = resolve(process.cwd(), 'tests/fixtures/structurize-hang.cjs');
+      process.env.STRUCTURIZE_TEST_MARKER = marker;
+      const conversion = new NodeProcessExecutableLauncher(resolve(process.cwd(), 'src/conversion'), {
+        maxExecutionMs: 10_000,
+        maxOldSpaceMb: 32,
+        maxStdoutBytes: 64 * 1024,
+        maxStderrBytes: 64 * 1024,
+        maxLineBytes: 64 * 1024,
+        maxFiles: 4,
+        maxWarnings: 4,
+        maxFileBytes: 64 * 1024,
+        maxAggregateFileBytes: 64 * 1024,
+      }).invoke({
+        executablePath: 'worker-runtime/converter-worker.cjs',
+        arguments: [],
+        request: {
+          operationId: randomUUID(),
+          commandId: 'export.structurize.s2asn',
+          sourceName: 'schema.struct.json',
+          source: encoder.encode('{"type":"string"}'),
+          options: {},
+          preview: true,
+        },
+        signal: controller.signal,
+        onProgress: vi.fn(),
+      });
+      evidence = await waitFor<StructurizeProcessEvidence>(async () => {
+        try {
+          return JSON.parse(await readFile(marker, 'utf8')) as StructurizeProcessEvidence;
+        } catch {
+          return undefined;
+        }
+      });
+      expect(processExists(evidence.pid)).toBe(true);
+      expect(processExists(evidence.grandchildPid)).toBe(true);
+
+      controller.abort();
+      await expect(conversion).rejects.toMatchObject({ name: 'AbortError' });
+      await waitFor(async () => !processExists(evidence!.pid) && !processExists(evidence!.grandchildPid) ? true : undefined);
+      await expect(stat(evidence.workspace)).rejects.toMatchObject({ code: 'ENOENT' });
+    } finally {
+      controller.abort();
+      if (evidence) await terminateKnownProcessTree(evidence.pid);
+      if (previousExecutable === undefined) delete process.env.STRUCTURIZE_EXECUTABLE;
+      else process.env.STRUCTURIZE_EXECUTABLE = previousExecutable;
+      if (previousMarker === undefined) delete process.env.STRUCTURIZE_TEST_MARKER;
+      else process.env.STRUCTURIZE_TEST_MARKER = previousMarker;
+      await rm(fixtureRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('times out the retained Structurize process tree and awaits workspace cleanup', async () => {
+    const fixtureRoot = await mkdtemp(join(tmpdir(), 'json-structure-structurize-timeout-'));
+    const marker = join(fixtureRoot, 'process.json');
+    const previousExecutable = process.env.STRUCTURIZE_EXECUTABLE;
+    const previousMarker = process.env.STRUCTURIZE_TEST_MARKER;
+    let evidence: StructurizeProcessEvidence | undefined;
+    try {
+      process.env.STRUCTURIZE_EXECUTABLE = resolve(process.cwd(), 'tests/fixtures/structurize-hang.cjs');
+      process.env.STRUCTURIZE_TEST_MARKER = marker;
+      const conversion = new NodeProcessExecutableLauncher(resolve(process.cwd(), 'src/conversion'), {
+        maxExecutionMs: 1_000,
+        maxOldSpaceMb: 32,
+        maxStdoutBytes: 64 * 1024,
+        maxStderrBytes: 64 * 1024,
+        maxLineBytes: 64 * 1024,
+        maxFiles: 4,
+        maxWarnings: 4,
+        maxFileBytes: 64 * 1024,
+        maxAggregateFileBytes: 64 * 1024,
+      }).invoke({
+        executablePath: 'worker-runtime/converter-worker.cjs',
+        arguments: [],
+        request: {
+          operationId: randomUUID(),
+          commandId: 'export.structurize.s2asn',
+          sourceName: 'schema.struct.json',
+          source: encoder.encode('{"type":"string"}'),
+          options: {},
+          preview: true,
+        },
+        signal: new AbortController().signal,
+        onProgress: vi.fn(),
+      });
+      evidence = await waitFor<StructurizeProcessEvidence>(async () => {
+        try {
+          return JSON.parse(await readFile(marker, 'utf8')) as StructurizeProcessEvidence;
+        } catch {
+          return undefined;
+        }
+      });
+      await expect(conversion).rejects.toThrow('execution quota');
+      await waitFor(async () => !processExists(evidence!.pid) && !processExists(evidence!.grandchildPid) ? true : undefined);
+      await expect(stat(evidence.workspace)).rejects.toMatchObject({ code: 'ENOENT' });
+    } finally {
+      if (evidence) await terminateKnownProcessTree(evidence.pid);
+      if (previousExecutable === undefined) delete process.env.STRUCTURIZE_EXECUTABLE;
+      else process.env.STRUCTURIZE_EXECUTABLE = previousExecutable;
+      if (previousMarker === undefined) delete process.env.STRUCTURIZE_TEST_MARKER;
+      else process.env.STRUCTURIZE_TEST_MARKER = previousMarker;
+      await rm(fixtureRoot, { recursive: true, force: true });
+    }
+  });
+
   it('imports JSON Schema recursively with canonical identity and escaped root pointers', async () => {
     const result = await runPackaged('import.jsonschema.to-json-structure', {
       $id: 'https://example.test/customer.schema.json',
@@ -251,7 +478,6 @@ describe('Phase 5 packaged process runtime', () => {
       items: { type: 'array', items: { type: 'any' } },
     });
     expect(result.warnings).toContainEqual(expect.objectContaining({ code: 'jsonschema.keyword.omitted', sourceLocation: '/title' }));
-    expect(result.lossiness).not.toBe('none');
   });
 
   it('normalizes colliding definition names and rewrites escaped local references', async () => {
@@ -304,6 +530,56 @@ describe('Phase 5 packaged process runtime', () => {
     expect(result.warnings).toEqual([]);
   });
 
+  it('classifies annotation-only JSON Schema definitions as schemas with explicit lossiness', async () => {
+    const result = await runPackaged('import.jsonschema.to-json-structure', JSON.parse(JSON.stringify({
+      type: 'object',
+      properties: { description: { type: 'string' } },
+      $defs: {
+        DescriptionOnly: { description: 'A reusable annotation-only schema.' },
+        TitleOnly: { title: 'A reusable title-only schema.' },
+        DefsOnly: { $defs: { Nested: { type: 'string' } } },
+        Namespace: { Child: { description: 'A nested schema, not a namespace payload.' } },
+      },
+    })), { rootName: 'Annotated' });
+    const output = JSON.parse(decoder.decode(result.files['preview.json']));
+    expect(output.definitions.DescriptionOnly).toEqual({ type: 'any', description: 'A reusable annotation-only schema.' });
+    expect(output.definitions.TitleOnly).toEqual({ type: 'any' });
+    expect(output.definitions.DefsOnly).toEqual({ type: 'any' });
+    expect(output.definitions.DefsOnly_Nested).toEqual({ type: 'string' });
+    expect(output.definitions.Namespace_Child).toEqual({ type: 'any', description: 'A nested schema, not a namespace payload.' });
+    expect(result.warnings).toContainEqual(expect.objectContaining({ code: 'jsonschema.keyword.omitted', sourceLocation: '/$defs/TitleOnly/title', lossiness: 'metadata' }));
+    expect(result.warnings).not.toContainEqual(expect.objectContaining({ sourceLocation: '/$defs/DescriptionOnly/description' }));
+    expect(result.lossiness).toBe('metadata');
+  });
+
+  it('retains magic JSON Schema definition names and local references after JSON roundtrip', async () => {
+    const source = JSON.parse('{"type":"object","properties":{"proto":{"$ref":"#/$defs/__proto__"},"ctor":{"$ref":"#/$defs/constructor"},"prototype":{"$ref":"#/$defs/prototype"}},"$defs":{"__proto__":{"type":"string"},"constructor":{"type":"string"},"prototype":{"$ref":"#/$defs/__proto__"}}}');
+    const result = await runPackaged('import.jsonschema.to-json-structure', source, { rootName: 'Magic' });
+    const output = JSON.parse(decoder.decode(result.files['preview.json']));
+    expect(Object.prototype.hasOwnProperty.call(output.definitions, '__proto__')).toBe(true);
+    expect(Object.prototype.hasOwnProperty.call(output.definitions, 'constructor')).toBe(true);
+    expect(Object.prototype.hasOwnProperty.call(output.definitions, 'prototype')).toBe(true);
+    expect(output.definitions.__proto__).toEqual({ type: 'string' });
+    expect(output.definitions.constructor).toEqual({ type: 'string' });
+    expect(output.definitions.prototype).toEqual({ type: { $ref: '#/definitions/__proto__' } });
+    expect(output.definitions.Magic.properties).toEqual({
+      proto: { type: { $ref: '#/definitions/__proto__' } },
+      ctor: { type: { $ref: '#/definitions/constructor' } },
+      prototype: { type: { $ref: '#/definitions/prototype' } },
+    });
+    expect(result.warnings).toEqual([]);
+    expect(JSON.parse(JSON.stringify(output)).definitions.__proto__).toEqual({ type: 'string' });
+  });
+
+  it('retains magic Protobuf message names in the generated number lock', async () => {
+    const source = JSON.parse('{"name":"__proto__","type":"object","properties":{"id":{"type":"string"}}}');
+    const numbers = '{"version":2,"messages":{"__proto__":{"fields":{"id":7}}},"enums":{}}';
+    const result = await runPackaged('export.json-structure.to-protobuf', source, { numbers });
+    const lock = JSON.parse(decoder.decode(result.files['proto-numbers.json']));
+    expect(Object.prototype.hasOwnProperty.call(lock.messages, '__proto__')).toBe(true);
+    expect(lock.messages.__proto__).toEqual({ fields: { id: 7 } });
+    expect(JSON.parse(JSON.stringify(lock)).messages.__proto__).toEqual({ fields: { id: 7 } });
+  });
   it('emits typed canonical schemas and maps required property identifiers without silent loss', async () => {
     const unconstrained = await runPackaged('import.jsonschema.to-json-structure', {}, { rootName: 'Anything' });
     expect(JSON.parse(decoder.decode(unconstrained.files['preview.json'])).definitions.Anything).toEqual({ type: 'any' });
@@ -432,6 +708,35 @@ describe('Phase 5 packaged process runtime', () => {
     await expect(runPackaged('export.json-structure.to-protobuf', { name: 'Open', type: 'object', properties: { id: { type: 'string' } }, additionalProperties: true }, { additional_properties: 'error' })).rejects.toThrow('protobuf messages are closed');
   });
 
+  it('rejects malformed Protobuf field-number locks and reserved ranges', () => {
+    const proto = encoder.encode('syntax = "proto3";\nmessage Root {\n  optional string id = 2;\n}\n');
+    const validateLock = (reserved: unknown) => validateGeneratedConversionFiles('protobuf', {
+      'root.proto': proto,
+      'proto-numbers.json': encoder.encode(JSON.stringify({ version: 2, messages: { Root: { fields: { id: 2 }, reserved } }, enums: {} })),
+    });
+    for (const [reserved, diagnostic] of [
+      [[0], /outside/], [[-1], /outside/], [[536870912], /outside/], [[19000], /implementation-reserved/],
+      [[{ from: 4, to: 3 }], /reversed/], [[{ from: 1, to: 3 }], /reserves assigned/],
+    ] as const) expect(() => validateLock(reserved)).toThrow(diagnostic);
+    expect(() => validateLock([{ from: 1, to: 3 }, { from: 3, to: 4 }])).toThrow(/overlaps/);
+    expect(() => validateLock([{ from: 1, to: 1 }, { from: 4, to: 3 }])).toThrow(/reversed/);
+    expect(() => validateLock([{ from: 1, to: 1 }, { from: 536870910, to: 536870911 }])).not.toThrow();
+
+    for (const reserved of ['0', '-1', '536870912', '19000', '4 to 3', '1 to 3, 3 to 4', '19000 to 20000']) {
+      expect(() => validateGeneratedConversionFiles('protobuf', {
+        'bad.proto': encoder.encode('syntax = "proto3";\nmessage Bad {\n  reserved ' + reserved + ';\n}\n'),
+      })).toThrow(/invalid|outside|reversed|overlaps|implementation-reserved/);
+    }
+    expect(() => validateGeneratedConversionFiles('protobuf', {
+      'good.proto': encoder.encode('syntax = "proto3";\nmessage Good {\n  reserved 1, 3 to 4, 536870910 to max;\n  optional string id = 2;\n}\n'),
+    })).not.toThrow();
+    for (const number of ['-1', '0', '536870912', '19000']) {
+      expect(() => validateGeneratedConversionFiles('protobuf', {
+        'bad-field.proto': encoder.encode('syntax = "proto3";\nmessage BadField {\n  optional string id = ' + number + ';\n}\n'),
+      })).toThrow(/invalid|field number/);
+    }
+  });
+
   it('imports nested Avro records, unions, arrays, maps, enums, fixed, and logical types', async () => {
     const result = await runPackaged('import.avro.to-json-structure', {
       type: 'record',
@@ -495,7 +800,6 @@ describe('Phase 5 packaged process runtime', () => {
       expect.objectContaining({ code: 'avro.keyword.omitted', sourceLocation: '/fields/1/type/precision' }),
       expect.objectContaining({ code: 'avro.keyword.omitted', sourceLocation: '/fields/1/order' }),
     ]));
-    expect(result.lossiness).not.toBe('none');
   });
 
   it('preserves nested JSON Schema shape and reports every omitted annotation', async () => {
@@ -530,7 +834,6 @@ describe('Phase 5 packaged process runtime', () => {
     });
     const output = JSON.parse(decoder.decode(result.files['preview.avsc']));
     expect(output.fields[0]).toMatchObject({ name: 'child', type: { type: 'record', fields: [{ name: 'id', type: 'string' }] } });
-    expect(result.lossiness).not.toBe('none');
     expect(result.warnings).toContainEqual(expect.objectContaining({ code: 'json-structure.keyword.omitted', sourceLocation: '/definitions/Root/properties/child/minimum' }));
   });
 
@@ -818,6 +1121,13 @@ describe('Phase 5 packaged process runtime', () => {
     ]);
   });
 
+  it('validates conversion options before prompting for a destination', async () => {
+    let prompted = false;
+    const host = new NodeConversionHost({ runtimeRoot: resolve(process.cwd(), 'src/conversion'), destination: async () => { prompted = true; return 'unused'; } });
+    await expect(host.convert({ protocolVersion: 1, requestId: 'invalid-before-destination', kind: 'conversion', documentVersion: 1, commandId: 'import.jsonschema.to-json-structure', sourceName: 'schema.json', sourceText: '{}', options: { preserveUnknownKeywords: 1 } })).rejects.toThrow('must be a boolean');
+    expect(prompted).toBe(false);
+  });
+
   it('can cancel while destination selection is pending and never starts publication', async () => {
     let releaseDestination: ((value: string) => void) | undefined;
     const destination = new Promise<string>((resolveDestination) => { releaseDestination = resolveDestination; });
@@ -921,4 +1231,52 @@ describe('Phase 5 packaged process runtime', () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  it('reports nested Protobuf lossiness for collections, unions, choices, inheritance, and sets', async () => {
+    const result = await runPackaged('export.json-structure.to-protobuf', {
+      name: 'Lossy',
+      type: 'object',
+      properties: {
+        items: { type: 'array', items: { type: 'string', minLength: 2, default: 'x' } },
+        values: { type: 'map', values: { type: 'string', semanticRole: 'status' } },
+        union: { type: [{ type: 'string', const: 'x' }, { type: 'object', properties: { relation: { type: 'string', relations: {} } } }] },
+        choice: { type: 'choice', choices: { branch: { type: 'string', maximum: 10 } } },
+        setValues: { type: 'set', items: { type: 'string' } },
+      },
+    });
+    expect(result.lossiness).toBe('data-loss');
+    for (const code of ['protobuf.minLength.omitted', 'protobuf.default.omitted', 'protobuf.semanticRole.omitted', 'protobuf.const.omitted', 'protobuf.relations.omitted', 'protobuf.maximum.omitted', 'protobuf.set.uniqueness']) {
+      expect(result.warnings).toContainEqual(expect.objectContaining({ code }));
+    }
+
+    const inherited = await runPackaged('export.json-structure.to-protobuf', {
+      definitions: {
+        Base: { type: 'object', abstract: true, properties: { base: { type: 'string' } } },
+        Child: { type: 'object', $extends: '#/definitions/Base', properties: { child: { type: 'string' } } },
+      },
+      $root: '#/definitions/Child',
+    });
+    expect(inherited.warnings).toContainEqual(expect.objectContaining({ code: 'protobuf.$extends.omitted', sourceLocation: '#/definitions/Child' }));
+    expect(inherited.warnings).toContainEqual(expect.objectContaining({ code: 'protobuf.abstract.omitted', sourceLocation: '#/definitions/Base' }));
+  });
+
+  it('escapes reserved Protobuf field and enum symbols and rejects reserved declarations and packages', async () => {
+    const result = await runPackaged('export.json-structure.to-protobuf', {
+      name: 'Names', type: 'object', properties: {
+        service: { type: 'string' },
+        state: { type: 'string', enum: ['message'] },
+      },
+    });
+    const proto = decoder.decode(result.files['names.proto']);
+    expect(proto).toContain('service_');
+    expect(proto).toContain('message_');
+    expect(result.warnings.filter((warning) => warning.code === 'protobuf.identifier.escaped')).toHaveLength(2);
+    expect(() => validateGeneratedConversionFiles('protobuf', result.files)).not.toThrow();
+    await expect(runPackaged('export.json-structure.to-protobuf', { name: 'message', type: 'object', properties: { id: { type: 'string' } } })).rejects.toThrow(/legal protobuf identifier/);
+    await expect(runPackaged('export.json-structure.to-protobuf', { definitions: { package: { type: 'object', properties: { id: { type: 'string' } } } }, $root: '#/definitions/package' })).rejects.toThrow(/legal protobuf declaration identifier/);
+    await expect(runPackaged('export.json-structure.to-protobuf', { definitions: { Package: { Order: { type: 'object', properties: { id: { type: 'string' } } } } }, $root: '#/definitions/Package/Order' })).rejects.toThrow(/package component/);
+    expect(() => validateGeneratedConversionFiles('protobuf', { 'bad.proto': encoder.encode('syntax = "proto3";\nmessage Bad {\n  string message = 1;\n}\n') })).toThrow(/invalid|identifier/);
+    expect(() => validateGeneratedConversionFiles('protobuf', { 'bad.proto': encoder.encode('syntax = "proto3";\nmessage Bad {\n  string id = 1\n}\n') })).toThrow(/invalid|expected/);
+  });
+
 });

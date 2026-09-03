@@ -56,7 +56,8 @@ interface ResourceResultMessage {
 interface ServiceResultMessage { readonly type: 'serviceResult'; readonly protocolVersion: typeof protocolVersion; readonly requestId: string; readonly result?: unknown; readonly error?: string }
 interface ConversionProgressMessage extends ProgressEvent { readonly type: 'conversionProgress' }
 export type HostMessage = InitMessage | DocumentChangedMessage | DocumentRejectedMessage | ApplyResultMessage | DocumentSavedMessage | ShowCommandsMessage | ResourceResultMessage | ServiceResultMessage | ConversionProgressMessage;
-export type WebviewMessage = { readonly type: 'applyTextEdits'; readonly protocolVersion: typeof protocolVersion; readonly request: ApplyTextEditsRequest } |
+export type WebviewMessage = { readonly type: 'rendererReady'; readonly protocolVersion: typeof protocolVersion; readonly requestId: string; readonly phase: 'mounted' | 'confirmed' } |
+  { readonly type: 'applyTextEdits'; readonly protocolVersion: typeof protocolVersion; readonly request: ApplyTextEditsRequest } |
   { readonly type: 'readResource'; readonly protocolVersion: typeof protocolVersion; readonly requestId: string; readonly uri: string } |
   { readonly type: 'listConversionCommands' | 'selectConversionSource' | 'convert' | 'cancelConversion' | 'openGeneratedOutput' | 'libraryRequest' | 'listLibraryEntries' | 'readLibraryDocument'; readonly protocolVersion: typeof protocolVersion; readonly requestId: string; readonly request?: unknown };
 
@@ -91,6 +92,7 @@ export function createVsCodeWebviewClient(options: VsCodeWebviewClientOptions): 
   const replaceDelay = options.sourceReplaceDelayMs ?? sourceReplaceDelayMs;
   const timeoutDelay = options.requestTimeoutMs ?? requestTimeoutMs;
   const pending = new Map<string, PendingRequest>();
+  const acknowledgedApplies = new Map<string, string>();
   const pendingResources = new Map<string, { readonly resolve: (result: ResourceSnapshot) => void; readonly reject: (error: Error) => void; readonly timeout: ReturnType<typeof setTimeout> }>();
   const pendingServices = new Map<string, { readonly resolve: (result: unknown) => void; readonly reject: (error: Error) => void; readonly timeout?: ReturnType<typeof setTimeout> }>();
   let editor: JsonStructureEditorHandle | undefined;
@@ -114,6 +116,7 @@ export function createVsCodeWebviewClient(options: VsCodeWebviewClientOptions): 
       entry.reject(new Error(message));
     }
     pending.clear();
+    acknowledgedApplies.clear();
     for (const entry of applyQueue.splice(0)) entry.reject(new Error(message));
     applyInFlight = false;
   }
@@ -232,7 +235,12 @@ export function createVsCodeWebviewClient(options: VsCodeWebviewClientOptions): 
   function receive(value: unknown): void {
     if (disposed || !isHostMessage(value)) return;
     if (value.type === 'showCommands') { editor?.showCommandPalette(); return; }
-    if (value.type === 'documentSaved') return;
+    if (value.type === 'documentSaved') {
+      // A save acknowledgement is valid only for the host bytes currently
+      // mirrored by the editor; pending Source text must remain dirty.
+      if (snapshot && editor?.getText() === snapshot.text && value.documentVersion >= snapshot.documentVersion) editor.markSaved?.(value.documentVersion);
+      return;
+    }
     if (value.type === 'conversionProgress') { for (const listener of progressListeners) listener(value); return; }
     if (value.type === 'resourceResult') {
       const entry = pendingResources.get(value.requestId);
@@ -255,7 +263,13 @@ export function createVsCodeWebviewClient(options: VsCodeWebviewClientOptions): 
       if (!entry) return;
       pending.delete(value.requestId);
       cancel(entry.timeout);
-      if (value.result.applied && snapshot && snapshot.documentVersion < value.result.documentVersion) snapshot = { ...snapshot, text: applyEdits(snapshot.text, entry.request.edits), documentVersion: value.result.documentVersion };
+      if (value.result.applied && snapshot && snapshot.documentVersion < value.result.documentVersion) {
+        const echoedText = acknowledgedApplies.get(value.requestId);
+        const text = echoedText === snapshot.text ? snapshot.text : applyEdits(snapshot.text, entry.request.edits);
+        snapshot = { ...snapshot, text, documentVersion: value.result.documentVersion };
+        editor?.acknowledgeText?.(snapshot.text, snapshot.documentVersion);
+      }
+      acknowledgedApplies.delete(value.requestId);
       applyInFlight = false;
       entry.resolve(value.result);
       startNextApply();
@@ -271,6 +285,21 @@ export function createVsCodeWebviewClient(options: VsCodeWebviewClientOptions): 
       synchronizing = true;
       editor?.setText(snapshot.text, snapshot.documentVersion);
       synchronizing = false;
+      return;
+    }
+    const echoedApply = value.type === 'documentChanged' && snapshot && !replacement && !replacementInFlight && replacementAwaitingVersion === undefined && value.documentVersion >= snapshot.documentVersion
+      ? [...pending.values()].find((entry) => applyEdits(snapshot!.text, entry.request.edits) === value.text)
+      : undefined;
+    if (echoedApply && snapshot) {
+      acknowledgedApplies.set(echoedApply.request.requestId, value.text);
+      snapshot = { ...snapshot, text: value.text, documentVersion: value.documentVersion };
+      editor?.acknowledgeText?.(snapshot.text, snapshot.documentVersion);
+      return;
+    }
+    const acknowledgedChange = value.type === 'documentChanged' && snapshot && !replacement && !replacementInFlight && replacementAwaitingVersion === undefined && value.documentVersion >= snapshot.documentVersion && value.text === snapshot.text;
+    if (acknowledgedChange && snapshot) {
+      snapshot = { ...snapshot, documentVersion: value.documentVersion };
+      editor?.acknowledgeText?.(snapshot.text, snapshot.documentVersion);
       return;
     }
     const preserveReplacement = value.type === 'documentChanged' && (replacementInFlight || replacementAwaitingVersion !== undefined);
@@ -315,14 +344,31 @@ export function createVsCodeWebviewClient(options: VsCodeWebviewClientOptions): 
   } };
 }
 
+const rendererArtifactMarker = 'json-structure-vscode-renderer-ready-v1';
+
 export function startVsCodeWebview(): VsCodeWebviewClient {
   const styleNonce = document.querySelector('meta[name="json-structure-style-nonce"]')?.getAttribute('content') ?? undefined;
-  return createVsCodeWebviewClient({
-    vscode: acquireVsCodeApi(), window, document,
+  const vscode = acquireVsCodeApi();
+  const requestId = document.querySelector('meta[name="json-structure-renderer-readiness"]')?.getAttribute('content');
+  if (requestId) {
+    const confirm = (event: MessageEvent): void => {
+      const data = event.data;
+      if (data && data.type === 'rendererReadyAck' && data.protocolVersion === protocolVersion && data.requestId === requestId) {
+        vscode.postMessage({ type: 'rendererReady', protocolVersion, requestId, phase: 'confirmed' });
+        window.removeEventListener('message', confirm);
+      }
+    };
+    window.addEventListener('message', confirm);
+  }
+  const client = createVsCodeWebviewClient({
+    vscode, window, document,
     mount: (initial, host, onChange) => mountJsonStructureEditor(document.querySelector('#editor') as HTMLElement, {
       text: initial.text, uri: initial.uri, title: initial.title, documentVersion: initial.documentVersion, host, onChange, styleNonce, chrome: 'embedded'
     })
   });
+  document.documentElement.setAttribute('data-json-structure-renderer', rendererArtifactMarker);
+  if (requestId) vscode.postMessage({ type: 'rendererReady', protocolVersion, requestId, phase: 'mounted' });
+  return client;
 }
 
 if (typeof window !== 'undefined' && typeof document !== 'undefined') startVsCodeWebview();

@@ -1,16 +1,20 @@
 'use strict';
 
 let input = '';
+let handled = false;
 process.stdin.setEncoding('utf8');
-process.stdin.on('data', (chunk) => { input += chunk; });
-process.stdin.on('end', () => {
-  const request = JSON.parse(input.trim());
+process.stdin.on('data', (chunk) => {
+  input += chunk;
+  const newline = input.indexOf('\n');
+  if (handled || newline < 0) return;
+  handled = true;
+  const request = JSON.parse(input.slice(0, newline).trim());
   if (request.sourceName === 'hang.struct.json') {
     setInterval(() => undefined, 1000);
     return;
   }
   if (request.sourceName === 'stdout.struct.json') {
-    process.stdout.write('x'.repeat(4096));
+    process.stdout.write('x'.repeat(4096), () => process.exit(0));
     return;
   }
   const evidence = {
@@ -24,5 +28,5 @@ process.stdin.on('end', () => {
     lossiness: 'none',
     warnings: [],
     files: [{ path: 'evidence.schema.json', contentBase64: Buffer.from(JSON.stringify(evidence)).toString('base64') }],
-  }) + '\n');
+  }) + '\n', () => process.exit(0));
 });

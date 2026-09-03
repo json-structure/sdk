@@ -108,6 +108,23 @@ describe('VS Code webview client', () => {
     vi.useRealTimers();
   });
 
+  it('does not reset Design history when a local edit echo precedes applyResult', async () => {
+    const setText = vi.fn();
+    const acknowledgeText = vi.fn();
+    const client = createVsCodeWebviewClient({
+      vscode: { postMessage: vi.fn() },
+      window: { addEventListener: vi.fn(), removeEventListener: vi.fn() },
+      document: { visibilityState: 'visible', addEventListener: vi.fn(), removeEventListener: vi.fn() },
+      mount: () => ({ setText, acknowledgeText, setTitle: vi.fn(), setUri: vi.fn(), getText: () => 'aXc', showCommandPalette: vi.fn(), dispose: vi.fn() })
+    });
+    client.receive({ type: 'init', protocolVersion: 1, uri: 'file:///test.struct.json', title: 'Test', text: 'abc', documentVersion: 1 });
+    const applied = client.host.applyTextEdits(request);
+    client.receive({ type: 'documentChanged', protocolVersion: 1, text: 'aXc', documentVersion: 2 });
+    expect(setText).not.toHaveBeenCalled();
+    expect(acknowledgeText).toHaveBeenCalledWith('aXc', 2);
+    client.receive({ type: 'applyResult', protocolVersion: 1, requestId: request.requestId, result: { protocolVersion: 1, requestId: request.requestId, documentVersion: 2, applied: true, diagnostics: [] } });
+    await expect(applied).resolves.toMatchObject({ applied: true });
+  });
   it('does not replay an edit after the host document change already includes it', async () => {
     const { client } = fixture();
     const applied = client.host.applyTextEdits(request);

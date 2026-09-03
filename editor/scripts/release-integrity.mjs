@@ -6,7 +6,7 @@ const [command, rootArgument = 'release', ...declared] = process.argv.slice(2);
 const root = path.resolve(rootArgument);
 const posix = (file) => path.relative(root, file).split(path.sep).join('/');
 const normalize = (value) => Array.isArray(value) ? value.map(normalize) : value && typeof value === 'object'
-  ? Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right)).map(([key, entry]) => [key, normalize(entry)]))
+  ? Object.fromEntries(Object.keys(value).sort((left, right) => left < right ? -1 : left > right ? 1 : 0).map((key) => [key, normalize(value[key])]))
   : value;
 const stable = (value) => `${JSON.stringify(normalize(value), null, 2)}\n`;
 const matchesDeclaration = (relative, declaration) => {
@@ -25,12 +25,40 @@ async function files(directory) {
   return found;
 }
 
+async function corpusTrustFindings(releaseRoot) {
+  const projectRoot = path.basename(releaseRoot).toLowerCase() === 'release' ? path.resolve(releaseRoot, '..') : releaseRoot;
+  const coverageRoot = path.join(projectRoot, 'coverage');
+  try { await stat(coverageRoot); } catch { return []; }
+  const baselinePath = path.join(projectRoot, 'coverage', 'corpus-baseline.json');
+  const integrityPath = path.join(projectRoot, 'coverage', 'release-integrity.json');
+  try {
+    const baseline = JSON.parse(await readFile(baselinePath, 'utf8'));
+    const integrity = JSON.parse(await readFile(integrityPath, 'utf8'));
+    const artifact = integrity.artifact;
+    const review = integrity.review;
+    const findings = [];
+    if (integrity.schemaVersion !== 1 || artifact?.path !== 'coverage/corpus-baseline.json' || artifact?.version !== baseline.version || artifact?.canonicalization !== 'json-stable-v1' || typeof artifact?.sha256 !== 'string' || !/^[a-f0-9]{64}$/i.test(artifact.sha256)) {
+      findings.push('coverage/release-integrity.json: malformed corpus baseline trust manifest');
+    } else {
+      const digest = createHash('sha256').update(stable(baseline), 'utf8').digest('hex');
+      if (digest !== artifact.sha256.toLowerCase()) findings.push('coverage/corpus-baseline.json: canonical SHA-256 differs from release integrity manifest');
+    }
+    if (review?.version !== 1 || review?.status !== 'independent-review-required' || review?.authorizedWorkflow !== 'coverage-baseline-update' || review?.tokenEnvironment !== 'JSON_STRUCTURE_BASELINE_UPDATE_TOKEN' || typeof review?.changePolicy !== 'string' || !review.changePolicy.trim() || JSON.stringify(review?.requiredMetadata) !== JSON.stringify(['reviewId', 'reason', 'approvedBy'])) {
+      findings.push('coverage/release-integrity.json: incomplete independent-review metadata');
+    }
+    return findings;
+  } catch (error) {
+    return ['coverage/release-integrity.json: unable to verify corpus baseline trust (' + (error instanceof Error ? error.message : String(error)) + ')'];
+  }
+}
+
 if (!['scan', 'manifest', 'executables', 'attest'].includes(command)) {
   console.error('usage: node scripts/release-integrity.mjs <scan|manifest|executables|attest> [release-root] [declared-executable ...]');
   process.exitCode = 2;
 } else {
   const artifacts = [];
   const findings = [];
+  if (command !== 'executables') findings.push(...await corpusTrustFindings(root));
   const executableManifestPath = path.join(root, 'executables.json');
   const executableFiles = (await files(root)).filter((file) => /\.(?:exe|dll|dylib|so|node|appimage|msi)$/i.test(file)).map(posix).sort();
   if (command === 'executables') {
@@ -80,6 +108,10 @@ if (!['scan', 'manifest', 'executables', 'attest'].includes(command)) {
         predicate: { buildDefinition: { buildType: 'json-structure-editor-release', externalParameters: { source: process.env.GITHUB_REPOSITORY || 'local', sourceDigest } }, runDetails: { builder: { id: process.env.GITHUB_ACTIONS ? 'github-actions' : 'local' }, metadata: { invocationId }, environment: { platform: process.platform, architecture: process.arch, node: process.version, tools: { npm: process.env.npm_config_user_agent?.split(' ')[0] || 'npm' } } } }
       }));
       console.log(`wrote SBOM and provenance for ${components.length} locked packages`);
+    }
+    if (findings.length) {
+      console.error(findings.join('\n'));
+      process.exitCode = 1;
     }
   } else if (findings.length) {
     console.error(findings.join('\n'));

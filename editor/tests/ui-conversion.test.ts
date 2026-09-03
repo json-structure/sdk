@@ -28,6 +28,32 @@ describe('conversion workbench view', () => {
     expect(selected).not.toContain('data-conversion-run disabled');
   });
 
+  it('renders external-service imports as configuration workflows without a local file gate', () => {
+    const externalManifest: ConversionCommandsManifest = {
+      schemaVersion: 1,
+      converters: [{
+        id: 'structurize-cli', displayName: 'Structurize', version: '1', sourceFormats: ['kusto'], targetFormats: ['json-structure'],
+        options: [
+          { name: 'kusto_uri', type: 'string', default: '' },
+          { name: 'kusto_database', type: 'string', default: '' },
+          { name: 'table_name', type: 'string', default: '' },
+        ],
+      }],
+      commands: [{
+        id: 'import.structurize.k2s', converterId: 'structurize-cli', direction: 'import', label: 'Import Kusto',
+        sourceFormat: 'kusto', targetFormat: 'json-structure', defaultAutoOpen: true, cliCommand: 'k2s',
+        optionNames: ['kusto_uri', 'kusto_database', 'table_name'], availability: 'external-service',
+        availabilityMessage: 'Kusto import requires a configured cluster URI, database, and table.',
+      }],
+    };
+    const host = { listConversionCommands: async () => externalManifest, selectConversionSource: async () => undefined, convert: async () => { throw new Error('not called'); } };
+    const html = conversionView(host, externalManifest, 'import.structurize.k2s', undefined, undefined, '');
+    expect(html).toContain('External data source');
+    expect(html).toContain('data-conversion-option="kusto_uri"');
+    expect(html).not.toContain('data-conversion-source');
+    expect(html).not.toContain('data-conversion-run disabled');
+  });
+
   it('renders typed options and committed result details', () => {
     const host = { listConversionCommands: async () => manifest, convert: async () => { throw new Error('not called'); }, openGeneratedOutput: async () => ({ protocolVersion: 1 as const, requestId: 'open', opened: true }) };
     const html = conversionView(host, manifest, 'convert.fixture', undefined, {
@@ -51,6 +77,7 @@ describe('conversion workbench view', () => {
     }, 'Generated 1 output.');
 
     expect(html).toContain('data-option-type="boolean" checked');
+    expect(html).toContain('data-conversion-reset');
     expect(html).toContain('class="js-conversion-tile"');
     expect(html).toContain('class="js-technology-icon"');
     expect(html).not.toContain('>B</span>');

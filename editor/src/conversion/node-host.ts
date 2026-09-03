@@ -4,7 +4,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 import type { ConversionRequest, ConversionResult, HostFile } from '../contracts.js';
 import { PROTOCOL_VERSION } from '../contracts.js';
 import { NodeProcessExecutableLauncher } from './process.js';
-import { ConversionService } from './service.js';
+import { ConversionService, type EffectiveImportResolver } from './service.js';
 import type { ConversionStorage } from './storage.js';
 import { PackagedExecutableWorkerAdapter } from './worker.js';
 
@@ -101,6 +101,7 @@ export interface NodeConversionHostOptions {
   destination(request: ConversionRequest): Promise<string | undefined>;
   launch?(path: string): Promise<void>;
   progress?(request: ConversionRequest, phase: string, completed: number, total: number, message?: string): void;
+  effectiveImports?: EffectiveImportResolver;
 }
 
 export class NodeConversionHost {
@@ -112,6 +113,7 @@ export class NodeConversionHost {
     this.service = new ConversionService({
       worker: new PackagedExecutableWorkerAdapter('worker-runtime/converter-worker.cjs', new NodeProcessExecutableLauncher(options.runtimeRoot)),
       storage: new NodeFilesystemConversionStorage(),
+      effectiveImports: options.effectiveImports,
     });
   }
 
@@ -123,6 +125,7 @@ export class NodeConversionHost {
     this.operations.set(request.requestId, controller);
     try {
       if (controller.signal.aborted) return cancelledResult(request);
+      const prepared = this.service.prepare(request.commandId, request.options);
       const destination = await this.options.destination(request);
       if (!destination || controller.signal.aborted) return cancelledResult(request);
       const source = new TextEncoder().encode(request.sourceText);
@@ -133,7 +136,7 @@ export class NodeConversionHost {
         source,
         destination,
         preview: false,
-        optionValues: request.options,
+        optionValues: prepared.effectiveOptions,
         launch: { autoOpen: false },
         signal: controller.signal,
         onProgress: (progress) => this.options.progress?.(request, progress.phase, progress.completed, progress.total, progress.message),

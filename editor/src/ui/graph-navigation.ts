@@ -23,6 +23,12 @@ export interface GraphNavigationState {
   readonly historyIndex: number;
 }
 
+export interface GraphNavigationEvent {
+  readonly type: 'camera-changed' | 'selection-changed';
+  readonly state: GraphNavigationState;
+}
+export type GraphNavigationEventListener = (event: GraphNavigationEvent) => void;
+
 export interface GraphNavigationOptions {
   readonly viewport?: GraphRect;
   readonly content?: GraphRect;
@@ -47,6 +53,22 @@ export class GraphNavigationController {
   private selection: SelectionIdentity | undefined;
   private history: NavigationEntry[] = [];
   private historyIndex = -1;
+  private readonly listeners = new Set<GraphNavigationEventListener>();
+
+  /** Subscribes a central UI owner to camera and selection changes. */
+  public on(listener: GraphNavigationEventListener): () => void {
+    this.listeners.add(listener);
+    return () => { this.listeners.delete(listener); };
+  }
+
+  public onChange(listener: GraphNavigationEventListener): () => void {
+    return this.on(listener);
+  }
+
+  private publish(type: GraphNavigationEvent['type']): void {
+    const event: GraphNavigationEvent = { type, state: this.snapshot() };
+    for (const listener of [...this.listeners]) listener(event);
+  }
 
   public constructor(options: GraphNavigationOptions = {}) {
     this.viewport = options.viewport ?? DEFAULT_VIEWPORT;
@@ -64,24 +86,37 @@ export class GraphNavigationController {
 
   public setViewport(viewport: GraphRect): GraphNavigationState {
     this.viewport = { ...viewport };
+    this.publish('camera-changed');
     return this.snapshot();
   }
 
   public setContent(content: GraphRect): GraphNavigationState {
     this.content = { ...content };
+    this.publish('camera-changed');
+    return this.snapshot();
+  }
+
+  public setCamera(camera: CameraState): GraphNavigationState {
+    this.camera = { ...camera, zoom: this.clampZoom(camera.zoom) };
+    this.publish('camera-changed');
     return this.snapshot();
   }
 
   public setSelection(selection: SelectionIdentity | undefined): GraphNavigationState {
     this.selection = selection;
+    this.publish('selection-changed');
     return this.snapshot();
   }
 
   /** Keeps a selection when its identity is still represented by the new projection. */
-  public reconcileSelection(nodes: readonly Pick<GraphNode, 'id' | 'pointer'>[]): GraphNavigationState {
+  public reconcileSelection(nodes: readonly Pick<GraphNode, 'id' | 'pointer'>[], edges: readonly { readonly id: string }[] = []): GraphNavigationState {
     if (!this.selection) return this.snapshot();
-    const exists = nodes.some((node) => node.id === this.selection?.nodeId || node.pointer === this.selection?.pointer);
-    if (!exists) this.selection = undefined;
+    const exists = nodes.some((node) => node.id === this.selection?.nodeId || node.pointer === this.selection?.pointer)
+      || edges.some((edge) => edge.id === this.selection?.nodeId);
+    if (!exists) {
+      this.selection = undefined;
+      this.publish('selection-changed');
+    }
     return this.snapshot();
   }
 
@@ -90,6 +125,7 @@ export class GraphNavigationController {
     const nextZoom = this.clampZoom(this.camera.zoom * factor);
     const world = this.screenToWorld(pointer);
     this.camera = { x: pointer.x - world.x * nextZoom, y: pointer.y - world.y * nextZoom, zoom: nextZoom };
+    this.publish('camera-changed');
     return this.snapshot();
   }
 
@@ -97,11 +133,13 @@ export class GraphNavigationController {
     const nextZoom = this.clampZoom(Math.round((this.camera.zoom + delta) * 10) / 10);
     const world = this.screenToWorld(pointer);
     this.camera = { x: pointer.x - world.x * nextZoom, y: pointer.y - world.y * nextZoom, zoom: nextZoom };
+    this.publish('camera-changed');
     return this.snapshot();
   }
 
   public pan(delta: GraphPoint): GraphNavigationState {
     this.camera = { ...this.camera, x: this.camera.x + delta.x, y: this.camera.y + delta.y };
+    this.publish('camera-changed');
     return this.snapshot();
   }
 
@@ -110,6 +148,7 @@ export class GraphNavigationController {
     const availableHeight = Math.max(1, this.viewport.height - padding * 2);
     const zoom = this.clampZoom(Math.min(availableWidth / Math.max(1, bounds.width), availableHeight / Math.max(1, bounds.height)));
     this.camera = { zoom, x: this.viewport.x + (this.viewport.width - bounds.width * zoom) / 2 - bounds.x * zoom, y: this.viewport.y + (this.viewport.height - bounds.height * zoom) / 2 - bounds.y * zoom };
+    this.publish('camera-changed');
     return this.snapshot();
   }
 
@@ -123,6 +162,7 @@ export class GraphNavigationController {
     const projected = { x: bounds.x * next.zoom + next.x, y: bounds.y * next.zoom + next.y };
     next = { ...next, x: next.x + this.viewport.x + padding - projected.x, y: next.y + this.viewport.y + padding - projected.y };
     this.camera = next;
+    this.publish('camera-changed');
     return this.snapshot();
   }
 
@@ -133,23 +173,26 @@ export class GraphNavigationController {
     this.history.push(entry);
     if (this.history.length > this.historyLimit) this.history.shift();
     this.historyIndex = this.history.length - 1;
+    this.publish('selection-changed');
     return this.snapshot();
   }
 
   public back(): GraphNavigationState {
     if (this.historyIndex > 0) this.historyIndex -= 1;
     this.selection = this.history[this.historyIndex]?.selection;
+    this.publish('selection-changed');
     return this.snapshot();
   }
 
   public forward(): GraphNavigationState {
     if (this.historyIndex < this.history.length - 1) this.historyIndex += 1;
     this.selection = this.history[this.historyIndex]?.selection;
+    this.publish('selection-changed');
     return this.snapshot();
   }
 
   public sortHits<T>(hits: readonly GraphHit<T>[]): readonly GraphHit<T>[] {
-    return [...hits].sort((a, b) => hitPrecedence(a.kind) - hitPrecedence(b.kind) || (a.distance ?? 0) - (b.distance ?? 0));
+    return [...hits].sort((a, b) => hitPrecedence(a.kind) - hitPrecedence(b.kind) || (a.distance ?? 0) - (b.distance ?? 0) || String(a.id).localeCompare(String(b.id)));
   }
 
   public minimap(nodes: readonly GraphRect[] = []): MinimapData {
@@ -160,6 +203,7 @@ export class GraphNavigationController {
   public navigateMinimap(point: GraphPoint, minimap: GraphRect): GraphNavigationState {
     const world = { x: this.content.x + ((point.x - minimap.x) / Math.max(1, minimap.width)) * this.content.width, y: this.content.y + ((point.y - minimap.y) / Math.max(1, minimap.height)) * this.content.height };
     this.camera = { ...this.camera, x: this.viewport.x + this.viewport.width / 2 - world.x * this.camera.zoom, y: this.viewport.y + this.viewport.height / 2 - world.y * this.camera.zoom };
+    this.publish('camera-changed');
     return this.snapshot();
   }
 
@@ -174,11 +218,11 @@ export class GraphNavigationController {
     return { x: (point.x - this.camera.x) / this.camera.zoom, y: (point.y - this.camera.y) / this.camera.zoom };
   }
 
-  private worldToScreenRect(rect: GraphRect): GraphRect {
+  public worldToScreenRect(rect: GraphRect): GraphRect {
     return { x: rect.x * this.camera.zoom + this.camera.x, y: rect.y * this.camera.zoom + this.camera.y, width: rect.width * this.camera.zoom, height: rect.height * this.camera.zoom };
   }
 
-  private screenToWorldRect(rect: GraphRect): GraphRect {
+  public screenToWorldRect(rect: GraphRect): GraphRect {
     const origin = this.screenToWorld(rect);
     return { x: origin.x, y: origin.y, width: rect.width / this.camera.zoom, height: rect.height / this.camera.zoom };
   }

@@ -27,6 +27,11 @@ export interface ConversionCommand {
   cliCommand?: string;
   outputKind?: 'file' | 'directory';
   outputName?: string;
+  /** File extensions accepted by the host source picker for import routes. */
+  sourceExtensions?: readonly string[];
+  /** A route that needs a host capability rather than a local source file. */
+  availability?: 'local' | 'external-service';
+  availabilityMessage?: string;
 }
 
 export interface ConversionCommandsManifest {
@@ -185,6 +190,12 @@ export function parseCommandsManifest(value: unknown): ConversionCommandsManifes
     const optionNames = item.optionNames === undefined ? undefined : stringArray(item.optionNames, `manifest.commands[${index}].optionNames`);
     if (optionNames && new Set(optionNames).size !== optionNames.length) throw new Error(`manifest.commands[${index}].optionNames must be unique.`);
     if (optionNames) for (const optionName of optionNames) if (!converter.options.some((option) => option.name === optionName)) throw new Error(`manifest.commands[${index}] references unknown option ${optionName}.`);
+    const sourceExtensions = item.sourceExtensions === undefined ? undefined : stringArray(item.sourceExtensions, `manifest.commands[${index}].sourceExtensions`);
+    const availability = item.availability === undefined ? undefined : item.availability === 'local' || item.availability === 'external-service'
+      ? item.availability
+      : (() => { throw new Error(`manifest.commands[${index}].availability must be local or external-service.`); })();
+    const availabilityMessage = item.availabilityMessage === undefined ? undefined : text(item.availabilityMessage, `manifest.commands[${index}].availabilityMessage`);
+    if (availability === 'external-service' && availabilityMessage === undefined) throw new Error(`manifest.commands[${index}] must explain its external-service requirement.`);
     return {
       id: text(item.id, `manifest.commands[${index}].id`), converterId, direction: item.direction,
       label: text(item.label, `manifest.commands[${index}].label`),
@@ -197,6 +208,9 @@ export function parseCommandsManifest(value: unknown): ConversionCommandsManifes
         ? item.outputKind
         : (() => { throw new Error(`manifest.commands[${index}].outputKind must be file or directory.`); })(),
       outputName: item.outputName === undefined ? undefined : text(item.outputName, `manifest.commands[${index}].outputName`),
+      sourceExtensions,
+      availability,
+      availabilityMessage,
     };
   });
   if (new Set(commands.map(({ id }) => id)).size !== commands.length) throw new Error('Command ids must be unique.');
@@ -221,7 +235,7 @@ export function validateOptionValues(metadata: ConverterMetadata, values: Conver
       result[option.name] = [...value];
       continue;
     }
-    if (typeof value !== option.type) throw new Error(`Option ${option.name} must be a ${option.type}.`);
+    if (typeof value !== option.type || option.type === 'number' && !Number.isFinite(value)) throw new Error(`Option ${option.name} must be a ${option.type}.`);
     if (option.type === 'string' && option.allowedValues && !option.allowedValues.includes(value as string)) throw new Error(`Option ${option.name} is not an allowed value.`);
     if (option.type === 'number' && option.minimum !== undefined && (value as number) < option.minimum) throw new Error(`Option ${option.name} is below its minimum.`);
     if (option.type === 'number' && option.maximum !== undefined && (value as number) > option.maximum) throw new Error(`Option ${option.name} exceeds its maximum.`);

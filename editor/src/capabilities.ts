@@ -15,7 +15,7 @@ export interface CapabilityResolution {
   readonly unknown: readonly string[];
 }
 
-export type CanonicalMetaSchemaMode = 'core' | 'validation' | 'semantic-annotations' | 'relations' | 'extended';
+export type CanonicalMetaSchemaMode = 'core' | 'validation' | 'semantic-annotations' | 'semantic' | 'relations' | 'extended';
 export type CapabilityUse = typeof CAPABILITY_USES[keyof typeof CAPABILITY_USES];
 
 export interface MetaSchemaCapabilityProfile {
@@ -47,7 +47,21 @@ const CORE_META_SCHEMA = 'https://json-structure.org/meta/core/v0/#';
 const EXTENDED_META_SCHEMA = 'https://json-structure.org/meta/extended/v0/#';
 const VALIDATION_META_SCHEMA = 'https://json-structure.org/meta/validation/v0/#';
 const SEMANTIC_ANNOTATIONS_META_SCHEMA = 'https://json-structure.org/meta/semantic-annotations/v0/#';
+const SEMANTIC_META_SCHEMA = 'https://json-structure.org/meta/semantic/v0/#';
 const RELATIONS_META_SCHEMA = 'https://json-structure.org/meta/relations/v0/#';
+
+export const WELL_KNOWN_META_SCHEMAS: readonly {
+  readonly mode: CanonicalMetaSchemaMode;
+  readonly label: string;
+  readonly uri: string;
+}[] = [
+  { mode: 'core', label: 'Core', uri: CORE_META_SCHEMA },
+  { mode: 'extended', label: 'Extended', uri: EXTENDED_META_SCHEMA },
+  { mode: 'validation', label: 'Validation', uri: VALIDATION_META_SCHEMA },
+  { mode: 'semantic-annotations', label: 'Semantic annotations', uri: SEMANTIC_ANNOTATIONS_META_SCHEMA },
+  { mode: 'semantic', label: 'Semantic', uri: SEMANTIC_META_SCHEMA },
+  { mode: 'relations', label: 'Relations', uri: RELATIONS_META_SCHEMA }
+];
 
 const CANONICAL_META_SCHEMAS: Readonly<Record<string, CanonicalMetaSchema>> = {
   [CORE_META_SCHEMA]: { mode: 'core', uses: [], offers: [] },
@@ -74,6 +88,19 @@ const CANONICAL_META_SCHEMAS: Readonly<Record<string, CanonicalMetaSchema>> = {
     parent: EXTENDED_META_SCHEMA,
     uses: [CAPABILITY_USES.units, CAPABILITY_USES.imports, CAPABILITY_USES.conditionalComposition, CAPABILITY_USES.validation],
     offers: [CAPABILITY_USES.semanticAnnotations, CAPABILITY_USES.relations]
+  },
+  [SEMANTIC_META_SCHEMA]: {
+    mode: 'semantic',
+    parent: SEMANTIC_ANNOTATIONS_META_SCHEMA,
+    uses: [
+      CAPABILITY_USES.alternateNames,
+      CAPABILITY_USES.units,
+      CAPABILITY_USES.imports,
+      CAPABILITY_USES.conditionalComposition,
+      CAPABILITY_USES.validation,
+      CAPABILITY_USES.semanticAnnotations
+    ],
+    offers: [CAPABILITY_USES.relations]
   },
   [RELATIONS_META_SCHEMA]: {
     mode: 'relations',

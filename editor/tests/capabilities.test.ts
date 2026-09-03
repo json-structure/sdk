@@ -19,6 +19,7 @@ const core = 'https://json-structure.org/meta/core/v0/#';
 const extended = 'https://json-structure.org/meta/extended/v0/#';
 const validation = 'https://json-structure.org/meta/validation/v0/#';
 const semanticAnnotations = 'https://json-structure.org/meta/semantic-annotations/v0/#';
+const semantic = 'https://json-structure.org/meta/semantic/v0/#';
 const relations = 'https://json-structure.org/meta/relations/v0/#';
 
 describe('canonical capability profiles', () => {
@@ -28,6 +29,7 @@ describe('canonical capability profiles', () => {
       [extended, ['JSONStructureImport']],
       [validation, ['JSONStructureAlternateNames', 'JSONStructureConditionalComposition', 'JSONStructureImport', 'JSONStructureUnits', 'JSONStructureValidation']],
       [semanticAnnotations, ['JSONStructureConditionalComposition', 'JSONStructureImport', 'JSONStructureUnits', 'JSONStructureValidation']],
+      [semantic, ['JSONStructureAlternateNames', 'JSONStructureConditionalComposition', 'JSONStructureImport', 'JSONStructureSemanticAnnotations', 'JSONStructureUnits', 'JSONStructureValidation']],
       [relations, ['JSONStructureImport']]
     ];
     for (const [schema, expected] of profiles) {

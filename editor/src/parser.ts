@@ -24,10 +24,82 @@ import { ALTERNATE_NAMES_KEYWORDS, alternateNamesIssues, type AlternateNamesKeyw
 interface ParsedValue { value: unknown; start: number; end: number; pointer: string; keyStart?: number; keyEnd?: number; }
 interface ParseOutput { value: unknown; values: ParsedValue[]; diagnostics: Diagnostic[]; recovery: RecoveryState; }
 
+interface TextIndex { readonly lineStarts: readonly number[]; }
+
+// Source ranges are requested once for nearly every diagnostic. Keep a small bounded
+// cache so range lookup remains logarithmic instead of rescanning the whole source.
+const textIndexes = new Map<string, TextIndex>();
+const parsedValues = new Map<string, readonly ParsedValue[]>();
+const parsedValueIndexes = new Map<string, ReadonlyMap<string, ParsedValue>>();
+const CACHE_LIMIT = 8;
+const nodeIndexes = new WeakMap<readonly ModelNode[], ReadonlyMap<string, readonly ModelNode[]>>();
+const pointerSegmentsCache = new Map<string, readonly string[]>();
+const POINTER_CACHE_LIMIT = 4_096;
+
+function pointerSegments(pointer: string): readonly string[] {
+  const cached = pointerSegmentsCache.get(pointer);
+  if (cached) return cached;
+  const segments = pointer.split('/').filter((part) => part.length > 0).map((part) => part.replace(/~1/g, '/').replace(/~0/g, '~'));
+  pointerSegmentsCache.set(pointer, segments);
+  while (pointerSegmentsCache.size > POINTER_CACHE_LIMIT) pointerSegmentsCache.delete(pointerSegmentsCache.keys().next().value!);
+  return segments;
+}
+function nodesByPointer(nodes: readonly ModelNode[]): ReadonlyMap<string, readonly ModelNode[]> {
+  const cached = nodeIndexes.get(nodes);
+  if (cached) return cached;
+  const index = new Map<string, ModelNode[]>();
+  for (const node of nodes) {
+    const bucket = index.get(node.pointer);
+    if (bucket) bucket.push(node);
+    else index.set(node.pointer, [node]);
+  }
+  nodeIndexes.set(nodes, index);
+  return index;
+}
+
+function nodeAt(nodes: readonly ModelNode[], pointer: string): ModelNode | undefined {
+  return nodesByPointer(nodes).get(pointer)?.[0];
+}
+
+function hasDuplicatePointer(nodes: readonly ModelNode[], pointer: string): boolean {
+  return (nodesByPointer(nodes).get(pointer)?.length ?? 0) > 1;
+}
+
+function rememberParsedValues(text: string, values: readonly ParsedValue[]): void {
+  parsedValues.set(text, values);
+  const index = new Map<string, ParsedValue>();
+  for (const value of values) index.set(value.pointer, value);
+  parsedValueIndexes.set(text, index);
+  while (parsedValues.size > CACHE_LIMIT) {
+    const oldest = parsedValues.keys().next().value;
+    if (oldest === undefined) break;
+    parsedValues.delete(oldest);
+    parsedValueIndexes.delete(oldest);
+  }
+}
+
+function sourceIndex(text: string): TextIndex {
+  const cached = textIndexes.get(text);
+  if (cached) return cached;
+  const lineStarts: number[] = [0];
+  for (let index = 0; index < text.length; index++) if (text.charCodeAt(index) === 10) lineStarts.push(index + 1);
+  const index = { lineStarts };
+  textIndexes.set(text, index);
+  while (textIndexes.size > CACHE_LIMIT) textIndexes.delete(textIndexes.keys().next().value!);
+  return index;
+}
+
 function position(text: string, offset: number): TextPosition {
-  const before = text.slice(0, offset);
-  const lineStart = before.lastIndexOf('\n') + 1;
-  return { line: (before.match(/\n/g) ?? []).length, column: offset - lineStart, offset };
+  const starts = sourceIndex(text).lineStarts;
+  let low = 0;
+  let high = starts.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (starts[middle]! <= offset) low = middle + 1;
+    else high = middle;
+  }
+  const line = Math.max(0, low - 1);
+  return { line, column: offset - starts[line]!, offset };
 }
 /**
  * Builds a source range from byte offsets in the current document text.
@@ -87,8 +159,10 @@ class StrictParser {
       if (this.text[this.index++] !== ':') throw new Error(`Expected ':' at offset ${this.index - 1}.`);
       const childPointer = `${pointer}/${pointerPart(key)}`;
       result[key] = this.readValue(childPointer);
-      const child = [...this.values].reverse().find((entry) => entry.pointer === childPointer);
-      if (child) { child.keyStart = keyStart; child.keyEnd = keyEnd; }
+      // readValue records the direct child after its nested values, so the last
+      // entry is the child without allocating/re-scanning the complete value list.
+      const child = this.values[this.values.length - 1];
+      if (child?.pointer === childPointer) { child.keyStart = keyStart; child.keyEnd = keyEnd; }
       this.skip();
       if (this.text[this.index] === '}') { this.index++; return result; }
       if (this.text[this.index++] !== ',') throw new Error(`Expected ',' at offset ${this.index - 1}.`);
@@ -131,6 +205,7 @@ export interface ParseResult { readonly model?: NormalizedDocument; readonly val
  */
 export function parseDocument(uri: string, text: string): ParseResult {
   const parsed = new StrictParser(text, uri).parse();
+  rememberParsedValues(text, parsed.values);
   if (parsed.recovery !== 'valid') return { diagnostics: parsed.diagnostics, recovery: parsed.recovery };
   const nodes: ModelNode[] = [];
   for (const entry of parsed.values) {
@@ -148,7 +223,7 @@ export function parseDocument(uri: string, text: string): ParseResult {
       code: 'core.document-root-invalid',
       message: 'A JSON Structure document root must be an object.',
       severity: 'error' as const,
-      location: location(uri, '', nodes.find((node) => node.pointer === '')?.range ?? rangeFor(text, 0, text.length))
+      location: location(uri, '', nodeAt(nodes, '')?.range ?? rangeFor(text, 0, text.length))
     }];
     return { value: parsed.value, diagnostics, recovery: 'valid' };
   }
@@ -212,7 +287,7 @@ function collectCoreDeclarationDiagnostics(
   const { validationActive, conditionalCompositionActive } = resolveCapabilities(root);
   const diagnoseName = (pointer: string, kind: 'type' | 'namespace' | 'property', name: string): void => {
     if (IDENTIFIER.test(name)) return;
-    const node = nodes.find((candidate) => candidate.pointer === pointer);
+    const node = nodeAt(nodes, pointer);
     diagnostics.push({
       code: 'core.identifier-invalid',
       message: `${kind} name '${name}' must match ${IDENTIFIER.source}.`,
@@ -524,7 +599,7 @@ function collectAbstractReferenceDiagnostics(
     const target = pointerAtRoot(root, targetPointer);
     if (!isRecord(target) || target.abstract !== true) continue;
     if (diagnostics.some((diagnostic) => diagnostic.code === 'core.declaration-invalid' && diagnostic.location?.pointer === reference.pointer)) continue;
-    const node = nodes.find((candidate) => candidate.pointer === reference.pointer);
+    const node = nodeAt(nodes, reference.pointer);
     diagnostics.push({
       code: 'core.declaration-invalid',
       message: 'Abstract declarations may only be used as inheritance bases.',
@@ -558,7 +633,8 @@ function collectSchemaProjections(
     diagnosed.add(pointer);
     localTypeReferenceDiagnostics(pointer, candidate, uri, text, diagnostics);
     relationAndIdentityLocalDiagnostics(root, pointer, candidate, uri, text, diagnostics, nodes, relationsActive);
-    if (!visited.has(pointer) && isSchemaDeclaration(candidate)) {
+    const projectionCandidate = isSchemaDeclaration(candidate) || conditionalCompositionActive && coreForm(candidate, conditionalCompositionActive) === 'composed';
+    if (!visited.has(pointer) && projectionCandidate) {
       const split = pointer.lastIndexOf('/');
       const name = pointer === '' ? '$root' : pointer.slice(split + 1).replace(/~1/g, '/').replace(/~0/g, '~');
       const namespacePointer = pointer === '' ? '' : pointer.slice(0, split);
@@ -738,7 +814,7 @@ function definitionProjection(
   const effectiveTypes = effectiveValidationTypes(root, value);
   const maxLengthPointer = `${pointer}/maxLength`;
   const maxLength = effectiveTypes.determinate && effectiveTypes.types.length === 1 && effectiveTypes.types[0] === 'string' &&
-    typeof value.maxLength === 'number' && Number.isInteger(value.maxLength) && value.maxLength >= 0 && nodes.filter((node) => node.pointer === maxLengthPointer).length === 1
+    typeof value.maxLength === 'number' && Number.isInteger(value.maxLength) && value.maxLength >= 0 && uniquePointer(nodes, maxLengthPointer)
       ? value.maxLength : undefined;
   const binary = binaryAnnotationsProjection(pointer, value, type, uri, text, diagnostics);
   return {
@@ -785,7 +861,7 @@ function alternateNamesProjection(
       pushKeywordDiagnostic(diagnostics, uri, keywordPointer, `${keyword} requires the JSON Structure Alternate Names extension.`, text);
       invalid.add(keyword);
     }
-    if (nodes.filter((node) => node.pointer === keywordPointer).length > 1) invalid.add(keyword);
+    if (hasDuplicatePointer(nodes, keywordPointer)) invalid.add(keyword);
   }
   if (active) {
     for (const issue of alternateNamesIssues(value, namedElement)) {
@@ -1159,7 +1235,7 @@ function relationAndIdentityLocalDiagnostics(
   }
 }
 function pointerAtRoot(root: unknown, pointer: string): unknown {
-  const parts = pointer.split('/').filter((part) => part.length > 0).map((part) => part.replace(/~1/g, '/').replace(/~0/g, '~'));
+  const parts = pointerSegments(pointer);
   let current: unknown = root;
   for (const part of parts) {
     if (!isRecord(current)) return undefined;
@@ -1168,19 +1244,24 @@ function pointerAtRoot(root: unknown, pointer: string): unknown {
   return current;
 }
 function uniquePointer(nodes: readonly ModelNode[], pointer: string): boolean {
-  return nodes.filter((node) => node.pointer === pointer).length === 1;
+  return nodesByPointer(nodes).get(pointer)?.length === 1;
 }
 function uniquePointerPath(nodes: readonly ModelNode[], pointer: string): boolean {
   if (pointer === '') return uniquePointer(nodes, '');
   const segments = pointer.slice(1).split('/');
-  return segments.every((_, index) => uniquePointer(nodes, `/${segments.slice(0, index + 1).join('/')}`));
+  let current = '';
+  for (const segment of segments) {
+    current += `/${segment}`;
+    if (!uniquePointer(nodes, current)) return false;
+  }
+  return true;
 }
 function isTypeDeclaration(value: unknown): value is Record<string, unknown> {
   return isRecord(value) && validCoreTypeValue(value.type);
 }
 function reusableTypePointer(root: Record<string, unknown>, pointer: string, nodes: readonly ModelNode[]): boolean {
   if (!pointer.startsWith('/definitions/') || !uniquePointerPath(nodes, pointer)) return false;
-  const parts = pointer.slice('/definitions/'.length).split('/').map((part) => part.replace(/~1/g, '/').replace(/~0/g, '~'));
+  const parts = pointerSegments(pointer).slice(1);
   let current: unknown = root.definitions;
   if (!isRecord(current)) return false;
   for (let index = 0; index < parts.length; index++) {
@@ -1257,7 +1338,7 @@ function scopeCollectionCompatible(root: Record<string, unknown>, scope: string,
   return collectionCompatible(root, pointerAtRoot(root, scope.slice(1)), targetRef);
 }
 function pointerMayResolveThroughImportOrInheritance(root: Record<string, unknown>, pointer: string): boolean {
-  const parts = pointer.split('/').filter((part) => part.length > 0).map((part) => part.replace(/~1/g, '/').replace(/~0/g, '~'));
+  const parts = pointerSegments(pointer);
   let current: unknown = root;
   let declaration: Readonly<Record<string, unknown>> | undefined = root;
   for (const part of parts) {
@@ -1295,7 +1376,7 @@ function namespacePointer(root: Record<string, unknown>, pointer: string, nodes:
   if (pointer === '') return true;
   if (pointer === '/definitions') return isRecord(root.definitions) && uniquePointerPath(nodes, pointer);
   if (!pointer.startsWith('/definitions/') || !uniquePointerPath(nodes, pointer)) return false;
-  const parts = pointer.slice('/definitions/'.length).split('/').map((part) => part.replace(/~1/g, '/').replace(/~0/g, '~'));
+  const parts = pointerSegments(pointer).slice(1);
   let current: unknown = root.definitions;
   if (!isRecord(current)) return false;
   for (const part of parts) {
@@ -1339,7 +1420,7 @@ function unitsProjection(
     });
   }
   for (const keyword of UNITS_KEYWORDS) {
-    if (nodes.filter((node) => node.pointer === `${pointer}/${pointerPart(keyword)}`).length > 1) invalid.add(keyword);
+    if (hasDuplicatePointer(nodes, `${pointer}/${pointerPart(keyword)}`)) invalid.add(keyword);
   }
   const projection: UnitsProjection = {
     ...(!invalid.has('symbol') && typeof value.symbol === 'string' ? { symbol: value.symbol } : {}),
@@ -1371,7 +1452,7 @@ function validationProjection(
   const projection: Record<string, unknown> = {};
   for (const keyword of VALIDATION_KEYWORDS) {
     const keywordPointer = `${pointer}/${pointerPart(keyword)}`;
-    if (nodes.filter((node) => node.pointer === keywordPointer).length > 1) invalid.add(keyword);
+    if (hasDuplicatePointer(nodes, keywordPointer)) invalid.add(keyword);
     if (!invalid.has(keyword) && Object.prototype.hasOwnProperty.call(value, keyword)) projection[keyword] = value[keyword];
   }
   if (!invalid.has('contains') && Object.prototype.hasOwnProperty.call(value, 'contains')) {
@@ -1425,7 +1506,7 @@ function collectCompositionDiagnostics(
         pushKeywordDiagnostic(diagnostics, uri, keywordPointer, `${keyword} requires the JSON Structure Conditional Composition extension.`, text);
         continue;
       }
-      if (nodes.filter((node) => node.pointer === keywordPointer).length > 1) continue;
+      if (hasDuplicatePointer(nodes, keywordPointer)) continue;
       const authored = candidate[keyword];
       if (keyword === 'allOf' || keyword === 'anyOf' || keyword === 'oneOf') {
         if (!Array.isArray(authored) || authored.length === 0 || !authored.every(isRecord)) {
@@ -2275,12 +2356,17 @@ function declarationType(value: Record<string, unknown>): string | undefined {
 }
 
 function keywordRange(text: string, pointer: string): TextRange {
-  const parsed = new StrictParser(text, '').parse();
-  const value = [...parsed.values].reverse().find((entry) => entry.pointer === pointer);
+  if (!parsedValues.has(text)) {
+    const parsed = new StrictParser(text, '').parse();
+    rememberParsedValues(text, parsed.values);
+  }
+  const index = parsedValueIndexes.get(text)!;
+  const value = index.get(pointer);
   if (value) return rangeFor(text, value.start, value.end);
   const parentPointer = pointer.slice(0, pointer.lastIndexOf('/'));
-  const parent = [...parsed.values].reverse().find((entry) => entry.pointer === parentPointer);
-  return parent ? rangeFor(text, parent.start, parent.end) : rangeFor(text, 0, text.length);
+  const parent = index.get(parentPointer);
+  if (parent) return rangeFor(text, parent.start, parent.end);
+  return rangeFor(text, 0, text.length);
 }
 function pushKeywordDiagnostic(
   diagnostics: Diagnostic[],

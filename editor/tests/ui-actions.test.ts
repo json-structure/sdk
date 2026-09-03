@@ -32,7 +32,10 @@ describe('UI command action registry', () => {
   });
 
   it('describes typed controls, targets, capabilities, and explicit removals', () => {
-    expect(actionById('core.type')).toMatchObject({ control: { kind: 'select' }, capability: 'core', targets: ['declaration'], operation: 'set', removesActionId: 'core.type.remove' });
+    expect(actionById('core.type')).toMatchObject({ control: { kind: 'select' }, capability: 'core', targets: ['declaration', 'property', 'choice'], operation: 'set' });
+    expect(actionById('core.type')).not.toHaveProperty('removesActionId');
+    expect(actionById('core.type.remove')).toBeUndefined();
+    expect(actionById('core.choice.remove')).toBeUndefined();
     expect(actionById('core.type')?.control).toMatchObject({ options: expect.arrayContaining([
       { value: 'any', label: 'any' },
       { value: 'int8', label: 'int8' }, { value: 'uint16', label: 'uint16' }, { value: 'float8', label: 'float8' },
@@ -41,8 +44,16 @@ describe('UI command action registry', () => {
     expect(actionById('core.required')).toMatchObject({ control: { kind: 'property-multi-select' } });
     expect(actionById('core.max-length')).toMatchObject({ capability: 'core', schemaTypes: ['string'], keyword: 'maxLength' });
     expect(actionById('validation.maxLength')).toBeUndefined();
-    expect(actionById('property.required-alternatives')).toMatchObject({ control: { kind: 'source-only' } });
+    expect(actionById('property.required-alternatives')).toMatchObject({ control: { kind: 'structured-object', family: 'required-alternatives' } });
     expect(actionById('definition.add')).toMatchObject({ control: { kind: 'schema-type' } });
+    expect(actionById('namespace.rename')).toMatchObject({ targets: ['namespace'], operation: 'rename' });
+    expect(actionById('namespace.delete-contents')).toMatchObject({ targets: ['namespace'], operation: 'delete' });
+    expect(actionById('choice.add')).toMatchObject({ control: { kind: 'schema-type' }, schemaTypes: ['choice'] });
+    expect(actionById('choice.rename')).toMatchObject({ targets: ['choice'], operation: 'rename' });
+    expect(actionById('choice.delete')).toMatchObject({ targets: ['choice'], operation: 'delete' });
+    expect(actionById('import.set')).toMatchObject({ control: { kind: 'structured-object', family: 'import' } });
+    expect(actionById('validation.contains')).toMatchObject({ control: { kind: 'advanced-json' } });
+    expect(actionById('composition.allOf')).toMatchObject({ control: { kind: 'advanced-json' } });
     expect(actionById('core.extends')).toMatchObject({ control: { kind: 'structured-list', item: 'reference' } });
     expect(actionById('reference.type')).toMatchObject({ control: { kind: 'reference-picker' } });
     expect(actionById('relation.add')).toMatchObject({ control: { kind: 'relation-editor' }, capability: 'relations' });
@@ -51,11 +62,16 @@ describe('UI command action registry', () => {
     expect(actionById('relation.cardinality')).toMatchObject({ control: { kind: 'select' }, keyword: 'cardinality' });
     expect(actionById('relation.scope')).toMatchObject({ control: { kind: 'structured-list', item: 'reference' }, keyword: 'scope' });
     expect(actionById('relation.qualifier')).toMatchObject({ control: { kind: 'reference-picker' }, keyword: 'qualifiertype' });
+    expect(actionById('units.unit')).toMatchObject({ control: { kind: 'catalog', family: 'unit' }, capability: 'units' });
     expect(actionById('units.ucumUnit')).toMatchObject({ control: { kind: 'catalog', family: 'ucumUnit' }, capability: 'units', operation: 'set', removesActionId: 'units.ucumUnit.remove' });
+    expect(actionById('semantic.concepts')).toMatchObject({ control: { kind: 'catalog', family: 'concepts' }, capability: 'semantic-annotations' });
+    expect(actionById('semantic.observedProperty')).toMatchObject({ control: { kind: 'catalog', family: 'observedProperty' }, capability: 'semantic-annotations' });
     expect(actionById('units.symbol')?.schemaTypes).toBeUndefined();
     expect(actionById('units.symbols')?.schemaTypes).toBeUndefined();
     expect(actionById('units.currency')?.schemaTypes).toBeUndefined();
     expect(actionById('units.unit.remove')).toMatchObject({ requiresValue: false, capability: 'units', operation: 'remove' });
+    expect(commandActions.filter((action) => ['Validation', 'Composition', 'Units', 'Alternate names', 'Semantic annotations'].includes(action.group) && action.operation === 'set')
+      .every((action) => action.control?.kind !== 'source-only')).toBe(true);
     expect(commandActions.filter((action) => action.operation === 'set').every((action) => action.control || action.id === 'root.set')).toBe(true);
   });
 
@@ -104,6 +120,64 @@ describe('UI command action registry', () => {
     expect(actionAvailability(actionById('validation.minimum')!, '/definitions/Domain/Tiny', document).enabled).toBe(true);
     expect(actionAvailability(actionById('validation.minimum')!, '/definitions/Domain/Unknown', document).enabled).toBe(false);
     expect(actionAvailability(actionById('core.precision')!, '/definitions/Domain/Numeric', document).enabled).toBe(true);
+  });
+
+  it('enables legal schema actions on choice alternatives and keeps property-only actions restricted', () => {
+    const document = {
+      $schema: 'https://json-structure.org/meta/semantic-annotations/v0/#',
+      $uses: [
+        'JSONStructureValidation',
+        'JSONStructureConditionalComposition',
+        'JSONStructureUnits',
+        'JSONStructureAlternateNames',
+        'JSONStructureSemanticAnnotations',
+      ],
+      definitions: {
+        Target: { type: 'string' },
+        Value: {
+          type: 'choice',
+          choices: {
+            amount: { type: 'number' },
+            code: { type: 'string', enum: ['a'] },
+          },
+        },
+      },
+    };
+    const amount = '/definitions/Value/choices/amount';
+    const code = '/definitions/Value/choices/code';
+    const session = new DocumentSession('memory://choice-action-availability', JSON.stringify(document));
+    const context = { session, documentVersion: 1 };
+    for (const [id, pointer, value] of [
+      ['core.const', amount, 1],
+      ['reference.type', amount, '#/definitions/Target'],
+      ['validation.minimum', amount, 0],
+      ['composition.allOf', amount, [{ type: 'number' }]],
+      ['units.unit', amount, 'm'],
+      ['alternate-enums.altenums', code, { json: { a: 'A' } }],
+      ['localized-descriptions.descriptions', amount, { 'lang:en': 'Amount' }],
+      ['semantic.concepts', amount, [{ reference: 'urn:concept:amount', kind: 'custom-concept' }]],
+    ] as const) {
+      const action = actionById(id)!;
+      expect(action.targets, id).toContain('choice');
+      expect(actionAvailability(action, pointer, document), id).toMatchObject({ enabled: true, pointer });
+      expect(action.create(pointer, value).canExecute(context), id).toBe(true);
+    }
+    expect(actionById('alternate-names.altnames')?.targets).not.toContain('choice');
+    expect(actionById('semantic.referenceRole')?.targets).toEqual(['property']);
+    expect(actionAvailability(actionById('semantic.referenceRole')!, amount, document).enabled).toBe(false);
+    expect(actionAvailability(actionById('core.const')!, amount, document).enabled).toBe(true);
+    expect(actionAvailability(actionById('core.type')!, amount, document).enabled).toBe(true);
+
+    const collectionChoice = {
+      ...document,
+      definitions: {
+        ...document.definitions,
+        Value: { type: 'choice', choices: { list: { type: 'array', items: { type: 'string' } } } },
+      },
+    };
+    const list = '/definitions/Value/choices/list';
+    expect(actionAvailability(actionById('core.items')!, list, collectionChoice).enabled).toBe(true);
+    expect(actionAvailability(actionById('core.items.remove')!, list, collectionChoice).enabled).toBe(false);
   });
 
   it('sets Core sample-relevant members with minimal edits and supports explicit removal', () => {

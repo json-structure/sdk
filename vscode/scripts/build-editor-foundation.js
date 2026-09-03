@@ -7,6 +7,7 @@ const result = spawnSync(process.execPath, [
   cli,
   'src/conversion/types.ts',
   'src/libraries/host-runtime.ts',
+  'src/host/effective-imports.ts',
   '--format',
   'esm,cjs',
   '--dts',

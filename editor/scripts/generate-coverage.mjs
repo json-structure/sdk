@@ -72,7 +72,7 @@ if (process.argv.includes('--check')) {
       process.exit(1);
     }
   }
-  const errors = validateCoverage({ projectRoot, ...inputs, ledger });
+  const errors = validateCoverage({ projectRoot, ...inputs, ledger, checkArtifacts: !process.argv.includes('--artifacts-only') });
   if (errors.length) { console.error(errors.join('\n')); process.exit(1); }
 } else {
   for (const obsolete of ['COVERAGE.md', 'gaps.json', 'ledger.json']) fs.rmSync(path.join(projectRoot, 'coverage', obsolete), { force: true });

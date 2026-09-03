@@ -5,15 +5,15 @@
   "files": [
     {
       "path": "worker-runtime/converter-worker.cjs",
-      "sha256": "3dd035525248025d7ae8664ab29a8b9699ca3daaba3513c561495a2915672b04"
+      "sha256": "20405d0f282147798498e703f44874aa1734881b9a2bdde199cea02a4003960f"
     },
     {
       "path": "worker-runtime/commands-manifest.json",
-      "sha256": "a0fc61549922b309d78c7612ab4f88536f813917ea82bed7170a3313dc209c3d"
+      "sha256": "42ffcb63f679cc7ca2c5afec34a96db18d1afeeca84831de736ddaa0bb4ff4f0"
     },
     {
       "path": "worker-runtime/proto-generator.cjs",
-      "sha256": "1cc02c2c4db9a5a1bcbf1a763b08e1251859e224eb957111990df236497d01a0"
+      "sha256": "9cbf225dfda87114a3705d3362f7ad534d17a156cd8a45e7405b6665aea1b773"
     }
   ]
 }

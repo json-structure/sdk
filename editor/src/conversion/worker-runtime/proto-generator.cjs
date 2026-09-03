@@ -1,6 +1,12 @@
 'use strict';
 
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const PROTO_RESERVED_KEYWORDS = new Set([
+  'syntax', 'import', 'weak', 'public', 'package', 'option', 'message', 'enum', 'service',
+  'extend', 'extensions', 'group', 'oneof', 'map', 'repeated', 'optional', 'required',
+  'reserved', 'rpc', 'returns', 'stream', 'to', 'max',
+]);
+function isProtoIdentifier(value) { return typeof value === 'string' && IDENTIFIER.test(value) && !PROTO_RESERVED_KEYWORDS.has(value); }
 const LOCK_VERSION = 2;
 const PROTO_PRIMITIVES = {
   null: 'google.protobuf.NullValue', boolean: 'bool', string: 'string',
@@ -13,6 +19,11 @@ const PROTO_PRIMITIVES = {
 };
 
 function isRecord(value) { return value !== null && typeof value === 'object' && !Array.isArray(value); }
+function hasOwn(value, key) { return Object.prototype.hasOwnProperty.call(value, key); }
+function defineOwn(target, key, value) {
+  Object.defineProperty(target, key, { configurable: true, enumerable: true, writable: true, value });
+  return value;
+}
 function escapePointer(value) { return String(value).replace(/~/g, '~0').replace(/\//g, '~1'); }
 function unescapePointer(value) { return String(value).replace(/~1/g, '/').replace(/~0/g, '~'); }
 function definitionPointer(path) { return `#/definitions/${path.map(escapePointer).join('/')}`; }
@@ -26,7 +37,74 @@ function canonicalDefinitionPointer(pointer) {
   return path ? definitionPointer(path) : undefined;
 }
 function qualify(packageName, name) { return packageName ? `${packageName}.${name}` : name; }
-function reservedFieldNumber(value) { return value >= 19000 && value <= 19999; }
+const PROTO_FIELD_NUMBER_MIN = 1;
+const PROTO_FIELD_NUMBER_MAX = 536870911;
+const PROTO_IMPLEMENTATION_RESERVED_MIN = 19000;
+const PROTO_IMPLEMENTATION_RESERVED_MAX = 19999;
+const PROTO_ENUM_NUMBER_MIN = -2147483648;
+const PROTO_ENUM_NUMBER_MAX = 2147483647;
+function reservedFieldNumber(value) { return value >= PROTO_IMPLEMENTATION_RESERVED_MIN && value <= PROTO_IMPLEMENTATION_RESERVED_MAX; }
+function protoNumberInRange(value, minimum, maximum) {
+  return Number.isSafeInteger(value) && value >= minimum && value <= maximum;
+}
+function rangesOverlap(left, right) { return left.start <= right.end && right.start <= left.end; }
+// Lock reserved entries are inclusive numbers or canonical {from,to} ranges.
+function reservedRanges(value, path, minimum, maximum, excludeImplementationRange) {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) throw new Error(`field-number lock ${path} must be an array of numbers or {from,to} ranges.`);
+  const ranges = [];
+  for (let index = 0; index < value.length; index++) {
+    const entry = value[index];
+    let start;
+    let end;
+    if (Number.isSafeInteger(entry)) {
+      start = entry;
+      end = entry;
+    } else if (isRecord(entry) && Object.keys(entry).length === 2 && Object.prototype.hasOwnProperty.call(entry, 'from') && Object.prototype.hasOwnProperty.call(entry, 'to') && Number.isSafeInteger(entry.from) && Number.isSafeInteger(entry.to)) {
+      start = entry.from;
+      end = entry.to;
+    } else {
+      throw new Error(`field-number lock ${path}[${index}] must be an integer or an object with integer from/to endpoints.`);
+    }
+    if (!protoNumberInRange(start, minimum, maximum) || !protoNumberInRange(end, minimum, maximum)) {
+      throw new Error(`field-number lock ${path}[${index}] has endpoints ${start}..${end}; endpoints must be within ${minimum}..${maximum}.`);
+    }
+    if (start > end) throw new Error(`field-number lock ${path}[${index}] is reversed (${start} to ${end}); the from endpoint must not exceed to.`);
+    if (excludeImplementationRange && (reservedFieldNumber(start) || reservedFieldNumber(end))) {
+      throw new Error(`field-number lock ${path}[${index}] uses protobuf implementation-reserved endpoint ${reservedFieldNumber(start) ? start : end}; endpoints 19000..19999 are not allowed.`);
+    }
+    const range = { start, end };
+    const previous = ranges[ranges.length - 1];
+    if (previous && start < previous.start) throw new Error(`field-number lock ${path}[${index}] is out of order; reserved entries must be sorted by their from endpoint.`);
+    if (previous && rangesOverlap(previous, range)) throw new Error(`field-number lock ${path}[${index}] overlaps an earlier reserved entry (${start} to ${end}).`);
+    ranges.push(range);
+  }
+  return ranges;
+}
+function reservedRangeContains(ranges, number) { return ranges.some((range) => number >= range.start && number <= range.end); }
+function nextAvailableNumber(candidate, taken, ranges, maximum, skipImplementation, path) {
+  let next = candidate;
+  while (next <= maximum) {
+    if (taken.has(next)) { next++; continue; }
+    const range = ranges.find((entry) => next >= entry.start && next <= entry.end);
+    if (range) { next = range.end + 1; continue; }
+    if (skipImplementation && reservedFieldNumber(next)) { next = PROTO_IMPLEMENTATION_RESERVED_MAX + 1; continue; }
+    return next;
+  }
+  throw new Error(`No available protobuf number remains for ${path}; all legal numbers are allocated or reserved.`);
+}
+function addReservedRange(ranges, start, end, path) {
+  const range = { start, end };
+  if (ranges.some((existing) => rangesOverlap(existing, range))) throw new Error(`field-number lock ${path} overlaps an existing reserved entry (${start} to ${end}).`);
+  ranges.push(range);
+  ranges.sort((left, right) => left.start - right.start || left.end - right.end);
+}
+function canonicalReserved(ranges) {
+  return ranges.map((range) => range.start === range.end ? range.start : { from: range.start, to: range.end });
+}
+function renderReservedRanges(ranges) {
+  return ranges.map((range) => range.start === range.end ? String(range.start) : `${range.start} to ${range.end === PROTO_FIELD_NUMBER_MAX ? 'max' : range.end}`).join(', ');
+}
 function isTypeDeclaration(value) { return isRecord(value) && (Object.prototype.hasOwnProperty.call(value, 'type') || Object.prototype.hasOwnProperty.call(value, '$extends') || Object.prototype.hasOwnProperty.call(value, 'abstract')); }
 function firstDuplicate(values) { const seen = new Set(); return values.find((value) => seen.has(value) || !seen.add(value)); }
 function branchFieldStem(typeName) {
@@ -36,6 +114,32 @@ function branchFieldStem(typeName) {
 function screamingSnake(name) { return name.replace(/([a-z0-9])([A-Z])/g, '$1_$2').replace(/_+/g, '_').toUpperCase(); }
 function jsonCommentValue(value) { return JSON.stringify(value); }
 function at(message, pointer) { return `${message} (at ${pointer || '#'})`; }
+
+function activeImportLocations(document) {
+  if (!isRecord(document)) return [];
+  const locations = [];
+  const inspect = (namespace, pointer) => {
+    for (const key of ['$import', '$importdefs']) {
+      if (Object.prototype.hasOwnProperty.call(namespace, key)) locations.push({ key, pointer: pointer + '/' + key });
+    }
+  };
+  const visitNamespace = (namespace, pointer) => {
+    if (!isRecord(namespace)) return;
+    inspect(namespace, pointer);
+    for (const [name, member] of Object.entries(namespace)) {
+      if (name === '$import' || name === '$importdefs' || !isRecord(member) || isTypeDeclaration(member)) continue;
+      visitNamespace(member, pointer + '/' + escapePointer(name));
+    }
+  };
+  inspect(document, '#');
+  if (isRecord(document.definitions)) visitNamespace(document.definitions, '#/definitions');
+  return locations;
+}
+
+const PROTO_VALIDATION_KEYWORDS = new Set(['minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf', 'minLength', 'maxLength', 'pattern', 'format', 'minItems', 'maxItems', 'uniqueItems', 'minContains', 'maxContains', 'minProperties', 'minEntries', 'dependentRequired', 'contains', 'propertyNames', 'keyNames', 'has', 'patternProperties', 'patternKeys']);
+const PROTO_COMPOSITION_KEYWORDS = new Set(['allOf', 'anyOf', 'oneOf', 'not', 'if', 'then', 'else']);
+const PROTO_SEMANTIC_KEYWORDS = new Set(['unit', 'ucumUnit', 'currency', 'concepts', 'observedProperty', 'semanticRole', 'derivation', 'statistic', 'phenomenonTimeRelation', 'supportPeriod', 'cadence', 'codedValues', 'measurementConditioning', 'coordinateReferenceSystem', 'vectorReferenceFrames', 'tensorReferenceFrames', 'frameTransforms', 'linearReferenceSystem', 'colorSpaces', 'audioChannels', 'spectralBands', 'temporalReferenceSystem', 'referenceRole']);
+const PROTO_RELATION_KEYWORDS = new Set(['relations', '$relations', 'relation', '$relation']);
 
 function requiredNames(schema, pointer, warnings) {
   if (!Array.isArray(schema.required)) return new Set();
@@ -72,12 +176,17 @@ class ProtoGenerator {
     this.addIns = [];
     this.selectors = collectSelectors(document);
     this.enumSymbols = new Map();
+    this.lossinessReported = new Set();
     this.lockInput = this.parseLock(this.options.numbers);
-    this.lockOutput = { version: LOCK_VERSION, messages: {}, enums: {} };
+    this.lockOutput = { version: LOCK_VERSION, messages: Object.create(null), enums: Object.create(null) };
   }
 
   run() {
+    const importLocation = activeImportLocations(this.document)[0];
+    if (importLocation) throw new Error(`Protobuf export requires effective imports. Resolve ${importLocation.key} before conversion; the editor host has no import resolver capability.`);
+    this.checkLossyFeatures(this.document, '#');
     this.plan();
+    for (const descriptor of this.planEntries) this.checkLossyFeatures(descriptor.schema, descriptor.pointer);
     this.collectAddIns();
     this.checkPackageCollisions();
     for (const descriptor of this.planEntries) {
@@ -102,6 +211,34 @@ class ProtoGenerator {
       try { parsed = JSON.parse(value); } catch { throw new Error('Protobuf numbers option must contain valid JSON.'); }
     }
     if (!isRecord(parsed) || parsed.version !== LOCK_VERSION) throw new Error(`field-number lock has version ${String(isRecord(parsed) ? parsed.version : 'none')}, but this implementation writes version ${LOCK_VERSION}; regenerate the lock rather than letting it be ignored (in message <lock>)`);
+    if (!isRecord(parsed.messages) || !isRecord(parsed.enums)) throw new Error('field-number lock must contain object-valued messages and enums sections.');
+    for (const key of Object.keys(parsed)) if (!['version', 'messages', 'enums'].includes(key)) throw new Error(`field-number lock has unsupported top-level property ${key}.`);
+    for (const [name, entry] of Object.entries(parsed.messages)) {
+      if (!isRecord(entry)) throw new Error(`field-number lock messages.${name} must be an object.`);
+      if (!isRecord(entry.fields)) throw new Error(`field-number lock messages.${name}.fields must be an object.`);
+      for (const key of Object.keys(entry)) if (!['fields', 'reserved'].includes(key)) throw new Error(`field-number lock messages.${name} has unsupported property ${key}.`);
+      const assigned = new Set();
+      for (const [fieldName, number] of Object.entries(entry.fields)) {
+        if (!protoNumberInRange(number, PROTO_FIELD_NUMBER_MIN, PROTO_FIELD_NUMBER_MAX) || reservedFieldNumber(number)) throw new Error(`field-number lock messages.${name}.fields.${fieldName} has invalid protobuf field number ${String(number)}; use 1..536870911 excluding 19000..19999.`);
+        if (assigned.has(number)) throw new Error(`field-number lock messages.${name}.fields assigns number ${number} more than once.`);
+        assigned.add(number);
+      }
+      const reserved = reservedRanges(entry.reserved, `messages.${name}.reserved`, PROTO_FIELD_NUMBER_MIN, PROTO_FIELD_NUMBER_MAX, true);
+      for (const number of assigned) if (reservedRangeContains(reserved, number)) throw new Error(`field-number lock messages.${name}.fields reserves assigned number ${number}.`);
+    }
+    for (const [name, entry] of Object.entries(parsed.enums)) {
+      if (!isRecord(entry)) throw new Error(`field-number lock enums.${name} must be an object.`);
+      if (!isRecord(entry.values)) throw new Error(`field-number lock enums.${name}.values must be an object.`);
+      for (const key of Object.keys(entry)) if (!['values', 'reserved'].includes(key)) throw new Error(`field-number lock enums.${name} has unsupported property ${key}.`);
+      const assigned = new Set();
+      for (const [symbol, number] of Object.entries(entry.values)) {
+        if (!protoNumberInRange(number, PROTO_ENUM_NUMBER_MIN, PROTO_ENUM_NUMBER_MAX)) throw new Error(`field-number lock enums.${name}.values.${symbol} has invalid enum number ${String(number)}; use the int32 range.`);
+        if (assigned.has(number)) throw new Error(`field-number lock enums.${name}.values assigns number ${number} more than once.`);
+        assigned.add(number);
+      }
+      const reserved = reservedRanges(entry.reserved, `enums.${name}.reserved`, PROTO_ENUM_NUMBER_MIN, PROTO_ENUM_NUMBER_MAX, false);
+      for (const number of assigned) if (reservedRangeContains(reserved, number)) throw new Error(`field-number lock enums.${name}.values reserves assigned number ${number}.`);
+    }
     return parsed;
   }
 
@@ -132,6 +269,7 @@ class ProtoGenerator {
       if (!isTypeDeclaration(value)) { this.planNamespace(value, childPath); continue; }
       const pointer = definitionPointer(childPath);
       const name = this.declaredName(value, pointer) || key;
+      if (!isProtoIdentifier(name)) throw new Error(at(`'${String(name)}' is not a legal protobuf declaration identifier`, pointer));
       const file = this.fileFor(path);
       const packageName = this.files[file].packageName;
       const fq = qualify(packageName, name);
@@ -144,7 +282,7 @@ class ProtoGenerator {
   }
 
   fileFor(namespacePath) {
-    for (const segment of namespacePath) if (!IDENTIFIER.test(segment.toLowerCase())) throw new Error(`Namespace segment ${JSON.stringify(segment)} is not a legal protobuf package component.`);
+    for (const segment of namespacePath) { const normalized = segment.toLowerCase(); if (!isProtoIdentifier(normalized)) throw new Error(`Namespace segment ${JSON.stringify(segment)} is not a legal protobuf package component.`); }
     const segments = namespacePath.map((segment) => segment.toLowerCase());
     const packageName = segments.join('.');
     const path = segments.length ? `${segments.join('/')}.proto` : `${this.documentStem()}.proto`;
@@ -196,10 +334,10 @@ class ProtoGenerator {
   declaredName(schema, pointer) {
     const alt = isRecord(schema.altnames) ? schema.altnames.proto : undefined;
     if (alt !== undefined) {
-      if (typeof alt !== 'string' || !IDENTIFIER.test(alt)) throw new Error(at(`'${String(alt)}' is not a legal protobuf identifier`, `${pointer}/altnames/proto`));
+      if (typeof alt !== 'string' || !isProtoIdentifier(alt)) throw new Error(at(`'${String(alt)}' is not a legal protobuf identifier`, `${pointer}/altnames/proto`));
       return alt;
     }
-    if (schema.name !== undefined && (typeof schema.name !== 'string' || !IDENTIFIER.test(schema.name))) throw new Error(`name at ${pointer} must be a legal protobuf identifier.`);
+    if (schema.name !== undefined && (typeof schema.name !== 'string' || !isProtoIdentifier(schema.name))) throw new Error(`name at ${pointer} must be a legal protobuf identifier.`);
     return typeof schema.name === 'string' ? schema.name : undefined;
   }
 
@@ -210,7 +348,10 @@ class ProtoGenerator {
       const target = alt === undefined ? pointer : `${pointer}/altnames/proto`;
       throw new Error(at(`'${String(name)}' is not a legal protobuf identifier`, target));
     }
-    return name;
+    if (!PROTO_RESERVED_KEYWORDS.has(name)) return name;
+    const escaped = name + '_';
+    this.warnings.push({ path: pointer, code: 'protobuf.identifier.escaped', lossiness: 'metadata', message: `Protobuf keyword ${name} was escaped as ${escaped}.` });
+    return escaped;
   }
 
   resolveDescriptor(reference, from) {
@@ -221,6 +362,7 @@ class ProtoGenerator {
   }
 
   buildNamed(schema, name, packageName, context) {
+    this.checkLossyFeatures(schema, context.pointer);
     const enumDeclaration = this.tryEnum(schema, name, packageName, context.pointer);
     if (enumDeclaration) return enumDeclaration;
     if (schema.type === 'object') return this.buildMessage(schema, name, packageName, context);
@@ -262,7 +404,7 @@ class ProtoGenerator {
     let entries;
     if (kind === 'tuple') {
       if (!Array.isArray(schema.tuple)) throw new Error(`tuple at ${pointer} requires tuple order.`);
-      entries = schema.tuple.map((propertyName) => [propertyName, properties[propertyName]]);
+      entries = schema.tuple.map((propertyName) => [propertyName, hasOwn(properties, propertyName) ? properties[propertyName] : undefined]);
     } else entries = Object.entries(properties);
     for (const [propertyName, member] of entries) {
       if (typeof propertyName !== 'string' || !isRecord(member)) throw new Error(`Property ${String(propertyName)} at ${pointer} must be a schema object.`);
@@ -289,16 +431,14 @@ class ProtoGenerator {
   }
 
   buildField(spec, context) {
+    this.checkLossyFeatures(spec.schema, spec.pointer);
     const name = this.fieldName(spec.schema, spec.key, spec.pointer);
     const child = { hint: `${context.hint}_${spec.key}`, member: spec.key, pointer: spec.pointer, file: context.file };
     const resolved = this.typeReference(spec.schema, child);
     const field = this.field(name, resolved, spec.required, spec.schema, spec.pointer);
     const notes = [];
     if (this.options.emit_comments !== false && typeof spec.schema.description === 'string') notes.push(spec.schema.description);
-    for (const keyword of ['default', 'const']) if (Object.prototype.hasOwnProperty.call(spec.schema, keyword)) {
-      if (this.options.emit_comments !== false) notes.push(`JSON Structure ${keyword}: ${jsonCommentValue(spec.schema[keyword])}`);
-      this.warnings.push({ path: spec.pointer, code: `protobuf.${keyword}.omitted`, lossiness: 'unsupported-feature', message: `proto3 cannot express ${keyword}; the value is not enforced.` });
-    }
+    for (const keyword of ['default', 'const']) if (Object.prototype.hasOwnProperty.call(spec.schema, keyword) && this.options.emit_comments !== false) notes.push(`JSON Structure ${keyword}: ${jsonCommentValue(spec.schema[keyword])}`);
     field.comment = notes.length ? notes.join('\n') : undefined;
     return field;
   }
@@ -328,10 +468,66 @@ class ProtoGenerator {
       if (!isRecord(branch) || !IDENTIFIER.test(key)) throw new Error(`Choice branch ${key} at ${context.pointer} is invalid.`);
       const child = { hint: `${context.hint}_${key}`, member: key, pointer: `${context.pointer}/choices/${escapePointer(key)}`, file: context.file };
       const type = this.typeForOneof(branch, child);
-      branches.push({ name: key, type, rule: 'singular', number: 0 });
+      branches.push({ name: this.fieldName(branch, key, child.pointer), type, rule: 'singular', number: 0 });
     }
-    members.push({ kind: 'oneof', name: inline ? schema.selector : context.member || 'value', fields: branches });
+    const oneofName = inline ? schema.selector : context.member || 'value';
+    if (typeof oneofName !== 'string' || !IDENTIFIER.test(oneofName)) throw new Error(at(`'${String(oneofName)}' is not a legal protobuf oneof identifier`, context.pointer));
+    const emittedOneofName = PROTO_RESERVED_KEYWORDS.has(oneofName) ? oneofName + '_' : oneofName;
+    if (emittedOneofName !== oneofName) this.warnings.push({ path: context.pointer, code: 'protobuf.identifier.escaped', lossiness: 'metadata', message: `Protobuf keyword ${oneofName} was escaped as ${emittedOneofName}.` });
+    members.push({ kind: 'oneof', name: emittedOneofName, fields: branches });
     return this.finishMessage(name, packageName, this.commentOf(schema), members);
+  }
+
+  checkLossyFeatures(schema, pointer) {
+    if (!isRecord(schema)) return;
+    const report = (key, lossiness, message) => {
+      const identity = pointer + ':' + key;
+      if (this.lossinessReported.has(identity)) return;
+      this.lossinessReported.add(identity);
+      this.warnings.push({ path: pointer, code: 'protobuf.' + key + '.omitted', lossiness, message });
+    };
+    const reportCode = (identity, code, lossiness, message) => {
+      if (this.lossinessReported.has(identity)) return;
+      this.lossinessReported.add(identity);
+      this.warnings.push({ path: pointer, code, lossiness, message });
+    };
+    for (const key of Object.keys(schema)) {
+      if (PROTO_VALIDATION_KEYWORDS.has(key)) report(key, 'unsupported-feature', 'JSON Structure validation keyword ' + key + ' is not enforced by protobuf output.');
+      else if (PROTO_COMPOSITION_KEYWORDS.has(key)) report(key, 'unsupported-feature', 'JSON Structure composition keyword ' + key + ' is not represented by protobuf output.');
+      else if (PROTO_SEMANTIC_KEYWORDS.has(key)) report(key, 'metadata', 'JSON Structure semantic annotation ' + key + ' is not represented by protobuf output.');
+      else if (PROTO_RELATION_KEYWORDS.has(key)) report(key, 'data-loss', 'JSON Structure relations are not represented by protobuf output.');
+      else if (key === 'default' || key === 'const') report(key, 'unsupported-feature', 'JSON Structure ' + key + ' is not enforced by protobuf output.');
+      else if (key === '$extends') report(key, 'metadata', 'JSON Structure inheritance was flattened into protobuf fields; inheritance metadata is not represented.');
+      else if (key === 'abstract') report(key, 'metadata', 'JSON Structure abstract declaration metadata is not represented by protobuf output.');
+      else if (key === '$uses' && (!Array.isArray(this.options.uses) || this.options.uses.length === 0)) report(key, 'metadata', 'JSON Structure add-in selections were not enabled for this protobuf conversion.');
+    }
+    if (schema.type === 'set') reportCode(pointer + ':set', 'protobuf.set.uniqueness', 'unsupported-feature', 'Protobuf has no set type; uniqueness is not enforced on the wire.');
+    if (this.options.emit_comments === false && Object.prototype.hasOwnProperty.call(schema, 'description')) report('description', 'metadata', 'Descriptions were omitted because protobuf comments were disabled.');
+
+    const visit = (value, childPointer) => {
+      if (isRecord(value)) this.checkLossyFeatures(value, childPointer);
+    };
+    const visitValue = (value, childPointer) => {
+      if (Array.isArray(value)) value.forEach((entry, index) => visit(entry, childPointer + '/' + index));
+      else visit(value, childPointer);
+    };
+    if (isRecord(schema.properties)) for (const [name, value] of Object.entries(schema.properties)) visit(value, pointer + '/properties/' + escapePointer(name));
+    if (isRecord(schema.choices)) for (const [name, value] of Object.entries(schema.choices)) visit(value, pointer + '/choices/' + escapePointer(name));
+    for (const key of ['items', 'values', 'additionalProperties', 'contains', 'propertyNames', 'keyNames', 'has', 'not', 'if', 'then', 'else']) visit(schema[key], pointer + '/' + key);
+    for (const key of ['patternProperties', 'patternKeys']) if (isRecord(schema[key])) for (const [name, value] of Object.entries(schema[key])) visit(value, pointer + '/' + key + '/' + escapePointer(name));
+    for (const key of ['allOf', 'anyOf', 'oneOf']) visitValue(schema[key], pointer + '/' + key);
+    if (Array.isArray(schema.type)) visitValue(schema.type, pointer + '/type');
+    if (isRecord(schema.definitions)) {
+      const visitDefinitions = (definitions, basePointer) => {
+        for (const [name, value] of Object.entries(definitions)) {
+          if (!isRecord(value)) continue;
+          const childPointer = basePointer + '/' + escapePointer(name);
+          if (isTypeDeclaration(value)) visit(value, childPointer);
+          else if (isRecord(value)) visitDefinitions(value, childPointer);
+        }
+      };
+      visitDefinitions(schema.definitions, pointer + '/definitions');
+    }
   }
 
   typeReference(schema, context) {
@@ -358,7 +554,6 @@ class ProtoGenerator {
     }
     if (schema.type === 'array' || schema.type === 'set') {
       if (!isRecord(schema.items)) throw new Error(`${schema.type} at ${context.pointer} requires items.`);
-      if (schema.type === 'set') this.warnings.push({ path: context.pointer, code: 'protobuf.set.uniqueness', lossiness: 'unsupported-feature', message: 'Protobuf has no set type; uniqueness is not enforced on the wire.' });
       const child = { hint: `${context.hint}Item`, member: undefined, pointer: `${context.pointer}/items`, file: context.file };
       const inner = this.typeReference(schema.items, child);
       const name = inner.rule === 'singular' || inner.rule === 'optional' ? inner.name : this.wrap(inner, inner.rule === 'map' ? 'values' : 'items', child);
@@ -431,19 +626,41 @@ class ProtoGenerator {
     const symbols = [];
     for (const value of schema.enum) {
       if (typeof value !== 'string') return undefined;
-      const symbol = overrides[value] === undefined ? value : overrides[value];
+      let symbol = hasOwn(overrides, value) ? overrides[value] : value;
       if (typeof symbol !== 'string' || !IDENTIFIER.test(symbol)) {
         if (overrides[value] !== undefined) throw new Error(`altenums.proto value at ${pointer} must be a legal protobuf identifier.`);
         this.warnings.push({ path: pointer, code: 'protobuf.enum.lexical', lossiness: 'unsupported-feature', message: `Enum symbol ${JSON.stringify(value)} is not a legal protobuf identifier; the type falls back to string.` });
         return undefined;
       }
+      if (PROTO_RESERVED_KEYWORDS.has(symbol)) {
+        const escaped = symbol + '_';
+        this.warnings.push({ path: pointer, code: 'protobuf.identifier.escaped', lossiness: 'metadata', message: `Protobuf keyword ${symbol} was escaped as ${escaped}.` });
+        symbol = escaped;
+      }
       symbols.push(symbol);
     }
     const duplicate = firstDuplicate(symbols);
     if (duplicate) throw new Error(`Enum at ${pointer} declares ${duplicate} twice.`);
-    const unspecified = `${screamingSnake(name)}_UNSPECIFIED`;
-    if (symbols.includes(unspecified)) throw new Error(at(`enum symbol '${unspecified}' collides with the synthesized zero value`, pointer));
     const fq = qualify(packageName, name);
+    const enumPrefix = screamingSnake(name);
+    const collidesWithSibling = symbols.some((symbol) => this.enumSymbols.has(qualify(packageName, symbol)));
+    if (collidesWithSibling) {
+      const originalSymbols = symbols.slice();
+      const prefixedSymbols = [];
+      for (const symbol of symbols) {
+        const baseSymbol = `${enumPrefix}_${screamingSnake(symbol)}`;
+        let prefixed = baseSymbol;
+        let suffix = 2;
+        while (prefixedSymbols.includes(prefixed) || this.enumSymbols.has(qualify(packageName, prefixed))) prefixed = `${baseSymbol}_${suffix++}`;
+        prefixedSymbols.push(prefixed);
+      }
+      symbols.splice(0, symbols.length, ...prefixedSymbols);
+      this.warnings.push({ path: pointer, code: 'protobuf.enum.symbols.prefixed', lossiness: 'metadata', message: `Enum symbols ${originalSymbols.join(', ')} were prefixed with ${enumPrefix}_ because protobuf enum values share the enclosing package scope.` });
+    }
+    let unspecified = `${enumPrefix}_UNSPECIFIED`;
+    let unspecifiedSuffix = 2;
+    while (symbols.includes(unspecified) || this.enumSymbols.has(qualify(packageName, unspecified))) unspecified = `${enumPrefix}_UNSPECIFIED_${unspecifiedSuffix++}`;
+    if (unspecified !== `${enumPrefix}_UNSPECIFIED`) this.warnings.push({ path: pointer, code: 'protobuf.enum.zero-value.suffixed', lossiness: 'metadata', message: `The synthesized zero value for enum ${name} was renamed to ${unspecified} to avoid a protobuf package-scope collision.` });
     const { numbers, reserved } = this.numberEnum(fq, symbols, schema, pointer);
     const values = [{ name: unspecified, number: 0 }, ...symbols.map((symbol, index) => ({ name: symbol, number: numbers[index] }))];
     for (const value of values) {
@@ -460,75 +677,82 @@ class ProtoGenerator {
     const names = fields.map((field) => field.name);
     const duplicate = firstDuplicate(names);
     if (duplicate) throw new Error(`Field ${duplicate} is declared twice in message ${fq}.`);
-    const lockEntry = isRecord(this.lockInput?.messages) && isRecord(this.lockInput.messages[fq]) ? this.lockInput.messages[fq] : {};
+    const lockEntry = isRecord(this.lockInput?.messages) && hasOwn(this.lockInput.messages, fq) && isRecord(this.lockInput.messages[fq]) ? this.lockInput.messages[fq] : {};
     const lockedFields = isRecord(lockEntry.fields) ? lockEntry.fields : {};
-    const reserved = Array.isArray(lockEntry.reserved) ? lockEntry.reserved.filter(Number.isInteger) : [];
-    const taken = new Set(reserved);
+    const reserved = reservedRanges(lockEntry.reserved, `messages.${fq}.reserved`, PROTO_FIELD_NUMBER_MIN, PROTO_FIELD_NUMBER_MAX, true);
+    const taken = new Set();
     const assigned = new Map();
     for (const field of fields) if (field.pin !== undefined) {
-      if (lockedFields[field.name] !== undefined && lockedFields[field.name] !== field.pin) throw new Error(`field '${field.name}' is pinned to ${field.pin} but locked at ${lockedFields[field.name]} (in message ${fq})`);
-      if (taken.has(field.pin)) throw new Error(`number ${field.pin} is pinned twice (in message ${fq})`);
+      const lockedFieldNumber = hasOwn(lockedFields, field.name) ? lockedFields[field.name] : undefined;
+      if (lockedFieldNumber !== undefined && lockedFieldNumber !== field.pin) throw new Error(`field '${field.name}' is pinned to ${field.pin} but locked at ${lockedFieldNumber} (in message ${fq})`);
+      if (taken.has(field.pin) || reservedRangeContains(reserved, field.pin)) throw new Error(`number ${field.pin} is pinned twice or reserved (in message ${fq})`);
       taken.add(field.pin); assigned.set(field.name, field.pin);
     }
     for (const [fieldName, number] of Object.entries(lockedFields)) {
       if (!Number.isInteger(number)) continue;
       if (assigned.has(fieldName)) continue;
       if (names.includes(fieldName)) {
-        if (taken.has(number)) throw new Error(`Lock assigns number ${number} twice in ${fq}.`);
+        if (taken.has(number) || reservedRangeContains(reserved, number)) throw new Error(`Lock assigns number ${number} twice or reserves it in ${fq}.`);
         taken.add(number); assigned.set(fieldName, number);
-      } else { reserved.push(number); taken.add(number); }
+      } else {
+        if (taken.has(number) || reservedRangeContains(reserved, number)) throw new Error(`Lock reserves number ${number}, but it is already allocated in ${fq}.`);
+        addReservedRange(reserved, number, number, `messages.${fq}.reserved`);
+      }
     }
     let next = 1;
     for (const field of fields) {
       if (!assigned.has(field.name)) {
-        while (taken.has(next) || reservedFieldNumber(next)) next++;
+        next = nextAvailableNumber(next, taken, reserved, PROTO_FIELD_NUMBER_MAX, true, `message ${fq}`);
         assigned.set(field.name, next); taken.add(next);
       }
       field.number = assigned.get(field.name);
     }
     const output = { fields: Object.fromEntries(names.map((fieldName) => [fieldName, assigned.get(fieldName)])) };
-    const uniqueReserved = [...new Set(reserved)].sort((left, right) => left - right);
-    if (uniqueReserved.length) output.reserved = uniqueReserved;
-    this.lockOutput.messages[fq] = output;
-    return { kind: 'message', name, comment, members, reserved: uniqueReserved };
+    reserved.sort((left, right) => left.start - right.start || left.end - right.end);
+    const outputReserved = canonicalReserved(reserved);
+    if (outputReserved.length) output.reserved = outputReserved;
+    defineOwn(this.lockOutput.messages, fq, output);
+    return { kind: 'message', name, comment, members, reserved };
   }
 
   numberEnum(fq, symbols, schema, pointer) {
     const pins = isRecord(schema.protoNumbers) ? schema.protoNumbers : {};
-    const lockEntry = isRecord(this.lockInput?.enums) && isRecord(this.lockInput.enums[fq]) ? this.lockInput.enums[fq] : {};
+    const lockEntry = isRecord(this.lockInput?.enums) && hasOwn(this.lockInput.enums, fq) && isRecord(this.lockInput.enums[fq]) ? this.lockInput.enums[fq] : {};
     const locked = isRecord(lockEntry.values) ? lockEntry.values : {};
-    const reserved = Array.isArray(lockEntry.reserved) ? lockEntry.reserved.filter(Number.isInteger) : [];
-    for (const [symbol, number] of Object.entries(locked)) if (!symbols.includes(symbol) && Number.isInteger(number)) reserved.push(number);
-    const taken = new Set([0, ...reserved]);
+    const reserved = reservedRanges(lockEntry.reserved, `enums.${fq}.reserved`, PROTO_ENUM_NUMBER_MIN, PROTO_ENUM_NUMBER_MAX, false);
+    for (const [symbol, number] of Object.entries(locked)) if (!symbols.includes(symbol)) addReservedRange(reserved, number, number, `enums.${fq}.reserved`);
+    if (reservedRangeContains(reserved, 0)) throw new Error(`field-number lock enums.${fq}.reserved reserves the synthesized zero enum value 0.`);
+    const taken = new Set([0]);
     const assigned = new Map();
     for (const symbol of symbols) {
-      const pin = pins[symbol];
-      const lockedNumber = locked[symbol];
+      const pin = hasOwn(pins, symbol) ? pins[symbol] : undefined;
+      const lockedNumber = hasOwn(locked, symbol) ? locked[symbol] : undefined;
       if (pin !== undefined && (!Number.isInteger(pin) || pin < 1 || pin > 2147483647)) throw new Error(at(`\`protoNumbers\` value ${String(pin)} for '${symbol}' is outside the int32 range protobuf enum values occupy`, pointer));
       if (pin !== undefined && lockedNumber !== undefined && pin !== lockedNumber) throw new Error(`value '${symbol}' is pinned to ${pin} but locked at ${lockedNumber} (in message ${fq})`);
       const number = pin ?? lockedNumber;
       if (number !== undefined) {
-        if (!Number.isInteger(number) || number < 1 || number > 2147483647 || taken.has(number)) throw new Error(`Invalid or duplicate enum number ${String(number)} in ${fq}.`);
+        if (!Number.isInteger(number) || number < 1 || number > PROTO_ENUM_NUMBER_MAX || taken.has(number) || reservedRangeContains(reserved, number)) throw new Error(`Invalid or duplicate enum number ${String(number)} in ${fq}.`);
         taken.add(number); assigned.set(symbol, number);
       }
     }
     let next = 1;
     const numbers = symbols.map((symbol) => {
       if (assigned.has(symbol)) return assigned.get(symbol);
-      while (taken.has(next)) next++;
+      next = nextAvailableNumber(next, taken, reserved, PROTO_ENUM_NUMBER_MAX, false, `enum ${fq}`);
       taken.add(next); assigned.set(symbol, next); return next;
     });
     const output = { values: Object.fromEntries(symbols.map((symbol) => [symbol, assigned.get(symbol)])) };
-    const uniqueReserved = [...new Set(reserved)].sort((left, right) => left - right);
-    if (uniqueReserved.length) output.reserved = uniqueReserved;
-    this.lockOutput.enums[fq] = output;
-    return { numbers, reserved: uniqueReserved };
+    reserved.sort((left, right) => left.start - right.start || left.end - right.end);
+    const outputReserved = canonicalReserved(reserved);
+    if (outputReserved.length) output.reserved = outputReserved;
+    defineOwn(this.lockOutput.enums, fq, output);
+    return { numbers, reserved };
   }
 
   mint(context) {
     const packageName = this.files[context.file].packageName;
     const base = context.hint;
-    if (!IDENTIFIER.test(base)) throw new Error(`Generated name ${base} at ${context.pointer} is not a legal protobuf identifier.`);
+    if (!isProtoIdentifier(base)) throw new Error(`Generated name ${base} at ${context.pointer} is not a legal protobuf identifier.`);
     let candidate = base;
     let suffix = 1;
     while (this.taken.has(qualify(packageName, candidate))) candidate = `${base}_${suffix++}`;
@@ -589,7 +813,7 @@ function renderDeclaration(declaration, depth = 0) {
   const indent = '  '.repeat(depth);
   if (declaration.kind === 'enum') {
     let output = `${renderComment(declaration.comment, depth)}${indent}enum ${declaration.name} {\n`;
-    if (declaration.reserved.length) output += `${indent}  reserved ${[...declaration.reserved].sort((a, b) => a - b).join(', ')};\n`;
+    if (declaration.reserved.length) output += `${indent}  reserved ${renderReservedRanges(declaration.reserved)};\n`;
     for (const value of declaration.values) output += `${renderComment(value.comment, depth + 1)}${indent}  ${value.name} = ${value.number};\n`;
     return `${output}${indent}}\n`;
   }
@@ -602,7 +826,7 @@ function renderDeclaration(declaration, depth = 0) {
       output += `${'  '.repeat(depth + 1)}}\n`;
     }
   }
-  if (declaration.reserved.length) output += `${'  '.repeat(depth + 1)}reserved ${[...declaration.reserved].sort((a, b) => a - b).join(', ')};\n`;
+  if (declaration.reserved.length) output += `${'  '.repeat(depth + 1)}reserved ${renderReservedRanges(declaration.reserved)};\n`;
   return `${output}${indent}}\n`;
 }
 

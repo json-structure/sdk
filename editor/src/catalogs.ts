@@ -27,6 +27,7 @@ export interface CatalogProviderManifest {
   readonly families: readonly CatalogFamily[];
   readonly source: string;
   readonly version: string;
+  readonly entryCount?: number;
   readonly priority?: number;
   readonly trusted?: boolean;
   readonly endpoint?: string;
@@ -122,6 +123,7 @@ export interface CatalogMergeResult extends ProtocolEnvelope {
 function validManifest(manifest: CatalogProviderManifest): boolean {
   return manifest.id.trim().length > 0 && manifest.label.trim().length > 0 && manifest.source.trim().length > 0 &&
     manifest.version.trim().length > 0 && manifest.families.length > 0 && new Set(manifest.families).size === manifest.families.length &&
+    (manifest.entryCount === undefined || (Number.isInteger(manifest.entryCount) && manifest.entryCount >= 0)) &&
     (manifest.kind !== 'https' || (typeof manifest.endpoint === 'string' && /^https:\/\//.test(manifest.endpoint)));
 }
 function normalized(value: string): string { return value.normalize('NFKC').toLocaleLowerCase('en-US'); }
@@ -185,6 +187,17 @@ function rank(entry: CatalogEntry, query: string, priority: number): number {
   if (aliases.some((alias) => alias === needle)) return 3250 + priority;
   if (value.includes(needle) || label.includes(needle) || aliases.some((alias) => alias.includes(needle))) return 2000 + priority;
   return -1;
+}
+
+export type CatalogCustomValueKind = 'string' | 'reference' | 'closed';
+const OPEN_STRING_CATALOG_FAMILIES = new Set<CatalogFamily>(['unit', 'ucumUnit', 'currency']);
+const OPEN_REFERENCE_CATALOG_FAMILIES = new Set<CatalogFamily>(['semanticConcept', 'observedProperty']);
+
+/** Returns the graphical custom-value policy for a catalog family. */
+export function catalogCustomValueKind(family: CatalogFamily): CatalogCustomValueKind {
+  if (OPEN_STRING_CATALOG_FAMILIES.has(family)) return 'string';
+  if (OPEN_REFERENCE_CATALOG_FAMILIES.has(family)) return 'reference';
+  return 'closed';
 }
 
 /**
@@ -329,6 +342,20 @@ export class CatalogRegistry {
   }
 }
 
+const unit = (value: string, label: string, description: string, aliases: readonly string[] = []): CatalogEntry => ({ family: 'unit', value, label, description, aliases });
+/** Project-owned offline seed of JSON Structure Units recommendations represented by the editor prototype. */
+export const BUNDLED_JSON_STRUCTURE_UNITS_ENTRIES: readonly CatalogEntry[] = [
+  unit('m', 'metre', 'length', ['meter']), unit('km', 'kilometre', 'length'), unit('mm', 'millimetre', 'length'),
+  unit('m/s', 'metres per second', 'velocity'), unit('m/s^2', 'metres per second squared', 'acceleration'),
+  unit('kg', 'kilogram', 'mass'), unit('s', 'second', 'time'), unit('K', 'kelvin', 'temperature'),
+  unit('L', 'litre', 'volume', ['liter']), unit('psi', 'pounds per square inch', 'pressure'),
+  unit('J', 'joule', 'energy'), unit('W', 'watt', 'power'), unit('Ω', 'ohm', 'resistance', ['Ohm']),
+  unit('A', 'ampere', 'electric current'), unit('cd', 'candela', 'luminous intensity'),
+  unit('m^2', 'square metre', 'area'), unit('m^3', 'cubic metre', 'volume'),
+  unit('ft', 'foot', 'length'), unit('gal', 'gallon', 'volume'), unit('bar', 'bar', 'pressure'),
+  unit('B', 'byte', 'digital storage'), unit('bit/s', 'bits per second', 'data rate')
+];
+
 const ucum = (value: string, label: string, aliases: readonly string[] = []): CatalogEntry => ({ family: 'ucumUnit', value, label, aliases });
 /**
  * Constant for bundled ucum entries.
@@ -369,30 +396,142 @@ export const BUNDLED_ISO_4217_ENTRIES: readonly CatalogEntry[] = [
   currency('VED','Bolivar soberano'), currency('VES','Bolivar soberano'), currency('VND','Dong'), currency('VUV','Vatu'), currency('WST','Tala'), currency('XAF','CFA franc BEAC'), currency('XAG','Silver'), currency('XAU','Gold'), currency('XBA','European Composite Unit'), currency('XBB','European Monetary Unit'), currency('XBC','European Unit of Account 9'), currency('XBD','European Unit of Account 17'), currency('XCD','East Caribbean dollar'), currency('XCG','Caribbean guilder'), currency('XDR','Special drawing rights'), currency('XOF','CFA franc BCEAO'), currency('XPD','Palladium'), currency('XPF','CFP franc'), currency('XPT','Platinum'), currency('XSU','SUCRE'), currency('XTS','Testing code'), currency('XUA','ADB Unit of Account'), currency('XXX','No currency'), currency('YER','Yemeni rial'), currency('ZAR','Rand'), currency('ZMW','Zambian kwacha'), currency('ZWG','Zimbabwe Gold')
 ];
 
+const semanticEntry = (family: CatalogFamily, value: CatalogJsonValue, label: string, aliases: readonly string[] = [], description?: string): CatalogEntry =>
+  ({ family, value, label, aliases, ...(description ? { description } : {}) });
+const referenced = (reference: string, kind: string): CatalogJsonValue => ({ reference, kind });
+const concept = (reference: string, kind: string, label: string, aliases: readonly string[] = [], description?: string): CatalogEntry =>
+  semanticEntry('semanticConcept', referenced(reference, kind), label, aliases, description);
+const observedProperty = (reference: string, kind: string, label: string, aliases: readonly string[] = []): CatalogEntry =>
+  semanticEntry('observedProperty', referenced(reference, kind), label, aliases);
+
+/** Project-owned offline prototype seed for QUDT quantity-kind classification concepts. */
+export const BUNDLED_QUDT_QUANTITY_KIND_ENTRIES: readonly CatalogEntry[] = [
+  concept('http://qudt.org/vocab/quantitykind/Length', 'qudt-quantity-kind', 'Length'),
+  concept('http://qudt.org/vocab/quantitykind/Speed', 'qudt-quantity-kind', 'Speed', ['velocity']),
+  concept('http://qudt.org/vocab/quantitykind/Acceleration', 'qudt-quantity-kind', 'Acceleration'),
+  concept('http://qudt.org/vocab/quantitykind/Temperature', 'qudt-quantity-kind', 'Temperature'),
+  concept('http://qudt.org/vocab/quantitykind/Power', 'qudt-quantity-kind', 'Power'),
+  concept('http://qudt.org/vocab/quantitykind/Energy', 'qudt-quantity-kind', 'Energy'),
+  concept('http://qudt.org/vocab/quantitykind/Pressure', 'qudt-quantity-kind', 'Pressure'),
+  concept('http://qudt.org/vocab/quantitykind/ElectricCurrent', 'qudt-quantity-kind', 'Electric current'),
+  concept('http://qudt.org/vocab/quantitykind/ElectrolyticConductivity', 'qudt-quantity-kind', 'Electrolytic conductivity'),
+  concept('http://qudt.org/vocab/quantitykind/MagneticFluxDensity', 'qudt-quantity-kind', 'Magnetic flux density'),
+  concept('http://qudt.org/vocab/quantitykind/PowerPerArea', 'qudt-quantity-kind', 'Power per area'),
+  concept('http://qudt.org/vocab/quantitykind/DimensionlessRatio', 'qudt-quantity-kind', 'Dimensionless ratio'),
+  concept('http://qudt.org/vocab/quantitykind/Currency', 'qudt-quantity-kind', 'Currency')
+];
+
+/** Project-owned offline prototype seed for CF Standard Name observed properties. */
+export const BUNDLED_CF_STANDARD_NAME_ENTRIES: readonly CatalogEntry[] = [
+  observedProperty('https://cfconventions.org/Data/cf-standard-names/current/build/cf-standard-name-table.html#water_surface_height_above_reference_datum', 'cf-standard-name', 'Water surface height above datum'),
+  observedProperty('https://cfconventions.org/Data/cf-standard-names/current/build/cf-standard-name-table.html#sea_water_temperature', 'cf-standard-name', 'Sea water temperature'),
+  observedProperty('https://cfconventions.org/Data/cf-standard-names/current/build/cf-standard-name-table.html#sea_water_electrical_conductivity', 'cf-standard-name', 'Sea water electrical conductivity'),
+  observedProperty('https://cfconventions.org/Data/cf-standard-names/current/build/cf-standard-name-table.html#air_temperature', 'cf-standard-name', 'Air temperature'),
+  observedProperty('https://cfconventions.org/Data/cf-standard-names/current/build/cf-standard-name-table.html#wind_speed', 'cf-standard-name', 'Wind speed'),
+  observedProperty('https://cfconventions.org/Data/cf-standard-names/current/build/cf-standard-name-table.html#air_pressure', 'cf-standard-name', 'Air pressure')
+];
+
+/** Project-owned offline prototype seed for SOSA concepts. No SSN-only entries are included. */
+export const BUNDLED_SOSA_ENTRIES: readonly CatalogEntry[] = [
+  concept('http://www.w3.org/ns/sosa/Observation', 'owl-class', 'Observation'),
+  concept('http://www.w3.org/ns/sosa/ObservationCollection', 'owl-class', 'Observation collection'),
+  concept('http://www.w3.org/ns/sosa/Sensor', 'owl-class', 'Sensor'),
+  concept('http://www.w3.org/ns/sosa/FeatureOfInterest', 'owl-class', 'Feature of interest'),
+  concept('http://www.w3.org/ns/sosa/ObservableProperty', 'owl-class', 'Observable property'),
+  concept('http://www.w3.org/ns/sosa/Sample', 'owl-class', 'Sample'),
+  concept('http://www.w3.org/ns/sosa/Platform', 'owl-class', 'Platform')
+];
+
+/** Project-owned offline prototype seed for Schema.org concepts and properties. */
+export const BUNDLED_SCHEMA_ORG_ENTRIES: readonly CatalogEntry[] = [
+  concept('https://schema.org/name', 'rdf-property', 'name'),
+  concept('https://schema.org/identifier', 'rdf-property', 'identifier'),
+  concept('https://schema.org/email', 'rdf-property', 'email'),
+  concept('https://schema.org/address', 'rdf-property', 'address'),
+  concept('https://schema.org/latitude', 'rdf-property', 'latitude'),
+  concept('https://schema.org/longitude', 'rdf-property', 'longitude'),
+  concept('https://schema.org/dateCreated', 'rdf-property', 'dateCreated', ['date created']),
+  concept('https://schema.org/dateModified', 'rdf-property', 'dateModified', ['date modified']),
+  concept('https://schema.org/SpecialAnnouncement', 'rdfs-class', 'SpecialAnnouncement', ['special announcement'])
+];
+
+/** Project-owned offline prototype seed for Dublin Core Terms properties. */
+export const BUNDLED_DCTERMS_ENTRIES: readonly CatalogEntry[] = [
+  concept('http://purl.org/dc/terms/title', 'dcterms-property', 'title'),
+  concept('http://purl.org/dc/terms/identifier', 'dcterms-property', 'identifier'),
+  concept('http://purl.org/dc/terms/created', 'dcterms-property', 'created'),
+  concept('http://purl.org/dc/terms/modified', 'dcterms-property', 'modified'),
+  concept('http://purl.org/dc/terms/source', 'dcterms-property', 'source'),
+  concept('http://purl.org/dc/terms/spatial', 'dcterms-property', 'spatial'),
+  concept('http://purl.org/dc/terms/temporal', 'dcterms-property', 'temporal'),
+  concept('http://purl.org/dc/terms/type', 'dcterms-property', 'type')
+];
+
+/** Project-owned offline prototype seed for SKOS and PROV-O concepts and properties. */
+export const BUNDLED_SKOS_PROV_ENTRIES: readonly CatalogEntry[] = [
+  concept('http://www.w3.org/2004/02/skos/core#Concept', 'owl-class', 'SKOS Concept'),
+  concept('http://www.w3.org/2004/02/skos/core#prefLabel', 'rdf-property', 'preferred label', ['prefLabel']),
+  concept('http://www.w3.org/2004/02/skos/core#broader', 'owl-object-property', 'broader concept'),
+  concept('http://www.w3.org/2004/02/skos/core#narrower', 'owl-object-property', 'narrower concept'),
+  concept('http://www.w3.org/ns/prov#Entity', 'owl-class', 'PROV Entity'),
+  concept('http://www.w3.org/ns/prov#generatedAtTime', 'owl-datatype-property', 'generated at time'),
+  concept('http://www.w3.org/ns/prov#wasDerivedFrom', 'owl-object-property', 'was derived from')
+];
+
+/** Bundled JSON Structure Units recommendation provider. */
+export const BUNDLED_JSON_STRUCTURE_UNITS_PROVIDER: CatalogProviderManifest = {
+  id: 'bundled.json-structure-units', label: 'JSON Structure Units · SI + NIST', kind: 'bundled', families: ['unit'],
+  source: 'https://json-structure.org/units/', version: 'prototype-seed-2026-08-31',
+  entryCount: BUNDLED_JSON_STRUCTURE_UNITS_ENTRIES.length, priority: 100, trusted: true
+};
 /**
  * Constant for bundled ucum provider.
  */
 export const BUNDLED_UCUM_PROVIDER: CatalogProviderManifest = {
-  id: 'bundled.ucum', label: 'UCUM', kind: 'bundled', families: ['ucumUnit'], source: 'https://ucum.org/ucum', version: '2017-11-21', priority: 100, trusted: true
+  id: 'bundled.ucum', label: 'UCUM', kind: 'bundled', families: ['ucumUnit'], source: 'https://ucum.org/ucum', version: '2017-11-21',
+  entryCount: BUNDLED_UCUM_ENTRIES.length, priority: 100, trusted: true
 };
 /**
  * Constant for bundled iso 4217 provider.
  */
 export const BUNDLED_ISO_4217_PROVIDER: CatalogProviderManifest = {
-  id: 'bundled.iso-4217', label: 'ISO 4217', kind: 'bundled', families: ['currency'], source: 'https://www.iso.org/iso-4217-currency-codes.html', version: 'seed-2026-08-31', priority: 100, trusted: true
+  id: 'bundled.iso-4217', label: 'ISO 4217', kind: 'bundled', families: ['currency'], source: 'https://www.iso.org/iso-4217-currency-codes.html', version: 'seed-2026-08-31',
+  entryCount: BUNDLED_ISO_4217_ENTRIES.length, priority: 100, trusted: true
 };
-const semanticEntry = (family: CatalogFamily, value: CatalogJsonValue, label: string, aliases: readonly string[] = []): CatalogEntry => ({ family, value, label, aliases });
-const referenced = (reference: string, kind: string): CatalogJsonValue => ({ reference, kind });
+export const BUNDLED_QUDT_QUANTITY_KIND_PROVIDER: CatalogProviderManifest = {
+  id: 'bundled.qudt-quantity-kinds', label: 'QUDT Quantity Kinds', kind: 'bundled', families: ['semanticConcept'],
+  source: 'http://qudt.org/vocab/quantitykind/', version: 'prototype-seed-2026-08-31',
+  entryCount: BUNDLED_QUDT_QUANTITY_KIND_ENTRIES.length, priority: 90, trusted: false
+};
+export const BUNDLED_CF_STANDARD_NAME_PROVIDER: CatalogProviderManifest = {
+  id: 'bundled.cf-standard-names', label: 'CF Standard Names', kind: 'bundled', families: ['observedProperty'],
+  source: 'https://cfconventions.org/Data/cf-standard-names/', version: 'prototype-seed-2026-08-31',
+  entryCount: BUNDLED_CF_STANDARD_NAME_ENTRIES.length, priority: 90, trusted: false
+};
+export const BUNDLED_SOSA_PROVIDER: CatalogProviderManifest = {
+  id: 'bundled.sosa', label: 'SOSA', kind: 'bundled', families: ['semanticConcept'],
+  source: 'http://www.w3.org/ns/sosa/', version: 'prototype-seed-2026-08-31',
+  entryCount: BUNDLED_SOSA_ENTRIES.length, priority: 80, trusted: false
+};
+export const BUNDLED_SCHEMA_ORG_PROVIDER: CatalogProviderManifest = {
+  id: 'bundled.schema-org', label: 'Schema.org', kind: 'bundled', families: ['semanticConcept'],
+  source: 'https://schema.org/', version: 'prototype-seed-2026-08-31',
+  entryCount: BUNDLED_SCHEMA_ORG_ENTRIES.length, priority: 80, trusted: false
+};
+export const BUNDLED_DCTERMS_PROVIDER: CatalogProviderManifest = {
+  id: 'bundled.dublin-core-terms', label: 'Dublin Core Terms', kind: 'bundled', families: ['semanticConcept'],
+  source: 'http://purl.org/dc/terms/', version: 'prototype-seed-2026-08-31',
+  entryCount: BUNDLED_DCTERMS_ENTRIES.length, priority: 80, trusted: false
+};
+export const BUNDLED_SKOS_PROV_PROVIDER: CatalogProviderManifest = {
+  id: 'bundled.skos-prov-o', label: 'SKOS + PROV-O', kind: 'bundled', families: ['semanticConcept'],
+  source: 'https://www.w3.org/2004/02/skos/core#; https://www.w3.org/ns/prov#', version: 'prototype-seed-2026-08-31',
+  entryCount: BUNDLED_SKOS_PROV_ENTRIES.length, priority: 80, trusted: false
+};
 /**
  * Constant for bundled semantic entries.
  */
 export const BUNDLED_SEMANTIC_ENTRIES: readonly CatalogEntry[] = [
-  semanticEntry('semanticConcept', referenced('https://www.w3.org/2006/time#Instant', 'owl-class'), 'Time instant', ['instant']),
-  semanticEntry('semanticConcept', referenced('https://www.w3.org/2006/time#Interval', 'owl-class'), 'Time interval', ['interval']),
-  semanticEntry('semanticConcept', referenced('https://qudt.org/schema/qudt/QuantityValue', 'owl-class'), 'Quantity value', ['quantity']),
-  semanticEntry('observedProperty', referenced('https://qudt.org/vocab/quantitykind/Temperature', 'qudt-quantity-kind'), 'Temperature'),
-  semanticEntry('observedProperty', referenced('https://qudt.org/vocab/quantitykind/Pressure', 'qudt-quantity-kind'), 'Pressure'),
-  semanticEntry('observedProperty', referenced('https://qudt.org/vocab/quantitykind/Velocity', 'qudt-quantity-kind'), 'Velocity'),
   ...['observationValue','resultQuality','featureOfInterest','proximateFeatureOfInterest','ultimateFeatureOfInterest','observingProcedure','phenomenonTime','resultTime','effectiveTime','phenomenonTimeStart','phenomenonTimeEnd','effectiveTimeStart','effectiveTimeEnd','ingestionTime','scheduledTime','actualTime','forecastIssueTime','forecastLeadDuration','status'].map((value) => semanticEntry('semanticRole', value, value)),
   ...['measured','statistic','calculated','estimated','modeled'].map((value) => semanticEntry('derivation', value, value)),
   ...['mean','median','mode','minimum','maximum','sum','count','standardDeviation','variance','range'].map((value) => semanticEntry('statistic', value, value)),
@@ -428,16 +567,49 @@ export const BUNDLED_SEMANTIC_ENTRIES: readonly CatalogEntry[] = [
  * Constant for bundled semantic provider.
  */
 export const BUNDLED_SEMANTIC_PROVIDER: CatalogProviderManifest = {
-  id: 'bundled.semantic-annotations', label: 'Semantic Annotations', kind: 'bundled',
+  id: 'bundled.semantic-annotations', label: 'JSON Structure Semantic Presets', kind: 'bundled',
   families: [...new Set(BUNDLED_SEMANTIC_ENTRIES.map((entry) => entry.family))],
-  source: 'https://json-structure.org/semantic-annotations/', version: 'seed-2026-08-31', priority: 100, trusted: false
+  source: 'https://json-structure.org/semantic-annotations/', version: 'seed-2026-08-31',
+  entryCount: BUNDLED_SEMANTIC_ENTRIES.length, priority: 100, trusted: true
 };
+
+export interface BundledCatalogDefinition {
+  readonly manifest: CatalogProviderManifest;
+  readonly entries: readonly CatalogEntry[];
+}
+
+/** Complete offline catalog inventory bundled into Electron and VS Code renderer builds. */
+export const BUNDLED_CATALOGS: readonly BundledCatalogDefinition[] = [
+  { manifest: BUNDLED_JSON_STRUCTURE_UNITS_PROVIDER, entries: BUNDLED_JSON_STRUCTURE_UNITS_ENTRIES },
+  { manifest: BUNDLED_UCUM_PROVIDER, entries: BUNDLED_UCUM_ENTRIES },
+  { manifest: BUNDLED_ISO_4217_PROVIDER, entries: BUNDLED_ISO_4217_ENTRIES },
+  { manifest: BUNDLED_QUDT_QUANTITY_KIND_PROVIDER, entries: BUNDLED_QUDT_QUANTITY_KIND_ENTRIES },
+  { manifest: BUNDLED_CF_STANDARD_NAME_PROVIDER, entries: BUNDLED_CF_STANDARD_NAME_ENTRIES },
+  { manifest: BUNDLED_SOSA_PROVIDER, entries: BUNDLED_SOSA_ENTRIES },
+  { manifest: BUNDLED_SCHEMA_ORG_PROVIDER, entries: BUNDLED_SCHEMA_ORG_ENTRIES },
+  { manifest: BUNDLED_DCTERMS_PROVIDER, entries: BUNDLED_DCTERMS_ENTRIES },
+  { manifest: BUNDLED_SKOS_PROV_PROVIDER, entries: BUNDLED_SKOS_PROV_ENTRIES },
+  { manifest: BUNDLED_SEMANTIC_PROVIDER, entries: BUNDLED_SEMANTIC_ENTRIES }
+];
+export const BUNDLED_CATALOG_PROVIDERS: readonly CatalogProviderManifest[] = BUNDLED_CATALOGS.map((catalog) => catalog.manifest);
+const BUNDLED_CATALOG_BY_ID = new Map(BUNDLED_CATALOGS.map((catalog) => [catalog.manifest.id, catalog] as const));
+
+/** Creates the editor's registry with every offline built-in provider registered. */
+export function createCatalogRegistry(): CatalogRegistry {
+  const registry = new CatalogRegistry();
+  for (const provider of BUNDLED_CATALOG_PROVIDERS) registry.register(provider);
+  return registry;
+}
+
+/** Creates a provider adapter for one registered offline bundled catalog. */
+export function createBundledCatalogProvider(providerId: string): CatalogProvider {
+  if (!BUNDLED_CATALOG_BY_ID.has(providerId)) throw new Error(`Unknown bundled catalog provider: ${providerId}`);
+  return { providerId, search: (request) => bundledCatalogResult(request, providerId) };
+}
 /**
  * Performs bundled catalog result logic.
  */
 export function bundledCatalogResult(request: CatalogSearchRequest, providerId: string): CatalogProviderResult {
-  const entries = providerId === BUNDLED_UCUM_PROVIDER.id ? BUNDLED_UCUM_ENTRIES :
-    providerId === BUNDLED_ISO_4217_PROVIDER.id ? BUNDLED_ISO_4217_ENTRIES :
-      providerId === BUNDLED_SEMANTIC_PROVIDER.id ? BUNDLED_SEMANTIC_ENTRIES.filter((entry) => entry.family === request.family) : [];
+  const entries = BUNDLED_CATALOG_BY_ID.get(providerId)?.entries.filter((entry) => entry.family === request.family) ?? [];
   return { ...request, kind: 'catalog-results', providerId, entries };
 }

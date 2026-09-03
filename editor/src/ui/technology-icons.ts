@@ -1,7 +1,7 @@
 // Font Awesome Free 7.3.1 icons are bundled into the editor build.
 import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
 import { faGolang, faJava, faJs, faMarkdown, faMicrosoft, faPython, faRust } from '@fortawesome/free-brands-svg-icons';
-import { faCode, faCubes, faDatabase, faDiagramProject, faFeatherPointed, faFileCode, faFileCsv, faSnowflake, faTableColumns } from '@fortawesome/free-solid-svg-icons';
+import { faCode, faCubes, faDatabase, faDiagramProject, faFeatherPointed, faFileCode, faFileCsv, faNetworkWired, faSnowflake, faTableColumns } from '@fortawesome/free-solid-svg-icons';
 
 const formatIcons: Readonly<Record<string, IconDefinition>> = {
   asn1: faFileCode,
@@ -22,9 +22,11 @@ const formatIcons: Readonly<Record<string, IconDefinition>> = {
   java: faJava,
   javascript: faJs,
   'json-schema': faFileCode,
+  json: faFileCode,
   jtd: faFileCode,
   kusto: faDatabase,
   markdown: faMarkdown,
+  openapi: faNetworkWired,
   parquet: faTableColumns,
   protobuf: faDiagramProject,
   python: faPython,
@@ -35,6 +37,7 @@ const formatIcons: Readonly<Record<string, IconDefinition>> = {
   thrift: faDiagramProject,
   tmsl: faMicrosoft,
   typescript: faCode,
+  xml: faFileCode,
   xsd: faFileCode,
 };
 

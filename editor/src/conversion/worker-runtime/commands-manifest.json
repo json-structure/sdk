@@ -131,7 +131,21 @@
       "displayName": "Structurize CLI",
       "version": "external",
       "sourceFormats": [
-        "json-structure"
+        "json-structure",
+        "flatbuffers",
+        "json-schema",
+        "kusto",
+        "json",
+        "xml",
+        "avro",
+        "jtd",
+        "cddl",
+        "openapi",
+        "cue",
+        "thrift",
+        "smithy",
+        "capnp",
+        "raml"
       ],
       "targetFormats": [
         "asn1",
@@ -161,7 +175,8 @@
         "thrift",
         "smithy",
         "capnp",
-        "raml"
+        "raml",
+        "json-structure"
       ],
       "options": [
         {
@@ -181,11 +196,424 @@
             "redshift",
             "db2"
           ]
+        },
+        {
+          "name": "namespace",
+          "type": "string",
+          "description": "Namespace for generated declarations.",
+          "default": ""
+        },
+        {
+          "name": "root_class_name",
+          "type": "string",
+          "description": "Root class name used by the j2s converter.",
+          "default": "document"
+        },
+        {
+          "name": "type_name",
+          "type": "string",
+          "description": "Root type name used by inference converters.",
+          "default": "Document"
+        },
+        {
+          "name": "base_id",
+          "type": "string",
+          "description": "Base URI used for inferred schema identity.",
+          "default": "https://example.com/"
+        },
+        {
+          "name": "sample_size",
+          "type": "number",
+          "description": "Maximum number of samples (0 means all).",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 100000
+        },
+        {
+          "name": "choice_depth",
+          "type": "number",
+          "description": "Maximum nested choice inference depth.",
+          "default": 1,
+          "minimum": 1,
+          "maximum": 64
+        },
+        {
+          "name": "infer_choices",
+          "type": "boolean",
+          "description": "Infer discriminated choices from samples.",
+          "default": false
+        },
+        {
+          "name": "infer_enums",
+          "type": "boolean",
+          "description": "Infer enums from repeated values.",
+          "default": false
+        },
+        {
+          "name": "preserve_composition",
+          "type": "boolean",
+          "description": "Preserve composition keywords where supported.",
+          "default": false
+        },
+        {
+          "name": "detect_inheritance",
+          "type": "boolean",
+          "description": "Detect inheritance patterns in JSON Schema.",
+          "default": true
+        },
+        {
+          "name": "detect_discriminators",
+          "type": "boolean",
+          "description": "Detect discriminator patterns.",
+          "default": true
+        },
+        {
+          "name": "lift_inline_schemas",
+          "type": "boolean",
+          "description": "Lift inline OpenAPI schemas into definitions.",
+          "default": false
+        },
+        {
+          "name": "convert_empty_objects_to_maps",
+          "type": "boolean",
+          "description": "Convert empty JSON Schema objects to maps.",
+          "default": true
+        },
+        {
+          "name": "naming",
+          "type": "string",
+          "description": "Type naming convention.",
+          "default": "default",
+          "allowedValues": [
+            "snake",
+            "camel",
+            "pascal",
+            "default"
+          ]
+        },
+        {
+          "name": "avro_encoding",
+          "type": "boolean",
+          "description": "Enable Avro encoding for unions.",
+          "default": false
+        },
+        {
+          "name": "kusto_uri",
+          "type": "string",
+          "description": "Kusto cluster URI.",
+          "default": ""
+        },
+        {
+          "name": "kusto_database",
+          "type": "string",
+          "description": "Kusto database name.",
+          "default": ""
+        },
+        {
+          "name": "table_name",
+          "type": "string",
+          "description": "Kusto table name.",
+          "default": ""
+        },
+        {
+          "name": "emit_cloudevents",
+          "type": "boolean",
+          "description": "Emit CloudEvents declarations.",
+          "default": false
+        },
+        {
+          "name": "emit_xregistry",
+          "type": "boolean",
+          "description": "Emit an xRegistry manifest.",
+          "default": false
         }
       ]
     }
   ],
   "commands": [
+    {
+      "id": "import.structurize.fbs2s",
+      "converterId": "structurize-cli",
+      "direction": "import",
+      "label": "Import FlatBuffers to JSON Structure",
+      "sourceFormat": "flatbuffers",
+      "targetFormat": "json-structure",
+      "defaultAutoOpen": true,
+      "optionNames": [
+        "namespace"
+      ],
+      "cliCommand": "fbs2s",
+      "outputKind": "file",
+      "outputName": "schema.struct.json",
+      "sourceExtensions": [
+        ".fbs"
+      ]
+    },
+    {
+      "id": "import.structurize.j2s",
+      "converterId": "structurize-cli",
+      "direction": "import",
+      "label": "Import JSON Schema to JSON Structure",
+      "sourceFormat": "json-schema",
+      "targetFormat": "json-structure",
+      "defaultAutoOpen": true,
+      "optionNames": [
+        "namespace",
+        "root_class_name"
+      ],
+      "cliCommand": "j2s",
+      "outputKind": "file",
+      "outputName": "schema.struct.json",
+      "sourceExtensions": [
+        ".json",
+        ".jsons"
+      ]
+    },
+    {
+      "id": "import.structurize.k2s",
+      "converterId": "structurize-cli",
+      "direction": "import",
+      "label": "Import Kusto to JSON Structure",
+      "sourceFormat": "kusto",
+      "targetFormat": "json-structure",
+      "defaultAutoOpen": true,
+      "optionNames": [
+        "kusto_uri",
+        "kusto_database",
+        "table_name",
+        "base_id",
+        "emit_cloudevents",
+        "emit_xregistry",
+        "sample_size",
+        "infer_choices",
+        "choice_depth",
+        "infer_enums"
+      ],
+      "cliCommand": "k2s",
+      "outputKind": "file",
+      "outputName": "schema.struct.json",
+      "sourceExtensions": [
+        ".kusto"
+      ],
+      "availability": "external-service",
+      "availabilityMessage": "Kusto import requires a configured cluster URI, database, and table; local file conversion is not supported."
+    },
+    {
+      "id": "import.structurize.json2s",
+      "converterId": "structurize-cli",
+      "direction": "import",
+      "label": "Import JSON data to JSON Structure",
+      "sourceFormat": "json",
+      "targetFormat": "json-structure",
+      "defaultAutoOpen": true,
+      "optionNames": [
+        "type_name",
+        "base_id",
+        "sample_size",
+        "infer_choices",
+        "choice_depth",
+        "infer_enums"
+      ],
+      "cliCommand": "json2s",
+      "outputKind": "file",
+      "outputName": "schema.struct.json",
+      "sourceExtensions": [
+        ".json",
+        ".jsonl",
+        ".ndjson"
+      ]
+    },
+    {
+      "id": "import.structurize.xml2s",
+      "converterId": "structurize-cli",
+      "direction": "import",
+      "label": "Import XML data to JSON Structure",
+      "sourceFormat": "xml",
+      "targetFormat": "json-structure",
+      "defaultAutoOpen": true,
+      "optionNames": [
+        "type_name",
+        "base_id",
+        "sample_size"
+      ],
+      "cliCommand": "xml2s",
+      "outputKind": "file",
+      "outputName": "schema.struct.json",
+      "sourceExtensions": [
+        ".xml"
+      ]
+    },
+    {
+      "id": "import.structurize.a2s",
+      "converterId": "structurize-cli",
+      "direction": "import",
+      "label": "Import Avro to JSON Structure",
+      "sourceFormat": "avro",
+      "targetFormat": "json-structure",
+      "defaultAutoOpen": true,
+      "optionNames": [
+        "naming",
+        "avro_encoding"
+      ],
+      "cliCommand": "a2s",
+      "outputKind": "file",
+      "outputName": "schema.struct.json",
+      "sourceExtensions": [
+        ".avsc"
+      ]
+    },
+    {
+      "id": "import.structurize.jtd2s",
+      "converterId": "structurize-cli",
+      "direction": "import",
+      "label": "Import JSON Type Definition to JSON Structure",
+      "sourceFormat": "jtd",
+      "targetFormat": "json-structure",
+      "defaultAutoOpen": true,
+      "optionNames": [
+        "namespace"
+      ],
+      "cliCommand": "jtd2s",
+      "outputKind": "file",
+      "outputName": "schema.struct.json",
+      "sourceExtensions": [
+        ".jtd.json",
+        ".jtd"
+      ]
+    },
+    {
+      "id": "import.structurize.cddl2s",
+      "converterId": "structurize-cli",
+      "direction": "import",
+      "label": "Import CDDL to JSON Structure",
+      "sourceFormat": "cddl",
+      "targetFormat": "json-structure",
+      "defaultAutoOpen": true,
+      "optionNames": [
+        "namespace"
+      ],
+      "cliCommand": "cddl2s",
+      "outputKind": "file",
+      "outputName": "schema.struct.json",
+      "sourceExtensions": [
+        ".cddl"
+      ]
+    },
+    {
+      "id": "import.structurize.oas2s",
+      "converterId": "structurize-cli",
+      "direction": "import",
+      "label": "Import OpenAPI to JSON Structure",
+      "sourceFormat": "openapi",
+      "targetFormat": "json-structure",
+      "defaultAutoOpen": true,
+      "optionNames": [
+        "namespace",
+        "preserve_composition",
+        "detect_discriminators",
+        "lift_inline_schemas"
+      ],
+      "cliCommand": "oas2s",
+      "outputKind": "file",
+      "outputName": "schema.struct.json",
+      "sourceExtensions": [
+        ".yaml",
+        ".yml",
+        ".json"
+      ]
+    },
+    {
+      "id": "import.structurize.cue2s",
+      "converterId": "structurize-cli",
+      "direction": "import",
+      "label": "Import CUE to JSON Structure",
+      "sourceFormat": "cue",
+      "targetFormat": "json-structure",
+      "defaultAutoOpen": true,
+      "optionNames": [
+        "namespace"
+      ],
+      "cliCommand": "cue2s",
+      "outputKind": "file",
+      "outputName": "schema.struct.json",
+      "sourceExtensions": [
+        ".cue"
+      ]
+    },
+    {
+      "id": "import.structurize.thrift2s",
+      "converterId": "structurize-cli",
+      "direction": "import",
+      "label": "Import Apache Thrift to JSON Structure",
+      "sourceFormat": "thrift",
+      "targetFormat": "json-structure",
+      "defaultAutoOpen": true,
+      "optionNames": [
+        "namespace"
+      ],
+      "cliCommand": "thrift2s",
+      "outputKind": "file",
+      "outputName": "schema.struct.json",
+      "sourceExtensions": [
+        ".thrift"
+      ]
+    },
+    {
+      "id": "import.structurize.smithy2s",
+      "converterId": "structurize-cli",
+      "direction": "import",
+      "label": "Import Smithy to JSON Structure",
+      "sourceFormat": "smithy",
+      "targetFormat": "json-structure",
+      "defaultAutoOpen": true,
+      "optionNames": [
+        "namespace"
+      ],
+      "cliCommand": "smithy2s",
+      "outputKind": "file",
+      "outputName": "schema.struct.json",
+      "sourceExtensions": [
+        ".smithy"
+      ]
+    },
+    {
+      "id": "import.structurize.capnp2s",
+      "converterId": "structurize-cli",
+      "direction": "import",
+      "label": "Import Cap'n Proto to JSON Structure",
+      "sourceFormat": "capnp",
+      "targetFormat": "json-structure",
+      "defaultAutoOpen": true,
+      "optionNames": [
+        "namespace",
+        "naming",
+        "avro_encoding"
+      ],
+      "cliCommand": "capnp2s",
+      "outputKind": "file",
+      "outputName": "schema.struct.json",
+      "sourceExtensions": [
+        ".capnp"
+      ]
+    },
+    {
+      "id": "import.structurize.raml2s",
+      "converterId": "structurize-cli",
+      "direction": "import",
+      "label": "Import RAML to JSON Structure",
+      "sourceFormat": "raml",
+      "targetFormat": "json-structure",
+      "defaultAutoOpen": true,
+      "optionNames": [
+        "namespace"
+      ],
+      "cliCommand": "raml2s",
+      "outputKind": "file",
+      "outputName": "schema.struct.json",
+      "sourceExtensions": [
+        ".raml"
+      ]
+    },
     {
       "id": "import.jsonschema.to-json-structure",
       "converterId": "jsonschema",

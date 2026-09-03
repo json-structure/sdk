@@ -93,7 +93,11 @@ export interface ConversionRequest extends ProtocolEnvelope { readonly kind: 'co
 /** Defines a user-selected conversion input file. */
 export interface ConversionSource { readonly uri: string; readonly name: string; readonly text: string; }
 /** Defines a request for a conversion input file. */
-export interface SelectConversionSourceRequest extends ProtocolEnvelope { readonly kind: 'select-conversion-source'; readonly formats: readonly string[]; }
+export interface SelectConversionSourceRequest extends ProtocolEnvelope {
+  readonly kind: 'select-conversion-source';
+  readonly formats: readonly string[];
+  readonly extensions?: readonly string[];
+}
 /** Type alias for conversion lossiness classifications. */
 export type ConversionLossiness = 'none' | 'formatting' | 'metadata' | 'precision' | 'unsupported-feature' | 'data-loss';
 /** Defines one structured conversion warning retained for review. */

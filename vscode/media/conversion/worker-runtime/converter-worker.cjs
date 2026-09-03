@@ -2,7 +2,12 @@
 'use strict';
 
 const { stdin, stdout } = process;
+const { execFile, spawn } = require('node:child_process');
+const { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } = require('node:fs');
+const { tmpdir } = require('node:os');
+const { basename, delimiter, extname, join, relative, resolve } = require('node:path');
 const { generateProto } = require('./proto-generator.cjs');
+const commandsManifest = require('./commands-manifest.json');
 
 const CORE_SCHEMA_URI = 'https://json-structure.org/meta/core/v0/#';
 const EXTENDED_SCHEMA_URI = 'https://json-structure.org/meta/extended/v0/#';
@@ -23,6 +28,67 @@ function aggregateLossiness(warnings) {
 
 function isRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function hasOwn(value, key) {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function defineOwn(target, key, value) {
+  Object.defineProperty(target, key, { configurable: true, enumerable: true, writable: true, value });
+  return value;
+}
+
+const JSON_SCHEMA_VOCABULARY = new Set([
+  '$schema', '$id', '$ref', '$anchor', '$dynamicRef', '$dynamicAnchor', '$defs', '$comment',
+  '$recursiveRef', '$recursiveAnchor', '$vocabulary',
+  'type', 'enum', 'const', 'allOf', 'anyOf', 'oneOf', 'not', 'if', 'then', 'else',
+  'prefixItems', 'items', 'contains', 'additionalItems', 'additionalProperties', 'properties',
+  'patternProperties', 'unevaluatedItems', 'unevaluatedProperties', 'propertyNames',
+  'dependentSchemas', 'dependencies', 'required', 'dependentRequired', 'minContains', 'maxContains',
+  'multipleOf', 'maximum', 'exclusiveMaximum', 'minimum', 'exclusiveMinimum', 'maxLength',
+  'minLength', 'pattern', 'maxItems', 'minItems', 'uniqueItems', 'maxProperties', 'minProperties',
+  'format', 'contentEncoding', 'contentMediaType', 'contentSchema', 'title', 'description',
+  'default', 'deprecated', 'readOnly', 'writeOnly', 'examples', 'definitions', 'id',
+]);
+
+function isTypeDeclaration(value) {
+  return isRecord(value) && (Object.prototype.hasOwnProperty.call(value, 'type') || Object.prototype.hasOwnProperty.call(value, '$extends') || Object.prototype.hasOwnProperty.call(value, 'abstract'));
+}
+
+function isJsonSchemaNode(value) {
+  if (typeof value === 'boolean') return true;
+  if (!isRecord(value)) return false;
+  const keys = Object.keys(value);
+  // A namespace is an object whose children are all declaration/namespace objects.
+  // Every other object is a schema, including an empty or annotation-only schema.
+  return keys.length === 0 || keys.some((key) => JSON_SCHEMA_VOCABULARY.has(key)) || keys.some((key) => !isRecord(value[key]));
+}
+
+function activeImportLocations(document) {
+  if (!isRecord(document)) return [];
+  const locations = [];
+  const inspect = (namespace, pointer) => {
+    for (const key of ['$import', '$importdefs']) {
+      if (Object.prototype.hasOwnProperty.call(namespace, key)) locations.push({ key, pointer: pointer + '/' + key });
+    }
+  };
+  const visitNamespace = (namespace, pointer) => {
+    if (!isRecord(namespace)) return;
+    inspect(namespace, pointer);
+    for (const [name, member] of Object.entries(namespace)) {
+      if (name === '$import' || name === '$importdefs' || !isRecord(member) || isTypeDeclaration(member)) continue;
+      visitNamespace(member, pointer + '/' + escapePointer(name));
+    }
+  };
+  inspect(document, '#');
+  if (isRecord(document.definitions)) visitNamespace(document.definitions, '#/definitions');
+  return locations;
+}
+
+function assertEffectiveImports(document, targetFormat) {
+  const importLocation = activeImportLocations(document)[0];
+  if (importLocation) throw new Error(targetFormat + ' export requires effective imports; resolve ' + importLocation.key + ' before conversion (at ' + importLocation.pointer + ').');
 }
 
 function escapePointer(value) {
@@ -103,11 +169,18 @@ function generatedId(sourceId, sourceName, warnings) {
 
 function structureReference(reference, rootName, definitionNames) {
   if (reference === '#') return `#/definitions/${escapePointer(rootName)}`;
-  const definitionReference = reference.match(/^#\/(\$defs|definitions)\/([^/]+)(.*)$/);
+  const definitionReference = reference.match(/^#\/(\$defs|definitions)\/(.+)$/);
   if (definitionReference) {
-    const sourceName = decodePointerToken(definitionReference[2]);
-    const targetName = definitionNames.get(`${definitionReference[1]}:${sourceName}`);
-    if (targetName) return `#/definitions/${escapePointer(targetName)}${definitionReference[3]}`;
+    const keyword = definitionReference[1];
+    const segments = definitionReference[2].split('/').map(decodePointerToken);
+    for (let count = segments.length; count > 0; count--) {
+      const sourcePointer = `#/${keyword}/${segments.slice(0, count).map(escapePointer).join('/')}`;
+      const targetName = definitionNames.get(sourcePointer);
+      if (targetName) {
+        const suffix = segments.slice(count).map(escapePointer).join('/');
+        return `#/definitions/${escapePointer(targetName)}${suffix ? `/${suffix}` : ''}`;
+      }
+    }
   }
   if (reference.startsWith('#/')) return `#/definitions/${escapePointer(rootName)}${reference.slice(1)}`;
   return undefined;
@@ -118,7 +191,7 @@ function preserveOrWarnUnknown(source, consumed, output, sourcePointer, targetPo
     if (consumed.has(key)) continue;
     const annotation = `x-json-schema-${key}`;
     if (preserveUnknownKeywords) {
-      output[annotation] = source[key];
+      defineOwn(output, annotation, source[key]);
       warning(warnings, 'jsonschema.keyword.preserved', `JSON Schema keyword ${key} was preserved as ${annotation}; its semantics are not enforced by JSON Structure.`, 'metadata', childPointer(sourcePointer, key), childPointer(targetPointer, annotation));
     } else {
       warning(warnings, 'jsonschema.keyword.omitted', `JSON Schema keyword ${key} is not represented in JSON Structure output.`, 'metadata', childPointer(sourcePointer, key), targetPointer);
@@ -175,8 +248,8 @@ function convertJsonSchemaNode(schema, sourcePointer, targetPointer, rootName, d
   const consumed = new Set();
   if (sourcePointer === '') {
     for (const keyword of ['$schema', '$id']) if (Object.prototype.hasOwnProperty.call(schema, keyword)) consumed.add(keyword);
-    for (const keyword of ['$defs', 'definitions']) if (isRecord(schema[keyword])) consumed.add(keyword);
   }
+  for (const keyword of ['$defs', 'definitions']) if (isRecord(schema[keyword])) consumed.add(keyword);
   if (typeof schema.$ref === 'string') {
     const reference = structureReference(schema.$ref, rootName, definitionNames);
     if (reference) output.type = { $ref: reference };
@@ -255,7 +328,7 @@ function convertJsonSchemaNode(schema, sourcePointer, targetPointer, rootName, d
     for (const sourceName of schema.required) {
       if (typeof sourceName !== 'string' || Object.prototype.hasOwnProperty.call(output.properties, propertyNames.get(sourceName))) continue;
       const targetName = propertyNames.get(sourceName);
-      output.properties[targetName] = { type: 'any' };
+      defineOwn(output.properties, targetName, { type: 'any' });
       warning(warnings, 'jsonschema.required.synthesized', `Required property ${JSON.stringify(sourceName)} had no property schema and was represented with type any.`, 'metadata', childPointer(sourcePointer, 'required'), childPointer(childPointer(targetPointer, 'properties'), targetName));
     }
   }
@@ -325,30 +398,51 @@ function convertJsonSchemaNode(schema, sourcePointer, targetPointer, rootName, d
   return output;
 }
 
-function convertJsonSchemaDefinitions(value, keyword, rootName, definitionNames, warnings, preserveUnknownKeywords) {
-  if (!isRecord(value)) return {};
-  return Object.fromEntries(Object.entries(value).map(([name, schema]) => [
-    definitionNames.get(`${keyword}:${name}`),
-    convertJsonSchemaNode(schema, `/${keyword}/${escapePointer(name)}`, `/definitions/${escapePointer(definitionNames.get(`${keyword}:${name}`))}`, rootName, definitionNames, warnings, preserveUnknownKeywords),
-  ]));
+function convertJsonSchemaDefinitions(value, sourcePointer, parentTargetName, rootName, definitionNames, warnings, preserveUnknownKeywords, output) {
+  if (!isRecord(value)) return;
+  for (const [name, schema] of Object.entries(value)) {
+    const memberPointer = `${sourcePointer}/${escapePointer(name)}`;
+    const targetName = definitionNames.get(memberPointer);
+    const namespaceName = targetName || (parentTargetName ? `${parentTargetName}_${normalizedIdentifier(name, 'Definition')}` : normalizedIdentifier(name, 'Definition'));
+    if (!isJsonSchemaNode(schema)) {
+      if (isRecord(schema)) convertJsonSchemaDefinitions(schema, memberPointer, namespaceName, rootName, definitionNames, warnings, preserveUnknownKeywords, output);
+      continue;
+    }
+    if (!targetName) continue;
+    defineOwn(output, targetName, convertJsonSchemaNode(schema, memberPointer.slice(1), `/definitions/${escapePointer(targetName)}`, rootName, definitionNames, warnings, preserveUnknownKeywords));
+    if (!isRecord(schema)) continue;
+    for (const keyword of ['definitions', '$defs']) {
+      if (isRecord(schema[keyword])) convertJsonSchemaDefinitions(schema[keyword], `${memberPointer}/${keyword}`, targetName, rootName, definitionNames, warnings, preserveUnknownKeywords, output);
+    }
+  }
 }
 
 function jsonSchemaDefinitionNames(doc, rootName, warnings) {
   const names = new Map();
   const reserved = new Set([rootName]);
-  for (const keyword of ['definitions', '$defs']) {
-    if (!isRecord(doc[keyword])) continue;
-    for (const sourceName of Object.keys(doc[keyword])) {
-      const sourcePointer = `/${keyword}/${escapePointer(sourceName)}`;
-      const base = normalizeName(sourceName, 'Definition', warnings, sourcePointer);
+  const visit = (value, sourcePointer, parentTargetName) => {
+    if (!isRecord(value)) return;
+    for (const [sourceName, schema] of Object.entries(value)) {
+      const memberPointer = `${sourcePointer}/${escapePointer(sourceName)}`;
+      const sourceLocation = memberPointer.slice(1);
+      const baseName = normalizeName(sourceName, 'Definition', warnings, sourceLocation);
+      const base = parentTargetName ? `${parentTargetName}_${baseName}` : baseName;
+      if (!isJsonSchemaNode(schema)) {
+        if (isRecord(schema)) visit(schema, memberPointer, base);
+        continue;
+      }
       let targetName = base;
       let suffix = 2;
       while (reserved.has(targetName)) targetName = `${base}_${suffix++}`;
-      if (targetName !== base) warning(warnings, 'jsonschema.name.collision', `Definition name ${base} was already reserved and was changed to ${targetName}.`, 'metadata', sourcePointer, `/definitions/${escapePointer(targetName)}`);
+      if (targetName !== base) warning(warnings, 'jsonschema.name.collision', `Definition name ${base} was already reserved and was changed to ${targetName}.`, 'metadata', sourceLocation, `/definitions/${escapePointer(targetName)}`);
       reserved.add(targetName);
-      names.set(`${keyword}:${sourceName}`, targetName);
+      names.set(memberPointer, targetName);
+      if (isRecord(schema)) for (const keyword of ['definitions', '$defs']) {
+        if (isRecord(schema[keyword])) visit(schema[keyword], `${memberPointer}/${keyword}`, targetName);
+      }
     }
-  }
+  };
+  if (isRecord(doc)) for (const keyword of ['definitions', '$defs']) visit(doc[keyword], `#/${keyword}`, '');
   return names;
 }
 
@@ -363,9 +457,8 @@ function convertJsonSchemaToJsonStructure(sourceText, sourceName, options, previ
   const targetRoot = `/definitions/${escapePointer(rootName)}`;
   const root = convertJsonSchemaNode(doc, '', targetRoot, rootName, definitionNames, warnings, preserveUnknownKeywords);
   const definitions = {};
-  if (isRecord(doc) && isRecord(doc.definitions)) Object.assign(definitions, convertJsonSchemaDefinitions(doc.definitions, 'definitions', rootName, definitionNames, warnings, preserveUnknownKeywords));
-  if (isRecord(doc) && isRecord(doc.$defs)) {
-    Object.assign(definitions, convertJsonSchemaDefinitions(doc.$defs, '$defs', rootName, definitionNames, warnings, preserveUnknownKeywords));
+  if (isRecord(doc)) for (const keyword of ['definitions', '$defs']) {
+    if (isRecord(doc[keyword])) convertJsonSchemaDefinitions(doc[keyword], `#/${keyword}`, '', rootName, definitionNames, warnings, preserveUnknownKeywords, definitions);
   }
   if (isRecord(doc)) {
     delete root.$id;
@@ -373,7 +466,7 @@ function convertJsonSchemaToJsonStructure(sourceText, sourceName, options, previ
     delete root.$defs;
     delete root.definitions;
   }
-  definitions[rootName] = root;
+  defineOwn(definitions, rootName, root);
   const output = {
     $schema: CORE_SCHEMA_URI,
     $id: generatedId(isRecord(doc) ? doc.$id : undefined, sourceName, warnings),
@@ -409,9 +502,9 @@ function convertDefinitionTree(value, sourcePointer, targetPointer, warnings) {
       warning(warnings, 'json-structure.definition.invalid', `Definition ${name} is not an object and was omitted.`, 'data-loss', source, target);
       continue;
     }
-    converted[name] = Object.prototype.hasOwnProperty.call(member, 'type') || Object.prototype.hasOwnProperty.call(member, '$ref')
+    defineOwn(converted, name, Object.prototype.hasOwnProperty.call(member, 'type') || Object.prototype.hasOwnProperty.call(member, '$ref')
       ? convertJsonStructureSchema(member, source, target, warnings)
-      : convertDefinitionTree(member, source, target, warnings);
+      : convertDefinitionTree(member, source, target, warnings));
   }
   return converted;
 }
@@ -567,7 +660,7 @@ function convertJsonStructureSchema(schema, sourcePointer, targetPointer, warnin
 
 function pointerValue(root, pointer) {
   if (!pointer.startsWith('#/')) return undefined;
-  return pointer.slice(2).split('/').map((token) => token.replace(/~1/g, '/').replace(/~0/g, '~')).reduce((value, token) => isRecord(value) ? value[token] : undefined, root);
+  return pointer.slice(2).split('/').map((token) => token.replace(/~1/g, '/').replace(/~0/g, '~')).reduce((value, token) => isRecord(value) && hasOwn(value, token) ? value[token] : undefined, root);
 }
 
 function validateGeneratedJsonStructure(document) {
@@ -612,6 +705,8 @@ function validateGeneratedJsonSchema(document) {
 
 function convertJsonStructureToJsonSchema(sourceText, _sourceName, _options, preview) {
   const doc = JSON.parse(sourceText);
+  if (!isRecord(doc)) throw new Error('JSON Structure source must be an object.');
+  assertEffectiveImports(doc, 'JSON Schema');
   const rootRef = typeof doc.$root === 'string' ? doc.$root : '';
   const root = rootRef ? pointerValue(doc, rootRef) : Object.prototype.hasOwnProperty.call(doc, 'type') ? doc : undefined;
   const warnings = [];
@@ -652,13 +747,14 @@ function setNestedDefinition(definitions, fullName, value) {
   const parts = fullName.split('.');
   let current = definitions;
   for (const part of parts.slice(0, -1)) {
-    if (current[part] === undefined) current[part] = {};
-    if (!isRecord(current[part]) || Object.prototype.hasOwnProperty.call(current[part], 'type')) throw new Error(`Avro namespace collides with a type: ${fullName}.`);
-    current = current[part];
+    if (!hasOwn(current, part)) defineOwn(current, part, {});
+    const child = current[part];
+    if (!isRecord(child) || Object.prototype.hasOwnProperty.call(child, 'type')) throw new Error(`Avro namespace collides with a type: ${fullName}.`);
+    current = child;
   }
   const name = parts[parts.length - 1];
   if (Object.prototype.hasOwnProperty.call(current, name)) throw new Error(`Duplicate Avro named type: ${fullName}.`);
-  current[name] = value;
+  defineOwn(current, name, value);
 }
 
 function resolveAvroReference(name, namespace, context) {
@@ -757,7 +853,7 @@ function convertAvroSchema(schema, sourcePointer, targetPointer, namespace, cont
       const property = convertAvroSchema(field.type, childPointer(fieldPointer, 'type'), target, parts.namespace, context);
       if (Object.prototype.hasOwnProperty.call(field, 'default')) property.default = field.default;
       if (typeof field.doc === 'string') property.description = field.doc;
-      record.properties[field.name] = property;
+      defineOwn(record.properties, field.name, property);
       const nullableWithDefault = Array.isArray(field.type) && field.type.some((branch) => branch === 'null' || isRecord(branch) && branch.type === 'null') && Object.prototype.hasOwnProperty.call(field, 'default');
       if (!nullableWithDefault) required.push(field.name);
       else warning(context.warnings, 'avro.field.optional.inferred', `Field ${field.name} was inferred as optional from its nullable type and default.`, 'metadata', fieldPointer, target);
@@ -1407,6 +1503,7 @@ function validateGeneratedAvro(schema) {
 function convertJsonStructureToAvro(sourceText, sourceName, options, preview) {
   const doc = JSON.parse(sourceText);
   if (!isRecord(doc)) throw new Error('JSON Structure source must be an object.');
+  assertEffectiveImports(doc, 'Avro');
   const warnings = [];
   const context = {
     document: doc,
@@ -1452,9 +1549,11 @@ function convertJsonStructureToAvro(sourceText, sourceName, options, preview) {
 
 function convertJsonStructureToProto(sourceText, sourceName, options) {
   const document = JSON.parse(sourceText);
+  if (!isRecord(document)) throw new Error('JSON Structure source must be an object.');
+  assertEffectiveImports(document, 'Protobuf');
   const generated = generateProto(document, sourceName, options);
   const files = {};
-  for (const file of generated.files) files[file.path] = Buffer.from(file.contents, 'utf8').toString('base64');
+  for (const file of generated.files) defineOwn(files, file.path, Buffer.from(file.contents, 'utf8').toString('base64'));
   files['proto-numbers.json'] = Buffer.from(JSON.stringify(generated.numbers, null, 2) + '\n', 'utf8').toString('base64');
   const warnings = generated.warnings.map((entry) => ({
     code: entry.code,
@@ -1465,7 +1564,253 @@ function convertJsonStructureToProto(sourceText, sourceName, options) {
   return { files, warnings, lossiness: aggregateLossiness(warnings) };
 }
 
-function runConversion(commandId, sourceName, sourceText, options, preview) {
+function readGeneratedFiles(root, directory = root) {
+  const files = {};
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) for (const [filePath, content] of Object.entries(readGeneratedFiles(root, path))) defineOwn(files, filePath, content);
+    else if (entry.isFile()) defineOwn(files, relative(root, path).replace(/\\/g, '/'), readFileSync(path).toString('base64'));
+  }
+  return files;
+}
+
+const STRUCTURIZE_OUTPUT_LIMIT = 1024 * 1024;
+let activeStructurizeProcess;
+let activeOperationId;
+let cancellationRequested = false;
+let cancellationInProgress;
+
+function conversionCancelledError() {
+  const error = new Error('Conversion cancelled.');
+  error.name = 'AbortError';
+  return error;
+}
+
+function waitForProcessExit(child, milliseconds) {
+  if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve(true);
+  return new Promise((resolveExit) => {
+    let settled = false;
+    const finish = (exited) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      child.off('exit', onExit);
+      resolveExit(exited);
+    };
+    const onExit = () => finish(true);
+    const timer = setTimeout(() => finish(false), milliseconds);
+    timer.unref();
+    child.once('exit', onExit);
+  });
+}
+
+async function terminateStructurizeProcess(child) {
+  if (!child || child.exitCode !== null || child.signalCode !== null || child.pid === undefined) return;
+  const pid = child.pid;
+  if (process.platform === 'win32') {
+    await new Promise((resolveTermination) => {
+      execFile('taskkill.exe', ['/PID', String(pid), '/T', '/F'], { windowsHide: true }, () => resolveTermination());
+    });
+  } else {
+    try {
+      process.kill(-pid, 'SIGTERM');
+    } catch (error) {
+      if (error.code !== 'ESRCH') throw error;
+    }
+    if (!await waitForProcessExit(child, 750)) {
+      try {
+        process.kill(-pid, 'SIGKILL');
+      } catch (error) {
+        if (error.code !== 'ESRCH') throw error;
+      }
+    }
+  }
+  await waitForProcessExit(child, 1_000);
+}
+
+function cancelActiveStructurize(operationId) {
+  if (operationId !== undefined && activeOperationId !== operationId) return Promise.resolve();
+  cancellationRequested = true;
+  if (!cancellationInProgress) {
+    cancellationInProgress = terminateStructurizeProcess(activeStructurizeProcess).finally(() => {
+      cancellationInProgress = undefined;
+    });
+  }
+  return cancellationInProgress;
+}
+
+function resolveBundledStructurizeInvocation() {
+  const roots = [];
+  if (process.env.STRUCTURIZE_RUNTIME_ROOT) roots.push(resolve(process.env.STRUCTURIZE_RUNTIME_ROOT));
+  if (typeof process.resourcesPath === 'string' && process.resourcesPath) roots.push(join(process.resourcesPath, 'conversion', 'worker-runtime', 'structurize-runtime'));
+  roots.push(join(__dirname, 'structurize-runtime'));
+  const seen = new Set();
+  for (const root of roots) {
+    if (seen.has(root)) continue;
+    seen.add(root);
+    const runtimeDirectory = join(root, `${process.platform}-${process.arch}`);
+    const manifestPath = join(runtimeDirectory, 'runtime.json');
+    if (!existsSync(manifestPath)) continue;
+    let manifest;
+    try { manifest = JSON.parse(readFileSync(manifestPath, 'utf8')); }
+    catch (error) { throw new Error(`Bundled Structurize runtime manifest is invalid: ${error instanceof Error ? error.message : String(error)}`); }
+    if (!isRecord(manifest) || manifest.kind !== 'structurize-runtime' || typeof manifest.executable !== 'string' || !Array.isArray(manifest.arguments) || !manifest.arguments.every((value) => typeof value === 'string')) {
+      throw new Error(`Bundled Structurize runtime manifest is malformed: ${manifestPath}`);
+    }
+    if (manifest.executable.includes('\\') || manifest.executable.includes('/') || manifest.executable === '.' || manifest.executable === '..') throw new Error(`Bundled Structurize runtime executable is not a file name: ${manifestPath}`);
+    const executable = join(runtimeDirectory, manifest.executable);
+    if (!existsSync(executable)) throw new Error(`Bundled Structurize executable is missing: ${executable}`);
+    const pythonPath = Array.isArray(manifest.pythonPath) && manifest.pythonPath.every((value) => typeof value === 'string')
+      ? manifest.pythonPath.map((value) => join(runtimeDirectory, value))
+      : [runtimeDirectory, join(runtimeDirectory, 'Lib', 'site-packages')];
+    return { executable, arguments: manifest.arguments, environment: { PYTHONHOME: runtimeDirectory, PYTHONPATH: pythonPath.join(delimiter) } };
+  }
+  return undefined;
+}
+
+function invokeStructurizeExecutable(executable, args, workspace, environment = {}) {
+  return new Promise((resolveInvocation) => {
+    const script = ['.js', '.cjs', '.mjs'].includes(extname(executable).toLowerCase());
+    const command = script ? process.execPath : executable;
+    const commandArgs = script ? [executable, ...args] : args;
+    const child = spawn(command, commandArgs, {
+      cwd: workspace,
+      env: { ...process.env, ...environment },
+      encoding: 'utf8',
+      windowsHide: true,
+      detached: process.platform !== 'win32',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    activeStructurizeProcess = child;
+    let settled = false;
+    let stdoutText = '';
+    let stderrText = '';
+    let outputError;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      if (activeStructurizeProcess === child) activeStructurizeProcess = undefined;
+      resolveInvocation({ ...result, stdout: stdoutText, stderr: stderrText });
+    };
+    const consume = (stream, chunk) => {
+      if (outputError) return;
+      if (stream === 'stdout') stdoutText += chunk.toString('utf8');
+      else stderrText += chunk.toString('utf8');
+      if (Buffer.byteLength(stdoutText) + Buffer.byteLength(stderrText) > STRUCTURIZE_OUTPUT_LIMIT) {
+        outputError = new Error(`Structurize ${stream} exceeded the ${STRUCTURIZE_OUTPUT_LIMIT}-byte output limit.`);
+        void terminateStructurizeProcess(child);
+      }
+    };
+    child.stdout.on('data', (chunk) => consume('stdout', chunk));
+    child.stderr.on('data', (chunk) => consume('stderr', chunk));
+    child.once('error', (error) => finish({ error }));
+    child.once('close', (status, signal) => finish({ status, signal, ...(outputError ? { error: outputError } : {}) }));
+    if (cancellationRequested) void terminateStructurizeProcess(child);
+  });
+}
+
+function normalizeStructurizeJsonStructure(files, command) {
+  if (command.targetFormat !== 'json-structure') return { files, warnings: [] };
+  const normalized = {};
+  const warnings = [];
+  for (const [path, encoded] of Object.entries(files)) {
+    let document;
+    try { document = JSON.parse(Buffer.from(encoded, 'base64').toString('utf8')); } catch { defineOwn(normalized, path, encoded); continue; }
+    if (!isRecord(document)) { defineOwn(normalized, path, encoded); continue; }
+    if (document.name === undefined) {
+      let rootName;
+      if (typeof document.$root === 'string' && document.$root.startsWith('#/definitions/')) {
+        const token = document.$root.slice('#/definitions/'.length).split('/')[0];
+        const definition = isRecord(document.definitions) && hasOwn(document.definitions, decodePointerToken(token)) ? document.definitions[decodePointerToken(token)] : undefined;
+        rootName = isRecord(definition) && typeof definition.name === 'string' ? definition.name : decodePointerToken(token);
+      } else if (typeof document.name === 'string') rootName = document.name;
+      else if (Object.prototype.hasOwnProperty.call(document, 'type')) rootName = 'Document';
+      if (typeof rootName !== 'string' || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(rootName)) throw new Error(`Structurize ${command.cliCommand} produced JSON Structure output ${path} without a valid root declaration name.`);
+      document.name = rootName;
+      defineOwn(normalized, path, Buffer.from(JSON.stringify(document, null, 2) + '\n', 'utf8').toString('base64'));
+      warnings.push({ code: 'structurize.root-name.normalized', message: `Structurize ${command.cliCommand} output did not include a document name; ${rootName} was derived from its root declaration.`, lossiness: 'metadata' });
+    } else defineOwn(normalized, path, encoded);
+  }
+  return { files: normalized, warnings };
+}
+
+function structurizeWarnings(command) {
+  const warnings = [{
+    code: 'structurize.lossiness.unreported',
+    message: `Structurize ${command.cliCommand} completed without machine-readable lossiness metadata; review the generated JSON Structure for features the target format cannot represent.`,
+    lossiness: 'unsupported-feature',
+  }];
+  if (command.cliCommand === 'json2s' || command.cliCommand === 'xml2s') warnings.push({
+    code: `structurize.${command.cliCommand}.inference`,
+    message: `${command.cliCommand} infers a schema from sample data; values and constraints not present in the sample are not represented.`,
+    lossiness: 'data-loss',
+  });
+  return warnings;
+}
+
+async function runStructurize(command, sourceName, sourceText, options) {
+  if (command.availability === 'external-service') throw new Error(command.availabilityMessage || `Structurize ${command.cliCommand} requires an external service capability that is not configured.`);
+  if (command.direction === 'export') {
+    const document = JSON.parse(sourceText);
+    if (!isRecord(document)) throw new Error('JSON Structure source must be an object.');
+    assertEffectiveImports(document, `Structurize ${command.cliCommand}`);
+  }
+  const workspace = mkdtempSync(join(tmpdir(), 'json-structure-convert-'));
+  try {
+    if (cancellationRequested) throw conversionCancelledError();
+    const inputName = basename(sourceName) || 'source.schema';
+    const inputPath = join(workspace, inputName);
+    writeFileSync(inputPath, sourceText, 'utf8');
+    const outputRoot = join(workspace, 'output');
+    const outputPath = command.outputKind === 'directory' ? outputRoot : join(outputRoot, command.outputName);
+    mkdirSync(command.outputKind === 'directory' ? outputPath : outputRoot, { recursive: true });
+    const args = [command.cliCommand, inputPath, '--out', outputPath];
+    for (const [name, value] of Object.entries(options)) {
+      const flag = `--${name.replace(/_/g, '-')}`;
+      if (typeof value === 'boolean') {
+        if (value) args.push(flag);
+      } else if (Array.isArray(value)) {
+        for (const item of value) args.push(flag, item);
+      } else if (value !== '') {
+        args.push(flag, String(value));
+      }
+    }
+    const candidates = [];
+    if (process.env.STRUCTURIZE_EXECUTABLE) candidates.push({ executable: process.env.STRUCTURIZE_EXECUTABLE, arguments: [], environment: {} });
+    const bundled = resolveBundledStructurizeInvocation();
+    if (bundled) candidates.push(bundled);
+    for (const executable of process.platform === 'win32' ? ['structurize.exe', 'avrotize.exe'] : ['structurize', 'avrotize']) candidates.push({ executable, arguments: [], environment: {} });
+    let result;
+    for (const candidate of candidates) {
+      if (cancellationRequested) throw conversionCancelledError();
+      result = await invokeStructurizeExecutable(candidate.executable, [...candidate.arguments, ...args], workspace, candidate.environment);
+      if (!result.error || result.error.code !== 'ENOENT') break;
+    }
+    if (cancellationRequested) throw conversionCancelledError();
+    if (result?.error) {
+      if (result.error.code === 'ENOENT') throw new Error(`Structurize runtime is unavailable for ${command.cliCommand}. Install the packaged Structurize executable or set STRUCTURIZE_EXECUTABLE to its path.`);
+      throw result.error;
+    }
+    if (!result || result.status !== 0) {
+      const detail = result?.stderr?.trim() || result?.stdout?.trim() || `exit code ${String(result?.status)}`;
+      throw new Error(`Structurize ${command.cliCommand} failed: ${detail}`);
+    }
+    let files = command.outputKind === 'directory'
+      ? readGeneratedFiles(outputPath)
+      : existsSync(outputPath) ? { [command.outputName]: readFileSync(outputPath).toString('base64') } : {};
+    if (Object.keys(files).length === 0) throw new Error(`Structurize ${command.cliCommand} produced no output files.`);
+    const normalized = normalizeStructurizeJsonStructure(files, command);
+    files = normalized.files;
+    const warnings = [...structurizeWarnings(command), ...normalized.warnings];
+    return { files, warnings, lossiness: aggregateLossiness(warnings) };
+  } finally {
+    if (activeStructurizeProcess) await terminateStructurizeProcess(activeStructurizeProcess);
+    if (cancellationInProgress) await cancellationInProgress;
+    rmSync(workspace, { recursive: true, force: true });
+  }
+}
+
+async function runConversion(commandId, sourceName, sourceText, options, preview) {
   if (commandId === 'import.jsonschema.to-json-structure') {
     return convertJsonSchemaToJsonStructure(sourceText, sourceName, options, preview);
   }
@@ -1481,46 +1826,78 @@ function runConversion(commandId, sourceName, sourceText, options, preview) {
   if (commandId === 'export.json-structure.to-protobuf') {
     return convertJsonStructureToProto(sourceText, sourceName, options);
   }
+  const command = commandsManifest.commands.find((candidate) => candidate.id === commandId && candidate.cliCommand);
+  if (command) return await runStructurize(command, sourceName, sourceText, options);
   throw new Error(`Unsupported command id: ${commandId}`);
 }
 
 let input = '';
+let requestStarted = false;
+let activeRequest;
 stdin.setEncoding('utf8');
 stdin.on('data', (chunk) => {
   input += chunk;
+  const lines = input.split(/\r?\n/);
+  input = lines.pop() || '';
+  for (const line of lines) processInputLine(line);
 });
 stdin.on('end', () => {
-  const lines = input.split(/\r?\n/).filter((line) => line.trim().length > 0);
-  for (const line of lines) {
-    let request;
-    try {
-      request = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    if (!request || request.type !== 'request') continue;
-    const operationId = typeof request.operationId === 'string' ? request.operationId : 'unknown';
-    try {
-      emit({ type: 'progress', operationId, phase: 'read', completed: 1, total: 3, message: 'Parsing source document.' });
-      const source = Buffer.from(String(request.sourceBase64 || ''), 'base64').toString('utf8');
-      emit({ type: 'progress', operationId, phase: 'convert', completed: 2, total: 3, message: 'Running conversion workflow.' });
-      const result = runConversion(String(request.commandId || ''), String(request.sourceName || 'source.json'), source, request.options && typeof request.options === 'object' ? request.options : {}, Boolean(request.preview));
-      emit({ type: 'progress', operationId, phase: 'finalize', completed: 3, total: 3, message: 'Packaging output files.' });
-      emit({
-        type: 'result',
-        operationId,
-        lossiness: result.lossiness,
-        warnings: result.warnings,
-        files: Object.entries(result.files).map(([path, contentBase64]) => ({ path, contentBase64 })),
-      });
-    } catch (error) {
-      emit({
-        type: 'error',
-        operationId,
-        code: 'conversion.failed',
-        message: error instanceof Error ? error.message : String(error),
-      });
-      process.exitCode = 1;
-    }
-  }
+  if (input.trim()) processInputLine(input);
 });
+
+function processInputLine(line) {
+  let message;
+  try {
+    message = JSON.parse(line);
+  } catch {
+    return;
+  }
+  if (!message || typeof message !== 'object') return;
+  if (message.type === 'cancel') {
+    void cancelActiveStructurize(typeof message.operationId === 'string' ? message.operationId : undefined);
+    return;
+  }
+  if (message.type !== 'request' || requestStarted) return;
+  requestStarted = true;
+  activeOperationId = typeof message.operationId === 'string' ? message.operationId : 'unknown';
+  activeRequest = handleRequest(message).finally(() => {
+    activeRequest = undefined;
+    activeOperationId = undefined;
+    stdin.destroy();
+  });
+}
+
+async function handleRequest(request) {
+  const operationId = activeOperationId;
+  try {
+    emit({ type: 'progress', operationId, phase: 'read', completed: 1, total: 3, message: 'Parsing source document.' });
+    const source = Buffer.from(String(request.sourceBase64 || ''), 'base64').toString('utf8');
+    emit({ type: 'progress', operationId, phase: 'convert', completed: 2, total: 3, message: 'Running conversion workflow.' });
+    const result = await runConversion(String(request.commandId || ''), String(request.sourceName || 'source.json'), source, request.options && typeof request.options === 'object' ? request.options : {}, Boolean(request.preview));
+    if (cancellationRequested) throw conversionCancelledError();
+    emit({ type: 'progress', operationId, phase: 'finalize', completed: 3, total: 3, message: 'Packaging output files.' });
+    emit({
+      type: 'result',
+      operationId,
+      lossiness: result.lossiness,
+      warnings: result.warnings,
+      files: Object.entries(result.files).map(([path, contentBase64]) => ({ path, contentBase64 })),
+    });
+  } catch (error) {
+    emit({
+      type: 'error',
+      operationId,
+      code: cancellationRequested || error?.name === 'AbortError' ? 'conversion.cancelled' : 'conversion.failed',
+      message: error instanceof Error ? error.message : String(error),
+    });
+    process.exitCode = 1;
+  }
+}
+
+const handleTerminationSignal = () => {
+  void cancelActiveStructurize().finally(() => {
+    if (!activeRequest) stdin.destroy();
+  });
+};
+process.once('SIGTERM', handleTerminationSignal);
+process.once('SIGINT', handleTerminationSignal);

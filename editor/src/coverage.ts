@@ -44,3 +44,37 @@ export function coverageErrors(features: readonly CoverageFeature[], minimumCore
   if (features.filter((feature) => feature.spec === 'Core').length < minimumCore) errors.push(`at least ${minimumCore} owned Core feature records are required`);
   return errors;
 }
+
+export type CorpusExpectation = 'pass' | 'diagnostic';
+export interface CorpusObservation {
+  readonly id: string;
+  readonly expected: CorpusExpectation;
+  readonly observed: CorpusExpectation;
+}
+export interface CorpusMatrixSummary {
+  readonly total: number;
+  readonly pass: number;
+  readonly expectedDiagnostic: number;
+  readonly fail: number;
+  readonly mismatches: readonly string[];
+}
+
+/** Summarizes a corpus sweep without conflating expected external diagnostics with parser failures. */
+export function summarizeCorpusMatrix(observations: readonly CorpusObservation[]): CorpusMatrixSummary {
+  let pass = 0;
+  let expectedDiagnostic = 0;
+  const mismatches: string[] = [];
+  for (const observation of observations) {
+    if (observation.expected === observation.observed) {
+      if (observation.observed === 'pass') pass++;
+      else expectedDiagnostic++;
+    } else mismatches.push(observation.id);
+  }
+  return {
+    total: observations.length,
+    pass,
+    expectedDiagnostic,
+    fail: mismatches.length,
+    mismatches
+  };
+}

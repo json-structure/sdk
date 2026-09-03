@@ -29,13 +29,20 @@ export interface ServiceRequestMessage {
     readonly requestId: string;
     readonly request?: unknown;
 }
-export type WebviewMessage = TextEditMessage | ReadResourceMessage | ServiceRequestMessage;
+export interface RendererReadyMessage {
+    readonly type: 'rendererReady';
+    readonly protocolVersion: typeof customEditorProtocolVersion;
+    readonly requestId: string;
+    readonly phase: 'mounted' | 'confirmed';
+}
+export type WebviewMessage = TextEditMessage | ReadResourceMessage | ServiceRequestMessage | RendererReadyMessage;
 
 export function isWebviewMessage(value: unknown): value is WebviewMessage {
     if (!value || typeof value !== 'object') return false;
     if (!isSerializedMessageWithinBudget(value)) return false;
     const message = value as Record<string, unknown>;
     if (message.protocolVersion !== customEditorProtocolVersion) return false;
+    if (message.type === 'rendererReady') return isRequestId(message.requestId) && (message.phase === 'mounted' || message.phase === 'confirmed');
     if (message.type === 'readResource') return typeof message.requestId === 'string' && message.requestId.trim().length > 0 && message.requestId.length <= 256 && typeof message.uri === 'string' && message.uri.trim().length > 0 && message.uri.length <= 16_384;
     if (message.type === 'libraryRequest') return isRequestId(message.requestId) && isLibraryRequest(message.request);
     if (['listConversionCommands', 'selectConversionSource', 'convert', 'cancelConversion', 'openGeneratedOutput', 'listLibraryEntries', 'readLibraryDocument'].includes(String(message.type))) return isRequestId(message.requestId);

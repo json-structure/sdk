@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { NodeId } from '../src/contracts.js';
+import { nodeId } from '../src/model.js';
 import { GraphNavigationController, semanticZoomForScale } from '../src/ui/graph-navigation.js';
 
 describe('graph navigation controller', () => {
@@ -36,6 +37,14 @@ describe('graph navigation controller', () => {
     expect(navigation.screenToWorld(pointer)).toEqual(world);
   });
 
+  it('restores an exact cached camera without changing semantic scale', () => {
+    const navigation = new GraphNavigationController({ minZoom: 0.1, maxZoom: 4 });
+    const camera = { x: -173.25, y: 88.5, zoom: 1.37 };
+    expect(navigation.setCamera(camera).camera).toEqual(camera);
+    navigation.pan({ x: 10, y: 5 });
+    expect(navigation.setCamera(camera).camera).toEqual(camera);
+  });
+
   it('maintains selection continuity and browser-like navigation history', () => {
     const navigation = new GraphNavigationController();
     const first = { kind: 'type' as const, nodeId: '/a' as NodeId, pointer: '/a' };
@@ -67,5 +76,17 @@ describe('graph navigation controller', () => {
     expect(data.nodes).toHaveLength(1);
     navigation.navigateMinimap({ x: 500, y: 250 }, { x: 0, y: 0, width: 1000, height: 500 });
     expect(navigation.screenToWorld({ x: 100, y: 50 })).toEqual({ x: 500, y: 250 });
+  });
+  it('publishes typed camera and selection changes and keeps edge identities during reconciliation', () => {
+    const navigation = new GraphNavigationController();
+    const events: string[] = [];
+    const unsubscribe = navigation.on((event) => events.push(`${event.type}:${event.state.selection?.nodeId ?? 'none'}`));
+    const relation = { kind: 'relation' as const, nodeId: nodeId('edge-1'), pointer: '/definitions/A/relations/r' };
+    navigation.navigate(relation);
+    expect(navigation.reconcileSelection([], [{ id: 'edge-1' }]).selection).toEqual(relation);
+    navigation.navigateMinimap({ x: 20, y: 20 }, { x: 0, y: 0, width: 100, height: 100 });
+    expect(events).toContain('selection-changed:edge-1');
+    expect(events.some((event) => event.startsWith('camera-changed:'))).toBe(true);
+    unsubscribe();
   });
 });

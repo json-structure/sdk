@@ -1,4 +1,4 @@
-import type { Diagnostic, DocumentSnapshot, RecoveryState } from './contracts.js';
+import type { Diagnostic, DocumentSnapshot, RecoveryState, TextEdit } from './contracts.js';
 import type { NormalizedDocument } from './model.js';
 import {
   coreScalarValueValid,
@@ -13,6 +13,16 @@ import { resolveDocumentReferences, type ExternalDocumentInput } from './resolve
 import { ResolvedSchemaContext, type ResolvedSchemaDocument, type ResolvedSchemaLocation } from './phase4/resolved-schema.js';
 import { resolveEffectiveMembers } from './phase4/effective-members.js';
 
+const MAX_SESSION_HISTORY_ENTRIES = 128;
+
+/** A reversible text transition owned by a document session. */
+export interface SessionHistoryEntry {
+  readonly beforeText: string;
+  readonly afterText: string;
+  readonly beforeVersion: number;
+  readonly afterVersion: number;
+}
+
 /**
  * API for document session.
  */
@@ -21,8 +31,12 @@ export class DocumentSession {
   private lastValid?: { model: NormalizedDocument; value: unknown };
   private current: DocumentSnapshot;
   private parsedValue?: unknown;
+  private history: SessionHistoryEntry[] = [];
+  private historyIndex = 0;
+  private savedBytes: string;
+
   private externalDocuments: readonly ExternalDocumentInput[] = [];
-  constructor(uri: string, text: string, documentVersion = 1) { this.documentUri = uri; this.current = this.update(text, documentVersion); }
+  constructor(uri: string, text: string, documentVersion = 1) { this.documentUri = uri; this.savedBytes = text; this.current = this.update(text, documentVersion); }
   get uri(): string { return this.documentUri; }
   setUri(uri: string): DocumentSnapshot {
     if (uri === this.documentUri) return this.current;
@@ -64,6 +78,87 @@ export class DocumentSession {
     return this.update(this.current.text, this.current.documentVersion);
   }
   snapshot(): DocumentSnapshot { return this.current; }
+  /** Whether the current text differs byte-for-byte from the saved text. */
+  get dirty(): boolean { return this.current.text !== this.savedBytes; }
+  /** Whether a local design/source transition can be undone. */
+  get canUndo(): boolean { return this.historyIndex > 0; }
+  /** Whether an undone local transition can be redone. */
+  get canRedo(): boolean { return this.historyIndex < this.history.length; }
+  /** The saved bytes used by dirty tracking. */
+  get savedText(): string { return this.savedBytes; }
+  /** Clears local undo history when a host replaces the open document. */
+  clearHistory(markCurrentSaved = false): DocumentSnapshot {
+    this.history = [];
+    this.historyIndex = 0;
+    if (markCurrentSaved) this.savedBytes = this.current.text;
+    return this.current;
+  }
+  /** Marks the supplied bytes (or current text) as clean without changing the document. */
+  markSaved(text = this.current.text): DocumentSnapshot { if (text === this.current.text) this.savedBytes = text; return this.current; }
+  /** Alias used by source-editor hosts when Monaco text equals saved bytes. */
+  markClean(text = this.current.text): DocumentSnapshot { return this.markSaved(text); }
+  /**
+   * Commits a complete text transition and records it for session undo/redo.
+   * Host adapters can use this after an optimistic apply has been confirmed.
+   */
+  commitText(text: string, documentVersion = this.current.documentVersion + 1): DocumentSnapshot {
+    if (text === this.current.text) return this.current;
+    const entry: SessionHistoryEntry = { beforeText: this.current.text, afterText: text, beforeVersion: this.current.documentVersion, afterVersion: documentVersion };
+    this.history = this.history.slice(0, this.historyIndex);
+    this.history.push(entry);
+    this.historyIndex += 1;
+    if (this.history.length > MAX_SESSION_HISTORY_ENTRIES) {
+      this.history.shift();
+      this.historyIndex -= 1;
+    }
+    return this.update(text, documentVersion);
+  }
+  /** Applies offset-based edits and records one reversible design transition. */
+  applyTextEdits(edits: readonly TextEdit[], documentVersion = this.current.documentVersion + 1): DocumentSnapshot {
+    const source = this.current.text;
+    const positioned = edits.map((edit, index) => {
+      const start = edit.range.startOffset;
+      const end = edit.range.endOffset;
+      if (start === undefined || end === undefined) throw new Error('Edit source range is unavailable.');
+      if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end < start || end > source.length) throw new Error('Edit source range is invalid.');
+      if (typeof edit.newText !== 'string') throw new Error('Edit replacement text is invalid.');
+      return { edit, index, start, end };
+    }).sort((left, right) => left.start - right.start || left.end - right.end || left.index - right.index);
+    const normalized: typeof positioned = [];
+    for (const current of positioned) {
+      const previous = normalized.at(-1);
+      if (previous) {
+        const overlaps = previous.start < current.end && current.start < previous.end;
+        if (overlaps) throw new Error('Overlapping text edits are not supported.');
+        if (previous.start === previous.end && current.start === current.end && previous.start === current.start) {
+          normalized[normalized.length - 1] = {
+            ...previous,
+            edit: { ...previous.edit, newText: previous.edit.newText + current.edit.newText }
+          };
+          continue;
+        }
+      }
+      normalized.push(current);
+    }
+    const text = [...normalized]
+      .sort((left, right) => right.start - left.start || right.end - left.end || right.index - left.index)
+      .reduce((value, current) => value.slice(0, current.start) + current.edit.newText + value.slice(current.end), source);
+    return this.commitText(text, documentVersion);
+  }
+  /** Reverts the most recent local transition, if one exists. */
+  undo(): DocumentSnapshot {
+    if (!this.canUndo) return this.current;
+    const entry = this.history[this.historyIndex - 1]!;
+    this.historyIndex -= 1;
+    return this.update(entry.beforeText, this.current.documentVersion + 1);
+  }
+  /** Reapplies the next local transition, if one exists. */
+  redo(): DocumentSnapshot {
+    if (!this.canRedo) return this.current;
+    const entry = this.history[this.historyIndex]!;
+    this.historyIndex += 1;
+    return this.update(entry.afterText, this.current.documentVersion + 1);
+  }
   get value(): unknown { return this.parsedValue ?? this.lastValid?.value; }
   get model(): NormalizedDocument | undefined { return this.current.model; }
   get resolvedSchemaDocuments(): readonly ResolvedSchemaDocument[] {

@@ -16,8 +16,26 @@ interface MonacoWindow extends Window {
   getWorker: (_moduleId: string, label: string) => label === 'json' ? new JsonWorker() : new EditorWorker()
 };
 
-export function createJsonModel(text: string): monaco.editor.ITextModel {
-  return monaco.editor.createModel(text, 'json');
+/** Thresholds used to keep Monaco responsive for large structured documents. */
+export const MONACO_PERFORMANCE_LIMITS = Object.freeze({
+  largeDocumentBytes: 256_000,
+  largeDocumentLines: 4_000,
+  maxTokenizationLineLength: 20_000
+});
+
+export function createJsonModel(text: string, uri?: string): monaco.editor.ITextModel {
+  return monaco.editor.createModel(text, 'json', uri === undefined ? undefined : monaco.Uri.parse(uri));
+}
+
+/** Updates a model only when its source has changed, avoiding redundant tokenization. */
+export function updateJsonModel(model: monaco.editor.ITextModel, text: string): void {
+  if (model.isDisposed() || model.getValueLength() === text.length && model.getValue() === text) return;
+  model.setValue(text);
+}
+
+/** Releases a JSON model and its worker-side tokenization state. */
+export function disposeJsonModel(model: monaco.editor.ITextModel): void {
+  if (!model.isDisposed()) model.dispose();
 }
 
 export type JsonEditorTheme = 'dark' | 'light' | 'contrast';
@@ -28,14 +46,19 @@ export function setJsonEditorTheme(theme: JsonEditorTheme): void {
 
 export function createJsonEditor(element: HTMLElement, model: monaco.editor.ITextModel, theme: JsonEditorTheme = 'dark'): monaco.editor.IStandaloneCodeEditor {
   setJsonEditorTheme(theme);
+  const largeDocument = model.getValueLength() >= MONACO_PERFORMANCE_LIMITS.largeDocumentBytes ||
+    model.getLineCount() >= MONACO_PERFORMANCE_LIMITS.largeDocumentLines;
   const editor = monaco.editor.create(element, {
     model,
     automaticLayout: true,
-    minimap: { enabled: true },
+    largeFileOptimizations: true,
+    maxTokenizationLineLength: MONACO_PERFORMANCE_LIMITS.maxTokenizationLineLength,
+    minimap: { enabled: !largeDocument },
     wordWrap: 'off',
     fontFamily: 'Consolas, "Cascadia Code", monospace',
     fontSize: 13,
     scrollBeyondLastLine: false,
+    smoothScrolling: false,
     tabSize: 2,
     insertSpaces: true
   });

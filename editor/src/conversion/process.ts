@@ -1,4 +1,4 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { extname, resolve } from 'node:path';
@@ -127,6 +127,40 @@ function decodeFiles(files: readonly WorkerResultFile[]): Readonly<Record<string
   return decoded;
 }
 
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolveDelay) => {
+    const timer = setTimeout(resolveDelay, milliseconds);
+    timer.unref();
+  });
+}
+
+async function terminateProcessTree(child: ChildProcessWithoutNullStreams): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null || child.pid === undefined) return;
+  const pid = child.pid;
+  if (process.platform === 'win32') {
+    await new Promise<void>((resolveTermination) => {
+      execFile('taskkill.exe', ['/PID', String(pid), '/T', '/F'], { windowsHide: true }, () => resolveTermination());
+    });
+  } else {
+    try {
+      process.kill(-pid, 'SIGTERM');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+    }
+    await Promise.race([once(child, 'exit').then(() => undefined), delay(1_000)]);
+    if (child.exitCode === null && child.signalCode === null) {
+      try {
+        process.kill(-pid, 'SIGKILL');
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+      }
+    }
+  }
+  if (child.exitCode === null && child.signalCode === null) {
+    await Promise.race([once(child, 'exit').then(() => undefined), delay(1_000)]);
+  }
+}
+
 function collectLines(
   process: ChildProcessWithoutNullStreams,
   limits: ConversionWorkerLimits,
@@ -184,10 +218,35 @@ export class NodeProcessExecutableLauncher implements PackagedExecutableLauncher
       cwd: this.cwd,
       stdio: 'pipe',
       windowsHide: true,
+      detached: process.platform !== 'win32',
       env: { ...process.env, ...(process.versions.electron ? { ELECTRON_RUN_AS_NODE: '1' } : {}) },
     });
+    const exit = once(child, 'exit') as Promise<[number | null, NodeJS.Signals | null]>;
+    let workerError: Error | undefined;
+    let termination: Promise<void> | undefined;
+    const requestTermination = (error: Error): Promise<void> => {
+      if (!workerError) workerError = error;
+      if (termination) return termination;
+      termination = (async () => {
+        if (child.exitCode !== null || child.signalCode !== null) return;
+        const cancellation = JSON.stringify({
+          type: 'cancel',
+          operationId: invocation.request.operationId,
+        }) + '\n';
+        if (child.stdin.writable && !child.stdin.destroyed) {
+          await new Promise<void>((resolveWrite) => {
+            child.stdin.write(cancellation, () => resolveWrite());
+          }).catch(() => undefined);
+        }
+        const exited = await Promise.race([exit.then(() => true), delay(1_000).then(() => false)]);
+        if (!exited) await terminateProcessTree(child);
+      })();
+      return termination;
+    };
     const abort = (): void => {
-      child.kill('SIGTERM');
+      const error = new Error('Conversion cancelled.');
+      error.name = 'AbortError';
+      void requestTermination(error);
     };
     invocation.signal.addEventListener('abort', abort, { once: true });
     try {
@@ -202,10 +261,8 @@ export class NodeProcessExecutableLauncher implements PackagedExecutableLauncher
         preview: invocation.request.preview,
       };
       let resultEvent: WorkerResultEvent | undefined;
-      let workerError: Error | undefined;
       const fail = (error: Error): void => {
-        if (!workerError) workerError = error;
-        child.kill('SIGKILL');
+        void requestTermination(error);
       };
       const detach = collectLines(child, this.limits, (line) => {
         try {
@@ -218,7 +275,7 @@ export class NodeProcessExecutableLauncher implements PackagedExecutableLauncher
             return;
           }
           if (event.type === 'error') {
-            workerError = new Error(`${event.code}: ${event.message}`);
+            if (!workerError) workerError = new Error(`${event.code}: ${event.message}`);
             return;
           }
           resultEvent = event;
@@ -227,11 +284,14 @@ export class NodeProcessExecutableLauncher implements PackagedExecutableLauncher
         }
       }, fail);
       child.stdin.on('error', fail);
-      child.stdin.end(JSON.stringify(requestPayload) + '\n');
-      const timeout = setTimeout(() => fail(new Error(`Converter exceeded the ${this.limits.maxExecutionMs}ms execution quota.`)), this.limits.maxExecutionMs);
+      child.stdin.write(JSON.stringify(requestPayload) + '\n');
+      const timeout = setTimeout(() => {
+        void requestTermination(new Error(`Converter exceeded the ${this.limits.maxExecutionMs}ms execution quota.`));
+      }, this.limits.maxExecutionMs);
       timeout.unref();
-      const [code] = await once(child, 'exit') as [number | null, NodeJS.Signals | null];
+      const [code] = await exit;
       clearTimeout(timeout);
+      if (termination) await termination;
       detach();
       if (invocation.signal.aborted) {
         const error = new Error('Conversion cancelled.');

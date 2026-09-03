@@ -346,4 +346,35 @@ describe('Core declaration diagnostics', () => {
     }
     expect(parsed.diagnostics.some((diagnostic) => diagnostic.location?.pointer === '/definitions/ValidDerived/$extends')).toBe(false);
   });
-});
+
+  it('validates replacement definitions as declarations, namespaces, and exclusive imports', () => {
+    const header = {
+      $schema: 'https://json-structure.org/meta/core/v0/#',
+      $id: 'https://example.org/definitions-command',
+      name: 'DefinitionsCommand',
+      definitions: {}
+    };
+    const session = new DocumentSession('memory://definitions-command', JSON.stringify(header));
+    const context = { session, documentVersion: session.snapshot().documentVersion };
+    expect(new SetCoreMemberCommand('', 'definitions', { Broken: 7 }).canExecute(context)).toBe(false);
+    expect(new SetCoreMemberCommand('', 'definitions', { Namespace: { Broken: 7 } }).canExecute(context)).toBe(false);
+    expect(new SetCoreMemberCommand('', 'definitions', { AnnotationOnly: { description: 'not a declaration' } }).canExecute(context)).toBe(false);
+    expect(new SetCoreMemberCommand('', 'definitions', { Annotated: { type: 'string', description: 'a declaration annotation' } }).canExecute(context)).toBe(true);
+    expect(new SetCoreMemberCommand('', 'definitions', { Namespace: { Inner: { type: 'string' } } }).canExecute(context)).toBe(true);
+    expect(new SetCoreMemberCommand('', 'definitions', { Imported: { $import: 'https://example.org/root.struct.json' } }).canExecute(context)).toBe(false);
+
+    const extended = new DocumentSession('memory://definitions-command-extended', JSON.stringify({
+      ...header,
+      $schema: 'https://json-structure.org/meta/extended/v0/#',
+      $uses: ['JSONStructureConditionalComposition'],
+      definitions: {}
+    }));
+    const extendedContext = { session: extended, documentVersion: extended.snapshot().documentVersion };
+    expect(new SetCoreMemberCommand('', 'definitions', {
+      Imported: { $import: 'https://example.org/root.struct.json' },
+      Rules: { Rule: { allOf: [{ type: 'string' }] } }
+    }).canExecute(extendedContext)).toBe(true);
+    expect(new SetCoreMemberCommand('', 'definitions', {
+      Namespace: { $import: 'https://example.org/root.struct.json', $importdefs: 'https://example.org/defs.struct.json' }
+    }).canExecute(extendedContext)).toBe(false);
+  });});

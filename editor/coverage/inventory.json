@@ -226,5 +226,3721 @@
     {"id":"question.relations-scope","anchors":["relations/draft-vasters-json-structure-relations.md#identity-keyword","relations/draft-vasters-json-structure-relations.md#scope-keyword"],"affectedIds":["relations.identity-form","relations.scope-array","relations.scope-root-collection","relations.resolution-ambiguous"],"alternatives":["preserve authored scope order and return first match","search all and reject duplicates","define an explicit priority rule"],"criterion":"Lookup remains deterministic and never silently selects between duplicate identities."},
     {"id":"question.units-engines","anchors":["units/draft-vasters-json-structure-units.md#ucum-unit-keyword","units/draft-vasters-json-structure-units.md#currency-keyword"],"affectedIds":["units.ucum-valid","units.currency-placement"],"alternatives":["bundle full UCUM and language registries","perform bounded syntax checks","leave semantic validation external"],"criterion":"Claim only validation that is reproducible offline and versioned with its registry data."},
     {"id":"question.semantic-accumulation","anchors":["semantic-annotations/draft-vasters-json-structure-sem-ann.md#statistic","semantic-annotations/draft-vasters-json-structure-sem-ann.md#phenomenon-time-relation"],"affectedIds":["observation.statistic-string","temporal.relation-enum"],"alternatives":["treat accumulation as derivation-independent","require a compatible statistic","correct the measured example"],"criterion":"The same observation can be classified from authored annotations without inference from prose examples."}
-  ]
+  ],
+  "corpus": {
+    "version": 1,
+    "roots": [
+      {
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples",
+        "pattern": "**/*.struct.json"
+      },
+      {
+        "source": "sdk-assets",
+        "path": "..\\test-assets",
+        "pattern": "**/*.struct.json"
+      },
+      {
+        "source": "avrotize",
+        "path": "..\\..\\avrotize\\test\\struct",
+        "pattern": "**/*.struct.json"
+      }
+    ],
+    "counts": {
+      "real-corpus": 81,
+      "sdk-assets": 203,
+      "avrotize": 14,
+      "total": 298,
+      "expected": {
+        "pass": 127,
+        "diagnostic": 171
+      }
+    },
+    "required": [
+      "corpus.real-corpus.samples.core.01-basic-person.schema",
+      "corpus.real-corpus.samples.core.03-financial-types.schema",
+      "corpus.real-corpus.samples.core.06-tuples.schema",
+      "corpus.real-corpus.samples.core.08-namespaces.schema",
+      "corpus.real-corpus.samples.core.10-discriminated-unions.schema",
+      "corpus.real-corpus.samples.core.11-sets-and-maps.schema",
+      "corpus.real-corpus.samples.core.12-multiple-inheritance.schema",
+      "corpus.real-corpus.samples.import.02-namespace-import.schema",
+      "corpus.real-corpus.samples.relations.01-identity-single.schema",
+      "corpus.real-corpus.samples.relations.02-identity-composite.schema",
+      "corpus.real-corpus.samples.relations.03-identity-tuple.schema",
+      "corpus.real-corpus.samples.relations.04-relation-single.schema",
+      "corpus.real-corpus.samples.relations.05-relation-multiple.schema",
+      "corpus.real-corpus.samples.relations.06-relation-qualified.schema",
+      "corpus.real-corpus.samples.relations.07-scope-multiple.schema",
+      "corpus.real-corpus.samples.relations.08-scope-map.schema",
+      "corpus.real-corpus.samples.relations.09-scope-set.schema",
+      "corpus.real-corpus.samples.relations.10-scope-root.schema",
+      "corpus.real-corpus.samples.relations.11-relation-self.schema",
+      "corpus.real-corpus.samples.relations.12-relation-external.schema",
+      "corpus.real-corpus.samples.relations.real-world.01-library-catalog.schema",
+      "corpus.real-corpus.samples.relations.real-world.02-order-management.schema",
+      "corpus.real-corpus.samples.semantic-annotations.01-observation-basics.schema",
+      "corpus.real-corpus.samples.semantic-annotations.15-station-network-telemetry.schema",
+      "corpus.real-corpus.samples.semantic-annotations.real-world.06-solar-xray-flare.schema",
+      "corpus.real-corpus.samples.semantic-annotations.real-world.24-fogra-characterization-patch.schema",
+      "corpus.sdk-assets.schemas.adversarial.deeply-nested-allof",
+      "corpus.sdk-assets.schemas.adversarial.oneof-all-match",
+      "corpus.sdk-assets.schemas.validation.object-dependentrequired-with-uses"
+    ],
+    "schemas": [
+      {
+        "id": "corpus.real-corpus.samples.core.01-basic-person.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\core\\01-basic-person\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/properties/isActive/default"
+        ]
+      },
+      {
+        "id": "corpus.real-corpus.samples.core.02-address.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\core\\02-address\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.core.03-financial-types.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\core\\03-financial-types\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.core.04-datetime-examples.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\core\\04-datetime-examples\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/definitions/RecurrenceRule/properties/interval/default"
+        ]
+      },
+      {
+        "id": "corpus.real-corpus.samples.core.05-collections.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\core\\05-collections\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.core.06-tuples.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\core\\06-tuples\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.core.07-unions.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\core\\07-unions\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.core.08-namespaces.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\core\\08-namespaces\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.core.09-extensions.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\core\\09-extensions\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.core.10-discriminated-unions.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\core\\10-discriminated-unions\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.core.11-sets-and-maps.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\core\\11-sets-and-maps\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/definitions/Library/properties/openingHours/values/properties/isClosed/default",
+          "json.keyword-invalid@/definitions/Library/properties/specialCollections/values/properties/accessLevel/default"
+        ]
+      },
+      {
+        "id": "corpus.real-corpus.samples.core.12-multiple-inheritance.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\core\\12-multiple-inheritance\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/definitions/FlyingCar/$extends/0",
+          "core.declaration-invalid@/definitions/FlyingCar/$extends/1"
+        ]
+      },
+      {
+        "id": "corpus.real-corpus.samples.import.01-root-import.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\import\\01-root-import\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "import-drift",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/$import"
+        ],
+        "externalExpected": "import-resolution"
+      },
+      {
+        "id": "corpus.real-corpus.samples.import.02-namespace-import.financial-library.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\import\\02-namespace-import\\financial-library\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.import.02-namespace-import.person-library.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\import\\02-namespace-import\\person-library\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.import.02-namespace-import.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\import\\02-namespace-import\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "import-drift",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/definitions/People/$import",
+          "json.keyword-invalid@/definitions/Finance/$import"
+        ],
+        "externalExpected": "import-resolution"
+      },
+      {
+        "id": "corpus.real-corpus.samples.import.03-importdefs-only.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\import\\03-importdefs-only\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "import-drift",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/definitions/PersonLib/$importdefs",
+          "json.keyword-invalid@/definitions/FinanceLib/$importdefs"
+        ],
+        "externalExpected": "import-resolution"
+      },
+      {
+        "id": "corpus.real-corpus.samples.import.04-shadowing.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\import\\04-shadowing\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "import-drift",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/definitions/CustomerTypes/$import",
+          "json.keyword-invalid@/definitions/FinanceTypes/$importdefs"
+        ],
+        "externalExpected": "import-resolution"
+      },
+      {
+        "id": "corpus.real-corpus.samples.relations.01-identity-single.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\relations\\01-identity-single\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.relations.02-identity-composite.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\relations\\02-identity-composite\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.relations.03-identity-tuple.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\relations\\03-identity-tuple\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.relations.04-relation-single.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\relations\\04-relation-single\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.relations.05-relation-multiple.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\relations\\05-relation-multiple\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.relations.06-relation-qualified.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\relations\\06-relation-qualified\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.relations.07-scope-multiple.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\relations\\07-scope-multiple\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.relations.08-scope-map.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\relations\\08-scope-map\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.relations.09-scope-set.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\relations\\09-scope-set\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.relations.10-scope-root.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\relations\\10-scope-root\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.relations.11-relation-self.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\relations\\11-relation-self\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.relations.12-relation-external.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\relations\\12-relation-external\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.relations.real-world.01-library-catalog.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\relations\\real-world\\01-library-catalog\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.relations.real-world.02-order-management.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\relations\\real-world\\02-order-management\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.01-observation-basics.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\01-observation-basics\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.02-concepts-vocabulary.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\02-concepts-vocabulary\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.03-sampling-features.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\03-sampling-features\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.04-temporal-roles.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\04-temporal-roles\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.05-flattened-periods.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\05-flattened-periods\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.06-operational-times.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\06-operational-times\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.07-forecasts.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\07-forecasts\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.08-status-and-quality.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\08-status-and-quality\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.09-derivation-and-statistic.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\09-derivation-and-statistic\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.10-phenomenon-time-relation.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\10-phenomenon-time-relation\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.11-cadence.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\11-cadence\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.12-temporal-reference-systems.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\12-temporal-reference-systems\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.13-coordinate-reference-systems.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\13-coordinate-reference-systems\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.14-linear-reference-systems.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\14-linear-reference-systems\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.15-station-network-telemetry.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\15-station-network-telemetry\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.real-world.01-ais-vessel-position.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\real-world\\01-ais-vessel-position\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/properties/Timestamp/semanticRole",
+          "json.keyword-invalid@/properties/AssignedMode/semanticRole",
+          "json.keyword-invalid@/properties/ClassBUnit/semanticRole"
+        ]
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.real-world.02-marine-buoy-observation.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\real-world\\02-marine-buoy-observation\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.real-world.03-aerodrome-metar.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\real-world\\03-aerodrome-metar\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.real-world.04-lightning-stroke.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\real-world\\04-lightning-stroke\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.real-world.05-earthquake-report.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\real-world\\05-earthquake-report\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.real-world.06-solar-xray-flare.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\real-world\\06-solar-xray-flare\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.real-world.07-grid-carbon-intensity.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\real-world\\07-grid-carbon-intensity\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.real-world.08-public-power-generation.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\real-world\\08-public-power-generation\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.real-world.09-orbit-mean-elements.schema-unannotated",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\real-world\\09-orbit-mean-elements\\schema-unannotated.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.real-world.09-orbit-mean-elements.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\real-world\\09-orbit-mean-elements\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/properties/CLASSIFICATION_TYPE/semanticRole"
+        ]
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.real-world.10-transit-vehicle-position.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\real-world\\10-transit-vehicle-position\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/properties/monitored/semanticRole",
+          "json.keyword-invalid@/properties/origin_aimed_departure_time/semanticRole",
+          "json.keyword-invalid@/properties/destination_aimed_arrival_time/semanticRole"
+        ]
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.real-world.11-route-travel-time.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\real-world\\11-route-travel-time\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.real-world.12-bikeshare-station-status.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\real-world\\12-bikeshare-station-status\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/properties/is_installed/semanticRole",
+          "json.keyword-invalid@/properties/is_renting/semanticRole",
+          "json.keyword-invalid@/properties/is_returning/semanticRole"
+        ]
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.real-world.13-weather-alert.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\real-world\\13-weather-alert\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.real-world.14-marine-water-quality.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\real-world\\14-marine-water-quality\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.real-world.15-pollen-forecast.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\real-world\\15-pollen-forecast\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.real-world.16-transit-vehicle-hfp.schema-unannotated",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\real-world\\16-transit-vehicle-hfp\\schema-unannotated.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.real-world.16-transit-vehicle-hfp.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\real-world\\16-transit-vehicle-hfp\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/properties/journey_start/temporalReferenceSystem",
+          "json.keyword-invalid@/properties/journey_start/semanticRole",
+          "json.keyword-invalid@/properties/odo/phenomenonTimeRelation",
+          "json.keyword-invalid@/properties/ttarr/semanticRole",
+          "json.keyword-invalid@/properties/ttdep/semanticRole",
+          "json.keyword-invalid@/properties/drst/altenums"
+        ]
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.real-world.17-usgs-instantaneous-value.schema-unannotated",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\real-world\\17-usgs-instantaneous-value\\schema-unannotated.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.real-world.17-usgs-instantaneous-value.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\real-world\\17-usgs-instantaneous-value\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/properties/exception/semanticRole"
+        ]
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.real-world.18-mode-s-aircraft-report.schema-unannotated",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\real-world\\18-mode-s-aircraft-report\\schema-unannotated.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.real-world.18-mode-s-aircraft-report.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\real-world\\18-mode-s-aircraft-report\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/properties/sq/semanticRole"
+        ]
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.real-world.19-bmrs-generation-mix.schema-unannotated",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\real-world\\19-bmrs-generation-mix\\schema-unannotated.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.real-world.19-bmrs-generation-mix.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\real-world\\19-bmrs-generation-mix\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.real-world.20-goes-magnetometer.schema-unannotated",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\real-world\\20-goes-magnetometer\\schema-unannotated.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.real-world.20-goes-magnetometer.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\real-world\\20-goes-magnetometer\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.real-world.21-gcmt-moment-tensor.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\real-world\\21-gcmt-moment-tensor\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.real-world.22-ccsds-attitude-quaternion.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\real-world\\22-ccsds-attitude-quaternion\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.real-world.23-kitti-sensor-alignment.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\real-world\\23-kitti-sensor-alignment\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.real-world.24-fogra-characterization-patch.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\real-world\\24-fogra-characterization-patch\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.real-world.25-sensor-community-noise.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\real-world\\25-sensor-community-noise\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/properties/observed_at/semanticRole"
+        ]
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.real-world.26-vatsim-pilot-position.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\real-world\\26-vatsim-pilot-position\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/properties/last_updated/semanticRole"
+        ]
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.real-world.27-firms-modis-fire-detection.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\real-world\\27-firms-modis-fire-detection\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/properties/acq_datetime/semanticRole"
+        ]
+      },
+      {
+        "id": "corpus.real-corpus.samples.semantic-annotations.real-world.28-broadcast-audio-frame.schema",
+        "source": "real-corpus",
+        "path": "..\\..\\json-structure\\primer-and-samples\\samples\\semantic-annotations\\real-world\\28-broadcast-audio-frame\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.avro.invalid.abstract-referenced.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\invalid\\abstract-referenced\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name",
+          "core.declaration-invalid@/definitions/Holder/properties/b/type/$ref"
+        ],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.avro.invalid.abstract-root.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\invalid\\abstract-root\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name",
+          "core.declaration-invalid@/$root"
+        ],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.avro.invalid.dangling-ref.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\invalid\\dangling-ref\\schema.struct.json",
+        "expected": "pass",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": [],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.avro.invalid.duplicate-altname.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\invalid\\duplicate-altname\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid",
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name",
+          "json.keyword-invalid@/definitions/Invoice/altnames"
+        ],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.avro.invalid.extends-cycle.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\invalid\\extends-cycle\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name",
+          "core.declaration-invalid@/definitions/A/properties/a",
+          "core.declaration-invalid@/definitions/B/properties/b"
+        ],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.avro.invalid.extends-redefine.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\invalid\\extends-redefine\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name",
+          "core.declaration-invalid@/definitions/Dog/properties/age"
+        ],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.avro.invalid.illegal-altname.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\invalid\\illegal-altname\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/properties/a/altnames"
+        ],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.avro.invalid.no-root-type.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\invalid\\no-root-type\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name"
+        ],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.avro.invalid.open-record.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\invalid\\open-record\\schema.struct.json",
+        "expected": "pass",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": [],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.avro.invalid.unknown-addin.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\invalid\\unknown-addin\\schema.struct.json",
+        "expected": "pass",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": [],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.avro.valid.addins.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\valid\\addins\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name",
+          "core.declaration-invalid@/definitions/Auditable/$extends",
+          "core.declaration-invalid@/definitions/Taggable/$extends"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.avro.valid.additional-properties-schema.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\valid\\additional-properties-schema\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.avro.valid.altnames.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\valid\\altnames\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.identifier-invalid",
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.identifier-invalid@/properties/first-name",
+          "json.keyword-invalid@/altnames",
+          "json.keyword-invalid@/properties/first-name/altnames",
+          "json.keyword-invalid@/properties/status/altenums"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.avro.valid.any.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\valid\\any\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.avro.valid.choice-inline.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\valid\\choice-inline\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.avro.valid.choice-key-collision.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\valid\\choice-key-collision\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.avro.valid.choice-tagged.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\valid\\choice-tagged\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.avro.valid.choice-variants.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\valid\\choice-variants\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.avro.valid.collections-of-types.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\valid\\collections-of-types\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.avro.valid.collections.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\valid\\collections\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.avro.valid.enums.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\valid\\enums\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/properties/priority/default"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.avro.valid.extends-addin-base.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\valid\\extends-addin-base\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.avro.valid.extends-cross-namespace.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\valid\\extends-cross-namespace\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.avro.valid.extends-deep.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\valid\\extends-deep\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.avro.valid.extends-diamond.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\valid\\extends-diamond\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.avro.valid.extends.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\valid\\extends\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.avro.valid.full-constraint-annotations.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\valid\\full-constraint-annotations\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/properties/constrained/minLength",
+          "json.keyword-invalid@/properties/constrained/pattern",
+          "json.keyword-invalid@/properties/bare/minimum",
+          "json.keyword-invalid@/properties/bare/maximum",
+          "json.keyword-invalid@/properties/content/contentEncoding",
+          "json.keyword-invalid@/properties/content/contentCompression",
+          "json.keyword-invalid@/properties/content/contentMediaType",
+          "json.keyword-invalid@/properties/ordering/minimum",
+          "json.keyword-invalid@/properties/ordering/maximum",
+          "json.keyword-invalid@/properties/ordering/minLength",
+          "json.keyword-invalid@/properties/ordering/pattern",
+          "json.keyword-invalid@/properties/ordering/contentEncoding",
+          "json.keyword-invalid@/properties/ordering/contentCompression",
+          "json.keyword-invalid@/properties/ordering/contentMediaType"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.avro.valid.full-constraints-no-doc.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\valid\\full-constraints-no-doc\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/properties/code/pattern",
+          "json.keyword-invalid@/properties/count/minimum"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.avro.valid.full-decimal-constraints.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\valid\\full-decimal-constraints\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/properties/carried/minimum",
+          "json.keyword-invalid@/properties/noPrecision/maximum"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.avro.valid.full-logical-types.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\valid\\full-logical-types\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.avro.valid.full-name-binding-dropped.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\valid\\full-name-binding-dropped\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.identifier-invalid",
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.identifier-invalid@/properties/latitude-deg",
+          "core.identifier-invalid@/properties/longitude-deg",
+          "json.keyword-invalid@/coordinateReferenceSystem",
+          "json.keyword-invalid@/properties/observedAt/temporalReferenceSystem",
+          "json.keyword-invalid@/properties/latitude-deg/unit",
+          "json.keyword-invalid@/properties/latitude-deg/altnames",
+          "json.keyword-invalid@/properties/longitude-deg/unit",
+          "json.keyword-invalid@/properties/longitude-deg/altnames"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.avro.valid.full-reserved-logicals.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\valid\\full-reserved-logicals\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.avro.valid.full-semantic-annotations.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\valid\\full-semantic-annotations\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/concepts",
+          "json.keyword-invalid@/observedProperty",
+          "json.keyword-invalid@/definitions/Quality/concepts",
+          "json.keyword-invalid@/properties/result/semanticRole",
+          "json.keyword-invalid@/properties/result/derivation",
+          "json.keyword-invalid@/properties/result/statistic",
+          "json.keyword-invalid@/properties/result/measurementConditioning",
+          "json.keyword-invalid@/properties/result/phenomenonTimeRelation",
+          "json.keyword-invalid@/properties/result/supportPeriod",
+          "json.keyword-invalid@/properties/result/cadence"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.avro.valid.full-units.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\valid\\full-units\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/properties/distance/symbol",
+          "json.keyword-invalid@/properties/distance/unit",
+          "json.keyword-invalid@/properties/concentration/ucumUnit",
+          "json.keyword-invalid@/properties/price/currency",
+          "json.keyword-invalid@/properties/bunnies/symbols"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.avro.valid.lossless-strings.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\valid\\lossless-strings\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.avro.valid.mutual-recursion.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\valid\\mutual-recursion\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.avro.valid.name-collision.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\valid\\name-collision\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.avro.valid.namespaces.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\valid\\namespaces\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.avro.valid.optional-and-defaults.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\valid\\optional-and-defaults\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/properties/retries/default",
+          "json.keyword-invalid@/properties/enabled/default"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.avro.valid.primitives.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\valid\\primitives\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.avro.valid.recursion.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\valid\\recursion\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.avro.valid.ref-chain.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\valid\\ref-chain\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.avro.valid.required-alternatives.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\valid\\required-alternatives\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.avro.valid.root-array.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\valid\\root-array\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.avro.valid.root-choice.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\valid\\root-choice\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.avro.valid.root-enum.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\valid\\root-enum\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.avro.valid.root-primitive.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\valid\\root-primitive\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.avro.valid.same-name-two-namespaces.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\valid\\same-name-two-namespaces\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.avro.valid.tuple.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\valid\\tuple\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.avro.valid.union-default-placement.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\valid\\union-default-placement\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/properties/value/default"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.avro.valid.union-namespaced-branches.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\valid\\union-namespaced-branches\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.avro.valid.union.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\avro\\valid\\union\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.proto.invalid.abstract-referenced.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\invalid\\abstract-referenced\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name",
+          "core.declaration-invalid@/definitions/Holder/properties/b/type/$ref"
+        ],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.proto.invalid.abstract-root.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\invalid\\abstract-root\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name",
+          "core.declaration-invalid@/$root"
+        ],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.proto.invalid.dangling-ref.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\invalid\\dangling-ref\\schema.struct.json",
+        "expected": "pass",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": [],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.proto.invalid.duplicate-altname.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\invalid\\duplicate-altname\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid",
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name",
+          "json.keyword-invalid@/definitions/Invoice/altnames"
+        ],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.proto.invalid.enum-pin-out-of-range.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\invalid\\enum-pin-out-of-range\\schema.struct.json",
+        "expected": "pass",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": [],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.proto.invalid.enum-symbol-collision.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\invalid\\enum-symbol-collision\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name"
+        ],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.proto.invalid.enum-unspecified-collision.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\invalid\\enum-unspecified-collision\\schema.struct.json",
+        "expected": "pass",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": [],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.proto.invalid.extends-cycle.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\invalid\\extends-cycle\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name",
+          "core.declaration-invalid@/definitions/A/properties/a",
+          "core.declaration-invalid@/definitions/B/properties/b"
+        ],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.proto.invalid.extends-redefine.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\invalid\\extends-redefine\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name",
+          "core.declaration-invalid@/definitions/Dog/properties/age"
+        ],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.proto.invalid.illegal-altname.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\invalid\\illegal-altname\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/properties/a/altnames"
+        ],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.proto.invalid.import-cycle.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\invalid\\import-cycle\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name"
+        ],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.proto.invalid.namespace-case-collision.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\invalid\\namespace-case-collision\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name"
+        ],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.proto.invalid.nothing-to-generate.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\invalid\\nothing-to-generate\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name"
+        ],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.proto.invalid.open-record.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\invalid\\open-record\\schema.struct.json",
+        "expected": "pass",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": [],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.proto.invalid.pin-collision.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\invalid\\pin-collision\\schema.struct.json",
+        "expected": "pass",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": [],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.proto.invalid.pin-conflicts-lock.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\invalid\\pin-conflicts-lock\\schema.struct.json",
+        "expected": "pass",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": [],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.proto.invalid.pin-out-of-range.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\invalid\\pin-out-of-range\\schema.struct.json",
+        "expected": "pass",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": [],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.proto.invalid.stale-lock-version.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\invalid\\stale-lock-version\\schema.struct.json",
+        "expected": "pass",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": [],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.proto.invalid.unknown-addin.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\invalid\\unknown-addin\\schema.struct.json",
+        "expected": "pass",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": [],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.proto.valid.addins.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\valid\\addins\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name",
+          "core.declaration-invalid@/definitions/Auditable/$extends",
+          "core.declaration-invalid@/definitions/Taggable/$extends"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.proto.valid.additional-properties-schema.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\valid\\additional-properties-schema\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.proto.valid.altnames.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\valid\\altnames\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.identifier-invalid",
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.identifier-invalid@/properties/first-name",
+          "json.keyword-invalid@/altnames",
+          "json.keyword-invalid@/properties/first-name/altnames",
+          "json.keyword-invalid@/properties/status/altenums"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.proto.valid.any.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\valid\\any\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.proto.valid.choice-inline.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\valid\\choice-inline\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.proto.valid.choice-tagged.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\valid\\choice-tagged\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.proto.valid.choice-variants.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\valid\\choice-variants\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.proto.valid.collections-of-types.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\valid\\collections-of-types\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.proto.valid.collections.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\valid\\collections\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.proto.valid.definitions-only.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\valid\\definitions-only\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.proto.valid.enums.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\valid\\enums\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/properties/priority/default"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.proto.valid.extends-addin-base.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\valid\\extends-addin-base\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.proto.valid.extends-cross-namespace.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\valid\\extends-cross-namespace\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.proto.valid.extends-deep.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\valid\\extends-deep\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.proto.valid.extends-diamond.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\valid\\extends-diamond\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.proto.valid.extends.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\valid\\extends\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.proto.valid.lossless-strings.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\valid\\lossless-strings\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.proto.valid.mutual-recursion.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\valid\\mutual-recursion\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.proto.valid.name-collision.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\valid\\name-collision\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.proto.valid.namespaces.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\valid\\namespaces\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.proto.valid.numbering.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\valid\\numbering\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.proto.valid.optional-and-defaults.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\valid\\optional-and-defaults\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/properties/retries/default",
+          "json.keyword-invalid@/properties/enabled/default"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.proto.valid.primitives.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\valid\\primitives\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.proto.valid.recursion.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\valid\\recursion\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.proto.valid.ref-chain.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\valid\\ref-chain\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.proto.valid.required-alternatives.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\valid\\required-alternatives\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.proto.valid.root-array.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\valid\\root-array\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.proto.valid.root-choice.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\valid\\root-choice\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.proto.valid.root-enum.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\valid\\root-enum\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.proto.valid.root-primitive.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\valid\\root-primitive\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.proto.valid.same-name-two-namespaces.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\valid\\same-name-two-namespaces\\schema.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.proto.valid.tuple.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\valid\\tuple\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.proto.valid.union.schema",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\proto\\valid\\union\\schema.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.adversarial.additionalProperties-combined",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\adversarial\\additionalProperties-combined.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/additionalProperties/additionalProperties/items"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.adversarial.allof-conflicting-types",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\adversarial\\allof-conflicting-types.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.adversarial.anyof-none-match",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\adversarial\\anyof-none-match.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid",
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/properties/cantMatch",
+          "json.keyword-invalid@/properties/cantMatch/anyOf"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.adversarial.conflicting-constraints",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\adversarial\\conflicting-constraints.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/properties/impossibleRange/minimum",
+          "json.keyword-invalid@/properties/impossibleRange/maximum",
+          "json.keyword-invalid@/properties/impossibleLength/minLength",
+          "json.keyword-invalid@/properties/impossibleArray/minItems",
+          "json.keyword-invalid@/properties/impossibleArray/maxItems",
+          "json.keyword-invalid@/properties/impossibleArray",
+          "json.keyword-invalid@/properties/impossibleMultiple/minimum",
+          "json.keyword-invalid@/properties/impossibleMultiple/maximum",
+          "json.keyword-invalid@/properties/impossibleMultiple/multipleOf",
+          "json.keyword-invalid@/properties/contradictoryEnum/minLength"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.adversarial.deep-nesting-100",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\adversarial\\deep-nesting-100.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.adversarial.deeply-nested-allof",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\adversarial\\deeply-nested-allof.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.adversarial.default-vs-required",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\adversarial\\default-vs-required.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/properties/requiredWithDefault/default",
+          "json.keyword-invalid@/properties/optionalWithDefault/default"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.adversarial.duplicate-keys",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\adversarial\\duplicate-keys.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.adversarial.empty-arrays-objects",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\adversarial\\empty-arrays-objects.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid",
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/properties/emptyObject",
+          "json.keyword-invalid@/properties/emptyArray/minItems",
+          "json.keyword-invalid@/properties/emptyArray/maxItems",
+          "json.keyword-invalid@/properties/nonEmptyArray/minItems"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.adversarial.extends-circular-chain",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\adversarial\\extends-circular-chain.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/definitions/TypeA/properties/a",
+          "core.declaration-invalid@/definitions/TypeB/properties/b",
+          "core.declaration-invalid@/definitions/TypeC/properties/c"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.adversarial.extends-with-overrides",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\adversarial\\extends-with-overrides.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/properties/item"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.adversarial.extremely-long-string",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\adversarial\\extremely-long-string.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/properties/longPattern/pattern",
+          "json.keyword-invalid@/properties/longMinLength/minLength"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.adversarial.floating-point-precision",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\adversarial\\floating-point-precision.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/properties/almostZero/minimum",
+          "json.keyword-invalid@/properties/infinityTest/maximum",
+          "json.keyword-invalid@/properties/denormalized/minimum",
+          "json.keyword-invalid@/properties/denormalized/exclusiveMaximum",
+          "json.keyword-invalid@/properties/negativeZero/exclusiveMaximum"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.adversarial.format-edge-cases",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\adversarial\\format-edge-cases.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/properties/dateTime/format",
+          "json.keyword-invalid@/properties/uri/format",
+          "json.keyword-invalid@/properties/email/format",
+          "json.keyword-invalid@/properties/uuid/format",
+          "json.keyword-invalid@/properties/unknownFormat/format"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.adversarial.indirect-circular-ref",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\adversarial\\indirect-circular-ref.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.adversarial.int64-precision-loss",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\adversarial\\int64-precision-loss.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.adversarial.integer-boundary-values",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\adversarial\\integer-boundary-values.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.adversarial.malformed-json-pointer",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\adversarial\\malformed-json-pointer.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/properties/noHash",
+          "core.declaration-invalid@/properties/doubleHash",
+          "core.declaration-invalid@/properties/backslash",
+          "core.declaration-invalid@/properties/dotNotation",
+          "core.declaration-invalid@/properties/urlEncoded",
+          "core.declaration-invalid@/properties/trailingSlash",
+          "core.declaration-invalid@/properties/doubleSlash",
+          "core.declaration-invalid@/properties/relative",
+          "core.declaration-invalid@/properties/fragment"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.adversarial.massive-enum",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\adversarial\\massive-enum.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.adversarial.null-edge-cases",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\adversarial\\null-edge-cases.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/properties/nullDefault/default"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.adversarial.oneof-all-match",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\adversarial\\oneof-all-match.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.adversarial.pattern-with-flags",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\adversarial\\pattern-with-flags.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/properties/caseInsensitive/pattern",
+          "json.keyword-invalid@/properties/multiline/pattern",
+          "json.keyword-invalid@/properties/dotAll/pattern",
+          "json.keyword-invalid@/properties/unicode/pattern",
+          "json.keyword-invalid@/properties/lookbehind/pattern",
+          "json.keyword-invalid@/properties/namedGroups/pattern"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.adversarial.property-name-edge-cases",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\adversarial\\property-name-edge-cases.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.identifier-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.identifier-invalid@/properties/",
+          "core.identifier-invalid@/properties/$ref",
+          "core.identifier-invalid@/properties/a.b.c",
+          "core.identifier-invalid@/properties/a~1b~1c",
+          "core.identifier-invalid@/properties/a~00b~01c"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.adversarial.quadratic-blowup",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\adversarial\\quadratic-blowup.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/properties/deep1",
+          "core.declaration-invalid@/properties/deep2",
+          "core.declaration-invalid@/properties/deep3",
+          "core.declaration-invalid@/properties/deep4",
+          "core.declaration-invalid@/properties/deep5"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.adversarial.recursive-array-items",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\adversarial\\recursive-array-items.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/properties/root"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.adversarial.redos-catastrophic-backtracking",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\adversarial\\redos-catastrophic-backtracking.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.adversarial.redos-pattern",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\adversarial\\redos-pattern.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.adversarial.ref-to-nowhere",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\adversarial\\ref-to-nowhere.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/properties/missingDef",
+          "core.declaration-invalid@/properties/missingNested",
+          "core.declaration-invalid@/properties/externalMissing",
+          "core.declaration-invalid@/properties/malformedPointer",
+          "core.declaration-invalid@/properties/invalidEscape"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.adversarial.ref-vs-property",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\adversarial\\ref-vs-property.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid",
+          "core.identifier-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/properties/usesRef",
+          "core.identifier-invalid@/properties/hasRefProperty/properties/$ref"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.adversarial.self-referencing-extends",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\adversarial\\self-referencing-extends.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/definitions/Recursive/properties/value",
+          "core.declaration-invalid@/properties/data/type/$ref"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.adversarial.string-length-surrogate",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\adversarial\\string-length-surrogate.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/properties/exactLengthEmoji/minLength",
+          "json.keyword-invalid@/properties/countingTest/minLength",
+          "json.keyword-invalid@/properties/familyEmoji/minLength",
+          "json.keyword-invalid@/properties/flagEmoji/minLength"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.adversarial.type-union-ambiguous",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\adversarial\\type-union-ambiguous.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.adversarial.unicode-edge-cases",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\adversarial\\unicode-edge-cases.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/properties/nullCharacter/pattern",
+          "json.keyword-invalid@/properties/surrogates/minLength",
+          "json.keyword-invalid@/properties/zeroWidth/minLength"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.invalid.allof-not-array",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\invalid\\allof-not-array.struct.json",
+        "expected": "diagnostic",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid",
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@",
+          "json.keyword-invalid@/allOf"
+        ],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.invalid.array-missing-items",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\invalid\\array-missing-items.struct.json",
+        "expected": "diagnostic",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@"
+        ],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.invalid.circular-ref-direct",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\invalid\\circular-ref-direct.struct.json",
+        "expected": "pass",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": [],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.invalid.constraint-type-mismatch-minimum",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\invalid\\constraint-type-mismatch-minimum.struct.json",
+        "expected": "diagnostic",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/minimum"
+        ],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.invalid.constraint-type-mismatch-minlength",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\invalid\\constraint-type-mismatch-minlength.struct.json",
+        "expected": "diagnostic",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/minLength"
+        ],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.invalid.defs-not-object",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\invalid\\defs-not-object.struct.json",
+        "expected": "diagnostic",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/definitions",
+          "core.declaration-invalid@"
+        ],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.invalid.enum-duplicates",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\invalid\\enum-duplicates.struct.json",
+        "expected": "diagnostic",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/enum"
+        ],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.invalid.enum-empty",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\invalid\\enum-empty.struct.json",
+        "expected": "diagnostic",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/enum"
+        ],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.invalid.enum-not-array",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\invalid\\enum-not-array.struct.json",
+        "expected": "diagnostic",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/enum"
+        ],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.invalid.invalid-regex-pattern",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\invalid\\invalid-regex-pattern.struct.json",
+        "expected": "diagnostic",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/pattern"
+        ],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.invalid.map-missing-values",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\invalid\\map-missing-values.struct.json",
+        "expected": "diagnostic",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@"
+        ],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.invalid.minimum-exceeds-maximum",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\invalid\\minimum-exceeds-maximum.struct.json",
+        "expected": "diagnostic",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/minimum",
+          "json.keyword-invalid@/maximum"
+        ],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.invalid.minitems-exceeds-maxitems",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\invalid\\minitems-exceeds-maxitems.struct.json",
+        "expected": "diagnostic",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/minItems",
+          "json.keyword-invalid@/maxItems"
+        ],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.invalid.minitems-negative",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\invalid\\minitems-negative.struct.json",
+        "expected": "diagnostic",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/minItems"
+        ],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.invalid.minlength-exceeds-maxlength",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\invalid\\minlength-exceeds-maxlength.struct.json",
+        "expected": "diagnostic",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/minLength"
+        ],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.invalid.minlength-negative",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\invalid\\minlength-negative.struct.json",
+        "expected": "diagnostic",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/minLength"
+        ],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.invalid.missing-type",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\invalid\\missing-type.struct.json",
+        "expected": "diagnostic",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/name"
+        ],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.invalid.multipleof-negative",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\invalid\\multipleof-negative.struct.json",
+        "expected": "diagnostic",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/multipleOf"
+        ],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.invalid.multipleof-zero",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\invalid\\multipleof-zero.struct.json",
+        "expected": "diagnostic",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/multipleOf"
+        ],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.invalid.properties-not-object",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\invalid\\properties-not-object.struct.json",
+        "expected": "diagnostic",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid",
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/properties",
+          "json.keyword-invalid@/properties"
+        ],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.invalid.ref-undefined",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\invalid\\ref-undefined.struct.json",
+        "expected": "pass",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": [],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.invalid.required-missing-property",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\invalid\\required-missing-property.struct.json",
+        "expected": "diagnostic",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/required"
+        ],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.invalid.required-not-array",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\invalid\\required-not-array.struct.json",
+        "expected": "diagnostic",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/required"
+        ],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.invalid.tuple-missing-definition",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\invalid\\tuple-missing-definition.struct.json",
+        "expected": "diagnostic",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@"
+        ],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.invalid.tuple-missing-prefixitems",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\invalid\\tuple-missing-prefixitems.struct.json",
+        "expected": "diagnostic",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@"
+        ],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.invalid.unknown-type",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\invalid\\unknown-type.struct.json",
+        "expected": "diagnostic",
+        "profile": "invalid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/type"
+        ],
+        "externalExpected": "diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.validation.all-extension-keywords-with-uses",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\validation\\all-extension-keywords-with-uses.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.validation.array-contains-with-uses",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\validation\\array-contains-with-uses.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.validation.array-maxitems-with-uses",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\validation\\array-maxitems-with-uses.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.validation.array-minitems-with-uses",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\validation\\array-minitems-with-uses.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.validation.array-uniqueitems-with-uses",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\validation\\array-uniqueitems-with-uses.struct.json",
+        "expected": "diagnostic",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/uniqueItems"
+        ]
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.validation.map-keywords-with-uses",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\validation\\map-keywords-with-uses.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.validation.numeric-exclusive-maximum-with-uses",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\validation\\numeric-exclusive-maximum-with-uses.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.validation.numeric-exclusive-minimum-with-uses",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\validation\\numeric-exclusive-minimum-with-uses.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.validation.numeric-maximum-with-uses",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\validation\\numeric-maximum-with-uses.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.validation.numeric-minimum-with-uses",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\validation\\numeric-minimum-with-uses.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.validation.numeric-multiple-of-with-uses",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\validation\\numeric-multiple-of-with-uses.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.validation.object-dependentrequired-with-uses",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\validation\\object-dependentrequired-with-uses.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.validation.object-maxproperties-with-uses",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\validation\\object-maxproperties-with-uses.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.validation.object-minproperties-with-uses",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\validation\\object-minproperties-with-uses.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.validation.string-minlength-with-uses",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\validation\\string-minlength-with-uses.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.validation.string-pattern-with-uses",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\validation\\string-pattern-with-uses.struct.json",
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.warnings.all-extension-keywords-with-uses",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\warnings\\all-extension-keywords-with-uses.struct.json",
+        "expected": "pass",
+        "profile": "profile-drift",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": [],
+        "externalExpected": "extension-diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.warnings.all-extension-keywords-without-uses",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\warnings\\all-extension-keywords-without-uses.struct.json",
+        "expected": "diagnostic",
+        "profile": "profile-drift",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/minProperties",
+          "json.keyword-invalid@/maxProperties",
+          "json.keyword-invalid@/properties/count/minimum",
+          "json.keyword-invalid@/properties/count/maximum",
+          "json.keyword-invalid@/properties/count/multipleOf",
+          "json.keyword-invalid@/properties/rate/exclusiveMinimum",
+          "json.keyword-invalid@/properties/rate/exclusiveMaximum",
+          "json.keyword-invalid@/properties/name/minLength",
+          "json.keyword-invalid@/properties/name/pattern",
+          "json.keyword-invalid@/properties/tags/minItems",
+          "json.keyword-invalid@/properties/tags/maxItems",
+          "json.keyword-invalid@/properties/tags/uniqueItems"
+        ],
+        "externalExpected": "extension-diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.warnings.array-contains-without-uses",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\warnings\\array-contains-without-uses.struct.json",
+        "expected": "diagnostic",
+        "profile": "profile-drift",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/contains"
+        ],
+        "externalExpected": "extension-diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.warnings.array-maxcontains-without-uses",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\warnings\\array-maxcontains-without-uses.struct.json",
+        "expected": "diagnostic",
+        "profile": "profile-drift",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/maxContains",
+          "json.keyword-invalid@/contains"
+        ],
+        "externalExpected": "extension-diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.warnings.array-maxitems-without-uses",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\warnings\\array-maxitems-without-uses.struct.json",
+        "expected": "diagnostic",
+        "profile": "profile-drift",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/maxItems"
+        ],
+        "externalExpected": "extension-diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.warnings.array-mincontains-without-uses",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\warnings\\array-mincontains-without-uses.struct.json",
+        "expected": "diagnostic",
+        "profile": "profile-drift",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/minContains",
+          "json.keyword-invalid@/contains"
+        ],
+        "externalExpected": "extension-diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.warnings.array-minitems-without-uses",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\warnings\\array-minitems-without-uses.struct.json",
+        "expected": "diagnostic",
+        "profile": "profile-drift",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/minItems"
+        ],
+        "externalExpected": "extension-diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.warnings.array-uniqueitems-without-uses",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\warnings\\array-uniqueitems-without-uses.struct.json",
+        "expected": "diagnostic",
+        "profile": "profile-drift",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/uniqueItems"
+        ],
+        "externalExpected": "extension-diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.warnings.content-keywords-without-uses",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\warnings\\content-keywords-without-uses.struct.json",
+        "expected": "diagnostic",
+        "profile": "profile-drift",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/properties/data/contentEncoding",
+          "json.keyword-invalid@/properties/data/contentMediaType"
+        ],
+        "externalExpected": "extension-diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.warnings.default-keyword-without-uses",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\warnings\\default-keyword-without-uses.struct.json",
+        "expected": "diagnostic",
+        "profile": "profile-drift",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/properties/status/default",
+          "json.keyword-invalid@/properties/count/default"
+        ],
+        "externalExpected": "extension-diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.warnings.map-keywords-without-uses",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\warnings\\map-keywords-without-uses.struct.json",
+        "expected": "diagnostic",
+        "profile": "profile-drift",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/minEntries",
+          "json.keyword-invalid@/maxEntries",
+          "json.keyword-invalid@/keyNames"
+        ],
+        "externalExpected": "extension-diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.warnings.numeric-exclusive-maximum-without-uses",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\warnings\\numeric-exclusive-maximum-without-uses.struct.json",
+        "expected": "diagnostic",
+        "profile": "profile-drift",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/exclusiveMaximum"
+        ],
+        "externalExpected": "extension-diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.warnings.numeric-exclusive-minimum-without-uses",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\warnings\\numeric-exclusive-minimum-without-uses.struct.json",
+        "expected": "diagnostic",
+        "profile": "profile-drift",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/exclusiveMinimum"
+        ],
+        "externalExpected": "extension-diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.warnings.numeric-maximum-without-uses",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\warnings\\numeric-maximum-without-uses.struct.json",
+        "expected": "diagnostic",
+        "profile": "profile-drift",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/maximum"
+        ],
+        "externalExpected": "extension-diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.warnings.numeric-minimum-without-uses",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\warnings\\numeric-minimum-without-uses.struct.json",
+        "expected": "diagnostic",
+        "profile": "profile-drift",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/minimum"
+        ],
+        "externalExpected": "extension-diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.warnings.numeric-multiple-of-without-uses",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\warnings\\numeric-multiple-of-without-uses.struct.json",
+        "expected": "diagnostic",
+        "profile": "profile-drift",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/multipleOf"
+        ],
+        "externalExpected": "extension-diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.warnings.object-dependentrequired-without-uses",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\warnings\\object-dependentrequired-without-uses.struct.json",
+        "expected": "diagnostic",
+        "profile": "profile-drift",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/dependentRequired"
+        ],
+        "externalExpected": "extension-diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.warnings.object-maxproperties-without-uses",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\warnings\\object-maxproperties-without-uses.struct.json",
+        "expected": "diagnostic",
+        "profile": "profile-drift",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/maxProperties"
+        ],
+        "externalExpected": "extension-diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.warnings.object-minproperties-without-uses",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\warnings\\object-minproperties-without-uses.struct.json",
+        "expected": "diagnostic",
+        "profile": "profile-drift",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/minProperties"
+        ],
+        "externalExpected": "extension-diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.warnings.object-patternproperties-without-uses",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\warnings\\object-patternproperties-without-uses.struct.json",
+        "expected": "diagnostic",
+        "profile": "profile-drift",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/patternProperties"
+        ],
+        "externalExpected": "extension-diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.warnings.object-propertynames-without-uses",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\warnings\\object-propertynames-without-uses.struct.json",
+        "expected": "diagnostic",
+        "profile": "profile-drift",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/propertyNames"
+        ],
+        "externalExpected": "extension-diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.warnings.string-format-without-uses",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\warnings\\string-format-without-uses.struct.json",
+        "expected": "diagnostic",
+        "profile": "profile-drift",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/format"
+        ],
+        "externalExpected": "extension-diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.warnings.string-minlength-without-uses",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\warnings\\string-minlength-without-uses.struct.json",
+        "expected": "diagnostic",
+        "profile": "profile-drift",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/minLength"
+        ],
+        "externalExpected": "extension-diagnostic"
+      },
+      {
+        "id": "corpus.sdk-assets.schemas.warnings.string-pattern-without-uses",
+        "source": "sdk-assets",
+        "path": "..\\test-assets\\schemas\\warnings\\string-pattern-without-uses.struct.json",
+        "expected": "diagnostic",
+        "profile": "profile-drift",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/pattern"
+        ],
+        "externalExpected": "extension-diagnostic"
+      },
+      {
+        "id": "corpus.avrotize.advanced-features",
+        "source": "avrotize",
+        "path": "..\\..\\avrotize\\test\\struct\\advanced-features.struct.json",
+        "expected": "diagnostic",
+        "profile": "avrotize-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/properties/validatedString/minLength",
+          "json.keyword-invalid@/properties/validatedString/pattern"
+        ]
+      },
+      {
+        "id": "corpus.avrotize.basic-types",
+        "source": "avrotize",
+        "path": "..\\..\\avrotize\\test\\struct\\basic-types.struct.json",
+        "expected": "diagnostic",
+        "profile": "avrotize-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/properties/bytesField/type"
+        ]
+      },
+      {
+        "id": "corpus.avrotize.choice-types",
+        "source": "avrotize",
+        "path": "..\\..\\avrotize\\test\\struct\\choice-types.struct.json",
+        "expected": "diagnostic",
+        "profile": "avrotize-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/properties/inlineChoice/choices/Person",
+          "core.declaration-invalid@/properties/inlineChoice/choices/Company"
+        ]
+      },
+      {
+        "id": "corpus.avrotize.collections",
+        "source": "avrotize",
+        "path": "..\\..\\avrotize\\test\\struct\\collections.struct.json",
+        "expected": "diagnostic",
+        "profile": "avrotize-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/properties/stringArray/minItems",
+          "json.keyword-invalid@/properties/stringArray/maxItems",
+          "json.keyword-invalid@/properties/numberSet/minItems",
+          "json.keyword-invalid@/properties/numberSet/maxItems",
+          "json.keyword-invalid@/properties/numberSet/items/minimum",
+          "json.keyword-invalid@/properties/numberSet/items/maximum",
+          "json.keyword-invalid@/properties/stringToNumberMap/values/minimum"
+        ]
+      },
+      {
+        "id": "corpus.avrotize.complex-scenario",
+        "source": "avrotize",
+        "path": "..\\..\\avrotize\\test\\struct\\complex-scenario.struct.json",
+        "expected": "diagnostic",
+        "profile": "avrotize-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/properties/data/choices/measurement/properties/timestamp/type",
+          "json.keyword-invalid@/properties/signature/type"
+        ]
+      },
+      {
+        "id": "corpus.avrotize.descriptions-test",
+        "source": "avrotize",
+        "path": "..\\..\\avrotize\\test\\struct\\descriptions-test.struct.json",
+        "expected": "diagnostic",
+        "profile": "avrotize-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@/properties/choiceField/choices/structuredData",
+          "core.declaration-invalid@/properties/referencedType"
+        ]
+      },
+      {
+        "id": "corpus.avrotize.edge-cases",
+        "source": "avrotize",
+        "path": "..\\..\\avrotize\\test\\struct\\edge-cases.struct.json",
+        "expected": "diagnostic",
+        "profile": "avrotize-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/properties/largeInteger/minimum",
+          "json.keyword-invalid@/properties/largeInteger/maximum",
+          "json.keyword-invalid@/properties/emptyArray/maxItems"
+        ]
+      },
+      {
+        "id": "corpus.avrotize.extensions",
+        "source": "avrotize",
+        "path": "..\\..\\avrotize\\test\\struct\\extensions.struct.json",
+        "expected": "diagnostic",
+        "profile": "avrotize-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/properties/price/minimum",
+          "json.keyword-invalid@/properties/weight/minimum",
+          "json.keyword-invalid@/properties/stockSymbol/pattern"
+        ]
+      },
+      {
+        "id": "corpus.avrotize.inheritance",
+        "source": "avrotize",
+        "path": "..\\..\\avrotize\\test\\struct\\inheritance.struct.json",
+        "expected": "diagnostic",
+        "profile": "avrotize-fixture",
+        "diagnosticCodes": [
+          "core.declaration-invalid",
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "core.declaration-invalid@",
+          "json.keyword-invalid@/definitions/Car/properties/numberOfDoors/minimum",
+          "json.keyword-invalid@/definitions/Car/properties/numberOfDoors/maximum"
+        ]
+      },
+      {
+        "id": "corpus.avrotize.nested-objects",
+        "source": "avrotize",
+        "path": "..\\..\\avrotize\\test\\struct\\nested-objects.struct.json",
+        "expected": "diagnostic",
+        "profile": "avrotize-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/properties/person/properties/address/properties/coordinates/properties/latitude/minimum",
+          "json.keyword-invalid@/properties/person/properties/address/properties/coordinates/properties/latitude/maximum",
+          "json.keyword-invalid@/properties/person/properties/address/properties/coordinates/properties/longitude/minimum",
+          "json.keyword-invalid@/properties/person/properties/address/properties/coordinates/properties/longitude/maximum",
+          "json.keyword-invalid@/properties/person/properties/phoneNumbers/items/properties/number/pattern"
+        ]
+      },
+      {
+        "id": "corpus.avrotize.numeric-types",
+        "source": "avrotize",
+        "path": "..\\..\\avrotize\\test\\struct\\numeric-types.struct.json",
+        "expected": "diagnostic",
+        "profile": "avrotize-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/properties/int8Field/minimum",
+          "json.keyword-invalid@/properties/int8Field/maximum",
+          "json.keyword-invalid@/properties/int16Field/minimum",
+          "json.keyword-invalid@/properties/int16Field/maximum",
+          "json.keyword-invalid@/properties/uint32Field/minimum",
+          "json.keyword-invalid@/properties/uint32Field/maximum",
+          "json.keyword-invalid@/properties/uint64Field/minimum",
+          "json.keyword-invalid@/properties/decimalField/minimum",
+          "json.keyword-invalid@/properties/decimalField/maximum",
+          "json.keyword-invalid@/properties/float32Field/type",
+          "json.keyword-invalid@/properties/float64Field/type"
+        ]
+      },
+      {
+        "id": "corpus.avrotize.temporal-types",
+        "source": "avrotize",
+        "path": "..\\..\\avrotize\\test\\struct\\temporal-types.struct.json",
+        "expected": "diagnostic",
+        "profile": "avrotize-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/properties/timestampField/type"
+        ]
+      },
+      {
+        "id": "corpus.avrotize.tuple-test",
+        "source": "avrotize",
+        "path": "..\\..\\avrotize\\test\\struct\\tuple-test.struct.json",
+        "expected": "diagnostic",
+        "profile": "avrotize-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/properties/coordinates/properties/latitude/minimum",
+          "json.keyword-invalid@/properties/coordinates/properties/latitude/maximum",
+          "json.keyword-invalid@/properties/coordinates/properties/longitude/minimum",
+          "json.keyword-invalid@/properties/coordinates/properties/longitude/maximum"
+        ]
+      },
+      {
+        "id": "corpus.avrotize.validation-constraints",
+        "source": "avrotize",
+        "path": "..\\..\\avrotize\\test\\struct\\validation-constraints.struct.json",
+        "expected": "diagnostic",
+        "profile": "avrotize-fixture",
+        "diagnosticCodes": [
+          "json.keyword-invalid"
+        ],
+        "diagnosticExpectations": [
+          "json.keyword-invalid@/properties/constrainedString/minLength",
+          "json.keyword-invalid@/properties/constrainedString/pattern",
+          "json.keyword-invalid@/properties/numberWithConstraints/minimum",
+          "json.keyword-invalid@/properties/numberWithConstraints/maximum",
+          "json.keyword-invalid@/properties/numberWithConstraints/multipleOf",
+          "json.keyword-invalid@/properties/exclusiveRangeNumber/exclusiveMinimum",
+          "json.keyword-invalid@/properties/exclusiveRangeNumber/exclusiveMaximum"
+        ]
+      }
+    ]
+  }
 }
