@@ -450,8 +450,10 @@ impl<'a> Compiler<'a> {
             pointer: spec.pointer.clone(),
         };
         let base_type = self.compile_inline(decl, &child)?;
+        let normalized_default =
+            normalize_date_default(decl.get("default"), &base_type, &spec.pointer)?;
         let (field_type, default) =
-            self.nullable(base_type, spec.required, decl.get("default"), &spec.pointer)?;
+            self.nullable(base_type, spec.required, normalized_default.as_ref(), &spec.pointer)?;
 
         // Avro has no notion of a fixed value. A `const` becomes an ordinary
         // field that any writer may set to anything, which is worth saying out
@@ -1195,6 +1197,13 @@ impl<'a> Compiler<'a> {
             return self.decimal_value(decl, ctx);
         }
 
+        if type_name == "date" {
+            let mut out = Map::new();
+            out.insert("type".to_string(), Value::String("int".to_string()));
+            out.insert("logicalType".to_string(), Value::String("date".to_string()));
+            return Value::Object(out);
+        }
+
         if self.opts.mode == Mode::Full {
             if let Some(logical) = avro_logical(type_name) {
                 let mut out = Map::new();
@@ -1311,6 +1320,51 @@ impl<'a> Compiler<'a> {
 
 // -- free functions --------------------------------------------------------
 
+fn normalize_date_default(
+    default: Option<&Value>,
+    avro_type: &Value,
+    pointer: &str,
+) -> Result<Option<Value>, AvroError> {
+    let Some(default) = default else {
+        return Ok(None);
+    };
+    if default.is_null() || !has_date_without_string_branch(avro_type) {
+        return Ok(Some(default.clone()));
+    }
+    let text = default.as_str().ok_or_else(|| AvroError::Invalid {
+        message: "`date` default must be an RFC 3339 full-date string".to_string(),
+        path: pointer.to_string(),
+    })?;
+    let date = chrono::NaiveDate::parse_from_str(text, "%Y-%m-%d").map_err(|_| {
+        AvroError::Invalid {
+            message: format!("`date` default `{text}` is not an RFC 3339 full-date"),
+            path: pointer.to_string(),
+        }
+    })?;
+    let epoch = chrono::NaiveDate::from_ymd_opt(1970, 1, 1).unwrap();
+    let days = date.signed_duration_since(epoch).num_days();
+    let days = i32::try_from(days).map_err(|_| AvroError::Invalid {
+        message: format!("`date` default `{text}` is outside Avro's date range"),
+        path: pointer.to_string(),
+    })?;
+    Ok(Some(Value::Number(days.into())))
+}
+
+fn has_date_without_string_branch(avro_type: &Value) -> bool {
+    fn is_date(value: &Value) -> bool {
+        value.get("logicalType").and_then(Value::as_str) == Some("date")
+    }
+    fn is_string(value: &Value) -> bool {
+        value.as_str() == Some("string")
+            || value.get("type").and_then(Value::as_str) == Some("string")
+    }
+
+    match avro_type {
+        Value::Array(branches) => branches.iter().any(is_date) && !branches.iter().any(is_string),
+        value => is_date(value),
+    }
+}
+
 /// The primitive mapping table of §2. `None` means the name is not a primitive.
 ///
 /// This is the *wire* type and is the same in both modes; `full` mode only adds
@@ -1331,8 +1385,11 @@ fn avro_primitive(type_name: &str) -> Option<&'static str> {
         // Only when `precision` is declared; `primitive_value` falls back to
         // `string` and warns otherwise (§2.3).
         "decimal" => "bytes",
-        // Avro has no offset-carrying temporal type; RFC 3339 text keeps it.
-        "date" | "time" | "datetime" | "duration" => "string",
+        // Avro's date logical type exactly represents an RFC 3339 full-date.
+        "date" => "int",
+        // Avro has no offset-carrying time or datetime type, and its duration
+        // cannot represent the full JSON Structure duration value space.
+        "time" | "datetime" | "duration" => "string",
         "uuid" | "uri" | "jsonpointer" => "string",
         "binary" => "bytes",
         _ => return None,
@@ -1345,11 +1402,10 @@ fn avro_primitive(type_name: &str) -> Option<&'static str> {
 /// The `rfc3339-*` names are Avrotize's extension. They are not reserved Avro
 /// logical types, which is exactly the point: a reader that does not know the
 /// name sees the `string` base and is correct, so `full` and `compact` describe
-/// byte-identical data. Avro's own `date` and `timestamp-micros` would instead
-/// move the value onto an integer base and discard the RFC 3339 offset.
+/// byte-identical data. Avro's `time-micros` and `timestamp-micros` would
+/// instead move values onto integer bases and discard the RFC 3339 offset.
 fn avro_logical(type_name: &str) -> Option<&'static str> {
     Some(match type_name {
-        "date" => "rfc3339-date",
         "time" => "rfc3339-time-micros",
         "datetime" => "rfc3339-timestamp-micros",
         "duration" => "rfc3339-duration",

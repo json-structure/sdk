@@ -420,6 +420,8 @@ public static partial class AvroCompiler
             var baseType = CompileInline(decl, child);
 
             var hasDefault = decl.TryGetPropertyValue("default", out var declaredDefault);
+            declaredDefault = NormalizeDateDefault(
+                baseType, hasDefault, declaredDefault, spec.Pointer);
             var (fieldType, defaultValue, hasEmittedDefault) =
                 Nullable(baseType, spec.Required, hasDefault, declaredDefault, spec.Pointer);
 
@@ -1153,6 +1155,15 @@ public static partial class AvroCompiler
             if (typeName == "decimal")
             {
                 return DecimalValue(decl, ctx);
+            }
+
+            if (typeName == "date")
+            {
+                return new JsonObject
+                {
+                    ["type"] = JsonValue.Create("int"),
+                    ["logicalType"] = JsonValue.Create("date"),
+                };
             }
 
             if (_opts.Mode == AvroMode.Full && AvroLogical(typeName) is { } logical)

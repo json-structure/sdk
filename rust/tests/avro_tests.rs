@@ -68,7 +68,6 @@ fn lossless_types_travel_as_strings() {
     // Avro has no offset-carrying temporal type and no unsigned 64-bit integer,
     // so these keep their lexical form rather than being silently truncated.
     for js_type in [
-        "date",
         "time",
         "datetime",
         "duration",
@@ -86,6 +85,27 @@ fn lossless_types_travel_as_strings() {
             "required": ["v"]
         }));
         assert_eq!(compile(&schema)["fields"][0]["type"], json!("string"), "for {js_type}");
+    }
+}
+
+#[test]
+fn date_uses_the_standard_avro_logical_type_in_both_modes() {
+    let schema = doc(json!({
+        "name": "T", "type": "object",
+        "properties": { "v": { "type": "date" } },
+        "required": ["v"]
+    }));
+
+    for mode in [Mode::Compact, Mode::Full] {
+        let options = AvroOptions {
+            mode,
+            ..AvroOptions::default()
+        };
+        let out = avro::compile_with(&schema, &options).unwrap();
+        assert_eq!(
+            out.schema["fields"][0]["type"],
+            json!({"type": "int", "logicalType": "date"})
+        );
     }
 }
 

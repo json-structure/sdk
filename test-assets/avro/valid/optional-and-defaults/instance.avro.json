@@ -3,5 +3,8 @@
   "retries": 5,
   "label": "prod",
   "enabled": false,
+  "effectiveDate": 2,
+  "referencedDate": 3,
+  "dateOrBoolean": 4,
   "kind": null
 }

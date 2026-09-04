@@ -76,6 +76,8 @@
 //! - `JSONStructureImport` - Schema imports
 //! - `JSONStructureAlternateNames` - Alternate property names
 //! - `JSONStructureUnits` - Unit annotations
+//! - `JSONStructureSemanticAnnotations` - Semantic and reference-system annotations
+//! - `JSONStructureRelations` - Typed relations between identified objects
 
 mod error_codes;
 mod instance_validator;

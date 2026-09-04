@@ -178,14 +178,17 @@ fn every_valid_case_matches_its_expected_output() {
 /// and only data written under one mode and read under the other would notice.
 #[test]
 fn full_mode_only_adds_metadata() {
-    /// Removes everything `full` mode is allowed to add: `logicalType` on a
-    /// non-`decimal` type, `doc`, and the `annotations` constraint
-    /// attribute. `decimal` is not a `full`-mode annotation — it is emitted in
-    /// both modes (§2.3) — so its `logicalType`, `precision`, and `scale` stay.
+    /// Removes everything `full` mode is allowed to add: `logicalType` other
+    /// than the standard `decimal` and `date` types, `doc`, and the
+    /// `annotations` constraint attribute. Standard logical types are emitted
+    /// in both modes, so they stay.
     fn strip(value: &mut Value) {
         match value {
             Value::Object(map) => {
-                if map.get("logicalType").and_then(Value::as_str) != Some("decimal") {
+                if !matches!(
+                    map.get("logicalType").and_then(Value::as_str),
+                    Some("decimal" | "date")
+                ) {
                     map.remove("logicalType");
                 }
                 map.remove("doc");
@@ -574,6 +577,10 @@ fn try_decode(
             _ => return Err(wrong("null")),
         },
         S::Boolean => A::Boolean(json.as_bool().ok_or_else(|| wrong("a boolean"))?),
+        S::Date => {
+            let value = json.as_i64().ok_or_else(|| wrong("an Avro date as epoch days"))?;
+            A::Date(i32::try_from(value).map_err(|_| format!("{value} does not fit in an Avro date"))?)
+        }
         S::Int => {
             let value = json.as_i64().ok_or_else(|| wrong("an int"))?;
             A::Int(i32::try_from(value).map_err(|_| format!("{value} does not fit in an int"))?)

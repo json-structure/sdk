@@ -336,6 +336,16 @@ internal static class AvroJson
 
         switch (schema.LogicalTypeName)
         {
+            case "date":
+                if (!TryLong(json, out var epochDays)
+                    || epochDays is < int.MinValue or > int.MaxValue)
+                {
+                    why = $"expected an Avro date as epoch days, found {json?.ToJsonString() ?? "null"}";
+                    return false;
+                }
+                value = DateTime.UnixEpoch.Date.AddDays(epochDays);
+                return true;
+
             case "uuid":
                 if (Kind(json) != JsonValueKind.String
                     || !Guid.TryParse(json!.GetValue<string>(), out var uuid))

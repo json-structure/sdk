@@ -2,10 +2,13 @@ package org.json_structure.avro;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.IntNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.node.TextNode;
 import java.math.BigInteger;
+import java.time.DateTimeException;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -450,6 +453,8 @@ public final class AvroCompiler {
 
             boolean hasDefault = decl.has("default");
             JsonNode declaredDefault = hasDefault ? decl.get("default") : null;
+            declaredDefault =
+                normalizeDateDefault(baseType, hasDefault, declaredDefault, spec.pointer());
             Nullability nullability =
                 nullable(baseType, spec.required(), hasDefault, declaredDefault, spec.pointer());
 
@@ -1132,6 +1137,13 @@ public final class AvroCompiler {
                 return decimalValue(decl, ctx);
             }
 
+            if (typeName.equals("date")) {
+                ObjectNode out = NODES.objectNode();
+                out.put("type", "int");
+                out.put("logicalType", "date");
+                return out;
+            }
+
             if (opts.mode() == AvroMode.FULL) {
                 String logical = avroLogical(typeName);
                 if (logical != null) {
@@ -1243,6 +1255,54 @@ public final class AvroCompiler {
 
     // -- static tables and pure helpers ----------------------------------------
 
+    private static JsonNode normalizeDateDefault(
+            JsonNode avroType, boolean hasDefault, JsonNode defaultValue, String pointer) {
+        if (!hasDefault || defaultValue == null || defaultValue.isNull()
+                || !hasDateWithoutStringBranch(avroType)) {
+            return defaultValue;
+        }
+        if (!defaultValue.isTextual()) {
+            throw AvroCompileException.invalid(
+                "`date` default must be an RFC 3339 full-date string", pointer);
+        }
+        try {
+            long epochDays = LocalDate.parse(defaultValue.textValue()).toEpochDay();
+            if (epochDays < Integer.MIN_VALUE || epochDays > Integer.MAX_VALUE) {
+                throw AvroCompileException.invalid(
+                    "`date` default is outside Avro's date range", pointer);
+            }
+            return IntNode.valueOf((int) epochDays);
+        } catch (DateTimeException error) {
+            throw AvroCompileException.invalid(
+                "`date` default must be an RFC 3339 full-date string", pointer);
+        }
+    }
+
+    private static boolean hasDateWithoutStringBranch(JsonNode avroType) {
+        if (!avroType.isArray()) {
+            return isAvroDate(avroType);
+        }
+        boolean hasDate = false;
+        for (JsonNode branch : avroType) {
+            hasDate |= isAvroDate(branch);
+            if (isAvroString(branch)) {
+                return false;
+            }
+        }
+        return hasDate;
+    }
+
+    private static boolean isAvroDate(JsonNode value) {
+        return value != null && value.isObject()
+            && "date".equals(value.path("logicalType").asText(null));
+    }
+
+    private static boolean isAvroString(JsonNode value) {
+        return value != null
+            && (value.isTextual() && value.textValue().equals("string")
+                || value.isObject() && value.path("type").asText("").equals("string"));
+    }
+
     /** The primitive mapping table of §2. {@code null} means the name is not a primitive. */
     private static String avroPrimitive(String typeName) {
         return switch (typeName) {
@@ -1257,8 +1317,11 @@ public final class AvroCompiler {
             case "int128", "uint64", "uint128" -> "string";
             case "float8", "float" -> "float";
             case "double" -> "double";
-            // Avro has no offset-carrying temporal type; RFC 3339 text keeps it.
-            case "date", "time", "datetime", "duration" -> "string";
+            // Avro's date logical type exactly represents an RFC 3339 full-date.
+            case "date" -> "int";
+            // Avro has no offset-carrying time or datetime type, and its duration
+            // cannot represent the full JSON Structure duration value space.
+            case "time", "datetime", "duration" -> "string";
             case "uuid", "uri", "jsonpointer" -> "string";
             case "binary" -> "bytes";
             // §2.3: the base for Avro's own `decimal` logical type, in both modes.
@@ -1281,7 +1344,6 @@ public final class AvroCompiler {
      */
     private static String avroLogical(String typeName) {
         return switch (typeName) {
-            case "date" -> "rfc3339-date";
             case "time" -> "rfc3339-time-micros";
             case "datetime" -> "rfc3339-timestamp-micros";
             case "duration" -> "rfc3339-duration";

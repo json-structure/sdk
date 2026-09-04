@@ -35,12 +35,12 @@ under one mode reads correctly under the other, and a reader that has never
 heard of the annotations sees exactly the `compact` schema. `full` adds
 information *about* the bytes; it never changes them.
 
-That is why the temporal annotations use Avrotize's `rfc3339-*` family over a
-`string` base rather than Avro's own `date` and `timestamp-micros`. Avro's
-temporal logical types are UTC instants on integer bases: adopting them would
-change the wire format *and* silently discard the offset that RFC 3339 requires
-the value to carry. Keeping RFC 3339 text and naming what it holds loses
-neither.
+JSON Structure `date` maps exactly to Avro's standard `date` logical type and
+uses that representation in both modes. The other temporal annotations use
+Avrotize's `rfc3339-*` family over a `string` base rather than Avro's
+`time-micros`, `timestamp-micros`, or `duration`. Those logical types cannot
+preserve an RFC 3339 offset or the complete JSON Structure duration value
+space. Keeping those values as text and naming what they hold loses neither.
 
 **Losslessness beats compactness.** Where a narrower Avro type would truncate or
 wrap a legal JSON Structure value, the mapping chooses the wider or lexical
@@ -115,7 +115,7 @@ means `full` emits the bare type, exactly as `compact` does.
 | `float` | `float` | | |
 | `double` | `double` | | |
 | `decimal` | `bytes` | | `decimal` logical type in **both** modes; see {{decimal}} |
-| `date` | `string` | `rfc3339-date` | RFC 3339 `full-date` |
+| `date` | `int` | `date` | Standard Avro logical type; RFC 3339 `full-date` |
 | `time` | `string` | `rfc3339-time-micros` | RFC 3339 `full-time`, offset preserved |
 | `datetime` | `string` | `rfc3339-timestamp-micros` | RFC 3339 `date-time`, offset preserved |
 | `duration` | `string` | `rfc3339-duration` | ISO 8601 duration |
@@ -126,7 +126,8 @@ means `full` emits the bare type, exactly as `compact` does.
 | `any` | see {{any}} | | Empty record; a schema hole |
 
 In `compact` mode, implementations MUST NOT emit a `logicalType` attribute for
-any of these except `decimal`, which carries one in both modes ({{decimal}}).
+any of these except `decimal` and `date`, which carry one in both modes
+({{decimal}}).
 In `full` mode, implementations MUST emit exactly the annotations in the `full`
 column and no others.
 
@@ -201,12 +202,12 @@ would be a breaking schema change rather than a validation change.
 annotation. It changes no base type, no field, no name, and no byte on the
 wire.
 
-**Logical type annotations.** Values whose `string` base understates what they
-carry are annotated with Avrotize's `rfc3339-*` family:
+`date` uses Avro's standard `date` logical type in both modes. Values whose
+`string` base understates what they carry are annotated in `full` mode with
+Avrotize's `rfc3339-*` family:
 
 | JSON Structure | Emitted in `full` mode |
 |---|---|
-| `date` | `{"type": "string", "logicalType": "rfc3339-date"}` |
 | `time` | `{"type": "string", "logicalType": "rfc3339-time-micros"}` |
 | `datetime` | `{"type": "string", "logicalType": "rfc3339-timestamp-micros"}` |
 | `duration` | `{"type": "string", "logicalType": "rfc3339-duration"}` |
@@ -231,7 +232,7 @@ Some Avro libraries are nonetheless strict about *unknown* logical type names
 and refuse to parse rather than ignore. Apache Avro 1.12 for .NET is one:
 
 ```
-AvroTypeException: Logical type 'rfc3339-date' is not supported.
+AvroTypeException: Logical type 'rfc3339-time-micros' is not supported.
 ```
 
 A conforming SDK that offers `full` mode MUST therefore ensure its own runtime
@@ -267,6 +268,12 @@ For each property `p` with schema `S`:
   `["null", T]` and the field `default` is `null`.
 - If `p` is not required and has a `default` value `d`, the field type is
   `[T, "null"]` and the field `default` is `d`.
+
+For a `date` branch, an RFC 3339 `full-date` default MUST be converted to the
+signed number of days since 1970-01-01 before it is emitted. This conversion
+also applies when the branch is reached through `$ref` or appears in a union
+that has no string-backed branch. When a union also has a string-backed branch,
+the lexical default remains a string and that branch is placed first.
 
 Avro requires a field's default to be valid against the *first* branch of a
 union, which is why the branch order flips with the presence of a default.

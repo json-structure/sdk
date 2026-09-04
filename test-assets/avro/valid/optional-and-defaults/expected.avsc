@@ -31,6 +31,40 @@
       "default": true
     },
     {
+      "name": "effectiveDate",
+      "type": [
+        {
+          "type": "int",
+          "logicalType": "date"
+        },
+        "null"
+      ],
+      "default": 1
+    },
+    {
+      "name": "referencedDate",
+      "type": [
+        {
+          "type": "int",
+          "logicalType": "date"
+        },
+        "null"
+      ],
+      "default": 2
+    },
+    {
+      "name": "dateOrBoolean",
+      "type": [
+        {
+          "type": "int",
+          "logicalType": "date"
+        },
+        "boolean",
+        "null"
+      ],
+      "default": 3
+    },
+    {
       "name": "kind",
       "type": [
         "null",

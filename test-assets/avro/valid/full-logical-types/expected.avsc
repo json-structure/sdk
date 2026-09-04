@@ -6,8 +6,8 @@
     {
       "name": "date",
       "type": {
-        "type": "string",
-        "logicalType": "rfc3339-date"
+        "type": "int",
+        "logicalType": "date"
       }
     },
     {

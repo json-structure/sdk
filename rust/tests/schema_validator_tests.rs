@@ -770,7 +770,11 @@ fn test_valid_uses_extension() {
         "$id": "https://example.com/schema/uses",
         "name": "UsesSchema",
         "type": "string",
-        "$uses": ["JSONStructureValidation", "JSONStructureAlternateNames"]
+        "$uses": [
+            "JSONStructureValidation",
+            "JSONStructureAlternateNames",
+            "JSONStructureSemanticAnnotations"
+        ]
     }"##;
     let validator = SchemaValidator::new();
     let result = validator.validate(schema);

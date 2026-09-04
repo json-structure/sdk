@@ -288,6 +288,13 @@ final class AvroJson {
      * Avro ignores a logical type it does not know — so those never reach here.
      */
     private static Attempt tryDecodeLogical(Schema schema, LogicalType logical, JsonNode json) {
+        if (logical instanceof LogicalTypes.Date) {
+            if (json == null || !json.isIntegralNumber() || !json.canConvertToInt()) {
+                return Attempt.no("expected an Avro date as epoch days, found " + render(json));
+            }
+            return Attempt.of(json.intValue());
+        }
+
         // Feature 3 again: a decimal is its *numeric* value as a string, not the
         // unscaled bytes. That is the whole interoperability point — a plain JSON
         // consumer can read `"1.25"` and cannot read `"fQ=="`.

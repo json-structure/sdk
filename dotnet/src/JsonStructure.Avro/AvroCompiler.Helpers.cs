@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -106,8 +107,11 @@ public static partial class AvroCompiler
         "int128" or "uint64" or "uint128" => "string",
         "float8" or "float" => "float",
         "double" => "double",
-        // Avro has no offset-carrying temporal type; RFC 3339 text keeps it.
-        "date" or "time" or "datetime" or "duration" => "string",
+        // Avro's date logical type exactly represents an RFC 3339 full-date.
+        "date" => "int",
+        // Avro has no offset-carrying time or datetime type, and its duration
+        // cannot represent the full JSON Structure duration value space.
+        "time" or "datetime" or "duration" => "string",
         "uuid" or "uri" or "jsonpointer" => "string",
         "binary" => "bytes",
         // §2.3: the base for Avro's own `decimal` logical type, in both modes.
@@ -130,13 +134,78 @@ public static partial class AvroCompiler
     /// </remarks>
     private static string? AvroLogical(string typeName) => typeName switch
     {
-        "date" => "rfc3339-date",
         "time" => "rfc3339-time-micros",
         "datetime" => "rfc3339-timestamp-micros",
         "duration" => "rfc3339-duration",
         "uuid" => "uuid",
         _ => null,
     };
+
+    private static JsonNode? NormalizeDateDefault(
+        JsonNode avroType, bool hasDefault, JsonNode? defaultValue, string pointer)
+    {
+        if (!hasDefault || defaultValue is null || !HasDateWithoutStringBranch(avroType))
+        {
+            return defaultValue;
+        }
+        if (defaultValue.GetValueKind() != JsonValueKind.String
+            || !TryEpochDays(defaultValue.GetValue<string>(), out var epochDays))
+        {
+            throw AvroCompileException.Invalid(
+                "`date` default must be an RFC 3339 full-date string", pointer);
+        }
+        return JsonValue.Create(epochDays);
+    }
+
+    private static bool TryEpochDays(string text, out int epochDays)
+    {
+        epochDays = 0;
+        if (text.Length != 10 || text[4] != '-' || text[7] != '-'
+            || !int.TryParse(text.AsSpan(0, 4), NumberStyles.None, CultureInfo.InvariantCulture, out var year)
+            || !int.TryParse(text.AsSpan(5, 2), NumberStyles.None, CultureInfo.InvariantCulture, out var month)
+            || !int.TryParse(text.AsSpan(8, 2), NumberStyles.None, CultureInfo.InvariantCulture, out var day)
+            || month is < 1 or > 12)
+        {
+            return false;
+        }
+
+        var leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+        int[] monthLengths = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+        if (day < 1 || day > monthLengths[month - 1])
+        {
+            return false;
+        }
+
+        var adjustedYear = year - (month <= 2 ? 1 : 0);
+        var era = adjustedYear >= 0 ? adjustedYear / 400 : (adjustedYear - 399) / 400;
+        var yearOfEra = adjustedYear - era * 400;
+        var dayOfYear = (153 * (month + (month > 2 ? -3 : 9)) + 2) / 5 + day - 1;
+        var dayOfEra = yearOfEra * 365 + yearOfEra / 4 - yearOfEra / 100 + dayOfYear;
+        epochDays = era * 146097 + dayOfEra - 719468;
+        return true;
+    }
+
+    private static bool HasDateWithoutStringBranch(JsonNode avroType)
+    {
+        static bool IsDate(JsonNode? node) =>
+            node is JsonObject obj
+            && Js.Str(Js.Get(obj, "logicalType")) == "date";
+
+        static bool IsString(JsonNode? node)
+        {
+            if (node?.GetValueKind() == JsonValueKind.String)
+            {
+                return node.GetValue<string>() == "string";
+            }
+            return node is JsonObject obj && Js.Str(Js.Get(obj, "type")) == "string";
+        }
+
+        if (avroType is not JsonArray branches)
+        {
+            return IsDate(avroType);
+        }
+        return branches.Any(IsDate) && !branches.Any(IsString);
+    }
 
     /// <summary>
     /// The keywords §6.4.1 carries in the <c>annotations</c> attribute in

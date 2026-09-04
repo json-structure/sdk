@@ -3,11 +3,26 @@
   "$id": "https://example.com/avro/optional-and-defaults",
   "name": "Settings",
   "type": "object",
+  "definitions": {
+    "EffectiveDate": {
+      "name": "EffectiveDate",
+      "type": "date"
+    }
+  },
   "properties": {
     "id": { "type": "string" },
     "retries": { "type": "int32", "default": 3 },
     "label": { "type": "string" },
     "enabled": { "type": "boolean", "default": true },
+    "effectiveDate": { "type": "date", "default": "1970-01-02" },
+    "referencedDate": {
+      "type": { "$ref": "#/definitions/EffectiveDate" },
+      "default": "1970-01-03"
+    },
+    "dateOrBoolean": {
+      "type": ["date", "boolean"],
+      "default": "1970-01-04"
+    },
     "kind": { "type": "string", "const": "settings" }
   },
   "required": ["id"]
