@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/avro/addins",
+  "$root": "#/definitions/Document",
+  "$offers": {
+    "Auditable": "#/definitions/Auditable",
+    "Taggable": "#/definitions/Taggable"
+  },
+  "definitions": {
+    "Document": {
+      "name": "Document",
+      "type": "object",
+      "properties": { "title": { "type": "string" } },
+      "required": ["title"]
+    },
+    "Auditable": {
+      "name": "Auditable",
+      "abstract": true,
+      "type": "object",
+      "$extends": "#/definitions/Document",
+      "properties": { "createdBy": { "type": "string" } },
+      "required": ["createdBy"]
+    },
+    "Taggable": {
+      "name": "Taggable",
+      "abstract": true,
+      "type": "object",
+      "$extends": "#/definitions/Document",
+      "properties": { "tags": { "type": "array", "items": { "type": "string" } } },
+      "required": ["tags"]
+    }
+  }
+}

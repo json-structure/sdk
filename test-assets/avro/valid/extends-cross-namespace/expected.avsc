@@ -1,0 +1,19 @@
+{
+  "type": "record",
+  "name": "Ticket",
+  "namespace": "app",
+  "fields": [
+    {
+      "name": "createdBy",
+      "type": "string"
+    },
+    {
+      "name": "id",
+      "type": "string"
+    },
+    {
+      "name": "title",
+      "type": "string"
+    }
+  ]
+}

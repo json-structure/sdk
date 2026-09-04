@@ -1,0 +1,6 @@
+syntax = "proto3";
+
+message Node {
+  string value = 1;
+  repeated Node children = 2;
+}

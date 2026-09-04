@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+enum Account_state {
+  reserved 5;
+  ACCOUNT_STATE_UNSPECIFIED = 0;
+  open = 7;
+  closed = 8;
+}
+
+message Account {
+  optional string inserted = 2;
+  string id = 1;
+  optional string code = 25;
+  optional string label = 4;
+  Account_state state = 3;
+  reserved 6, 9;
+}

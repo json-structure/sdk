@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/avro/open-record",
+  "name": "Thing",
+  "type": "object",
+  "properties": { "a": { "type": "string" } },
+  "required": ["a"],
+  "additionalProperties": true
+}

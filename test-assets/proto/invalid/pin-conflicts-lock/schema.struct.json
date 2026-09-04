@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/proto/pin-conflicts-lock",
+  "name": "Account",
+  "type": "object",
+  "properties": {
+    "state": {
+      "type": "string",
+      "enum": ["open", "closed"],
+      "protoNumbers": { "open": 7 }
+    }
+  },
+  "required": ["state"]
+}

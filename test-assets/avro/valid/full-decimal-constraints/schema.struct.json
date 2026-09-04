@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/avro/full-decimal-constraints",
+  "name": "Money",
+  "type": "object",
+  "properties": {
+    "carried": { "type": "decimal", "precision": 9, "scale": 2, "minimum": 0 },
+    "noPrecision": { "type": "decimal", "scale": 2, "maximum": 100 },
+    "scaleOverPrecision": { "type": "decimal", "precision": 2, "scale": 5 }
+  },
+  "required": ["carried", "noPrecision", "scaleOverPrecision"]
+}

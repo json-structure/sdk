@@ -1,0 +1,83 @@
+{
+  "type": "record",
+  "name": "Basket",
+  "fields": [
+    {
+      "name": "items",
+      "type": {
+        "type": "array",
+        "items": {
+          "type": "record",
+          "name": "Item",
+          "fields": [
+            {
+              "name": "sku",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "byId",
+      "type": {
+        "type": "map",
+        "values": "Item"
+      }
+    },
+    {
+      "name": "colours",
+      "type": {
+        "type": "array",
+        "items": {
+          "type": "enum",
+          "name": "Colour",
+          "symbols": [
+            "RED",
+            "BLUE"
+          ]
+        }
+      }
+    },
+    {
+      "name": "inline",
+      "type": {
+        "type": "array",
+        "items": {
+          "type": "record",
+          "name": "Basket_inline_item",
+          "fields": [
+            {
+              "name": "n",
+              "type": "int"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "inlineEnum",
+      "type": {
+        "type": "array",
+        "items": {
+          "type": "enum",
+          "name": "Basket_inlineEnum_item",
+          "symbols": [
+            "A",
+            "B"
+          ]
+        }
+      }
+    },
+    {
+      "name": "grid",
+      "type": {
+        "type": "array",
+        "items": {
+          "type": "array",
+          "items": "Item"
+        }
+      }
+    }
+  ]
+}

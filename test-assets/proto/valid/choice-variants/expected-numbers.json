@@ -1,0 +1,40 @@
+{
+  "version": 2,
+  "messages": {
+    "Node_value_nested": {
+      "fields": {
+        "a": 1,
+        "b": 2
+      }
+    },
+    "Node_value": {
+      "fields": {
+        "text": 1,
+        "number": 2,
+        "flag": 3,
+        "nested": 4,
+        "children": 5
+      }
+    },
+    "Node_listItem": {
+      "fields": {
+        "x": 1,
+        "y": 2
+      }
+    },
+    "Node_bagValue": {
+      "fields": {
+        "p": 1,
+        "q": 2
+      }
+    },
+    "Node": {
+      "fields": {
+        "value": 1,
+        "list": 2,
+        "bag": 3
+      }
+    }
+  },
+  "enums": {}
+}

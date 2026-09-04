@@ -1,0 +1,5 @@
+{
+  "value": { "value": { "value": "deep" } },
+  "list": [{ "value": "one" }, { "value": 2 }],
+  "bag": { "k": { "value": "v" } }
+}

@@ -1,0 +1,40 @@
+[
+  {
+    "type": "record",
+    "name": "circle",
+    "fields": [
+      {
+        "name": "value",
+        "type": {
+          "type": "record",
+          "name": "Shape_circle",
+          "fields": [
+            {
+              "name": "r",
+              "type": "double"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "type": "record",
+    "name": "square",
+    "fields": [
+      {
+        "name": "value",
+        "type": {
+          "type": "record",
+          "name": "Shape_square",
+          "fields": [
+            {
+              "name": "s",
+              "type": "double"
+            }
+          ]
+        }
+      }
+    ]
+  }
+]

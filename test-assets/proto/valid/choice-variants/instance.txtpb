@@ -1,0 +1,12 @@
+# message: Node
+value {
+nested {
+a: 7 } }
+list {
+x: "hi" }
+list {
+y: 3 }
+bag {
+key: "k"
+value {
+q: 9 } }

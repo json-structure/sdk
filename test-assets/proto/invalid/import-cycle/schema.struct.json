@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/proto/import-cycle",
+  "$root": "#/definitions/left/Left",
+  "definitions": {
+    "left": {
+      "Left": {
+        "name": "Left",
+        "type": "object",
+        "properties": { "right": { "type": { "$ref": "#/definitions/right/Right" } } },
+        "required": ["right"]
+      }
+    },
+    "right": {
+      "Right": {
+        "name": "Right",
+        "type": "object",
+        "properties": { "left": { "type": { "$ref": "#/definitions/left/Left" } } },
+        "required": ["left"]
+      }
+    }
+  }
+}

@@ -1,0 +1,3 @@
+kind: Invalid
+path: #/definitions/Mood
+message: enum symbol 'RED' is already declared by enum `Colour`; protobuf enum values are siblings of their type, so they must be unique within the enclosing scope (at #/definitions/Mood)

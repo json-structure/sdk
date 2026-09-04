@@ -1,0 +1,23 @@
+{
+  "version": 2,
+  "messages": {
+    "Envelope_payload_1": {
+      "fields": {
+        "body": 1
+      }
+    },
+    "Envelope": {
+      "fields": {
+        "id": 1,
+        "payload": 2,
+        "declared": 3
+      }
+    },
+    "Envelope_payload": {
+      "fields": {
+        "note": 1
+      }
+    }
+  },
+  "enums": {}
+}

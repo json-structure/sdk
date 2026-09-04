@@ -1,0 +1,8 @@
+# message: Landmark
+id: "l-1"
+createdAt: "2020-01-01"
+label: "Tower"
+location {
+lat: 1.5
+lon: 2.5 }
+visitors: 9

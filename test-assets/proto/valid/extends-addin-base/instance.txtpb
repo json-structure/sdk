@@ -1,0 +1,6 @@
+# message: Landmark
+id: "l-1"
+label: "Tower"
+auditedBy: "cv"
+auditedAt: "2020-01-01"
+visitors: 12

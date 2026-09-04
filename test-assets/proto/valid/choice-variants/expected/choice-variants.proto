@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+message Node_value_nested {
+  oneof nested {
+    int32 a = 1;
+    string b = 2;
+  }
+}
+
+message Node_value_children {
+  repeated Node items = 1;
+}
+
+message Node_value {
+  oneof value {
+    string text = 1;
+    double number = 2;
+    bool flag = 3;
+    Node_value_nested nested = 4;
+    Node_value_children children = 5;
+  }
+}
+
+message Node_listItem {
+  oneof value {
+    string x = 1;
+    int32 y = 2;
+  }
+}
+
+message Node_bagValue {
+  oneof value {
+    string p = 1;
+    int32 q = 2;
+  }
+}
+
+message Node {
+  Node_value value = 1;
+  repeated Node_listItem list = 2;
+  map<string, Node_bagValue> bag = 3;
+}

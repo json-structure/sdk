@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+enum LegacyRecord_status {
+  LEGACY_RECORD_STATUS_UNSPECIFIED = 0;
+  IN_STOCK = 1;
+  OUT_OF_STOCK = 2;
+}
+
+message LegacyRecord {
+  string firstName = 1;
+  LegacyRecord_status status = 2;
+}

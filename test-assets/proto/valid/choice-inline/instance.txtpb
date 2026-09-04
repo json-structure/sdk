@@ -1,0 +1,5 @@
+# message: Shape
+id: "s-1"
+circle {
+id: "c-1"
+radius: 2.5 }

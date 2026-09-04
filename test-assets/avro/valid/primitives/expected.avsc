@@ -1,0 +1,62 @@
+{
+  "type": "record",
+  "name": "Primitives",
+  "fields": [
+    {
+      "name": "s",
+      "type": "string"
+    },
+    {
+      "name": "b",
+      "type": "boolean"
+    },
+    {
+      "name": "i8",
+      "type": "int"
+    },
+    {
+      "name": "i16",
+      "type": "int"
+    },
+    {
+      "name": "i32",
+      "type": "int"
+    },
+    {
+      "name": "i64",
+      "type": "long"
+    },
+    {
+      "name": "u8",
+      "type": "int"
+    },
+    {
+      "name": "u16",
+      "type": "int"
+    },
+    {
+      "name": "u32",
+      "type": "long"
+    },
+    {
+      "name": "f",
+      "type": "float"
+    },
+    {
+      "name": "d",
+      "type": "double"
+    },
+    {
+      "name": "n",
+      "type": "double"
+    },
+    {
+      "name": "bin",
+      "type": "bytes"
+    },
+    {
+      "name": "nul",
+      "type": "null"
+    }
+  ]
+}

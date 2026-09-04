@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/avro/root-choice",
+  "$root": "#/definitions/Shape",
+  "definitions": {
+    "Shape": {
+      "name": "Shape",
+      "type": "choice",
+      "choices": {
+        "circle": { "type": "object", "properties": { "r": { "type": "double" } }, "required": ["r"] },
+        "square": { "type": "object", "properties": { "s": { "type": "double" } }, "required": ["s"] }
+      }
+    }
+  }
+}

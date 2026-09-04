@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/avro/abstract-root",
+  "$root": "#/definitions/Base",
+  "definitions": {
+    "Base": { "name": "Base", "abstract": true, "type": "object", "properties": { "a": { "type": "string" } }, "required": ["a"] }
+  }
+}

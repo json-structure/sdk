@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+message Circle {
+  string id = 1;
+  double radius = 2;
+}
+
+message Square {
+  string id = 1;
+  double side = 2;
+}
+
+message Shape {
+  string id = 1;
+  oneof kind {
+    Circle circle = 2;
+    Square square = 3;
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "version": 2,
+  "messages": {
+    "Event_body_created": {
+      "fields": {
+        "at": 1
+      }
+    },
+    "Event_body_deleted": {
+      "fields": {
+        "reason": 1
+      }
+    },
+    "Event_body": {
+      "fields": {
+        "created": 1,
+        "deleted": 2
+      }
+    },
+    "Event": {
+      "fields": {
+        "body": 1
+      }
+    }
+  },
+  "enums": {}
+}

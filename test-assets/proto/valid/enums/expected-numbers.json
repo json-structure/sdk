@@ -1,0 +1,26 @@
+{
+  "version": 2,
+  "messages": {
+    "Order": {
+      "fields": {
+        "status": 1,
+        "priority": 2
+      }
+    }
+  },
+  "enums": {
+    "Order_status": {
+      "values": {
+        "pending": 1,
+        "shipped": 2,
+        "delivered": 3
+      }
+    },
+    "Order_priority": {
+      "values": {
+        "low": 1,
+        "high": 2
+      }
+    }
+  }
+}

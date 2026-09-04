@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "messages": {
+    "Envelope": {
+      "fields": {
+        "id": 1,
+        "payload": 2,
+        "meta": 3
+      }
+    }
+  },
+  "enums": {}
+}

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/proto/numbering",
+  "name": "Account",
+  "type": "object",
+  "properties": {
+    "inserted": { "type": "string" },
+    "id": { "type": "string", "protoNumber": 1 },
+    "code": { "type": "string", "protoNumber": 25 },
+    "label": { "type": "string" },
+    "state": {
+      "type": "string",
+      "enum": ["open", "closed"],
+      "protoNumbers": { "open": 7, "closed": 8 }
+    }
+  },
+  "required": ["id", "state"]
+}

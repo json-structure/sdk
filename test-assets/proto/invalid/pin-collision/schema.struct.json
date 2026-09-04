@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/proto/pin-collision",
+  "name": "Account",
+  "type": "object",
+  "properties": {
+    "a": { "type": "string", "protoNumber": 5 },
+    "b": { "type": "string", "protoNumber": 5 }
+  },
+  "required": ["a", "b"]
+}

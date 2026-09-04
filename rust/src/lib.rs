@@ -76,6 +76,8 @@
 //! - `JSONStructureImport` - Schema imports
 //! - `JSONStructureAlternateNames` - Alternate property names
 //! - `JSONStructureUnits` - Unit annotations
+//! - `JSONStructureSemanticAnnotations` - Semantic and reference-system annotations
+//! - `JSONStructureRelations` - Typed relations between identified objects
 
 mod error_codes;
 mod instance_validator;
@@ -83,6 +85,11 @@ mod json_source_locator;
 mod schema_validator;
 mod types;
 
+pub mod avro;
+pub mod consolidate;
+pub mod proto;
+
+pub use consolidate::{consolidate, ConsolidateError, FileResolver, MapResolver, SchemaResolver};
 pub use error_codes::{InstanceErrorCode, SchemaErrorCode};
 pub use instance_validator::InstanceValidator;
 pub use json_source_locator::JsonSourceLocator;

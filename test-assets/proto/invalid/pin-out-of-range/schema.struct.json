@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/proto/pin-out-of-range",
+  "name": "Account",
+  "type": "object",
+  "properties": { "a": { "type": "string", "protoNumber": 19500 } },
+  "required": ["a"]
+}

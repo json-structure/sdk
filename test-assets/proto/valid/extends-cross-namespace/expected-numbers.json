@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "messages": {
+    "app.Ticket": {
+      "fields": {
+        "createdBy": 1,
+        "id": 2,
+        "title": 3
+      }
+    }
+  },
+  "enums": {}
+}

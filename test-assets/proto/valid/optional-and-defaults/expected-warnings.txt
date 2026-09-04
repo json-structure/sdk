@@ -1,0 +1,3 @@
+#/properties/retries: proto3 cannot express `default`; the value is not enforced
+#/properties/enabled: proto3 cannot express `default`; the value is not enforced
+#/properties/kind: proto3 cannot express `const`; the value is not enforced

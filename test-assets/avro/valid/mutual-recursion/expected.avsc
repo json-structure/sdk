@@ -1,0 +1,34 @@
+{
+  "type": "record",
+  "name": "Parent",
+  "fields": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "children",
+      "type": {
+        "type": "array",
+        "items": {
+          "type": "record",
+          "name": "Child",
+          "fields": [
+            {
+              "name": "label",
+              "type": "string"
+            },
+            {
+              "name": "parent",
+              "type": [
+                "null",
+                "Parent"
+              ],
+              "default": null
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

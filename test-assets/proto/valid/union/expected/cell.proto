@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+message Cell_value {
+  oneof value {
+    string string_value = 1;
+    int32 int32_value = 2;
+    bool bool_value = 3;
+  }
+}
+
+message Cell {
+  Cell_value value = 1;
+}

@@ -460,6 +460,7 @@ pub const KNOWN_EXTENSIONS: &[&str] = &[
     "JSONStructureUnits",
     "JSONStructureConditionalComposition",
     "JSONStructureValidation",
+    "JSONStructureSemanticAnnotations",
     "JSONStructureRelations",
 ];
 

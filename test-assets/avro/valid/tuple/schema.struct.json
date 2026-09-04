@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/avro/tuple",
+  "name": "Reading",
+  "type": "object",
+  "properties": {
+    "point": {
+      "type": "tuple",
+      "properties": {
+        "x": { "type": "double" },
+        "y": { "type": "double" },
+        "label": { "type": "string" }
+      },
+      "tuple": ["x", "y", "label"]
+    }
+  },
+  "required": ["point"]
+}

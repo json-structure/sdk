@@ -1,0 +1,8 @@
+{
+  "items": [{ "sku": "A1" }],
+  "byId": { "A1": { "sku": "A1" } },
+  "colours": ["RED", "BLUE"],
+  "inline": [{ "n": 4 }],
+  "inlineEnum": ["A"],
+  "grid": [[{ "sku": "B2" }], []]
+}

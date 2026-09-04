@@ -1,0 +1,18 @@
+{
+  "version": 2,
+  "messages": {
+    "Parent": {
+      "fields": {
+        "name": 1,
+        "children": 2
+      }
+    },
+    "Child": {
+      "fields": {
+        "label": 1,
+        "parent": 2
+      }
+    }
+  },
+  "enums": {}
+}

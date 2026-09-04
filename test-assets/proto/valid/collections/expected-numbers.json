@@ -1,0 +1,14 @@
+{
+  "version": 2,
+  "messages": {
+    "Collections": {
+      "fields": {
+        "tags": 1,
+        "ids": 2,
+        "counts": 3,
+        "matrix": 4
+      }
+    }
+  },
+  "enums": {}
+}

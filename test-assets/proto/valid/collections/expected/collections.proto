@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+message Collections_matrixItem {
+  repeated double items = 1;
+}
+
+message Collections {
+  repeated string tags = 1;
+  repeated int32 ids = 2;
+  map<string, int64> counts = 3;
+  repeated Collections_matrixItem matrix = 4;
+}

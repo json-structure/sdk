@@ -1,0 +1,75 @@
+{
+  "type": "record",
+  "name": "Lossless",
+  "fields": [
+    {
+      "name": "dec",
+      "type": {
+        "type": "bytes",
+        "logicalType": "decimal",
+        "precision": 10,
+        "scale": 2
+      }
+    },
+    {
+      "name": "decNoScale",
+      "type": {
+        "type": "bytes",
+        "logicalType": "decimal",
+        "precision": 4,
+        "scale": 0
+      }
+    },
+    {
+      "name": "decNoPrecision",
+      "type": "string"
+    },
+    {
+      "name": "decScaleOverPrecision",
+      "type": "string"
+    },
+    {
+      "name": "date",
+      "type": {
+        "type": "int",
+        "logicalType": "date"
+      }
+    },
+    {
+      "name": "time",
+      "type": "string"
+    },
+    {
+      "name": "dt",
+      "type": "string"
+    },
+    {
+      "name": "dur",
+      "type": "string"
+    },
+    {
+      "name": "uuid",
+      "type": "string"
+    },
+    {
+      "name": "uri",
+      "type": "string"
+    },
+    {
+      "name": "ptr",
+      "type": "string"
+    },
+    {
+      "name": "i128",
+      "type": "string"
+    },
+    {
+      "name": "u64",
+      "type": "string"
+    },
+    {
+      "name": "u128",
+      "type": "string"
+    }
+  ]
+}

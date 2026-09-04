@@ -1,0 +1,35 @@
+{
+  "type": "record",
+  "name": "Root",
+  "namespace": "com.example.app",
+  "fields": [
+    {
+      "name": "left",
+      "type": {
+        "type": "record",
+        "name": "Thing",
+        "namespace": "com.example.left",
+        "fields": [
+          {
+            "name": "a",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "name": "right",
+      "type": {
+        "type": "record",
+        "name": "Thing",
+        "namespace": "com.example.right",
+        "fields": [
+          {
+            "name": "b",
+            "type": "string"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/avro/choice-key-collision",
+  "name": "Doc",
+  "type": "object",
+  "properties": {
+    "head": { "type": "choice", "choices": { "text": { "type": "object", "properties": { "a": { "type": "string" } }, "required": ["a"] }, "n": { "type": "int32" } } },
+    "foot": { "type": "choice", "choices": { "text": { "type": "object", "properties": { "b": { "type": "int32" } }, "required": ["b"] }, "m": { "type": "int32" } } }
+  },
+  "required": ["head","foot"]
+}

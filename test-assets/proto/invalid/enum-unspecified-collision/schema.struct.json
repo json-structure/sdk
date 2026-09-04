@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/proto/enum-unspecified-collision",
+  "name": "Account",
+  "type": "object",
+  "properties": {
+    "state": { "type": "string", "enum": ["ACCOUNT_STATE_UNSPECIFIED", "open"] }
+  },
+  "required": ["state"]
+}

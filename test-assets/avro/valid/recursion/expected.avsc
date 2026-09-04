@@ -1,0 +1,17 @@
+{
+  "type": "record",
+  "name": "Node",
+  "fields": [
+    {
+      "name": "value",
+      "type": "string"
+    },
+    {
+      "name": "children",
+      "type": {
+        "type": "array",
+        "items": "Node"
+      }
+    }
+  ]
+}

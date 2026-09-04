@@ -1,0 +1,19 @@
+{
+  "version": 2,
+  "messages": {
+    "LegacyRecord": {
+      "fields": {
+        "firstName": 1,
+        "status": 2
+      }
+    }
+  },
+  "enums": {
+    "LegacyRecord_status": {
+      "values": {
+        "IN_STOCK": 1,
+        "OUT_OF_STOCK": 2
+      }
+    }
+  }
+}

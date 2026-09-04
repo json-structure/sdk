@@ -1,0 +1,2 @@
+kind: NoRootType
+message: document declares neither `type` nor `$root`; nothing to compile

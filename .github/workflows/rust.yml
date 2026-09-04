@@ -6,6 +6,7 @@ on:
     paths:
       - 'rust/**'
       - 'meta/**'
+      - 'spec/**'
       - 'test-assets/**'
       - '.github/workflows/rust.yml'
     tags:
@@ -15,6 +16,7 @@ on:
     paths:
       - 'rust/**'
       - 'meta/**'
+      - 'spec/**'
       - 'test-assets/**'
       - '.github/workflows/rust.yml'
 
@@ -56,18 +58,30 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-${{ matrix.rust }}-
 
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: '29.3'
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build
         working-directory: rust
-        run: cargo build --verbose
+        run: cargo build --verbose --all-features --all-targets
 
+      # `--all-features` is not optional here. The Avro runtime lives behind
+      # `avro` and the `jstruct` binary behind `cli`; without them the Avro
+      # round-trip tests and the whole CLI suite compile to zero tests and
+      # report success.
       - name: Run tests
         working-directory: rust
-        run: cargo test --verbose
+        env:
+          JSTRUCT_REQUIRE_PROTOC: '1'
+        run: cargo test --verbose --all-features
 
       - name: Run clippy
         if: matrix.rust == 'stable' && matrix.os == 'ubuntu-latest'
         working-directory: rust
-        run: cargo clippy -- -D warnings
+        run: cargo clippy --all-features --all-targets -- -D warnings
 
       - name: Check formatting
         if: matrix.rust == 'stable' && matrix.os == 'ubuntu-latest'

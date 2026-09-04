@@ -1,0 +1,1 @@
+#: Avro records are closed; `additionalProperties` cannot be carried and undeclared properties will not be transmitted

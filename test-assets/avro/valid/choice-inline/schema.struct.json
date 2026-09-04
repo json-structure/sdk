@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/avro/choice-inline",
+  "$root": "#/definitions/Shape",
+  "definitions": {
+    "ShapeBase": {
+      "name": "ShapeBase",
+      "abstract": true,
+      "type": "object",
+      "properties": { "id": { "type": "string" } },
+      "required": ["id"]
+    },
+    "Circle": {
+      "name": "Circle",
+      "type": "object",
+      "$extends": "#/definitions/ShapeBase",
+      "properties": { "radius": { "type": "double" } },
+      "required": ["radius"]
+    },
+    "Square": {
+      "name": "Square",
+      "type": "object",
+      "$extends": "#/definitions/ShapeBase",
+      "properties": { "side": { "type": "double" } },
+      "required": ["side"]
+    },
+    "Shape": {
+      "name": "Shape",
+      "type": "choice",
+      "$extends": "#/definitions/ShapeBase",
+      "selector": "kind",
+      "choices": {
+        "circle": { "type": { "$ref": "#/definitions/Circle" } },
+        "square": { "type": { "$ref": "#/definitions/Square" } }
+      }
+    }
+  }
+}
