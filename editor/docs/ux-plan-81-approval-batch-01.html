@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Editor UX approval batch 01 — Property rows</title>
+  <style>
+    :root { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: #17212a; background: #eef2f4; }
+    * { box-sizing: border-box; }
+    body { margin: 0; line-height: 1.45; }
+    .hero { padding: 28px max(18px, calc((100% - 1500px) / 2)); border-bottom: 4px solid #54badb; background: #172c36; color: #fff; }
+    .hero h1 { margin: 0 0 8px; font-size: clamp(1.8rem, 4vw, 2.7rem); }
+    .hero p { max-width: 95ch; margin: 0; color: #d9e6ea; }
+    main { width: min(1500px, 100%); margin: auto; padding: 18px clamp(10px, 2vw, 28px) 60px; }
+    .contract { margin-bottom: 18px; padding: 14px 16px; border: 1px solid #bac8cf; border-left: 5px solid #1682ac; background: #fff; }
+    .contract h2 { margin: 0 0 6px; font-size: 1.05rem; }
+    .contract p { margin: 0; }
+    .card { margin: 18px 0; border: 1px solid #bac8cf; background: #fff; box-shadow: 0 2px 8px #15313d12; }
+    .card header { display: grid; grid-template-columns: 52px 1fr auto; gap: 12px; align-items: center; padding: 12px 14px; border-bottom: 1px solid #d6dfe3; }
+    .num { display: grid; width: 46px; height: 42px; place-items: center; background: #244e61; color: #fff; font-weight: 800; }
+    .card h2 { margin: 0; font-size: 1.15rem; }
+    .card header p { margin: 2px 0 0; color: #60717a; }
+    .pending { padding: 5px 10px; border: 1px solid #b88e35; background: #fff4d9; color: #694b0e; font-size: .78rem; font-weight: 800; text-transform: uppercase; }
+    .comparison { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: #aebdc4; }
+    figure { min-width: 0; margin: 0; padding: 12px; background: #f7f9fa; }
+    figcaption { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 8px; font-weight: 750; }
+    figcaption span { color: #60717a; font-size: .8rem; font-weight: 500; }
+    figure img { display: block; width: 100%; height: auto; border: 1px solid #7e8e96; background: #111; }
+    .full-link { display: inline-block; margin-top: 7px; font-size: .84rem; font-weight: 700; }
+    .details { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 13px 14px 16px; }
+    .details section { padding: 10px 12px; border-left: 3px solid #8fa6b1; background: #f5f8f9; }
+    .details h3 { margin: 0 0 5px; color: #405863; font-size: .76rem; letter-spacing: .05em; text-transform: uppercase; }
+    .details p, .details ul { margin: 0; font-size: .9rem; }
+    .details ul { padding-left: 18px; }
+    a { color: #12658a; }
+    a:focus-visible { outline: 3px solid #157fae; outline-offset: 2px; }
+    @media (max-width: 900px) { .comparison, .details { grid-template-columns: 1fr; } .card header { grid-template-columns: 48px 1fr; } .pending { grid-column: 2; justify-self: start; } }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <h1>Approval batch 01 — Property rows</h1>
+    <p>Five independent proposals grounded in the restored editor. Every Before image is a real current-editor capture. Every After image is a clean standalone rendering of the proposed final state, not an overlay. All five decisions are Pending.</p>
+  </header>
+  <main>
+    <section class="contract">
+      <h2>Invariant for every proposal</h2>
+      <p>All editing remains in the central property canvas. A displayed value becomes its editor in the same location when clicked, reached by Tab, or activated with Enter. Expanded facets remain directly below the property. The Inspector stays informational.</p>
+    </section>
+
+    <article class="card" id="item-11">
+      <header><span class="num">11</span><div><h2>Proposal 11 — Compact inactive property rows</h2><p>Reduce scanning height without hiding authored information or relocating editing.</p></div><span class="pending">Pending</span></header>
+      <div class="comparison">
+        <figure><figcaption>Before — current editor <span>Real capture</span></figcaption><img src="./ux-plan-81-assets/before-design-invoice-root-1440x1000.png" alt="Current Invoice property table with permanently rendered controls"><a class="full-link" href="./ux-plan-81-assets/before-design-invoice-root-1440x1000.png">Open full-size Before</a></figure>
+        <figure><figcaption>After — proposed final state <span>Interactive standalone HTML</span></figcaption><img src="./ux-plan-81-assets/proposed-after-011.png" alt="Proposed compact Invoice property rows with inactive values rendered as text"><a class="full-link" href="./ux-plan-81-assets/proposal-property-row-states.html?item=11">Open interactive After</a></figure>
+      </div>
+      <div class="details"><section><h3>Change</h3><p>Inactive name, type, presence, and description values render as compact readable text in the existing grid.</p></section><section><h3>Unchanged</h3><p>Click, Tab, or Enter activates the same field in place. Disclosure, direct facets, keyboard flow, and the informational Inspector remain.</p></section></div>
+    </article>
+
+    <article class="card" id="item-12">
+      <header><span class="num">12</span><div><h2>Proposal 12 — In-place field activation</h2><p>Transform only the value being edited; preserve the row and surrounding context.</p></div><span class="pending">Pending</span></header>
+      <div class="comparison">
+        <figure><figcaption>Before — current editor <span>Real capture</span></figcaption><img src="./ux-plan-81-assets/before-property-name-focus-1440x1000.png" alt="Current expanded invoiceNumber property with permanent form controls"><a class="full-link" href="./ux-plan-81-assets/before-property-name-focus-1440x1000.png">Open full-size Before</a></figure>
+        <figure><figcaption>After — proposed active state <span>Interactive standalone HTML</span></figcaption><img src="./ux-plan-81-assets/proposed-after-012.png" alt="Proposed expanded property row where only invoiceNumber has transformed into an input"><a class="full-link" href="./ux-plan-81-assets/proposal-property-row-states.html?item=12">Open interactive After, initially inactive</a></figure>
+      </div>
+      <div class="details"><section><h3>Change</h3><p>The activated invoiceNumber text becomes the existing name input in the same cell. The linked After starts inactive so click, Tab focus, and Enter activation can be reviewed.</p></section><section><h3>Dependency and invariant</h3><p>This proposal depends on approval of item 11’s displayed-value state. The expanded inline facets and selected-property Inspector remain visible while the name is edited.</p></section></div>
+    </article>
+
+    <article class="card" id="item-14">
+      <header><span class="num">14</span><div><h2>Proposal 14 — Collapsed authored summaries</h2><p>Expose authored qualifiers and annotations without expanding the full detail editor.</p></div><span class="pending">Pending</span></header>
+      <div class="comparison">
+        <figure><figcaption>Before — current expanded state <span>Real capture</span></figcaption><img src="./ux-plan-81-assets/before-units-expanded-1440x1000.png" alt="Current expanded distance property showing unit and display symbol only in detail controls"><a class="full-link" href="./ux-plan-81-assets/before-units-expanded-1440x1000.png">Open full-size Before</a></figure>
+        <figure><figcaption>After — proposed collapsed state <span>Standalone HTML capture</span></figcaption><img src="./ux-plan-81-assets/proposed-after-014.png" alt="Proposed collapsed distance row with unit m and symbol d summary chips"><a class="full-link" href="./ux-plan-81-assets/proposal-property-row-states.html?item=14">Open interactive collapsed After</a></figure>
+      </div>
+      <div class="comparison" style="grid-template-columns:1fr"><figure><figcaption>After — same proposal expanded <span>Proof that inline editors remain below distance</span></figcaption><img src="./ux-plan-81-assets/proposed-after-014-expanded.png" alt="Proposed distance row expanded with Display symbol and Display unit editors directly below it"><a class="full-link" href="./ux-plan-81-assets/proposal-property-row-states.html?item=14&amp;state=expanded">Open interactive expanded After</a></figure></div>
+      <div class="details"><section><h3>Change</h3><p>The collapsed distance row gains a restrained `unit m · symbol d` summary derived only from authored values.</p></section><section><h3>Unchanged</h3><p>Expanding the row still exposes the full inline annotation editors directly beneath distance.</p></section></div>
+    </article>
+
+    <article class="card" id="item-18">
+      <header><span class="num">18</span><div><h2>Proposal 18 — Delete in row overflow</h2><p>Remove the destructive action from the normal scanning path without hiding it remotely.</p></div><span class="pending">Pending</span></header>
+      <div class="comparison">
+        <figure><figcaption>Before — current editor <span>Real capture</span></figcaption><img src="./ux-plan-81-assets/before-design-invoice-root-1440x1000.png" alt="Current property rows with an exposed X delete action on every row"><a class="full-link" href="./ux-plan-81-assets/before-design-invoice-root-1440x1000.png">Open full-size Before</a></figure>
+        <figure><figcaption>After — proposed final state <span>Interactive standalone HTML</span></figcaption><img src="./ux-plan-81-assets/proposed-after-018.png" alt="Proposed property row overflow menu containing only Delete property"><a class="full-link" href="./ux-plan-81-assets/proposal-property-row-states.html?item=18">Open keyboard-accessible After</a></figure>
+      </div>
+      <div class="details"><section><h3>Change</h3><p>Each row exposes one actions button. Its menu contains only the existing Delete property action; no new commands are proposed.</p></section><section><h3>Unchanged</h3><p>The current permanent field controls remain in this proposal so the delete-placement decision is isolated. Delete stays attached to the row and does not move to the Inspector.</p></section></div>
+    </article>
+
+    <article class="card" id="item-19">
+      <header><span class="num">19</span><div><h2>Proposal 19 — Neutral row selection</h2><p>Allow selection for context and navigation without treating selection as an edit command.</p></div><span class="pending">Pending</span></header>
+      <div class="comparison">
+        <figure><figcaption>Before — current collapsed state <span>Real capture</span></figcaption><img src="./ux-plan-81-assets/before-design-invoice-root-1440x1000.png" alt="Current collapsed property table without a neutral row selection state"><a class="full-link" href="./ux-plan-81-assets/before-design-invoice-root-1440x1000.png">Open full-size Before</a></figure>
+        <figure><figcaption>After — proposed selected state <span>Interactive standalone HTML</span></figcaption><img src="./ux-plan-81-assets/proposed-after-019.png" alt="Proposed selected property row with current controls retained and no field focused"><a class="full-link" href="./ux-plan-81-assets/proposal-property-row-states.html?item=19">Open focusable selected-row After</a></figure>
+      </div>
+      <div class="details"><section><h3>Change</h3><p>The property row is a focusable grid row with `aria-selected`; neutral row activation selects invoiceNumber and updates the informational Inspector.</p></section><section><h3>Unchanged</h3><p>The current permanent controls remain in this isolated proposal. Clicking or tabbing to a specific control still activates that control rather than the row.</p></section></div>
+    </article>
+  </main>
+</body>
+</html>
