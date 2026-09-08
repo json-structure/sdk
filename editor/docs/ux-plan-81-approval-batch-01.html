@@ -20,7 +20,7 @@
     .num { display: grid; width: 46px; height: 42px; place-items: center; background: #244e61; color: #fff; font-weight: 800; }
     .card h2 { margin: 0; font-size: 1.15rem; }
     .card header p { margin: 2px 0 0; color: #60717a; }
-    .pending { padding: 5px 10px; border: 1px solid #b88e35; background: #fff4d9; color: #694b0e; font-size: .78rem; font-weight: 800; text-transform: uppercase; }
+    .pending { padding: 5px 10px; border: 1px solid #23825e; background: #e4f5ed; color: #07573b; font-size: .78rem; font-weight: 800; text-transform: uppercase; }
     .comparison { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: #aebdc4; }
     figure { min-width: 0; margin: 0; padding: 12px; background: #f7f9fa; }
     figcaption { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 8px; font-weight: 750; }
@@ -40,7 +40,7 @@
 <body>
   <header class="hero">
     <h1>Approval batch 01 — Property rows</h1>
-    <p>Five independent proposals grounded in the restored editor. Every Before image is a real current-editor capture. Every After image is a clean standalone rendering of the proposed final state, not an overlay. All five decisions are Pending.</p>
+    <p>Five independent proposals grounded in the restored editor. Every Before image is a real current-editor capture. Every After image is a clean standalone rendering of the proposed final state, not an overlay. The user approved all five proposals on 8 September 2026.</p>
   </header>
   <main>
     <section class="contract">
@@ -49,7 +49,7 @@
     </section>
 
     <article class="card" id="item-11">
-      <header><span class="num">11</span><div><h2>Proposal 11 — Compact inactive property rows</h2><p>Reduce scanning height without hiding authored information or relocating editing.</p></div><span class="pending">Pending</span></header>
+      <header><span class="num">11</span><div><h2>Proposal 11 — Compact inactive property rows</h2><p>Reduce scanning height without hiding authored information or relocating editing.</p></div><span class="pending">Approved</span></header>
       <div class="comparison">
         <figure><figcaption>Before — current editor <span>Real capture</span></figcaption><img src="./ux-plan-81-assets/before-design-invoice-root-1440x1000.png" alt="Current Invoice property table with permanently rendered controls"><a class="full-link" href="./ux-plan-81-assets/before-design-invoice-root-1440x1000.png">Open full-size Before</a></figure>
         <figure><figcaption>After — proposed final state <span>Interactive standalone HTML</span></figcaption><img src="./ux-plan-81-assets/proposed-after-011.png" alt="Proposed compact Invoice property rows with inactive values rendered as text"><a class="full-link" href="./ux-plan-81-assets/proposal-property-row-states.html?item=11">Open interactive After</a></figure>
@@ -58,7 +58,7 @@
     </article>
 
     <article class="card" id="item-12">
-      <header><span class="num">12</span><div><h2>Proposal 12 — In-place field activation</h2><p>Transform only the value being edited; preserve the row and surrounding context.</p></div><span class="pending">Pending</span></header>
+      <header><span class="num">12</span><div><h2>Proposal 12 — In-place field activation</h2><p>Transform only the value being edited; preserve the row and surrounding context.</p></div><span class="pending">Approved</span></header>
       <div class="comparison">
         <figure><figcaption>Before — current editor <span>Real capture</span></figcaption><img src="./ux-plan-81-assets/before-property-name-focus-1440x1000.png" alt="Current expanded invoiceNumber property with permanent form controls"><a class="full-link" href="./ux-plan-81-assets/before-property-name-focus-1440x1000.png">Open full-size Before</a></figure>
         <figure><figcaption>After — proposed active state <span>Interactive standalone HTML</span></figcaption><img src="./ux-plan-81-assets/proposed-after-012.png" alt="Proposed expanded property row where only invoiceNumber has transformed into an input"><a class="full-link" href="./ux-plan-81-assets/proposal-property-row-states.html?item=12">Open interactive After, initially inactive</a></figure>
@@ -67,7 +67,7 @@
     </article>
 
     <article class="card" id="item-14">
-      <header><span class="num">14</span><div><h2>Proposal 14 — Collapsed authored summaries</h2><p>Expose authored qualifiers and annotations without expanding the full detail editor.</p></div><span class="pending">Pending</span></header>
+      <header><span class="num">14</span><div><h2>Proposal 14 — Collapsed authored summaries</h2><p>Expose authored qualifiers and annotations without expanding the full detail editor.</p></div><span class="pending">Approved</span></header>
       <div class="comparison">
         <figure><figcaption>Before — current expanded state <span>Real capture</span></figcaption><img src="./ux-plan-81-assets/before-units-expanded-1440x1000.png" alt="Current expanded distance property showing unit and display symbol only in detail controls"><a class="full-link" href="./ux-plan-81-assets/before-units-expanded-1440x1000.png">Open full-size Before</a></figure>
         <figure><figcaption>After — proposed collapsed state <span>Standalone HTML capture</span></figcaption><img src="./ux-plan-81-assets/proposed-after-014.png" alt="Proposed collapsed distance row with unit m and symbol d summary chips"><a class="full-link" href="./ux-plan-81-assets/proposal-property-row-states.html?item=14">Open interactive collapsed After</a></figure>
@@ -77,7 +77,7 @@
     </article>
 
     <article class="card" id="item-18">
-      <header><span class="num">18</span><div><h2>Proposal 18 — Delete in row overflow</h2><p>Remove the destructive action from the normal scanning path without hiding it remotely.</p></div><span class="pending">Pending</span></header>
+      <header><span class="num">18</span><div><h2>Proposal 18 — Delete in row overflow</h2><p>Remove the destructive action from the normal scanning path without hiding it remotely.</p></div><span class="pending">Approved</span></header>
       <div class="comparison">
         <figure><figcaption>Before — current editor <span>Real capture</span></figcaption><img src="./ux-plan-81-assets/before-design-invoice-root-1440x1000.png" alt="Current property rows with an exposed X delete action on every row"><a class="full-link" href="./ux-plan-81-assets/before-design-invoice-root-1440x1000.png">Open full-size Before</a></figure>
         <figure><figcaption>After — proposed final state <span>Interactive standalone HTML</span></figcaption><img src="./ux-plan-81-assets/proposed-after-018.png" alt="Proposed property row overflow menu containing only Delete property"><a class="full-link" href="./ux-plan-81-assets/proposal-property-row-states.html?item=18">Open keyboard-accessible After</a></figure>
@@ -86,7 +86,7 @@
     </article>
 
     <article class="card" id="item-19">
-      <header><span class="num">19</span><div><h2>Proposal 19 — Neutral row selection</h2><p>Allow selection for context and navigation without treating selection as an edit command.</p></div><span class="pending">Pending</span></header>
+      <header><span class="num">19</span><div><h2>Proposal 19 — Neutral row selection</h2><p>Allow selection for context and navigation without treating selection as an edit command.</p></div><span class="pending">Approved</span></header>
       <div class="comparison">
         <figure><figcaption>Before — current collapsed state <span>Real capture</span></figcaption><img src="./ux-plan-81-assets/before-design-invoice-root-1440x1000.png" alt="Current collapsed property table without a neutral row selection state"><a class="full-link" href="./ux-plan-81-assets/before-design-invoice-root-1440x1000.png">Open full-size Before</a></figure>
         <figure><figcaption>After — proposed selected state <span>Interactive standalone HTML</span></figcaption><img src="./ux-plan-81-assets/proposed-after-019.png" alt="Proposed selected property row with current controls retained and no field focused"><a class="full-link" href="./ux-plan-81-assets/proposal-property-row-states.html?item=19">Open focusable selected-row After</a></figure>

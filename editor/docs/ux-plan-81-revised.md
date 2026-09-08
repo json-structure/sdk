@@ -29,17 +29,17 @@ The counts cover all 81 original items: 41 + 23 + 15 + 2.
 
 ## Approval queue: reproduced visual changes
 
-Every item below is `Pending`.
+Every item below is `Pending` unless its table or the approval record explicitly says otherwise.
 
 ### Batch 1 — Property-row read and edit states
 
-| Item | Proposal | Smallest change under review | Evidence |
-|---:|---|---|---|
-| 11 | Compact rows | Render inactive values as compact text in the existing property grid while retaining a restrained description summary. | `before-design-invoice-root-1440x1000.png` |
-| 12 | In-place activation | Replace only the activated displayed value with its existing editor in the same cell. | `before-property-name-focus-1440x1000.png` |
-| 14 | Authored summaries | Show a restrained collapsed summary such as `unit m · symbol d` directly below the property row. | `before-units-expanded-1440x1000.png` |
-| 18 | Delete placement | Replace the prominent row delete button with an accessible overflow menu containing Delete property. | `before-design-invoice-root-1440x1000.png` |
-| 19 | Row selection | Add a neutral selected-row state that does not enter field edit mode. | `before-property-name-focus-1440x1000.png` |
+| Item | Status | Proposal | Approved change | Evidence |
+|---:|---|---|---|---|
+| 11 | **Approved** | Compact rows | Render inactive values as compact text in the existing property grid while retaining a restrained description summary. | `before-design-invoice-root-1440x1000.png` |
+| 12 | **Approved** | In-place activation | Replace only the activated displayed value with its existing editor in the same cell. | `before-property-name-focus-1440x1000.png` |
+| 14 | **Approved** | Authored summaries | Show a restrained collapsed summary such as `unit m · symbol d` directly below the property row. | `before-units-expanded-1440x1000.png` |
+| 18 | **Approved** | Delete placement | Replace the prominent row delete button with an accessible overflow menu containing Delete property. | `before-design-invoice-root-1440x1000.png` |
+| 19 | **Approved** | Row selection | Add a neutral selected-row state that does not enter field edit mode. | `before-property-name-focus-1440x1000.png` |
 
 Review artifact: `ux-plan-81-approval-batch-01.html`.
 
@@ -149,4 +149,8 @@ Record decisions here only after explicit user responses.
 
 | Item | Decision | Date | Notes |
 |---:|---|---|---|
-| — | No decisions yet | — | All 41 reproduced visual items and all 15 nonvisual items remain Pending. |
+| 11 | Approved | 2026-09-08 | Approved as shown in approval batch 01. |
+| 12 | Approved | 2026-09-08 | Approved as shown in approval batch 01. |
+| 14 | Approved | 2026-09-08 | Approved as shown in approval batch 01. |
+| 18 | Approved | 2026-09-08 | Approved as shown in approval batch 01. |
+| 19 | Approved | 2026-09-08 | Approved as shown in approval batch 01. |
