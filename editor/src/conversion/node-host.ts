@@ -12,10 +12,10 @@ export class NodeFilesystemConversionStorage implements ConversionStorage {
   private readonly temporaryDirectories = new Map<string, string>();
 
   async createStagingDirectory(destination: string, _operationId: string): Promise<string> {
-    const parent = resolve(dirname(destination));
-    await mkdir(parent, { recursive: true });
-    const staging = await mkdtemp(join(parent, `.${destination.replace(/^.*[\\/]/, '')}.staging-`));
-    this.temporaryDirectories.set(resolve(staging), parent);
+    const root = resolve(destination);
+    await mkdir(root, { recursive: true });
+    const staging = await mkdtemp(join(root, '.json-structure-staging-'));
+    this.temporaryDirectories.set(resolve(staging), root);
     return staging;
   }
 
@@ -75,10 +75,10 @@ export class NodeFilesystemConversionStorage implements ConversionStorage {
   }
 
   private async createTemporaryDirectory(destination: string, kind: 'rollback'): Promise<string> {
-    const parent = resolve(dirname(destination));
-    await mkdir(parent, { recursive: true });
-    const temporary = await mkdtemp(join(parent, `.${destination.replace(/^.*[\\/]/, '')}.${kind}-`));
-    this.temporaryDirectories.set(resolve(temporary), parent);
+    const root = resolve(destination);
+    await mkdir(root, { recursive: true });
+    const temporary = await mkdtemp(join(root, `.json-structure-${kind}-`));
+    this.temporaryDirectories.set(resolve(temporary), root);
     return temporary;
   }
 

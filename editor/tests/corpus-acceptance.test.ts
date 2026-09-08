@@ -166,7 +166,7 @@ describe('real corpus acceptance matrix', { timeout: 120_000 }, () => {
     expect(rows.some(({ parsed }) => parsed.model?.projections.definitions.some((definition) => definition.relations.length > 0))).toBe(true);
     expect(find('semantic-annotations.real-world.24-fogra-characterization-patch')?.parsed.model?.projections.definitions.some((definition) => definition.semantic?.colorSpaces !== undefined)).toBe(true);
     const namespaceImport = find('import.02-namespace-import');
-    expect(namespaceImport?.parsed.diagnostics.some((diagnostic) => diagnostic.location?.pointer === '/definitions/People/$import' && diagnostic.code === 'json.keyword-invalid')).toBe(true);
+    expect(namespaceImport?.parsed.model?.projections.imports.some((item) => item.pointer === '/definitions/People/$import' && item.source === 'person-library/schema.struct.json')).toBe(true);
     const validImport = parseDocument('memory://valid-import', JSON.stringify({
       $schema: 'https://json-structure.org/meta/extended/v0/#',
       $id: 'urn:json-structure:valid-import',

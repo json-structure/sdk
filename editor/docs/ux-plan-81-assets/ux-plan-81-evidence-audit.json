@@ -1,0 +1,1548 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-08T12:32:22.844Z",
+  "scope": {
+    "authoritativePlan": "editor/docs/ux-plan-81-revised.md",
+    "editorRuntime": "Current restored Vite renderer using the real mountJsonStructureEditor workbench",
+    "rule": "Each item has exactly one classification. This audit does not propose or render AFTER designs."
+  },
+  "liveProbes": {
+    "narrowDesign": {
+      "widths": [
+        320,
+        390,
+        500,
+        620
+      ],
+      "documentOverflow": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "tabpanelMatchedViewport": true,
+      "mobileModeActive": true
+    },
+    "rootSelection": {
+      "fixture": "Financial Types",
+      "rootCheckbox": "Use Invoice as document root = checked",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-design-invoice-root-1440x1000.png"
+    },
+    "definitionSearch": {
+      "query": "currency",
+      "visibleTreeItems": 0
+    },
+    "rowSelection": {
+      "clickResult": "Focused the nullable INPUT; no separate row-only selection target was exposed."
+    },
+    "localError": {
+      "field": "invoiceNumber.maxLength",
+      "entered": "-1",
+      "browserValidationMessage": "Value must be greater than or equal to 0.",
+      "adjacentStatus": "Enter a valid number.",
+      "problemsCount": 0
+    }
+  },
+  "items": [
+    {
+      "number": 1,
+      "section": "Correctness and state",
+      "title": "Narrow layouts",
+      "requirement": "retain usable workspace width at 320, 390, 500, and 620 px.",
+      "classification": "ALREADY_SATISFIED_NO_CHANGE",
+      "fixtureOrDocument": "vscode/test-fixtures/financial-types/schema.struct.json",
+      "viewport": "320, 390, 500, and 620 px live probes; 390 × 844 capture",
+      "steps": [
+        "Launch the current editor renderer.",
+        "Mount the Financial Types fixture and select Invoice in Design.",
+        "Resize to 320, 390, 500, and 620 px; inspect the mobile mode selector, drawers, tabpanel width, and document overflow."
+      ],
+      "observedCurrentBehavior": "Live probes reported zero document overflow and a tabpanel equal to the viewport width at all four requested widths; mobile mode and drawer controls were active.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-design-financial-390x844.png",
+      "relatedCapturePaths": [
+        "editor/docs/ux-plan-81-assets/before-empty-390x844.png",
+        "editor/docs/ux-plan-81-assets/before-narrow-types-drawer-390x844.png",
+        "editor/docs/ux-plan-81-assets/before-narrow-inspector-drawer-390x844.png"
+      ],
+      "satisfyingCurrentControlOrState": "The current mobile mode selector plus on-demand Types and Inspector drawers already preserve the Design work lane."
+    },
+    {
+      "number": 2,
+      "section": "Correctness and state",
+      "title": "Document reset",
+      "requirement": "reset mode, scroll, expansion, selection, and graph state when another document opens.",
+      "classification": "NONVISUAL_REQUIREMENT",
+      "fixtureOrDocument": "editor/scripts/real-host-acceptance.mjs initialText",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the real-host relation fixture.",
+        "Open Graph.",
+        "Select the Source node and inspect the retained graph context."
+      ],
+      "observedCurrentBehavior": "The capture establishes selected graph state, but a still cannot prove what is cleared when a second document opens.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-graph-selection-1440x1000.png",
+      "relatedCapturePaths": [],
+      "testOrArchitectureEvidenceNeeded": "Add an automated two-document lifecycle test that sets mode, scroll, disclosure, selection, graph camera/lens, opens document B, and asserts B starts from its own defaults."
+    },
+    {
+      "number": 3,
+      "section": "Correctness and state",
+      "title": "Root selection",
+      "requirement": "select and feature the declared `$root` when a document opens.",
+      "classification": "ALREADY_SATISFIED_NO_CHANGE",
+      "fixtureOrDocument": "vscode/test-fixtures/financial-types/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Launch the current editor with Financial Types.",
+        "Open Design and inspect the type tree.",
+        "Select Invoice and inspect its root marker, checked Root control, and definition header."
+      ],
+      "observedCurrentBehavior": "Invoice is visibly root-marked in the tree, its Root control is checked, and the cited current capture shows Invoice selected in Design.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-design-invoice-root-1440x1000.png",
+      "relatedCapturePaths": [],
+      "satisfyingCurrentControlOrState": "The existing root marker, checked Root control, selected tree row, and Invoice definition header satisfy the visible requirement."
+    },
+    {
+      "number": 4,
+      "section": "Correctness and state",
+      "title": "Graph counts",
+      "requirement": "separate relations, references, inheritance, and imports.",
+      "classification": "REPRODUCED_VISUAL_CHANGE",
+      "fixtureOrDocument": "editor/scripts/real-host-acceptance.mjs initialText",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the real-host relation fixture.",
+        "Open Graph and choose the Relations lens.",
+        "Fit the atlas and inspect toolbar, graph summary, Details, and relation matrix."
+      ],
+      "observedCurrentBehavior": "Graph reports one aggregate link total while the four edge kinds remain distributed across lenses and separate views.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-graph-relations-1440x1000.png",
+      "relatedCapturePaths": [
+        "editor/docs/ux-plan-81-assets/before-graph-incoming-1440x1000.png",
+        "editor/docs/ux-plan-81-assets/before-graph-inheritance-1440x1000.png",
+        "editor/docs/ux-plan-81-assets/before-graph-references-1440x1000.png",
+        "editor/docs/ux-plan-81-assets/before-graph-imports-1440x1000.png"
+      ],
+      "smallestLiteralUiDelta": "Replace the aggregate link count with four compact per-kind counts in the existing graph toolbar or Details metrics area."
+    },
+    {
+      "number": 5,
+      "section": "Correctness and state",
+      "title": "Semantic source",
+      "requirement": "establish one versioned semantic descriptor for parser, commands, UI, validation, and tests.",
+      "classification": "NONVISUAL_REQUIREMENT",
+      "fixtureOrDocument": "vscode/test-fixtures/financial-types/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the Financial Types fixture.",
+        "Open Source.",
+        "Inspect the Monaco surface and surrounding workbench state."
+      ],
+      "observedCurrentBehavior": "No screen can establish whether all five consumers load one versioned descriptor.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-source-1440x1000.png",
+      "relatedCapturePaths": [],
+      "testOrArchitectureEvidenceNeeded": "Provide an architecture trace naming the descriptor artifact/version and contract tests proving every consumer loads it."
+    },
+    {
+      "number": 6,
+      "section": "Correctness and state",
+      "title": "Preset accuracy",
+      "requirement": "correct inaccurate presets and label invented examples as examples.",
+      "classification": "NONVISUAL_REQUIREMENT",
+      "fixtureOrDocument": "test-assets/avro/valid/full-semantic-annotations/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the semantic-annotations fixture.",
+        "Expand result.",
+        "Choose Browse for Semantic role and inspect labels, exact values, provider text, and controls."
+      ],
+      "observedCurrentBehavior": "The catalog exposes labels and providers, but appearance cannot prove normative accuracy or example status.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-semantic-catalog-1440x1000.png",
+      "relatedCapturePaths": [],
+      "testOrArchitectureEvidenceNeeded": "Provide a preset inventory mapped to normative sources, plus tests distinguishing normative values from explicitly labeled examples."
+    },
+    {
+      "number": 7,
+      "section": "Correctness and state",
+      "title": "Open value spaces",
+      "requirement": "treat catalogs as suggestions, not legal-value boundaries.",
+      "classification": "ALREADY_SATISFIED_NO_CHANGE",
+      "fixtureOrDocument": "test-assets/avro/valid/full-semantic-annotations/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the semantic-annotations fixture.",
+        "Expand result.",
+        "Choose Browse for Semantic role and inspect labels, exact values, provider text, and controls."
+      ],
+      "observedCurrentBehavior": "Catalog-backed fields remain editable and the property detail states “Catalog suggestions are advisory.”",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-semantic-catalog-1440x1000.png",
+      "relatedCapturePaths": [],
+      "satisfyingCurrentControlOrState": "The editable value field, Browse affordance, and advisory provenance text already preserve custom exact values."
+    },
+    {
+      "number": 8,
+      "section": "Correctness and state",
+      "title": "Applicability",
+      "requirement": "use one semantic applicability matrix across all layers.",
+      "classification": "NONVISUAL_REQUIREMENT",
+      "fixtureOrDocument": "test-assets/avro/valid/full-semantic-annotations/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the semantic-annotations fixture.",
+        "Expand result.",
+        "Inspect the inline Annotations region and selected-property Inspector."
+      ],
+      "observedCurrentBehavior": "The UI shows applicability outcomes, but cannot establish that parser, commands, rendering, validation, and serialization share one matrix.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-semantic-expanded-1440x1000.png",
+      "relatedCapturePaths": [],
+      "testOrArchitectureEvidenceNeeded": "Provide one versioned applicability matrix and cross-layer conformance tests."
+    },
+    {
+      "number": 9,
+      "section": "Correctness and state",
+      "title": "Effective metadata",
+      "requirement": "expose member type, origin, requiredness, unit, aliases, and inheritance.",
+      "classification": "REPRODUCED_VISUAL_CHANGE",
+      "fixtureOrDocument": "test-assets/avro/valid/extends-cross-namespace/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the cross-namespace inheritance fixture.",
+        "Select app/Ticket.",
+        "Switch Properties from Local to Effective and inspect every member row."
+      ],
+      "observedCurrentBehavior": "Effective rows show type, requiredness, local/inherited origin, and inheritance source, but omit unit, aliases, and default-origin metadata.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-effective-members-1440x1000.png",
+      "relatedCapturePaths": [],
+      "smallestLiteralUiDelta": "Add unit, alias, and default-origin metadata to the existing Effective row or adjacent read-only details."
+    },
+    {
+      "number": 10,
+      "section": "Property presentation",
+      "title": "Property placement",
+      "requirement": "place Properties directly below the definition header unless authored metadata requires precedence.",
+      "classification": "ALREADY_SATISFIED_NO_CHANGE",
+      "fixtureOrDocument": "vscode/test-fixtures/financial-types/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the Financial Types fixture.",
+        "Open Design and select Invoice.",
+        "Inspect the definition header, property table, relations, and Inspector."
+      ],
+      "observedCurrentBehavior": "Properties is already the first substantive section immediately below the Invoice header and description.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-design-invoice-root-1440x1000.png",
+      "relatedCapturePaths": [],
+      "satisfyingCurrentControlOrState": "The existing header-to-Properties ordering satisfies the item."
+    },
+    {
+      "number": 11,
+      "section": "Property presentation",
+      "title": "Compact rows",
+      "requirement": "reduce inactive row height without hiding authored information.",
+      "classification": "REPRODUCED_VISUAL_CHANGE",
+      "fixtureOrDocument": "vscode/test-fixtures/financial-types/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the Financial Types fixture.",
+        "Open Design and select Invoice.",
+        "Inspect the definition header, property table, relations, and Inspector."
+      ],
+      "observedCurrentBehavior": "Inactive rows remain roughly two lines tall because controls are permanently rendered and descriptions occupy a separate line.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-design-invoice-root-1440x1000.png",
+      "relatedCapturePaths": [],
+      "smallestLiteralUiDelta": "Render inactive values as compact text in the same grid while retaining a restrained description summary."
+    },
+    {
+      "number": 12,
+      "section": "Property presentation",
+      "title": "In-place activation",
+      "requirement": "clicking or tabbing into a displayed property value activates its editor in that location.",
+      "classification": "REPRODUCED_VISUAL_CHANGE",
+      "fixtureOrDocument": "vscode/test-fixtures/financial-types/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount Financial Types and select Invoice.",
+        "Focus or click within the invoiceNumber row.",
+        "Inspect focus, row selection, and surrounding context."
+      ],
+      "observedCurrentBehavior": "Name, type, and description are central, but are permanently rendered as form controls instead of transforming from compact displayed values.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-property-name-focus-1440x1000.png",
+      "relatedCapturePaths": [],
+      "smallestLiteralUiDelta": "Keep the same cell geometry and replace only the activated displayed value with the existing editor."
+    },
+    {
+      "number": 13,
+      "section": "Property presentation",
+      "title": "Empty detail rows",
+      "requirement": "remove empty qualifier and annotation messages from collapsed properties.",
+      "classification": "ALREADY_SATISFIED_NO_CHANGE",
+      "fixtureOrDocument": "vscode/test-fixtures/financial-types/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the Financial Types fixture.",
+        "Open Design.",
+        "Inspect the type tree, selected definition, canvas, Inspector, and status bar."
+      ],
+      "observedCurrentBehavior": "Collapsed rows show authored descriptions but do not emit empty qualifier or annotation placeholder rows.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-design-financial-1440x1000.png",
+      "relatedCapturePaths": [],
+      "satisfyingCurrentControlOrState": "The current collapsed-row presentation already omits those messages."
+    },
+    {
+      "number": 14,
+      "section": "Property presentation",
+      "title": "Authored summaries",
+      "requirement": "show restrained authored qualifier and annotation summaries below the main row.",
+      "classification": "REPRODUCED_VISUAL_CHANGE",
+      "fixtureOrDocument": "test-assets/avro/valid/full-units/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the full-units fixture.",
+        "Expand distance.",
+        "Inspect unit and symbol annotations and the selected-property Inspector."
+      ],
+      "observedCurrentBehavior": "Unit and symbol values appear only after distance is expanded; the collapsed row has no facet summary.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-units-expanded-1440x1000.png",
+      "relatedCapturePaths": [],
+      "smallestLiteralUiDelta": "Add a small summary line or chips such as “unit m · symbol d” below the collapsed row."
+    },
+    {
+      "number": 15,
+      "section": "Property presentation",
+      "title": "Origin distinction",
+      "requirement": "distinguish authored, inherited, and default values.",
+      "classification": "REPRODUCED_VISUAL_CHANGE",
+      "fixtureOrDocument": "test-assets/avro/valid/extends-cross-namespace/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the cross-namespace inheritance fixture.",
+        "Select app/Ticket.",
+        "Switch Properties from Local to Effective and inspect every member row."
+      ],
+      "observedCurrentBehavior": "Local and inherited rows are distinct, but profile, normative, and runtime defaults have no corresponding visual origin.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-effective-members-1440x1000.png",
+      "relatedCapturePaths": [],
+      "smallestLiteralUiDelta": "Extend the existing origin badge with authored, inherited, profile default, normative default, and runtime default."
+    },
+    {
+      "number": 16,
+      "section": "Property presentation",
+      "title": "Add control",
+      "requirement": "place a subtle add control inside the property detail area, not in a remote form.",
+      "classification": "ALREADY_SATISFIED_NO_CHANGE",
+      "fixtureOrDocument": "vscode/test-fixtures/financial-types/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount Financial Types and select Invoice.",
+        "Expand validation and annotations for invoiceNumber.",
+        "Inspect the inline controls, inline status location, and Inspector."
+      ],
+      "observedCurrentBehavior": "Expanded properties already include local Add constraint, Add annotation, and Add structured facet controls.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-property-expanded-1440x1000.png",
+      "relatedCapturePaths": [],
+      "satisfyingCurrentControlOrState": "The existing add controls are attached to the property detail area."
+    },
+    {
+      "number": 17,
+      "section": "Property presentation",
+      "title": "Facet grouping",
+      "requirement": "group expanded controls by Value, Range, Format, Presence, Semantics, Composition, and Advanced.",
+      "classification": "REPRODUCED_VISUAL_CHANGE",
+      "fixtureOrDocument": "vscode/test-fixtures/financial-types/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount Financial Types and select Invoice.",
+        "Expand validation and annotations for invoiceNumber.",
+        "Inspect the inline controls, inline status location, and Inspector."
+      ],
+      "observedCurrentBehavior": "Current groups are Core qualifiers, Validation constraints, Annotations, and a duplicate catch-all section.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-property-expanded-1440x1000.png",
+      "relatedCapturePaths": [],
+      "smallestLiteralUiDelta": "Reorganize the existing inline blocks into the requested seven groups without moving them from the property."
+    },
+    {
+      "number": 18,
+      "section": "Property presentation",
+      "title": "Delete placement",
+      "requirement": "move Delete into an accessible overflow menu.",
+      "classification": "REPRODUCED_VISUAL_CHANGE",
+      "fixtureOrDocument": "vscode/test-fixtures/financial-types/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the Financial Types fixture.",
+        "Open Design and select Invoice.",
+        "Inspect the definition header, property table, relations, and Inspector."
+      ],
+      "observedCurrentBehavior": "Each property row exposes a prominent X delete button beside its normal disclosure control.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-design-invoice-root-1440x1000.png",
+      "relatedCapturePaths": [],
+      "smallestLiteralUiDelta": "Replace the row X with one accessible overflow button containing Delete property."
+    },
+    {
+      "number": 19,
+      "section": "Property presentation",
+      "title": "Row selection",
+      "requirement": "allow row selection without automatically entering edit mode.",
+      "classification": "REPRODUCED_VISUAL_CHANGE",
+      "fixtureOrDocument": "vscode/test-fixtures/financial-types/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount Financial Types and select Invoice.",
+        "Focus or click within the invoiceNumber row.",
+        "Inspect focus, row selection, and surrounding context."
+      ],
+      "observedCurrentBehavior": "A live click within the row focused the nullable input; no neutral row-only selection target was exposed.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-property-name-focus-1440x1000.png",
+      "relatedCapturePaths": [],
+      "smallestLiteralUiDelta": "Add a row selection hit target/state while individual controls retain explicit edit activation."
+    },
+    {
+      "number": 20,
+      "section": "Property presentation",
+      "title": "Field activation",
+      "requirement": "remove Edit facets; activate the specific name, type, description, or value that receives focus.",
+      "classification": "ALREADY_SATISFIED_NO_CHANGE",
+      "fixtureOrDocument": "vscode/test-fixtures/financial-types/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount Financial Types and select Invoice.",
+        "Focus or click within the invoiceNumber row.",
+        "Inspect focus, row selection, and surrounding context."
+      ],
+      "observedCurrentBehavior": "There is no generic Edit facets action; individual name, type, presence, description, and detail controls receive focus directly.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-property-name-focus-1440x1000.png",
+      "relatedCapturePaths": [],
+      "satisfyingCurrentControlOrState": "The current direct data-inline-property controls satisfy field-specific activation."
+    },
+    {
+      "number": 21,
+      "section": "Property presentation",
+      "title": "Context preservation",
+      "requirement": "retain surrounding property context while one field is edited.",
+      "classification": "ALREADY_SATISFIED_NO_CHANGE",
+      "fixtureOrDocument": "vscode/test-fixtures/financial-types/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount Financial Types and select Invoice.",
+        "Expand validation and annotations for invoiceNumber.",
+        "Inspect the inline controls, inline status location, and Inspector."
+      ],
+      "observedCurrentBehavior": "Focusing or expanding invoiceNumber leaves its definition header and neighboring property context in the canvas.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-property-expanded-1440x1000.png",
+      "relatedCapturePaths": [],
+      "satisfyingCurrentControlOrState": "The current inline row and directly attached detail panel preserve context."
+    },
+    {
+      "number": 22,
+      "section": "Property presentation",
+      "title": "Central editing",
+      "requirement": "keep primary property editing in the central canvas; keep the right pane informational.",
+      "classification": "ALREADY_SATISFIED_NO_CHANGE",
+      "fixtureOrDocument": "vscode/test-fixtures/financial-types/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount Financial Types and select Invoice.",
+        "Expand validation and annotations for invoiceNumber.",
+        "Inspect the inline controls, inline status location, and Inspector."
+      ],
+      "observedCurrentBehavior": "Property inputs and validation/annotation controls are central; the Inspector presents selected-property facts and document metadata, not a second property form.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-property-expanded-1440x1000.png",
+      "relatedCapturePaths": [],
+      "satisfyingCurrentControlOrState": "The current central property editor and informational Inspector satisfy this ownership rule."
+    },
+    {
+      "number": 23,
+      "section": "Property presentation",
+      "title": "Disclosure persistence",
+      "requirement": "persist deliberate disclosure state without carrying it into another document.",
+      "classification": "NONVISUAL_REQUIREMENT",
+      "fixtureOrDocument": "vscode/test-fixtures/financial-types/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount Financial Types and select Invoice.",
+        "Expand validation and annotations for invoiceNumber.",
+        "Inspect the inline controls, inline status location, and Inspector."
+      ],
+      "observedCurrentBehavior": "A capture can show an open disclosure but cannot prove persistence across rerenders or isolation between documents.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-property-expanded-1440x1000.png",
+      "relatedCapturePaths": [],
+      "testOrArchitectureEvidenceNeeded": "Add state tests for rerender persistence, document A/B isolation, reopen behavior, and reset behavior."
+    },
+    {
+      "number": 24,
+      "section": "Property presentation",
+      "title": "Nested summaries",
+      "requirement": "summarize nested schemas while retaining direct navigation.",
+      "classification": "REPRODUCED_VISUAL_CHANGE",
+      "fixtureOrDocument": "test-assets/avro/valid/tuple/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the tuple fixture.",
+        "Open Design.",
+        "Inspect the point row and current tuple representation."
+      ],
+      "observedCurrentBehavior": "The point row is labeled any and does not summarize its tuple members; detail is available only farther down or in the Inspector.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-tuple-1440x1000.png",
+      "relatedCapturePaths": [],
+      "smallestLiteralUiDelta": "Show “tuple · 3 members” and a direct nested-navigation affordance in the existing row."
+    },
+    {
+      "number": 25,
+      "section": "Property presentation",
+      "title": "Tuple ordering",
+      "requirement": "integrate tuple ordering into tuple rows.",
+      "classification": "REPRODUCED_VISUAL_CHANGE",
+      "fixtureOrDocument": "test-assets/avro/valid/tuple/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the tuple fixture.",
+        "Expand point.",
+        "Inspect property details and Nested tuple members."
+      ],
+      "observedCurrentBehavior": "Nested tuple members occupy a separate lower section and ordering is not expressed directly in each member row.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-tuple-expanded-1440x1000.png",
+      "relatedCapturePaths": [],
+      "smallestLiteralUiDelta": "Add the tuple index and reorder handle to each existing nested tuple row."
+    },
+    {
+      "number": 26,
+      "section": "Property presentation",
+      "title": "Touch affordances",
+      "requirement": "keep editable values discoverable without hover.",
+      "classification": "ALREADY_SATISFIED_NO_CHANGE",
+      "fixtureOrDocument": "vscode/test-fixtures/financial-types/schema.struct.json",
+      "viewport": "320, 390, 500, and 620 px live probes; 390 × 844 capture",
+      "steps": [
+        "Launch the current editor renderer.",
+        "Mount the Financial Types fixture and select Invoice in Design.",
+        "Resize to 320, 390, 500, and 620 px; inspect the mobile mode selector, drawers, tabpanel width, and document overflow."
+      ],
+      "observedCurrentBehavior": "At 390 px the name, type, presence, disclosure, and delete controls remain visible without hover, with touch-sized mobile controls.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-design-financial-390x844.png",
+      "relatedCapturePaths": [
+        "editor/docs/ux-plan-81-assets/before-empty-390x844.png",
+        "editor/docs/ux-plan-81-assets/before-narrow-types-drawer-390x844.png",
+        "editor/docs/ux-plan-81-assets/before-narrow-inspector-drawer-390x844.png"
+      ],
+      "satisfyingCurrentControlOrState": "The visible controls and on-demand drawers already provide touch discovery."
+    },
+    {
+      "number": 27,
+      "section": "Inline editing behavior",
+      "title": "Name editor",
+      "requirement": "transform the displayed property name into an input on click, Enter, or keyboard focus.",
+      "classification": "REPRODUCED_VISUAL_CHANGE",
+      "fixtureOrDocument": "vscode/test-fixtures/financial-types/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount Financial Types and select Invoice.",
+        "Focus or click within the invoiceNumber row.",
+        "Inspect focus, row selection, and surrounding context."
+      ],
+      "observedCurrentBehavior": "The property name is always an input, so the compact displayed-name-to-input transition is absent.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-property-name-focus-1440x1000.png",
+      "relatedCapturePaths": [],
+      "smallestLiteralUiDelta": "Render the inactive name as text and swap that same cell to the existing input on activation."
+    },
+    {
+      "number": 28,
+      "section": "Inline editing behavior",
+      "title": "Type editor",
+      "requirement": "transform the displayed type into the existing type selector in place.",
+      "classification": "ALREADY_SATISFIED_NO_CHANGE",
+      "fixtureOrDocument": "vscode/test-fixtures/financial-types/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the Financial Types fixture.",
+        "Open Design and select Invoice.",
+        "Inspect the definition header, property table, relations, and Inspector."
+      ],
+      "observedCurrentBehavior": "Each type is already an in-row selector with primitive, collection, and reusable-type options.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-design-invoice-root-1440x1000.png",
+      "relatedCapturePaths": [],
+      "satisfyingCurrentControlOrState": "The existing selector satisfies direct in-place type editing."
+    },
+    {
+      "number": 29,
+      "section": "Inline editing behavior",
+      "title": "Description editor",
+      "requirement": "transform the displayed description into an inline or locally expanding text editor.",
+      "classification": "ALREADY_SATISFIED_NO_CHANGE",
+      "fixtureOrDocument": "vscode/test-fixtures/financial-types/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the Financial Types fixture.",
+        "Open Design and select Invoice.",
+        "Inspect the definition header, property table, relations, and Inspector."
+      ],
+      "observedCurrentBehavior": "Each description is already an inline textarea directly below its property row.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-design-invoice-root-1440x1000.png",
+      "relatedCapturePaths": [],
+      "satisfyingCurrentControlOrState": "The current locally expanding description control satisfies the item."
+    },
+    {
+      "number": 30,
+      "section": "Inline editing behavior",
+      "title": "Required sets",
+      "requirement": "edit requiredness and alternative-required membership beside the property.",
+      "classification": "REPRODUCED_VISUAL_CHANGE",
+      "fixtureOrDocument": "test-assets/avro/valid/required-alternatives/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the required-alternatives fixture.",
+        "Open Design.",
+        "Inspect the Presence column for name, fins, legs, and nickname."
+      ],
+      "observedCurrentBehavior": "Alternative-required data produces blank, unlabeled-looking Presence controls and does not expose clause membership.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-required-alternatives-1440x1000.png",
+      "relatedCapturePaths": [],
+      "smallestLiteralUiDelta": "Replace the ambiguous Presence cells with a readable adjacent alternative-clause control while preserving nested required arrays."
+    },
+    {
+      "number": 31,
+      "section": "Inline editing behavior",
+      "title": "Presence",
+      "requirement": "keep nullable and presence controls directly associated with the property.",
+      "classification": "ALREADY_SATISFIED_NO_CHANGE",
+      "fixtureOrDocument": "test-assets/avro/valid/required-alternatives/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the required-alternatives fixture.",
+        "Open Design.",
+        "Inspect the Presence column for name, fins, legs, and nickname."
+      ],
+      "observedCurrentBehavior": "Nullable and Presence controls are already located in each property row.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-required-alternatives-1440x1000.png",
+      "relatedCapturePaths": [],
+      "satisfyingCurrentControlOrState": "The current columns satisfy locality for ordinary presence editing."
+    },
+    {
+      "number": 32,
+      "section": "Inline editing behavior",
+      "title": "Scalar constraints",
+      "requirement": "edit scalar constraints inside the expanded property detail row.",
+      "classification": "ALREADY_SATISFIED_NO_CHANGE",
+      "fixtureOrDocument": "vscode/test-fixtures/financial-types/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount Financial Types and select Invoice.",
+        "Expand validation and annotations for invoiceNumber.",
+        "Inspect the inline controls, inline status location, and Inspector."
+      ],
+      "observedCurrentBehavior": "invoiceNumber maxLength is rendered in Validation constraints directly below its row.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-property-expanded-1440x1000.png",
+      "relatedCapturePaths": [],
+      "satisfyingCurrentControlOrState": "The current expanded Validation constraints block satisfies inline scalar editing."
+    },
+    {
+      "number": 33,
+      "section": "Inline editing behavior",
+      "title": "Semantic controls",
+      "requirement": "edit semantic annotations inside that same detail row.",
+      "classification": "ALREADY_SATISFIED_NO_CHANGE",
+      "fixtureOrDocument": "test-assets/avro/valid/full-semantic-annotations/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the semantic-annotations fixture.",
+        "Expand result.",
+        "Inspect the inline Annotations region and selected-property Inspector."
+      ],
+      "observedCurrentBehavior": "Semantic role, derivation, time relation, statistic, and related annotations render inside the expanded result property.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-semantic-expanded-1440x1000.png",
+      "relatedCapturePaths": [],
+      "satisfyingCurrentControlOrState": "The current property-attached Annotations block satisfies locality."
+    },
+    {
+      "number": 34,
+      "section": "Inline editing behavior",
+      "title": "Composition",
+      "requirement": "attach composition controls to the property or nested schema they affect.",
+      "classification": "ALREADY_SATISFIED_NO_CHANGE",
+      "fixtureOrDocument": "test-assets/avro/valid/tuple/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the tuple fixture.",
+        "Expand point.",
+        "Inspect property details and Nested tuple members."
+      ],
+      "observedCurrentBehavior": "Composition/structured-facet controls and Nested tuple members are rendered below the affected property, not in the Inspector.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-tuple-expanded-1440x1000.png",
+      "relatedCapturePaths": [],
+      "satisfyingCurrentControlOrState": "The current attached composition and nested-schema surfaces satisfy the item."
+    },
+    {
+      "number": 35,
+      "section": "Inline editing behavior",
+      "title": "Commit and cancel",
+      "requirement": "Enter commits appropriate single-line edits; Escape restores the previous value.",
+      "classification": "NONVISUAL_REQUIREMENT",
+      "fixtureOrDocument": "vscode/test-fixtures/financial-types/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount Financial Types and select Invoice.",
+        "Focus or click within the invoiceNumber row.",
+        "Inspect focus, row selection, and surrounding context."
+      ],
+      "observedCurrentBehavior": "A still image cannot prove Enter commit or Escape restoration semantics.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-property-name-focus-1440x1000.png",
+      "relatedCapturePaths": [],
+      "testOrArchitectureEvidenceNeeded": "Add keyboard tests for every single-line field, exact prior-value restoration, and retained local focus."
+    },
+    {
+      "number": 36,
+      "section": "Inline editing behavior",
+      "title": "Tab order",
+      "requirement": "Tab commits and advances in reading order.",
+      "classification": "NONVISUAL_REQUIREMENT",
+      "fixtureOrDocument": "vscode/test-fixtures/financial-types/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount Financial Types and select Invoice.",
+        "Focus or click within the invoiceNumber row.",
+        "Inspect focus, row selection, and surrounding context."
+      ],
+      "observedCurrentBehavior": "A capture cannot establish commit-on-Tab or the complete focus sequence.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-property-name-focus-1440x1000.png",
+      "relatedCapturePaths": [],
+      "testOrArchitectureEvidenceNeeded": "Add keyboard traversal tests covering name, type, presence, description, details, and the next property."
+    },
+    {
+      "number": 37,
+      "section": "Inline editing behavior",
+      "title": "Vertical movement",
+      "requirement": "ArrowDown retains same-column movement between property rows.",
+      "classification": "NONVISUAL_REQUIREMENT",
+      "fixtureOrDocument": "vscode/test-fixtures/financial-types/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount Financial Types and select Invoice.",
+        "Focus or click within the invoiceNumber row.",
+        "Inspect focus, row selection, and surrounding context."
+      ],
+      "observedCurrentBehavior": "Same-column ArrowDown movement is an interaction contract, not a static visual state.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-property-name-focus-1440x1000.png",
+      "relatedCapturePaths": [],
+      "testOrArchitectureEvidenceNeeded": "Add a keyboard test starting in every supported column and asserting the next-row target."
+    },
+    {
+      "number": 38,
+      "section": "Inline editing behavior",
+      "title": "Last-field creation",
+      "requirement": "Tab from the last description retains collision-free property creation.",
+      "classification": "NONVISUAL_REQUIREMENT",
+      "fixtureOrDocument": "vscode/test-fixtures/financial-types/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the Financial Types fixture.",
+        "Open Design and select Invoice.",
+        "Inspect the definition header, property table, relations, and Inspector."
+      ],
+      "observedCurrentBehavior": "Collision-free creation requires a complete keyboard edit sequence and source assertion.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-design-invoice-root-1440x1000.png",
+      "relatedCapturePaths": [],
+      "testOrArchitectureEvidenceNeeded": "Add a test with field and field2 already present, then Tab from the final description and verify the generated name and selected text."
+    },
+    {
+      "number": 39,
+      "section": "Inline editing behavior",
+      "title": "Focus locality",
+      "requirement": "keyboard editing never transfers focus to the right pane.",
+      "classification": "NONVISUAL_REQUIREMENT",
+      "fixtureOrDocument": "vscode/test-fixtures/financial-types/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount Financial Types and select Invoice.",
+        "Focus or click within the invoiceNumber row.",
+        "Inspect focus, row selection, and surrounding context."
+      ],
+      "observedCurrentBehavior": "A screenshot cannot prove focus history across the keyboard workflow.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-property-name-focus-1440x1000.png",
+      "relatedCapturePaths": [],
+      "testOrArchitectureEvidenceNeeded": "Add focus-trace tests asserting that editing and traversal never move focus into the Inspector."
+    },
+    {
+      "number": 40,
+      "section": "Inline editing behavior",
+      "title": "Local errors",
+      "requirement": "show validation errors adjacent to their field.",
+      "classification": "ALREADY_SATISFIED_NO_CHANGE",
+      "fixtureOrDocument": "vscode/test-fixtures/financial-types/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount Financial Types and select Invoice.",
+        "Expand validation and annotations for invoiceNumber.",
+        "Inspect the inline controls, inline status location, and Inspector."
+      ],
+      "observedCurrentBehavior": "A live probe entered -1 in invoiceNumber maxLength; the browser reported “Value must be greater than or equal to 0.” and adjacent status reported “Enter a valid number.” while Problems stayed at 0.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-property-expanded-1440x1000.png",
+      "relatedCapturePaths": [],
+      "satisfyingCurrentControlOrState": "The existing field validation and data-inline-status message satisfy local error placement."
+    },
+    {
+      "number": 41,
+      "section": "Document and definition comprehension",
+      "title": "Optional overview",
+      "requirement": "add an optional Document Overview for populated documents without displacing Design editing.",
+      "classification": "REPRODUCED_VISUAL_CHANGE",
+      "fixtureOrDocument": "vscode/test-fixtures/financial-types/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the Financial Types fixture.",
+        "Open Design and select Invoice.",
+        "Inspect the definition header, property table, relations, and Inspector."
+      ],
+      "observedCurrentBehavior": "Populated documents expose Design, Graph, Source, Validate, and Convert, but no Overview entry.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-design-invoice-root-1440x1000.png",
+      "relatedCapturePaths": [],
+      "smallestLiteralUiDelta": "Add one Overview tab or mode beside Design while leaving Design selected by default."
+    },
+    {
+      "number": 42,
+      "section": "Document and definition comprehension",
+      "title": "Empty documents",
+      "requirement": "retain the existing first-type creator for new and empty documents.",
+      "classification": "ALREADY_SATISFIED_NO_CHANGE",
+      "fixtureOrDocument": "editor/src/ui/bootstrap.ts defaultUntitledDocument",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Launch the editor with its default untitled document.",
+        "Keep Design active.",
+        "Inspect the first-type creator and import starting points."
+      ],
+      "observedCurrentBehavior": "The empty editor opens on Choose the first type with Object, Array, Set, Map, Tuple, Choice, primitive creation, and import starting points.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-empty-1440x1000.png",
+      "relatedCapturePaths": [
+        "editor/docs/ux-plan-81-assets/before-empty-390x844.png"
+      ],
+      "satisfyingCurrentControlOrState": "The current first-type creator already satisfies the requirement and should remain unchanged."
+    },
+    {
+      "number": 43,
+      "section": "Document and definition comprehension",
+      "title": "Document identity",
+      "requirement": "show purpose, `$id`, profile, validity, and root.",
+      "classification": "REPRODUCED_VISUAL_CHANGE",
+      "fixtureOrDocument": "vscode/test-fixtures/financial-types/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the Financial Types fixture.",
+        "Open Design.",
+        "Inspect the type tree, selected definition, canvas, Inspector, and status bar."
+      ],
+      "observedCurrentBehavior": "Purpose/description, $id, profile, validity, and root are visible but distributed across the header, metadata pane, tree, and status bar.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-design-financial-1440x1000.png",
+      "relatedCapturePaths": [],
+      "smallestLiteralUiDelta": "Add one compact read-only identity summary reusing those values; do not move property editing."
+    },
+    {
+      "number": 44,
+      "section": "Document and definition comprehension",
+      "title": "Definition counts",
+      "requirement": "show local, imported, and effective counts.",
+      "classification": "REPRODUCED_VISUAL_CHANGE",
+      "fixtureOrDocument": "meta/relations/v0/index.json with meta/extended/v0/index.json and meta/core/v0/index.json resolved",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the Relations meta-schema with the current readResource integration.",
+        "Wait for the companion document to resolve.",
+        "Inspect the companion count and visible definition tree."
+      ],
+      "observedCurrentBehavior": "The UI shows “6 definitions” and “1 companions”, not separate local, imported, and effective totals.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-imported-definitions-1440x1000.png",
+      "relatedCapturePaths": [
+        "editor/docs/ux-plan-81-assets/before-graph-imports-1440x1000.png"
+      ],
+      "smallestLiteralUiDelta": "Add three labeled counts beside the existing definition/companion summary."
+    },
+    {
+      "number": 45,
+      "section": "Document and definition comprehension",
+      "title": "Root-first list",
+      "requirement": "list primary definitions with the root first.",
+      "classification": "ALREADY_SATISFIED_NO_CHANGE",
+      "fixtureOrDocument": "vscode/test-fixtures/financial-types/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Launch the current editor with Financial Types.",
+        "Open Design and inspect the type tree.",
+        "Select Invoice and inspect its root marker, checked Root control, and definition header."
+      ],
+      "observedCurrentBehavior": "Invoice, the declared root, is already first in the Financial Types list and visibly root-marked.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-design-invoice-root-1440x1000.png",
+      "relatedCapturePaths": [],
+      "satisfyingCurrentControlOrState": "The existing ordering and root marker satisfy this item."
+    },
+    {
+      "number": 46,
+      "section": "Document and definition comprehension",
+      "title": "Relationship kinds",
+      "requirement": "separate relation, reference, inheritance, and import summaries.",
+      "classification": "REPRODUCED_VISUAL_CHANGE",
+      "fixtureOrDocument": "editor/scripts/real-host-acceptance.mjs initialText",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the real-host relation fixture.",
+        "Open Graph and choose the Relations lens.",
+        "Fit the atlas and inspect toolbar, graph summary, Details, and relation matrix."
+      ],
+      "observedCurrentBehavior": "Lenses distinguish several kinds, but the summary reports a generic relations-link total and references are not separately summarized.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-graph-relations-1440x1000.png",
+      "relatedCapturePaths": [
+        "editor/docs/ux-plan-81-assets/before-graph-incoming-1440x1000.png",
+        "editor/docs/ux-plan-81-assets/before-graph-inheritance-1440x1000.png",
+        "editor/docs/ux-plan-81-assets/before-graph-references-1440x1000.png",
+        "editor/docs/ux-plan-81-assets/before-graph-imports-1440x1000.png"
+      ],
+      "smallestLiteralUiDelta": "Add a compact four-kind breakdown to the existing graph summary."
+    },
+    {
+      "number": 47,
+      "section": "Document and definition comprehension",
+      "title": "Document summary",
+      "requirement": "summarize imports, provenance, semantics, defaults, and unresolved issues.",
+      "classification": "REPRODUCED_VISUAL_CHANGE",
+      "fixtureOrDocument": "meta/relations/v0/index.json with meta/extended/v0/index.json and meta/core/v0/index.json resolved",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the Relations meta-schema with the current readResource integration.",
+        "Wait for the companion document to resolve.",
+        "Inspect the companion count and visible definition tree."
+      ],
+      "observedCurrentBehavior": "These facts remain distributed across tree, Inspector, Graph, and Problems.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-imported-definitions-1440x1000.png",
+      "relatedCapturePaths": [
+        "editor/docs/ux-plan-81-assets/before-graph-imports-1440x1000.png"
+      ],
+      "smallestLiteralUiDelta": "Add one read-only document summary using existing data and links to its source panes."
+    },
+    {
+      "number": 48,
+      "section": "Document and definition comprehension",
+      "title": "Definition synopsis",
+      "requirement": "add a concise read-first definition synopsis.",
+      "classification": "ALREADY_SATISFIED_NO_CHANGE",
+      "fixtureOrDocument": "vscode/test-fixtures/financial-types/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the Financial Types fixture.",
+        "Open Design and select Invoice.",
+        "Inspect the definition header, property table, relations, and Inspector."
+      ],
+      "observedCurrentBehavior": "The definition name and authored description appear at the top of the canvas before Properties and secondary sections.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-design-invoice-root-1440x1000.png",
+      "relatedCapturePaths": [],
+      "satisfyingCurrentControlOrState": "The Invoice heading plus “A business invoice” already supplies a concise synopsis."
+    },
+    {
+      "number": 49,
+      "section": "Document and definition comprehension",
+      "title": "Effective members",
+      "requirement": "show effective members while marking the locally editable subset.",
+      "classification": "ALREADY_SATISFIED_NO_CHANGE",
+      "fixtureOrDocument": "test-assets/avro/valid/extends-cross-namespace/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the cross-namespace inheritance fixture.",
+        "Select app/Ticket.",
+        "Switch Properties from Local to Effective and inspect every member row."
+      ],
+      "observedCurrentBehavior": "The Local/Effective switch exposes effective members; inherited rows show source labels and local rows are marked local.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-effective-members-1440x1000.png",
+      "relatedCapturePaths": [],
+      "satisfyingCurrentControlOrState": "The current Effective table identifies the locally editable subset."
+    },
+    {
+      "number": 50,
+      "section": "Document and definition comprehension",
+      "title": "Meaning first",
+      "requirement": "place descriptions and semantic meaning before secondary controls.",
+      "classification": "REPRODUCED_VISUAL_CHANGE",
+      "fixtureOrDocument": "test-assets/avro/valid/full-semantic-annotations/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the semantic-annotations fixture.",
+        "Expand result.",
+        "Inspect the inline Annotations region and selected-property Inspector."
+      ],
+      "observedCurrentBehavior": "The semantic fixture root says “No description yet” while concepts and observed-property meaning remain elsewhere.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-semantic-expanded-1440x1000.png",
+      "relatedCapturePaths": [],
+      "smallestLiteralUiDelta": "Surface the authored description and concise semantic summary immediately below the definition identity."
+    },
+    {
+      "number": 51,
+      "section": "Document and definition comprehension",
+      "title": "Long descriptions",
+      "requirement": "clamp long descriptions with explicit local expansion.",
+      "classification": "NOT_REPRODUCED_NEEDS_EVIDENCE",
+      "fixtureOrDocument": "meta/relations/v0/index.json with meta/extended/v0/index.json and meta/core/v0/index.json resolved",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the Relations meta-schema with the current readResource integration.",
+        "Wait for the companion document to resolve.",
+        "Inspect the companion count and visible definition tree."
+      ],
+      "observedCurrentBehavior": "The inspected captures do not show a selected definition with a sufficiently long authored description to verify wrapping, clipping, or expansion behavior.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-imported-definitions-1440x1000.png",
+      "relatedCapturePaths": [
+        "editor/docs/ux-plan-81-assets/before-graph-imports-1440x1000.png"
+      ],
+      "missingReproductionEvidence": "Capture a real definition with a multi-paragraph description at desktop and narrow widths and record current overflow plus any local expansion control."
+    },
+    {
+      "number": 52,
+      "section": "Document and definition comprehension",
+      "title": "Identity notation",
+      "requirement": "show ordered identities such as `tenantId -> employeeNumber`.",
+      "classification": "NOT_REPRODUCED_NEEDS_EVIDENCE",
+      "fixtureOrDocument": "editor/scripts/real-host-acceptance.mjs initialText",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the real-host relation fixture.",
+        "Select Source in Design.",
+        "Inspect identity, authored relations, header, and lower relation section."
+      ],
+      "observedCurrentBehavior": "The available relation fixture contains only single-member identities, so ordered multi-member notation was not present.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-relations-design-1440x1000.png",
+      "relatedCapturePaths": [],
+      "missingReproductionEvidence": "Identify an existing fixture with a multi-member identity, open it, and capture the current ordering presentation."
+    },
+    {
+      "number": 53,
+      "section": "Document and definition comprehension",
+      "title": "Required clauses",
+      "requirement": "render alternative required sets as readable clauses.",
+      "classification": "REPRODUCED_VISUAL_CHANGE",
+      "fixtureOrDocument": "test-assets/avro/valid/required-alternatives/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the required-alternatives fixture.",
+        "Open Design.",
+        "Inspect the Presence column for name, fins, legs, and nickname."
+      ],
+      "observedCurrentBehavior": "The required-alternatives source is loaded, but Design does not render its alternatives as readable clauses.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-required-alternatives-1440x1000.png",
+      "relatedCapturePaths": [],
+      "smallestLiteralUiDelta": "Render the nested required sets as explicit clauses beside the affected properties."
+    },
+    {
+      "number": 54,
+      "section": "Document and definition comprehension",
+      "title": "Composition summaries",
+      "requirement": "generate concise natural-language summaries.",
+      "classification": "REPRODUCED_VISUAL_CHANGE",
+      "fixtureOrDocument": "test-assets/avro/valid/tuple/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the tuple fixture.",
+        "Open Design.",
+        "Inspect the point row and current tuple representation."
+      ],
+      "observedCurrentBehavior": "The UI exposes raw tuple members and tuple metadata, but no concise natural-language composition summary.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-tuple-1440x1000.png",
+      "relatedCapturePaths": [],
+      "smallestLiteralUiDelta": "Add one generated summary adjacent to the tuple property."
+    },
+    {
+      "number": 55,
+      "section": "Document and definition comprehension",
+      "title": "Relationship summary",
+      "requirement": "summarize declared relationships near the definition header.",
+      "classification": "REPRODUCED_VISUAL_CHANGE",
+      "fixtureOrDocument": "editor/scripts/real-host-acceptance.mjs initialText",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the real-host relation fixture.",
+        "Select Source in Design.",
+        "Inspect identity, authored relations, header, and lower relation section."
+      ],
+      "observedCurrentBehavior": "Source has a lower Relations section, but the definition header has no outgoing/incoming relationship summary.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-relations-design-1440x1000.png",
+      "relatedCapturePaths": [],
+      "smallestLiteralUiDelta": "Add a short relation/reference summary directly beneath the existing definition identity."
+    },
+    {
+      "number": 56,
+      "section": "Document and definition comprehension",
+      "title": "Inheritance explanation",
+      "requirement": "explain contributed members, precedence, conflicts, and source.",
+      "classification": "REPRODUCED_VISUAL_CHANGE",
+      "fixtureOrDocument": "test-assets/avro/valid/extends-cross-namespace/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the cross-namespace inheritance fixture.",
+        "Select app/Ticket.",
+        "Switch Properties from Local to Effective and inspect every member row."
+      ],
+      "observedCurrentBehavior": "Inherited rows name their source, but precedence, contribution totals, and conflicts are not explained together.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-effective-members-1440x1000.png",
+      "relatedCapturePaths": [],
+      "smallestLiteralUiDelta": "Add a compact explanation beside Effective or Extends using the existing source/conflict data."
+    },
+    {
+      "number": 57,
+      "section": "Document and definition comprehension",
+      "title": "Origin vocabulary",
+      "requirement": "use authored, inherited, profile default, normative default, and runtime default consistently.",
+      "classification": "REPRODUCED_VISUAL_CHANGE",
+      "fixtureOrDocument": "test-assets/avro/valid/extends-cross-namespace/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the cross-namespace inheritance fixture.",
+        "Select app/Ticket.",
+        "Switch Properties from Local to Effective and inspect every member row."
+      ],
+      "observedCurrentBehavior": "Visible origin labels are local and inherited; the complete vocabulary is absent.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-effective-members-1440x1000.png",
+      "relatedCapturePaths": [],
+      "smallestLiteralUiDelta": "Replace/extend existing badges with the five exact origin terms."
+    },
+    {
+      "number": 58,
+      "section": "Document and definition comprehension",
+      "title": "Imported definitions",
+      "requirement": "make imported definitions readable in place while keeping them read-only.",
+      "classification": "REPRODUCED_VISUAL_CHANGE",
+      "fixtureOrDocument": "meta/relations/v0/index.json with meta/extended/v0/index.json and meta/core/v0/index.json resolved",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the Relations meta-schema with the current readResource integration.",
+        "Wait for the companion document to resolve.",
+        "Inspect the companion count and visible definition tree."
+      ],
+      "observedCurrentBehavior": "The editor reports one resolved companion, yet the tree lists only six local Relations definitions; imported definitions are not readable in place.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-imported-definitions-1440x1000.png",
+      "relatedCapturePaths": [
+        "editor/docs/ux-plan-81-assets/before-graph-imports-1440x1000.png"
+      ],
+      "smallestLiteralUiDelta": "Add a read-only imported group to the existing tree and canvas with source provenance and disabled editing."
+    },
+    {
+      "number": 59,
+      "section": "Document and definition comprehension",
+      "title": "Definition tree",
+      "requirement": "add kind, root/imported/abstract state, purpose, and member count.",
+      "classification": "REPRODUCED_VISUAL_CHANGE",
+      "fixtureOrDocument": "test-assets/avro/valid/extends-cross-namespace/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the cross-namespace inheritance fixture.",
+        "Select app/Ticket.",
+        "Inspect the header, Extends section, Local/Effective controls, and tree."
+      ],
+      "observedCurrentBehavior": "Tree nodes show names, namespace grouping, icons, and root controls, but not explicit kind, abstract/imported state, purpose, or member count.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-inheritance-1440x1000.png",
+      "relatedCapturePaths": [],
+      "smallestLiteralUiDelta": "Extend each existing tree row with compact metadata rather than adding another navigator."
+    },
+    {
+      "number": 60,
+      "section": "Document and definition comprehension",
+      "title": "Definition search",
+      "requirement": "search names, descriptions, properties, concepts, relations, and units.",
+      "classification": "REPRODUCED_VISUAL_CHANGE",
+      "fixtureOrDocument": "vscode/test-fixtures/financial-types/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the Financial Types fixture.",
+        "Open Design.",
+        "Inspect the type tree, selected definition, canvas, Inspector, and status bar."
+      ],
+      "observedCurrentBehavior": "A live Filter types query for “currency” returned no visible rows despite Money.currency and its ISO 4217 description.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-design-financial-1440x1000.png",
+      "relatedCapturePaths": [],
+      "smallestLiteralUiDelta": "Broaden the existing filter index to the requested fields; keep the current search box."
+    },
+    {
+      "number": 61,
+      "section": "Semantic annotations and catalogs",
+      "title": "Structured annotations",
+      "requirement": "provide structured inline editors for every supported semantic family.",
+      "classification": "REPRODUCED_VISUAL_CHANGE",
+      "fixtureOrDocument": "test-assets/avro/valid/full-semantic-annotations/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the semantic-annotations fixture.",
+        "Expand result.",
+        "Inspect the inline Annotations region and selected-property Inspector."
+      ],
+      "observedCurrentBehavior": "Simple semantic values have labeled fields, while complex families still fall back to flat or generic JSON-oriented controls.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-semantic-expanded-1440x1000.png",
+      "relatedCapturePaths": [],
+      "smallestLiteralUiDelta": "Replace only the generic complex-family controls with labeled subfields inside the existing Annotations block."
+    },
+    {
+      "number": 62,
+      "section": "Semantic annotations and catalogs",
+      "title": "Annotation locality",
+      "requirement": "keep each semantic editor attached to its property or definition.",
+      "classification": "ALREADY_SATISFIED_NO_CHANGE",
+      "fixtureOrDocument": "test-assets/avro/valid/full-semantic-annotations/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the semantic-annotations fixture.",
+        "Expand result.",
+        "Inspect the inline Annotations region and selected-property Inspector."
+      ],
+      "observedCurrentBehavior": "Semantic editors are rendered inside the expanded result property directly below the row they annotate.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-semantic-expanded-1440x1000.png",
+      "relatedCapturePaths": [],
+      "satisfyingCurrentControlOrState": "The current property-attached Annotations region satisfies locality."
+    },
+    {
+      "number": 63,
+      "section": "Semantic annotations and catalogs",
+      "title": "Identity and bindings",
+      "requirement": "separate external catalog identity from local member bindings.",
+      "classification": "REPRODUCED_VISUAL_CHANGE",
+      "fixtureOrDocument": "test-assets/avro/valid/full-name-binding-dropped/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the name-binding fixture.",
+        "Open Design on the inline root.",
+        "Inspect Coordinate reference system and its property binding rows."
+      ],
+      "observedCurrentBehavior": "The coordinate reference URI, kind, and local coordinate rows occupy one block without explicit external-identity and local-binding sections.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-semantic-bindings-1440x1000.png",
+      "relatedCapturePaths": [],
+      "smallestLiteralUiDelta": "Add those two labels while preserving the existing URI/kind fields and ordered binding rows."
+    },
+    {
+      "number": 64,
+      "section": "Semantic annotations and catalogs",
+      "title": "Reload resolution",
+      "requirement": "resolve saved values back to matching catalog entries.",
+      "classification": "NONVISUAL_REQUIREMENT",
+      "fixtureOrDocument": "test-assets/avro/valid/full-semantic-annotations/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the semantic-annotations fixture.",
+        "Expand result.",
+        "Choose Browse for Semantic role and inspect labels, exact values, provider text, and controls."
+      ],
+      "observedCurrentBehavior": "One open catalog state cannot prove a save, close, reload, and re-resolution lifecycle.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-semantic-catalog-1440x1000.png",
+      "relatedCapturePaths": [],
+      "testOrArchitectureEvidenceNeeded": "Add a persistence test asserting provider, entry, exact JSON, and selected result after reopen."
+    },
+    {
+      "number": 65,
+      "section": "Semantic annotations and catalogs",
+      "title": "Semantic summaries",
+      "requirement": "replace generic configured-value labels with meaningful summaries.",
+      "classification": "REPRODUCED_VISUAL_CHANGE",
+      "fixtureOrDocument": "test-assets/avro/valid/full-semantic-annotations/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the semantic-annotations fixture.",
+        "Expand result.",
+        "Inspect the inline Annotations region and selected-property Inspector."
+      ],
+      "observedCurrentBehavior": "Annotations display raw values such as result, measured, and period independently rather than a meaningful combined summary.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-semantic-expanded-1440x1000.png",
+      "relatedCapturePaths": [],
+      "smallestLiteralUiDelta": "Generate a concise summary from the existing values in the property summary line."
+    },
+    {
+      "number": 66,
+      "section": "Semantic annotations and catalogs",
+      "title": "Friendly terminology",
+      "requirement": "show friendly labels and definitions with exact identifiers as secondary text.",
+      "classification": "ALREADY_SATISFIED_NO_CHANGE",
+      "fixtureOrDocument": "test-assets/avro/valid/full-semantic-annotations/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the semantic-annotations fixture.",
+        "Expand result.",
+        "Choose Browse for Semantic role and inspect labels, exact values, provider text, and controls."
+      ],
+      "observedCurrentBehavior": "Catalog results use readable labels such as actualTime and Observation value, with exact quoted identifiers as secondary text.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-semantic-catalog-1440x1000.png",
+      "relatedCapturePaths": [],
+      "satisfyingCurrentControlOrState": "The current label, definition/family text, and secondary exact value satisfy this presentation."
+    },
+    {
+      "number": 67,
+      "section": "Semantic annotations and catalogs",
+      "title": "Prerequisites",
+      "requirement": "explain requirements and effects beside the relevant control.",
+      "classification": "REPRODUCED_VISUAL_CHANGE",
+      "fixtureOrDocument": "test-assets/avro/valid/full-semantic-annotations/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the semantic-annotations fixture.",
+        "Expand result.",
+        "Inspect the inline Annotations region and selected-property Inspector."
+      ],
+      "observedCurrentBehavior": "Controls show advisory catalog provenance but not semantic prerequisites or downstream effects.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-semantic-expanded-1440x1000.png",
+      "relatedCapturePaths": [],
+      "smallestLiteralUiDelta": "Add short prerequisite/effect help directly under only the controls that require it."
+    },
+    {
+      "number": 68,
+      "section": "Semantic annotations and catalogs",
+      "title": "Specification links",
+      "requirement": "link semantic help to the exact specification section.",
+      "classification": "REPRODUCED_VISUAL_CHANGE",
+      "fixtureOrDocument": "test-assets/avro/valid/full-semantic-annotations/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the semantic-annotations fixture.",
+        "Expand result.",
+        "Choose Browse for Semantic role and inspect labels, exact values, provider text, and controls."
+      ],
+      "observedCurrentBehavior": "The catalog identifies family and provider but exposes no exact specification-section link.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-semantic-catalog-1440x1000.png",
+      "relatedCapturePaths": [],
+      "smallestLiteralUiDelta": "Add one section-specific help link in the existing result/detail area."
+    },
+    {
+      "number": 69,
+      "section": "Semantic annotations and catalogs",
+      "title": "Unit terminology",
+      "requirement": "replace Display unit with language covering interpretation and conversion.",
+      "classification": "REPRODUCED_VISUAL_CHANGE",
+      "fixtureOrDocument": "test-assets/avro/valid/full-units/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the full-units fixture.",
+        "Expand distance.",
+        "Inspect unit and symbol annotations and the selected-property Inspector."
+      ],
+      "observedCurrentBehavior": "The actual annotation label is “Display unit”.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-units-expanded-1440x1000.png",
+      "relatedCapturePaths": [],
+      "smallestLiteralUiDelta": "Rename that existing field to terminology covering interpretation and preferred conversion/presentation."
+    },
+    {
+      "number": 70,
+      "section": "Semantic annotations and catalogs",
+      "title": "Catalog metadata",
+      "requirement": "support identifiers, definitions, revisions, domain/range, deprecation, replacements, structure, licensing, and review status.",
+      "classification": "REPRODUCED_VISUAL_CHANGE",
+      "fixtureOrDocument": "editor/tests/ui-libraries.test.ts host-service fixture with vscode/test-fixtures/financial-types/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the current editor with the existing library host-service fixture pattern.",
+        "Open Import type library and load providers/catalog.",
+        "Resolve Financial Types 1.0.0 and inspect provenance and declarations."
+      ],
+      "observedCurrentBehavior": "Resolved details show provider, source, entry, version, trust, and declarations, but not the full requested metadata set.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-library-details-1440x1000.png",
+      "relatedCapturePaths": [],
+      "smallestLiteralUiDelta": "Extend the existing detail pane with the missing metadata while preserving current provenance."
+    },
+    {
+      "number": 71,
+      "section": "Semantic annotations and catalogs",
+      "title": "Provider provenance",
+      "requirement": "preserve competing labels, aliases, descriptions, and provenance.",
+      "classification": "REPRODUCED_VISUAL_CHANGE",
+      "fixtureOrDocument": "editor/tests/ui-libraries.test.ts host-service fixture with vscode/test-fixtures/financial-types/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the current editor with the existing library host-service fixture pattern.",
+        "Open Import type library and load providers/catalog.",
+        "Resolve Financial Types 1.0.0 and inspect provenance and declarations."
+      ],
+      "observedCurrentBehavior": "Provider and source are visible, but competing provider labels, aliases, and descriptions are not retained side by side.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-library-details-1440x1000.png",
+      "relatedCapturePaths": [],
+      "smallestLiteralUiDelta": "Add provider attribution to each alternate label, alias, and description in the existing detail pane."
+    },
+    {
+      "number": 72,
+      "section": "Semantic annotations and catalogs",
+      "title": "Catalog search",
+      "requirement": "index descriptions, aliases, humanized tokens, authority, kind, and domain.",
+      "classification": "NONVISUAL_REQUIREMENT",
+      "fixtureOrDocument": "editor/tests/ui-libraries.test.ts host-service fixture plus repository semantic/unit schemas",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the current editor with the existing library host-service fixture pattern.",
+        "Open Import type library.",
+        "Load and inspect providers, search, count, and catalog cards."
+      ],
+      "observedCurrentBehavior": "The search control is visible, but a screenshot cannot prove which metadata fields are indexed.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-libraries-catalog-1440x1000.png",
+      "relatedCapturePaths": [],
+      "testOrArchitectureEvidenceNeeded": "Add search tests for each requested field across multiple providers."
+    },
+    {
+      "number": 73,
+      "section": "Semantic annotations and catalogs",
+      "title": "Catalog paging",
+      "requirement": "expose counts, pages, and continuation state.",
+      "classification": "REPRODUCED_VISUAL_CHANGE",
+      "fixtureOrDocument": "editor/tests/ui-libraries.test.ts host-service fixture plus repository semantic/unit schemas",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the current editor with the existing library host-service fixture pattern.",
+        "Open Import type library.",
+        "Load and inspect providers, search, count, and catalog cards."
+      ],
+      "observedCurrentBehavior": "The catalog shows “3 of 3 entries” with no page number, previous/next controls, or continuation state.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-libraries-catalog-1440x1000.png",
+      "relatedCapturePaths": [],
+      "smallestLiteralUiDelta": "Extend the existing catalog toolbar with result range, page controls, and continuation status."
+    },
+    {
+      "number": 74,
+      "section": "Semantic annotations and catalogs",
+      "title": "Local providers",
+      "requirement": "add document-local and imported-definition sources.",
+      "classification": "REPRODUCED_VISUAL_CHANGE",
+      "fixtureOrDocument": "editor/tests/ui-libraries.test.ts host-service fixture plus repository semantic/unit schemas",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the current editor with the existing library host-service fixture pattern.",
+        "Open Import type library.",
+        "Load and inspect providers, search, count, and catalog cards."
+      ],
+      "observedCurrentBehavior": "The provider list exposes bundled, xRegistry, and workspace/local fixture providers, but no Document local or Imported definitions sources.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-libraries-catalog-1440x1000.png",
+      "relatedCapturePaths": [],
+      "smallestLiteralUiDelta": "Add those two sources to the existing provider list using current resolved-document provenance."
+    },
+    {
+      "number": 75,
+      "section": "Semantic annotations and catalogs",
+      "title": "Authority providers",
+      "requirement": "add only sources with verified mapping, license, and version.",
+      "classification": "NONVISUAL_REQUIREMENT",
+      "fixtureOrDocument": "editor/tests/ui-libraries.test.ts host-service fixture plus repository semantic/unit schemas",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the current editor with the existing library host-service fixture pattern.",
+        "Open Import type library.",
+        "Load and inspect providers, search, count, and catalog cards."
+      ],
+      "observedCurrentBehavior": "A provider card can display trust, but cannot prove that admission was gated by mapping, license, and version verification.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-libraries-catalog-1440x1000.png",
+      "relatedCapturePaths": [],
+      "testOrArchitectureEvidenceNeeded": "Provide provider-onboarding policy tests and signed/versioned verification metadata."
+    },
+    {
+      "number": 76,
+      "section": "Semantic annotations and catalogs",
+      "title": "Host providers",
+      "requirement": "complete workspace, HTTPS, and host workflows before exposing controls.",
+      "classification": "NONVISUAL_REQUIREMENT",
+      "fixtureOrDocument": "editor/tests/ui-libraries.test.ts host-service fixture",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the current editor with library services.",
+        "Open Import type library before loading the catalog.",
+        "Inspect host controls and the empty catalog state."
+      ],
+      "observedCurrentBehavior": "Visible controls cannot prove end-to-end Electron/VS Code host readiness, credential handling, network failure behavior, or publication.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-library-dialog-empty-1440x1000.png",
+      "relatedCapturePaths": [],
+      "testOrArchitectureEvidenceNeeded": "Provide packaged-host tests for configure, authenticate, list, resolve, import, offline, remove, and publish flows."
+    },
+    {
+      "number": 77,
+      "section": "Semantic annotations and catalogs",
+      "title": "Trust model",
+      "requirement": "represent trust as separate verifiable dimensions.",
+      "classification": "REPRODUCED_VISUAL_CHANGE",
+      "fixtureOrDocument": "editor/tests/ui-libraries.test.ts host-service fixture with vscode/test-fixtures/financial-types/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount the current editor with the existing library host-service fixture pattern.",
+        "Open Import type library and load providers/catalog.",
+        "Resolve Financial Types 1.0.0 and inspect provenance and declarations."
+      ],
+      "observedCurrentBehavior": "Current provider/detail surfaces reduce trust to a single trusted label plus general provenance.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-library-details-1440x1000.png",
+      "relatedCapturePaths": [],
+      "smallestLiteralUiDelta": "Replace the single label with separate mapping, license, version, connectivity, and review dimensions."
+    },
+    {
+      "number": 78,
+      "section": "Remaining workspaces and chrome",
+      "title": "Shell density",
+      "requirement": "reduce chrome without removing command, navigation, or document-identity access.",
+      "classification": "REPRODUCED_VISUAL_CHANGE",
+      "fixtureOrDocument": "vscode/test-fixtures/financial-types/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount Financial Types with integrated chrome.",
+        "Open the View application menu.",
+        "Inspect title/menu chrome, activity rail, both side panes, Problems, and status bar."
+      ],
+      "observedCurrentBehavior": "The screen simultaneously shows menu/title chrome, activity rail, Types, canvas, Inspector/schema metadata, Problems, and status bar.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-shell-view-menu-1440x1000.png",
+      "relatedCapturePaths": [],
+      "smallestLiteralUiDelta": "Consolidate duplicate title/status affordances and reduce fixed chrome height while retaining every entry point."
+    },
+    {
+      "number": 79,
+      "section": "Remaining workspaces and chrome",
+      "title": "Responsive workspaces",
+      "requirement": "adapt Graph, Source, Validate, Convert, and Libraries through progressive disclosure.",
+      "classification": "REPRODUCED_VISUAL_CHANGE",
+      "fixtureOrDocument": "vscode/test-fixtures/financial-types/schema.struct.json",
+      "viewport": "390 × 844",
+      "steps": [
+        "Mount Financial Types and resize to 390 × 844.",
+        "Use the mobile mode selector.",
+        "Inspect Graph, Source, Validate, and the library dialog."
+      ],
+      "observedCurrentBehavior": "At 390 px Graph controls clip horizontally; Source and Validate shift into a narrow right column with large blank left space and internal horizontal scrolling; Libraries becomes a tall modal column.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-graph-390x844.png",
+      "relatedCapturePaths": [
+        "editor/docs/ux-plan-81-assets/before-source-390x844.png",
+        "editor/docs/ux-plan-81-assets/before-validate-390x844.png",
+        "editor/docs/ux-plan-81-assets/before-libraries-390x844.png"
+      ],
+      "smallestLiteralUiDelta": "Keep the mobile mode selector, give each workspace the full content width, and move secondary controls into on-demand sheets or drawers."
+    },
+    {
+      "number": 80,
+      "section": "Remaining workspaces and chrome",
+      "title": "Action hierarchy",
+      "requirement": "simplify actions and empty states without moving core editing out of context.",
+      "classification": "REPRODUCED_VISUAL_CHANGE",
+      "fixtureOrDocument": "vscode/test-fixtures/financial-types/schema.struct.json with editor/src/conversion/worker-runtime/commands-manifest.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount Financial Types with the current conversion manifest.",
+        "Open Convert.",
+        "Inspect command cards, selected command detail, actions, and scrolling."
+      ],
+      "observedCurrentBehavior": "Convert presents dozens of equal-weight command cards while the selected command and primary action compete with reset/refresh and long scrolling.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-convert-workspace-1440x1000.png",
+      "relatedCapturePaths": [
+        "editor/docs/ux-plan-81-assets/before-convert-result-1440x1000.png",
+        "editor/docs/ux-plan-81-assets/before-import-chooser-1440x1000.png",
+        "editor/docs/ux-plan-81-assets/before-import-dialog-1440x1000.png"
+      ],
+      "smallestLiteralUiDelta": "Keep the selected outcome and primary action prominent; collapse secondary formats and actions behind search, grouping, or overflow."
+    },
+    {
+      "number": 81,
+      "section": "Remaining workspaces and chrome",
+      "title": "UX proof",
+      "requirement": "add comprehension, keyboard, responsive, accessibility, visual, and packaged-host tests, including explicit proof that property editing remains in place.",
+      "classification": "NONVISUAL_REQUIREMENT",
+      "fixtureOrDocument": "vscode/test-fixtures/financial-types/schema.struct.json",
+      "viewport": "1440 × 1000",
+      "steps": [
+        "Mount Financial Types.",
+        "Choose View > High Contrast Theme.",
+        "Inspect the resulting editor surface."
+      ],
+      "observedCurrentBehavior": "The High Contrast capture demonstrates one visual state, but cannot constitute the requested cross-discipline proof suite.",
+      "capturePath": "editor/docs/ux-plan-81-assets/before-theme-high-contrast-1440x1000.png",
+      "relatedCapturePaths": [],
+      "testOrArchitectureEvidenceNeeded": "Provide named automated and manual evidence for every proof area, including an assertion that property editing remains in the central canvas."
+    }
+  ],
+  "categoryCounts": {
+    "REPRODUCED_VISUAL_CHANGE": 41,
+    "ALREADY_SATISFIED_NO_CHANGE": 23,
+    "NONVISUAL_REQUIREMENT": 15,
+    "NOT_REPRODUCED_NEEDS_EVIDENCE": 2
+  }
+}

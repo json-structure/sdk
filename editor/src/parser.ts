@@ -20,6 +20,7 @@ import { VALIDATION_KEYWORDS, effectiveValidationTypes, validationIssues, type V
 import { UNITS_KEYWORDS, unitsIssues, type UnitsKeyword } from './units.js';
 import { resolveCapabilities } from './capabilities.js';
 import { ALTERNATE_NAMES_KEYWORDS, alternateNamesIssues, type AlternateNamesKeyword } from './alternate-names.js';
+import { isImportUriReference } from './import-uri.js';
 
 interface ParsedValue { value: unknown; start: number; end: number; pointer: string; keyStart?: number; keyEnd?: number; }
 interface ParseOutput { value: unknown; values: ParsedValue[]; diagnostics: Diagnostic[]; recovery: RecoveryState; }
@@ -918,7 +919,7 @@ function pushImportProjection(
   const importValue = value.$import;
   if (importValue !== undefined) {
     const importPointer = `${pointer}/$import`;
-    if (absoluteUri(importValue)) {
+    if (isImportUriReference(importValue)) {
       imports.push({
         pointer: importPointer,
         namespacePointer: pointer,
@@ -927,13 +928,13 @@ function pushImportProjection(
         provenance: 'import'
       });
     } else {
-      pushKeywordDiagnostic(diagnostics, uri, importPointer, '$import must be an absolute URI string.', text);
+      pushKeywordDiagnostic(diagnostics, uri, importPointer, '$import must be a valid URI-reference string.', text);
     }
   }
   const importDefs = value.$importdefs;
   if (importDefs !== undefined) {
     const importDefsPointer = `${pointer}/$importdefs`;
-    if (absoluteUri(importDefs)) {
+    if (isImportUriReference(importDefs)) {
       imports.push({
         pointer: importDefsPointer,
         namespacePointer: pointer,
@@ -942,7 +943,7 @@ function pushImportProjection(
         provenance: 'importdefs'
       });
     } else {
-      pushKeywordDiagnostic(diagnostics, uri, importDefsPointer, '$importdefs must be an absolute URI string.', text);
+      pushKeywordDiagnostic(diagnostics, uri, importDefsPointer, '$importdefs must be a valid URI-reference string.', text);
     }
   }
 

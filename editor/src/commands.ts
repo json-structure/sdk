@@ -23,6 +23,7 @@ import { effectiveValidationTypes, VALIDATION_KEYWORDS, validationIssues, valida
 import { unitsValueValid, type UnitsKeyword, type UnitsKeywordMap } from './units.js';
 import { alternateNamesPlacementValid, alternateNamesValueValid, type AlternateNamesKeyword, type AlternateNamesKeywordMap } from './alternate-names.js';
 import { ResolvedSchemaContext } from './phase4/resolved-schema.js';
+import { isImportUriReference } from './import-uri.js';
 
 /**
  * Type alias for schema type value.
@@ -976,7 +977,7 @@ function coreMemberValueValid(keyword: CoreDocumentMember, value: unknown): bool
     case '$root': return typeof value === 'string' && validPointerFragment(value);
     case 'type': return validTypeValue(value);
     case 'abstract': return typeof value === 'boolean';
-    case 'additionalProperties': return typeof value === 'boolean' || typeReferenceValue(value) !== undefined;
+    case 'additionalProperties': return typeof value === 'boolean' || isObjectLike(value);
     case '$extends': return (typeof value === 'string' && value.length > 0) || (isStringArray(value) && value.length > 0);
     case 'required': return Array.isArray(value);
     case 'tuple': return isStringArray(value) && new Set(value).size === value.length;
@@ -1118,6 +1119,8 @@ export class SetCoreMemberCommand implements EditorCommand {
       !Object.values(this.value as Record<string, unknown>).every((schema) => validSchemaValue(session, schema))) return false;
     if (this.keyword === 'properties' && Object.keys(this.value as Record<string, unknown>).some((name) => declarationInheritedPropertyNames(session, target).has(name))) return false;
     if ((this.keyword === 'items' || this.keyword === 'values') && !validSchemaValue(session, this.value)) return false;
+    if (this.keyword === 'additionalProperties' && typeof this.value !== 'boolean' &&
+      typeReferenceValue(this.value) === undefined && !validSchemaValue(session, this.value)) return false;
     if (this.keyword === 'type') {
       const references: string[] = [];
       const collect = (candidate: unknown): void => {
@@ -1637,13 +1640,12 @@ export class SetLocalizedDescriptionsCommand extends SetAlternateNamesKeywordCom
   constructor(targetPointer: string, value: AlternateNamesKeywordMap['descriptions'] | undefined) { super(targetPointer, 'descriptions', value); }
 }
 
-const SEMANTIC_COLLECTION_TYPES = new Set(['array', 'set', 'map', 'choice']);
 const SEMANTIC_PROPERTY_OR_COLLECTION = new Set<SemanticAnnotationKeyword>([
   'observedProperty', 'semanticRole', 'derivation', 'statistic', 'temporalReferenceSystem',
-  'cadence', 'codedValues', 'measurementConditioning'
+  'cadence', 'codedValues', 'measurementConditioning', 'referenceRole'
 ]);
 const SEMANTIC_PROPERTY_ONLY = new Set<SemanticAnnotationKeyword>([
-  'phenomenonTimeRelation', 'supportPeriod', 'referenceRole'
+  'phenomenonTimeRelation', 'supportPeriod'
 ]);
 const SEMANTIC_RECORD_ONLY = new Set<SemanticAnnotationKeyword>([
   'coordinateReferenceSystem', 'vectorReferenceFrames', 'tensorReferenceFrames', 'frameTransforms',
@@ -1670,12 +1672,20 @@ function semanticMemberPosition(session: DocumentSession, pointer: string): 'pro
 function semanticPlacementValid(session: DocumentSession, pointer: string, declaration: Record<string, unknown>, keyword: SemanticAnnotationKeyword): boolean {
   if (keyword === 'concepts') return true;
   const memberPosition = semanticMemberPosition(session, pointer);
+  const effectiveType = (): string | undefined => {
+    if (typeof declaration.type === 'string') return declaration.type;
+    const effective = effectiveValidationTypes(session.value, declaration);
+    return effective.determinate && effective.types.length === 1 ? effective.types[0] : undefined;
+  };
   if (SEMANTIC_PROPERTY_ONLY.has(keyword)) return memberPosition === 'property';
   if (SEMANTIC_PROPERTY_OR_COLLECTION.has(keyword)) {
-    return memberPosition !== undefined || SEMANTIC_COLLECTION_TYPES.has(String(declaration.type)) ||
-      ((declaration.type === 'object' || declaration.type === 'tuple') && (keyword === 'observedProperty' || keyword === 'temporalReferenceSystem'));
+    if (memberPosition !== undefined) return true;
+    const type = effectiveType();
+    return (type === 'object' || type === 'tuple') && (keyword === 'observedProperty' || keyword === 'temporalReferenceSystem');
   }
-  return SEMANTIC_RECORD_ONLY.has(keyword) && (declaration.type === 'object' || declaration.type === 'tuple');
+  if (!SEMANTIC_RECORD_ONLY.has(keyword)) return false;
+  const type = effectiveType();
+  return type === 'object' || type === 'tuple';
 }
 
 /**
@@ -2647,7 +2657,7 @@ export class SetImportCommand implements EditorCommand {
 
   canExecute({ session, documentVersion }: CommandContext): boolean {
     if (documentVersion !== session.snapshot().documentVersion || session.snapshot().recovery !== 'valid' || !session.capabilities.importActive) return false;
-    if (!absoluteUri(this.sourceUri) || !namespaceImportPlacement(session, this.namespacePointer)) return false;
+    if (!isImportUriReference(this.sourceUri) || !namespaceImportPlacement(session, this.namespacePointer)) return false;
     const target = pointerValue(session.value, this.namespacePointer);
     if (!isObjectLike(target) || !hasUniquePointerPath(session, this.namespacePointer) || hasDuplicatePointerDiagnostic(session, this.namespacePointer)) return false;
     if (hasOtherImportKeyword(target, this.keyword)) return false;

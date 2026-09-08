@@ -165,18 +165,40 @@ function keywordActions(group: ActionGroup, prefix: string, keywords: readonly s
   const capability = prefix === 'validation' ? 'validation' : prefix === 'composition' ? 'conditional-composition' : prefix === 'units' ? 'units' :
     prefix.startsWith('alternate') || prefix === 'localized-descriptions' ? 'alternate-names' : prefix === 'semantic' ? 'semantic-annotations' : 'core';
   return keywords.flatMap((keyword) => {
-    const control: ActionControl = keyword === 'uniqueItems' ? { kind: 'boolean' } :
+    const control: ActionControl = keyword === 'contentEncoding' ? { kind: 'select', options: [
+      { value: 'base64', label: 'base64' },
+      { value: 'base64url', label: 'base64url' },
+      { value: 'base16', label: 'base16' },
+      { value: 'base32', label: 'base32' },
+      { value: 'base32hex', label: 'base32hex' },
+    ] } :
+      keyword === 'contentCompression' ? { kind: 'select', options: [
+        { value: 'gzip', label: 'gzip' },
+        { value: 'deflate', label: 'deflate' },
+        { value: 'zlib', label: 'zlib' },
+        { value: 'brotli', label: 'brotli' },
+      ] } :
+      keyword === 'uniqueItems' ? { kind: 'boolean' } :
       ['minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf'].includes(keyword)
         ? { kind: 'number', schemaNumeric: true } :
       ['minLength', 'minItems', 'maxItems', 'minContains', 'maxContains', 'minProperties', 'maxProperties', 'minEntries', 'maxEntries'].includes(keyword)
         ? { kind: 'number', integer: true, minimum: 0 } :
       ['unit', 'ucumUnit', 'currency', 'concepts', 'observedProperty', 'semanticRole', 'derivation', 'statistic', 'codedValues', 'measurementConditioning', 'referenceRole', 'phenomenonTimeRelation', 'temporalReferenceSystem', 'cadence', 'coordinateReferenceSystem', 'vectorReferenceFrames', 'tensorReferenceFrames', 'frameTransforms', 'linearReferenceSystem', 'colorSpaces', 'audioChannels', 'spectralBands'].includes(keyword) ? { kind: 'catalog', family: keyword } :
       ['format', 'contentEncoding', 'contentCompression', 'pattern', 'symbol', 'contentMediaType'].includes(keyword) ? { kind: 'text' } :
+      keyword === 'descriptions' ? { kind: 'structured-object', family: 'localized-descriptions' } :
+      keyword === 'altnames' ? { kind: 'structured-object', family: 'alternate-names' } :
       ['allOf', 'anyOf', 'oneOf', 'not', 'contains', 'propertyNames', 'keyNames', 'has', 'dependentRequired', 'patternProperties', 'patternKeys', 'default'].includes(keyword) ? { kind: 'advanced-json' } :
       { kind: 'advanced-json' };
-    const propertyOnly = prefix === 'semantic' && ['referenceRole', 'phenomenonTimeRelation', 'supportPeriod'].includes(keyword);
-    const choiceInapplicable = propertyOnly || prefix.startsWith('alternate') && keyword === 'altnames';
-    const targets: readonly ActionTarget[] = propertyOnly ? ['property'] : choiceInapplicable ? ['declaration', 'property'] : SCHEMA_TARGETS;
+    const propertyOnly = prefix === 'semantic' && ['phenomenonTimeRelation', 'supportPeriod'].includes(keyword);
+    const alternateNameOnly = prefix.startsWith('alternate') && keyword === 'altnames';
+    const alternateNamesFamily = prefix.startsWith('alternate') || prefix === 'localized-descriptions';
+    const targets: readonly ActionTarget[] = propertyOnly
+      ? ['property']
+      : alternateNameOnly
+        ? ['document', 'declaration', 'property']
+        : alternateNamesFamily
+          ? SELECTABLE_SCHEMA_TARGETS
+          : SCHEMA_TARGETS;
     const action: CommandAction = { id: `${prefix}.${keyword}`, group, label: `Set ${keyword}`, help: `Set ${keyword} on the selected schema.`, valueLabel: `Set ${keyword}`, control, capability, targets, schemaTypes: schemaTypesForKeyword(prefix, keyword), operation: 'set', removesActionId: `${prefix}.${keyword}.remove`, keyword, create: set(Command, keyword) };
     return [action, remove(action, keyword, Command)];
   });
@@ -185,6 +207,8 @@ function keywordActions(group: ActionGroup, prefix: string, keywords: readonly s
 function schemaTypesForKeyword(prefix: string, keyword: string): readonly string[] | undefined {
   if (prefix === 'binary') return ['binary'];
   if (prefix === 'units' && (keyword === 'unit' || keyword === 'ucumUnit')) return ['number', 'integer', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32', 'int64', 'uint64', 'int128', 'uint128', 'float8', 'float', 'double', 'decimal'];
+  if (prefix === 'semantic' && keyword === 'codedValues') return ['string', 'integer', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32', 'int64', 'uint64', 'int128', 'uint128'];
+  if (prefix === 'semantic' && keyword === 'measurementConditioning') return ['number', 'integer', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32', 'int64', 'uint64', 'int128', 'uint128', 'float8', 'float', 'double', 'decimal'];
   if (prefix !== 'validation' || keyword === 'default') return undefined;
   if (['minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf'].includes(keyword)) return ['number', 'integer', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32', 'int64', 'uint64', 'int128', 'uint128', 'float8', 'float', 'double', 'decimal'];
   if (['minLength', 'pattern', 'format'].includes(keyword)) return ['string'];

@@ -6,7 +6,7 @@ export const defaultUntitledDocument = JSON.stringify({
   $id: 'urn:json-structure:untitled',
   name: 'UntitledStructure',
   definitions: {},
-}, null, 2);
+}, null, 4);
 
 export type HostCommand = 'new' | 'open' | 'save' | 'save-as' | 'show-commands';
 export type WindowCommand = 'undo' | 'redo' | 'cut' | 'copy' | 'paste' | 'select-all' | 'reset-zoom' | 'zoom-in' | 'zoom-out' | 'toggle-fullscreen' | 'quit';
@@ -219,7 +219,20 @@ export function bootstrapJsonStructureEditor(container: HTMLElement, demoText: s
     onChange: () => { if (!controller?.replacing) { controller?.syncDirty(); renderFileState(); } }
   });
   const renderFileState = (): void => {
-    const title = controller?.path ? fileName(controller.path) : 'Untitled JSON Structure';
+    const fileTitle = controller?.path ? fileName(controller.path) : 'Untitled JSON Structure';
+    let schemaName: string | undefined;
+    if (controller?.path) {
+      try {
+        const value = JSON.parse(editor.getText()) as unknown;
+        if (value && typeof value === 'object' && !Array.isArray(value) && typeof (value as Record<string, unknown>).name === 'string') {
+          schemaName = (value as Record<string, string>).name.trim() || undefined;
+        }
+      } catch (error) {
+        if (!(error instanceof SyntaxError)) throw error;
+        schemaName = undefined;
+      }
+    }
+    const title = schemaName ? `${schemaName} - ${fileTitle}` : fileTitle;
     document.title = `${controller?.dirty ? '* ' : ''}${title} - JSON Structure`;
     editor.setTitle(title);
   };

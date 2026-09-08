@@ -149,6 +149,7 @@ export class ForceGraphLayout {
     if (restoresCompleteCache) this.overlapStatsValue = { passes: 0, candidatePairs: 0, movedPairs: 0 };
     else this.resolveOverlaps();
     this.cacheCurrentPositions();
+    if (mode === 'force' && orderedNodes.length > 1) this.simulation.alpha(0.22).restart();
     return this.positions();
   }
 
@@ -202,6 +203,7 @@ export class ForceGraphLayout {
     node.fy = node.y;
     node.vx = 0;
     node.vy = 0;
+    this.simulation.alphaTarget(0.16).alpha(Math.max(this.simulation.alpha(), 0.28)).restart();
   }
 
   public drag(id: string, point: { readonly x: number; readonly y: number }): void {
@@ -230,7 +232,7 @@ export class ForceGraphLayout {
     }
     node.vx = 0;
     node.vy = 0;
-    this.simulation.stop();
+    this.simulation.alphaTarget(0).alpha(Math.max(this.simulation.alpha(), 0.18)).restart();
     this.cacheCurrentPositions();
     this.tickListener?.();
   }

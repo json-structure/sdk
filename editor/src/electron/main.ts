@@ -3,7 +3,7 @@ import type { HostCommand, OpenFileResult, WindowCommand } from './contracts';
 import { classifyGeneratedOutputPaths, commonGeneratedOutputDirectory, createConversionDocumentContext, createFileDocumentContext, createUntitledDocumentContext, DocumentActivationLedger, type ConversionDocumentContext, type FileDocumentKind } from './document-workflow';
 import { createHash, randomUUID } from 'node:crypto';
 import { dirname, join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { realpath } from 'node:fs/promises';
 import { atomicWrite, readBoundedFile, readFile, readResource } from './file-service';
 import { discoverImportSources, loadExternalDocuments, materializeEffectiveImports, ResolvedSchemaContext } from '../host/effective-imports';
@@ -12,6 +12,7 @@ import { NodeConversionHost } from '../conversion/node-host';
 import { dispatchLibraryOperation, type LibraryHostRuntime } from '../libraries/host-runtime';
 import { createElectronLibraryRuntime, type ElectronLibraryApprovalRequest } from './library-runtime';
 import { deniedWindowOpen, isAllowedRendererNavigation, isTrustedIpcSender, selectDevelopmentUrl, selectInitialDocumentArgument } from './security';
+import { nextZoomFactor, windowCommandForShortcut } from './window-controls';
 
 const currentDirectory = __dirname;
 const rendererDirectory = join(currentDirectory, '..', 'dist', 'renderer');
@@ -34,8 +35,44 @@ const coreLibraryPath = app.isPackaged ? join(process.resourcesPath, 'libraries'
 const coreLibraryEntry = { id: 'financial-types', name: 'Financial Types', description: 'A bundled JSON Structure type library sample.', versions: [{ version: '1.0.0', documentUri: pathToFileURL(coreLibraryPath).toString(), isDefault: true }] } as const;
 let libraryRuntime: Promise<LibraryHostRuntime> | undefined;
 const approvedLibraryRequests = new Set<string>();
+const approvedImportRoots = new Set<string>();
 function activeMainWindow(): BrowserWindow | undefined {
   return mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
+}
+
+async function readDesktopResource(uri: string) {
+  const libraryReader = async (requestedUri: string) => (await getLibraryRuntime()).readResource(requestedUri);
+  let containmentError: Error | undefined;
+  for (const root of [openedDocumentRoot, ...approvedImportRoots]) {
+    if (!root) continue;
+    try {
+      return await readResource(uri, root, maxImportedResourceBytes, libraryReader);
+    } catch (error) {
+      if (!(error instanceof Error) || !error.message.includes('inside the opened document directory')) throw error;
+      containmentError = error;
+    }
+  }
+  if (!containmentError) return readResource(uri, openedDocumentRoot, maxImportedResourceBytes, libraryReader);
+
+  const parsed = new URL(uri);
+  if (parsed.protocol !== 'file:') throw containmentError;
+  const canonicalPath = await realpath(fileURLToPath(parsed));
+  const requestedRoot = dirname(canonicalPath);
+  const options = {
+    type: 'question' as const,
+    buttons: ['Allow import', 'Cancel'],
+    defaultId: 1,
+    cancelId: 1,
+    noLink: true,
+    title: 'Allow imported schema access?',
+    message: 'This schema imports a file outside the opened document directory.',
+    detail: `Allow access to imported schemas in:\n${requestedRoot}`,
+  };
+  const owner = activeMainWindow();
+  const decision = owner ? await dialog.showMessageBox(owner, options) : await dialog.showMessageBox(options);
+  if (decision.response !== 0) throw new Error('Imported resource access was not approved.');
+  approvedImportRoots.add(requestedRoot);
+  return readResource(uri, requestedRoot, maxImportedResourceBytes, libraryReader);
 }
 
 function captureConversionDocumentContext(): ConversionDocumentContext {
@@ -81,6 +118,28 @@ function sendHostCommand(command: HostCommand): void {
   activeMainWindow()?.webContents.send('file:command', command);
 }
 
+function executeWindowCommand(contents: Electron.WebContents, command: WindowCommand): void {
+  const commands: Record<WindowCommand, () => void> = {
+    undo: () => contents.undo(),
+    redo: () => contents.redo(),
+    cut: () => contents.cut(),
+    copy: () => contents.copy(),
+    paste: () => contents.paste(),
+    'select-all': () => contents.selectAll(),
+    'reset-zoom': () => contents.setZoomFactor(1),
+    'zoom-in': () => contents.setZoomFactor(nextZoomFactor(contents.getZoomFactor(), 'in')),
+    'zoom-out': () => contents.setZoomFactor(nextZoomFactor(contents.getZoomFactor(), 'out')),
+    'toggle-fullscreen': () => {
+      const window = BrowserWindow.fromWebContents(contents);
+      if (window && !window.isDestroyed()) window.setFullScreen(!window.isFullScreen());
+    },
+    quit: () => app.quit(),
+  };
+  const execute = commands[command];
+  if (!execute) throw new Error('Unknown window command.');
+  execute();
+}
+
 function stageDocument(file: { path: string; text: string }, kind: FileDocumentKind): OpenFileResult & { readonly activationToken: string; readonly uri: string; readonly kind: FileDocumentKind } {
   const context = createFileDocumentContext(file.path, file.text, kind);
   const staged = documentActivations.stage(context);
@@ -98,6 +157,7 @@ function activateDocument(path: string, activationToken?: string): void {
     if (!staged || staged.path !== path) throw new Error('The selected document is no longer available for activation.');
     approvedDocumentPath = staged.path;
     openedDocumentRoot = dirname(staged.path);
+    approvedImportRoots.clear();
     documentStateGeneration += 1;
     ++latestSaveAsRequest;
     return;
@@ -107,6 +167,7 @@ function activateDocument(path: string, activationToken?: string): void {
   if (!current || current.path !== path) throw new Error('The selected document is no longer available for activation.');
   approvedDocumentPath = current.path;
   openedDocumentRoot = dirname(current.path);
+  approvedImportRoots.clear();
   documentStateGeneration += 1;
   ++latestSaveAsRequest;
 }
@@ -128,6 +189,7 @@ function installApplicationMenu(): void {
       submenu: [
         { label: 'New', accelerator: 'CmdOrCtrl+N', click: () => sendHostCommand('new') },
         { label: 'Open...', accelerator: 'CmdOrCtrl+O', click: () => sendHostCommand('open') },
+        { label: 'Import...', click: () => sendHostCommand('import') },
         { type: 'separator' },
         { label: 'Save', accelerator: 'CmdOrCtrl+S', click: () => sendHostCommand('save') },
         { label: 'Save As...', accelerator: 'CmdOrCtrl+Shift+S', click: () => sendHostCommand('save-as') },
@@ -193,6 +255,7 @@ function registerIpcHandlers(): void {
     documentActivations.clear();
     approvedDocumentPath = undefined;
     openedDocumentRoot = undefined;
+    approvedImportRoots.clear();
     return createUntitledDocumentContext();
   });
   handleTrusted('file:save', async (_event, request: { path: string; text: string }) => {
@@ -209,6 +272,7 @@ function registerIpcHandlers(): void {
     if (stateGeneration !== documentStateGeneration || saveAsRequest !== latestSaveAsRequest) return null;
     approvedDocumentPath = await canonicalPath(result.filePath);
     openedDocumentRoot = dirname(approvedDocumentPath);
+    approvedImportRoots.clear();
     documentActivations.setActive(createFileDocumentContext(approvedDocumentPath, request.text));
     documentStateGeneration += 1;
     return { path: approvedDocumentPath, uri: pathToFileURL(approvedDocumentPath).toString() };
@@ -218,26 +282,7 @@ function registerIpcHandlers(): void {
     await shell.openExternal(url);
   });
   handleTrusted('window:command', (event, command: WindowCommand) => {
-    const contents = event.sender;
-    const commands: Record<WindowCommand, () => void> = {
-      undo: () => contents.undo(),
-      redo: () => contents.redo(),
-      cut: () => contents.cut(),
-      copy: () => contents.copy(),
-      paste: () => contents.paste(),
-      'select-all': () => contents.selectAll(),
-      'reset-zoom': () => contents.setZoomFactor(1),
-      'zoom-in': () => contents.setZoomFactor(Math.min(3, contents.getZoomFactor() + 0.1)),
-      'zoom-out': () => contents.setZoomFactor(Math.max(0.5, contents.getZoomFactor() - 0.1)),
-      'toggle-fullscreen': () => {
-        const window = BrowserWindow.fromWebContents(contents);
-        if (window && !window.isDestroyed()) window.setFullScreen(!window.isFullScreen());
-      },
-      quit: () => app.quit(),
-    };
-    const execute = commands[command];
-    if (!execute) throw new Error('Unknown window command.');
-    execute();
+    executeWindowCommand(event.sender, command);
   });
   handleTrusted('window:titlebar-theme', (_event, theme: 'dark' | 'light' | 'contrast') => {
     if (!['dark', 'light', 'contrast'].includes(theme)) throw new Error('Unknown title-bar theme.');
@@ -249,7 +294,7 @@ function registerIpcHandlers(): void {
     activeMainWindow()?.setTitleBarOverlay({ ...colors, height: 35 });
   });
   handleTrusted('resource:read', async (_event, uri: string) => {
-    const resource = await readResource(uri, openedDocumentRoot, maxImportedResourceBytes, async (requestedUri) => (await getLibraryRuntime()).readResource(requestedUri));
+    const resource = await readDesktopResource(uri);
     return { ...resource, contentHash: createHash('sha256').update(resource.content).digest('hex') };
   });
   handleTrusted('conversion:list', (_event, request: unknown) => {
@@ -261,6 +306,13 @@ function registerIpcHandlers(): void {
     const sourceRequest = request as unknown as Record<string, unknown>;
     if (sourceRequest.kind !== 'select-conversion-source' || !Array.isArray(sourceRequest.formats) || !sourceRequest.formats.every((format) => typeof format === 'string' && format.length > 0 && format.length <= 64)) throw new Error('Invalid conversion source request.');
     if (sourceRequest.extensions !== undefined && (!Array.isArray(sourceRequest.extensions) || !sourceRequest.extensions.every((extension) => typeof extension === 'string' && /^\.[A-Za-z0-9][A-Za-z0-9.-]{0,31}$/.test(extension)))) throw new Error('Invalid conversion source extensions.');
+    const acceptanceSource = process.env.JSON_STRUCTURE_REAL_HOST_TEST === '1'
+      ? process.env.JSON_STRUCTURE_REAL_HOST_SOURCE_PATH
+      : undefined;
+    if (acceptanceSource) {
+      const source = await readBoundedFile(acceptanceSource, maxConversionSourceBytes);
+      return { uri: pathToFileURL(source.path).toString(), name: source.path.split(/[\\/]/).pop()!, text: source.text };
+    }
     const extensions = Array.isArray(sourceRequest.extensions)
       ? sourceRequest.extensions.map((extension) => String(extension).replace(/^\./, ''))
       : ['json', 'avsc', 'yaml', 'yml', 'proto', 'xml', 'xsd'];
@@ -406,6 +458,15 @@ async function createWindow(): Promise<void> {
   const developmentUrl = selectDevelopmentUrl(app.isPackaged, process.env.VITE_DEV_SERVER_URL);
   allowedRendererUrl = developmentUrl ?? pathToFileURL(join(rendererDirectory, 'index.html')).href;
   const expectedUrl = allowedRendererUrl;
+  window.webContents.on('did-finish-load', () => {
+    if (!window.isDestroyed()) window.webContents.setZoomFactor(1);
+  });
+  window.webContents.on('before-input-event', (event, input) => {
+    const command = windowCommandForShortcut(input, process.platform);
+    if (!command) return;
+    event.preventDefault();
+    executeWindowCommand(window.webContents, command);
+  });
   window.webContents.setWindowOpenHandler(() => deniedWindowOpen);
   window.webContents.on('will-navigate', (event, url) => {
     if (!isAllowedRendererNavigation(url, expectedUrl)) event.preventDefault();

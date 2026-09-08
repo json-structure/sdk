@@ -52,6 +52,25 @@ describe('force graph layout', () => {
     layout.dispose();
   });
 
+  it('reheats connected nodes while a node is dragged and lets the graph settle afterward', () => {
+    const layout = new ForceGraphLayout();
+    layout.reconcile(nodes, edges);
+    const before = new Map(layout.positions().map((position) => [position.id, { x: position.x, y: position.y }]));
+
+    layout.startDrag(nodes[0]!.id);
+    layout.drag(nodes[0]!.id, { x: 40, y: 40 });
+    layout.endDrag(nodes[0]!.id);
+    layout.settle(40);
+
+    expect(layout.position(nodes[0]!.id)).toMatchObject({ x: 40, y: 40, pinned: true });
+    expect(nodes.slice(1).some((node) => {
+      const previous = before.get(node.id)!;
+      const current = layout.position(node.id)!;
+      return Math.hypot(current.x - previous.x, current.y - previous.y) > 0.5;
+    })).toBe(true);
+    layout.dispose();
+  });
+
   it('moves only the dragged node and restores cached projection layouts exactly', () => {
     const layout = new ForceGraphLayout();
     const before = layout.reconcile(nodes, edges, { cacheKey: 'relations:types', mode: 'relations' });

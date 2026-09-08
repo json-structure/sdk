@@ -12,37 +12,100 @@ permissions:
   contents: read
   id-token: write
 
+env:
+  STRUCTURIZE_SOURCE_REVISION: 8d1c504ec2cd06ab8971503394f73bf4a97c9617
+  STRUCTURIZE_SOURCE_ROOT: ${{ github.workspace }}/avrotize
+  STRUCTURIZE_SITE_PACKAGES: ${{ github.workspace }}/editor/build/structurize-site-packages
+  STRUCTURIZE_WHEELHOUSE: ${{ github.workspace }}/.structurize-wheelhouse
+  STRUCTURIZE_PROVISION_PYTHON: python
+
 jobs:
   build-test-package:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
+        include:
+          - os: windows-latest
+            target: win32-x64
+            python_arch: x64
+          - os: ubuntu-latest
+            target: linux-x64
+            python_arch: x64
+          - os: macos-14
+            target: darwin-x64
+            python_arch: x64
+          - os: macos-14
+            target: darwin-arm64
+            python_arch: arm64
     runs-on: ${{ matrix.os }}
     defaults:
       run:
         working-directory: editor
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: clemensv/avrotize
+          ref: 8d1c504ec2cd06ab8971503394f73bf4a97c9617
+          path: avrotize
+          fetch-depth: 1
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: editor/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.10'
+          architecture: ${{ matrix.python_arch }}
+          cache: pip
+          cache-dependency-path: editor/config/structurize-runtime-requirements.txt
+      - name: Resolve native Python root
+        shell: bash
+        run: python -c 'import sys; print("STRUCTURIZE_PYTHON_ROOT=" + sys.prefix)' >> "$GITHUB_ENV"
+      - uses: actions/cache@v4
+        with:
+          path: .structurize-wheelhouse
+          key: structurize-wheels-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('editor/config/structurize-runtime.lock.json', 'editor/config/structurize-runtime-requirements.txt') }}
       - run: npm ci
+      - name: Provision pinned Structurize dependencies
+        env:
+          STRUCTURIZE_ALLOW_NETWORK: '1'
+        run: npm run provision:structurize-runtime
       - run: npm run typecheck
       - run: npm test
+      - run: npm run test:ux:coverage
+      - run: npm run test:structurize-runtime
       - run: npm run beta:package:verified
+      - run: npm run test:final-electron-runtime
+      - run: node scripts/real-host-acceptance.mjs
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: ux-visual-diffs-${{ matrix.target }}
+          path: editor/artifacts/ux-visual/
+          if-no-files-found: ignore
+      - name: Report packaged sizes
+        shell: bash
+        run: du -sh release/* release 2>/dev/null | sort -h
       - uses: actions/upload-artifact@v4
         with:
-          name: editor-${{ runner.os }}-${{ runner.arch }}
+          name: editor-${{ matrix.target }}
           path: editor/release/
           if-no-files-found: error
 
   macos-notarize:
     if: github.event_name == 'workflow_dispatch'
     needs: build-test-package
-    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - artifact: editor-darwin-x64
+            signed: editor-darwin-x64-signed
+          - artifact: editor-darwin-arm64
+            signed: editor-darwin-arm64-signed
+    runs-on: macos-14
     env:
       APPLE_ID: ${{ secrets.APPLE_ID }}
       APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
@@ -50,15 +113,16 @@ jobs:
       MACOS_SIGNING_CERTIFICATE: ${{ secrets.MACOS_SIGNING_CERTIFICATE }}
       MACOS_SIGNING_PASSWORD: ${{ secrets.MACOS_SIGNING_PASSWORD }}
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: editor-macOS-X64
-          path: artifacts
+          name: ${{ matrix.artifact }}
+          path: editor/release
       - name: Require notarization credentials
         run: test -n "$APPLE_ID" && test -n "$APPLE_APP_PASSWORD" && test -n "$APPLE_TEAM_ID" && test -n "$MACOS_SIGNING_CERTIFICATE" && test -n "$MACOS_SIGNING_PASSWORD"
       - name: Sign, notarize, staple, and verify application
         run: |
-          ZIP=$(find artifacts -name '*.zip' -print -quit)
+          ZIP=$(find editor/release -name '*.zip' -print -quit)
           test -n "$ZIP"
           echo "$MACOS_SIGNING_CERTIFICATE" | base64 --decode > certificate.p12
           security create-keychain -p temporary build.keychain
@@ -74,13 +138,17 @@ jobs:
           xcrun stapler staple verified/*.app
           codesign --verify --deep --strict --verbose=2 verified/*.app
           spctl --assess --type execute --verbose=2 verified/*.app
-          ditto -c -k --keepParent verified/*.app json-structure-editor-macos-signed.zip
+          rm -f "$ZIP"
+          ditto -c -k --keepParent verified/*.app editor/release/json-structure-editor-macos-signed.zip
+          node editor/scripts/release-integrity.mjs executables editor/release
+          node editor/scripts/release-integrity.mjs scan editor/release
+          node editor/scripts/release-integrity.mjs attest editor/release
           rm -f certificate.p12
           security delete-keychain build.keychain
       - uses: actions/upload-artifact@v4
         with:
-          name: editor-macOS-X64-signed
-          path: json-structure-editor-macos-signed.zip
+          name: ${{ matrix.signed }}
+          path: editor/release/json-structure-editor-macos-signed.zip
           if-no-files-found: error
 
   windows-sign:
@@ -91,10 +159,11 @@ jobs:
       WINDOWS_SIGNING_CERTIFICATE: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE }}
       WINDOWS_SIGNING_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PASSWORD }}
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: editor-Windows-X64
-          path: artifacts
+          name: editor-win32-x64
+          path: editor/release
       - name: Require signing credentials
         shell: pwsh
         run: if (-not $env:WINDOWS_SIGNING_CERTIFICATE -or -not $env:WINDOWS_SIGNING_PASSWORD) { throw 'Windows signing credentials are required.' }
@@ -103,16 +172,35 @@ jobs:
         run: |
           [IO.File]::WriteAllBytes("certificate.pfx", [Convert]::FromBase64String($env:WINDOWS_SIGNING_CERTIFICATE))
           $signtool = (Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Recurse -Filter signtool.exe | Sort-Object FullName -Descending | Select-Object -First 1).FullName
-          Get-ChildItem artifacts -Recurse -Include *.exe,*.msi | ForEach-Object { & $signtool sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /f certificate.pfx /p $env:WINDOWS_SIGNING_PASSWORD $_.FullName; if ($LASTEXITCODE) { throw "Signing failed: $($_.FullName)" }; & $signtool verify /pa /all $_.FullName; if ($LASTEXITCODE) { throw "Verification failed: $($_.FullName)" } }
+          Get-ChildItem editor/release -Recurse -Include *.exe,*.msi | ForEach-Object { & $signtool sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /f certificate.pfx /p $env:WINDOWS_SIGNING_PASSWORD $_.FullName; if ($LASTEXITCODE) { throw "Signing failed: $($_.FullName)" }; & $signtool verify /pa /all $_.FullName; if ($LASTEXITCODE) { throw "Verification failed: $($_.FullName)" } }
           Remove-Item certificate.pfx -Force
+          node editor/scripts/release-integrity.mjs executables editor/release
+          node editor/scripts/release-integrity.mjs scan editor/release
+          node editor/scripts/release-integrity.mjs attest editor/release
       - uses: actions/upload-artifact@v4
         with:
-          name: editor-Windows-X64-signed
-          path: artifacts/
+          name: editor-win32-x64-signed
+          path: editor/release/
           if-no-files-found: error
 
   vscode-package:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: win32-x64
+            python_arch: x64
+          - os: ubuntu-latest
+            target: linux-x64
+            python_arch: x64
+          - os: macos-14
+            target: darwin-x64
+            python_arch: x64
+          - os: macos-14
+            target: darwin-arm64
+            python_arch: arm64
+    runs-on: ${{ matrix.os }}
     defaults:
       run:
         working-directory: vscode
@@ -120,6 +208,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+      - uses: actions/checkout@v4
+        with:
+          repository: clemensv/avrotize
+          ref: 8d1c504ec2cd06ab8971503394f73bf4a97c9617
+          path: avrotize
+          fetch-depth: 1
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -127,19 +221,36 @@ jobs:
           cache-dependency-path: |
             editor/package-lock.json
             vscode/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.10'
+          architecture: ${{ matrix.python_arch }}
+          cache: pip
+          cache-dependency-path: editor/config/structurize-runtime-requirements.txt
+      - name: Resolve native Python root
+        shell: bash
+        run: python -c 'import sys; print("STRUCTURIZE_PYTHON_ROOT=" + sys.prefix)' >> "$GITHUB_ENV"
+      - uses: actions/cache@v4
+        with:
+          path: .structurize-wheelhouse
+          key: structurize-wheels-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('editor/config/structurize-runtime.lock.json', 'editor/config/structurize-runtime-requirements.txt') }}
       - run: npm ci --prefix ../editor
       - run: npm ci
+      - name: Provision pinned Structurize dependencies
+        working-directory: editor
+        env:
+          STRUCTURIZE_ALLOW_NETWORK: '1'
+        run: npm run provision:structurize-runtime
+      - run: npm run build:editor
       - run: npm test
-      - run: mkdir -p artifacts && npm run package -- --out artifacts/json-structure-editor.vsix
-      - name: Verify required VSIX payloads
-        run: |
-          unzip -l artifacts/json-structure-editor.vsix > artifacts/vsix-files.txt
-          grep -q 'extension/media/conversion/worker-runtime/converter-worker.cjs' artifacts/vsix-files.txt
-          grep -q 'extension/media/conversion/worker-runtime/commands-manifest.json' artifacts/vsix-files.txt
-          grep -q 'extension/media/libraries/financial-types.struct.json' artifacts/vsix-files.txt
-          if unzip -p artifacts/json-structure-editor.vsix | grep -E 'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|client[_-]?secret' -i; then exit 1; fi
+      - run: npm run test:artifact
+      - run: npm run package -- --target ${{ matrix.target }} --out artifacts/json-structure-editor-${{ matrix.target }}.vsix
+      - run: node scripts/vsix-runtime-smoke.mjs artifacts/json-structure-editor-${{ matrix.target }}.vsix
+      - name: Report VSIX size
+        shell: bash
+        run: du -h artifacts/*.vsix
       - uses: actions/upload-artifact@v4
         with:
-          name: json-structure-editor-vsix
-          path: vscode/artifacts/json-structure-editor.vsix
+          name: json-structure-editor-vsix-${{ matrix.target }}
+          path: vscode/artifacts/*.vsix
           if-no-files-found: error

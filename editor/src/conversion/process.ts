@@ -238,7 +238,7 @@ export class NodeProcessExecutableLauncher implements PackagedExecutableLauncher
             child.stdin.write(cancellation, () => resolveWrite());
           }).catch(() => undefined);
         }
-        const exited = await Promise.race([exit.then(() => true), delay(1_000).then(() => false)]);
+        const exited = await Promise.race([exit.then(() => true), delay(2_000).then(() => false)]);
         if (!exited) await terminateProcessTree(child);
       })();
       return termination;

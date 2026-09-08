@@ -139,6 +139,7 @@
     "test:coverage": "c8 --include=dist/**/*.js --exclude=dist/test/**/*.js node ./dist/test/runTest.js",
     "lint": "eslint src --ext ts",
     "package": "vsce package --no-dependencies",
+    "test:runtime-artifact": "node scripts/vsix-runtime-smoke.mjs",
     "test:artifact": "npm run compile-tests && node -e \"require('./dist/test/artifact-integrity.js').assertRendererArtifactIntegrity().catch(error => { console.error(error); process.exitCode = 1; })\""
   },
   "devDependencies": {

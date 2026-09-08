@@ -1,5 +1,5 @@
 const { createHash } = require('node:crypto');
-const { cpSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } = require('node:fs');
+const { cpSync, copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } = require('node:fs');
 const { join } = require('node:path');
 const { spawnSync } = require('node:child_process');
 
@@ -7,12 +7,9 @@ const root = join(__dirname, '..', '..');
 const media = join(root, 'vscode', 'media');
 const sourceRuntime = join(root, 'editor', 'src', 'conversion', 'worker-runtime');
 const packagedRuntime = join(root, 'editor', 'build', 'structurize-runtime');
-const packagedPlatformRuntime = join(packagedRuntime, `${process.platform}-${process.arch}`, 'runtime.json');
-if (!existsSync(packagedPlatformRuntime)) {
-	const result = spawnSync(process.execPath, [join(root, 'editor', 'scripts', 'prepare-structurize-runtime.mjs')], { cwd: join(root, 'editor'), stdio: 'inherit', env: process.env });
-	if (result.error) throw result.error;
-	if (result.status !== 0) process.exit(result.status ?? 1);
-}
+const prepareResult = spawnSync(process.execPath, [join(root, 'editor', 'scripts', 'prepare-structurize-runtime.mjs')], { cwd: join(root, 'editor'), stdio: 'inherit', env: process.env });
+if (prepareResult.error) throw prepareResult.error;
+if (prepareResult.status !== 0) process.exit(prepareResult.status ?? 1);
 const destinationRuntime = join(media, 'conversion', 'worker-runtime');
 const descriptorPath = join(sourceRuntime, 'runtime-descriptor.json');
 const descriptor = JSON.parse(readFileSync(descriptorPath, 'utf8'));

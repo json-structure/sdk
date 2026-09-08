@@ -8,12 +8,32 @@ interface StructurizeImportCommand {
   readonly options: readonly string[];
   readonly availability?: 'external-service';
   readonly availabilityMessage?: string;
+  readonly availabilityRequirements?: readonly string[];
+}
+
+interface StructurizeBridgeCommand {
+  readonly id: string;
+  readonly direction: 'import' | 'export';
+  readonly label: string;
+  readonly sourceFormat: string;
+  readonly targetFormat: string;
+  readonly sourceExtensions?: readonly string[];
+  readonly outputName: string;
+  readonly outputKind?: 'file' | 'directory';
+  readonly optionNames: readonly string[];
+  readonly firstCommand: string;
+  readonly firstOptions: readonly string[];
+  readonly secondCommand: string;
+  readonly secondOptions: readonly string[];
+  readonly availability?: 'external-service';
+  readonly availabilityMessage?: string;
+  readonly availabilityRequirements?: readonly string[];
 }
 
 const structurizeImportCommands: readonly StructurizeImportCommand[] = [
   { cliCommand: 'fbs2s', sourceFormat: 'flatbuffers', displayName: 'FlatBuffers', sourceExtensions: ['.fbs'], options: ['namespace'] },
   { cliCommand: 'j2s', sourceFormat: 'json-schema', displayName: 'JSON Schema', sourceExtensions: ['.json', '.jsons'], options: ['namespace', 'root_class_name'] },
-  { cliCommand: 'k2s', sourceFormat: 'kusto', displayName: 'Kusto', sourceExtensions: ['.kusto'], options: ['kusto_uri', 'kusto_database', 'table_name', 'base_id', 'emit_cloudevents', 'emit_xregistry', 'sample_size', 'infer_choices', 'choice_depth', 'infer_enums'], availability: 'external-service', availabilityMessage: 'Kusto import requires a configured cluster URI, database, and table; local file conversion is not supported.' },
+  { cliCommand: 'k2s', sourceFormat: 'kusto', displayName: 'Kusto', sourceExtensions: ['.kusto'], options: ['kusto_uri', 'kusto_database', 'table_name', 'base_id', 'emit_cloudevents', 'emit_xregistry', 'sample_size', 'infer_choices', 'choice_depth', 'infer_enums'], availability: 'external-service', availabilityMessage: 'Kusto import requires a configured cluster URI, database, and table; local file conversion is not supported.', availabilityRequirements: ['kusto_uri', 'kusto_database', 'table_name'] },
   { cliCommand: 'json2s', sourceFormat: 'json', displayName: 'JSON data', sourceExtensions: ['.json', '.jsonl', '.ndjson'], options: ['type_name', 'base_id', 'sample_size', 'infer_choices', 'choice_depth', 'infer_enums'] },
   { cliCommand: 'xml2s', sourceFormat: 'xml', displayName: 'XML data', sourceExtensions: ['.xml'], options: ['type_name', 'base_id', 'sample_size'] },
   { cliCommand: 'a2s', sourceFormat: 'avro', displayName: 'Avro', sourceExtensions: ['.avsc'], options: ['naming', 'avro_encoding'] },
@@ -57,6 +77,26 @@ const structurizeExportCommands = [
   ['s2capnp', 'capnp', "Cap'n Proto schema", 'file', 'schema.capnp'],
   ['s2raml', 'raml', 'RAML Data Types', 'file', 'schema.raml'],
 ] as const;
+
+const structurizeBridgeCommands: readonly StructurizeBridgeCommand[] = [
+  { id: 'import.structurize.p2s', direction: 'import', label: 'Import Protocol Buffers to JSON Structure', sourceFormat: 'protobuf', targetFormat: 'json-structure', sourceExtensions: ['.proto'], outputName: 'schema.struct.json', optionNames: ['namespace', 'message_type', 'proto_root', 'naming', 'avro_encoding'], firstCommand: 'p2a', firstOptions: ['namespace', 'message_type', 'proto_root'], secondCommand: 'a2s', secondOptions: ['naming', 'avro_encoding'] },
+  { id: 'import.structurize.x2s', direction: 'import', label: 'Import XML Schema to JSON Structure', sourceFormat: 'xsd', targetFormat: 'json-structure', sourceExtensions: ['.xsd'], outputName: 'schema.struct.json', optionNames: ['namespace', 'naming', 'avro_encoding'], firstCommand: 'x2a', firstOptions: ['namespace'], secondCommand: 'a2s', secondOptions: ['naming', 'avro_encoding'] },
+  { id: 'import.structurize.surreal2s', direction: 'import', label: 'Import SurrealQL to JSON Structure', sourceFormat: 'surrealql', targetFormat: 'json-structure', sourceExtensions: ['.surql', '.surrealql'], outputName: 'schema.struct.json', optionNames: ['namespace', 'naming', 'avro_encoding'], firstCommand: 'surreal2a', firstOptions: ['namespace'], secondCommand: 'a2s', secondOptions: ['naming', 'avro_encoding'] },
+  { id: 'import.structurize.pq2s', direction: 'import', label: 'Import Apache Parquet to JSON Structure', sourceFormat: 'parquet', targetFormat: 'json-structure', sourceExtensions: ['.parquet'], outputName: 'schema.struct.json', optionNames: ['namespace', 'naming', 'avro_encoding'], firstCommand: 'pq2a', firstOptions: ['namespace'], secondCommand: 'a2s', secondOptions: ['naming', 'avro_encoding'] },
+  { id: 'import.structurize.asn2s', direction: 'import', label: 'Import ASN.1 to JSON Structure', sourceFormat: 'asn1', targetFormat: 'json-structure', sourceExtensions: ['.asn1'], outputName: 'schema.struct.json', optionNames: ['naming', 'avro_encoding'], firstCommand: 'asn2a', firstOptions: [], secondCommand: 'a2s', secondOptions: ['naming', 'avro_encoding'] },
+  { id: 'import.structurize.kstruct2s', direction: 'import', label: 'Import Kafka Struct to JSON Structure', sourceFormat: 'kafka-struct', targetFormat: 'json-structure', sourceExtensions: ['.kstruct'], outputName: 'schema.struct.json', optionNames: ['naming', 'avro_encoding'], firstCommand: 'kstruct2a', firstOptions: [], secondCommand: 'a2s', secondOptions: ['naming', 'avro_encoding'] },
+  { id: 'import.structurize.csv2s', direction: 'import', label: 'Import CSV data to JSON Structure', sourceFormat: 'csv', targetFormat: 'json-structure', sourceExtensions: ['.csv'], outputName: 'schema.struct.json', optionNames: ['namespace', 'naming', 'avro_encoding'], firstCommand: 'csv2a', firstOptions: ['namespace'], secondCommand: 'a2s', secondOptions: ['naming', 'avro_encoding'] },
+  { id: 'import.structurize.sql2s', direction: 'import', label: 'Import SQL database to JSON Structure', sourceFormat: 'sql-database', targetFormat: 'json-structure', outputName: 'schema.struct.json', optionNames: ['connection_string', 'username', 'password', 'database', 'table_name', 'namespace', 'dialect', 'emit_cloudevents', 'sample_size', 'infer_json', 'infer_xml', 'infer_choices', 'naming', 'avro_encoding'], firstCommand: 'sql2a', firstOptions: ['connection_string', 'username', 'password', 'database', 'table_name', 'namespace', 'dialect', 'emit_cloudevents', 'sample_size', 'infer_json', 'infer_xml', 'infer_choices'], secondCommand: 'a2s', secondOptions: ['naming', 'avro_encoding'], availability: 'external-service', availabilityMessage: 'SQL import requires a database connection string; local file conversion is not supported.', availabilityRequirements: ['connection_string'] },
+  { id: 'export.structurize.s2mongo', direction: 'export', label: 'Export JSON Structure to MongoDB schema', sourceFormat: 'json-structure', targetFormat: 'mongodb', outputName: 'mongodb', outputKind: 'directory', optionNames: ['emit_cloudevents_columns'], firstCommand: 's2a', firstOptions: [], secondCommand: 'a2mongo', secondOptions: ['emit_cloudevents_columns'] },
+  { id: 'export.structurize.s2dynamodb', direction: 'export', label: 'Export JSON Structure to DynamoDB schema', sourceFormat: 'json-structure', targetFormat: 'dynamodb', outputName: 'dynamodb', outputKind: 'directory', optionNames: ['emit_cloudevents_columns'], firstCommand: 's2a', firstOptions: [], secondCommand: 'a2dynamodb', secondOptions: ['emit_cloudevents_columns'] },
+  { id: 'export.structurize.s2es', direction: 'export', label: 'Export JSON Structure to Elasticsearch schema', sourceFormat: 'json-structure', targetFormat: 'elasticsearch', outputName: 'elasticsearch', outputKind: 'directory', optionNames: ['emit_cloudevents_columns'], firstCommand: 's2a', firstOptions: [], secondCommand: 'a2es', secondOptions: ['emit_cloudevents_columns'] },
+  { id: 'export.structurize.s2couchdb', direction: 'export', label: 'Export JSON Structure to CouchDB schema', sourceFormat: 'json-structure', targetFormat: 'couchdb', outputName: 'couchdb', outputKind: 'directory', optionNames: ['emit_cloudevents_columns'], firstCommand: 's2a', firstOptions: [], secondCommand: 'a2couchdb', secondOptions: ['emit_cloudevents_columns'] },
+  { id: 'export.structurize.s2neo4j', direction: 'export', label: 'Export JSON Structure to Neo4j schema', sourceFormat: 'json-structure', targetFormat: 'neo4j', outputName: 'neo4j', outputKind: 'directory', optionNames: ['emit_cloudevents_columns'], firstCommand: 's2a', firstOptions: [], secondCommand: 'a2neo4j', secondOptions: ['emit_cloudevents_columns'] },
+  { id: 'export.structurize.s2firebase', direction: 'export', label: 'Export JSON Structure to Firebase schema', sourceFormat: 'json-structure', targetFormat: 'firebase', outputName: 'firebase', outputKind: 'directory', optionNames: ['emit_cloudevents_columns'], firstCommand: 's2a', firstOptions: [], secondCommand: 'a2firebase', secondOptions: ['emit_cloudevents_columns'] },
+  { id: 'export.structurize.s2cosmos', direction: 'export', label: 'Export JSON Structure to Cosmos DB schema', sourceFormat: 'json-structure', targetFormat: 'cosmosdb', outputName: 'cosmosdb', outputKind: 'directory', optionNames: ['emit_cloudevents_columns'], firstCommand: 's2a', firstOptions: [], secondCommand: 'a2cosmos', secondOptions: ['emit_cloudevents_columns'] },
+  { id: 'export.structurize.s2hbase', direction: 'export', label: 'Export JSON Structure to HBase schema', sourceFormat: 'json-structure', targetFormat: 'hbase', outputName: 'hbase', outputKind: 'directory', optionNames: ['emit_cloudevents_columns'], firstCommand: 's2a', firstOptions: [], secondCommand: 'a2hbase', secondOptions: ['emit_cloudevents_columns'] },
+  { id: 'export.structurize.s2surreal', direction: 'export', label: 'Export JSON Structure to SurrealQL schema', sourceFormat: 'json-structure', targetFormat: 'surrealql', outputName: 'schema.surql', optionNames: ['record_type'], firstCommand: 's2a', firstOptions: [], secondCommand: 'a2surreal', secondOptions: ['record_type'] },
+];
 
 export const BUILTIN_CONVERSION_COMMANDS_MANIFEST: ConversionCommandsManifest = parseCommandsManifest({
   schemaVersion: 1,
@@ -167,8 +207,8 @@ export const BUILTIN_CONVERSION_COMMANDS_MANIFEST: ConversionCommandsManifest = 
       id: 'structurize-cli',
       displayName: 'Structurize CLI',
       version: 'external',
-      sourceFormats: ['json-structure', ...structurizeImportCommands.map((item) => item.sourceFormat)],
-      targetFormats: [...structurizeExportCommands.map(([, format]) => format), 'json-structure'],
+      sourceFormats: ['json-structure', ...structurizeImportCommands.map((item) => item.sourceFormat), ...structurizeBridgeCommands.filter((item) => item.direction === 'import').map((item) => item.sourceFormat)],
+      targetFormats: [...structurizeExportCommands.map(([, format]) => format), ...structurizeBridgeCommands.filter((item) => item.direction === 'export').map((item) => item.targetFormat), 'json-structure'],
       options: [
         { name: 'dialect', type: 'string', description: 'SQL dialect used by the s2sql exporter.', default: 'postgres', allowedValues: ['mysql', 'mariadb', 'postgres', 'sqlserver', 'oracle', 'sqlite', 'bigquery', 'snowflake', 'redshift', 'db2'] },
         { name: 'namespace', type: 'string', description: 'Namespace for generated declarations.', default: '' },
@@ -191,6 +231,16 @@ export const BUILTIN_CONVERSION_COMMANDS_MANIFEST: ConversionCommandsManifest = 
         { name: 'table_name', type: 'string', description: 'Kusto table name.', default: '' },
         { name: 'emit_cloudevents', type: 'boolean', description: 'Emit CloudEvents declarations.', default: false },
         { name: 'emit_xregistry', type: 'boolean', description: 'Emit an xRegistry manifest.', default: false },
+        { name: 'message_type', type: 'string', description: 'Protocol Buffers message selected as the imported root.', default: '' },
+        { name: 'proto_root', type: 'string', description: 'Root directory used to resolve Protocol Buffers imports.', default: '' },
+        { name: 'connection_string', type: 'string', description: 'Database connection string used for SQL schema import.', default: '' },
+        { name: 'username', type: 'string', description: 'Optional database user name.', default: '' },
+        { name: 'password', type: 'string', description: 'Optional database password.', default: '' },
+        { name: 'database', type: 'string', description: 'Optional database name.', default: '' },
+        { name: 'infer_json', type: 'boolean', description: 'Infer structures stored in JSON columns.', default: false },
+        { name: 'infer_xml', type: 'boolean', description: 'Infer structures stored in XML columns.', default: false },
+        { name: 'emit_cloudevents_columns', type: 'boolean', description: 'Include CloudEvents metadata columns in generated database schemas.', default: false },
+        { name: 'record_type', type: 'string', description: 'SurrealQL record type used for generated declarations.', default: '' },
       ]
     }
   ],
@@ -209,6 +259,7 @@ export const BUILTIN_CONVERSION_COMMANDS_MANIFEST: ConversionCommandsManifest = 
       outputName: 'schema.struct.json',
       sourceExtensions: item.sourceExtensions,
       ...(item.availability ? { availability: item.availability, availabilityMessage: item.availabilityMessage } : {}),
+      ...(item.availabilityRequirements ? { availabilityRequirements: item.availabilityRequirements } : {}),
     })),
     {
       id: 'import.jsonschema.to-json-structure',
@@ -263,6 +314,25 @@ export const BUILTIN_CONVERSION_COMMANDS_MANIFEST: ConversionCommandsManifest = 
       optionNames: ['uses', 'additional_properties', 'emit_comments', 'numbers'],
       cliCommand: 's2p'
     },
+    ...structurizeBridgeCommands.map((item) => ({
+      id: item.id,
+      converterId: 'structurize-cli',
+      direction: item.direction,
+      label: item.label,
+      sourceFormat: item.sourceFormat,
+      targetFormat: item.targetFormat,
+      defaultAutoOpen: item.direction === 'import' || item.outputKind !== 'directory',
+      optionNames: item.optionNames,
+      outputKind: item.outputKind ?? 'file',
+      outputName: item.outputName,
+      sourceExtensions: item.sourceExtensions,
+      cliPipeline: [
+        { cliCommand: item.firstCommand, outputKind: 'file' as const, outputName: 'schema.avsc', optionNames: item.firstOptions },
+        { cliCommand: item.secondCommand, outputKind: item.outputKind ?? 'file', outputName: item.outputName, optionNames: item.secondOptions },
+      ],
+      ...(item.availability ? { availability: item.availability, availabilityMessage: item.availabilityMessage } : {}),
+      ...(item.availabilityRequirements ? { availabilityRequirements: item.availabilityRequirements } : {}),
+    })),
     ...structurizeExportCommands.map(([cliCommand, targetFormat, displayName, outputKind, outputName]) => ({
       id: `export.structurize.${cliCommand}`,
       converterId: 'structurize-cli',

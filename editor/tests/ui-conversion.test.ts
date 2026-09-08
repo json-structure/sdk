@@ -44,12 +44,15 @@ describe('conversion workbench view', () => {
         sourceFormat: 'kusto', targetFormat: 'json-structure', defaultAutoOpen: true, cliCommand: 'k2s',
         optionNames: ['kusto_uri', 'kusto_database', 'table_name'], availability: 'external-service',
         availabilityMessage: 'Kusto import requires a configured cluster URI, database, and table.',
+        availabilityRequirements: ['kusto_uri', 'kusto_database', 'table_name'],
       }],
     };
     const host = { listConversionCommands: async () => externalManifest, selectConversionSource: async () => undefined, convert: async () => { throw new Error('not called'); } };
     const html = conversionView(host, externalManifest, 'import.structurize.k2s', undefined, undefined, '');
     expect(html).toContain('External data source');
+    expect(html).toContain('aria-label="External data source configuration"');
     expect(html).toContain('data-conversion-option="kusto_uri"');
+    expect(html).toContain('required aria-required="true"');
     expect(html).not.toContain('data-conversion-source');
     expect(html).not.toContain('data-conversion-run disabled');
   });
@@ -77,6 +80,7 @@ describe('conversion workbench view', () => {
     }, 'Generated 1 output.');
 
     expect(html).toContain('data-option-type="boolean" checked');
+    expect(html).toContain('aria-describedby="conversion-workbench-option-strict-description"');
     expect(html).toContain('data-conversion-reset');
     expect(html).toContain('class="js-conversion-tile"');
     expect(html).toContain('class="js-technology-icon"');
@@ -101,6 +105,8 @@ describe('conversion workbench view', () => {
     expect(html).toContain('Keyword: x-source');
     expect(html).toContain('42 B');
     expect(html).toContain('a'.repeat(64));
+    expect(html).toContain('data-conversion-state="success"');
+    expect(html).toContain('data-conversion-result="success" aria-label="Conversion succeeded"');
   });
 
   it('renders progress and cancellation controls only while a conversion is active', () => {
@@ -120,10 +126,17 @@ describe('conversion workbench view', () => {
     const idle = conversionView(host, manifest, 'convert.fixture', undefined, undefined, 'Ready');
 
     expect(active).toContain('<progress max="100" value="75"');
+    expect(active).toContain('aria-valuetext="Writing outputs"');
+    expect(active).toContain('aria-busy="true"');
     expect(active).toContain('data-conversion-cancel');
     expect(active).toContain('data-conversion-run disabled');
     expect(idle).not.toContain('data-conversion-cancel');
     expect(idle).not.toContain('<progress');
+
+    const cancelling = conversionView(host, manifest, 'convert.fixture', undefined, undefined, 'Cancelling...', undefined, 'convert-1');
+    expect(cancelling).toContain('data-conversion-state="cancelling"');
+    expect(cancelling).toContain('data-conversion-cancel disabled');
+    expect(cancelling).toContain('Cancelling...');
   });
 
   it('renders only options selected by the active command', () => {

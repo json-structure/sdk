@@ -65,7 +65,11 @@ export interface GraphEdge {
   readonly contextDimmed?: boolean;
 }
 
-export interface GraphProjection { readonly nodes: readonly GraphNode[]; readonly edges: readonly GraphEdge[]; }
+export interface GraphProjection {
+  readonly nodes: readonly GraphNode[];
+  readonly edges: readonly GraphEdge[];
+  readonly documentLabel?: string;
+}
 
 /** Stable graph identity for the authored document root, including inline schemas. */
 export const GRAPH_DOCUMENT_NODE_ID = 'graph:document-root' as const;
@@ -135,10 +139,14 @@ export function projectGraph(snapshot: DocumentSnapshot): GraphProjection {
   const resolution = model.projections.resolution ?? resolveReferences(model);
   resolution.imports.forEach((fact) => projectImportFact(snapshot, fact, nodes, nodeIds, edges));
   resolution.references.forEach((fact) => projectReferenceFact(snapshot, definitions, fact, resolution.references, nodes, nodeIds, edges));
-  return { nodes, edges };
+  return { nodes, edges, documentLabel: model.name ?? 'Document' };
 }
 
 function projectReferenceFact(snapshot: DocumentSnapshot, definitions: readonly DefinitionProjection[], fact: ReferenceResolutionFact, facts: readonly ReferenceResolutionFact[], nodes: GraphNode[], nodeIds: Set<string>, edges: GraphEdge[]): void {
+  // A header-only document envelope is not a type. Its $root target already
+  // appears as a reusable type node, so projecting the envelope adds a
+  // misleading, disconnected type-like node to the topology.
+  if (fact.kind === 'root' && !snapshotHasInlineRoot(snapshot)) return;
   const owner = fact.kind === 'root' ? ensureDocumentNode(snapshot, nodes, nodeIds) : owningNode(definitions, nodes, fact.pointer) ?? (snapshotHasInlineRoot(snapshot) ? ensureDocumentNode(snapshot, nodes, nodeIds) : undefined);
   if (!owner) return;
   const status = graphStatus(snapshot, fact.status, fact.targetDocumentUri);

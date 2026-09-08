@@ -36,8 +36,6 @@ function mountGraph(): HTMLElement {
     }),
   });
   (container.querySelector('[data-mode="graph"]') as HTMLButtonElement).click();
-  const namespace = container.querySelector('[data-graph-node="graph:namespace:Definitions"]') as SVGElement;
-  namespace.dispatchEvent(new window.MouseEvent('dblclick', { bubbles: true, cancelable: true }));
   const source = container.querySelector('[data-graph-node="/definitions/Source"]') as SVGElement;
   source.dispatchEvent(new window.MouseEvent('dblclick', { bubbles: true, cancelable: true }));
   return container;
@@ -109,10 +107,10 @@ describe('mounted graph drag geometry', () => {
     expect(root.querySelector('[data-graph-layer="everything"]')).not.toBeNull();
     expect(root.querySelector('[data-graph-matrix-sort="source"]')).not.toBeNull();
     expect(root.querySelectorAll('.js-relation-matrix-scroll>[role="row"][data-graph-edge-select]')).toHaveLength(4);
-    expect(root.querySelectorAll('[data-minimap-node]')).toHaveLength(4);
+    expect(root.querySelectorAll('[data-minimap-node]')).toHaveLength(3);
     (root.querySelector('[data-graph-isolate]') as HTMLButtonElement).click();
     expect(root.querySelectorAll('[data-graph-node]')).toHaveLength(2);
-    expect(root.querySelectorAll('[data-minimap-node]')).toHaveLength(4);
+    expect(root.querySelectorAll('[data-minimap-node]')).toHaveLength(3);
     (root.querySelector('[data-graph-isolate]') as HTMLButtonElement).click();
     const normalMatrixRow = [...root.querySelectorAll('[data-graph-edge-select]') as unknown as HTMLElement[]].find((candidate) => candidate.matches('.js-relation-matrix-scroll>[role="row"]') && candidate.textContent?.includes('normal'));
     normalMatrixRow?.click();

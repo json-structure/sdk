@@ -31,6 +31,11 @@ shown as external but are not fetched by the beta hosts.
 
 ```text
 npm test                 # contract and coverage unit tests
+npm run test:conversion-integration # live PostgreSQL, MySQL, SQL Server, and Kusto integration
+npm run test:ux:coverage # mounted UX tests plus V8 statement/branch/function/line gates
+npm run test:ux:real-host # packaged Electron UI, axe, responsive, RTL, and visual checks
+npm run test:ux          # complete UX quality gate (requires the prepared runtime)
+npm run test:ux:update-visuals # intentionally update Windows visual baselines
 npm run typecheck        # strict TypeScript check
 npm run build            # ESM/CJS package and declarations
 npm run alpha:build      # renderer and Electron main/preload bundles
@@ -44,6 +49,61 @@ npm run beta:package     # beta platform packages under release/
 npm run coverage:check   # validate ledger and generated documentation
 npm run coverage:generate
 ```
+
+The live conversion integration suite uses Testcontainers and the prepared,
+pinned Structurize runtime. Start Docker, run
+`npm run prepare:structurize-runtime` with the required pinned runtime source
+environment, then run `npm run test:conversion-integration`. The suite creates
+temporary PostgreSQL, MySQL, SQL Server, and Kustainer instances; verifies
+connection and selection parameters against real servers; checks worker
+progress and terminal failure behavior; and removes all containers afterward.
+The regular `npm test` run loads this suite in skipped mode and does not require
+Docker.
+
+## UX quality gate
+
+`npm run test:ux:coverage` executes the mounted workbench, conversion, graph,
+responsive, Electron bridge, and VS Code webview suites with V8 source
+coverage. The enforced floor is 68% statements, 61% branches, 71% functions,
+and 73% lines. Reports are written to `coverage/ux/`; these percentages are
+source execution coverage and are separate from the specification evidence
+ledger under `coverage/generated/`.
+
+The same suite maintains an exhaustive contract for all 245 interactive
+`data-*` control families emitted by the workbench. Each family receives its
+own test case for stable identity, native keyboard operability, accessible
+naming, and a wiring path. The expected count is fixed, so adding or removing
+an interactive control requires an explicit test update instead of silently
+changing the UX surface.
+
+`npm run test:ux:real-host` packages and launches the actual Electron
+application. It drives File > Import through the visible conversion UI, checks
+that the generated Monaco editor is both visible and non-empty, runs WCAG A/AA
+axe scans, verifies pane scrolling and graph pointer behavior, exercises
+500x600 touch and right-to-left/text-expansion layouts, and compares six
+Windows screenshot states against `tests/visual-baselines/win32-x64/`.
+Linux and macOS runners execute the same structural, accessibility, responsive,
+and internationalization assertions; pixel comparison is Windows-specific
+because native font and window rendering differ by platform.
+
+The shipped Electron application and VS Code webview both use Chromium.
+Firefox, WebKit, iOS Safari, and Android browsers are not product runtime
+targets, so the gate tests the supported Chromium hosts across Windows, Linux,
+Intel macOS, and Apple Silicon macOS instead of presenting unsupported engines
+as product coverage.
+
+Automated accessibility checks do not reproduce screen-reader speech output.
+Before a release candidate, complete this short manual pass:
+
+1. In NVDA on Windows or VoiceOver on macOS, traverse the title bar, activity
+   rail, type tree, Design controls, Problems panel, and status bar.
+2. Open and close the import chooser, conversion dialog, command palette, and
+   library dialog using only the keyboard; confirm focus remains trapped and
+   returns to the invoking control.
+3. Run one successful and one failing conversion; confirm progress, failure,
+   and success announcements are spoken once and include useful context.
+4. Switch among Design, Graph, Source, Validate, and Convert; confirm the
+   selected mode and editor content are announced.
 
 On Windows, `npm run beta:package` produces an NSIS installer and a portable
 executable. macOS and Linux package targets are configured but must be built and

@@ -3,7 +3,8 @@ import { execFile } from 'node:child_process';
 import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { NodeProcessExecutableLauncher, parseBundledCommandsManifest, parseProcessWorkerEvent } from '../src/conversion/process.js';
-import { ConversionWorkerQuotaTracker, validateWorkerOutputQuotas, type ConversionOptionValues } from '../src/conversion/types.js';
+import { ConversionWorkerQuotaTracker, conversionOptionsForCommand, validateWorkerOutputQuotas, type ConversionCommand, type ConversionOption, type ConversionOptionValues } from '../src/conversion/types.js';
+import { BUILTIN_CONVERSION_COMMANDS_MANIFEST } from '../src/conversion/manifest.js';
 import { PACKAGED_COMMANDS_MANIFEST_PATH, PACKAGED_RUNTIME_DESCRIPTOR_PATH } from '../src/conversion/assets.js';
 import { parsePackagedRuntimeDescriptor, verifyPackagedRuntime } from '../src/conversion/integrity.js';
 import { validateGeneratedConversionFiles } from '../src/conversion/validation.js';
@@ -36,6 +37,43 @@ function processExists(pid: number): boolean {
   } catch (error) {
     return (error as NodeJS.ErrnoException).code === 'EPERM';
   }
+}
+
+function explicitOptionValue(option: ConversionOption): boolean | string | number | readonly string[] {
+    if (option.type === 'boolean') return true;
+    if (option.type === 'number') return Math.max(option.minimum ?? 0, option.name === 'choice_depth' ? 3 : 7);
+    if (option.type === 'string-list') return ['First', 'Second'];
+    if (option.allowedValues?.length) return option.allowedValues.at(-1)!;
+    const values: Record<string, string> = {
+      kusto_uri: 'https://kusto.example.test',
+      kusto_database: 'IntegrationDatabase',
+      table_name: 'IntegrationTable',
+      connection_string: 'postgresql://integration.example.test/integration',
+      username: 'integration-user',
+      password: 'integration-password',
+      database: 'integration',
+    };
+    return values[option.name] ?? `integration-${option.name}`;
+}
+
+function commandOptions(command: ConversionCommand): ConversionOptionValues {
+  const converter = BUILTIN_CONVERSION_COMMANDS_MANIFEST.converters.find((candidate) => candidate.id === command.converterId)!;
+  return Object.fromEntries(conversionOptionsForCommand(converter, command).map((option) => [option.name, explicitOptionValue(option)]));
+}
+
+function expectedOptionArguments(options: ConversionOptionValues, optionNames?: readonly string[]): string[] {
+  const allowed = optionNames ? new Set(optionNames) : undefined;
+  const args: string[] = [];
+  for (const [name, value] of Object.entries(options)) {
+    if (allowed && !allowed.has(name)) continue;
+    const flag = `--${name.replace(/_/g, '-')}`;
+    if (typeof value === 'boolean') {
+      if (value) args.push(flag);
+    } else if (Array.isArray(value)) {
+      for (const item of value) args.push(flag, item);
+    } else if (value !== '') args.push(flag, String(value));
+  }
+  return args;
 }
 
 async function terminateKnownProcessTree(pid: number): Promise<void> {
@@ -73,10 +111,11 @@ describe('Phase 5 packaged process runtime', () => {
     const manifest = parseBundledCommandsManifest(await readFile(PACKAGED_COMMANDS_MANIFEST_PATH));
     expect(manifest.schemaVersion).toBe(1);
     expect(manifest.converters.map((converter) => converter.id)).toEqual(['jsonschema', 'avro', 'protobuf', 'structurize-cli']);
-    expect(manifest.commands).toHaveLength(47);
-    expect(manifest.commands.filter((command) => command.direction === 'import')).toHaveLength(16);
-    expect(manifest.commands.filter((command) => command.direction === 'export')).toHaveLength(31);
-    expect(manifest.commands.filter((command) => command.direction === 'import').map((command) => command.cliCommand)).toEqual(['fbs2s', 'j2s', 'k2s', 'json2s', 'xml2s', 'a2s', 'jtd2s', 'cddl2s', 'oas2s', 'cue2s', 'thrift2s', 'smithy2s', 'capnp2s', 'raml2s', undefined, undefined]);
+    expect(manifest.commands).toHaveLength(64);
+    expect(manifest.commands.filter((command) => command.direction === 'import')).toHaveLength(24);
+    expect(manifest.commands.filter((command) => command.direction === 'export')).toHaveLength(40);
+    expect(manifest.commands.find((command) => command.id === 'import.structurize.p2s')?.cliPipeline?.map((step) => step.cliCommand)).toEqual(['p2a', 'a2s']);
+    expect(manifest.commands.find((command) => command.id === 'export.structurize.s2mongo')?.cliPipeline?.map((step) => step.cliCommand)).toEqual(['s2a', 'a2mongo']);
     expect(manifest.commands.find((command) => command.cliCommand === 'oas2s')).toMatchObject({ sourceExtensions: ['.yaml', '.yml', '.json'], sourceFormat: 'openapi' });
     expect(manifest.commands.find((command) => command.cliCommand === 'k2s')).toMatchObject({ availability: 'external-service' });
   });
@@ -85,9 +124,11 @@ describe('Phase 5 packaged process runtime', () => {
     const root = await mkdtemp(join(tmpdir(), 'json-structure-structurize-args-'));
     const markerPath = join(root, 'args.json');
     const previousExecutable = process.env.STRUCTURIZE_EXECUTABLE;
+    const previousRuntimeOverride = process.env.STRUCTURIZE_ALLOW_RUNTIME_OVERRIDE;
     const previousMarker = process.env.STRUCTURIZE_TEST_ARGS;
     try {
       process.env.STRUCTURIZE_EXECUTABLE = resolve(process.cwd(), 'tests/fixtures/structurize-args.cjs');
+      process.env.STRUCTURIZE_ALLOW_RUNTIME_OVERRIDE = '1';
       process.env.STRUCTURIZE_TEST_ARGS = markerPath;
       const result = await runPackaged('import.structurize.oas2s', { openapi: '3.0.0' }, { detect_discriminators: false }, 'api.yaml');
       expect(result.files['schema.struct.json']).toBeDefined();
@@ -99,11 +140,52 @@ describe('Phase 5 packaged process runtime', () => {
     } finally {
       if (previousExecutable === undefined) delete process.env.STRUCTURIZE_EXECUTABLE;
       else process.env.STRUCTURIZE_EXECUTABLE = previousExecutable;
+      if (previousRuntimeOverride === undefined) delete process.env.STRUCTURIZE_ALLOW_RUNTIME_OVERRIDE;
+      else process.env.STRUCTURIZE_ALLOW_RUNTIME_OVERRIDE = previousRuntimeOverride;
       if (previousMarker === undefined) delete process.env.STRUCTURIZE_TEST_ARGS;
       else process.env.STRUCTURIZE_TEST_ARGS = previousMarker;
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  it('routes every Structurize command and option to the declared CLI step', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'json-structure-structurize-matrix-'));
+    const markerPath = join(root, 'args.jsonl');
+    const previousExecutable = process.env.STRUCTURIZE_EXECUTABLE;
+    const previousRuntimeOverride = process.env.STRUCTURIZE_ALLOW_RUNTIME_OVERRIDE;
+    const previousMarker = process.env.STRUCTURIZE_TEST_ARGS;
+    try {
+      process.env.STRUCTURIZE_EXECUTABLE = resolve(process.cwd(), 'tests/fixtures/structurize-args.cjs');
+      process.env.STRUCTURIZE_ALLOW_RUNTIME_OVERRIDE = '1';
+      process.env.STRUCTURIZE_TEST_ARGS = markerPath;
+      const commands = BUILTIN_CONVERSION_COMMANDS_MANIFEST.commands.filter((command) => command.converterId === 'structurize-cli');
+
+      for (const command of commands) {
+        const options = commandOptions(command);
+        const before = await readFile(markerPath, 'utf8').catch(() => '');
+        const beforeCount = before.trim() ? before.trim().split(/\r?\n/).length : 0;
+        await runPackaged(command.id, { name: 'Integration', type: 'object', properties: {} }, options, command.sourceExtensions?.[0] ? `schema${command.sourceExtensions[0]}` : 'schema.struct.json');
+        const invocations = (await readFile(markerPath, 'utf8')).trim().split(/\r?\n/).slice(beforeCount).map((line) => JSON.parse(line) as string[]);
+        const steps = command.cliPipeline ?? [{ cliCommand: command.cliCommand!, outputKind: command.outputKind!, outputName: command.outputName!, optionNames: command.optionNames }];
+        expect(invocations, command.id).toHaveLength(steps.length);
+        steps.forEach((step, index) => {
+          const args = invocations[index]!;
+          expect(args[0], command.id).toBe(step.cliCommand);
+          expect(args[1], command.id).toMatch(/schema|generated/i);
+          expect(args.slice(2, 4), command.id).toEqual(['--out', expect.any(String)]);
+          expect(args.slice(4), command.id).toEqual(expectedOptionArguments(options, step.optionNames));
+        });
+      }
+    } finally {
+      if (previousExecutable === undefined) delete process.env.STRUCTURIZE_EXECUTABLE;
+      else process.env.STRUCTURIZE_EXECUTABLE = previousExecutable;
+      if (previousRuntimeOverride === undefined) delete process.env.STRUCTURIZE_ALLOW_RUNTIME_OVERRIDE;
+      else process.env.STRUCTURIZE_ALLOW_RUNTIME_OVERRIDE = previousRuntimeOverride;
+      if (previousMarker === undefined) delete process.env.STRUCTURIZE_TEST_ARGS;
+      else process.env.STRUCTURIZE_TEST_ARGS = previousMarker;
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 60_000);
 
   it('reports the Kusto inbound dependency instead of pretending local file support', async () => {
     await expect(runPackaged('import.structurize.k2s', {}, { kusto_uri: '', kusto_database: '', table_name: '' }, 'schema.kusto')).rejects.toThrow(/cluster URI.*database.*table/i);
@@ -271,11 +353,13 @@ describe('Phase 5 packaged process runtime', () => {
     const fixtureRoot = await mkdtemp(join(tmpdir(), 'json-structure-structurize-cancel-'));
     const marker = join(fixtureRoot, 'process.json');
     const previousExecutable = process.env.STRUCTURIZE_EXECUTABLE;
+    const previousRuntimeOverride = process.env.STRUCTURIZE_ALLOW_RUNTIME_OVERRIDE;
     const previousMarker = process.env.STRUCTURIZE_TEST_MARKER;
     const controller = new AbortController();
     let evidence: StructurizeProcessEvidence | undefined;
     try {
       process.env.STRUCTURIZE_EXECUTABLE = resolve(process.cwd(), 'tests/fixtures/structurize-hang.cjs');
+      process.env.STRUCTURIZE_ALLOW_RUNTIME_OVERRIDE = '1';
       process.env.STRUCTURIZE_TEST_MARKER = marker;
       const conversion = new NodeProcessExecutableLauncher(resolve(process.cwd(), 'src/conversion'), {
         maxExecutionMs: 10_000,
@@ -320,6 +404,8 @@ describe('Phase 5 packaged process runtime', () => {
       if (evidence) await terminateKnownProcessTree(evidence.pid);
       if (previousExecutable === undefined) delete process.env.STRUCTURIZE_EXECUTABLE;
       else process.env.STRUCTURIZE_EXECUTABLE = previousExecutable;
+      if (previousRuntimeOverride === undefined) delete process.env.STRUCTURIZE_ALLOW_RUNTIME_OVERRIDE;
+      else process.env.STRUCTURIZE_ALLOW_RUNTIME_OVERRIDE = previousRuntimeOverride;
       if (previousMarker === undefined) delete process.env.STRUCTURIZE_TEST_MARKER;
       else process.env.STRUCTURIZE_TEST_MARKER = previousMarker;
       await rm(fixtureRoot, { recursive: true, force: true });
@@ -330,10 +416,12 @@ describe('Phase 5 packaged process runtime', () => {
     const fixtureRoot = await mkdtemp(join(tmpdir(), 'json-structure-structurize-timeout-'));
     const marker = join(fixtureRoot, 'process.json');
     const previousExecutable = process.env.STRUCTURIZE_EXECUTABLE;
+    const previousRuntimeOverride = process.env.STRUCTURIZE_ALLOW_RUNTIME_OVERRIDE;
     const previousMarker = process.env.STRUCTURIZE_TEST_MARKER;
     let evidence: StructurizeProcessEvidence | undefined;
     try {
       process.env.STRUCTURIZE_EXECUTABLE = resolve(process.cwd(), 'tests/fixtures/structurize-hang.cjs');
+      process.env.STRUCTURIZE_ALLOW_RUNTIME_OVERRIDE = '1';
       process.env.STRUCTURIZE_TEST_MARKER = marker;
       const conversion = new NodeProcessExecutableLauncher(resolve(process.cwd(), 'src/conversion'), {
         maxExecutionMs: 1_000,
@@ -373,6 +461,8 @@ describe('Phase 5 packaged process runtime', () => {
       if (evidence) await terminateKnownProcessTree(evidence.pid);
       if (previousExecutable === undefined) delete process.env.STRUCTURIZE_EXECUTABLE;
       else process.env.STRUCTURIZE_EXECUTABLE = previousExecutable;
+      if (previousRuntimeOverride === undefined) delete process.env.STRUCTURIZE_ALLOW_RUNTIME_OVERRIDE;
+      else process.env.STRUCTURIZE_ALLOW_RUNTIME_OVERRIDE = previousRuntimeOverride;
       if (previousMarker === undefined) delete process.env.STRUCTURIZE_TEST_MARKER;
       else process.env.STRUCTURIZE_TEST_MARKER = previousMarker;
       await rm(fixtureRoot, { recursive: true, force: true });

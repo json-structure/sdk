@@ -42,4 +42,7 @@ The packaged conversion runtime includes Avrotize under the MIT License and
 CPython under the Python Software Foundation License. The build-time runtime
 staging script copies the corresponding license files and dependency metadata
 to the runtime resource directory. See the generated runtime
-THIRD-PARTY-NOTICES.txt and package .dist-info license records for the
+THIRD-PARTY-NOTICES.txt and package .dist-info license records for the complete inventory.
+The exact Avrotize revision, Python version, route dependencies, wheel URLs, and
+SHA-256 pins are checked in at config/structurize-runtime.lock.json. The runtime
+staging step fails if a pinned dependency or license record is absent.

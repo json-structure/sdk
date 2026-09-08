@@ -339,11 +339,12 @@ describe('Phase 1 vertical slice', () => {
     const diagnostic = invalid.diagnostics.find((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === '/definitions/Thing/relations/owner/scope');
     expect(diagnostic).toBeDefined();
   });
-  it('accepts singular absolute URI strings for $import and $importdefs only', () => {
-    const valid = parseDocument('memory://imports-valid', withImports('{"$import":"https://example.org/root.json","$importdefs":"https://example.org/defs.json","definitions":{"Thing":{"type":"object"}}}'));
+  it('accepts singular absolute and relative URI-reference strings for $import and $importdefs only', () => {
+    const valid = parseDocument('memory://imports-valid', withImports('{"$import":"../root.json","$importdefs":"https://example.org/defs.json","definitions":{"Thing":{"type":"object"}}}'));
     expect(valid.model?.projections.imports).toHaveLength(2);
+    expect(valid.model?.projections.imports[0]?.source).toBe('../root.json');
 
-    const invalid = parseDocument('memory://imports-invalid', withImports('{"$import":"/relative.json","$importdefs":["https://example.org/defs.json"],"definitions":{"Thing":{"type":"object"}}}'));
+    const invalid = parseDocument('memory://imports-invalid', withImports('{"$import":"C:\\\\schemas\\\\root.json","$importdefs":["https://example.org/defs.json"],"definitions":{"Thing":{"type":"object"}}}'));
     expect(invalid.diagnostics.some((item) => item.location?.pointer === '/$import' && item.code === 'json.keyword-invalid')).toBe(true);
     expect(invalid.diagnostics.some((item) => item.location?.pointer === '/$importdefs' && item.code === 'json.keyword-invalid')).toBe(true);
   });
@@ -638,7 +639,11 @@ describe('Phase 1 vertical slice', () => {
 
     const invalidPlacement = new DocumentSession('memory://import-invalid-placement', withImports('{"type":"object","properties":{"x":{"type":"string"}}}'));
     expect(new SetImportCommand('/properties/x', '$import', 'https://example.org/x').canExecute({ session: invalidPlacement, documentVersion: 1 })).toBe(false);
-    expect(new SetImportCommand('', '$import', '/relative').canExecute({ session: invalidPlacement, documentVersion: 1 })).toBe(false);
+    expect(new SetImportCommand('', '$import', '/relative').canExecute({ session: invalidPlacement, documentVersion: 1 })).toBe(true);
+    expect(new SetImportCommand('', '$import', 'C:\\schemas\\root.json').canExecute({ session: invalidPlacement, documentVersion: 1 })).toBe(false);
+    const relativeImport = new DocumentSession('memory://import-relative', withImports('{"definitions":{"People":{}}}'));
+    expect(new SetImportCommand('/definitions/People', '$importdefs', '../people/schema.struct.json').canExecute({ session: relativeImport, documentVersion: 1 })).toBe(true);
+    expect(new SetImportCommand('/definitions/People', '$importdefs', '../people/%zz.struct.json').canExecute({ session: relativeImport, documentVersion: 1 })).toBe(false);
 
     const bothKeywords = new DocumentSession('memory://import-both', withImports('{"definitions":{"Ns":{"$import":"https://example.org/a","$importdefs":"https://example.org/b"}}}'));
     expect(new SetImportCommand('/definitions/Ns', '$import', 'https://example.org/c').canExecute({ session: bothKeywords, documentVersion: 1 })).toBe(false);

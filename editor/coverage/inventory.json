@@ -252,8 +252,8 @@
       "avrotize": 14,
       "total": 298,
       "expected": {
-        "pass": 127,
-        "diagnostic": 171
+        "pass": 134,
+        "diagnostic": 164
       }
     },
     "required": [
@@ -404,28 +404,19 @@
         "id": "corpus.real-corpus.samples.core.12-multiple-inheritance.schema",
         "source": "real-corpus",
         "path": "..\\..\\json-structure\\primer-and-samples\\samples\\core\\12-multiple-inheritance\\schema.struct.json",
-        "expected": "diagnostic",
+        "expected": "pass",
         "profile": "valid-fixture",
-        "diagnosticCodes": [
-          "core.declaration-invalid"
-        ],
-        "diagnosticExpectations": [
-          "core.declaration-invalid@/definitions/FlyingCar/$extends/0",
-          "core.declaration-invalid@/definitions/FlyingCar/$extends/1"
-        ]
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
       },
       {
         "id": "corpus.real-corpus.samples.import.01-root-import.schema",
         "source": "real-corpus",
         "path": "..\\..\\json-structure\\primer-and-samples\\samples\\import\\01-root-import\\schema.struct.json",
-        "expected": "diagnostic",
-        "profile": "import-drift",
-        "diagnosticCodes": [
-          "json.keyword-invalid"
-        ],
-        "diagnosticExpectations": [
-          "json.keyword-invalid@/$import"
-        ],
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": [],
         "externalExpected": "import-resolution"
       },
       {
@@ -450,45 +441,30 @@
         "id": "corpus.real-corpus.samples.import.02-namespace-import.schema",
         "source": "real-corpus",
         "path": "..\\..\\json-structure\\primer-and-samples\\samples\\import\\02-namespace-import\\schema.struct.json",
-        "expected": "diagnostic",
-        "profile": "import-drift",
-        "diagnosticCodes": [
-          "json.keyword-invalid"
-        ],
-        "diagnosticExpectations": [
-          "json.keyword-invalid@/definitions/People/$import",
-          "json.keyword-invalid@/definitions/Finance/$import"
-        ],
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": [],
         "externalExpected": "import-resolution"
       },
       {
         "id": "corpus.real-corpus.samples.import.03-importdefs-only.schema",
         "source": "real-corpus",
         "path": "..\\..\\json-structure\\primer-and-samples\\samples\\import\\03-importdefs-only\\schema.struct.json",
-        "expected": "diagnostic",
-        "profile": "import-drift",
-        "diagnosticCodes": [
-          "json.keyword-invalid"
-        ],
-        "diagnosticExpectations": [
-          "json.keyword-invalid@/definitions/PersonLib/$importdefs",
-          "json.keyword-invalid@/definitions/FinanceLib/$importdefs"
-        ],
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": [],
         "externalExpected": "import-resolution"
       },
       {
         "id": "corpus.real-corpus.samples.import.04-shadowing.schema",
         "source": "real-corpus",
         "path": "..\\..\\json-structure\\primer-and-samples\\samples\\import\\04-shadowing\\schema.struct.json",
-        "expected": "diagnostic",
-        "profile": "import-drift",
-        "diagnosticCodes": [
-          "json.keyword-invalid"
-        ],
-        "diagnosticExpectations": [
-          "json.keyword-invalid@/definitions/CustomerTypes/$import",
-          "json.keyword-invalid@/definitions/FinanceTypes/$importdefs"
-        ],
+        "expected": "pass",
+        "profile": "valid-fixture",
+        "diagnosticCodes": [],
+        "diagnosticExpectations": [],
         "externalExpected": "import-resolution"
       },
       {
@@ -1557,18 +1533,10 @@
         "id": "corpus.sdk-assets.avro.valid.full-units.schema",
         "source": "sdk-assets",
         "path": "..\\test-assets\\avro\\valid\\full-units\\schema.struct.json",
-        "expected": "diagnostic",
+        "expected": "pass",
         "profile": "valid-fixture",
-        "diagnosticCodes": [
-          "json.keyword-invalid"
-        ],
-        "diagnosticExpectations": [
-          "json.keyword-invalid@/properties/distance/symbol",
-          "json.keyword-invalid@/properties/distance/unit",
-          "json.keyword-invalid@/properties/concentration/ucumUnit",
-          "json.keyword-invalid@/properties/price/currency",
-          "json.keyword-invalid@/properties/bunnies/symbols"
-        ]
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
       },
       {
         "id": "corpus.sdk-assets.avro.valid.lossless-strings.schema",
@@ -2050,18 +2018,10 @@
         "id": "corpus.sdk-assets.proto.valid.altnames.schema",
         "source": "sdk-assets",
         "path": "..\\test-assets\\proto\\valid\\altnames\\schema.struct.json",
-        "expected": "diagnostic",
+        "expected": "pass",
         "profile": "valid-fixture",
-        "diagnosticCodes": [
-          "core.identifier-invalid",
-          "json.keyword-invalid"
-        ],
-        "diagnosticExpectations": [
-          "core.identifier-invalid@/properties/first-name",
-          "json.keyword-invalid@/altnames",
-          "json.keyword-invalid@/properties/first-name/altnames",
-          "json.keyword-invalid@/properties/status/altenums"
-        ]
+        "diagnosticCodes": [],
+        "diagnosticExpectations": []
       },
       {
         "id": "corpus.sdk-assets.proto.valid.any.schema",

@@ -25,6 +25,12 @@ export interface ConversionCommand {
   defaultAutoOpen: boolean;
   optionNames?: readonly string[];
   cliCommand?: string;
+  cliPipeline?: readonly {
+    cliCommand: string;
+    outputKind: 'file' | 'directory';
+    outputName: string;
+    optionNames?: readonly string[];
+  }[];
   outputKind?: 'file' | 'directory';
   outputName?: string;
   /** File extensions accepted by the host source picker for import routes. */
@@ -32,6 +38,7 @@ export interface ConversionCommand {
   /** A route that needs a host capability rather than a local source file. */
   availability?: 'local' | 'external-service';
   availabilityMessage?: string;
+  availabilityRequirements?: readonly string[];
 }
 
 export interface ConversionCommandsManifest {
@@ -195,7 +202,24 @@ export function parseCommandsManifest(value: unknown): ConversionCommandsManifes
       ? item.availability
       : (() => { throw new Error(`manifest.commands[${index}].availability must be local or external-service.`); })();
     const availabilityMessage = item.availabilityMessage === undefined ? undefined : text(item.availabilityMessage, `manifest.commands[${index}].availabilityMessage`);
+    const availabilityRequirements = item.availabilityRequirements === undefined ? undefined : stringArray(item.availabilityRequirements, `manifest.commands[${index}].availabilityRequirements`);
     if (availability === 'external-service' && availabilityMessage === undefined) throw new Error(`manifest.commands[${index}] must explain its external-service requirement.`);
+    const cliPipeline = item.cliPipeline === undefined ? undefined : (() => {
+      if (!Array.isArray(item.cliPipeline) || item.cliPipeline.length < 2) throw new Error(`manifest.commands[${index}].cliPipeline must contain at least two steps.`);
+      return item.cliPipeline.map((value, stepIndex) => {
+        const step = record(value, `manifest.commands[${index}].cliPipeline[${stepIndex}]`);
+        const stepOptionNames = step.optionNames === undefined ? undefined : stringArray(step.optionNames, `manifest.commands[${index}].cliPipeline[${stepIndex}].optionNames`);
+        if (step.outputKind !== 'file' && step.outputKind !== 'directory') throw new Error(`manifest.commands[${index}].cliPipeline[${stepIndex}].outputKind must be file or directory.`);
+        const outputKind: 'file' | 'directory' = step.outputKind;
+        return {
+          cliCommand: text(step.cliCommand, `manifest.commands[${index}].cliPipeline[${stepIndex}].cliCommand`),
+          outputKind,
+          outputName: text(step.outputName, `manifest.commands[${index}].cliPipeline[${stepIndex}].outputName`),
+          optionNames: stepOptionNames,
+        };
+      });
+    })();
+    if (item.cliCommand !== undefined && cliPipeline !== undefined) throw new Error(`manifest.commands[${index}] cannot define both cliCommand and cliPipeline.`);
     return {
       id: text(item.id, `manifest.commands[${index}].id`), converterId, direction: item.direction,
       label: text(item.label, `manifest.commands[${index}].label`),
@@ -204,6 +228,7 @@ export function parseCommandsManifest(value: unknown): ConversionCommandsManifes
       defaultAutoOpen: item.defaultAutoOpen ?? true,
       optionNames,
       cliCommand: item.cliCommand === undefined ? undefined : text(item.cliCommand, `manifest.commands[${index}].cliCommand`),
+      cliPipeline,
       outputKind: item.outputKind === undefined ? undefined : item.outputKind === 'file' || item.outputKind === 'directory'
         ? item.outputKind
         : (() => { throw new Error(`manifest.commands[${index}].outputKind must be file or directory.`); })(),
@@ -211,6 +236,7 @@ export function parseCommandsManifest(value: unknown): ConversionCommandsManifes
       sourceExtensions,
       availability,
       availabilityMessage,
+      availabilityRequirements,
     };
   });
   if (new Set(commands.map(({ id }) => id)).size !== commands.length) throw new Error('Command ids must be unique.');

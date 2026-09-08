@@ -23,7 +23,7 @@ export interface FileOpenedEvent extends OpenFileResult {
   text: string;
 }
 
-export type HostCommand = 'new' | 'open' | 'save' | 'save-as' | 'show-commands';
+export type HostCommand = 'new' | 'open' | 'import' | 'save' | 'save-as' | 'show-commands';
 export type WindowCommand = 'undo' | 'redo' | 'cut' | 'copy' | 'paste' | 'select-all' | 'reset-zoom' | 'zoom-in' | 'zoom-out' | 'toggle-fullscreen' | 'quit';
 
 /** Renderer-safe bridge for file workflows and opening links outside the app. */

@@ -46,13 +46,18 @@ const monacoTest = vi.hoisted(() => {
     }
     private emit(): void { for (const listener of this.listeners) listener(); }
   }
+  const actions: string[] = [];
   class FakeEditor {
     private focused = false;
     constructor(private readonly model: FakeModel) {}
     onDidChangeModelContent(listener: Listener): { dispose(): void } { return this.model.onChange(listener); }
     focus(): void { this.focused = true; }
     hasTextFocus(): boolean { return this.focused; }
-    trigger(_source: string, action: string, _payload: unknown): void { if (action === 'undo') this.model.undo(); else if (action === 'redo') this.model.redo(); }
+    trigger(_source: string, action: string, _payload: unknown): void {
+      actions.push(action);
+      if (action === 'undo') this.model.undo();
+      else if (action === 'redo') this.model.redo();
+    }
     setSelection(_range: unknown): void { return; }
     revealRangeInCenter(_range: unknown): void { return; }
     dispose(): void { this.focused = false; }
@@ -60,6 +65,7 @@ const monacoTest = vi.hoisted(() => {
   const models: FakeModel[] = [];
   return {
     models,
+    actions,
     createJsonModel(text: string, uri?: string): FakeModel {
       const model = new FakeModel(text, uri ?? 'inmemory://json-structure');
       models.push(model);
@@ -73,7 +79,7 @@ vi.mock('../src/ui/monaco.js', () => monacoTest);
 import { mountJsonStructureEditor, type JsonStructureEditorHandle } from '../src/ui/index.js';
 
 let handle: JsonStructureEditorHandle | undefined;
-afterEach(() => { handle?.dispose(); handle = undefined; document.body.innerHTML = ''; monacoTest.models.length = 0; });
+afterEach(() => { handle?.dispose(); handle = undefined; document.body.innerHTML = ''; monacoTest.models.length = 0; monacoTest.actions.length = 0; });
 
 async function settle(): Promise<void> { await new Promise((resolve) => setTimeout(resolve, 20)); }
 
@@ -84,6 +90,38 @@ function activeModel(): (typeof monacoTest.models)[number] {
 }
 
 describe('Source Monaco document identity', () => {
+  it.each([
+    ['f', 'actions.find'],
+    ['h', 'editor.action.startFindReplaceAction'],
+  ])('opens Monaco search action %s from the standard keyboard shortcut', async (key, action) => {
+    const container = document.createElement('div');
+    document.body.append(container);
+    handle = mountJsonStructureEditor(container, { text: '{"type":"string"}', uri: 'memory://search-shortcut', chrome: 'integrated' });
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key, ctrlKey: true, bubbles: true }));
+    await settle();
+
+    expect(container.querySelector('[data-mode="source"]')?.getAttribute('aria-pressed')).toBe('true');
+    expect(monacoTest.actions).toContain(action);
+  });
+
+  it.each([
+    ['find', 'actions.find'],
+    ['replace', 'editor.action.startFindReplaceAction'],
+  ])('opens Monaco search action from the Edit menu command %s', async (command, action) => {
+    const container = document.createElement('div');
+    document.body.append(container);
+    handle = mountJsonStructureEditor(container, { text: '{"type":"string"}', uri: 'memory://search-menu', chrome: 'integrated' });
+    const button = container.querySelector(`[data-chrome-command="${command}"]`);
+    if (!(button instanceof HTMLButtonElement)) throw new Error(`Missing ${command} menu command.`);
+
+    button.click();
+    await settle();
+
+    expect(container.querySelector('[data-mode="source"]')?.getAttribute('aria-pressed')).toBe('true');
+    expect(monacoTest.actions).toContain(action);
+  });
+
   it('does not carry document A undo history into replacement document B', async () => {
     const documentA = '{"type":"string"}';
     const documentB = '{"type":"number"}';

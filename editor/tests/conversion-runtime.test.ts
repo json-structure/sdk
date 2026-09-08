@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { createOutputManifest, parsePackagedRuntimeDescriptor, sha256, verifyPackagedRuntime } from '../src/conversion/integrity.js';
 import { ConversionLifecycle } from '../src/conversion/lifecycle.js';
 import { NodeFilesystemConversionStorage } from '../src/conversion/node-host.js';
@@ -196,7 +196,7 @@ describe('conversion publication and preview', () => {
     expect(storage.directories.size).toBe(0);
   });
 
-  it('only recursively removes staging directories created beneath the canonical destination parent', async () => {
+  it('creates and removes staging directories inside the selected destination', async () => {
     const root = await mkdtemp(join(tmpdir(), 'json-structure-conversion-cleanup-'));
     const destination = join(root, 'selected');
     const unrelated = join(root, 'unrelated');
@@ -205,6 +205,7 @@ describe('conversion publication and preview', () => {
       await mkdir(unrelated);
       const staging = await storage.createStagingDirectory(destination, 'renderer-controlled');
       expect(staging).not.toContain('renderer-controlled');
+      expect(dirname(staging)).toBe(resolve(destination));
       await expect(storage.removeDirectory(unrelated)).rejects.toThrow('registered staging parent');
       await expect(readFile(unrelated)).rejects.toMatchObject({ code: 'EISDIR' });
       await storage.removeDirectory(staging);

@@ -28,8 +28,8 @@
     "avrotize": 14,
     "total": 298,
     "expected": {
-      "pass": 127,
-      "diagnostic": 171
+      "pass": 134,
+      "diagnostic": 164
     }
   },
   "fixtures": [
@@ -166,18 +166,9 @@
       "id": "corpus.real-corpus.samples.core.12-multiple-inheritance.schema",
       "source": "real-corpus",
       "path": "..\\..\\json-structure\\primer-and-samples\\samples\\core\\12-multiple-inheritance\\schema.struct.json",
-      "sha256": "a6ceb2ba793888c6a90eadbee0cca6f09a5aa124a834479ec8643582615935fb",
-      "expected": "diagnostic",
-      "diagnostics": [
-        {
-          "code": "core.declaration-invalid",
-          "pointer": "/definitions/FlyingCar/$extends/0"
-        },
-        {
-          "code": "core.declaration-invalid",
-          "pointer": "/definitions/FlyingCar/$extends/1"
-        }
-      ],
+      "sha256": "2326f2c90d21abc1eed4c1f71d0d8419341819fd04ed39ca8a98bc379554f641",
+      "expected": "pass",
+      "diagnostics": [],
       "category": "valid-fixture",
       "justification": "The fixture is inventoried as a real sample or SDK asset; every listed diagnostic is an exact parser code and JSON Pointer observed in the reviewed corpus."
     },
@@ -186,15 +177,10 @@
       "source": "real-corpus",
       "path": "..\\..\\json-structure\\primer-and-samples\\samples\\import\\01-root-import\\schema.struct.json",
       "sha256": "c93d95831a4040dec527d941c93229832b1a4caa71ecab57106e06bcf20e24b8",
-      "expected": "diagnostic",
-      "diagnostics": [
-        {
-          "code": "json.keyword-invalid",
-          "pointer": "/$import"
-        }
-      ],
-      "category": "import-drift",
-      "justification": "The fixture exercises an import-resolution/profile mismatch; only the explicit import diagnostic locations are accepted."
+      "expected": "pass",
+      "diagnostics": [],
+      "category": "valid-fixture",
+      "justification": "The fixture is inventoried as a real sample or SDK asset; every listed diagnostic is an exact parser code and JSON Pointer observed in the reviewed corpus."
     },
     {
       "id": "corpus.real-corpus.samples.import.02-namespace-import.financial-library.schema",
@@ -221,57 +207,30 @@
       "source": "real-corpus",
       "path": "..\\..\\json-structure\\primer-and-samples\\samples\\import\\02-namespace-import\\schema.struct.json",
       "sha256": "e2571bef7a85fa6781c8a7279829fd9747d32c61fab50169a35db1f272b54270",
-      "expected": "diagnostic",
-      "diagnostics": [
-        {
-          "code": "json.keyword-invalid",
-          "pointer": "/definitions/People/$import"
-        },
-        {
-          "code": "json.keyword-invalid",
-          "pointer": "/definitions/Finance/$import"
-        }
-      ],
-      "category": "import-drift",
-      "justification": "The fixture exercises an import-resolution/profile mismatch; only the explicit import diagnostic locations are accepted."
+      "expected": "pass",
+      "diagnostics": [],
+      "category": "valid-fixture",
+      "justification": "The fixture is inventoried as a real sample or SDK asset; every listed diagnostic is an exact parser code and JSON Pointer observed in the reviewed corpus."
     },
     {
       "id": "corpus.real-corpus.samples.import.03-importdefs-only.schema",
       "source": "real-corpus",
       "path": "..\\..\\json-structure\\primer-and-samples\\samples\\import\\03-importdefs-only\\schema.struct.json",
       "sha256": "fe024136ba6e2f8be285c6ed449998b66a9632f00ee1aade3c74c51f5757bd35",
-      "expected": "diagnostic",
-      "diagnostics": [
-        {
-          "code": "json.keyword-invalid",
-          "pointer": "/definitions/PersonLib/$importdefs"
-        },
-        {
-          "code": "json.keyword-invalid",
-          "pointer": "/definitions/FinanceLib/$importdefs"
-        }
-      ],
-      "category": "import-drift",
-      "justification": "The fixture exercises an import-resolution/profile mismatch; only the explicit import diagnostic locations are accepted."
+      "expected": "pass",
+      "diagnostics": [],
+      "category": "valid-fixture",
+      "justification": "The fixture is inventoried as a real sample or SDK asset; every listed diagnostic is an exact parser code and JSON Pointer observed in the reviewed corpus."
     },
     {
       "id": "corpus.real-corpus.samples.import.04-shadowing.schema",
       "source": "real-corpus",
       "path": "..\\..\\json-structure\\primer-and-samples\\samples\\import\\04-shadowing\\schema.struct.json",
       "sha256": "afb3bb2f8163b89b92905e714fc43d427d52e2d599c0b7c04865dab2e1a2bfa3",
-      "expected": "diagnostic",
-      "diagnostics": [
-        {
-          "code": "json.keyword-invalid",
-          "pointer": "/definitions/CustomerTypes/$import"
-        },
-        {
-          "code": "json.keyword-invalid",
-          "pointer": "/definitions/FinanceTypes/$importdefs"
-        }
-      ],
-      "category": "import-drift",
-      "justification": "The fixture exercises an import-resolution/profile mismatch; only the explicit import diagnostic locations are accepted."
+      "expected": "pass",
+      "diagnostics": [],
+      "category": "valid-fixture",
+      "justification": "The fixture is inventoried as a real sample or SDK asset; every listed diagnostic is an exact parser code and JSON Pointer observed in the reviewed corpus."
     },
     {
       "id": "corpus.real-corpus.samples.relations.01-identity-single.schema",
@@ -1614,30 +1573,9 @@
       "id": "corpus.sdk-assets.avro.valid.full-units.schema",
       "source": "sdk-assets",
       "path": "..\\test-assets\\avro\\valid\\full-units\\schema.struct.json",
-      "sha256": "91880426444a85741e0f50ca36eb67d5b3d8c27169242dafc3e2580d6def14db",
-      "expected": "diagnostic",
-      "diagnostics": [
-        {
-          "code": "json.keyword-invalid",
-          "pointer": "/properties/distance/symbol"
-        },
-        {
-          "code": "json.keyword-invalid",
-          "pointer": "/properties/distance/unit"
-        },
-        {
-          "code": "json.keyword-invalid",
-          "pointer": "/properties/concentration/ucumUnit"
-        },
-        {
-          "code": "json.keyword-invalid",
-          "pointer": "/properties/price/currency"
-        },
-        {
-          "code": "json.keyword-invalid",
-          "pointer": "/properties/bunnies/symbols"
-        }
-      ],
+      "sha256": "31a96367ed11d82b8c397a30c66a539a05cedd4e58167e4b516181bf0617c3de",
+      "expected": "pass",
+      "diagnostics": [],
       "category": "valid-fixture",
       "justification": "The fixture is inventoried as a real sample or SDK asset; every listed diagnostic is an exact parser code and JSON Pointer observed in the reviewed corpus."
     },
@@ -2191,26 +2129,9 @@
       "id": "corpus.sdk-assets.proto.valid.altnames.schema",
       "source": "sdk-assets",
       "path": "..\\test-assets\\proto\\valid\\altnames\\schema.struct.json",
-      "sha256": "086fb2e85ee76231333daccd4da35dde62deb5262d40365b897435d7f5d10a56",
-      "expected": "diagnostic",
-      "diagnostics": [
-        {
-          "code": "core.identifier-invalid",
-          "pointer": "/properties/first-name"
-        },
-        {
-          "code": "json.keyword-invalid",
-          "pointer": "/altnames"
-        },
-        {
-          "code": "json.keyword-invalid",
-          "pointer": "/properties/first-name/altnames"
-        },
-        {
-          "code": "json.keyword-invalid",
-          "pointer": "/properties/status/altenums"
-        }
-      ],
+      "sha256": "61268e6cac1f2610c10d9e35f9d8d25aff269be6925a2bb64e750798d1647715",
+      "expected": "pass",
+      "diagnostics": [],
       "category": "valid-fixture",
       "justification": "The fixture is inventoried as a real sample or SDK asset; every listed diagnostic is an exact parser code and JSON Pointer observed in the reviewed corpus."
     },

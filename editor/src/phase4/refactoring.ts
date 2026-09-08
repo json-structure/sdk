@@ -1,4 +1,5 @@
 import { resolveCapabilities } from '../capabilities.js';
+import { isImportUriReference } from '../import-uri.js';
 
 export type JsonObject = Record<string, unknown>;
 
@@ -251,7 +252,7 @@ export function planAddImport<T extends JsonObject>(document: T, options: AddImp
   if (!destinationSegments || !isObject(destination)) return failedPlan(document, invalidPointer(options.destinationPointer));
   if (!namespaceImportPlacement(document, destinationSegments)) return failedPlan(document, invalidPointer(options.destinationPointer));
   if (keyword !== '$import' && keyword !== '$importdefs') return failedPlan(document, invalidSelection(options.destinationPointer, `Unsupported import keyword: ${String(keyword)}`));
-  if (typeof options.source !== 'string' || !absoluteUri(options.source)) return failedPlan(document, missingSource(String(options.source)));
+  if (!isImportUriReference(options.source)) return failedPlan(document, missingSource(String(options.source)));
   const targetPointer = appendPointer(options.destinationPointer, keyword);
   if (Object.prototype.hasOwnProperty.call(destination, '$import') || Object.prototype.hasOwnProperty.call(destination, '$importdefs')) {
     return failedPlan(document, targetExists(targetPointer));
@@ -632,12 +633,4 @@ function typeReferenceValue(value: unknown): string | undefined {
   if (!isObject(value) || !Object.keys(value).every((key) => key === '$ref' || key === 'description')) return undefined;
   return typeof value.$ref === 'string' && localReferencePointer(value.$ref) !== undefined &&
     (value.description === undefined || typeof value.description === 'string') ? value.$ref : undefined;
-}
-
-function absoluteUri(value: string): boolean {
-  try {
-    return /^[A-Za-z][A-Za-z0-9+.-]*:/.test(value) && new URL(value).href.length > 0;
-  } catch {
-    return false;
-  }
 }

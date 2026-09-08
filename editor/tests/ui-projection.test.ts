@@ -121,4 +121,19 @@ describe('UI projection helpers', () => {
       expect.objectContaining({ from: '/definitions/Person', kind: 'inheritance', to: '/definitions/Base' })
     ]));
   });
+
+  it('does not project a named document envelope as a type-like graph node', () => {
+    const graph = projectGraph(new DocumentSession('memory://named-envelope', JSON.stringify({
+      name: 'FinancialDocument',
+      $root: '#/definitions/Invoice',
+      definitions: {
+        Invoice: { type: 'object', properties: {} },
+        Money: { type: 'decimal' },
+      },
+    })).snapshot());
+    expect(graph.nodes).not.toContainEqual(expect.objectContaining({ id: GRAPH_DOCUMENT_NODE_ID }));
+    expect(graph.nodes.map((node) => node.label)).not.toContain('FinancialDocument');
+    expect(graph.nodes).toContainEqual(expect.objectContaining({ id: '/definitions/Invoice', label: 'Invoice', kind: 'type' }));
+    expect(graph.edges).not.toContainEqual(expect.objectContaining({ pointer: '/$root' }));
+  });
 });

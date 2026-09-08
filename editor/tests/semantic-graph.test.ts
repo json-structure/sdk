@@ -25,14 +25,18 @@ describe('semantic graph controller', () => {
     const controller = new SemanticGraphController();
     const atlas = controller.setSource(projection());
     expect(atlas.location).toMatchObject({ level: 'atlas', lens: 'relations' });
-    expect(atlas.projection.nodes.map((node) => node.label)).toEqual(['Common', 'Domain', 'Remote']);
-    expect(atlas.projection.edges).toEqual([
+    expect(atlas.projection.nodes.map((node) => node.label)).toEqual(['Document', 'Common', 'Domain', 'Remote']);
+    expect(atlas.projection.edges).toEqual(expect.arrayContaining([
+      expect.objectContaining({ from: 'graph:namespace:document', to: 'graph:namespace:Common', label: 'contains', selectable: false }),
+      expect.objectContaining({ from: 'graph:namespace:document', to: 'graph:namespace:Domain', label: 'contains', selectable: false }),
+      expect.objectContaining({ from: 'graph:namespace:document', to: 'graph:namespace:Remote', label: 'contains', selectable: false }),
       expect.objectContaining({ from: 'graph:namespace:Domain', to: 'graph:namespace:Common', label: '1 link', selectable: true, memberEdgeIds: ['reference-a-c'] }),
-    ]);
+    ]));
 
     const imports = controller.setLens('imports');
-    expect(imports.projection.edges).toHaveLength(1);
-    expect(imports.projection.edges[0]).toMatchObject({ from: 'graph:namespace:Common', to: 'graph:namespace:Remote', label: '1 link' });
+    expect(imports.projection.edges).toEqual(expect.arrayContaining([
+      expect.objectContaining({ from: 'graph:namespace:Common', to: 'graph:namespace:Remote', label: '1 link' }),
+    ]));
   });
 
   it('supports two-hop and isolated neighborhoods without losing global context by default', () => {
@@ -108,7 +112,7 @@ describe('semantic graph controller', () => {
     expect(moved.projection.nodes.map((node) => node.label)).toEqual(['C']);
   });
 
-  it('retains a normalized semantic namespace when source nodes use the raw root namespace', () => {
+  it('uses the document as the default namespace when source nodes use the raw root namespace', () => {
     const controller = new SemanticGraphController();
     controller.setSource({
       nodes: [
@@ -117,10 +121,45 @@ describe('semantic graph controller', () => {
       ],
       edges: [{ id: 'a-b', from: '/definitions/A', to: '/definitions/B', pointer: '/definitions/A/relations/b', label: 'b', kind: 'relation' }],
     });
-    controller.openNode('graph:namespace:Definitions');
+    expect(controller.view().location).toEqual({ level: 'types', lens: 'relations', namespace: '' });
     const neighborhood = controller.openNode('/definitions/A');
-    expect(neighborhood.location.namespace).toBe('Definitions');
+    expect(neighborhood.location.namespace).toBe('');
     expect(neighborhood.projection.nodes.map((node) => node.label)).toEqual(['A', 'B']);
+  });
+
+  it('shows nested namespace containment beneath the document namespace', () => {
+    const controller = new SemanticGraphController();
+    const atlas = controller.setSource({
+      documentLabel: 'Catalog',
+      nodes: [
+        { id: '/definitions/Domain/A', pointer: '/definitions/Domain/A', label: 'A', namespace: 'Domain', kind: 'type', selectable: true },
+        { id: '/definitions/Domain/Sub/B', pointer: '/definitions/Domain/Sub/B', label: 'B', namespace: 'Sub', kind: 'type', selectable: true },
+      ],
+      edges: [],
+    });
+    expect(atlas.location.level).toBe('atlas');
+    expect(atlas.projection.nodes.map((node) => node.label)).toEqual(['Catalog', 'Domain', 'Sub']);
+    expect(atlas.description).toBe('3 namespaces · 0 relation links');
+    expect(atlas.projection.edges).toEqual([
+      expect.objectContaining({ from: 'graph:namespace:document', to: 'graph:namespace:Domain', label: 'contains' }),
+      expect.objectContaining({ from: 'graph:namespace:Domain', to: 'graph:namespace:Domain%2FSub', label: 'contains' }),
+    ]);
+  });
+
+  it('skips a one-node atlas and opens the document namespace type topology', () => {
+    const controller = new SemanticGraphController();
+    const view = controller.setSource({
+      documentLabel: 'FinancialDocument',
+      nodes: [
+        { id: '/definitions/Invoice', pointer: '/definitions/Invoice', label: 'Invoice', namespace: 'root', kind: 'type', selectable: true },
+        { id: '/definitions/Money', pointer: '/definitions/Money', label: 'Money', namespace: 'root', kind: 'type', selectable: true },
+      ],
+      edges: [],
+    });
+    expect(view.location).toEqual({ level: 'types', lens: 'relations', namespace: '' });
+    expect(view.title).toBe('FinancialDocument');
+    expect(view.projection.nodes.map((node) => node.label)).toEqual(['Invoice', 'Money']);
+    expect(view.description).toBe('2 visible types · 0 relations links');
   });
 
   it('selects relation edges with their authored relation pointer and searches the current level', () => {
@@ -265,7 +304,7 @@ describe('semantic graph controller', () => {
     controller.setSource(source);
     controller.setLens('namespaces');
     const namespace = controller.selectNode('graph:namespace:Domain');
-    expect(namespace.selection).toMatchObject({ kind: 'namespace', nodeId: 'graph:namespace:Domain', pointer: '' });
+    expect(namespace.selection).toMatchObject({ kind: 'namespace', nodeId: 'graph:namespace:Domain', pointer: '/definitions/Domain' });
     expect(controller.setSource(source).selection).toEqual(namespace.selection);
 
     controller.setLens('relations');
@@ -294,19 +333,18 @@ describe('semantic graph controller', () => {
     });
 
     const atlas = controller.view();
-    expect(atlas.projection.nodes.map((node) => node.id)).toEqual(['graph:document-root', 'graph:namespace:Definitions']);
+    expect(atlas.location).toEqual({ level: 'types', lens: 'relations', namespace: '' });
+    expect(atlas.projection.nodes.map((node) => node.id)).toEqual(['graph:document-root', '/definitions/Thing']);
     const opened = controller.openNode('graph:document-root');
-    expect(opened.location).toEqual({ level: 'types', lens: 'relations', namespace: 'Definitions' });
+    expect(opened.location).toEqual({ level: 'types', lens: 'relations', namespace: '' });
     expect(opened.selection).toMatchObject({ kind: 'document', nodeId: 'graph:document-root', pointer: '' });
     expect(opened.projection.nodes.map((node) => node.id)).toContain('/definitions/Thing');
-    expect(opened.projection.nodes.map((node) => node.id)).not.toContain('graph:namespace:Document');
+    expect(opened.projection.nodes.map((node) => node.id)).not.toContain('graph:namespace:document');
     expect(controller.openNode('graph:document-root').location).toEqual(opened.location);
 
     controller.setLens('namespaces');
-    const namespaceAtlas = controller.home();
-    expect(namespaceAtlas.projection.nodes.map((node) => node.id)).toEqual(['graph:document-root', 'graph:namespace:Definitions']);
-    const namespaceTopology = controller.openNode('graph:document-root');
-    expect(namespaceTopology.selection?.nodeId).toBe('graph:document-root');
-    expect(namespaceTopology.projection.nodes.map((node) => node.id)).not.toContain('graph:namespace:Document');
+    const namespaceTopology = controller.home();
+    expect(namespaceTopology.location).toEqual({ level: 'types', lens: 'namespaces', namespace: '' });
+    expect(namespaceTopology.projection.nodes.map((node) => node.id)).toEqual(['graph:namespace:document', 'graph:document-root', '/definitions/Thing']);
   });
 });

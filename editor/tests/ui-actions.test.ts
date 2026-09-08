@@ -88,6 +88,19 @@ describe('UI command action registry', () => {
     expect(actionAvailability(actionById('units.ucumUnit')!, '', document).enabled).toBe(false);
   });
 
+  it('filters semantic annotations with core-type requirements', () => {
+    const document = {
+      $schema: 'https://json-structure.org/meta/semantic-annotations/v0/#',
+      $uses: ['JSONStructureSemanticAnnotations'],
+      type: 'object',
+      properties: { dateField: { type: 'date' }, value: { type: 'decimal' } },
+    };
+    expect(actionAvailability(actionById('semantic.codedValues')!, '/properties/dateField', document).enabled).toBe(false);
+    expect(actionAvailability(actionById('semantic.measurementConditioning')!, '/properties/dateField', document).enabled).toBe(false);
+    expect(actionAvailability(actionById('semantic.temporalReferenceSystem')!, '/properties/dateField', document).enabled).toBe(true);
+    expect(actionAvailability(actionById('semantic.measurementConditioning')!, '/properties/value', document).enabled).toBe(true);
+  });
+
   it('disables hand-authored commands on incompatible selections', () => {
     const document = {
       $schema: 'https://json-structure.org/meta/relations/v0/#',
@@ -163,8 +176,8 @@ describe('UI command action registry', () => {
       expect(action.create(pointer, value).canExecute(context), id).toBe(true);
     }
     expect(actionById('alternate-names.altnames')?.targets).not.toContain('choice');
-    expect(actionById('semantic.referenceRole')?.targets).toEqual(['property']);
-    expect(actionAvailability(actionById('semantic.referenceRole')!, amount, document).enabled).toBe(false);
+    expect(actionById('semantic.referenceRole')?.targets).toContain('choice');
+    expect(actionAvailability(actionById('semantic.referenceRole')!, amount, document).enabled).toBe(true);
     expect(actionAvailability(actionById('core.const')!, amount, document).enabled).toBe(true);
     expect(actionAvailability(actionById('core.type')!, amount, document).enabled).toBe(true);
 

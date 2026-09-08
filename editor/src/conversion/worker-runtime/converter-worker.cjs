@@ -2,13 +2,57 @@
 'use strict';
 
 const { stdin, stdout } = process;
+const { createHash } = require('node:crypto');
 const { execFile, spawn } = require('node:child_process');
 const { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const { basename, delimiter, extname, join, relative, resolve } = require('node:path');
 const { generateProto } = require('./proto-generator.cjs');
 const commandsManifest = require('./commands-manifest.json');
+const STRUCTURIZE_ROUTE_NAMES = ['fbs2s', 'j2s', 'json2s', 'xml2s', 'a2s', 'jtd2s', 'cddl2s', 'oas2s', 'cue2s', 'thrift2s', 'smithy2s', 'capnp2s', 'raml2s', 'k2s'];
+const STRUCTURIZE_EXPORT_ROUTE_NAMES = ['s2asn', 's2fbs', 's2k', 's2sql', 's2ib', 's2pq', 's2tsml', 's2cs', 's2py', 's2cpp', 's2csv', 's2rust', 's2ts', 's2java', 's2js', 's2go', 's2graphql', 's2dp', 's2cassandra', 's2jtd', 's2x', 's2cddl', 's2md', 's2cue', 's2thrift', 's2smithy', 's2capnp', 's2raml'];
 
+function runtimePathIsSafe(value) {
+  return typeof value === 'string' && value.length > 0 && !/^(?:[a-z]:|[\\/])/i.test(value) && !value.split(/[\\/]/).includes('..');
+}
+
+function runtimeFileEntries(directory, root = directory, entries = []) {
+  for (const entry of readdirSync(directory, { withFileTypes: true }).sort((left, right) => left.name.localeCompare(right.name))) {
+    const target = join(directory, entry.name);
+    if (entry.isSymbolicLink()) throw new Error(`Bundled Structurize runtime contains an unsupported symbolic link: ${relative(root, target)}`);
+    if (entry.isDirectory()) runtimeFileEntries(target, root, entries);
+    else if (entry.isFile()) entries.push({ path: relative(root, target).split('\\').join('/'), sha256: createHash('sha256').update(readFileSync(target)).digest('hex') });
+    else throw new Error(`Bundled Structurize runtime contains an unsupported filesystem entry: ${relative(root, target)}`);
+  }
+  return entries;
+}
+
+function runtimeTreeDigest(entries) {
+  return createHash('sha256').update(entries.filter((entry) => entry.path !== 'runtime.json').sort((left, right) => left.path.localeCompare(right.path)).map((entry) => `${entry.path}\0${entry.sha256}\n`).join('')).digest('hex');
+}
+
+function verifyBundledRuntime(runtimeDirectory, manifestPath, manifest) {
+  const platformKey = `${process.platform}-${process.arch}`;
+  if (!isRecord(manifest) || manifest.schemaVersion !== 1 || manifest.kind !== 'structurize-runtime' || manifest.implementation !== 'avrotize') throw new Error(`Bundled Structurize runtime manifest is malformed: ${manifestPath}`);
+  if (manifest.platform?.key !== platformKey || manifest.platform?.nodePlatform !== process.platform || manifest.platform?.nodeArchitecture !== process.arch) throw new Error(`Bundled Structurize runtime targets ${manifest.platform?.key || 'an unknown platform'}, not ${platformKey}: ${manifestPath}`);
+  if (typeof manifest.source?.revision !== 'string' || !/^[a-f0-9]{40}$/i.test(manifest.source.revision) || !/^[a-f0-9]{64}$/i.test(manifest.source.fingerprint) || !/^[a-f0-9]{64}$/i.test(manifest.dependenciesFingerprint)) throw new Error(`Bundled Structurize runtime provenance metadata is incomplete: ${manifestPath}`);
+  if (typeof manifest.executable !== 'string' || !runtimePathIsSafe(manifest.executable) || manifest.executable === '.' || !Array.isArray(manifest.arguments) || !manifest.arguments.every((value) => typeof value === 'string')) throw new Error(`Bundled Structurize runtime interpreter metadata is malformed: ${manifestPath}`);
+  if (manifest.interpreter?.executable !== manifest.executable || typeof manifest.interpreter?.version !== 'string' || !manifest.interpreter.version.startsWith('3.12.') || !runtimePathIsSafe(manifest.interpreter.sharedLibrary)) throw new Error(`Bundled Structurize runtime interpreter metadata is incomplete: ${manifestPath}`);
+  if (!Array.isArray(manifest.routes) || JSON.stringify(manifest.routes) !== JSON.stringify(STRUCTURIZE_ROUTE_NAMES)) throw new Error(`Bundled Structurize runtime route contract is incomplete: ${manifestPath}`);
+  if (!Array.isArray(manifest.exportRoutes) || JSON.stringify(manifest.exportRoutes) !== JSON.stringify(STRUCTURIZE_EXPORT_ROUTE_NAMES)) throw new Error(`Bundled Structurize runtime export route contract is incomplete: ${manifestPath}`);
+  if (manifest.availability?.k2s?.kind !== 'external-service' || !Array.isArray(manifest.availability?.k2s?.requires) || manifest.availability.k2s.requires.length !== 3 || typeof manifest.availability?.k2s?.message !== 'string') throw new Error(`Bundled Structurize runtime k2s availability metadata is malformed: ${manifestPath}`);
+  if (manifest.licenses?.avrotize !== 'MIT' || manifest.licenses?.cpython !== 'Python Software Foundation License' || !Array.isArray(manifest.dependencies) || !Array.isArray(manifest.requiredFiles)) throw new Error(`Bundled Structurize runtime license metadata is incomplete: ${manifestPath}`);
+  if (['avrotize/commands.json', 'LICENSE.txt', 'avrotize.LICENSE', 'THIRD-PARTY-NOTICES.txt', manifest.executable, manifest.interpreter.sharedLibrary].some((required) => !manifest.requiredFiles.some((file) => file.path === required))) throw new Error(`Bundled Structurize runtime required-file metadata is incomplete: ${manifestPath}`);
+  for (const file of manifest.requiredFiles) {
+    if (!runtimePathIsSafe(file?.path) || !/^[a-f0-9]{64}$/i.test(file?.sha256)) throw new Error(`Bundled Structurize runtime file metadata is malformed: ${manifestPath}`);
+    const target = join(runtimeDirectory, file.path);
+    if (!existsSync(target) || createHash('sha256').update(readFileSync(target)).digest('hex') !== file.sha256.toLowerCase()) throw new Error(`Bundled Structurize runtime integrity check failed for ${file.path}: ${manifestPath}`);
+  }
+  const executable = join(runtimeDirectory, manifest.executable);
+  if (!existsSync(executable)) throw new Error(`Bundled Structurize executable is missing: ${executable}`);
+  if (!Array.isArray(manifest.pythonPath) || !manifest.pythonPath.every(runtimePathIsSafe)) throw new Error(`Bundled Structurize runtime PYTHONPATH metadata is malformed: ${manifestPath}`);
+  return { executable, arguments: manifest.arguments, environment: { PYTHONHOME: runtimeDirectory, PYTHONPATH: manifest.pythonPath.map((value) => join(runtimeDirectory, value)).join(delimiter), PYTHONDONTWRITEBYTECODE: '1' } };
+}
 const CORE_SCHEMA_URI = 'https://json-structure.org/meta/core/v0/#';
 const EXTENDED_SCHEMA_URI = 'https://json-structure.org/meta/extended/v0/#';
 const VALIDATION_SCHEMA_URI = 'https://json-structure.org/meta/validation/v0/#';
@@ -1641,9 +1685,12 @@ function cancelActiveStructurize(operationId) {
 
 function resolveBundledStructurizeInvocation() {
   const roots = [];
-  if (process.env.STRUCTURIZE_RUNTIME_ROOT) roots.push(resolve(process.env.STRUCTURIZE_RUNTIME_ROOT));
-  if (typeof process.resourcesPath === 'string' && process.resourcesPath) roots.push(join(process.resourcesPath, 'conversion', 'worker-runtime', 'structurize-runtime'));
-  roots.push(join(__dirname, 'structurize-runtime'));
+  const allowLocalOverride = process.env.STRUCTURIZE_ALLOW_RUNTIME_OVERRIDE === '1' && process.env.NODE_ENV !== 'production' && !process.versions.electron;
+  if (allowLocalOverride && process.env.STRUCTURIZE_RUNTIME_ROOT) roots.push(resolve(process.env.STRUCTURIZE_RUNTIME_ROOT));
+  else {
+    roots.push(resolve(process.cwd(), 'build', 'structurize-runtime'));
+    roots.push(join(__dirname, 'structurize-runtime'));
+  }
   const seen = new Set();
   for (const root of roots) {
     if (seen.has(root)) continue;
@@ -1654,17 +1701,9 @@ function resolveBundledStructurizeInvocation() {
     let manifest;
     try { manifest = JSON.parse(readFileSync(manifestPath, 'utf8')); }
     catch (error) { throw new Error(`Bundled Structurize runtime manifest is invalid: ${error instanceof Error ? error.message : String(error)}`); }
-    if (!isRecord(manifest) || manifest.kind !== 'structurize-runtime' || typeof manifest.executable !== 'string' || !Array.isArray(manifest.arguments) || !manifest.arguments.every((value) => typeof value === 'string')) {
-      throw new Error(`Bundled Structurize runtime manifest is malformed: ${manifestPath}`);
-    }
-    if (manifest.executable.includes('\\') || manifest.executable.includes('/') || manifest.executable === '.' || manifest.executable === '..') throw new Error(`Bundled Structurize runtime executable is not a file name: ${manifestPath}`);
-    const executable = join(runtimeDirectory, manifest.executable);
-    if (!existsSync(executable)) throw new Error(`Bundled Structurize executable is missing: ${executable}`);
-    const pythonPath = Array.isArray(manifest.pythonPath) && manifest.pythonPath.every((value) => typeof value === 'string')
-      ? manifest.pythonPath.map((value) => join(runtimeDirectory, value))
-      : [runtimeDirectory, join(runtimeDirectory, 'Lib', 'site-packages')];
-    return { executable, arguments: manifest.arguments, environment: { PYTHONHOME: runtimeDirectory, PYTHONPATH: pythonPath.join(delimiter) } };
+    return verifyBundledRuntime(runtimeDirectory, manifestPath, manifest);
   }
+  if (allowLocalOverride && process.env.STRUCTURIZE_RUNTIME_ROOT) return undefined;
   return undefined;
 }
 
@@ -1737,7 +1776,7 @@ function normalizeStructurizeJsonStructure(files, command) {
 function structurizeWarnings(command) {
   const warnings = [{
     code: 'structurize.lossiness.unreported',
-    message: `Structurize ${command.cliCommand} completed without machine-readable lossiness metadata; review the generated JSON Structure for features the target format cannot represent.`,
+    message: `Structurize ${command.cliCommand} completed without machine-readable lossiness metadata; review the generated output for features the target format cannot represent.`,
     lossiness: 'unsupported-feature',
   }];
   if (command.cliCommand === 'json2s' || command.cliCommand === 'xml2s') warnings.push({
@@ -1749,7 +1788,12 @@ function structurizeWarnings(command) {
 }
 
 async function runStructurize(command, sourceName, sourceText, options) {
-  if (command.availability === 'external-service') throw new Error(command.availabilityMessage || `Structurize ${command.cliCommand} requires an external service capability that is not configured.`);
+  if (command.availability === 'external-service') {
+    const required = Array.isArray(command.availabilityRequirements) ? command.availabilityRequirements : [];
+    const missing = required.filter((name) => typeof options?.[name] !== 'string' || options[name].trim() === '');
+    if (missing.length > 0) throw new Error(missing.length === required.length ? (command.availabilityMessage || `Structurize ${command.cliCommand} requires an external service capability that is not configured.`) : `${command.availabilityMessage || `Structurize ${command.cliCommand} requires an external service capability that is not configured.`} Missing configuration: ${missing.join(', ')}.`);
+  }
+
   if (command.direction === 'export') {
     const document = JSON.parse(sourceText);
     if (!isRecord(document)) throw new Error('JSON Structure source must be an object.');
@@ -1775,11 +1819,14 @@ async function runStructurize(command, sourceName, sourceText, options) {
         args.push(flag, String(value));
       }
     }
-    const candidates = [];
-    if (process.env.STRUCTURIZE_EXECUTABLE) candidates.push({ executable: process.env.STRUCTURIZE_EXECUTABLE, arguments: [], environment: {} });
-    const bundled = resolveBundledStructurizeInvocation();
-    if (bundled) candidates.push(bundled);
-    for (const executable of process.platform === 'win32' ? ['structurize.exe', 'avrotize.exe'] : ['structurize', 'avrotize']) candidates.push({ executable, arguments: [], environment: {} });
+    const allowLocalOverride = process.env.STRUCTURIZE_ALLOW_RUNTIME_OVERRIDE === '1' && process.env.NODE_ENV !== 'production' && !process.versions.electron;
+    const bundled = allowLocalOverride && process.env.STRUCTURIZE_EXECUTABLE ? undefined : resolveBundledStructurizeInvocation();
+    const candidates = allowLocalOverride && process.env.STRUCTURIZE_EXECUTABLE
+      ? [{ executable: process.env.STRUCTURIZE_EXECUTABLE, arguments: [], environment: {} }]
+      : bundled
+        ? [bundled]
+        : [];
+    if (candidates.length === 0) throw new Error(`Structurize runtime is unavailable for ${command.cliCommand} on ${process.platform}-${process.arch}; no matching packaged runtime was found and PATH fallback is disabled. Build the platform runtime or use the explicit local-development override.`);
     let result;
     for (const candidate of candidates) {
       if (cancellationRequested) throw conversionCancelledError();
@@ -1788,7 +1835,7 @@ async function runStructurize(command, sourceName, sourceText, options) {
     }
     if (cancellationRequested) throw conversionCancelledError();
     if (result?.error) {
-      if (result.error.code === 'ENOENT') throw new Error(`Structurize runtime is unavailable for ${command.cliCommand}. Install the packaged Structurize executable or set STRUCTURIZE_EXECUTABLE to its path.`);
+      if (result.error.code === 'ENOENT') throw new Error(`Structurize runtime is unavailable for ${command.cliCommand} on ${process.platform}-${process.arch}. Build and install the matching packaged runtime; STRUCTURIZE_EXECUTABLE is a local-development override.`);
       throw result.error;
     }
     if (!result || result.status !== 0) {
@@ -1810,6 +1857,40 @@ async function runStructurize(command, sourceName, sourceText, options) {
   }
 }
 
+async function runStructurizePipeline(command, sourceName, sourceText, options) {
+  let currentName = sourceName;
+  let currentText = sourceText;
+  const warnings = [];
+  let lossiness = 'none';
+  let files = {};
+  for (let index = 0; index < command.cliPipeline.length; index += 1) {
+    const step = command.cliPipeline[index];
+    const final = index === command.cliPipeline.length - 1;
+    const stepOptions = Object.fromEntries(Object.entries(options).filter(([name]) => !step.optionNames || step.optionNames.includes(name)));
+    const result = await runStructurize({
+      ...command,
+      cliCommand: step.cliCommand,
+      cliPipeline: undefined,
+      direction: index === 0 ? command.direction : 'import',
+      targetFormat: final ? command.targetFormat : 'avro',
+      outputKind: step.outputKind,
+      outputName: step.outputName,
+      availability: index === 0 ? command.availability : 'local',
+      availabilityRequirements: index === 0 ? command.availabilityRequirements : undefined,
+    }, currentName, currentText, stepOptions);
+    warnings.push(...result.warnings);
+    if (result.lossiness !== 'none') lossiness = result.lossiness;
+    files = result.files;
+    if (!final) {
+      const entries = Object.entries(files);
+      if (entries.length !== 1) throw new Error(`Structurize pipeline step ${step.cliCommand} produced ${entries.length} files; exactly one intermediate schema is required.`);
+      currentName = entries[0][0];
+      currentText = Buffer.from(entries[0][1], 'base64').toString('utf8');
+    }
+  }
+  return { files, warnings, lossiness };
+}
+
 async function runConversion(commandId, sourceName, sourceText, options, preview) {
   if (commandId === 'import.jsonschema.to-json-structure') {
     return convertJsonSchemaToJsonStructure(sourceText, sourceName, options, preview);
@@ -1826,7 +1907,8 @@ async function runConversion(commandId, sourceName, sourceText, options, preview
   if (commandId === 'export.json-structure.to-protobuf') {
     return convertJsonStructureToProto(sourceText, sourceName, options);
   }
-  const command = commandsManifest.commands.find((candidate) => candidate.id === commandId && candidate.cliCommand);
+  const command = commandsManifest.commands.find((candidate) => candidate.id === commandId && (candidate.cliCommand || candidate.cliPipeline));
+  if (command?.cliPipeline) return await runStructurizePipeline(command, sourceName, sourceText, options);
   if (command) return await runStructurize(command, sourceName, sourceText, options);
   throw new Error(`Unsupported command id: ${commandId}`);
 }

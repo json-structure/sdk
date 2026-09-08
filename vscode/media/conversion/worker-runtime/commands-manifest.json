@@ -145,7 +145,15 @@
         "thrift",
         "smithy",
         "capnp",
-        "raml"
+        "raml",
+        "protobuf",
+        "xsd",
+        "surrealql",
+        "parquet",
+        "asn1",
+        "kafka-struct",
+        "csv",
+        "sql-database"
       ],
       "targetFormats": [
         "asn1",
@@ -176,6 +184,15 @@
         "smithy",
         "capnp",
         "raml",
+        "mongodb",
+        "dynamodb",
+        "elasticsearch",
+        "couchdb",
+        "neo4j",
+        "firebase",
+        "cosmosdb",
+        "hbase",
+        "surrealql",
         "json-structure"
       ],
       "options": [
@@ -326,6 +343,66 @@
           "type": "boolean",
           "description": "Emit an xRegistry manifest.",
           "default": false
+        },
+        {
+          "name": "message_type",
+          "type": "string",
+          "description": "Protocol Buffers message selected as the imported root.",
+          "default": ""
+        },
+        {
+          "name": "proto_root",
+          "type": "string",
+          "description": "Root directory used to resolve Protocol Buffers imports.",
+          "default": ""
+        },
+        {
+          "name": "connection_string",
+          "type": "string",
+          "description": "Database connection string used for SQL schema import.",
+          "default": ""
+        },
+        {
+          "name": "username",
+          "type": "string",
+          "description": "Optional database user name.",
+          "default": ""
+        },
+        {
+          "name": "password",
+          "type": "string",
+          "description": "Optional database password.",
+          "default": ""
+        },
+        {
+          "name": "database",
+          "type": "string",
+          "description": "Optional database name.",
+          "default": ""
+        },
+        {
+          "name": "infer_json",
+          "type": "boolean",
+          "description": "Infer structures stored in JSON columns.",
+          "default": false
+        },
+        {
+          "name": "infer_xml",
+          "type": "boolean",
+          "description": "Infer structures stored in XML columns.",
+          "default": false
+        },
+        {
+          "name": "emit_cloudevents_columns",
+          "type": "boolean",
+          "description": "Include CloudEvents metadata columns in generated database schemas.",
+          "default": false
+        },
+        {
+          "name": "record_type",
+          "type": "string",
+          "description": "SurrealQL record type used for generated declarations.",
+          "default": ""
         }
       ]
     }
@@ -396,7 +473,12 @@
         ".kusto"
       ],
       "availability": "external-service",
-      "availabilityMessage": "Kusto import requires a configured cluster URI, database, and table; local file conversion is not supported."
+      "availabilityMessage": "Kusto import requires a configured cluster URI, database, and table; local file conversion is not supported.",
+      "availabilityRequirements": [
+        "kusto_uri",
+        "kusto_database",
+        "table_name"
+      ]
     },
     {
       "id": "import.structurize.json2s",
@@ -682,6 +764,600 @@
         "numbers"
       ],
       "cliCommand": "s2p"
+    },
+    {
+      "id": "import.structurize.p2s",
+      "converterId": "structurize-cli",
+      "direction": "import",
+      "label": "Import Protocol Buffers to JSON Structure",
+      "sourceFormat": "protobuf",
+      "targetFormat": "json-structure",
+      "defaultAutoOpen": true,
+      "optionNames": [
+        "namespace",
+        "message_type",
+        "proto_root",
+        "naming",
+        "avro_encoding"
+      ],
+      "cliPipeline": [
+        {
+          "cliCommand": "p2a",
+          "outputKind": "file",
+          "outputName": "schema.avsc",
+          "optionNames": [
+            "namespace",
+            "message_type",
+            "proto_root"
+          ]
+        },
+        {
+          "cliCommand": "a2s",
+          "outputKind": "file",
+          "outputName": "schema.struct.json",
+          "optionNames": [
+            "naming",
+            "avro_encoding"
+          ]
+        }
+      ],
+      "outputKind": "file",
+      "outputName": "schema.struct.json",
+      "sourceExtensions": [
+        ".proto"
+      ]
+    },
+    {
+      "id": "import.structurize.x2s",
+      "converterId": "structurize-cli",
+      "direction": "import",
+      "label": "Import XML Schema to JSON Structure",
+      "sourceFormat": "xsd",
+      "targetFormat": "json-structure",
+      "defaultAutoOpen": true,
+      "optionNames": [
+        "namespace",
+        "naming",
+        "avro_encoding"
+      ],
+      "cliPipeline": [
+        {
+          "cliCommand": "x2a",
+          "outputKind": "file",
+          "outputName": "schema.avsc",
+          "optionNames": [
+            "namespace"
+          ]
+        },
+        {
+          "cliCommand": "a2s",
+          "outputKind": "file",
+          "outputName": "schema.struct.json",
+          "optionNames": [
+            "naming",
+            "avro_encoding"
+          ]
+        }
+      ],
+      "outputKind": "file",
+      "outputName": "schema.struct.json",
+      "sourceExtensions": [
+        ".xsd"
+      ]
+    },
+    {
+      "id": "import.structurize.surreal2s",
+      "converterId": "structurize-cli",
+      "direction": "import",
+      "label": "Import SurrealQL to JSON Structure",
+      "sourceFormat": "surrealql",
+      "targetFormat": "json-structure",
+      "defaultAutoOpen": true,
+      "optionNames": [
+        "namespace",
+        "naming",
+        "avro_encoding"
+      ],
+      "cliPipeline": [
+        {
+          "cliCommand": "surreal2a",
+          "outputKind": "file",
+          "outputName": "schema.avsc",
+          "optionNames": [
+            "namespace"
+          ]
+        },
+        {
+          "cliCommand": "a2s",
+          "outputKind": "file",
+          "outputName": "schema.struct.json",
+          "optionNames": [
+            "naming",
+            "avro_encoding"
+          ]
+        }
+      ],
+      "outputKind": "file",
+      "outputName": "schema.struct.json",
+      "sourceExtensions": [
+        ".surql",
+        ".surrealql"
+      ]
+    },
+    {
+      "id": "import.structurize.pq2s",
+      "converterId": "structurize-cli",
+      "direction": "import",
+      "label": "Import Apache Parquet to JSON Structure",
+      "sourceFormat": "parquet",
+      "targetFormat": "json-structure",
+      "defaultAutoOpen": true,
+      "optionNames": [
+        "namespace",
+        "naming",
+        "avro_encoding"
+      ],
+      "cliPipeline": [
+        {
+          "cliCommand": "pq2a",
+          "outputKind": "file",
+          "outputName": "schema.avsc",
+          "optionNames": [
+            "namespace"
+          ]
+        },
+        {
+          "cliCommand": "a2s",
+          "outputKind": "file",
+          "outputName": "schema.struct.json",
+          "optionNames": [
+            "naming",
+            "avro_encoding"
+          ]
+        }
+      ],
+      "outputKind": "file",
+      "outputName": "schema.struct.json",
+      "sourceExtensions": [
+        ".parquet"
+      ]
+    },
+    {
+      "id": "import.structurize.asn2s",
+      "converterId": "structurize-cli",
+      "direction": "import",
+      "label": "Import ASN.1 to JSON Structure",
+      "sourceFormat": "asn1",
+      "targetFormat": "json-structure",
+      "defaultAutoOpen": true,
+      "optionNames": [
+        "naming",
+        "avro_encoding"
+      ],
+      "cliPipeline": [
+        {
+          "cliCommand": "asn2a",
+          "outputKind": "file",
+          "outputName": "schema.avsc",
+          "optionNames": []
+        },
+        {
+          "cliCommand": "a2s",
+          "outputKind": "file",
+          "outputName": "schema.struct.json",
+          "optionNames": [
+            "naming",
+            "avro_encoding"
+          ]
+        }
+      ],
+      "outputKind": "file",
+      "outputName": "schema.struct.json",
+      "sourceExtensions": [
+        ".asn1"
+      ]
+    },
+    {
+      "id": "import.structurize.kstruct2s",
+      "converterId": "structurize-cli",
+      "direction": "import",
+      "label": "Import Kafka Struct to JSON Structure",
+      "sourceFormat": "kafka-struct",
+      "targetFormat": "json-structure",
+      "defaultAutoOpen": true,
+      "optionNames": [
+        "naming",
+        "avro_encoding"
+      ],
+      "cliPipeline": [
+        {
+          "cliCommand": "kstruct2a",
+          "outputKind": "file",
+          "outputName": "schema.avsc",
+          "optionNames": []
+        },
+        {
+          "cliCommand": "a2s",
+          "outputKind": "file",
+          "outputName": "schema.struct.json",
+          "optionNames": [
+            "naming",
+            "avro_encoding"
+          ]
+        }
+      ],
+      "outputKind": "file",
+      "outputName": "schema.struct.json",
+      "sourceExtensions": [
+        ".kstruct"
+      ]
+    },
+    {
+      "id": "import.structurize.csv2s",
+      "converterId": "structurize-cli",
+      "direction": "import",
+      "label": "Import CSV data to JSON Structure",
+      "sourceFormat": "csv",
+      "targetFormat": "json-structure",
+      "defaultAutoOpen": true,
+      "optionNames": [
+        "namespace",
+        "naming",
+        "avro_encoding"
+      ],
+      "cliPipeline": [
+        {
+          "cliCommand": "csv2a",
+          "outputKind": "file",
+          "outputName": "schema.avsc",
+          "optionNames": [
+            "namespace"
+          ]
+        },
+        {
+          "cliCommand": "a2s",
+          "outputKind": "file",
+          "outputName": "schema.struct.json",
+          "optionNames": [
+            "naming",
+            "avro_encoding"
+          ]
+        }
+      ],
+      "outputKind": "file",
+      "outputName": "schema.struct.json",
+      "sourceExtensions": [
+        ".csv"
+      ]
+    },
+    {
+      "id": "import.structurize.sql2s",
+      "converterId": "structurize-cli",
+      "direction": "import",
+      "label": "Import SQL database to JSON Structure",
+      "sourceFormat": "sql-database",
+      "targetFormat": "json-structure",
+      "defaultAutoOpen": true,
+      "optionNames": [
+        "connection_string",
+        "username",
+        "password",
+        "database",
+        "table_name",
+        "namespace",
+        "dialect",
+        "emit_cloudevents",
+        "sample_size",
+        "infer_json",
+        "infer_xml",
+        "infer_choices",
+        "naming",
+        "avro_encoding"
+      ],
+      "cliPipeline": [
+        {
+          "cliCommand": "sql2a",
+          "outputKind": "file",
+          "outputName": "schema.avsc",
+          "optionNames": [
+            "connection_string",
+            "username",
+            "password",
+            "database",
+            "table_name",
+            "namespace",
+            "dialect",
+            "emit_cloudevents",
+            "sample_size",
+            "infer_json",
+            "infer_xml",
+            "infer_choices"
+          ]
+        },
+        {
+          "cliCommand": "a2s",
+          "outputKind": "file",
+          "outputName": "schema.struct.json",
+          "optionNames": [
+            "naming",
+            "avro_encoding"
+          ]
+        }
+      ],
+      "outputKind": "file",
+      "outputName": "schema.struct.json",
+      "availability": "external-service",
+      "availabilityMessage": "SQL import requires a database connection string; local file conversion is not supported."
+    },
+    {
+      "id": "export.structurize.s2mongo",
+      "converterId": "structurize-cli",
+      "direction": "export",
+      "label": "Export JSON Structure to MongoDB schema",
+      "sourceFormat": "json-structure",
+      "targetFormat": "mongodb",
+      "defaultAutoOpen": false,
+      "optionNames": [
+        "emit_cloudevents_columns"
+      ],
+      "cliPipeline": [
+        {
+          "cliCommand": "s2a",
+          "outputKind": "file",
+          "outputName": "schema.avsc",
+          "optionNames": []
+        },
+        {
+          "cliCommand": "a2mongo",
+          "outputKind": "directory",
+          "outputName": "mongodb",
+          "optionNames": [
+            "emit_cloudevents_columns"
+          ]
+        }
+      ],
+      "outputKind": "directory",
+      "outputName": "mongodb"
+    },
+    {
+      "id": "export.structurize.s2dynamodb",
+      "converterId": "structurize-cli",
+      "direction": "export",
+      "label": "Export JSON Structure to DynamoDB schema",
+      "sourceFormat": "json-structure",
+      "targetFormat": "dynamodb",
+      "defaultAutoOpen": false,
+      "optionNames": [
+        "emit_cloudevents_columns"
+      ],
+      "cliPipeline": [
+        {
+          "cliCommand": "s2a",
+          "outputKind": "file",
+          "outputName": "schema.avsc",
+          "optionNames": []
+        },
+        {
+          "cliCommand": "a2dynamodb",
+          "outputKind": "directory",
+          "outputName": "dynamodb",
+          "optionNames": [
+            "emit_cloudevents_columns"
+          ]
+        }
+      ],
+      "outputKind": "directory",
+      "outputName": "dynamodb"
+    },
+    {
+      "id": "export.structurize.s2es",
+      "converterId": "structurize-cli",
+      "direction": "export",
+      "label": "Export JSON Structure to Elasticsearch schema",
+      "sourceFormat": "json-structure",
+      "targetFormat": "elasticsearch",
+      "defaultAutoOpen": false,
+      "optionNames": [
+        "emit_cloudevents_columns"
+      ],
+      "cliPipeline": [
+        {
+          "cliCommand": "s2a",
+          "outputKind": "file",
+          "outputName": "schema.avsc",
+          "optionNames": []
+        },
+        {
+          "cliCommand": "a2es",
+          "outputKind": "directory",
+          "outputName": "elasticsearch",
+          "optionNames": [
+            "emit_cloudevents_columns"
+          ]
+        }
+      ],
+      "outputKind": "directory",
+      "outputName": "elasticsearch"
+    },
+    {
+      "id": "export.structurize.s2couchdb",
+      "converterId": "structurize-cli",
+      "direction": "export",
+      "label": "Export JSON Structure to CouchDB schema",
+      "sourceFormat": "json-structure",
+      "targetFormat": "couchdb",
+      "defaultAutoOpen": false,
+      "optionNames": [
+        "emit_cloudevents_columns"
+      ],
+      "cliPipeline": [
+        {
+          "cliCommand": "s2a",
+          "outputKind": "file",
+          "outputName": "schema.avsc",
+          "optionNames": []
+        },
+        {
+          "cliCommand": "a2couchdb",
+          "outputKind": "directory",
+          "outputName": "couchdb",
+          "optionNames": [
+            "emit_cloudevents_columns"
+          ]
+        }
+      ],
+      "outputKind": "directory",
+      "outputName": "couchdb"
+    },
+    {
+      "id": "export.structurize.s2neo4j",
+      "converterId": "structurize-cli",
+      "direction": "export",
+      "label": "Export JSON Structure to Neo4j schema",
+      "sourceFormat": "json-structure",
+      "targetFormat": "neo4j",
+      "defaultAutoOpen": false,
+      "optionNames": [
+        "emit_cloudevents_columns"
+      ],
+      "cliPipeline": [
+        {
+          "cliCommand": "s2a",
+          "outputKind": "file",
+          "outputName": "schema.avsc",
+          "optionNames": []
+        },
+        {
+          "cliCommand": "a2neo4j",
+          "outputKind": "directory",
+          "outputName": "neo4j",
+          "optionNames": [
+            "emit_cloudevents_columns"
+          ]
+        }
+      ],
+      "outputKind": "directory",
+      "outputName": "neo4j"
+    },
+    {
+      "id": "export.structurize.s2firebase",
+      "converterId": "structurize-cli",
+      "direction": "export",
+      "label": "Export JSON Structure to Firebase schema",
+      "sourceFormat": "json-structure",
+      "targetFormat": "firebase",
+      "defaultAutoOpen": false,
+      "optionNames": [
+        "emit_cloudevents_columns"
+      ],
+      "cliPipeline": [
+        {
+          "cliCommand": "s2a",
+          "outputKind": "file",
+          "outputName": "schema.avsc",
+          "optionNames": []
+        },
+        {
+          "cliCommand": "a2firebase",
+          "outputKind": "directory",
+          "outputName": "firebase",
+          "optionNames": [
+            "emit_cloudevents_columns"
+          ]
+        }
+      ],
+      "outputKind": "directory",
+      "outputName": "firebase"
+    },
+    {
+      "id": "export.structurize.s2cosmos",
+      "converterId": "structurize-cli",
+      "direction": "export",
+      "label": "Export JSON Structure to Cosmos DB schema",
+      "sourceFormat": "json-structure",
+      "targetFormat": "cosmosdb",
+      "defaultAutoOpen": false,
+      "optionNames": [
+        "emit_cloudevents_columns"
+      ],
+      "cliPipeline": [
+        {
+          "cliCommand": "s2a",
+          "outputKind": "file",
+          "outputName": "schema.avsc",
+          "optionNames": []
+        },
+        {
+          "cliCommand": "a2cosmos",
+          "outputKind": "directory",
+          "outputName": "cosmosdb",
+          "optionNames": [
+            "emit_cloudevents_columns"
+          ]
+        }
+      ],
+      "outputKind": "directory",
+      "outputName": "cosmosdb"
+    },
+    {
+      "id": "export.structurize.s2hbase",
+      "converterId": "structurize-cli",
+      "direction": "export",
+      "label": "Export JSON Structure to HBase schema",
+      "sourceFormat": "json-structure",
+      "targetFormat": "hbase",
+      "defaultAutoOpen": false,
+      "optionNames": [
+        "emit_cloudevents_columns"
+      ],
+      "cliPipeline": [
+        {
+          "cliCommand": "s2a",
+          "outputKind": "file",
+          "outputName": "schema.avsc",
+          "optionNames": []
+        },
+        {
+          "cliCommand": "a2hbase",
+          "outputKind": "directory",
+          "outputName": "hbase",
+          "optionNames": [
+            "emit_cloudevents_columns"
+          ]
+        }
+      ],
+      "outputKind": "directory",
+      "outputName": "hbase"
+    },
+    {
+      "id": "export.structurize.s2surreal",
+      "converterId": "structurize-cli",
+      "direction": "export",
+      "label": "Export JSON Structure to SurrealQL schema",
+      "sourceFormat": "json-structure",
+      "targetFormat": "surrealql",
+      "defaultAutoOpen": true,
+      "optionNames": [
+        "record_type"
+      ],
+      "cliPipeline": [
+        {
+          "cliCommand": "s2a",
+          "outputKind": "file",
+          "outputName": "schema.avsc",
+          "optionNames": []
+        },
+        {
+          "cliCommand": "a2surreal",
+          "outputKind": "file",
+          "outputName": "schema.surql",
+          "optionNames": [
+            "record_type"
+          ]
+        }
+      ],
+      "outputKind": "file",
+      "outputName": "schema.surql"
     },
     {
       "id": "export.structurize.s2asn",

@@ -95,7 +95,7 @@ describe('import-aware schema resolution', () => {
     }));
   });
 
-  it('retains invalid import diagnostics while resolving URI-relative closure entries', async () => {
+  it('resolves URI-relative closure entries parsed from imported documents', async () => {
     const base = 'file:///workspace/';
     const resources = new Map([
       [base + 'invalid.struct.json', JSON.stringify({
@@ -113,10 +113,7 @@ describe('import-aware schema resolution', () => {
     ]);
     const loaded = await loadExternalDocuments(base + 'main.struct.json', ['./invalid.struct.json'], async (uri) =>
       resourceSnapshot('import-test', uri, resources.get(uri)!));
-    expect(loaded[0]).toMatchObject({ uri: base + 'invalid.struct.json', availability: 'stale' });
-    expect(loaded[0]?.snapshot?.diagnostics).toEqual(expect.arrayContaining([
-      expect.objectContaining({ location: expect.objectContaining({ pointer: '/definitions/Nested/$importdefs' }) })
-    ]));
+    expect(loaded[0]).toMatchObject({ uri: base + 'invalid.struct.json', availability: 'available' });
     expect(loaded[1]).toMatchObject({ uri: base + 'nested.struct.json', availability: 'available' });
   });
   it('materializes imported declarations and rewrites imported local references', () => {

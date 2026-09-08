@@ -41,7 +41,7 @@ describe('graph projection', () => {
     }
   });
 
-  it('retains root, relation, import, external, unresolved, and indeterminate metadata', () => {
+  it('retains relation, import, external, unresolved, and indeterminate metadata without graphing the document envelope', () => {
     const external = parseDocument('https://example.org/types.json', JSON.stringify({
       $schema: 'https://json-structure.org/meta/relations/v0/#', $uses: ['JSONStructureRelations'], $id: 'https://example.org/types.json', name: 'Types',
       definitions: { External: { type: 'object', properties: { id: { type: 'string' } }, identity: ['id'] }, Qualifier: { type: 'object', properties: { code: { type: 'string' } } } }
@@ -65,8 +65,8 @@ describe('graph projection', () => {
       expect.objectContaining({ kind: 'target', status: 'unresolved', target: '#/definitions/Nope' }),
       expect.objectContaining({ kind: 'target', status: 'indeterminate', target: '#/definitions/MissingImport/Later' })
     ]));
+    expect(graph.nodes).not.toContainEqual(expect.objectContaining({ id: GRAPH_DOCUMENT_NODE_ID }));
     expect(graph.edges).toEqual(expect.arrayContaining([
-      expect.objectContaining({ kind: 'root', status: 'resolved', to: '/definitions/Source' }),
       expect.objectContaining({ kind: 'inheritance', status: 'resolved', to: '/definitions/Base' }),
       expect.objectContaining({
         kind: 'relation', label: 'external', status: 'external', targetPointer: '/definitions/External',
@@ -80,6 +80,7 @@ describe('graph projection', () => {
       expect.objectContaining({ kind: 'import', status: 'external', documentUri: 'https://example.org/types.json', provenance: 'importdefs' }),
       expect.objectContaining({ kind: 'import', status: 'indeterminate', provenance: 'importdefs' })
     ]));
+    expect(graph.edges).not.toContainEqual(expect.objectContaining({ kind: 'root', pointer: '/$root' }));
   });
   it('anchors resolved and unresolved root imports to one selectable document node', () => {
     const externalUri = 'https://example.org/root-import.json';

@@ -112,24 +112,43 @@ describe('release integrity foundations', () => {
     expect(source).toContain("['scan', 'manifest', 'executables', 'attest']");
     expect(source).toContain('sbom.cdx.json');
     expect(source).toContain('provenance.intoto.json');
-    expect([...source.matchAll(/from ['"]([^'"]+)['"]/g)].map((match) => match[1])).toEqual(['node:crypto', 'node:fs/promises', 'node:path']);
+    expect([...source.matchAll(/from ['"]([^'"]+)['"]/g)].map((match) => match[1])).toEqual(['node:crypto', 'node:fs/promises', 'node:path', 'node:url']);
 
     const root = await fixture();
     const script = path.join(process.cwd(), 'scripts', 'release-integrity.mjs');
     const scan = spawnSync(process.execPath, [script, 'scan', root], { encoding: 'utf8' });
     expect(scan.status).toBe(0);
-    await writeFile(path.join(root, 'declared.exe'), 'fixture');
+    await mkdir(path.join(root, 'win-unpacked'));
+    await writeFile(path.join(root, 'win-unpacked', 'JSON Structure Editor.exe'), 'fixture');
     expect(spawnSync(process.execPath, [script, 'executables', root], { encoding: 'utf8' }).status).toBe(0);
-    expect(spawnSync(process.execPath, [script, 'scan', root], { encoding: 'utf8' }).status).toBe(0);
-    await writeFile(path.join(root, 'rogue.exe'), 'fixture');
+    const nativeExtensions = ['exe', 'dll', 'pyd', 'so', 'dylib', 'node', 'AppImage', 'MSI'];
+    for (const extension of nativeExtensions) await writeFile(path.join(root, `rogue.${extension}`), 'fixture');
     const rogueScan = spawnSync(process.execPath, [script, 'scan', root], { encoding: 'utf8' });
     expect(rogueScan.status).toBe(1);
     expect(rogueScan.stderr).toContain('rogue.exe: undeclared executable');
-    await rm(path.join(root, 'declared.exe'));
-    await rm(path.join(root, 'rogue.exe'));
+    expect(rogueScan.stderr).toContain('rogue.dll: undeclared executable');
+    expect(rogueScan.stderr).toContain('rogue.pyd: undeclared executable');
+    for (const extension of nativeExtensions.slice(3)) expect(rogueScan.stderr).toContain(`rogue.${extension}: undeclared executable`);
+    expect(spawnSync(process.execPath, [script, 'executables', root], { encoding: 'utf8' }).status).toBe(1);
+    for (const extension of nativeExtensions) await rm(path.join(root, `rogue.${extension}`));
+    await rm(path.join(root, 'win-unpacked'), { recursive: true, force: true });
     const manifest = spawnSync(process.execPath, [script, 'manifest', root], { encoding: 'utf8' });
     expect(manifest.status).toBe(0);
     const checksums = JSON.parse(await readFile(path.join(root, 'checksums.json'), 'utf8'));
     expect(checksums.artifacts).toEqual([expect.objectContaining({ path: 'nested/app.txt' })]);
+  });
+
+  it('fails closed when the checked-in native allowlist is tampered', async () => {
+    const root = await fixture();
+    const allowlistPath = path.join(process.cwd(), 'config', 'native-artifact-allowlist.json');
+    const original = await readFile(allowlistPath, 'utf8');
+    try {
+      await writeFile(allowlistPath, `${original}\n`);
+      const result = spawnSync(process.execPath, [path.join(process.cwd(), 'scripts', 'release-integrity.mjs'), 'scan', root], { encoding: 'utf8' });
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('allowlist digest is not independently anchored');
+    } finally {
+      await writeFile(allowlistPath, original, 'utf8');
+    }
   });
 });

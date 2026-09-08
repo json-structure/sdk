@@ -109,10 +109,9 @@ describe('Phase 5 conversion service', () => {
     const service = new ConversionService({ worker: conversionFixtureWorker() });
     const manifest = service.listCommands();
     expect(manifest.schemaVersion).toBe(1);
-    expect(manifest.commands.filter((command) => command.direction === 'export').map((command) => command.cliCommand)).toEqual([
-      's2j', 's2a', 's2p', 's2asn', 's2fbs', 's2k', 's2sql', 's2ib', 's2pq', 's2tsml', 's2cs', 's2py', 's2cpp', 's2csv', 's2rust', 's2ts', 's2java', 's2js', 's2go', 's2graphql', 's2dp', 's2cassandra', 's2jtd', 's2x', 's2cddl', 's2md', 's2cue', 's2thrift', 's2smithy', 's2capnp', 's2raml',
-    ]);
-    expect(manifest.commands.filter((command) => command.direction === 'export')).toHaveLength(31);
+    expect(manifest.commands.filter((command) => command.direction === 'export')).toHaveLength(40);
+    expect(manifest.commands.find((command) => command.id === 'import.structurize.p2s')?.cliPipeline?.map((step) => step.cliCommand)).toEqual(['p2a', 'a2s']);
+    expect(manifest.commands.find((command) => command.id === 'export.structurize.s2mongo')?.cliPipeline?.map((step) => step.cliCommand)).toEqual(['s2a', 'a2mongo']);
     expect(manifest.commands.find((command) => command.cliCommand === 's2sql')?.optionNames).toEqual(['dialect']);
     expect(manifest.commands.find((command) => command.cliCommand === 'oas2s')?.optionNames).toEqual(['namespace', 'preserve_composition', 'detect_discriminators', 'lift_inline_schemas']);
     expect(service.prepare('import.structurize.oas2s', { detect_discriminators: false }).effectiveOptions.detect_discriminators).toBe(false);

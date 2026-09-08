@@ -94,15 +94,18 @@ export class SemanticGraphController {
 
   public setSource(source: GraphProjection): SemanticGraphView {
     this.source = source;
-    if (!this.selection) this.selection = defaultSelection(source, this.location.lens);
     if (this.historyIndex < 0) {
+      this.location = automaticEntryLocation(source, this.location.lens);
+      this.selection = defaultSelection(source, this.location);
       this.history = [{ location: this.location, selection: this.selection }];
       this.historyIndex = 0;
+    } else if (!this.selection) {
+      this.selection = defaultSelection(source, this.location);
     }
     const nodeIds = new Set(source.nodes.map((node) => node.id));
     const edgeIds = new Set(source.edges.map((edge) => edge.id));
     if (this.location.focusNodeId && !nodeIds.has(this.location.focusNodeId)) {
-      this.location = locationWithDirection({ level: this.location.namespace ? 'types' : 'atlas', lens: this.location.lens, namespace: this.location.namespace }, relationDirectionFor(this.location));
+      this.location = locationWithDirection({ level: this.location.namespace !== undefined ? 'types' : 'atlas', lens: this.location.lens, namespace: this.location.namespace }, relationDirectionFor(this.location));
     }
     const projected = projectionForLocation(source, this.location);
     const projectedNodeIds = new Set(projected.nodes.map((node) => node.id));
@@ -115,8 +118,8 @@ export class SemanticGraphController {
 
   public setLens(lens: ProjectionId): SemanticGraphView {
     if (this.location.lens === lens) return this.view();
-    this.location = { level: 'atlas', lens };
-    this.selection = defaultSelection(this.source, lens);
+    this.location = automaticEntryLocation(this.source, lens);
+    this.selection = defaultSelection(this.source, this.location);
     const view = this.view();
     this.publish('location-changed', 'graph', view);
     return view;
@@ -198,7 +201,7 @@ export class SemanticGraphController {
   public revealNode(nodeId: string): SemanticGraphView {
     const node = this.source.nodes.find((candidate) => candidate.id === nodeId);
     if (!node) return this.view();
-    const namespace = normalizedNamespace(node);
+    const namespace = namespaceForNode(this.source, node);
     if (this.location.level === 'atlas' || this.location.namespace !== namespace) {
       this.navigate(locationWithDirection({ level: 'types', lens: this.location.lens, namespace }, relationDirectionFor(this.location)), selectionForNode(node));
     } else {
@@ -237,12 +240,13 @@ export class SemanticGraphController {
     } else if (this.location.level === 'atlas') {
       const namespace = namespaceFromAtlasNode(node);
       const initialType = this.location.lens === 'relations'
-        ? this.source.nodes.find((candidate) => candidate.kind === 'type' && normalizedNamespace(candidate) === namespace && candidate.label === 'Place')
-          ?? this.source.nodes.find((candidate) => candidate.kind === 'type' && normalizedNamespace(candidate) === namespace)
+        ? this.source.nodes.find((candidate) => candidate.kind === 'type' && namespaceForNode(this.source, candidate) === namespace && candidate.label === 'Place')
+          ?? this.source.nodes.find((candidate) => candidate.kind === 'type' && namespaceForNode(this.source, candidate) === namespace)
         : undefined;
-      this.navigate(locationWithDirection({ level: 'types', lens: this.location.lens, namespace }, relationDirectionFor(this.location)), selectionForNode(initialType ?? node));
+      const next = automaticNamespaceLocation(this.source, this.location.lens, namespace, initialType);
+      this.navigate(locationWithDirection(next, relationDirectionFor(this.location)), selectionForNode(initialType ?? node));
     } else if (this.location.lens === 'relations' && this.location.level === 'types') {
-      this.navigate(locationWithDirection({ level: 'neighborhood', lens: this.location.lens, namespace: this.location.namespace ?? normalizedNamespace(node), focusNodeId: sourceNodeId(node) }, relationDirectionFor(this.location)), selectionForNode(node));
+      this.navigate(locationWithDirection({ level: 'neighborhood', lens: this.location.lens, namespace: this.location.namespace ?? namespaceForNode(this.source, node), focusNodeId: sourceNodeId(node) }, relationDirectionFor(this.location)), selectionForNode(node));
     } else {
       this.selection = selectionForNode(node);
     }
@@ -263,8 +267,9 @@ export class SemanticGraphController {
       const focus = this.location.focusNodeId ? this.source.nodes.find((node) => node.id === this.location.focusNodeId) : undefined;
       this.navigate({ level: 'types', lens: this.location.lens, namespace: this.location.namespace }, focus ? selectionForNode(focus) : undefined);
     } else if (this.location.level === 'types') {
-      const atlasNode = this.location.namespace ? atlasNodeFor(this.location.namespace) : undefined;
-      this.navigate({ level: 'atlas', lens: this.location.lens }, atlasNode ? selectionForNode(atlasNode) : defaultSelection(this.source, this.location.lens));
+      const atlasLocation: SemanticGraphLocation = { level: 'atlas', lens: this.location.lens };
+      const atlasNode = this.location.namespace !== undefined ? atlasNodeFor(this.source, this.location.namespace, undefined, namespaceDisplayLabel(this.source, this.location.namespace)) : undefined;
+      this.navigate(atlasLocation, atlasNode ? selectionForNode(atlasNode) : defaultSelection(this.source, atlasLocation));
     }
     const view = this.view();
     this.publish('location-changed', 'graph', view);
@@ -272,7 +277,8 @@ export class SemanticGraphController {
   }
 
   public home(): SemanticGraphView {
-    if (this.location.level !== 'atlas') this.navigate({ level: 'atlas', lens: this.location.lens }, defaultSelection(this.source, this.location.lens));
+    const location = automaticEntryLocation(this.source, this.location.lens);
+    if (!sameLocation(this.location, location)) this.navigate(location, defaultSelection(this.source, location));
     const view = this.view();
     this.publish('location-changed', 'graph', view);
     return view;
@@ -314,9 +320,9 @@ export class SemanticGraphController {
       : [];
     const focus = this.location.focusNodeId ? this.source.nodes.find((node) => node.id === this.location.focusNodeId) : undefined;
     const lensLabel = lensLabels[this.location.lens];
-    const title = this.location.level === 'atlas' ? 'Schema atlas' : this.location.level === 'types' ? this.location.namespace ?? 'Type topology' : focus?.label ?? 'Neighborhood';
+    const title = this.location.level === 'atlas' ? 'Schema atlas' : this.location.level === 'types' ? namespaceDisplayLabel(this.source, this.location.namespace) : focus?.label ?? 'Neighborhood';
     const description = this.location.level === 'atlas'
-      ? `${namespaceNames(this.source).length} namespaces · ${projection.nodes.length} domains · ${projection.edges.length} ${lensLabel.toLocaleLowerCase()} links`
+      ? atlasDescription(this.source, projection, this.location.lens)
       : this.location.level === 'types'
         ? `${projection.nodes.length} visible types · ${projection.edges.length} ${lensLabel.toLocaleLowerCase()} links`
         : `${this.location.hops ?? 1}-hop ${this.location.isolate ? 'isolated' : 'global-context'} view · ${projection.edges.length} ${lensLabel.toLocaleLowerCase()} links`;
@@ -324,7 +330,7 @@ export class SemanticGraphController {
       location: this.location,
       projection,
       selection: this.selection,
-      breadcrumbs: breadcrumbsFor(this.location, focus),
+      breadcrumbs: breadcrumbsFor(this.location, focus, this.source),
       title,
       description,
       searchQuery: this.searchQuery,
@@ -414,13 +420,9 @@ function projectionForLocation(source: GraphProjection, location: SemanticGraphL
 
 function atlasProjection(source: GraphProjection, lens: ProjectionId): GraphProjection {
   const namespaces = namespaceNames(source);
-  const documentNode = source.nodes.find((node) => node.kind === 'document');
-  const nodes: GraphNode[] = [
-    ...(documentNode ? [documentNode] : []),
-    ...namespaces.map((namespace) => atlasNodeFor(namespace, namespaceMemberCount(source, namespace))),
-  ];
+  const nodes = namespaces.map((namespace) => atlasNodeFor(source, namespace, namespaceMemberCount(source, namespace), namespaceDisplayLabel(source, namespace)));
   const namespaceSet = new Set(namespaces);
-  const namespaceByNode = new Map(source.nodes.map((node) => [node.id, atlasKeyForNode(node, documentNode, namespaceSet)]));
+  const namespaceByNode = new Map(source.nodes.map((node) => [node.id, atlasKeyForNode(source, node, namespaceSet)]));
   const aggregate = new Map<string, { from: string; to: string; count: number; statuses: Set<string>; members: GraphEdge[] }>();
   for (const edge of filteredEdges(source.edges, lens)) {
     const fromNamespace = namespaceByNode.get(edge.from);
@@ -435,8 +437,8 @@ function atlasProjection(source: GraphProjection, lens: ProjectionId): GraphProj
   }
   const aggregateEdges: GraphEdge[] = [...aggregate.values()].sort((left, right) => left.from.localeCompare(right.from) || left.to.localeCompare(right.to)).map((entry) => ({
     id: `graph:atlas:${lens}:${encodeURIComponent(entry.from)}:${encodeURIComponent(entry.to)}`,
-    from: documentNode && entry.from === documentNode.id ? entry.from : atlasNodeId(entry.from),
-    to: documentNode && entry.to === documentNode.id ? entry.to : atlasNodeId(entry.to),
+    from: atlasNodeId(entry.from),
+    to: atlasNodeId(entry.to),
     label: `${entry.count} ${entry.count === 1 ? 'link' : 'links'}`,
     kind: lensEdgeKind(lens),
     status: entry.statuses.has('unresolved') ? 'unresolved' : entry.statuses.has('indeterminate') ? 'indeterminate' : 'resolved',
@@ -444,22 +446,14 @@ function atlasProjection(source: GraphProjection, lens: ProjectionId): GraphProj
     memberEdgeIds: entry.members.map((edge) => edge.id),
     memberPointers: entry.members.map((edge) => edge.pointer).filter((pointer): pointer is string => pointer !== undefined),
   }));
-  const scaffold = documentNode ? namespaces.map((namespace): GraphEdge => ({
-    id: `graph:atlas-root:${encodeURIComponent(namespace)}`,
-    from: documentNode.id,
-    to: atlasNodeId(namespace),
-    label: 'contains',
-    kind: 'root',
-    status: 'resolved',
-    selectable: false,
-  })) : [];
+  const scaffold = namespaceContainmentEdges(namespaces);
   return { nodes, edges: [...scaffold, ...aggregateEdges] };
 }
 
 function typeProjection(source: GraphProjection, lens: ProjectionId, namespace?: string): GraphProjection {
   if (lens === 'namespaces') return namespaceContainmentProjection(source, namespace);
   const edges = filteredEdges(source.edges, lens);
-  const primary = new Set(source.nodes.filter((node) => !namespace || normalizedNamespace(node) === namespace || node.kind === 'document' && namespace === 'Definitions').map((node) => node.id));
+  const primary = new Set(source.nodes.filter((node) => namespace === undefined || namespaceForNode(source, node) === namespace).map((node) => node.id));
   const visibleEdges = edges.filter((edge) => primary.has(edge.from) && primary.has(edge.to));
   return {
     nodes: source.nodes.filter((node) => primary.has(node.id)),
@@ -469,14 +463,9 @@ function typeProjection(source: GraphProjection, lens: ProjectionId, namespace?:
 
 function namespaceAtlasProjection(source: GraphProjection): GraphProjection {
   const namespaces = namespaceNames(source);
-  const documentNode = source.nodes.find((node) => node.kind === 'document');
-  const namespaceNodes = namespaces.map((namespace) => atlasNodeFor(namespace, namespaceMemberCount(source, namespace)));
-  const rootEdges = documentNode
-    ? namespaceNodes.map((node) => ({ id: `graph:root:${node.id}`, from: documentNode.id, to: node.id, label: 'contains', kind: 'root' as const, selectable: false }))
-    : [];
   return {
-    nodes: [...(documentNode ? [documentNode] : []), ...namespaceNodes],
-    edges: rootEdges,
+    nodes: namespaces.map((namespace) => atlasNodeFor(source, namespace, namespaceMemberCount(source, namespace), namespaceDisplayLabel(source, namespace))),
+    edges: namespaceContainmentEdges(namespaces),
   };
 }
 
@@ -541,7 +530,7 @@ function relationDirectionFor(location: SemanticGraphLocation): GraphRelationDir
 
 function locationWithDirection(location: SemanticGraphLocation, direction: GraphRelationDirection): SemanticGraphLocation {
   if (direction !== 'outgoing') return { ...location, direction };
-  return { level: location.level, lens: location.lens, ...(location.namespace ? { namespace: location.namespace } : {}), ...(location.focusNodeId ? { focusNodeId: location.focusNodeId } : {}), ...(location.hops ? { hops: location.hops } : {}), ...(location.isolate ? { isolate: location.isolate } : {}) };
+  return { level: location.level, lens: location.lens, ...(location.namespace !== undefined ? { namespace: location.namespace } : {}), ...(location.focusNodeId ? { focusNodeId: location.focusNodeId } : {}), ...(location.hops ? { hops: location.hops } : {}), ...(location.isolate ? { isolate: location.isolate } : {}) };
 }
 
 function projectionWithSelectedEdge(projection: GraphProjection, source: GraphProjection, selection: SelectionIdentity | undefined): GraphProjection {
@@ -553,20 +542,19 @@ function projectionWithSelectedEdge(projection: GraphProjection, source: GraphPr
   return { nodes: projection.nodes, edges: bundle ? projection.edges.map((edge) => edge.id === bundle.id ? selected : edge) : [...projection.edges, selected] };
 }
 function namespaceContainmentProjection(source: GraphProjection, namespace?: string): GraphProjection {
-  const documentNode = source.nodes.find((node) => node.kind === 'document');
-  const types = source.nodes.filter((node) => node.kind !== 'namespace' && node.kind !== 'document' && (!namespace || normalizedNamespace(node) === namespace));
-  const names = [...new Set(types.map(normalizedNamespace))].sort();
-  const namespaceNodes: GraphNode[] = names.map((name) => atlasNodeFor(name, namespaceMemberCount(source, name)));
+  const types = source.nodes.filter((node) => node.kind !== 'namespace' && (namespace === undefined || namespaceForNode(source, node) === namespace));
+  const names = [...new Set(types.map((node) => namespaceForNode(source, node)))].sort();
+  const namespaceNodes: GraphNode[] = names.map((name) => atlasNodeFor(source, name, namespaceMemberCount(source, name), namespaceDisplayLabel(source, name)));
   const edges: GraphEdge[] = types.map((node) => ({
-    id: `graph:contains:${encodeURIComponent(normalizedNamespace(node))}:${node.id}`,
-    from: atlasNodeId(normalizedNamespace(node)),
+    id: `graph:contains:${encodeURIComponent(namespaceForNode(source, node))}:${node.id}`,
+    from: atlasNodeId(namespaceForNode(source, node)),
     to: node.id,
     label: 'contains',
     kind: 'root',
     status: node.status,
     selectable: false,
   }));
-  return { nodes: [...(documentNode && namespace === 'Definitions' ? [documentNode] : []), ...namespaceNodes, ...types], edges };
+  return { nodes: [...namespaceNodes, ...types], edges };
 }
 
 function filteredEdges(edges: readonly GraphEdge[], lens: ProjectionId): readonly GraphEdge[] {
@@ -599,42 +587,59 @@ function selectedEdgesFor(selection: SelectionIdentity | undefined, source: Grap
   return selected.memberEdgeIds.map((id) => source.edges.find((edge) => edge.id === id)).filter((edge): edge is GraphEdge => edge !== undefined);
 }
 
-function breadcrumbsFor(location: SemanticGraphLocation, focus: GraphNode | undefined): readonly SemanticGraphBreadcrumb[] {
+function breadcrumbsFor(location: SemanticGraphLocation, focus: GraphNode | undefined, source: GraphProjection): readonly SemanticGraphBreadcrumb[] {
   const breadcrumbs: SemanticGraphBreadcrumb[] = [{ label: 'Atlas', level: 'atlas' }];
-  if (location.level !== 'atlas') breadcrumbs.push({ label: location.namespace ?? 'Types', level: 'types' });
+  if (location.level !== 'atlas') breadcrumbs.push({ label: namespaceDisplayLabel(source, location.namespace), level: 'types' });
   if (location.level === 'neighborhood') breadcrumbs.push({ label: focus?.label ?? 'Neighborhood', level: 'neighborhood', nodeId: location.focusNodeId });
   return breadcrumbs;
 }
 
 function namespaceNames(source: GraphProjection): readonly string[] {
-  return [...new Set(source.nodes.filter((node) => node.kind === 'type' || node.kind === 'target' && node.namespace === 'root').map(normalizedNamespace))].sort();
+  if (!source.nodes.length) return [];
+  const names = new Set<string>(['']);
+  for (const node of source.nodes) {
+    const namespace = namespaceForNode(source, node);
+    if (!namespace) continue;
+    const segments = namespace.split('/');
+    for (let index = 1; index <= segments.length; index += 1) names.add(segments.slice(0, index).join('/'));
+  }
+  return [...names].sort((left, right) => left.split('/').length - right.split('/').length || left.localeCompare(right));
 }
 
-function normalizedNamespace(node: GraphNode): string {
-  if (node.kind === 'document') return 'Document';
-  return node.namespace && node.namespace !== 'root' && node.namespace.toLocaleLowerCase() !== 'definitions' ? node.namespace : 'Definitions';
+function namespaceForNode(_source: GraphProjection, node: GraphNode): string {
+  if (node.kind === 'document') return '';
+  const path = definitionPath(node.pointer);
+  if (path === undefined) return node.namespace === 'root' || node.namespace.toLocaleLowerCase() === 'definitions' ? '' : node.namespace;
+  if (node.kind === 'namespace') return path;
+  const separator = path.lastIndexOf('/');
+  return separator < 0 ? '' : path.slice(0, separator);
 }
 
 function atlasNodeId(namespace: string): string {
-  return `graph:namespace:${encodeURIComponent(namespace)}`;
+  return namespace === '' ? 'graph:namespace:document' : `graph:namespace:${encodeURIComponent(namespace)}`;
 }
 
-function atlasNodeFor(namespace: string, memberCount?: number): GraphNode {
-  return { id: atlasNodeId(namespace), pointer: '', label: namespace, namespace, kind: 'namespace', status: 'resolved', selectable: true, ...(memberCount !== undefined ? { memberCount } : {}) };
+function atlasNodeFor(source: GraphProjection, namespace: string, memberCount?: number, label = namespace): GraphNode {
+  const pointer = namespace === ''
+    ? ''
+    : source.nodes.find((node) => node.kind === 'namespace' && namespaceForNode(source, node) === namespace)?.pointer
+      ?? source.nodes.find((node) => node.kind !== 'namespace' && namespaceForNode(source, node) === namespace)?.pointer.replace(/\/[^/]+$/, '')
+      ?? '';
+  return { id: atlasNodeId(namespace), pointer, label, namespace, kind: 'namespace', status: 'resolved', selectable: true, ...(memberCount !== undefined ? { memberCount } : {}) };
 }
 
 function namespaceMemberCount(source: GraphProjection, namespace: string): number {
-  return source.nodes.filter((node) => node.kind !== 'namespace' && node.kind !== 'document' && normalizedNamespace(node) === namespace).length;
+  return source.nodes.filter((node) => node.kind !== 'namespace' && namespaceForNode(source, node) === namespace).length;
 }
 
-function atlasKeyForNode(node: GraphNode, documentNode: GraphNode | undefined, namespaces: ReadonlySet<string>): string | undefined {
-  if (documentNode && node.id === documentNode.id) return node.id;
-  const namespace = normalizedNamespace(node);
+function atlasKeyForNode(source: GraphProjection, node: GraphNode, namespaces: ReadonlySet<string>): string | undefined {
+  const namespace = namespaceForNode(source, node);
   return namespaces.has(namespace) ? namespace : undefined;
 }
 
 function namespaceFromAtlasNode(node: GraphNode): string {
-  return node.id.startsWith('graph:namespace:') ? decodeURIComponent(node.id.slice('graph:namespace:'.length)) : normalizedNamespace(node);
+  if (node.id === 'graph:namespace:document') return '';
+  return node.id.startsWith('graph:namespace:') ? decodeURIComponent(node.id.slice('graph:namespace:'.length)) : node.namespace;
 }
 
 function sourceNodeId(node: GraphNode): string {
@@ -648,8 +653,8 @@ function lensEdgeKind(lens: ProjectionId): GraphEdge['kind'] {
   return 'root';
 }
 
-function defaultSelection(source: GraphProjection, lens: ProjectionId): SelectionIdentity | undefined {
-  const projection = lens === 'namespaces' ? namespaceAtlasProjection(source) : atlasProjection(source, lens);
+function defaultSelection(source: GraphProjection, location: SemanticGraphLocation): SelectionIdentity | undefined {
+  const projection = projectionForLocation(source, location);
   const preferred = projection.nodes.find((node) => node.kind === 'namespace' && node.label === 'Nodes')
     ?? projection.nodes.find((node) => node.kind === 'namespace')
     ?? projection.nodes[0];
@@ -662,6 +667,58 @@ function sameLocation(left: SemanticGraphLocation, right: SemanticGraphLocation)
 
 function historyLabel(location: SemanticGraphLocation, source: GraphProjection): string {
   if (location.level === 'atlas') return 'Atlas';
-  if (location.level === 'types') return location.namespace ?? 'Types';
+  if (location.level === 'types') return namespaceDisplayLabel(source, location.namespace);
   return source.nodes.find((node) => node.id === location.focusNodeId)?.label ?? 'Neighborhood';
+}
+
+function definitionPath(pointer: string): string | undefined {
+  if (!pointer.startsWith('/definitions/')) return undefined;
+  return pointer.slice('/definitions/'.length).split('/').map((part) => part.replace(/~1/g, '/').replace(/~0/g, '~')).join('/');
+}
+
+function namespaceDisplayLabel(source: GraphProjection, namespace: string | undefined): string {
+  if (namespace === undefined) return 'Type topology';
+  if (namespace === '') return source.documentLabel ?? 'Document';
+  return namespace.split('/').at(-1) ?? namespace;
+}
+
+function namespaceContainmentEdges(namespaces: readonly string[]): readonly GraphEdge[] {
+  const available = new Set(namespaces);
+  return namespaces.filter((namespace) => namespace !== '').flatMap((namespace): readonly GraphEdge[] => {
+    const separator = namespace.lastIndexOf('/');
+    const parent = separator >= 0 ? namespace.slice(0, separator) : '';
+    if (!available.has(parent)) return [];
+    return [{
+      id: `graph:namespace-contains:${encodeURIComponent(parent)}:${encodeURIComponent(namespace)}`,
+      from: atlasNodeId(parent),
+      to: atlasNodeId(namespace),
+      label: 'contains',
+      kind: 'root',
+      status: 'resolved',
+      selectable: false,
+    }];
+  });
+}
+
+function automaticEntryLocation(source: GraphProjection, lens: ProjectionId): SemanticGraphLocation {
+  const atlas: SemanticGraphLocation = { level: 'atlas', lens };
+  const projection = projectionForLocation(source, atlas);
+  if (projection.nodes.length !== 1 || projection.nodes[0]?.kind !== 'namespace') return atlas;
+  return automaticNamespaceLocation(source, lens, namespaceFromAtlasNode(projection.nodes[0]));
+}
+
+function automaticNamespaceLocation(source: GraphProjection, lens: ProjectionId, namespace: string, preferred?: GraphNode): SemanticGraphLocation {
+  const types: SemanticGraphLocation = { level: 'types', lens, namespace };
+  const projection = projectionForLocation(source, types);
+  const typeNodes = projection.nodes.filter((node) => node.kind !== 'namespace');
+  const focus = preferred ?? typeNodes[0];
+  if (lens === 'relations' && typeNodes.length === 1 && focus) return { level: 'neighborhood', lens, namespace, focusNodeId: sourceNodeId(focus) };
+  return types;
+}
+
+function atlasDescription(source: GraphProjection, projection: GraphProjection, lens: ProjectionId): string {
+  const namespaceCount = namespaceNames(source).length;
+  const linkCount = lens === 'namespaces' ? projection.edges.length : projection.edges.filter((edge) => edge.selectable !== false).length;
+  const linkKind = lens === 'namespaces' ? 'containment' : lens === 'relations' ? 'relation' : lens === 'extends' ? 'inheritance' : 'import';
+  return `${namespaceCount} ${namespaceCount === 1 ? 'namespace' : 'namespaces'} · ${linkCount} ${linkKind} ${linkCount === 1 ? 'link' : 'links'}`;
 }

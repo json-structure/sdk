@@ -263,10 +263,9 @@ describe('workbench interaction markup', () => {
       schema: { type: [{ type: 'map', values: { type: 'uuid' } }, 'null'] },
     }], pointer);
     expect(html).toContain('map&lt;string, uuid&gt;');
-    expect(html).toContain('<option value="map" selected>map</option>');
-    expect(html).toContain('>Value type</span>');
-    expect(html).toContain(`data-property-pointer="${pointer}/type/0/values"`);
-    expect(html).toContain('checked> nullable');
+    expect(html).toContain('data-inline-property="nullable"');
+    expect(html).toMatch(/data-inline-property="nullable"[^>]*checked/);
+    expect(html).toContain(`data-property-details="${pointer}"`);
   });
 
   it('preserves nullable unions in local and effective property type displays', () => {
@@ -397,8 +396,12 @@ describe('workbench interaction markup', () => {
     ];
     const html = designView('Copy', 'object', undefined, rows, '/definitions/Copy/relations/edition', ['barcode', 'shelfmark'], [{
       pointer: '/definitions/Copy/relations/edition', name: 'edition', targetTypeRef: '#/definitions/Edition', cardinality: 'single', scope: '#/definitions/Catalog/properties/editions',
-    }], 'local', undefined, undefined, [{ name: 'Edition', pointer: '/definitions/Edition', identity: ['id'] }], {}, new Set(), true);
-    expect(html.match(/data-inline-property="identity"[^>]*checked/g)).toHaveLength(2);
+    }], 'local', undefined, undefined, [{ name: 'Edition', pointer: '/definitions/Edition', identity: ['id'] }], {
+      $schema: 'https://json-structure.org/meta/relations/v0/#',
+      $uses: ['JSONStructureRelations'],
+    }, new Set(), true);
+    expect(html.match(/data-inline-property="identity"/g)).toHaveLength(2);
+    expect(html).toMatch(/data-inline-property="identity"[^>]*checked/);
     expect(html).not.toContain('data-action-id="relation.identity"');
     expect(html).toContain('data-inline-relation-name');
     expect(html).toContain('data-inline-relation-target');
@@ -414,7 +417,7 @@ describe('workbench interaction markup', () => {
     const snapshot = new DocumentSession('memory://ordered-identity', source).snapshot();
     expect(snapshot.model?.projections.definitions[0]?.identity).toEqual(['tenant', 'id']);
     const person = snapshot.model!.projections.definitions[0]!;
-    const html = designView('Person', 'object', undefined, projectProperties(person), undefined, ['tenant', 'id']);
+    const html = designView('Person', 'object', undefined, projectProperties(person), undefined, ['tenant', 'id'], [], 'local', undefined, undefined, [], JSON.parse(source));
     expect(html.match(/data-inline-property="identity"[^>]*checked/g)).toHaveLength(2);
   });
 

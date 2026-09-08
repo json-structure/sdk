@@ -41,6 +41,10 @@ ENV/
 htmlcov/
 .tox/
 .nox/
+/artifacts/
+/editor/artifacts/
+/editor/.vscode-test/
+/editor/coverage/ux/
 
 # Build
 *.manifest

@@ -24,7 +24,8 @@ describe('phase 4 refactoring plans', () => {
     expect(planAddImport(document, { destinationPointer: '/definitions/Typed', source: 'memory:typed' }).applicable).toBe(false);
     expect(planAddImport(document, { destinationPointer: '/definitions/Typed/properties', source: 'memory:properties' }).applicable).toBe(false);
     expect(planAddImport(document, { destinationPointer: '/definitions/Imported', source: 'memory:duplicate', keyword: '$importdefs' }).applicable).toBe(false);
-    expect(planAddImport(document, { destinationPointer: '/definitions/Namespace', source: 'relative/path' }).applicable).toBe(false);
+    expect(planAddImport(document, { destinationPointer: '/definitions/Namespace', source: 'relative/path' }).applicable).toBe(true);
+    expect(planAddImport(document, { destinationPointer: '/definitions/Namespace', source: 'C:\\schemas\\types.json' }).applicable).toBe(false);
     expect(planAddImport(document, { destinationPointer: '/definitions/Namespace', source: '   ' }).applicable).toBe(false);
     expect(planAddImport(document, { destinationPointer: '/definitions/Namespace', source: ' memory:source' }).applicable).toBe(false);
     expect(planAddImport(document, {

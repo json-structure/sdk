@@ -13,4 +13,5 @@ vsc-extension-quickstart.md
 **/*.d.ts
 !dist/extension.js
 node_modules/**
+dist/test/**
 ../**

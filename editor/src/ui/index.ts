@@ -195,6 +195,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
   let disposed = false;
   let sourceEditor: MonacoEditor.IStandaloneCodeEditor | undefined;
   let sourceModel: MonacoEditor.ITextModel | undefined;
+  let pendingSourceEditorAction: 'actions.find' | 'editor.action.startFindReplaceAction' | undefined;
   let sourceModelIdentity: { readonly uri: string; readonly generation: number } | undefined;
   let sourceMount = 0;
   let documentGeneration = 0;
@@ -231,9 +232,11 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
   let conversionSource: ConversionSource | undefined;
   let conversionResult: ConversionResult | undefined;
   let conversionStatus = '';
+  let conversionOptionValues: ConversionOptionValues = {};
   let conversionProgress: ProgressEvent | undefined;
   let conversionRequestId: string | undefined;
   let conversionGeneration = 0;
+  let startConversionChooserOpen = false;
   let startConversionDialogOpen = false;
   let libraryEntries: readonly LibraryEntry[] | undefined;
   let libraryProviders: readonly LibraryProviderSummary[] | undefined;
@@ -258,6 +261,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
   let problemsOpen = false;
   let drawerReturnFocus: HTMLElement | undefined;
   let releaseDrawerTrap = (): void => undefined;
+  let releaseStartConversionTrap = (): void => undefined;
   const graphNavigation = new GraphNavigationController();
   const graphLayout = new ForceGraphLayout();
   const graphMinimapLayout = new ForceGraphLayout();
@@ -299,7 +303,20 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     drawerReturnFocus = undefined;
     queueMicrotask(() => returnFocus?.isConnected && returnFocus.focus());
   };
-
+  const closeStartConversionChooser = (): void => {
+    startConversionChooserOpen = false;
+    render();
+    queueMicrotask(() => (root.querySelector('[data-chrome-command="import"]') as HTMLElement | null)?.focus());
+  };
+  const focusStartConversionDialogPrimary = (): void => {
+    queueMicrotask(() => {
+      const dialog = root.querySelector('[data-start-conversion-dialog]') as HTMLElement | null;
+      const target = dialog?.querySelector('[data-conversion-source]') as HTMLElement | null
+        ?? dialog?.querySelector('[data-conversion-option]') as HTMLElement | null
+        ?? dialog?.querySelector('[data-start-conversion-close]') as HTMLElement | null;
+      target?.focus();
+    });
+  };
   const disposeSourceModel = (): void => {
     sourceMount += 1;
     sourceEditor?.dispose();
@@ -310,6 +327,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
   };
   const replaceDocument = (): void => {
     documentGeneration += 1;
+    startConversionChooserOpen = false;
     startConversionDialogOpen = false;
     disposeSourceModel();
   };
@@ -330,6 +348,14 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     }).finally(() => {
       conversionLoading = false;
       render();
+      queueMicrotask(() => {
+        const dialog = root.querySelector('[data-start-conversion-dialog]') as HTMLElement | null;
+        const target = dialog?.querySelector('[data-conversion-source]') as HTMLElement | null
+          ?? dialog?.querySelector('[data-conversion-option]') as HTMLElement | null
+          ?? dialog?.querySelector('[data-start-conversion-close]') as HTMLElement | null;
+        target?.focus();
+      });
+      focusStartConversionDialogPrimary();
     });
   };
 
@@ -459,14 +485,28 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       ? new ResolvedSchemaContext(session.value as Readonly<Record<string, unknown>>, { documentUri: session.uri, resolvedDocuments: session.resolvedSchemaDocuments })
       : undefined;
     const typeDefinitions = [
-      ...definitions.map((definition) => ({ name: definition.name, pointer: definition.pointer, namespace: definition.namespacePointer, identity: effectiveSchemaContext?.effectiveIdentity(`#${definition.pointer}`), imported: false, root: snapshot.model?.rootPointer === definition.pointer })),
+      ...definitions.map((definition) => {
+        const declaration = valueAtPointer(session.value, definition.pointer);
+        return {
+          name: definition.name,
+          pointer: definition.pointer,
+          namespace: definition.namespacePointer,
+          identity: effectiveSchemaContext?.effectiveIdentity(`#${definition.pointer}`),
+          type: definition.type,
+          abstract: isRecord(declaration) && (declaration as Record<string, unknown>)['abstract'] === true,
+          imported: false,
+          root: snapshot.model?.rootPointer === definition.pointer,
+        };
+      }),
       ...session.effectiveDeclarations
         .filter((declaration) => declaration.imports.length > 0 && !localDefinitionPointers.has(declaration.effectivePointer))
         .map((declaration) => ({
-          name: definitionTypeLabel(declaration.effectivePointer),
+          name: pointerLabel(declaration.effectivePointer),
           pointer: declaration.effectivePointer,
           namespace: declaration.effectivePointer.slice(0, declaration.effectivePointer.lastIndexOf('/')),
           identity: effectiveSchemaContext?.effectiveIdentity(`#${declaration.effectivePointer}`),
+          type: typeof declaration.schema.type === 'string' ? declaration.schema.type : undefined,
+          abstract: declaration.schema.abstract === true,
           imported: true,
           documentUri: declaration.documentUri,
           sourcePointer: declaration.sourcePointer,
@@ -506,13 +546,44 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     semanticGraphBySnapshot.set(snapshot, semanticGraph);
     graphLayout.reconcile(synchronizedGraphView.projection.nodes, synchronizedGraphView.projection.edges, forceGraphOptions(synchronizedGraphView));
     forceGraphLayoutBySnapshot.set(snapshot, graphLayout);
-    graphMinimapLayout.reconcile(graph.nodes, graph.edges, { cacheKey: 'full-document', mode: 'relations' });
+    graphMinimapLayout.reconcile(graph.nodes, graph.edges, { cacheKey: 'full-document', mode: 'force' });
+    graphMinimapLayout.settle();
     forceGraphMinimapLayoutBySnapshot.set(snapshot, graphMinimapLayout);
     root.innerHTML = structuredWorkbenchShell(snapshot, documentTitle, typeDefinitions, definitionPointer, rows, selectedPointer, mode, problemsOpen, designMemberMode, effectiveMembers, expandedPropertyPointer, options.chrome ?? 'document', pendingPropertyFields, relationDraftOpen, typeCreatorOpen);
-    if (startConversionDialogOpen) {
-      root.querySelector('.js-type-creator')?.insertAdjacentHTML('beforeend', startConversionDialog(services, conversionManifest ?? BUILTIN_CONVERSION_COMMANDS_MANIFEST, conversionCommandId, conversionSource, conversionResult, conversionStatus, conversionProgress, conversionRequestId));
+    if (startConversionChooserOpen) {
+      root.querySelector('.js-shell')?.insertAdjacentHTML('beforeend', startConversionChooserDialog(conversionManifest ?? BUILTIN_CONVERSION_COMMANDS_MANIFEST));
     }
-    mountAdvancedViews(root, snapshot, definitionPointer, graph, mode, instanceText, instanceResult, impactDirection, selectedAddIns, refactoringPlan, refactoringStatus, services, conversionManifest, conversionCommandId, conversionSource, conversionResult, conversionStatus, conversionProgress, conversionRequestId, libraryEntries, librarySelector, libraryDocument, librarySelection, libraryOperation, libraryPlan, libraryStatus, { providers: libraryProviders, catalog: libraryCatalog, resolution: libraryResolution, offline: libraryOffline, publishDraft: libraryPublishDraft, publishPreview: libraryPublishPreviewState, publishedEpoch: libraryPublishedEpoch, documentValid: documentCanPublish(snapshot), providerFilter: libraryProviderFilter, search: librarySearch, currentDocumentUri: snapshot.uri }, libraryModalOpen, instanceRoots, instanceRootPointer, instanceSelection, session.resolvedSchemaDocuments, typeDefinitions.map((definition) => definition.namespace));
+    if (startConversionDialogOpen) {
+      (root.querySelector('.js-type-creator') ?? root.querySelector('.js-shell'))?.insertAdjacentHTML('beforeend', startConversionDialog(services, conversionManifest ?? BUILTIN_CONVERSION_COMMANDS_MANIFEST, conversionCommandId, conversionSource, conversionResult, conversionStatus, conversionProgress, conversionRequestId, conversionOptionValues));
+    }
+    root.querySelectorAll('[data-start-conversion-chooser],[data-start-conversion-dialog]').forEach((dialog: DialogElement) => {
+      if (!dialog.open) queueMicrotask(() => dialog.isConnected && !dialog.open && dialog.showModal());
+    });
+    const startChooser = root.querySelector('[data-start-conversion-chooser]') as HTMLElement | null;
+    const startDialog = root.querySelector('[data-start-conversion-dialog]') as HTMLElement | null;
+    releaseStartConversionTrap();
+    releaseStartConversionTrap = () => undefined;
+    if (startChooser) {
+      releaseStartConversionTrap = trapFocus(startChooser, closeStartConversionChooser);
+      startChooser.addEventListener('cancel', (event: Event) => { event.preventDefault(); closeStartConversionChooser(); });
+    } else if (startDialog) {
+      releaseStartConversionTrap = trapFocus(startDialog, () => {
+        const activeRequest = conversionRequestId;
+        const commandId = conversionCommandId;
+        conversionGeneration += 1;
+        conversionRequestId = undefined;
+        conversionProgress = undefined;
+        startConversionDialogOpen = false;
+        if (activeRequest && services?.cancelConversion) void services.cancelConversion(activeRequest).catch(() => undefined);
+        render();
+        queueMicrotask(() => {
+          const command = commandId ? root.querySelector(`[data-start-conversion-command="${cssAttributeValue(commandId)}"]`) as HTMLElement | null : null;
+          (command ?? root.querySelector('[data-chrome-command="import"]') as HTMLElement | null)?.focus();
+        });
+      });
+      startDialog.addEventListener('cancel', (event: Event) => { event.preventDefault(); (startDialog.querySelector('[data-start-conversion-close]') as HTMLElement | null)?.click(); });
+    }
+    mountAdvancedViews(root, snapshot, definitionPointer, graph, mode, instanceText, instanceResult, impactDirection, selectedAddIns, refactoringPlan, refactoringStatus, services, conversionManifest, conversionCommandId, conversionSource, conversionResult, conversionStatus, conversionProgress, conversionRequestId, libraryEntries, librarySelector, libraryDocument, librarySelection, libraryOperation, libraryPlan, libraryStatus, { providers: libraryProviders, catalog: libraryCatalog, resolution: libraryResolution, offline: libraryOffline, publishDraft: libraryPublishDraft, publishPreview: libraryPublishPreviewState, publishedEpoch: libraryPublishedEpoch, documentValid: documentCanPublish(snapshot), providerFilter: libraryProviderFilter, search: librarySearch, currentDocumentUri: snapshot.uri }, libraryModalOpen, instanceRoots, instanceRootPointer, instanceSelection, session.resolvedSchemaDocuments, typeDefinitions.map((definition) => definition.namespace), conversionOptionValues);
     root.dataset.theme = themeName;
     const libraryDialog = root.querySelector('[data-library-dialog]') as DialogElement | null;
     if (libraryModalOpen && libraryDialog && !libraryDialog.open) queueMicrotask(() => libraryDialog.isConnected && libraryDialog.showModal());
@@ -538,17 +609,38 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       focusSourceAfterMount = false;
     }
     else restoreWorkbenchFocus(root, focusAnchor);
+    if (sourceEditor && pendingSourceEditorAction) {
+      const action = pendingSourceEditorAction;
+      pendingSourceEditorAction = undefined;
+      sourceEditor.focus();
+      sourceEditor.trigger('json-structure', action, null);
+    }
     if (sourceEditor) revealPendingDiagnostic();
     else if (mode === 'source') void mountSourceEditor(root, snapshot.text, sourceModel, snapshot.uri, setSourceText, themeName, () => !disposed && mount === sourceMount && session.snapshot().uri === snapshot.uri && documentGeneration === desiredSourceIdentity.generation).then((mounted) => {
       if (!mounted) return;
+      if (disposed || mount !== sourceMount || session.snapshot().uri !== snapshot.uri || documentGeneration !== desiredSourceIdentity.generation || !mounted.element.isConnected) {
+        mounted.editor.dispose();
+        if (mounted.createdModel && !mounted.model.isDisposed()) mounted.model.dispose();
+        return;
+      }
       sourceEditor = mounted.editor;
       sourceModel = mounted.model;
-       sourceModelIdentity = desiredSourceIdentity;
+      sourceModelIdentity = desiredSourceIdentity;
+      if (pendingSourceEditorAction) {
+        const action = pendingSourceEditorAction;
+        pendingSourceEditorAction = undefined;
+        sourceEditor.focus();
+        sourceEditor.trigger('json-structure', action, null);
+      }
       revealPendingDiagnostic();
       if (focusSourceAfterMount) {
         sourceEditor.focus();
         focusSourceAfterMount = false;
       }
+    }).catch((error) => {
+      if (disposed || mount !== sourceMount || mode !== 'source') return;
+      const source = root.querySelector('[data-source]');
+      if (source) source.innerHTML = `<div class="js-problem-error" role="alert">Source editor failed to load: ${escapeHtml(error instanceof Error ? error.message : String(error))}</div>`;
     });
     void refreshExternalDocuments(snapshot);
   };
@@ -622,7 +714,15 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       void options.onThemeChange?.(themeName);
       closeApplicationMenus(root);
     }));
-    root.querySelectorAll('[data-chrome-command]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => { const command = button.dataset.chromeCommand as Parameters<NonNullable<JsonStructureEditorOptions['onChromeCommand']>>[0]; if (!options.onChromeCommand && command === 'undo') undo(); else if (!options.onChromeCommand && command === 'redo') redo(); else void options.onChromeCommand?.(command); closeApplicationMenus(root); }));
+    root.querySelectorAll('[data-chrome-command]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
+      const command = button.dataset.chromeCommand ?? '';
+      if (command === 'find' || command === 'replace') openSourceSearch(command === 'replace');
+      else if (command === 'import') showImportDialog();
+      else if (!options.onChromeCommand && command === 'undo') undo();
+      else if (!options.onChromeCommand && command === 'redo') redo();
+      else void options.onChromeCommand?.(command as Parameters<NonNullable<JsonStructureEditorOptions['onChromeCommand']>>[0]);
+      closeApplicationMenus(root);
+    }));
     wireApplicationMenus(root);
     const filter = root.querySelector('.js-filter') as HTMLInputElement | null;
     filter?.addEventListener('input', () => filterTypeButtons(root, filter.value));
@@ -858,6 +958,21 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       nameControl?.select();
       return undefined;
     };
+    const addInlineChoice = async (ownerPointer: string, requestedName?: string, requestedSchema?: unknown): Promise<string | undefined> => {
+      const action = actionById('choice.add');
+      const owner = valueAtPointer(session.value, ownerPointer);
+      if (!action || !isRecord(owner)) return 'A choice alternative cannot be added at this location.';
+      const choiceName = requestedName?.trim() || availableChoiceName(owner);
+      const nextPointer = `${ownerPointer}/choices/${escapePointerToken(choiceName)}`;
+      const previousPointer = selectedPointer;
+      selectedPointer = nextPointer;
+      const error = await applyCommand(action.create(ownerPointer, requestedSchema ?? { type: 'string' }, choiceName));
+      if (error) { selectedPointer = previousPointer; return error; }
+      const nameControl = ([...root.querySelectorAll('[data-inline-choice-name]')] as HTMLInputElement[]).find((control) => control.dataset.inlineChoiceName === nextPointer);
+      nameControl?.focus();
+      nameControl?.select();
+      return undefined;
+    };
     root.querySelectorAll('[data-inline-property="description"]').forEach((input: HTMLTextAreaElement) => {
       autoGrowTextarea(input);
       input.addEventListener('input', () => autoGrowTextarea(input));
@@ -928,12 +1043,21 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       const fieldKey = inlineFieldKey(pointer, `${inlineKeywordActionId(family, keyword)}`);
       const schema = valueAtPointer(session.value, pointer) as Readonly<Record<string, unknown>> | undefined;
       const authored = schema?.[keyword] !== undefined;
+      const effectiveDefault = control.dataset.effectiveDefault;
+      if (effectiveDefault !== undefined && raw === effectiveDefault) {
+        if (!authored) return;
+        const removeAction = actionById(`${inlineKeywordActionId(family, keyword)}.remove`);
+        if (!removeAction) return;
+        void applyCommand(removeAction.create(pointer, undefined)).then((error) => error && setInlineStatus(root, pointer, error));
+        return;
+      }
       if (!authored && pendingPropertyFields.has(fieldKey) && control.dataset.valueKind !== 'boolean' && raw === '') return;
       const remove = authored && control.dataset.valueKind !== 'boolean' && raw === '';
       const action = actionById(`${inlineKeywordActionId(family, keyword)}${remove ? '.remove' : ''}`);
       if (!action) { setInlineStatus(root, pointer, `${keyword} is not available in this profile.`); return; }
       let value: unknown;
-      try { value = remove ? undefined : parseActionValue(action, raw, control.checked, effectiveSchemaType(session.value, pointer)); }
+      const checked = control.dataset.valueKind === 'select' && action.control?.kind === 'boolean' ? raw === 'true' : control.checked;
+      try { value = remove ? undefined : parseActionValue(action, raw, checked, effectiveSchemaType(session.value, pointer)); }
       catch (error) { setInlineStatus(root, pointer, error instanceof Error ? error.message : String(error)); return; }
       void applyCommand(action.create(pointer, value)).then((error) => {
         if (error) { setInlineStatus(root, pointer, error); return; }
@@ -949,7 +1073,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       wireCatalogControl(field, action, session, catalogRegistry, status, () => {
         const input = field.querySelector('[data-inline-keyword]') as HTMLInputElement | null;
         input?.dispatchEvent(new Event('change', { bubbles: true }));
-      });
+      }, pointer);
     });
     root.querySelectorAll('[data-inline-keyword-remove]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
       const pointer = button.dataset.propertyPointer;
@@ -986,6 +1110,41 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       mode = 'design';
       render();
       queueMicrotask(() => (root.querySelector('[data-type-create-name]') as HTMLInputElement | null)?.focus());
+    }));
+    root.querySelectorAll('[data-quick-add-namespace]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
+      openAction('namespace.add', button.dataset.quickAddNamespace ?? '');
+    }));
+    root.querySelectorAll('[data-tree-context-pointer]').forEach((target: HTMLElement) => target.addEventListener('contextmenu', (event: Event) => {
+      event.preventDefault();
+      const pointerEvent = event as Event & { readonly clientX: number; readonly clientY: number };
+      root.querySelector('.js-tree-context-menu')?.remove();
+      const pointer = target.dataset.treeContextPointer ?? '';
+      const kind = target.dataset.treeContextKind;
+      const namespacePointer = kind === 'definition' ? pointer.slice(0, pointer.lastIndexOf('/')) : pointer;
+      const menu = document.createElement('div');
+      menu.className = 'js-tree-context-menu';
+      menu.setAttribute('role', 'menu');
+      menu.style.left = `${pointerEvent.clientX}px`;
+      menu.style.top = `${pointerEvent.clientY}px`;
+      menu.innerHTML = `<button role="menuitem" data-tree-menu-action="add-type">Add type</button><button role="menuitem" data-tree-menu-action="add-namespace">Add namespace</button>${pointer && kind === 'namespace' ? '<button role="menuitem" data-tree-menu-action="rename">Rename namespace</button><button role="menuitem" class="js-danger" data-tree-menu-action="delete">Delete empty namespace</button>' : ''}${kind === 'definition' ? '<button role="menuitem" data-tree-menu-action="rename">Rename type</button><button role="menuitem" class="js-danger" data-tree-menu-action="delete">Delete type</button>' : ''}`;
+      root.append(menu);
+      menu.querySelectorAll('[data-tree-menu-action]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
+        const action = button.dataset.treeMenuAction;
+        menu.remove();
+        if (action === 'add-type') {
+          typeCreatorNamespacePointer = namespacePointer === '/definitions' ? '' : namespacePointer;
+          typeCreatorOpen = true;
+          mode = 'design';
+          render();
+        } else if (action === 'add-namespace') openAction('namespace.add', namespacePointer === '/definitions' ? '' : namespacePointer);
+        else if (action === 'rename') openAction(kind === 'definition' ? 'definition.rename' : 'namespace.rename', pointer);
+        else if (action === 'delete') {
+          const command = actionById(kind === 'definition' ? 'definition.delete' : 'namespace.delete');
+          if (command) void applyCommand(command.create(pointer, undefined));
+        }
+      }));
+      queueMicrotask(() => (menu.querySelector('button') as HTMLButtonElement | null)?.focus());
+      document.addEventListener('click', () => menu.remove(), { once: true });
     }));
     root.querySelectorAll('[data-namespace-add-type]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
       typeCreatorNamespacePointer = button.dataset.namespaceAddType ?? '';
@@ -1169,6 +1328,44 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       if (pointer === undefined || !action) return;
       void applyCommand(action.create(pointer, selectControl.value)).then((error) => error && setInlineStatus(root, pointer, error));
     }));
+    root.querySelectorAll('[data-inline-definition-abstract]').forEach((checkbox: HTMLInputElement) => checkbox.addEventListener('change', () => {
+      const pointer = checkbox.dataset.inlineDefinitionAbstract;
+      const action = actionById(checkbox.checked ? 'core.abstract' : 'core.abstract.remove');
+      if (pointer === undefined || !action) return;
+      void applyCommand(action.create(pointer, checkbox.checked ? true : undefined)).then((error) => error && setInlineStatus(root, pointer, error));
+    }));
+    root.querySelectorAll('[data-inline-extends-index]').forEach((selectControl: HTMLSelectElement) => selectControl.addEventListener('change', () => {
+      const pointer = selectControl.dataset.inlineExtendsPointer;
+      const index = Number(selectControl.dataset.inlineExtendsIndex);
+      const action = actionById('core.extends');
+      const declaration = pointer === undefined ? undefined : valueAtPointer(session.value, pointer);
+      if (pointer === undefined || !Number.isInteger(index) || !action || !isRecord(declaration)) return;
+      const current = typeof declaration.$extends === 'string' ? [declaration.$extends] : Array.isArray(declaration.$extends) ? declaration.$extends.filter((entry): entry is string => typeof entry === 'string') : [];
+      const next = current.map((reference, itemIndex) => itemIndex === index ? selectControl.value : reference);
+      void applyCommand(action.create(pointer, next)).then((error) => error && setInlineStatus(root, pointer, error));
+    }));
+    root.querySelectorAll('[data-inline-extends-remove]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
+      const pointer = button.dataset.inlineExtendsPointer;
+      const index = Number(button.dataset.inlineExtendsRemove);
+      const declaration = pointer === undefined ? undefined : valueAtPointer(session.value, pointer);
+      if (pointer === undefined || !Number.isInteger(index) || !isRecord(declaration)) return;
+      const current = typeof declaration.$extends === 'string' ? [declaration.$extends] : Array.isArray(declaration.$extends) ? declaration.$extends.filter((entry): entry is string => typeof entry === 'string') : [];
+      const next = current.filter((_, itemIndex) => itemIndex !== index);
+      const action = actionById(next.length ? 'core.extends' : 'core.extends.remove');
+      if (!action) return;
+      void applyCommand(action.create(pointer, next)).then((error) => error && setInlineStatus(root, pointer, error));
+    }));
+    root.querySelector('[data-inline-extends-add]')?.addEventListener('click', (event: Event) => {
+      const button = event.currentTarget as HTMLButtonElement;
+      const pointer = button.dataset.inlineExtendsPointer;
+      const selectControl = root.querySelector(`[data-inline-extends-add-select="${cssAttributeValue(pointer ?? '')}"]`) as HTMLSelectElement | null;
+      const declaration = pointer === undefined ? undefined : valueAtPointer(session.value, pointer);
+      const action = actionById('core.extends');
+      if (pointer === undefined || !selectControl?.value || !isRecord(declaration) || !action) return;
+      const current = typeof declaration.$extends === 'string' ? [declaration.$extends] : Array.isArray(declaration.$extends) ? declaration.$extends.filter((entry): entry is string => typeof entry === 'string') : [];
+      const next = [...current, selectControl.value];
+      void applyCommand(action.create(pointer, next)).then((error) => error && setInlineStatus(root, pointer, error));
+    });
     root.querySelectorAll('[data-inline-definition-delete]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
       const pointer = button.dataset.inlineDefinitionDelete;
       const action = actionById('definition.delete');
@@ -1214,12 +1411,16 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     }));
     root.querySelectorAll('[data-choice-add]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
       const pointer = button.dataset.choiceAdd;
-      const name = (button.closest('.js-choice-editor')?.querySelector('[data-choice-add-name]') as HTMLInputElement | null)?.value.trim() ?? '';
-      const typeValue = (button.closest('.js-choice-editor')?.querySelector('[data-choice-add-type]') as HTMLSelectElement | null)?.value;
-      const schema = typeValue?.startsWith('ref:#') ? { type: { $ref: typeValue.slice(4) } } : typeValue && isCreatableType(typeValue) ? compositeSchema(typeValue) : undefined;
-      const action = actionById('choice.add');
-      if (pointer === undefined || !name || !schema || !action) return;
-      void applyCommand(action.create(pointer, schema, name)).then((error) => error && setInlineStatus(root, pointer, error));
+      if (pointer === undefined) return;
+      const sheet = button.closest('.js-sheet') as HTMLElement | null;
+      const name = (sheet?.querySelector('[data-choice-add-name]') as HTMLInputElement | null)?.value;
+      const type = (sheet?.querySelector('[data-choice-add-type]') as HTMLSelectElement | null)?.value;
+      let schema: unknown = { type: 'string' };
+      if (type) {
+        try { schema = decodeInlineTypeMember(type); } catch { schema = { type: 'string' }; }
+        if (typeof schema === 'string') schema = { type: schema };
+      }
+      void addInlineChoice(pointer, name, schema).then((error) => error && setInlineStatus(root, pointer, error));
     }));
     root.querySelectorAll('[data-inline-namespace-name]').forEach((input: HTMLInputElement) => input.addEventListener('change', () => {
       const pointer = input.dataset.inlineNamespaceName;
@@ -1360,29 +1561,433 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     };
     root.querySelectorAll('[data-facet-add]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
       const pointer = button.dataset.facetAdd;
-      const select = pointer === undefined ? null : root.querySelector(`[data-facet-select="${cssAttributeValue(pointer)}"]`) as HTMLSelectElement | null;
+      const select = pointer === undefined ? null : button.closest('.js-detail-add')?.querySelector('[data-facet-select]') as HTMLSelectElement | null;
       if (pointer === undefined || !select?.value) return;
       const action = actionById(select.value);
       if (!action) return;
+      if (STRUCTURED_SCHEMA_FACETS.has(action.id)) {
+        void applyStructuredFacet(action, pointer, JSON.stringify({ type: 'string' }));
+        return;
+      }
       void ensureInlineActionCapability(action, pointer).then((error) => {
         if (error) { setInlineStatus(root, pointer, error); return; }
         pendingPropertyFields.add(inlineFieldKey(pointer, action.id));
         render();
       });
     }));
+    root.querySelectorAll('[data-facet-add-action]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
+      const pointer = button.dataset.facetPointer;
+      const action = actionById(button.dataset.facetAddAction ?? '');
+      if (pointer === undefined || !action) return;
+      if (isCompositionArrayAction(action)) {
+        void applyStructuredFacet(action, pointer, JSON.stringify([{ type: 'string' }]));
+        return;
+      }
+      if (action.id === 'composition.not') {
+        void applyStructuredFacet(action, pointer, JSON.stringify({ type: 'string' }));
+        return;
+      }
+      if (action.id === 'composition.conditional') {
+        showActionEditor(root, action, pointer, session, catalogRegistry, applyCommand, button);
+        return;
+      }
+      if (STRUCTURED_SCHEMA_FACETS.has(action.id)) {
+        void applyStructuredFacet(action, pointer, JSON.stringify({ type: 'string' }));
+        return;
+      }
+      void ensureInlineActionCapability(action, pointer).then((error) => {
+        if (error) { setInlineStatus(root, pointer, error); return; }
+        pendingPropertyFields.add(inlineFieldKey(pointer, action.id));
+        render();
+      });
+    }));
+    root.querySelectorAll('[data-composition-branch-add]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
+      const pointer = button.dataset.facetPointer;
+      const action = actionById(button.dataset.compositionBranchAdd ?? '');
+      const target = pointer === undefined ? undefined : valueAtPointer(session.value, pointer);
+      const current = action?.keyword && isSchemaRecord(target) && Array.isArray(target[action.keyword]) ? target[action.keyword] as unknown[] : [];
+      if (pointer === undefined || !action) return;
+      void applyCommand(action.create(pointer, [...current, { type: 'string' }])).then((error) => error && setInlineStatus(root, pointer, error));
+    }));
+    root.querySelectorAll('[data-composition-branch-remove]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
+      const pointer = button.dataset.facetPointer;
+      const action = actionById(button.dataset.compositionAction ?? '');
+      const target = pointer === undefined ? undefined : valueAtPointer(session.value, pointer);
+      const current = action?.keyword && isSchemaRecord(target) && Array.isArray(target[action.keyword]) ? target[action.keyword] as unknown[] : [];
+      const index = Number(button.dataset.compositionBranchRemove);
+      if (pointer === undefined || !action || !Number.isInteger(index)) return;
+      const next = current.filter((_, itemIndex) => itemIndex !== index);
+      const command = next.length ? action : actionById(action.removesActionId ?? `${action.id}.remove`);
+      if (command) void applyCommand(command.create(pointer, next.length ? next : undefined)).then((error) => error && setInlineStatus(root, pointer, error));
+    }));
     root.querySelectorAll('[data-facet-advanced]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
       const action = actionById(button.dataset.facetAdvanced ?? '');
       const pointer = button.dataset.facetPointer;
       if (action && pointer !== undefined) showActionEditor(root, action, pointer, session, catalogRegistry, applyCommand, button);
     }));
-    root.querySelectorAll('[data-facet-control]').forEach((control: HTMLInputElement | HTMLTextAreaElement) => control.addEventListener('change', () => {
+    root.querySelectorAll('[data-facet-control]').forEach((control: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement) => control.addEventListener('change', () => {
       const pointer = control.dataset.facetPointer;
       const action = actionById(control.dataset.facetAction ?? '');
       if (pointer === undefined || !action) return;
       const raw = control.dataset.valueKind === 'boolean' ? String((control as HTMLInputElement).checked) : control.value.trim();
-      if (control.dataset.valueKind !== 'boolean' && raw === '') return;
+      const current = valueAtPointer(session.value, pointer) as Readonly<Record<string, unknown>> | undefined;
+      const authored = action.keyword !== undefined && current?.[action.keyword] !== undefined;
+      const effectiveDefault = control.dataset.effectiveDefault;
+      if (effectiveDefault !== undefined && raw === effectiveDefault) {
+        if (!authored) return;
+        const removeAction = actionById(action.removesActionId ?? `${action.id}.remove`);
+        if (removeAction) void applyCommand(removeAction.create(pointer, undefined)).then((error) => error && setInlineStatus(root, pointer, error));
+        return;
+      }
+      if (control.dataset.valueKind !== 'boolean' && raw === '') {
+        if (!authored) return;
+        const removeAction = actionById(action.removesActionId ?? `${action.id}.remove`);
+        if (removeAction) void applyCommand(removeAction.create(pointer, undefined)).then((error) => error && setInlineStatus(root, pointer, error));
+        return;
+      }
       void applyStructuredFacet(action, pointer, raw, (control as HTMLInputElement).checked);
     }));
+    root.querySelectorAll('[data-additional-properties-policy]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
+      const pointer = button.dataset.facetPointer;
+      const action = actionById('core.additional-properties');
+      const policy = button.dataset.additionalPropertiesPolicy;
+      if (pointer === undefined || !action || !policy) return;
+      if (policy === 'schema') {
+        const control = button.closest('[data-additional-properties-control]');
+        control?.querySelectorAll('[data-additional-properties-policy]').forEach((candidate: HTMLElement) => candidate.setAttribute('aria-pressed', String(candidate === button)));
+        const constraints = control?.querySelector('[data-additional-properties-constraints]') as HTMLElement | null;
+        if (constraints) constraints.hidden = false;
+        (constraints?.querySelector('select') as HTMLSelectElement | null)?.focus();
+        return;
+      }
+      if (policy === 'unspecified') {
+        const removeAction = actionById(action.removesActionId ?? `${action.id}.remove`);
+        if (removeAction) void applyCommand(removeAction.create(pointer, undefined)).then((error) => error && setInlineStatus(root, pointer, error));
+        return;
+      }
+      void applyStructuredFacet(action, pointer, policy);
+    }));
+    root.querySelectorAll('[data-additional-properties-schema]').forEach((control: HTMLSelectElement) => control.addEventListener('change', () => {
+      const pointer = control.dataset.facetPointer;
+      const action = actionById('core.additional-properties');
+      if (pointer === undefined || !action || !control.value) return;
+      void applyStructuredFacet(action, pointer, control.value);
+    }));
+    root.querySelectorAll('[data-schema-qualifier-apply]').forEach((select: HTMLSelectElement) => select.addEventListener('change', () => {
+      const pointer = select.dataset.facetPointer;
+      const action = actionById(select.dataset.schemaQualifierApply ?? '');
+      if (pointer === undefined || !action || !select.value) return;
+      void applyStructuredFacet(action, pointer, JSON.stringify({ type: select.value }));
+    }));
+    root.querySelectorAll('[data-enum-editor]').forEach((container: HTMLElement) => {
+      const pointer = container.dataset.enumEditor;
+      const action = actionById('core.enum');
+      const schema = pointer === undefined ? undefined : valueAtPointer(session.value, pointer);
+      const type = container.dataset.enumType;
+      if (pointer === undefined || !action || !type || !isSchemaRecord(schema)) return;
+      const readValues = (): unknown[] => (Array.from(container.querySelectorAll('[data-enum-value]')) as HTMLElement[])
+        .map((token) => JSON.parse(token.dataset.enumValue ?? 'null'));
+      const commit = async (values: readonly unknown[]): Promise<void> => {
+        if (schema.altenums !== undefined && JSON.stringify(values) !== JSON.stringify(schema.enum)) {
+          setInlineStatus(root, pointer, 'Remove alternate enum representations before changing enum values.');
+          return;
+        }
+        if (!values.every((value) => coreScalarValueValid(type, value, schema))) {
+          setInlineStatus(root, pointer, `Enter values that match ${type}.`);
+          return;
+        }
+        if (new Set(values.map((value) => JSON.stringify(value))).size !== values.length) {
+          setInlineStatus(root, pointer, 'Enum values must be unique.');
+          return;
+        }
+        const command = values.length ? action : actionById(action.removesActionId ?? 'core.enum.remove');
+        if (!command) return;
+        const capabilityError = await ensureInlineActionCapability(command, pointer);
+        if (capabilityError) { setInlineStatus(root, pointer, capabilityError); return; }
+        const error = await applyCommand(command.create(pointer, values.length ? values : undefined));
+        if (error) { setInlineStatus(root, pointer, error); return; }
+        pendingPropertyFields.delete(inlineFieldKey(pointer, action.id));
+      };
+      container.querySelectorAll('[data-enum-remove]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
+        const index = Number(button.dataset.enumRemove);
+        try { void commit(readValues().filter((_, valueIndex) => valueIndex !== index)); }
+        catch (error) { setInlineStatus(root, pointer, error instanceof Error ? error.message : String(error)); }
+      }));
+      const input = container.querySelector('[data-enum-new-value]') as HTMLInputElement | null;
+      const addValues = (): void => {
+        if (!input?.value.trim()) return;
+        try {
+          const additions = input.value.split(',').map((entry: string) => entry.trim()).filter(Boolean).map((entry: string) => enumValueFromRaw(type, entry));
+          if (!additions.length) return;
+          void commit([...readValues(), ...additions]);
+        }
+        catch (error) { setInlineStatus(root, pointer, error instanceof Error ? error.message : String(error)); }
+      };
+      input?.addEventListener('change', addValues);
+      input?.addEventListener('keydown', (event: KeyboardEvent) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        addValues();
+      });
+      container.querySelector('[data-enum-add]')?.addEventListener('click', addValues);
+    });
+    root.querySelectorAll('[data-const-control][data-const-type]').forEach((control: HTMLInputElement | HTMLSelectElement) => control.addEventListener('change', () => {
+      const pointer = control.dataset.facetPointer;
+      const action = actionById('core.const');
+      const schema = pointer === undefined ? undefined : valueAtPointer(session.value, pointer);
+      const type = control.dataset.constType;
+      if (pointer === undefined || !action || !type || !isSchemaRecord(schema)) return;
+      if (control.value === '') {
+        if (schema.const === undefined) return;
+        const removeAction = actionById(action.removesActionId ?? 'core.const.remove');
+        if (removeAction) void applyCommand(removeAction.create(pointer, undefined)).then((error) => error && setInlineStatus(root, pointer, error));
+        return;
+      }
+      let value: unknown;
+      try { value = type === 'null' ? null : enumValueFromControl(type, control); }
+      catch (error) { setInlineStatus(root, pointer, error instanceof Error ? error.message : String(error)); return; }
+      void applyCommand(action.create(pointer, value)).then((error) => error && setInlineStatus(root, pointer, error));
+    }));
+    root.querySelectorAll('[data-localized-descriptions]').forEach((container: HTMLElement) => {
+      const pointer = container.dataset.localizedDescriptions;
+      const action = actionById('localized-descriptions.descriptions');
+      if (pointer === undefined || !action) return;
+      const commit = async (): Promise<void> => {
+        const descriptions: Record<string, string> = {};
+        container.querySelectorAll('[data-localized-description-row]').forEach((row: HTMLElement) => {
+          const locale = (row.querySelector('[data-description-locale]') as HTMLInputElement | null)?.value.trim() ?? '';
+          const description = (row.querySelector('[data-description-value]') as HTMLInputElement | null)?.value.trim() ?? '';
+          if (locale && description) descriptions[locale] = description;
+        });
+        const command = actionById(Object.keys(descriptions).length ? action.id : action.removesActionId ?? '');
+        if (command) {
+          const error = await applyCommand(command.create(pointer, Object.keys(descriptions).length ? descriptions : undefined));
+          if (error) setInlineStatus(root, pointer, error);
+        }
+      };
+      container.querySelectorAll('[data-description-locale],[data-description-value]').forEach((input: HTMLInputElement) => input.addEventListener('change', () => { void commit(); }));
+      container.querySelectorAll('[data-description-remove]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
+        button.closest('[data-localized-description-row]')?.remove();
+        void commit();
+      }));
+    });
+    root.querySelectorAll('[data-alternate-names]').forEach((container: HTMLElement) => {
+      const pointer = container.dataset.alternateNames;
+      const action = actionById('alternate-names.altnames');
+      if (pointer === undefined || !action) return;
+      const commit = async (): Promise<void> => {
+        const names: Record<string, string> = {};
+        container.querySelectorAll('[data-alternate-name-row]').forEach((row: HTMLElement) => {
+          const target = (row.querySelector('[data-alternate-name-target]') as HTMLInputElement | null)?.value.trim() ?? '';
+          const name = (row.querySelector('[data-alternate-name-value]') as HTMLInputElement | null)?.value.trim() ?? '';
+          if (target && name) names[target] = name;
+        });
+        const command = actionById(Object.keys(names).length ? action.id : action.removesActionId ?? '');
+        if (command) {
+          const error = await applyCommand(command.create(pointer, Object.keys(names).length ? names : undefined));
+          if (error) setInlineStatus(root, pointer, error);
+        }
+      };
+      container.querySelectorAll('[data-alternate-name-target],[data-alternate-name-value]').forEach((input: HTMLInputElement) => input.addEventListener('change', () => { void commit(); }));
+      container.querySelectorAll('[data-alternate-name-remove]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
+        button.closest('[data-alternate-name-row]')?.remove();
+        void commit();
+      }));
+    });
+    root.querySelectorAll('[data-alternate-enums]').forEach((container: HTMLElement) => {
+      const pointer = container.dataset.alternateEnums;
+      const action = actionById('alternate-enums.altenums');
+      if (pointer === undefined || !action) return;
+      const commit = async (): Promise<void> => {
+        const representations: Record<string, Record<string, string>> = {};
+        let duplicatePurpose: string | undefined;
+        container.querySelectorAll('[data-alternate-enum-purpose]').forEach((section: HTMLElement) => {
+          const purpose = (section.querySelector('[data-alternate-enum-purpose-name]') as HTMLInputElement | null)?.value.trim() ?? '';
+          if (!purpose) return;
+          if (Object.prototype.hasOwnProperty.call(representations, purpose)) {
+            duplicatePurpose = purpose;
+            return;
+          }
+          representations[purpose] = Object.fromEntries(
+            [...section.querySelectorAll('[data-alternate-enum-value]')].map((input: HTMLInputElement) => [input.dataset.alternateEnumValue ?? '', input.value]),
+          );
+        });
+        if (duplicatePurpose) {
+          setInlineStatus(root, pointer, `Duplicate alternate-enum purpose: ${duplicatePurpose}.`);
+          return;
+        }
+        const command = actionById(Object.keys(representations).length ? action.id : action.removesActionId ?? '');
+        if (command) {
+          const error = await applyCommand(command.create(pointer, Object.keys(representations).length ? representations : undefined));
+          if (error) setInlineStatus(root, pointer, error);
+        }
+      };
+      container.querySelectorAll('[data-alternate-enum-purpose-name],[data-alternate-enum-value]').forEach((input: HTMLInputElement) => input.addEventListener('change', () => { void commit(); }));
+      container.querySelectorAll('[data-alternate-enum-purpose-remove]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
+        button.closest('[data-alternate-enum-purpose]')?.remove();
+        void commit();
+      }));
+    });
+    root.querySelectorAll('[data-dependent-required]').forEach((container: HTMLElement) => {
+      const pointer = container.dataset.dependentRequired;
+      const action = actionById('validation.dependentRequired');
+      if (pointer === undefined || !action) return;
+      const commit = async (): Promise<void> => {
+        const dependencies: Record<string, string[]> = {};
+        for (const row of [...container.querySelectorAll('[data-dependent-required-row]')] as HTMLElement[]) {
+          const trigger = (row.querySelector('[data-dependent-trigger]') as HTMLInputElement | null)?.value.trim() ?? '';
+          if (!trigger) continue;
+          if (Object.prototype.hasOwnProperty.call(dependencies, trigger)) {
+            setInlineStatus(root, pointer, `Duplicate dependentRequired trigger: ${trigger}.`);
+            return;
+          }
+          const names: string[] = [];
+          for (const part of ((row.querySelector('[data-dependent-properties]') as HTMLInputElement | null)?.value ?? '').split(',')) {
+            const name = part.trim();
+            if (name) names.push(name);
+          }
+          dependencies[trigger] = [...new Set(names)];
+        }
+        if (Object.keys(dependencies).length) {
+          await applyStructuredFacet(action, pointer, JSON.stringify(dependencies));
+          return;
+        }
+        const remove = actionById(action.removesActionId ?? '');
+        const owner = valueAtPointer(session.value, pointer);
+        if (remove && isRecord(owner) && Object.prototype.hasOwnProperty.call(owner, 'dependentRequired')) {
+          const error = await applyCommand(remove.create(pointer, undefined));
+          if (error) setInlineStatus(root, pointer, error);
+        }
+      };
+      container.querySelectorAll('[data-dependent-trigger],[data-dependent-properties]').forEach((input: HTMLInputElement) => input.addEventListener('change', () => { void commit(); }));
+      container.querySelectorAll('[data-dependent-remove]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
+        button.closest('[data-dependent-required-row]')?.remove();
+        void commit();
+      }));
+    });
+    root.querySelectorAll('[data-regex-schema-map]').forEach((container: HTMLElement) => {
+      const pointer = container.dataset.regexSchemaMap;
+      const action = actionById(container.dataset.regexSchemaAction ?? '');
+      const keyword = action?.keyword;
+      if (pointer === undefined || !action || !keyword) return;
+      const currentMap = (): Record<string, unknown> => {
+        const owner = valueAtPointer(session.value, pointer);
+        const current = isRecord(owner) ? owner[keyword] : undefined;
+        return isRecord(current) ? { ...current } : {};
+      };
+      container.querySelector('[data-regex-schema-new-type]')?.addEventListener('change', (event: Event) => {
+        const select = event.currentTarget as HTMLSelectElement;
+        select.dataset.selectedType = select.value;
+      });
+      const applyMap = async (next: Record<string, unknown>): Promise<void> => {
+        if (Object.keys(next).length) {
+          await applyStructuredFacet(action, pointer, JSON.stringify(next));
+          return;
+        }
+        const remove = actionById(action.removesActionId ?? '');
+        if (remove) {
+          const error = await applyCommand(remove.create(pointer, undefined));
+          if (error) setInlineStatus(root, pointer, error);
+        }
+      };
+      container.querySelectorAll('[data-regex-pattern-input]').forEach((input: HTMLInputElement) => input.addEventListener('change', () => {
+        const row = input.closest('[data-regex-schema-row]') as HTMLElement | null;
+        const previous = row?.dataset.regexPattern ?? '';
+        const pattern = input.value;
+        if (!previous || !pattern || previous === pattern) return;
+        const next = currentMap();
+        if (Object.prototype.hasOwnProperty.call(next, pattern)) {
+          setInlineStatus(root, pointer, `Pattern ${pattern} already exists.`);
+          return;
+        }
+        next[pattern] = next[previous];
+        delete next[previous];
+        void applyMap(next);
+      }));
+      container.querySelectorAll('[data-regex-schema-remove]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
+        const pattern = (button.closest('[data-regex-schema-row]') as HTMLElement | null)?.dataset.regexPattern;
+        if (!pattern) return;
+        const next = currentMap();
+        delete next[pattern];
+        void applyMap(next);
+      }));
+      container.querySelector('[data-regex-schema-add]')?.addEventListener('click', () => {
+        const pattern = (container.querySelector('[data-regex-schema-new-pattern]') as HTMLInputElement | null)?.value ?? '';
+        const typeControl = container.querySelector('[data-regex-schema-new-type]') as HTMLSelectElement | null;
+        const type = typeControl?.dataset.selectedType ?? 'string';
+        if (!pattern) {
+          setInlineStatus(root, pointer, 'Enter an ECMAScript pattern.');
+          return;
+        }
+        const next = currentMap();
+        if (Object.prototype.hasOwnProperty.call(next, pattern)) {
+          setInlineStatus(root, pointer, `Pattern ${pattern} already exists.`);
+          return;
+        }
+        next[pattern] = compositeSchema(type);
+        void applyMap(next);
+      });
+    });
+    root.querySelectorAll('[data-coordinate-reference-system]').forEach((container: HTMLElement) => {
+      const pointer = container.dataset.coordinateReferenceSystem;
+      const action = actionById('semantic.coordinateReferenceSystem');
+      if (pointer === undefined || !action) return;
+      const properties = crsPropertyNamesAtPointer(session.value, pointer);
+      const value = (): Record<string, unknown> | undefined => {
+        const referenceText = (container.querySelector('[data-crs-reference]') as HTMLInputElement | null)?.value.trim() ?? '';
+        const kind = (container.querySelector('[data-crs-kind]') as HTMLInputElement | null)?.value.trim() ?? '';
+        const coordinates = [...container.querySelectorAll('[data-crs-coordinate]')].map((select) => (select as HTMLSelectElement).value).filter(Boolean);
+        if (!referenceText || !kind || coordinates.length === 0 || new Set(coordinates).size !== coordinates.length) return undefined;
+        const reference: unknown = referenceText.startsWith('#/') ? { $ref: referenceText } : referenceText;
+        return { reference, kind, coordinates };
+      };
+      const refresh = (): void => {
+        const apply = container.querySelector('[data-crs-apply]') as HTMLButtonElement | null;
+        if (apply) apply.disabled = value() === undefined;
+        const selected = new Set([...container.querySelectorAll('[data-crs-coordinate]')].map((select) => (select as HTMLSelectElement).value).filter(Boolean));
+        const add = container.querySelector('[data-crs-coordinate-add-select]') as HTMLSelectElement | null;
+        if (add) {
+          const previous = add.value;
+          add.innerHTML = `<option value="">Choose property</option>${properties.filter((property) => !selected.has(property)).map((property) => `<option value="${escapeAttribute(property)}">${escapeHtml(property)}</option>`).join('')}`;
+          add.value = selected.has(previous) ? '' : previous;
+        }
+        const addButton = container.querySelector('[data-crs-coordinate-add]') as HTMLButtonElement | null;
+        if (addButton) addButton.disabled = selected.size >= properties.length;
+      };
+      const bindCoordinateRow = (row: HTMLElement): void => {
+        row.querySelector('[data-crs-coordinate]')?.addEventListener('change', refresh);
+        row.querySelector('[data-crs-coordinate-remove]')?.addEventListener('click', () => {
+          row.remove();
+          refresh();
+        });
+        row.querySelector('[data-crs-coordinate-move="up"]')?.addEventListener('click', () => {
+          const previous = row.previousElementSibling;
+          if (previous?.matches('[data-crs-coordinate-row]')) previous.before(row);
+        });
+        row.querySelector('[data-crs-coordinate-move="down"]')?.addEventListener('click', () => {
+          const next = row.nextElementSibling;
+          if (next?.matches('[data-crs-coordinate-row]')) next.after(row);
+        });
+      };
+      container.querySelectorAll('[data-crs-reference],[data-crs-kind]').forEach((control: HTMLElement) => control.addEventListener('change', refresh));
+      container.querySelectorAll('[data-crs-coordinate-row]').forEach((row: HTMLElement) => bindCoordinateRow(row));
+      container.querySelector('[data-crs-apply]')?.addEventListener('click', () => {
+        const next = value();
+        if (next) void applyCommand(action.create(pointer, next)).then((error) => error && setInlineStatus(root, pointer, error));
+      });
+      container.querySelector('[data-crs-coordinate-add]')?.addEventListener('click', () => {
+        const add = container.querySelector('[data-crs-coordinate-add-select]') as HTMLSelectElement | null;
+        if (!add?.value) return;
+        const coordinates = container.querySelector('[data-crs-coordinates]');
+        coordinates?.querySelector('.js-detail-empty')?.remove();
+        coordinates?.insertAdjacentHTML('beforeend', coordinateReferenceSystemRow(add.value, properties, true));
+        const row = coordinates?.lastElementChild;
+        if (row instanceof HTMLElement) bindCoordinateRow(row);
+        add.value = '';
+        refresh();
+      });
+      refresh();
+    });
     root.querySelectorAll('[data-facet-catalog]').forEach((field: HTMLElement) => {
       const pointer = field.dataset.facetPointer;
       const action = actionById(field.dataset.facetCatalog ?? '');
@@ -1390,8 +1995,21 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       if (pointer === undefined || !action || !status) return;
       wireCatalogControl(field, action, session, catalogRegistry, status, () => {
         const input = field.querySelector('[data-catalog-value]') as HTMLInputElement | null;
-        if (input) void applyStructuredFacet(action, pointer, input.value);
-      });
+        const crs = field.closest('[data-coordinate-reference-system]');
+        if (input && crs) {
+          try {
+            const selected = JSON.parse(input.value) as Record<string, unknown>;
+            const reference = selected.reference;
+            const referenceInput = crs.querySelector('[data-crs-reference]') as HTMLInputElement | null;
+            const kindInput = crs.querySelector('[data-crs-kind]') as HTMLInputElement | null;
+            if (referenceInput) referenceInput.value = typeof reference === 'string' ? reference : isRecord(reference) && typeof reference.$ref === 'string' ? reference.$ref : '';
+            if (kindInput && typeof selected.kind === 'string') kindInput.value = selected.kind;
+            referenceInput?.dispatchEvent(new Event('change', { bubbles: true }));
+          } catch {
+            setInlineStatus(root, pointer, 'The selected CRS catalog value is invalid.');
+          }
+        } else if (input) void applyStructuredFacet(action, pointer, input.value);
+      }, pointer);
     });
     root.querySelectorAll('[data-facet-remove]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
       const pointer = button.dataset.facetPointer;
@@ -1417,8 +2035,9 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
         pendingPropertyFields.add(inlineFieldKey(pointer, actionId));
         render();
         queueMicrotask(() => {
-          const details = root.querySelector(`[data-property-editor="${cssAttributeValue(pointer)}"] .js-property-details`) as HTMLElement | null;
-          (details?.querySelector(`[data-inline-field-action="${cssAttributeValue(actionId)}"] input,[data-inline-field-action="${cssAttributeValue(actionId)}"] textarea`) as HTMLElement | null)?.focus();
+          const field = root.querySelector(`[data-property-editor="${cssAttributeValue(pointer)}"] [data-inline-field-action="${cssAttributeValue(actionId)}"]`) as HTMLElement | null;
+          field?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+          (field?.querySelector('input:not([type="hidden"]),textarea,select,button') as HTMLElement | null)?.focus();
         });
       });
     }));
@@ -1579,7 +2198,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       });
     });
     root.querySelector('[data-conversion-load]')?.addEventListener('click', loadConversionCommands);
-    root.querySelector('[data-conversion-reset]')?.addEventListener('click', () => {
+    ([...root.querySelectorAll('[data-conversion-reset]')] as HTMLButtonElement[]).forEach((button) => button.addEventListener('click', () => {
       const activeRequest = conversionRequestId;
       conversionGeneration += 1;
       conversionRequestId = undefined;
@@ -1587,9 +2206,10 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       conversionSource = undefined;
       conversionResult = undefined;
       conversionStatus = '';
+      conversionOptionValues = {};
       if (activeRequest && services?.cancelConversion) void services.cancelConversion(activeRequest).catch(() => undefined);
       render();
-    });
+    }));
     root.querySelectorAll('[data-conversion-command]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
       const activeRequest = conversionRequestId;
       conversionGeneration += 1;
@@ -1614,12 +2234,22 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       conversionSource = undefined;
       conversionResult = undefined;
       conversionStatus = '';
+      conversionOptionValues = {};
+      startConversionChooserOpen = false;
       startConversionDialogOpen = true;
       if (activeRequest && services?.cancelConversion) void services.cancelConversion(activeRequest).catch(() => undefined);
       if (!conversionManifest) loadConversionCommands();
       else render();
-      queueMicrotask(() => (root.querySelector(`[data-start-command="${cssAttributeValue(commandId)}"] [data-conversion-source],[data-start-command="${cssAttributeValue(commandId)}"] [data-conversion-option],[data-start-command="${cssAttributeValue(commandId)}"] [data-start-conversion-close]`) as HTMLElement | null)?.focus());
+      focusStartConversionDialogPrimary();
+      queueMicrotask(() => {
+        const dialog = root.querySelector(`[data-start-command="${cssAttributeValue(commandId)}"]`) as HTMLElement | null;
+        const target = dialog?.querySelector('[data-conversion-source]') as HTMLElement | null
+          ?? dialog?.querySelector('[data-conversion-option]') as HTMLElement | null
+          ?? dialog?.querySelector('[data-start-conversion-close]') as HTMLElement | null;
+        target?.focus();
+      });
     }));
+    root.querySelector('[data-start-conversion-chooser-close]')?.addEventListener('click', closeStartConversionChooser);
     root.querySelector('[data-start-conversion-close]')?.addEventListener('click', () => {
       const activeRequest = conversionRequestId;
       const commandId = conversionCommandId;
@@ -1629,9 +2259,20 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       startConversionDialogOpen = false;
       if (activeRequest && services?.cancelConversion) void services.cancelConversion(activeRequest).catch(() => undefined);
       render();
-      queueMicrotask(() => commandId && (root.querySelector(`[data-start-conversion-command="${cssAttributeValue(commandId)}"]`) as HTMLElement | null)?.focus());
+      queueMicrotask(() => {
+        const command = commandId ? root.querySelector(`[data-start-conversion-command="${cssAttributeValue(commandId)}"]`) as HTMLElement | null : null;
+        (command ?? root.querySelector('[data-chrome-command="import"]') as HTMLElement | null)?.focus();
+      });
     });
-    root.querySelector('[data-conversion-source]')?.addEventListener('click', () => {
+    root.querySelectorAll('[data-conversion-option]').forEach((control: HTMLInputElement | HTMLSelectElement) => {
+      const update = (): void => {
+        try { conversionOptionValues = { ...conversionOptionValues, ...readConversionOptions(root) }; }
+        catch { /* validation runs when the command is submitted */ }
+      };
+      control.addEventListener('input', update);
+      control.addEventListener('change', update);
+    });
+    ([...root.querySelectorAll('[data-conversion-source]')] as HTMLButtonElement[]).forEach((button) => button.addEventListener('click', () => {
       const command = conversionManifest?.commands.find((item) => item.id === conversionCommandId);
       if (!command || command.direction !== 'import' || !services?.selectConversionSource) return;
       const generation = ++conversionGeneration;
@@ -1649,14 +2290,14 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
         conversionResult = undefined;
         conversionStatus = source ? `Selected ${source.name}.` : 'Source selection was cancelled.';
         render();
-        queueMicrotask(() => (root.querySelector('[data-conversion-source]') as HTMLElement | null)?.focus());
+        queueMicrotask(() => (root.querySelector('[data-start-conversion-dialog] [data-conversion-source]') as HTMLElement | null)?.focus());
       }, (error) => {
         if (disposed || generation !== conversionGeneration || conversionCommandId !== commandId) return;
         conversionStatus = error instanceof Error ? error.message : String(error);
         render();
       });
-    });
-    root.querySelector('[data-conversion-run]')?.addEventListener('click', (event: Event) => {
+    }));
+    ([...root.querySelectorAll('[data-conversion-run]')] as HTMLButtonElement[]).forEach((button) => button.addEventListener('click', (event: Event) => {
       const command = conversionManifest?.commands.find((item) => item.id === conversionCommandId);
       if (!command || !services?.convert) return;
       if (command.direction === 'import' && conversionRequiresLocalSource(command) && !conversionSource) { conversionStatus = 'Choose a source file before importing.'; render(); return; }
@@ -1667,10 +2308,30 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
         const rawOptions = readConversionOptions(optionScope ?? root);
         const converter = conversionManifest?.converters.find((candidate) => candidate.id === command.converterId);
         conversionOptions = converter ? validateOptionValues(converter, rawOptions, command.optionNames) : rawOptions;
+        const reportConfigurationError = (message: string, optionName?: string): void => {
+          conversionStatus = message;
+          const scope = optionScope ?? root;
+          const status = scope.querySelector('[data-conversion-status]') as HTMLElement | null;
+          if (status) { status.textContent = message; status.setAttribute('role', 'alert'); }
+          const invalid = optionName ? scope.querySelector(`[data-conversion-option="${cssAttributeValue(optionName)}"]`) as HTMLInputElement | HTMLSelectElement | null : null;
+          invalid?.setAttribute('aria-invalid', 'true');
+          (invalid ?? scope.querySelector('[data-conversion-option]') as HTMLElement | null)?.focus();
+        };
+        if (command.availability === 'external-service') {
+          const missing = (command.availabilityRequirements ?? []).filter((name) => {
+            const value = conversionOptions[name];
+            return value === undefined || value === '' || Array.isArray(value) && value.length === 0;
+          });
+          if (missing.length) {
+            reportConfigurationError(`Missing configuration: ${missing.join(', ')}`, missing[0]);
+            return;
+          }
+        }
         const externalError = externalConversionConfigurationError(command, conversionOptions);
-        if (externalError) { conversionStatus = externalError; render(); return; }
+        if (externalError) { reportConfigurationError(externalError, command.cliCommand === 'k2s' ? 'kusto_uri' : undefined); return; }
       }
       catch (error) { conversionStatus = error instanceof Error ? error.message : String(error); render(); return; }
+      conversionOptionValues = conversionOptions;
       const generation = ++conversionGeneration;
       const requestId = `convert-${Date.now()}-${generation}`;
       conversionRequestId = requestId; conversionProgress = undefined; conversionResult = undefined; conversionStatus = 'Converting...'; render();
@@ -1695,17 +2356,17 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
         }
         if (generation !== conversionGeneration) return;
         render();
-        queueMicrotask(() => (root.querySelector('[data-conversion-run]') as HTMLElement | null)?.focus());
+        queueMicrotask(() => (root.querySelector('[data-start-conversion-dialog] [data-conversion-run]') ?? root.querySelector('[data-conversion-run]') as HTMLElement | null)?.focus());
       }, (error) => {
         if (disposed || generation !== conversionGeneration || conversionRequestId !== requestId) return;
         conversionRequestId = undefined;
         conversionProgress = undefined;
         conversionStatus = error instanceof Error ? error.message : String(error);
         render();
-        queueMicrotask(() => (root.querySelector('[data-conversion-run]') as HTMLElement | null)?.focus());
+        queueMicrotask(() => (root.querySelector('[data-start-conversion-dialog] [data-conversion-run]') ?? root.querySelector('[data-conversion-run]') as HTMLElement | null)?.focus());
       });
-    });
-    root.querySelector('[data-conversion-cancel]')?.addEventListener('click', () => {
+    }));
+    ([...root.querySelectorAll('[data-conversion-cancel]')] as HTMLButtonElement[]).forEach((button) => button.addEventListener('click', () => {
       if (!conversionRequestId || !services?.cancelConversion) return;
       const requestId = conversionRequestId;
       const generation = conversionGeneration;
@@ -1715,11 +2376,11 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
         conversionStatus = error instanceof Error ? error.message : String(error);
         render();
       });
-    });
-    root.querySelector('[data-conversion-open]')?.addEventListener('click', () => {
+    }));
+    ([...root.querySelectorAll('[data-conversion-open]')] as HTMLButtonElement[]).forEach((button) => button.addEventListener('click', () => {
       if (!conversionResult?.outputs.length || !services?.openGeneratedOutput) return;
       void services.openGeneratedOutput({ protocolVersion: PROTOCOL_VERSION, requestId: `open-${Date.now()}`, kind: 'open-generated-output', outputs: conversionResult.outputs }).then((result) => { conversionStatus = result.message ?? (result.opened ? 'Opened generated outputs.' : 'No generated outputs were opened.'); render(); }, (error) => { conversionStatus = error instanceof Error ? error.message : String(error); render(); });
-    });
+    }));
     const filterLibraryCatalog = (): void => {
       const query = librarySearch.trim().toLocaleLowerCase();
       let visible = 0;
@@ -2113,6 +2774,14 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     root.querySelector('[data-graph-forward]')?.addEventListener('click', () => { const view = semanticGraph.forward(); selectedPointer = view.selection?.pointer ?? undefined; fitGraphAfterRender = true; render(); });
     root.querySelector('[data-graph-home]')?.addEventListener('click', () => { const view = semanticGraph.home(); selectedPointer = view.selection?.pointer ?? undefined; fitGraphAfterRender = true; render(); });
     root.querySelector('[data-graph-out]')?.addEventListener('click', () => { const view = semanticGraph.drillOut(); selectedPointer = view.selection?.pointer ?? undefined; fitGraphAfterRender = true; render(); });
+    root.querySelectorAll('[data-graph-history]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
+      const index = Number(button.dataset.graphHistory);
+      if (!Number.isInteger(index)) return;
+      const view = semanticGraph.restore(index);
+      selectedPointer = view.selection?.pointer ?? undefined;
+      fitGraphAfterRender = true;
+      render();
+    }));
     root.querySelector('[data-graph-open-selection]')?.addEventListener('click', () => { const view = semanticGraph.openSelection(); selectedPointer = view.selection?.pointer ?? undefined; fitGraphAfterRender = true; render(); });
     root.querySelectorAll('[data-graph-add-relation]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
       selectedPointer = button.dataset.graphAddRelation;
@@ -2140,12 +2809,6 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       expandedPropertyPointer = selectedPointer.includes('/properties/') ? selectedPointer : expandedPropertyPointer;
       mode = 'design';
       lastRepresentationMode = 'design';
-      render();
-    }));
-    root.querySelectorAll('[data-graph-history]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
-      const view = semanticGraph.restore(Number(button.dataset.graphHistory));
-      selectedPointer = view.selection?.pointer ?? undefined;
-      fitGraphAfterRender = true;
       render();
     }));
     root.querySelector('.js-graph-toolbar')?.addEventListener('wheel', (event: Event) => event.preventDefault(), { passive: false });
@@ -2445,6 +3108,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     }, { passive: false });
     if (fitGraphAfterRender) {
       fitGraphAfterRender = false;
+      if (forceGraphOptions(semanticGraph.view()).mode === 'force') graphLayout.settle();
       graphNavigation.fit(graphFocusBounds(graph, graphLayout));
     }
     flushGraphGeometry();
@@ -2453,6 +3117,21 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     const pointer = selectedPointer ?? selectFallback(session.snapshot(), selectedPointer);
     if (pointer === undefined) return;
     showActionPalette(root, pointer, session, catalogRegistry, applyCommand, () => openSourceView(pointer));
+  };
+  const openSourceSearch = (replace: boolean): void => {
+    const action = replace ? 'editor.action.startFindReplaceAction' : 'actions.find';
+    if (mode !== 'source') {
+      pendingSourceEditorAction = action;
+      openSourceView(selectedPointer);
+      return;
+    }
+    if (!sourceEditor) {
+      pendingSourceEditorAction = action;
+      focusSourceAfterMount = true;
+      return;
+    }
+    sourceEditor.focus();
+    sourceEditor.trigger('json-structure', action, null);
   };
   const onKeyDown = (event: KeyboardEvent): void => {
     if (event.key === 'Escape' && root.querySelector('.js-drawer-open')) {
@@ -2463,6 +3142,10 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'p') {
       event.preventDefault();
       showCommandPalette();
+    } else if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && (event.key.toLowerCase() === 'f' || event.key.toLowerCase() === 'h')) {
+      if (sourceEditor?.hasTextFocus()) return;
+      event.preventDefault();
+      openSourceSearch(event.key.toLowerCase() === 'h');
     } else if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && !(event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement) && event.key.toLowerCase() === 'z') {
       event.preventDefault();
       undo();
@@ -2513,7 +3196,13 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
   };
   const markClean = (): void => { session.markClean(); };
   const isSourceEditorFocused = (): boolean => mode === 'source' && sourceEditor !== undefined;
-  return { setText, acknowledgeText, setTitle, setUri, getText: () => session.snapshot().text, get dirty() { return session.dirty; }, get canUndo() { return session.canUndo; }, get canRedo() { return session.canRedo; }, isSourceEditorFocused, undo, redo, markSaved, markClean, showCommandPalette, dispose: () => { disposed = true; instanceSourceGeneration += 1; conversionGeneration += 1; unsubscribeConversionProgress?.(); unsubscribeSemanticGraph(); if (synchronizedRender) clearTimeout(synchronizedRender); if (pendingGraphActivation) clearTimeout(pendingGraphActivation.timer); if (graphGeometryFrame !== undefined) window.cancelAnimationFrame(graphGeometryFrame); graphResizeObserver?.disconnect(); graphLayout.dispose(); graphMinimapLayout.dispose(); releaseDrawerTrap(); setCompactDrawerModal(root); window.removeEventListener('keydown', onKeyDown); disposeSourceModel(); container.innerHTML = ''; } };
+  const showImportDialog = (): void => {
+    startConversionChooserOpen = true;
+    if (!conversionManifest) loadConversionCommands();
+    else render();
+    queueMicrotask(() => (root.querySelector('[data-start-conversion-chooser] [data-start-conversion-command]') as HTMLElement | null)?.focus());
+  };
+  return { setText, acknowledgeText, setTitle, setUri, getText: () => session.snapshot().text, get dirty() { return session.dirty; }, get canUndo() { return session.canUndo; }, get canRedo() { return session.canRedo; }, isSourceEditorFocused, undo, redo, markSaved, markClean, showCommandPalette, dispose: () => { disposed = true; instanceSourceGeneration += 1; conversionGeneration += 1; unsubscribeConversionProgress?.(); unsubscribeSemanticGraph(); if (synchronizedRender) clearTimeout(synchronizedRender); if (pendingGraphActivation) clearTimeout(pendingGraphActivation.timer); if (graphGeometryFrame !== undefined) window.cancelAnimationFrame(graphGeometryFrame); graphResizeObserver?.disconnect(); graphLayout.dispose(); graphMinimapLayout.dispose(); releaseDrawerTrap(); releaseStartConversionTrap(); setCompactDrawerModal(root); window.removeEventListener('keydown', onKeyDown); disposeSourceModel(); container.innerHTML = ''; } };
 }
 
 interface LibraryWorkbenchState {
@@ -2530,14 +3219,14 @@ interface LibraryWorkbenchState {
   readonly currentDocumentUri?: string;
 }
 
-function mountAdvancedViews(root: HTMLElement, snapshot: DocumentSnapshot, definitionPointer: string | undefined, graph: ReturnType<typeof projectGraph>, mode: Mode, instanceText: string, instanceResult: InstanceValidationResult | undefined, impactDirection: ImpactDirection, selectedAddIns: readonly string[], refactoringPlan: RefactoringPlan | undefined, refactoringStatus: string, host: EditorServices | undefined, conversionManifest: ConversionCommandsManifest | undefined, conversionCommandId: string | undefined, conversionSource: ConversionSource | undefined, conversionResult: ConversionResult | undefined, conversionStatus: string, conversionProgress: ProgressEvent | undefined, conversionRequestId: string | undefined, libraryEntries: readonly LibraryEntry[] | undefined, librarySelector: 'pinned' | 'floating', libraryDocument: LibraryDocument | undefined, librarySelection: readonly string[], libraryOperation: LibraryOperation, libraryPlan: RefactoringPlan | undefined, libraryStatus: string, libraryState: LibraryWorkbenchState, libraryModalOpen: boolean, instanceRoots: readonly { readonly pointer: string; readonly label: string }[], instanceRootPointer: string | undefined, instanceSelection: CrossNavigationSelection | undefined, resolvedDocuments: readonly ResolvedSchemaDocument[] = [], targetNamespaces: readonly string[] = []): void {
+function mountAdvancedViews(root: HTMLElement, snapshot: DocumentSnapshot, definitionPointer: string | undefined, graph: ReturnType<typeof projectGraph>, mode: Mode, instanceText: string, instanceResult: InstanceValidationResult | undefined, impactDirection: ImpactDirection, selectedAddIns: readonly string[], refactoringPlan: RefactoringPlan | undefined, refactoringStatus: string, host: EditorServices | undefined, conversionManifest: ConversionCommandsManifest | undefined, conversionCommandId: string | undefined, conversionSource: ConversionSource | undefined, conversionResult: ConversionResult | undefined, conversionStatus: string, conversionProgress: ProgressEvent | undefined, conversionRequestId: string | undefined, libraryEntries: readonly LibraryEntry[] | undefined, librarySelector: 'pinned' | 'floating', libraryDocument: LibraryDocument | undefined, librarySelection: readonly string[], libraryOperation: LibraryOperation, libraryPlan: RefactoringPlan | undefined, libraryStatus: string, libraryState: LibraryWorkbenchState, libraryModalOpen: boolean, instanceRoots: readonly { readonly pointer: string; readonly label: string }[], instanceRootPointer: string | undefined, instanceSelection: CrossNavigationSelection | undefined, resolvedDocuments: readonly ResolvedSchemaDocument[] = [], targetNamespaces: readonly string[] = [], conversionOptionValues: ConversionOptionValues = {}): void {
   const sourcePanel = root.querySelector('.js-source-view');
-  sourcePanel?.insertAdjacentHTML('beforebegin', `<section class="js-view" data-panel-mode="analysis" ${mode === 'analysis' ? '' : 'hidden'}>${analysisView(snapshot, definitionPointer, graph, impactDirection, refactoringPlan, refactoringStatus, selectedAddIns, resolvedDocuments)}</section><section class="js-view" data-panel-mode="instance" ${mode === 'instance' ? '' : 'hidden'}>${instanceView(instanceText, instanceResult, instanceRoots, instanceRootPointer, instanceSelection)}</section><section class="js-view" data-panel-mode="conversion" ${mode === 'conversion' ? '' : 'hidden'}>${conversionView(host, conversionManifest, conversionCommandId, conversionSource, conversionResult, conversionStatus, conversionProgress, conversionRequestId)}</section>`);
+  sourcePanel?.insertAdjacentHTML('beforebegin', `<section class="js-view" data-panel-mode="analysis" ${mode === 'analysis' ? '' : 'hidden'}>${analysisView(snapshot, definitionPointer, graph, impactDirection, refactoringPlan, refactoringStatus, selectedAddIns, resolvedDocuments)}</section><section class="js-view" data-panel-mode="instance" ${mode === 'instance' ? '' : 'hidden'}>${instanceView(instanceText, instanceResult, instanceRoots, instanceRootPointer, instanceSelection)}</section><section class="js-view" data-panel-mode="conversion" ${mode === 'conversion' ? '' : 'hidden'}>${conversionView(host, conversionManifest, conversionCommandId, conversionSource, conversionResult, conversionStatus, conversionProgress, conversionRequestId, conversionOptionValues)}</section>`);
   root.querySelector('.js-shell')?.insertAdjacentHTML('beforeend', `<dialog class="js-library-dialog" data-library-dialog aria-label="Import from library"><div class="js-library-dialog-head"><strong>Import type library</strong><button data-library-close aria-label="Close library browser">${fluentIcon('dismiss')}</button></div>${renderLibraryBrowser({ requestBacked: Boolean(host?.libraryRequest), fallbackAvailable: Boolean(host?.listLibraryEntries && host.readLibraryDocument) }, libraryEntries, librarySelector, libraryDocument, librarySelection, libraryOperation, libraryPlan, libraryStatus, libraryState, { purpose: 'import', targetNamespaces })}</dialog>`);
   if (!libraryModalOpen) (root.querySelector('[data-library-dialog]') as DialogElement | null)?.removeAttribute('open');
 }
 
-export function conversionView(host: EditorServices | undefined, manifest: ConversionCommandsManifest | undefined, commandId: string | undefined, source: ConversionSource | undefined, result: ConversionResult | undefined, status: string, progress?: ProgressEvent, requestId?: string): string {
+export function conversionView(host: EditorServices | undefined, manifest: ConversionCommandsManifest | undefined, commandId: string | undefined, source: ConversionSource | undefined, result: ConversionResult | undefined, status: string, progress?: ProgressEvent, requestId?: string, currentOptionValues: ConversionOptionValues = {}): string {
   if (!host?.listConversionCommands || !host.convert) return '<div class="js-sheet"><h1>Conversion</h1><p class="js-description">This host does not provide conversion tools.</p></div>';
   const selected = manifest?.commands.find((command) => command.id === commandId)
     ?? manifest?.commands.find((command) => command.direction === 'export')
@@ -2545,7 +3234,8 @@ export function conversionView(host: EditorServices | undefined, manifest: Conve
   const converter = manifest?.converters.find((item) => item.id === selected?.converterId);
   const diagnostics = result?.diagnostics.map((diagnostic) => `<div class="js-problem"><span class="js-problem-${diagnostic.severity}">${fluentIcon(diagnostic.severity === 'error' ? 'errorCircle' : 'warning')}</span><span><span class="js-code">${escapeHtml(diagnostic.code)}</span> ${escapeHtml(diagnostic.message)}</span></div>`).join('') ?? '';
   const outputs = result?.outputs.map((output) => `<div class="js-analysis-row"><span>${escapeHtml(output.name)}</span><span class="js-code">${escapeHtml(output.uri)}</span></div>`).join('') ?? '';
-  const progressView = requestId ? `<div class="js-section-head"><progress max="100" value="${progress?.percent ?? 0}" aria-label="Conversion progress"></progress>${host.cancelConversion ? '<button data-conversion-cancel>Cancel</button>' : ''}</div>` : '';
+  const cancelling = status === 'Cancelling...';
+  const progressView = requestId ? `<div class="js-section-head" data-conversion-state="${cancelling ? 'cancelling' : 'running'}"><progress max="100" value="${progress?.percent ?? 0}" aria-label="Conversion progress" aria-valuetext="${escapeAttribute(progress?.message ?? status)}" aria-busy="true"></progress>${host.cancelConversion ? `<button data-conversion-cancel${cancelling ? ' disabled' : ''}>Cancel</button>` : ''}</div>` : '';
   const review = result?.review ? conversionReviewView(result.review) : '';
   const commandGroups = manifest ? (['export', 'import'] as const).map((direction) => {
     const commands = manifest.commands.filter((command) => command.direction === direction);
@@ -2557,19 +3247,24 @@ export function conversionView(host: EditorServices | undefined, manifest: Conve
   }).join('') : '';
   const sourcePicker = selected?.direction === 'import' ? conversionSourceControl(host, selected, source) : '';
   const commandOptions = selected && converter ? conversionOptionsForCommand(converter, selected) : [];
-  const configuration = selected ? `<section class="js-conversion-config"><div class="js-conversion-route"><div><span>From</span><strong>${escapeHtml(selected.sourceFormat)}</strong></div><span class="js-conversion-arrow" aria-hidden="true">${fluentIcon('arrowRight')}</span><div><span>To</span><strong>${escapeHtml(selected.targetFormat)}</strong></div></div>${sourcePicker}<fieldset><legend>Options</legend>${commandOptions.map(conversionOptionControl).join('') || '<p class="js-description">This converter has no options.</p>'}</fieldset><button data-conversion-run ${requestId || selected.direction === 'import' && conversionRequiresLocalSource(selected) && !source ? 'disabled' : ''} class="js-primary">${escapeHtml(conversionCommandAction(selected))}</button></section>` : '';
-  return `<div class="js-sheet js-conversion-sheet"><header class="js-type-head"><div><div class="js-eyebrow">Toolchain</div><h1>Convert</h1><p class="js-description">Choose an outcome, review its options, and write generated files to a directory you approve.</p></div><div class="js-actions"><button data-conversion-reset>Reset to defaults</button>${manifest ? '<button data-conversion-load title="Refresh conversion tools">Refresh</button>' : ''}</div></header>${manifest ? `<div class="js-conversion-layout"><div class="js-conversion-catalog">${commandGroups || '<p class="js-description">No conversion commands are installed.</p>'}</div>${configuration}</div>` : '<div class="js-conversion-loading" role="status">Loading conversion tools...</div>'}${progressView}<p role="status" aria-live="polite">${escapeHtml(status)}</p>${review}${result ? `<section><div class="js-section-head"><h2>Outputs (${result.outputs.length})</h2>${result.outputs.length && host.openGeneratedOutput ? '<button data-conversion-open>Open outputs</button>' : ''}</div>${outputs || '<p class="js-description">No output files were committed.</p>'}</section><section><h2>Diagnostics (${result.diagnostics.length})</h2>${diagnostics || '<p class="js-description">No conversion warnings or errors.</p>'}</section>` : ''}</div>`;
+  const requiredOptions = new Set(selected?.availabilityRequirements ?? []);
+  const configuration = selected ? `<section class="js-conversion-config"><div class="js-conversion-route"><div><span>From</span><strong>${escapeHtml(selected.sourceFormat)}</strong></div><span class="js-conversion-arrow" aria-hidden="true">${fluentIcon('arrowRight')}</span><div><span>To</span><strong>${escapeHtml(selected.targetFormat)}</strong></div></div>${sourcePicker}<fieldset><legend>Options</legend>${commandOptions.map((option, index) => conversionOptionControl(option, requiredOptions.has(option.name), currentOptionValues, index === 0)).join('') || '<p class="js-description">This converter has no options.</p>'}</fieldset><button data-conversion-run ${requestId || selected.direction === 'import' && conversionRequiresLocalSource(selected) && !source ? 'disabled' : ''} class="js-primary">${escapeHtml(conversionCommandAction(selected))}</button></section>` : '';
+  const resultState = result ? result.succeeded ? 'success' : 'failure' : undefined;
+  return `<div class="js-sheet js-conversion-sheet"><header class="js-type-head"><div><div class="js-eyebrow">Toolchain</div><h1>Convert</h1><p class="js-description">Choose an outcome, review its options, and write generated files to a directory you approve.</p></div><div class="js-actions"><button data-conversion-reset>Reset to defaults</button>${manifest ? '<button data-conversion-load title="Refresh conversion tools">Refresh</button>' : ''}</div></header>${manifest ? `<div class="js-conversion-layout"><div class="js-conversion-catalog">${commandGroups || '<p class="js-description">No conversion commands are installed.</p>'}</div>${configuration}</div>` : '<div class="js-conversion-loading" role="status">Loading conversion tools...</div>'}${progressView}<p role="status" aria-live="polite">${escapeHtml(status)}</p>${review}${result ? `<div data-conversion-state="${resultState}" data-conversion-result="${resultState}" aria-label="Conversion ${result.succeeded ? 'succeeded' : 'failed'}"></div><section><div class="js-section-head"><h2>Outputs (${result.outputs.length})</h2>${result.outputs.length && host.openGeneratedOutput ? '<button data-conversion-open>Open outputs</button>' : ''}</div>${outputs || '<p class="js-description">No output files were committed.</p>'}</section><section><h2>Diagnostics (${result.diagnostics.length})</h2>${diagnostics || '<p class="js-description">No conversion warnings or errors.</p>'}</section>` : ''}</div>`;
 }
 
-function startConversionDialog(host: EditorServices | undefined, manifest: ConversionCommandsManifest, commandId: string | undefined, source: ConversionSource | undefined, result: ConversionResult | undefined, status: string, progress?: ProgressEvent, requestId?: string): string {
+function startConversionDialog(host: EditorServices | undefined, manifest: ConversionCommandsManifest, commandId: string | undefined, source: ConversionSource | undefined, result: ConversionResult | undefined, status: string, progress?: ProgressEvent, requestId?: string, currentOptionValues: ConversionOptionValues = {}): string {
   const selected = directStructurizeImportCommands(manifest).find((command) => command.id === commandId);
-  if (!selected) return `<dialog class="js-start-conversion-dialog" data-start-conversion-dialog open><div class="js-start-conversion-dialog-head"><strong>Import existing schema or data</strong><button type="button" data-start-conversion-close aria-label="Close">${fluentIcon('dismiss')}</button></div><p class="js-description">Loading conversion options...</p></dialog>`;
+  if (!selected) return `<dialog class="js-start-conversion-dialog" data-start-conversion-dialog aria-labelledby="start-conversion-dialog-title" open><div class="js-start-conversion-dialog-head"><strong id="start-conversion-dialog-title">Import existing schema or data</strong><button type="button" data-start-conversion-close tabindex="-1" aria-label="Close">${fluentIcon('dismiss')}</button></div><p class="js-description">Loading conversion options...</p></dialog>`;
   const converter = manifest.converters.find((candidate) => candidate.id === selected.converterId);
   const options = converter ? conversionOptionsForCommand(converter, selected) : [];
-  const progressView = requestId ? `<div class="js-section-head"><progress max="100" value="${progress?.percent ?? 0}" aria-label="Conversion progress"></progress>${host?.cancelConversion ? '<button data-conversion-cancel>Cancel</button>' : ''}</div>` : '';
+  const requiredOptions = new Set(selected.availabilityRequirements ?? []);
+  const cancelling = status === 'Cancelling...';
+  const progressView = requestId ? `<div class="js-section-head" data-conversion-state="${cancelling ? 'cancelling' : 'running'}"><progress max="100" value="${progress?.percent ?? 0}" aria-label="Conversion progress" aria-valuetext="${escapeAttribute(progress?.message ?? status)}" aria-busy="true"></progress>${host?.cancelConversion ? `<button data-conversion-cancel${cancelling ? ' disabled' : ''}>Cancel</button>` : ''}</div>` : '';
   const outputs = result?.outputs.map((output) => `<div class="js-analysis-row"><span>${escapeHtml(output.name)}</span><span class="js-code">${escapeHtml(output.uri)}</span></div>`).join('') ?? '';
   const diagnostics = result?.diagnostics.map((diagnostic) => `<div class="js-problem"><span class="js-problem-${diagnostic.severity}">${fluentIcon(diagnostic.severity === 'error' ? 'errorCircle' : 'warning')}</span><span>${escapeHtml(diagnostic.message)}</span></div>`).join('') ?? '';
-  return `<dialog class="js-start-conversion-dialog" data-start-conversion-dialog data-start-command="${escapeAttribute(selected.id)}" open><div class="js-start-conversion-dialog-head"><span class="js-format-icon" data-format="${escapeAttribute(selected.sourceFormat)}" aria-hidden="true">${technologyIcon(selected.sourceFormat)}</span><span><strong>${escapeHtml(selected.label)}</strong><small>${escapeHtml(selected.cliCommand ?? selected.sourceFormat)}</small></span><button type="button" data-start-conversion-close aria-label="Close">${fluentIcon('dismiss')}</button></div><div class="js-start-conversion-dialog-body">${conversionSourceControl(host, selected, source)}<fieldset><legend>Import options</legend>${options.map(conversionOptionControl).join('') || '<p class="js-description">This importer has no options.</p>'}</fieldset><button data-conversion-run ${requestId || conversionRequiresLocalSource(selected) && !source ? 'disabled' : ''} class="js-primary">${escapeHtml(conversionCommandAction(selected))}</button>${progressView}<p class="js-action-status" role="status" aria-live="polite">${escapeHtml(status)}</p>${result ? `<section><div class="js-section-head"><h2>Outputs (${result.outputs.length})</h2>${result.outputs.length && host?.openGeneratedOutput ? '<button data-conversion-open>Open outputs</button>' : ''}</div>${outputs}${diagnostics}</section>` : ''}</div></dialog>`;
+  const resultState = result ? result.succeeded ? 'success' : 'failure' : undefined;
+  return `<dialog class="js-start-conversion-dialog" data-start-conversion-dialog data-start-command="${escapeAttribute(selected.id)}" aria-labelledby="start-conversion-dialog-title" open><div class="js-start-conversion-dialog-head"><span class="js-format-icon" data-format="${escapeAttribute(selected.sourceFormat)}" aria-hidden="true">${technologyIcon(selected.sourceFormat)}</span><span><strong id="start-conversion-dialog-title">${escapeHtml(selected.label)}</strong><small>${escapeHtml(selected.cliCommand ?? selected.sourceFormat)}</small></span><button type="button" data-start-conversion-close tabindex="-1" aria-label="Close">${fluentIcon('dismiss')}</button></div><div class="js-start-conversion-dialog-body"${requestId ? ' aria-busy="true"' : ''}>${conversionSourceControl(host, selected, source)}<fieldset><legend>Import options</legend>${options.map((option, index) => conversionOptionControl(option, requiredOptions.has(option.name), currentOptionValues, index === 0)).join('') || '<p class="js-description">This importer has no options.</p>'}</fieldset><button data-conversion-run ${requestId || conversionRequiresLocalSource(selected) && !source ? 'disabled' : ''} class="js-primary">${escapeHtml(conversionCommandAction(selected))}</button>${progressView}<p class="js-action-status" data-conversion-status role="${resultState === 'failure' ? 'alert' : 'status'}" aria-live="polite">${escapeHtml(status)}</p>${result ? `<div data-conversion-state="${resultState}" data-conversion-result="${resultState}" aria-label="Conversion ${result.succeeded ? 'succeeded' : 'failed'}"></div><section><div class="js-section-head"><h2>Outputs (${result.outputs.length})</h2>${result.outputs.length && host?.openGeneratedOutput ? '<button data-conversion-open>Open outputs</button>' : ''}</div>${outputs}${diagnostics}</section>` : ''}</div></dialog>`;
 }
 
 function conversionRequiresLocalSource(command: ConversionCommand): boolean {
@@ -2578,9 +3273,9 @@ function conversionRequiresLocalSource(command: ConversionCommand): boolean {
 
 function conversionSourceControl(host: EditorServices | undefined, command: ConversionCommand, source: ConversionSource | undefined): string {
   if (command.availability === 'external-service') {
-    return `<div class="js-conversion-source js-conversion-external-source"><span>External data source</span><strong>${escapeHtml(conversionFormatName(command.sourceFormat))}</strong><small>${escapeHtml(command.availabilityMessage ?? 'Configure the required connection options below.')}</small></div>`;
+    return `<div class="js-conversion-source js-conversion-external-source" aria-label="External data source configuration"><span>External data source</span><strong>${escapeHtml(conversionFormatName(command.sourceFormat))}</strong><small>${escapeHtml(command.availabilityMessage ?? 'Configure the required connection options below.')}</small></div>`;
   }
-  return `<div class="js-conversion-source"><span>Source file</span><strong>${escapeHtml(source?.name ?? 'No file selected')}</strong><button data-conversion-source ${host?.selectConversionSource ? '' : 'disabled'}>${source ? 'Change' : 'Choose file'}</button></div>`;
+  return `<div class="js-conversion-source"><span>Source file</span><strong>${escapeHtml(source?.name ?? 'No file selected')}</strong><button data-conversion-source autofocus ${host?.selectConversionSource ? '' : 'disabled'}>${source ? 'Change' : 'Choose file'}</button></div>`;
 }
 
 function externalConversionConfigurationError(command: ConversionCommand, options: ConversionOptionValues): string | undefined {
@@ -2659,14 +3354,18 @@ function conversionFormatName(format: string): string {
   return known[format.toLocaleLowerCase()] ?? format;
 }
 
-function conversionOptionControl(option: import('../conversion/types.js').ConversionOption): string {
-  const description = option.description ? `<span class="js-description">${escapeHtml(option.description)}</span>` : '';
+function conversionOptionControl(option: import('../conversion/types.js').ConversionOption, required = false, currentValues: ConversionOptionValues = {}, autoFocus = false): string {
+  const current = currentValues[option.name] ?? option.default;
+  const descriptionId = `conversion-workbench-option-${option.name}-description`;
+  const description = option.description ? `<span id="${escapeAttribute(descriptionId)}" class="js-description">${escapeHtml(option.description)}</span>` : '';
+  const accessibility = `${description ? ` aria-describedby="${escapeAttribute(descriptionId)}"` : ''}${required ? ' required aria-required="true"' : ''}${autoFocus ? ' autofocus' : ''}`;
   const label = `<span class="js-option-name">${escapeHtml(humanizeIdentifier(option.name))}</span>`;
-  if (option.type === 'boolean') return `<label><input type="checkbox" data-conversion-option="${escapeAttribute(option.name)}" data-option-type="boolean" ${option.default ? 'checked' : ''}>${label}${description}</label>`;
-  if (option.type === 'string' && option.allowedValues) return `<label>${label}<select data-conversion-option="${escapeAttribute(option.name)}" data-option-type="string">${option.allowedValues.map((value) => `<option value="${escapeAttribute(value)}" ${value === option.default ? 'selected' : ''}>${escapeHtml(value)}</option>`).join('')}</select>${description}</label>`;
-  if (option.type === 'string-list') return `<label>${label}<input data-conversion-option="${escapeAttribute(option.name)}" data-option-type="string-list" type="text" value="${escapeAttribute((option.default ?? []).join(', '))}">${description}</label>`;
+  if (option.type === 'boolean') return `<label><input type="checkbox" data-conversion-option="${escapeAttribute(option.name)}" data-option-type="boolean" ${current === true ? 'checked' : ''}${accessibility}>${label}${description}</label>`;
+  if (option.type === 'string' && option.allowedValues) return `<label>${label}<select data-conversion-option="${escapeAttribute(option.name)}" data-option-type="string"${accessibility}>${option.allowedValues.map((value) => `<option value="${escapeAttribute(value)}" ${value === current ? 'selected' : ''}>${escapeHtml(value)}</option>`).join('')}</select>${description}</label>`;
+  if (option.type === 'string-list') return `<label>${label}<input data-conversion-option="${escapeAttribute(option.name)}" data-option-type="string-list" type="text" value="${escapeAttribute((current as readonly string[] | undefined ?? []).join(', '))}"${accessibility}>${description}</label>`;
   const constraints = option.type === 'number' ? `${option.minimum === undefined ? '' : ` min="${option.minimum}"`}${option.maximum === undefined ? '' : ` max="${option.maximum}"`}` : '';
-  return `<label>${label}<input data-conversion-option="${escapeAttribute(option.name)}" data-option-type="${option.type}" type="${option.type === 'number' ? 'number' : 'text'}" value="${escapeAttribute(String(option.default ?? ''))}"${constraints}>${description}</label>`;
+  const inputType = option.type === 'number' ? 'number' : /password|secret/i.test(option.name) ? 'password' : 'text';
+  return `<label>${label}<input data-conversion-option="${escapeAttribute(option.name)}" data-option-type="${option.type}" type="${inputType}" value="${escapeAttribute(String(current ?? ''))}"${constraints}${accessibility}>${description}</label>`;
 }
 
 function humanizeIdentifier(value: string): string {
@@ -2872,13 +3571,13 @@ function renderTypeTree(definitions: readonly TypeTreeItem[], namespaces: readon
     const namespace = addNamespace(namespaceTreeSegments(definition.namespace));
     namespace.types.push(definition);
   }
-  const renderType = (item: TypeTreeItem): string => `<div class="js-tree-type-row"><button role="treeitem" class="js-tree-item${item.imported ? ' js-tree-item-imported' : ''}" ${item.imported ? `data-effective-source="${escapeAttribute(item.sourcePointer ?? '')}" data-effective-document="${escapeAttribute(item.documentUri ?? '')}" title="Imported from ${escapeAttribute(item.documentUri ?? '')}${escapeAttribute(item.sourcePointer ? `#${item.sourcePointer}` : '')}"` : `data-select="${escapeAttribute(item.pointer)}"`} data-type-drag="${escapeAttribute(item.pointer)}" draggable="true" aria-current="${selectedPointer === item.pointer}"><span class="js-kind" aria-hidden="true">${fluentIcon('cube')}</span><span>${escapeHtml(item.name)}</span>${item.imported ? '<small>imported</small>' : ''}</button><label class="js-tree-root-toggle" title="Use as document root"><input type="checkbox" data-root-toggle="${escapeAttribute(item.pointer)}" ${item.root ? 'checked' : ''} aria-label="Use ${escapeAttribute(item.name)} as document root"><span aria-hidden="true">✓</span></label></div>`;
+  const renderType = (item: TypeTreeItem): string => `<div class="js-tree-type-row"><button role="treeitem" class="js-tree-item${item.imported ? ' js-tree-item-imported' : ''}" ${item.imported ? `data-effective-source="${escapeAttribute(item.sourcePointer ?? '')}" data-effective-document="${escapeAttribute(item.documentUri ?? '')}" title="Imported from ${escapeAttribute(item.documentUri ?? '')}${escapeAttribute(item.sourcePointer ? `#${item.sourcePointer}` : '')}"` : `data-select="${escapeAttribute(item.pointer)}"`} data-type-drag="${escapeAttribute(item.pointer)}" draggable="true" aria-current="${selectedPointer === item.pointer}"${item.imported ? '' : ` data-tree-context-kind="definition" data-tree-context-pointer="${escapeAttribute(item.pointer)}"`}><span class="js-kind" aria-hidden="true">${fluentIcon('cube')}</span><span>${escapeHtml(item.name)}</span>${item.imported ? '<small>imported</small>' : ''}</button><label class="js-tree-root-toggle" title="Use as document root"><input type="checkbox" data-root-toggle="${escapeAttribute(item.pointer)}" ${item.root ? 'checked' : ''} aria-label="Use ${escapeAttribute(item.name)} as document root"><span aria-hidden="true">✓</span></label></div>`;
   const renderNamespace = (namespace: TypeTreeNamespace): string => {
     const children = [...namespace.children.values()].sort((left, right) => left.label.localeCompare(right.label)).map(renderNamespace).join('');
     const types = [...namespace.types].sort((left, right) => left.name.localeCompare(right.name)).map(renderType).join('');
     if (!namespace.path) {
       const rootNamespace = namespaces.includes('/definitions')
-        ? `<button role="treeitem" class="js-tree-item js-tree-root-namespace" data-select="/definitions" aria-current="${selectedPointer === '/definitions'}"><span class="js-kind" aria-hidden="true">${fluentIcon('collections')}</span><span>Root namespace</span><small>${namespace.types.length + namespace.children.size}</small></button>`
+        ? `<button role="treeitem" class="js-tree-item js-tree-root-namespace" data-select="/definitions" aria-current="${selectedPointer === '/definitions'}" data-tree-context-kind="namespace" data-tree-context-pointer="/definitions"><span class="js-kind" aria-hidden="true">${fluentIcon('collections')}</span><span>Root namespace</span><small>${namespace.types.length + namespace.children.size}</small></button>`
         : '';
       return `${rootNamespace}${types}${children}`;
     }
@@ -2925,17 +3624,19 @@ function structuredWorkbenchShell(snapshot: DocumentSnapshot, title: string, def
   const activities = primaryModes.map((item) => `<button class="js-activity-button" data-mode="${item.mode}" aria-label="${item.label}" title="${item.label}" aria-pressed="${mode === item.mode}">${fluentIcon(item.icon)}</button>`).join('');
   const schemaUri = isSchemaRecord(documentValue) && typeof documentValue.$schema === 'string' ? documentValue.$schema : '';
   const documentId = isSchemaRecord(documentValue) && typeof documentValue.$id === 'string' ? documentValue.$id : '';
-  const schemaStrip = documentMetadataView(documentValue, definitions, schemaUri, documentId);
+  const documentMetadata = documentMetadataView(documentValue, definitions, schemaUri, documentId);
+  const propertiesPanel = inspector(selectedProperty, definition, selectedDiagnostics, selectedRelation);
   const titleChrome = workbenchTitleChrome(title, chrome);
   return `<div class="js-shell js-chrome-${chrome}">
     ${titleChrome}
     <div class="js-document-toolbar" role="toolbar" aria-label="Document status"><button class="js-mobile-toggle" data-mobile-drawer="types" aria-controls="js-outline" aria-haspopup="dialog" aria-expanded="false" ${mode === 'design' || mode === 'graph' ? '' : 'hidden'}>Types</button><span class="js-chip">${escapeHtml(profile.mode)}</span>${activeCompanions ? `<span class="js-chip">${activeCompanions} companions</span>` : ''}<span class="js-spacer"></span><button class="js-mobile-toggle" data-mobile-drawer="inspector" aria-controls="js-inspector" aria-haspopup="dialog" aria-expanded="false" ${mode === 'design' ? '' : 'hidden'}>Inspector</button></div>
     <div class="js-workbench" data-problems-open="${problemsOpen}" data-active-mode="${mode}">
       <nav class="js-activity" aria-label="Editor modes">${activities}</nav>
-      <aside class="js-outline" id="js-outline" data-drawer-panel="types" aria-label="Types"><div class="js-panel-head"><span>Types</span><span class="js-spacer"></span><button data-command="definition.add" title="Add type" aria-label="Add type">${fluentIcon('add')}</button><button data-library-open title="Import type library" aria-label="Import type library">${fluentIcon('library')}</button><button class="js-drawer-close" data-mobile-drawer-close aria-label="Close Types">${fluentIcon('dismiss')}</button></div><input class="js-filter" type="search" placeholder="Filter types" aria-label="Filter types"><div class="js-tree" role="tree" aria-label="Types by namespace"><div class="js-tree-group">${definitions.length} definitions${inlineRootEntry ? " · inline root" : ""}</div>${inlineRootEntry}${typeTree}</div></aside>
-      <section class="js-center"><div class="js-editor-tab"><span class="js-kind" aria-hidden="true">${fluentIcon('document')}</span><span data-document-title>${escapeHtml(title)}</span></div>${schemaStrip}<section class="js-view" data-panel-mode="design" ${mode === 'design' ? '' : 'hidden'}>${designView(activeName, activeType, activeDescription, rows, selectedPointer, activeIdentity, activeRelations, memberMode, effectiveMembers, expandedPropertyPointer, definitions, documentValue, pendingPropertyFields, relationDraftOpen, typeCreatorOpen, definitionPointer, snapshot.model?.rootPointer === definitionPointer)}</section><section class="js-view js-graph" data-panel-mode="graph" ${mode === 'graph' ? '' : 'hidden'}>${graphView(snapshot, selectedPointer)}</section><section class="js-view js-source-view" data-panel-mode="source" ${mode === 'source' ? '' : 'hidden'}><div class="js-source" data-source aria-label="JSON source editor"></div></section></section>
-      <aside class="js-inspector" id="js-inspector" data-drawer-panel="inspector" aria-label="Inspector"><div class="js-panel-head"><span>Inspector</span><span class="js-spacer"></span><button class="js-drawer-close" data-mobile-drawer-close aria-label="Close Inspector">${fluentIcon('dismiss')}</button></div>${inspector(selectedProperty, definition, selectedDiagnostics, selectedRelation)}</aside>
-      <section class="js-problems" aria-label="Problems panel"><div class="js-problems-head"><button class="js-problems-tab" data-problems-toggle aria-controls="js-problem-list" aria-expanded="${problemsOpen}">Problems <span class="js-count">${snapshot.diagnostics.length}</span></button><span class="js-spacer"></span><button data-problems-toggle aria-controls="js-problem-list" aria-expanded="${problemsOpen}" aria-label="Close Problems">${fluentIcon('dismiss')}</button></div><div class="js-problem-list" id="js-problem-list" role="list">${problems(snapshot.diagnostics)}</div></section>
+      <aside class="js-outline" id="js-outline" data-drawer-panel="types" aria-label="Types"><div class="js-panel-head"><span>Types</span><span class="js-spacer"></span>      <button data-command="definition.add" title="Add type" aria-label="Add type">${fluentIcon('add')}</button><button data-quick-add-namespace="/definitions" title="Add namespace" aria-label="Add namespace">${fluentIcon('collections')}</button><button data-library-open title="Import type library" aria-label="Import type library">${fluentIcon('library')}</button><button class="js-drawer-close" data-mobile-drawer-close aria-label="Close Types">${fluentIcon('dismiss')}</button></div><input class="js-filter" type="search" placeholder="Filter types" aria-label="Filter types"><div class="js-tree" role="tree" aria-label="Types by namespace"><div class="js-tree-group">${definitions.length} definitions${inlineRootEntry ? " · inline root" : ""}</div>${inlineRootEntry}${typeTree}</div></aside>
+      <section class="js-center"><div class="js-editor-tab"><span class="js-kind" aria-hidden="true">${fluentIcon('document')}</span><span data-document-title>${escapeHtml(title)}</span></div><section class="js-view" data-panel-mode="design" ${mode === 'design' ? '' : 'hidden'}>${designView(activeName, activeType, activeDescription, rows, selectedPointer, activeIdentity, activeRelations, memberMode, effectiveMembers, expandedPropertyPointer, definitions, documentValue, pendingPropertyFields, relationDraftOpen, typeCreatorOpen, definitionPointer, snapshot.model?.rootPointer === definitionPointer)}</section><section class="js-view js-graph" data-panel-mode="graph" ${mode === 'graph' ? '' : 'hidden'}>${graphView(snapshot, selectedPointer)}</section><section class="js-view js-source-view" data-panel-mode="source" ${mode === 'source' ? '' : 'hidden'}><div class="js-source" data-source aria-label="JSON source editor"></div></section></section>
+      <aside class="js-inspector" id="js-inspector" data-drawer-panel="inspector" aria-label="Properties and schema metadata"><section class="js-side-pane js-properties-pane"><div class="js-panel-head"><span>Properties</span><span class="js-spacer"></span><button class="js-drawer-close" data-mobile-drawer-close aria-label="Close Properties and schema metadata">${fluentIcon('dismiss')}</button></div><div class="js-inspector-body">${propertiesPanel}</div></section><div class="js-horizontal-splitter" data-properties-pane-splitter role="separator" aria-label="Resize Properties and Schema metadata panes" aria-orientation="horizontal" aria-valuemin="140" aria-valuemax="520" aria-valuenow="260" tabindex="0"></div><section class="js-side-pane js-document-pane"><div class="js-panel-head"><span>Schema metadata</span></div><div class="js-document-pane-body">${documentMetadata}</div></section></aside>
+      <div class="js-pane-splitter js-pane-splitter-inspector" data-pane-splitter="inspector" role="separator" aria-label="Resize Properties and Schema metadata panes" aria-orientation="vertical" aria-valuemin="240" aria-valuemax="520" aria-valuenow="284" tabindex="0"></div>
+      <section class="js-problems" aria-label="Problems panel"><div class="js-problems-head"><button class="js-problems-tab" data-problems-toggle aria-controls="js-problem-list" aria-expanded="${problemsOpen}">Problems <span class="js-count">${snapshot.diagnostics.length}</span></button><span class="js-spacer"></span><button data-problems-toggle aria-controls="js-problem-list" aria-expanded="${problemsOpen}" aria-label="Close Problems">${fluentIcon('dismiss')}</button></div><div class="js-problem-list" id="js-problem-list" role="list" tabindex="0">${problems(snapshot.diagnostics)}</div></section>
     </div>
     <footer class="js-status"><button data-problems-toggle aria-controls="js-problem-list" aria-expanded="${problemsOpen}" title="Toggle Problems"><span>${fluentIcon('errorCircle')}${errors}</span><span>${fluentIcon('warning')}${warnings}</span></button><span>JSON Structure ${escapeHtml(profile.mode)}</span><span class="js-spacer"></span><span>${definitions.length} type${definitions.length === 1 ? '' : 's'}</span><span>${documentStatus}</span></footer>
   </div>`;
@@ -2963,7 +3664,7 @@ function documentMetadataView(document: unknown, definitions: readonly TypeTreeI
     return `<div class="js-offer-row" data-offer-row="${escapeAttribute(offerName)}"><input data-offer-name value="${escapeAttribute(offerName)}" aria-label="Offer name"><select data-offer-targets multiple size="${Math.min(4, Math.max(2, localDefinitions.length))}" aria-label="Types offered by ${escapeAttribute(offerName)}">${options}</select><button type="button" data-offer-remove aria-label="Remove offer ${escapeAttribute(offerName)}">${fluentIcon('dismiss')} Remove</button></div>`;
   }).join('');
   const addOfferOptions = offerTargetOptions(localDefinitions, []);
-  return `<details class="js-document-metadata" open><summary>Document metadata</summary><div class="js-schema-strip" aria-label="Schema metadata">
+  return `<div class="js-document-metadata"><div class="js-schema-strip" aria-label="Schema metadata">
     <label><span>Name</span><input data-document-member="name" data-document-action="core.name" value="${escapeAttribute(name)}" aria-label="Document name"></label>
     <div class="js-meta-schema-field"><label><span>Meta-schema</span><select data-meta-schema-select aria-label="Well-known meta-schema">${schemaOptions}<option value="__custom__" ${canonical ? '' : 'selected'}>Custom URI…</option></select></label><input data-meta-schema-custom data-document-member="$schema" data-document-action="core.schema" value="${escapeAttribute(canonical ? '' : schemaUri)}" placeholder="https://example.test/meta/#" aria-label="Custom meta-schema URI" ${canonical ? 'hidden disabled' : ''}></div>
     <label><span>Id</span><input data-document-member="$id" data-document-action="core.id" value="${escapeAttribute(documentId)}" aria-label="Schema id"></label>
@@ -2971,7 +3672,7 @@ function documentMetadataView(document: unknown, definitions: readonly TypeTreeI
     <fieldset class="js-document-uses"><legend>$uses</legend>${persistedUses}${includedUses || '<span class="js-description">No capabilities are included by this profile.</span>'}${useChoices || '<span class="js-description">No optional capabilities are offered by this profile.</span>'}</fieldset>
     <fieldset class="js-document-offers"><legend>$offers</legend><div class="js-offer-list">${offerRows || '<span class="js-description">No add-ins are offered.</span>'}</div><div class="js-offer-add"><input data-offer-add-name placeholder="Feature name" aria-label="New offer name"><select data-offer-add-targets multiple size="${Math.min(4, Math.max(2, localDefinitions.length))}" aria-label="Types for new offer">${addOfferOptions}</select><button type="button" data-offer-add ${localDefinitions.length ? '' : 'disabled'}>${fluentIcon('add')} Add offer</button></div></fieldset>
     <span class="js-schema-status" data-document-member-status role="status" aria-live="polite"></span>
-  </div></details>`;
+  </div></div>`;
 }
 
 function offerTargetOptions(definitions: readonly TypeTreeItem[], selected: readonly string[]): string {
@@ -3003,9 +3704,9 @@ export function workbenchTitleChrome(title: string, chrome: NonNullable<JsonStru
   return `<header class="js-titlebar">
     <div class="js-titlebar-drag"><span class="js-titlebar-icon" title="JSON Structure">${jsonStructureLogo()}</span>
       <nav class="js-menubar" role="menubar" aria-label="Application menu">
-        ${applicationMenu('File', '<button role="menuitem" data-chrome-command="new">New<kbd>Ctrl+N</kbd></button><button role="menuitem" data-chrome-command="open">Open...<kbd>Ctrl+O</kbd></button><button role="menuitem" data-chrome-command="save">Save<kbd>Ctrl+S</kbd></button><button role="menuitem" data-chrome-command="save-as">Save As...<kbd>Ctrl+Shift+S</kbd></button><hr><button role="menuitem" data-chrome-command="quit">Exit</button>')}
-        ${applicationMenu('Edit', '<button role="menuitem" data-chrome-command="undo">Undo<kbd>Ctrl+Z</kbd></button><button role="menuitem" data-chrome-command="redo">Redo<kbd>Ctrl+Y</kbd></button><hr><button role="menuitem" data-chrome-command="cut">Cut<kbd>Ctrl+X</kbd></button><button role="menuitem" data-chrome-command="copy">Copy<kbd>Ctrl+C</kbd></button><button role="menuitem" data-chrome-command="paste">Paste<kbd>Ctrl+V</kbd></button><button role="menuitem" data-chrome-command="select-all">Select All<kbd>Ctrl+A</kbd></button>')}
-        ${applicationMenu('View', '<button role="menuitem" data-chrome-command="show-commands">Command Palette...<kbd>Ctrl+Shift+P</kbd></button><hr><button role="menuitem" data-theme-choice="dark">Dark Theme</button><button role="menuitem" data-theme-choice="light">Light Theme</button><button role="menuitem" data-theme-choice="contrast">High Contrast Theme</button><hr><button role="menuitem" data-chrome-command="reset-zoom">Reset Zoom</button><button role="menuitem" data-chrome-command="zoom-in">Zoom In</button><button role="menuitem" data-chrome-command="zoom-out">Zoom Out</button><button role="menuitem" data-chrome-command="toggle-fullscreen">Toggle Full Screen<kbd>F11</kbd></button>')}
+        ${applicationMenu('File', '<button role="menuitem" data-chrome-command="new">New<kbd>Ctrl+N</kbd></button><button role="menuitem" data-chrome-command="open">Open...<kbd>Ctrl+O</kbd></button><button role="menuitem" data-chrome-command="import">Import...</button><hr><button role="menuitem" data-chrome-command="save">Save<kbd>Ctrl+S</kbd></button><button role="menuitem" data-chrome-command="save-as">Save As...<kbd>Ctrl+Shift+S</kbd></button><hr><button role="menuitem" data-chrome-command="quit">Exit</button>')}
+        ${applicationMenu('Edit', '<button role="menuitem" data-chrome-command="undo">Undo<kbd>Ctrl+Z</kbd></button><button role="menuitem" data-chrome-command="redo">Redo<kbd>Ctrl+Y</kbd></button><hr><button role="menuitem" data-chrome-command="find">Find<kbd>Ctrl+F</kbd></button><button role="menuitem" data-chrome-command="replace">Replace<kbd>Ctrl+H</kbd></button><hr><button role="menuitem" data-chrome-command="cut">Cut<kbd>Ctrl+X</kbd></button><button role="menuitem" data-chrome-command="copy">Copy<kbd>Ctrl+C</kbd></button><button role="menuitem" data-chrome-command="paste">Paste<kbd>Ctrl+V</kbd></button><button role="menuitem" data-chrome-command="select-all">Select All<kbd>Ctrl+A</kbd></button>')}
+        ${applicationMenu('View', '<button role="menuitem" data-chrome-command="show-commands">Command Palette...<kbd>Ctrl+Shift+P</kbd></button><hr><button role="menuitem" data-theme-choice="dark">Dark Theme</button><button role="menuitem" data-theme-choice="light">Light Theme</button><button role="menuitem" data-theme-choice="contrast">High Contrast Theme</button><hr><button role="menuitem" data-chrome-command="reset-zoom">Reset Zoom<kbd>Ctrl+0</kbd></button><button role="menuitem" data-chrome-command="zoom-in">Zoom In<kbd>Ctrl++</kbd></button><button role="menuitem" data-chrome-command="zoom-out">Zoom Out<kbd>Ctrl+-</kbd></button><button role="menuitem" data-chrome-command="toggle-fullscreen">Toggle Full Screen<kbd>F11</kbd></button>')}
         ${applicationMenu('Help', '<button role="menuitem" data-chrome-command="website">JSON Structure Website</button>')}
       </nav>
       <button class="js-command-center" data-show-commands title="Search files and run commands (Ctrl+Shift+P)" aria-label="Search files and run commands">${fluentIcon('console')}<span data-document-title>${escapeHtml(title)}</span></button>
@@ -3027,7 +3728,7 @@ function wireApplicationMenus(root: HTMLElement): void {
     menu.addEventListener('toggle', () => {
       if (!menu.hasAttribute('open')) return;
       menus.forEach((other) => { if (other !== menu) other.removeAttribute('open'); });
-      queueMicrotask(() => (menu.querySelector('[role="menuitem"]') as HTMLElement | null)?.focus());
+      queueMicrotask(() => (menu.querySelector('.js-app-menu-popup [role="menuitem"]') as HTMLElement | null)?.focus());
     });
     menu.querySelector('summary')?.addEventListener('keydown', (event: KeyboardEvent) => {
       const offset = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
@@ -3036,7 +3737,12 @@ function wireApplicationMenus(root: HTMLElement): void {
       menu.removeAttribute('open');
       (menus[(index + offset + menus.length) % menus.length]?.querySelector('summary') as HTMLElement | null)?.focus();
     });
-    menu.querySelector('.js-app-menu-popup')?.addEventListener('keydown', (event: KeyboardEvent) => {
+    const popup = menu.querySelector('.js-app-menu-popup');
+    popup?.addEventListener('click', (event: Event) => {
+      if (!(event.target as HTMLElement | null)?.closest?.('[role="menuitem"]')) return;
+      menu.removeAttribute('open');
+    });
+    popup?.addEventListener('keydown', (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       event.preventDefault();
       menu.removeAttribute('open');
@@ -3138,9 +3844,32 @@ export function designView(name: string | undefined, type: string | undefined, d
     : type === 'array' || type === 'set' || type === 'map' ? collectionDeclarationView(declarationPointer, declaration, definitions, document)
     : '<section class="js-design-section"><h2>Primitive declaration</h2><p class="js-description">Use the structured facets below to author constraints and annotations for this primitive.</p></section>';
   const typeEditor = typeof type === 'string' && type !== 'union' ? `<label class="js-definition-type">Type<select data-inline-definition-type="${escapeAttribute(declarationPointer)}">${definitionTypeOptions(type)}</select></label>` : '<span class="js-definition-type js-composition-type">Composition schema</span>';
+  const abstractToggle = declarationPointer !== '' && (type === 'object' || type === 'tuple') ? `<label class="js-root-toggle"><input type="checkbox" data-inline-definition-abstract="${escapeAttribute(declarationPointer)}" ${declaration?.abstract === true ? 'checked' : ''}> Abstract</label>` : '';
   const deleteDefinition = definitionPointer && definitionPointer !== '' ? `<button type="button" class="js-danger" data-inline-definition-delete="${escapeAttribute(definitionPointer)}">Delete type</button>` : '';
+  const inheritance = declaration && definitionPointer !== undefined ? inheritanceEditorView(definitionPointer, declaration, type, definitions) : '';
   const facets = declaration ? structuredFacetEditor(declarationPointer, declaration, document, pendingPropertyFields, new Set(), definitions) : '';
-  return `<div class="js-sheet"><header class="js-type-head"><div><div class="js-eyebrow">${name ? 'Local definition' : 'Inline schema'}</div>${editableName}${editableDescription}<p class="js-inline-status" data-inline-status="${escapeAttribute(definitionPointer ?? '')}" role="status" aria-live="polite"></p></div><div class="js-type-badges">${typeEditor}${rootToggle}${deleteDefinition}</div></header>${propertyView}${relationsView}${facets}</div>`;
+  return `<div class="js-sheet"><header class="js-type-head"><div><div class="js-eyebrow">${name ? 'Local definition' : 'Inline schema'}</div>${editableName}${editableDescription}<p class="js-inline-status" data-inline-status="${escapeAttribute(definitionPointer ?? '')}" role="status" aria-live="polite"></p></div><div class="js-type-badges">${typeEditor}${abstractToggle}${rootToggle}${deleteDefinition}</div></header>${propertyView}${inheritance}${relationsView}${facets}</div>`;
+}
+
+function inheritanceEditorView(pointer: string, declaration: Readonly<Record<string, unknown>>, type: string | undefined, definitions: readonly { readonly name: string; readonly pointer: string; readonly type?: string; readonly abstract?: boolean }[]): string {
+  if (!['object', 'tuple', 'choice'].includes(type ?? '')) return '';
+  const current = typeof declaration.$extends === 'string' ? [declaration.$extends] : Array.isArray(declaration.$extends) ? declaration.$extends.filter((entry): entry is string => typeof entry === 'string') : [];
+  const expectedBaseType = type === 'choice' ? 'object' : type;
+  const candidates = definitions.filter((definition) => definition.pointer !== pointer && definition.abstract === true && definition.type === expectedBaseType);
+  if (!current.length && !candidates.length) return '';
+  const option = (definition: { readonly name: string; readonly pointer: string }, selected: boolean) => `<option value="#${escapeAttribute(definition.pointer)}" ${selected ? 'selected' : ''}>${escapeHtml(definition.name)}</option>`;
+  const rows = current.map((reference, index) => {
+    const currentDefinition = definitions.find((definition) => `#${definition.pointer}` === reference);
+    const available = candidates.filter((definition) => !current.some((entry, itemIndex) => itemIndex !== index && entry === `#${definition.pointer}`));
+    const currentAvailable = available.some((definition) => `#${definition.pointer}` === reference);
+    const currentLabel = currentDefinition?.name ?? pointerLabel(reference);
+    const currentOption = currentAvailable ? '' : `<option value="${escapeAttribute(reference)}" selected>${escapeHtml(currentLabel)}</option>`;
+    const options = `${currentOption}${available.map((definition) => option(definition, `#${definition.pointer}` === reference)).join('')}`;
+    return `<div class="js-extends-row"><select data-inline-extends-index="${index}" data-inline-extends-pointer="${escapeAttribute(pointer)}" aria-label="Base type ${index + 1}">${options}</select><button type="button" data-inline-extends-remove="${index}" data-inline-extends-pointer="${escapeAttribute(pointer)}" aria-label="Remove base type ${escapeAttribute(pointerLabel(reference))}">${fluentIcon('dismiss')} Remove</button></div>`;
+  }).join('');
+  const addable = candidates.filter((definition) => !current.includes(`#${definition.pointer}`));
+  const add = addable.length ? `<div class="js-extends-add"><select data-inline-extends-add-select="${escapeAttribute(pointer)}" aria-label="Base type to add"><option value="">Choose an abstract base type</option>${addable.map((definition) => option(definition, false)).join('')}</select><button type="button" data-inline-extends-add data-inline-extends-pointer="${escapeAttribute(pointer)}">${fluentIcon('add')} Add base</button></div>` : current.length ? '' : '<p class="js-description">No compatible abstract base types are available.</p>';
+  return `<section class="js-inheritance-editor"><div class="js-section-head"><div><h2>Extends</h2><span class="js-section-meta">${current.length}</span></div></div><div class="js-extends-list">${rows}${add}</div></section>`;
 }
 
 function namespaceDesignView(pointer: string, document: unknown, definitions: readonly { readonly name: string; readonly pointer: string }[]): string {
@@ -3177,18 +3906,37 @@ function collectionDeclarationView(pointer: string, declaration: Readonly<Record
   return `<section class="js-design-section js-collection-editor"><div class="js-section-head"><div><h2>${declaration.type === 'map' ? 'Map values' : `${String(declaration.type)[0]!.toLocaleUpperCase()}${String(declaration.type).slice(1)} items`}</h2><span class="js-section-meta">Directly editable</span></div></div><div class="js-collection-member" data-type-drop="${escapeAttribute(memberPointer)}"><span>${keyword === 'values' ? 'Value type' : 'Item type'}</span>${inlineTypeComposer(member, memberPointer, keyword, definitions, true)}<span class="js-type-drop-zone" aria-hidden="true"></span>${inlineCollectionEditors(member, memberPointer, definitions, document)}${nestedSchemaEditor(member, memberPointer, definitions, document)}</div></section>`;
 }
 
+function coordinateReferenceSystemRow(coordinate: string, properties: readonly string[], transient: boolean): string {
+  const options = [...new Set([coordinate, ...properties])].map((property) => `<option value="${escapeAttribute(property)}" ${property === coordinate ? 'selected' : ''}>${escapeHtml(property)}</option>`).join('');
+  return `<div class="js-crs-coordinate-row" data-crs-coordinate-row ${transient ? 'data-transient="true"' : ''}><select data-crs-coordinate aria-label="Coordinate property">${options}</select><button type="button" data-crs-coordinate-move="up" aria-label="Move ${escapeAttribute(coordinate)} coordinate up">${fluentIcon('arrowUp')}</button><button type="button" class="js-crs-move-down" data-crs-coordinate-move="down" aria-label="Move ${escapeAttribute(coordinate)} coordinate down">${fluentIcon('arrowUp', 'js-icon-down')}</button><button type="button" data-crs-coordinate-remove aria-label="Remove ${escapeAttribute(coordinate)} coordinate">${fluentIcon('dismiss')}</button></div>`;
+}
+
+function crsPropertyNamesAtPointer(document: unknown, pointer: string): readonly string[] {
+  const schema = valueAtPointer(document, pointer);
+  return isRecord(schema) && isRecord(schema.properties) ? Object.keys(schema.properties) : [];
+}
+
 function choicesEditorView(pointer: string, declaration: Readonly<Record<string, unknown>> | undefined, definitions: readonly { readonly name: string; readonly pointer: string }[], ancestors: ReadonlySet<string> = new Set()): string {
   const choices = isRecord(declaration?.choices) ? declaration.choices as Record<string, unknown> : {};
   const rows = Object.entries(choices).map(([name, schema]) => {
     const choicePointer = `${pointer}/choices/${escapePointerToken(name)}`;
     const typed: Readonly<Record<string, unknown>> = isSchemaRecord(schema) ? schema : { type: 'string' };
-    return `<div class="js-choice-row" data-choice-row="${escapeAttribute(choicePointer)}"><input class="js-code" data-inline-choice-name="${escapeAttribute(choicePointer)}" value="${escapeAttribute(name)}" aria-label="Choice alternative name">${inlineTypeComposer(typed, choicePointer, name, definitions, true)}${nestedSchemaEditor(typed, choicePointer, definitions, undefined, new Set(), ancestors)}<textarea rows="1" data-inline-choice-description="${escapeAttribute(choicePointer)}" placeholder="Alternative description">${escapeHtml(typeof typed.description === 'string' ? typed.description : '')}</textarea><button class="js-danger" data-inline-choice-delete="${escapeAttribute(choicePointer)}" aria-label="Delete ${escapeAttribute(name)}">Delete</button><p class="js-inline-status" data-inline-status="${escapeAttribute(choicePointer)}" role="status"></p></div>`;
+    return `<div class="js-choice-row" data-choice-row="${escapeAttribute(choicePointer)}"><input class="js-code" data-inline-choice-name="${escapeAttribute(choicePointer)}" value="${escapeAttribute(name)}" aria-label="Choice alternative name">${inlineTypeComposer(typed, choicePointer, name, definitions, true)}${nestedSchemaEditor(typed, choicePointer, definitions, undefined, new Set(), ancestors)}<textarea rows="1" data-inline-choice-description="${escapeAttribute(choicePointer)}" aria-label="Description for ${escapeAttribute(name)}" placeholder="Alternative description">${escapeHtml(typeof typed.description === 'string' ? typed.description : '')}</textarea><button class="js-danger" data-inline-choice-delete="${escapeAttribute(choicePointer)}" aria-label="Delete ${escapeAttribute(name)}">Delete</button><p class="js-inline-status" data-inline-status="${escapeAttribute(choicePointer)}" role="status"></p></div>`;
   }).join('');
   return `<section class="js-design-section js-choice-editor"><div class="js-section-head"><div><h2>Choices</h2><span class="js-section-meta">${Object.keys(choices).length} alternatives</span></div></div><div class="js-choice-list">${rows || '<p class="js-description">No alternatives declared.</p>'}</div><div class="js-choice-add"><input data-choice-add-name class="js-code" placeholder="alternative_name" aria-label="New choice name"><select data-choice-add-type aria-label="New choice type">${definitionTypeOptions('string')}${definitions.map((definition) => `<option value="ref:#${escapeAttribute(definition.pointer)}">${escapeHtml(definitionTypeLabel(definition.pointer))} (reusable)</option>`).join('')}</select><button data-choice-add="${escapeAttribute(pointer)}">Add alternative</button></div></section>`;
 }
 
 const STRUCTURED_FACET_GROUPS = new Set(['Validation', 'Composition', 'Units', 'Alternate names', 'Semantic annotations']);
 const STRUCTURED_CORE_FACETS = new Set(['core.enum', 'core.const', 'core.abstract', 'core.extends', 'core.additional-properties', 'core.precision', 'core.scale', 'core.max-length', 'core.selector']);
+const STRUCTURED_SCHEMA_FACETS = new Set(['validation.contains', 'validation.propertyNames', 'validation.keyNames', 'validation.has']);
+
+function enumFacetControl(pointer: string, action: CommandAction, value: unknown, schemaType: string | undefined): string {
+  const type = schemaType ?? 'string';
+  const values = Array.isArray(value) ? value : [];
+  const rows = values.map((entry, index) => `<span class="js-enum-token" data-enum-value="${escapeAttribute(JSON.stringify(entry))}"><span>${escapeHtml(String(entry))}</span><button type="button" data-enum-remove="${index}" aria-label="Remove enum value ${index + 1}">${fluentIcon('dismiss')}</button></span>`).join('');
+  const canAdd = type !== 'null' || values.length === 0;
+  return `<div class="js-enum-editor" data-enum-editor="${escapeAttribute(pointer)}" data-enum-type="${escapeAttribute(type)}" data-enum-action="${escapeAttribute(action.id)}"><div class="js-enum-entry">${rows}<input data-enum-new-value type="text" aria-label="Add enum values" placeholder="${values.length ? 'Add values' : 'Enter comma-separated values'}" autocomplete="off" spellcheck="false" ${canAdd ? '' : 'disabled'}><button type="button" data-enum-add aria-label="Add enum values"${canAdd ? '' : ' disabled'}>Add</button></div><small>Press Enter or leave the field to add comma-separated <span class="js-code">${escapeHtml(type)}</span> values.</small></div>`;
+}
 
 function structuredFacetEditor(pointer: string, schema: Readonly<Record<string, unknown>>, document: unknown, pendingFields: ReadonlySet<string>, excludedActions: ReadonlySet<string> = new Set(), definitions: readonly { readonly name: string; readonly pointer: string }[] = []): string {
   const actions = commandActions.filter((action) => !excludedActions.has(action.id) && action.operation === 'set' && action.keyword &&
@@ -3207,7 +3955,7 @@ function structuredFacetEditor(pointer: string, schema: Readonly<Record<string, 
     if (current !== undefined && isCompositionArrayAction(action) && Array.isArray(current)) return [structuredCompositionFacetRow(pointer, action, current, definitions, document)];
     if (current !== undefined && action.id === 'composition.not' && isSchemaRecord(current)) return [structuredCompositionSingleFacetRow(pointer, action, 'not', current, definitions, document)];
     if (current !== undefined && action.id === 'composition.conditional' && isSchemaRecord(current)) return [structuredConditionalFacetRow(pointer, action, current, definitions, document)];
-    return current === undefined && !pending ? [] : [structuredFacetRow(pointer, action, current, pending, schemaType)];
+    return current === undefined && !pending ? [] : [structuredFacetRow(pointer, action, current, pending, schemaType, document)];
   }).join('');
   const options = candidates.filter((action) => {
     const current = action.id === 'composition.conditional'
@@ -3217,7 +3965,9 @@ function structuredFacetEditor(pointer: string, schema: Readonly<Record<string, 
     const availability = actionAvailability(action, pointer, document);
     return availability.enabled || availability.reason?.startsWith('Activate ');
   }).map((action) => `<option value="${escapeAttribute(action.id)}">${escapeHtml(action.group)} · ${escapeHtml(action.label.replace(/^Set /, ''))}</option>`).join('');
-  return `<details class="js-structured-facets" open><summary>Validation, composition, and annotations</summary><div class="js-structured-facet-list">${rows || '<p class="js-description">No structured facets are authored.</p>'}</div>${options ? `<div class="js-detail-add"><label>Add structured facet<select data-facet-select="${escapeAttribute(pointer)}"><option value="">Choose facet</option>${options}</select></label><button type="button" data-facet-add="${escapeAttribute(pointer)}">Add</button></div>` : ''}</details>`;
+  const schemaQualifiers = candidates.filter((action) => STRUCTURED_SCHEMA_FACETS.has(action.id) && actionAvailability(action, pointer, document).enabled && action.keyword && schema[action.keyword] === undefined)
+    .map((action) => `<div class="js-schema-qualifier-empty" data-facet-pointer="${escapeAttribute(pointer)}"><label>${escapeHtml(action.label.replace(/^Set /, ''))}<select data-schema-qualifier-type aria-label="${escapeAttribute(action.label)}"><option value="">Choose schema type</option><option value="string">string</option><option value="object">object</option><option value="array">array</option></select></label><button type="button" data-schema-qualifier-apply="${escapeAttribute(action.id)}" data-facet-pointer="${escapeAttribute(pointer)}" aria-label="Apply ${escapeAttribute(action.label)}">Apply</button></div>`).join('');
+  return `<details class="js-structured-facets" open><summary>Validation, composition, and annotations</summary><div class="js-structured-facet-list">${rows || '<p class="js-description">No structured facets are authored.</p>'}${schemaQualifiers}</div>${options ? `<div class="js-detail-add"><label>Add structured facet<select data-facet-select="${escapeAttribute(pointer)}"><option value="">Choose facet</option>${options}</select></label><button type="button" data-facet-add="${escapeAttribute(pointer)}">Add</button></div>` : ''}</details>`;
 }
 
 function isCompositionArrayAction(action: CommandAction): boolean {
@@ -3258,19 +4008,73 @@ function structuredConditionalFacetRow(pointer: string, action: CommandAction, v
   return `<div class="js-structured-facet-row js-composition-facet-row" data-facet-row="${escapeAttribute(action.id)}"><div><span>${escapeHtml(action.group)} · ${escapeHtml(action.label.replace(/^Set /, ''))}</span><div class="js-composition-branches">${branches || '<p class="js-description">No conditional branches are authored.</p>'}</div></div><button type="button" data-facet-advanced="${escapeAttribute(action.id)}" data-facet-pointer="${escapeAttribute(pointer)}">Advanced</button>${remove}</div>`;
 }
 
-function structuredFacetRow(pointer: string, action: CommandAction, value: unknown, pending: boolean, schemaType: string | undefined): string {
+function localizedDescriptionsFacetRow(pointer: string, value: unknown): string {
+  const entries = isRecord(value) ? Object.entries(value) : [];
+  const rows = entries.map(([locale, text]) => `<div class="js-localized-description-row" data-localized-description-row><input data-description-locale value="${escapeAttribute(locale)}" aria-label="Description locale"><textarea data-description-value aria-label="Localized description">${escapeHtml(typeof text === 'string' ? text : '')}</textarea><button type="button" data-description-remove aria-label="Remove localized description">${fluentIcon('dismiss')}</button></div>`).join('');
+  const empty = `<div class="js-localized-description-row" data-localized-description-row><input data-description-locale aria-label="Description locale"><textarea data-description-value aria-label="Localized description"></textarea><button type="button" data-description-remove aria-label="Remove localized description">${fluentIcon('dismiss')}</button></div>`;
+  return `<div class="js-structured-facet-row" data-facet-row="localized-descriptions.descriptions"><label><span>Alternate names · Localized descriptions</span><div class="js-localized-descriptions" data-localized-descriptions="${escapeAttribute(pointer)}">${rows || empty}</div></label></div>`;
+}
+
+function alternateNamesFacetRow(pointer: string, value: unknown): string {
+  const entries = isRecord(value) ? Object.entries(value) : [];
+  const rows = entries.map(([target, name]) => `<div class="js-alternate-name-row"><input data-alternate-name-target value="${escapeAttribute(target)}" aria-label="Alternate name target"><input data-alternate-name-value value="${escapeAttribute(typeof name === 'string' ? name : '')}" aria-label="Alternate name value"><button type="button" data-alternate-name-remove aria-label="Remove alternate name">${fluentIcon('dismiss')}</button></div>`).join('');
+  return `<div class="js-structured-facet-row" data-facet-row="alternate-names.altnames"><label><span>Alternate names</span><div class="js-alternate-names" data-alternate-names="${escapeAttribute(pointer)}">${rows || '<div class="js-alternate-name-row"><input data-alternate-name-target aria-label="Alternate name target"><input data-alternate-name-value aria-label="Alternate name value"><button type="button" data-alternate-name-remove aria-label="Remove alternate name">Remove</button></div>'}</div></label></div>`;
+}
+
+function alternateEnumsFacetRow(pointer: string, value: unknown): string {
+  const purposes = isRecord(value) ? Object.entries(value) : [];
+  const rows = purposes.map(([purpose, values]) => {
+    const entries = isRecord(values) ? Object.entries(values) : [];
+    return `<div class="js-alternate-enum-purpose" data-alternate-enum-purpose><div class="js-alternate-enum-purpose-head"><label>Purpose<input data-alternate-enum-purpose-name value="${escapeAttribute(purpose)}" aria-label="Alternate enum purpose"></label><button type="button" data-alternate-enum-purpose-remove aria-label="Remove alternate enum purpose">${fluentIcon('dismiss')}</button></div>${entries.map(([target, item]) => `<label class="js-alternate-enum-row"><span>${escapeHtml(target)}</span><input data-alternate-enum-value="${escapeAttribute(target)}" value="${escapeAttribute(typeof item === 'string' ? item : String(item ?? ''))}" aria-label="Alternate enum value"></label>`).join('')}</div>`;
+  }).join('');
+  return `<div class="js-structured-facet-row" data-facet-row="alternate-enums.altenums"><label><span>Alternate enum representations</span><div class="js-alternate-enums" data-alternate-enums="${escapeAttribute(pointer)}">${rows}</div></label></div>`;
+}
+
+function dependentRequiredFacetRow(pointer: string, value: unknown): string {
+  const entries = isRecord(value) ? Object.entries(value) : [];
+  const rows = entries.map(([trigger, properties]) => `<div class="js-dependent-required-row" data-dependent-required-row><input data-dependent-trigger value="${escapeAttribute(trigger)}" aria-label="Dependent required trigger"><input data-dependent-properties value="${escapeAttribute(Array.isArray(properties) ? properties.join(', ') : '')}" aria-label="Dependent required properties"><button type="button" data-dependent-remove aria-label="Remove dependent required rule">${fluentIcon('dismiss')}</button></div>`).join('');
+  return `<div class="js-structured-facet-row" data-facet-row="validation.dependentRequired"><label><span>Validation · Dependent required</span><div class="js-dependent-required" data-dependent-required="${escapeAttribute(pointer)}">${rows || '<div class="js-dependent-required-row" data-dependent-required-row><input data-dependent-trigger aria-label="Dependent required trigger"><input data-dependent-properties aria-label="Dependent required properties"><button type="button" data-dependent-remove aria-label="Remove dependent required rule">Remove</button></div>'}</div></label></div>`;
+}
+
+function regexSchemaFacetRow(pointer: string, action: CommandAction, value: unknown): string {
+  const entries = isRecord(value) ? Object.entries(value) : [];
+  const rows = entries.map(([pattern, schema]) => `<div class="js-regex-schema-row" data-regex-schema-row data-regex-pattern="${escapeAttribute(pattern)}"><input data-regex-pattern-input value="${escapeAttribute(pattern)}" aria-label="Regular expression pattern"><button type="button" data-regex-schema-remove aria-label="Remove regular expression schema">${fluentIcon('dismiss')}</button><span class="js-code">${escapeHtml(schemaExpressionLabel(isRecord(schema) ? schema.type : undefined))}</span></div>`).join('');
+  return `<div class="js-structured-facet-row" data-facet-row="${escapeAttribute(action.id)}"><label><span>${escapeHtml(action.group)} · ${escapeHtml(action.label.replace(/^Set /, ''))}</span><div class="js-regex-schema" data-regex-schema-map="${escapeAttribute(pointer)}" data-regex-schema-action="${escapeAttribute(action.id)}">${rows}<div class="js-regex-schema-add"><input data-regex-schema-new-pattern aria-label="New regular expression pattern"><select data-regex-schema-new-type aria-label="New regular expression schema type"><option value="string">string</option><option value="object">object</option></select><button type="button" data-regex-schema-add aria-label="Add regular expression schema">Add</button></div></div></label></div>`;
+}
+
+function crsFacetRow(pointer: string, value: unknown, properties: readonly string[]): string {
+  const current = isRecord(value) ? value : {};
+  const coordinates = Array.isArray(current.coordinates) ? current.coordinates.filter((entry): entry is string => typeof entry === 'string') : [];
+  const rows = coordinates.map((coordinate) => coordinateReferenceSystemRow(coordinate, properties, false)).join('');
+  const options = properties.filter((property) => !coordinates.includes(property)).map((property) => `<option value="${escapeAttribute(property)}">${escapeHtml(property)}</option>`).join('');
+  return `<div class="js-structured-facet-row" data-facet-row="semantic.coordinateReferenceSystem"><label><span>Semantic · Coordinate reference system</span><div class="js-coordinate-reference-system" data-coordinate-reference-system="${escapeAttribute(pointer)}"><input data-crs-reference value="${escapeAttribute(typeof current.reference === 'string' ? current.reference : isRecord(current.reference) && typeof current.reference.$ref === 'string' ? current.reference.$ref : '')}" aria-label="Coordinate reference"><input data-crs-kind value="${escapeAttribute(typeof current.kind === 'string' ? current.kind : '')}" aria-label="Coordinate system kind"><div data-crs-coordinates>${rows}</div><select data-crs-coordinate-add-select aria-label="Coordinate property"><option value="">Choose property</option>${options}</select><button type="button" data-crs-coordinate-add aria-label="Add coordinate">Add coordinate</button><button type="button" data-crs-apply aria-label="Apply coordinate reference system">Apply</button></div></label></div>`;
+}
+
+function structuredFacetRow(pointer: string, action: CommandAction, value: unknown, pending: boolean, schemaType: string | undefined, document?: unknown): string {
+  if (action.id === 'localized-descriptions.descriptions') return localizedDescriptionsFacetRow(pointer, value);
+  if (action.id === 'alternate-names.altnames') return alternateNamesFacetRow(pointer, value);
+  if (action.id === 'alternate-enums.altenums') return alternateEnumsFacetRow(pointer, value);
+  if (action.id === 'validation.dependentRequired') return dependentRequiredFacetRow(pointer, value);
+  if (action.id === 'validation.patternProperties' || action.id === 'validation.patternKeys') return regexSchemaFacetRow(pointer, action, value);
+  if (action.id === 'semantic.coordinateReferenceSystem') return crsFacetRow(pointer, value, crsPropertyNamesAtPointer(document, pointer));
   const raw = value === undefined ? '' : typeof value === 'string' && action.control?.kind !== 'advanced-json' ? value : JSON.stringify(value, null, 2);
   const kind = action.control?.kind === 'boolean' ? 'boolean' :
     action.control?.kind === 'number' ? 'number' :
     action.control?.kind === 'text' || action.control?.kind === 'catalog' ? 'text' : 'json';
+  const facetLabel = `${action.group} ${action.label.replace(/^Set /, '')}`;
+  const constControl = action.id === 'core.const'
+    ? `<input data-const-control data-facet-pointer="${escapeAttribute(pointer)}" data-const-type="${escapeAttribute(schemaType ?? 'string')}" aria-label="${escapeAttribute(facetLabel)}" value="${escapeAttribute(value === undefined ? '' : String(value))}">`
+    : undefined;
   const control = kind === 'boolean'
-    ? `<input type="checkbox" data-facet-control data-facet-action="${escapeAttribute(action.id)}" data-facet-pointer="${escapeAttribute(pointer)}" data-value-kind="boolean" ${value === true ? 'checked' : ''}>`
+    ? `<input type="checkbox" data-facet-control data-facet-action="${escapeAttribute(action.id)}" data-facet-pointer="${escapeAttribute(pointer)}" data-value-kind="boolean" aria-label="${escapeAttribute(facetLabel)}" ${value === true ? 'checked' : ''}>`
     : kind === 'json'
-      ? `<textarea rows="4" data-facet-control data-facet-action="${escapeAttribute(action.id)}" data-facet-pointer="${escapeAttribute(pointer)}" data-value-kind="json" placeholder="Enter structured JSON">${escapeHtml(raw)}</textarea>`
-      : `<input type="${kind === 'number' && !(action.control?.kind === 'number' && action.control.schemaNumeric && stringBackedNumericType(schemaType)) ? 'number' : 'text'}" data-facet-control data-facet-action="${escapeAttribute(action.id)}" data-facet-pointer="${escapeAttribute(pointer)}" data-value-kind="${kind}" value="${escapeAttribute(raw)}">`;
-  const catalog = action.control?.kind === 'catalog'
-    ? `<span class="js-catalog-field" data-facet-catalog="${escapeAttribute(action.id)}" data-facet-pointer="${escapeAttribute(pointer)}"><input type="hidden" data-catalog-value value="${escapeAttribute(raw)}"><input data-catalog-display value="${escapeAttribute(structuredValueLabel(value))}" readonly><button type="button" data-catalog-open>Browse catalog</button><small data-catalog-provenance>Catalog suggestions are advisory.</small></span>`
-    : control;
+      ? `<textarea rows="4" data-facet-control data-facet-action="${escapeAttribute(action.id)}" data-facet-pointer="${escapeAttribute(pointer)}" data-value-kind="json" aria-label="${escapeAttribute(facetLabel)}" placeholder="Enter structured JSON">${escapeHtml(raw)}</textarea>`
+      : `<input type="${kind === 'number' && !(action.control?.kind === 'number' && action.control.schemaNumeric && stringBackedNumericType(schemaType)) ? 'number' : 'text'}" data-facet-control data-facet-action="${escapeAttribute(action.id)}" data-facet-pointer="${escapeAttribute(pointer)}" data-value-kind="${kind}" aria-label="${escapeAttribute(facetLabel)}" value="${escapeAttribute(raw)}">`;
+  const catalog = action.id === 'core.enum'
+    ? enumFacetControl(pointer, action, value, schemaType)
+    : action.control?.kind === 'catalog'
+    ? `<span class="js-catalog-field" data-facet-catalog="${escapeAttribute(action.id)}" data-facet-pointer="${escapeAttribute(pointer)}"><input type="hidden" data-catalog-value value="${escapeAttribute(raw)}"><input data-catalog-display value="${escapeAttribute(structuredValueLabel(value))}" aria-label="${escapeAttribute(facetLabel)}" readonly><button type="button" data-catalog-open>Browse catalog</button><small data-catalog-provenance>Catalog suggestions are advisory.</small></span>`
+    : constControl ?? control;
   const remove = pending
     ? `<button type="button" data-facet-cancel="${escapeAttribute(inlineFieldKey(pointer, action.id))}">Cancel</button>`
     : `<button type="button" class="js-detail-remove" data-facet-remove="${escapeAttribute(action.removesActionId ?? `${action.id}.remove`)}" data-facet-pointer="${escapeAttribute(pointer)}">Remove</button>`;
@@ -3294,17 +4098,16 @@ function typeCreatorView(firstType: boolean): string {
 }
 
 function directStructurizeImportCommands(manifest: ConversionCommandsManifest): readonly ConversionCommand[] {
-  return manifest.commands.filter((command) => command.direction === 'import' && command.converterId === 'structurize-cli' && command.cliCommand?.endsWith('2s'));
+  return manifest.commands.filter((command) => command.direction === 'import');
 }
 
 function startConversionChoices(manifest: ConversionCommandsManifest): string {
   const commands = directStructurizeImportCommands(manifest);
-  return `<section class="js-start-conversion" aria-labelledby="start-conversion-title"><div class="js-section-head"><div><h2 id="start-conversion-title">Start from an existing schema or data source</h2><span class="js-section-meta">Import with Structurize</span></div></div><div class="js-start-conversion-grid">${commands.map((command) => `<button type="button" class="js-start-conversion-choice" data-start-conversion-command="${escapeAttribute(command.id)}" data-start-cli-command="${escapeAttribute(command.cliCommand ?? '')}"><span class="js-format-icon" data-format="${escapeAttribute(command.sourceFormat)}" aria-hidden="true">${technologyIcon(command.sourceFormat)}</span><span><strong>${escapeHtml(conversionFormatName(command.sourceFormat))}</strong><small>${escapeHtml(command.availability === 'external-service' ? command.availabilityMessage ?? 'External source configuration required.' : `Open ${command.sourceExtensions?.join(', ') ?? 'a source file'}`)}</small></span></button>`).join('')}</div></section>`;
+  return `<section class="js-start-conversion" aria-labelledby="start-conversion-title"><div class="js-section-head"><div><h2 id="start-conversion-title">Start from an existing schema or data source</h2><span class="js-section-meta">${commands.length} importers</span></div></div><div class="js-start-conversion-grid">${commands.map((command) => `<button type="button" class="js-start-conversion-choice" data-start-conversion-command="${escapeAttribute(command.id)}" data-start-cli-command="${escapeAttribute(command.cliCommand ?? '')}"><span class="js-format-icon" data-format="${escapeAttribute(command.sourceFormat)}" aria-hidden="true">${technologyIcon(command.sourceFormat)}</span><span><strong>${escapeHtml(command.label)}</strong><small>${escapeHtml(command.availability === 'external-service' ? command.availabilityMessage ?? 'External source configuration required.' : `${command.converterId}${command.sourceExtensions?.length ? ` · ${command.sourceExtensions.join(', ')}` : ''}`)}</small></span></button>`).join('')}</div></section>`;
 }
 
-function isCreatableType(value: string): value is CreatableType {
-  const action = actionById('core.type');
-  return action?.control?.kind === 'select' && action.control.options.some((option) => option.value === value);
+function startConversionChooserDialog(manifest: ConversionCommandsManifest): string {
+  return `<dialog class="js-start-conversion-dialog js-import-chooser-dialog" data-start-conversion-chooser aria-labelledby="start-conversion-chooser-title"><div class="js-start-conversion-dialog-head"><span aria-hidden="true">${fluentIcon('arrowSwap')}</span><span><strong id="start-conversion-chooser-title">Import existing schema or data</strong><small>Choose a source format or data service</small></span><button type="button" data-start-conversion-chooser-close aria-label="Close import chooser">${fluentIcon('dismiss')}</button></div><div class="js-start-conversion-dialog-body">${startConversionChoices(manifest)}</div></dialog>`;
 }
 
 export function compositeSchema(type: CreatableType): Readonly<Record<string, unknown>> {
@@ -3314,6 +4117,30 @@ export function compositeSchema(type: CreatableType): Readonly<Record<string, un
   if (type === 'tuple') return { type, properties: {}, tuple: [] };
   if (type === 'choice') return { type, choices: {} };
   return { type };
+}
+
+function enumValueFromControl(type: string, control: HTMLInputElement | HTMLSelectElement): unknown {
+  if (control.dataset.enumNull === 'true') return null;
+  if (!('value' in control)) throw new Error('Enum value control is invalid.');
+  return enumValueFromRaw(type, String(control.value));
+}
+
+function enumValueFromRaw(type: string, raw: string): unknown {
+  if (type === 'null') {
+    if (raw !== 'null') throw new Error('Enter null.');
+    return null;
+  }
+  if (type === 'boolean') {
+    if (raw !== 'true' && raw !== 'false') throw new Error('Enter true or false.');
+    return raw === 'true';
+  }
+  if (['number', 'integer', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32', 'float8', 'float', 'double'].includes(type)) {
+    if (raw.trim() === '') throw new Error('Enter a numeric enum value.');
+    const value = Number(raw);
+    if (!Number.isFinite(value)) throw new Error('Enter a valid numeric enum value.');
+    return value;
+  }
+  return raw;
 }
 
 function propertyEditorRow(row: PropertyRow, selected: boolean, expanded: boolean, identity: boolean, definitions: readonly { readonly name: string; readonly pointer: string }[], document?: unknown, pendingPropertyFields: ReadonlySet<string> = new Set(), tupleMember = false, ancestors: ReadonlySet<string> = new Set()): string {
@@ -3326,7 +4153,7 @@ function propertyEditorRow(row: PropertyRow, selected: boolean, expanded: boolea
     : row.requiredAlternatives
     ? `<button class="js-required-sets" data-action-id="property.required-alternatives" data-action-pointer="${escapeAttribute(propertyOwnerPointer(row.pointer))}" title="This type uses alternative required sets">Edit sets</button>`
     : `<label><input type="checkbox" data-inline-property="required" data-property-pointer="${escapeAttribute(row.pointer)}" ${row.required ? 'checked' : ''}> required</label>`;
-  return `<div class="js-property-editor" data-property-editor="${escapeAttribute(row.pointer)}" aria-current="${selected}"><div class="js-row js-inline-property-row" role="row"><div class="js-cell" role="cell"><input class="js-inline-name js-code" data-inline-property="name" data-property-pointer="${escapeAttribute(row.pointer)}" value="${escapeAttribute(row.name)}" aria-label="Property name"></div><div class="js-cell js-inline-type-cell" role="cell" data-type-drop="${escapeAttribute(row.pointer)}">${typeComposer}<span class="js-type-drop-zone" aria-hidden="true"></span></div><div class="js-cell js-inline-nullable-cell" role="cell"><label><input type="checkbox" data-inline-property="nullable" data-property-pointer="${escapeAttribute(row.pointer)}" ${inlinePropertyNullable(schema) ? 'checked' : ''}> nullable</label></div><div class="js-cell js-inline-identity-cell" role="cell"><label title="If needed, checking this activates the compatible Relations capability."><input type="checkbox" data-inline-property="identity" data-property-pointer="${escapeAttribute(row.pointer)}" ${identity ? 'checked' : ''}> identity</label></div><div class="js-cell js-inline-required-cell" role="cell">${requiredControl}</div><div class="js-cell js-description-cell" role="cell"><textarea class="js-inline-description" rows="1" data-inline-property="description" data-property-pointer="${escapeAttribute(row.pointer)}" placeholder="Add description" aria-label="Description for ${escapeAttribute(row.name)}">${escapeHtml(row.description ?? '')}</textarea></div><div class="js-cell js-action-cell" role="cell"><button class="js-row-action" data-property-details="${escapeAttribute(row.pointer)}" aria-expanded="${expanded}" aria-controls="${detailsId}" aria-label="${expanded ? 'Collapse' : 'Expand'} validation and annotations for ${escapeAttribute(row.name)}">${fluentIcon('chevronRight', `js-property-chevron${expanded ? ' js-expanded' : ''}`)}</button><button class="js-row-action js-danger" data-inline-property-delete="${escapeAttribute(row.pointer)}" aria-label="Delete ${escapeAttribute(row.name)}">${fluentIcon('dismiss')}</button></div>${collectionEditors}</div><p class="js-inline-status" data-inline-status="${escapeAttribute(row.pointer)}" role="status" aria-live="polite"></p>${expanded ? propertyDetailsPanel(row, detailsId, document, pendingPropertyFields, definitions) : ''}${nestedSchemaEditor(schema, row.pointer, definitions, document, pendingPropertyFields, ancestors)}</div>`;
+  return `<div class="js-property-editor" data-property-editor="${escapeAttribute(row.pointer)}" aria-current="${selected}" role="rowgroup"><div class="js-row js-inline-property-row" role="row"><div class="js-cell" role="cell"><input class="js-inline-name js-code" data-inline-property="name" data-property-pointer="${escapeAttribute(row.pointer)}" value="${escapeAttribute(row.name)}" aria-label="Property name"></div><div class="js-cell js-inline-type-cell" role="cell" data-type-drop="${escapeAttribute(row.pointer)}">${typeComposer}<span class="js-type-drop-zone" aria-hidden="true"></span></div><div class="js-cell js-inline-nullable-cell" role="cell"><label><input type="checkbox" data-inline-property="nullable" data-property-pointer="${escapeAttribute(row.pointer)}" ${inlinePropertyNullable(schema) ? 'checked' : ''}> nullable</label></div><div class="js-cell js-inline-identity-cell" role="cell"><label title="If needed, checking this activates the compatible Relations capability."><input type="checkbox" data-inline-property="identity" data-property-pointer="${escapeAttribute(row.pointer)}" ${identity ? 'checked' : ''}> identity</label></div><div class="js-cell js-inline-required-cell" role="cell">${requiredControl}</div><div class="js-cell js-description-cell" role="cell"><textarea class="js-inline-description" rows="1" data-inline-property="description" data-property-pointer="${escapeAttribute(row.pointer)}" placeholder="Add description" aria-label="Description for ${escapeAttribute(row.name)}">${escapeHtml(row.description ?? '')}</textarea></div><div class="js-cell js-action-cell" role="cell"><button class="js-row-action" data-property-details="${escapeAttribute(row.pointer)}" aria-expanded="${expanded}" aria-controls="${detailsId}" aria-label="${expanded ? 'Collapse' : 'Expand'} validation and annotations for ${escapeAttribute(row.name)}">${fluentIcon('chevronRight', `js-property-chevron${expanded ? ' js-expanded' : ''}`)}</button><button class="js-row-action js-danger" data-inline-property-delete="${escapeAttribute(row.pointer)}" aria-label="Delete ${escapeAttribute(row.name)}">${fluentIcon('dismiss')}</button></div>${collectionEditors}</div><p class="js-inline-status" data-inline-status="${escapeAttribute(row.pointer)}" role="status" aria-live="polite"></p>${expanded ? propertyDetailsPanel(row, detailsId, document, pendingPropertyFields, definitions) : ''}${nestedSchemaEditor(schema, row.pointer, definitions, document, pendingPropertyFields, ancestors)}</div>`;
 }
 
 function nestedSchemaEditor(schema: Readonly<Record<string, unknown>>, pointer: string, definitions: readonly { readonly name: string; readonly pointer: string }[], document?: unknown, pendingPropertyFields: ReadonlySet<string> = new Set(), ancestors: ReadonlySet<string> = new Set()): string {
@@ -3589,7 +4416,35 @@ function normalizeInlineTypeSchema(candidate: Record<string, unknown>): Record<s
   return next;
 }
 
-function propertyDetailsPanel(row: PropertyRow, id: string, document?: unknown, pendingPropertyFields: ReadonlySet<string> = new Set(), definitions: readonly { readonly name: string; readonly pointer: string }[] = []): string {
+function coreFacetEditor(pointer: string, schema: Readonly<Record<string, unknown>>, document: unknown, pendingFields: ReadonlySet<string>, _definitions: readonly { readonly name: string; readonly pointer: string }[]): string {
+  const actions = commandActions.filter((action) => STRUCTURED_CORE_FACETS.has(action.id) && action.operation === 'set' && action.keyword);
+  const effective = effectiveValidationTypes(document, schema);
+  const schemaType = effective.determinate && effective.types.length === 1 ? effective.types[0] : undefined;
+  const rows = actions.flatMap((action) => {
+    if (!coreFacetCompatibleWithType(action.id, schemaType, schema)) return [];
+    const current = schema[action.keyword!];
+    const pending = pendingFields.has(inlineFieldKey(pointer, action.id));
+    return [{ actionId: action.id, html: structuredFacetRow(pointer, action, current, pending, schemaType, document) }];
+  });
+  if (!rows.length) return '';
+  const compactStringIds = new Set(['core.enum', 'core.const', 'core.max-length']);
+  const compactStringRows = schemaType === 'string' ? rows.filter((row) => compactStringIds.has(row.actionId)) : [];
+  const regularRows = rows.filter((row) => !compactStringRows.includes(row));
+  const compactStringGroup = compactStringRows.length ? `<div class="js-core-facet-cluster js-core-string-qualifiers">${compactStringRows.map((row) => row.html).join('')}</div>` : '';
+  return `<section class="js-core-facets js-qualifier-section"><div class="js-section-head"><div><h2>Core qualifiers</h2><span class="js-section-meta">Type-specific attributes</span></div></div><div class="js-core-facet-list">${compactStringGroup}${regularRows.map((row) => row.html).join('')}</div></section>`;
+}
+
+function coreFacetCompatibleWithType(actionId: string, schemaType: string | undefined, schema: Readonly<Record<string, unknown>>): boolean {
+  const scalarTypes = new Set(['null', 'boolean', 'string', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32', 'int64', 'uint64', 'int128', 'uint128', 'integer', 'float8', 'float', 'double', 'decimal', 'number', 'date', 'datetime', 'time', 'duration', 'uuid', 'uri', 'binary', 'jsonpointer']);
+  if (actionId === 'core.enum' || actionId === 'core.const') return schemaType !== undefined && scalarTypes.has(schemaType);
+  if (actionId === 'core.additional-properties') return schemaType === 'object' && schema.abstract !== true;
+  if (actionId === 'core.precision' || actionId === 'core.scale') return schemaType === 'number' || schemaType === 'decimal';
+  if (actionId === 'core.max-length') return schemaType === 'string';
+  if (actionId === 'core.selector') return schemaType === 'choice';
+  return true;
+}
+
+function propertyDetailsPanel(row: PropertyRow, id: string, document?: unknown, pendingPropertyFields: ReadonlySet<string> = new Set(), _definitions: readonly { readonly name: string; readonly pointer: string }[] = []): string {
   const schema = row.schema ?? {};
   const validationFields = [
     ['minimum', 'Minimum', 'number'], ['maximum', 'Maximum', 'number'], ['exclusiveMinimum', 'Exclusive minimum', 'number'], ['exclusiveMaximum', 'Exclusive maximum', 'number'], ['multipleOf', 'Multiple of', 'number'],
@@ -3607,7 +4462,11 @@ function propertyDetailsPanel(row: PropertyRow, id: string, document?: unknown, 
   const structured = structuredFields.filter(([keyword]) => schema[keyword] !== undefined || pendingPropertyFields.has(inlineFieldKey(row.pointer, inlineKeywordActionId('annotation', keyword)))).map(([keyword, label]) => propertyJsonField(row.pointer, keyword, label, schema[keyword], pendingPropertyFields.has(inlineFieldKey(row.pointer, inlineKeywordActionId('annotation', keyword))))).join('');
   const validationCount = validationFields.filter(([keyword]) => schema[keyword] !== undefined).length;
   const annotationCount = annotationFields.filter(([keyword]) => schema[keyword] !== undefined).length + structuredFields.filter(([keyword]) => schema[keyword] !== undefined).length;
-  const validationAdd = propertyDetailAddControl(schema, row.pointer, validationFields.map(([keyword, label]) => [inlineKeywordActionId('validation', keyword), keyword, label] as const), 'constraint', document, pendingPropertyFields);
+  const validationAdd = propertyDetailAddControl(schema, row.pointer, [
+    ['core.precision', 'precision', 'Precision'],
+    ['core.scale', 'scale', 'Scale'],
+    ...validationFields.map(([keyword, label]) => [inlineKeywordActionId('validation', keyword), keyword, label] as const),
+  ], 'constraint', document, pendingPropertyFields);
   const annotationOptions = [
     ...annotationFields.map(([keyword, label]) => [inlineKeywordActionId('annotation', keyword), keyword, label] as const),
     ...structuredFields.map(([keyword, label]) => [inlineKeywordActionId('annotation', keyword), keyword, label] as const),
@@ -3618,8 +4477,9 @@ function propertyDetailsPanel(row: PropertyRow, id: string, document?: unknown, 
     ...annotationFields.map(([keyword]) => inlineKeywordActionId('annotation', keyword)),
     ...structuredFields.map(([keyword]) => inlineKeywordActionId('annotation', keyword)),
   ]);
-  const advanced = structuredFacetEditor(row.pointer, schema, document, pendingPropertyFields, represented, definitions);
-  return `<section class="js-property-details" id="${id}" aria-label="Validation and annotations for ${escapeAttribute(row.name)}"><div class="js-property-detail-columns"><section class="js-property-detail-group" aria-labelledby="${id}-constraints"><header><strong id="${id}-constraints">Validation constraints</strong><span>${validationCount}</span></header><div class="js-property-detail-fields">${validation || '<p class="js-detail-empty">No constraints</p>'}</div>${validationAdd}</section><section class="js-property-detail-group" aria-labelledby="${id}-annotations"><header><strong id="${id}-annotations">Annotations</strong><span>${annotationCount}</span></header><div class="js-property-detail-fields">${annotations}${structured || (!annotations ? '<p class="js-detail-empty">No annotations</p>' : '')}</div>${annotationAdd}</section></div>${advanced}<p class="js-inline-status" data-inline-status="${escapeAttribute(row.pointer)}" role="status" aria-live="polite"></p></section>`;
+  const core = coreFacetEditor(row.pointer, schema, document, pendingPropertyFields, _definitions);
+  const advanced = structuredFacetEditor(row.pointer, schema, document, pendingPropertyFields, new Set([...represented, ...STRUCTURED_CORE_FACETS]), _definitions);
+  return `<section class="js-property-details" id="${id}" aria-label="Validation and annotations for ${escapeAttribute(row.name)}">${core}<div class="js-property-detail-columns"><section class="js-property-detail-group" aria-labelledby="${id}-constraints"><header><strong id="${id}-constraints">Validation constraints</strong><span>${validationCount}</span></header><div class="js-property-detail-fields">${validation || '<p class="js-detail-empty">No constraints</p>'}</div>${validationAdd}</section><section class="js-property-detail-group" aria-labelledby="${id}-annotations"><header><strong id="${id}-annotations">Annotations</strong><span>${annotationCount}</span></header><div class="js-property-detail-fields">${annotations}${structured || (!annotations ? '<p class="js-detail-empty">No annotations</p>' : '')}</div>${annotationAdd}</section></div>${advanced}<p class="js-inline-status" data-inline-status="${escapeAttribute(row.pointer)}" role="status" aria-live="polite"></p></section>`;
 }
 
 function propertyDetailFields(schema: Readonly<Record<string, unknown>>, fields: readonly (readonly [string, string, 'text' | 'number' | 'integer' | 'boolean'])[], pointer: string, family: string, pendingPropertyFields: ReadonlySet<string>): string {
@@ -3629,12 +4489,12 @@ function propertyDetailFields(schema: Readonly<Record<string, unknown>>, fields:
     const pending = value === undefined && pendingPropertyFields.has(inlineFieldKey(pointer, actionId));
     const removeAction = `${inlineKeywordActionId(family, keyword)}.remove`;
     const removeButton = pending ? pendingPropertyFieldRemoveButton(pointer, actionId, label) : propertyDetailRemoveButton(pointer, removeAction, label);
-    if (kind === 'boolean') return `<div class="js-detail-field" data-inline-field-action="${escapeAttribute(actionId)}"><label class="js-detail-check"><input type="checkbox" data-inline-keyword="${keyword}" data-inline-family="${family}" data-property-pointer="${escapeAttribute(pointer)}" data-value-kind="boolean" ${value === true ? 'checked' : ''}> ${label}</label>${removeButton}</div>`;
+    if (kind === 'boolean') return `<div class="js-detail-field" data-inline-field-action="${escapeAttribute(actionId)}"><label class="js-detail-check"><input type="checkbox" data-inline-keyword="${keyword}" data-inline-family="${family}" data-property-pointer="${escapeAttribute(pointer)}" data-value-kind="boolean" aria-label="${escapeAttribute(label)}" ${value === true ? 'checked' : ''}> ${label}</label>${removeButton}</div>`;
     const action = actionById(actionId);
     const catalog = action && catalogFamilyForAction(action);
     const stringBacked = action?.control?.kind === 'number' && action.control.schemaNumeric && stringBackedNumericType(typeof schema.type === 'string' ? schema.type : undefined);
     const numericInput = kind === 'number' || kind === 'integer';
-    const input = `<input data-inline-keyword="${keyword}" data-inline-family="${family}" data-property-pointer="${escapeAttribute(pointer)}" data-value-kind="${kind}" ${catalog ? 'data-catalog-value ' : ''}type="${numericInput && !stringBacked ? 'number' : 'text'}" ${kind === 'integer' ? 'step="1" min="0"' : kind === 'number' && !stringBacked ? 'step="any"' : stringBacked ? 'inputmode="decimal"' : ''} value="${escapeAttribute(value === undefined ? '' : String(value))}">`;
+    const input = `<input data-inline-keyword="${keyword}" data-inline-family="${family}" data-property-pointer="${escapeAttribute(pointer)}" data-value-kind="${kind}" aria-label="${escapeAttribute(label)}" ${catalog ? 'data-catalog-value ' : ''}type="${numericInput && !stringBacked ? 'number' : 'text'}" ${kind === 'integer' ? 'step="1" min="0"' : kind === 'number' && !stringBacked ? 'step="any"' : stringBacked ? 'inputmode="decimal"' : ''} value="${escapeAttribute(value === undefined ? '' : String(value))}">`;
     const field = catalog ? `<label data-inline-catalog="${escapeAttribute(action.id)}" data-property-pointer="${escapeAttribute(pointer)}">${label}<span class="js-detail-json">${input}<button type="button" data-inline-browse="${keyword}" data-catalog-open aria-label="Browse ${escapeAttribute(label.toLocaleLowerCase())} catalog">Browse</button></span><small class="js-detail-provenance" data-catalog-provenance>Catalog suggestions are advisory.</small></label>` : `<label>${label}${input}</label>`;
     return `<div class="js-detail-field" data-inline-field-action="${escapeAttribute(actionId)}">${field}${removeButton}</div>`;
   }).join('');
@@ -3648,7 +4508,7 @@ function propertyJsonField(pointer: string, keyword: string, label: string, valu
   const remove = propertyDetailRemoveButton(pointer, `${inlineKeywordActionId('annotation', keyword)}.remove`, label);
   const actionId = inlineKeywordActionId('annotation', keyword);
   const removeButton = pending ? pendingPropertyFieldRemoveButton(pointer, actionId, label) : remove;
-  if (!catalog) return `<div class="js-detail-field" data-inline-field-action="${escapeAttribute(actionId)}"><label>${escapeHtml(label)}<textarea data-inline-keyword="${escapeAttribute(keyword)}" data-inline-family="annotation" data-property-pointer="${escapeAttribute(pointer)}" data-value-kind="json" rows="3" placeholder="Enter JSON">${escapeHtml(raw)}</textarea></label>${removeButton}</div>`;
+  if (!catalog) return `<div class="js-detail-field" data-inline-field-action="${escapeAttribute(actionId)}"><label>${escapeHtml(label)}<textarea data-inline-keyword="${escapeAttribute(keyword)}" data-inline-family="annotation" data-property-pointer="${escapeAttribute(pointer)}" data-value-kind="json" aria-label="${escapeAttribute(label)}" rows="3" placeholder="Enter JSON">${escapeHtml(raw)}</textarea></label>${removeButton}</div>`;
   const input = `<input type="hidden" data-inline-keyword="${keyword}" data-inline-family="annotation" data-property-pointer="${escapeAttribute(pointer)}" data-value-kind="json" data-catalog-value value="${escapeAttribute(raw)}"><input data-catalog-display value="${escapeAttribute(summary)}" readonly aria-label="${escapeAttribute(label)}">`;
   return `<div class="js-detail-field" data-inline-field-action="${escapeAttribute(actionId)}"><label data-inline-catalog="${escapeAttribute(action.id)}" data-property-pointer="${escapeAttribute(pointer)}">${label}<span class="js-detail-json">${input}<button type="button" data-inline-browse="${keyword}" data-catalog-open aria-label="Browse ${escapeAttribute(label.toLocaleLowerCase())} catalog">Browse</button></span><small class="js-detail-provenance" data-catalog-provenance>Catalog suggestions are advisory.</small></label>${removeButton}</div>`;
 }
@@ -4027,7 +4887,7 @@ function inspector(property: PropertyRow | undefined, definition: import('../mod
   const sections = property ? projectSchemaInspectorSections(property.schema) : projectInspectorSections(definition);
   const heading = property?.name ?? definition?.name ?? 'No selection';
   const kind = property ? 'Property' : definition?.type ?? 'Document';
-  const propertyActions = property ? `<div class="js-actions"><button data-action-id="property.rename">Rename</button><button data-action-id="property.edit">Change type</button><button class="js-danger" data-action-id="property.delete">Delete</button></div>` : '';
+  const propertyActions = '';
   return `<section><div class="js-eyebrow">${escapeHtml(kind)}</div><h2>${escapeHtml(heading)}</h2>${property?.description ? `<p class="js-description">${escapeHtml(property.description)}</p>` : ''}${propertyActions}</section>${sections.map(inspectorSection).join('') || '<section><p class="js-description">No normalized fields are available for this selection.</p></section>'}<section><div class="js-eyebrow">Diagnostics</div><p class="js-description">${diagnostics.length} for this selection.</p></section>`;
 }
 
@@ -4081,15 +4941,21 @@ function showActionPalette(root: HTMLElement, pointer: string, session: Document
   select.focus();
 }
 
-async function mountSourceEditor(root: HTMLElement, text: string, existingModel: MonacoEditor.ITextModel | undefined, uri: string, onChange: (text: string) => void, theme: 'dark' | 'light' | 'contrast', isCurrent: () => boolean): Promise<{ editor: MonacoEditor.IStandaloneCodeEditor; model: MonacoEditor.ITextModel } | undefined> {
+async function mountSourceEditor(root: HTMLElement, text: string, existingModel: MonacoEditor.ITextModel | undefined, uri: string, onChange: (text: string) => void, theme: 'dark' | 'light' | 'contrast', isCurrent: () => boolean): Promise<{ editor: MonacoEditor.IStandaloneCodeEditor; model: MonacoEditor.ITextModel; element: HTMLElement; createdModel: boolean } | undefined> {
   const element = root.querySelector('[data-source]') as HTMLElement | null;
   if (!element) return undefined;
   const { createJsonEditor, createJsonModel } = await import('./monaco.js');
   if (!isCurrent()) return undefined;
-  const model = existingModel && !existingModel.isDisposed() ? existingModel : createJsonModel(text, uri);
+  const createdModel = !existingModel || existingModel.isDisposed();
+  const model = createdModel ? createJsonModel(text, uri) : existingModel;
   const editor = createJsonEditor(element, model, theme);
+  if (!isCurrent() || !element.isConnected) {
+    editor.dispose();
+    if (createdModel && !model.isDisposed()) model.dispose();
+    return undefined;
+  }
   editor.onDidChangeModelContent(() => onChange(model.getValue()));
-  return { editor, model };
+  return { editor, model, element, createdModel };
 }
 
 function syncSourceModel(model: MonacoEditor.ITextModel | undefined, text: string): void {
@@ -4217,17 +5083,31 @@ function showActionEditor(root: HTMLElement, action: CommandAction, pointer: str
   const conditionalBuilder = panel.querySelector('[data-conditional-builder]');
   const syncConditionalBuilder = (): void => {
     if (!conditionalBuilder) return;
+    const mode = (conditionalBuilder.querySelector('[data-conditional-mode]') as HTMLSelectElement | null)?.value ?? 'then';
+    conditionalBuilder.querySelectorAll('[data-conditional-role]').forEach((entry: HTMLElement) => {
+      const role = entry.getAttribute('data-conditional-role');
+      const active = mode === 'both' || mode === role;
+      (entry as HTMLElement).hidden = !active;
+      const select = entry.querySelector('[data-conditional-value]') as HTMLSelectElement | null;
+      if (select) {
+        select.disabled = !active;
+        select.required = active;
+      }
+    });
     const value: Record<string, unknown> = {};
     conditionalBuilder.querySelectorAll('[data-conditional-value]').forEach((entry: HTMLElement) => {
       const keyword = entry.getAttribute('data-conditional-value');
-      const raw = (entry as HTMLSelectElement).value;
+      const select = entry as HTMLSelectElement;
+      const raw = select.disabled ? '' : select.value;
       if (!keyword || !raw) return;
       try { value[keyword] = JSON.parse(raw); } catch { /* Keep the row unset until a valid option is chosen. */ }
     });
     const hidden = form.elements.namedItem('value') as HTMLInputElement | null;
-    if (hidden) hidden.value = JSON.stringify(value);
+    const complete = isSchemaRecord(value.if) && (isSchemaRecord(value.then) || isSchemaRecord(value.else));
+    if (hidden) hidden.value = complete ? JSON.stringify(value) : '';
   };
   conditionalBuilder?.querySelectorAll('[data-conditional-value]').forEach((control: HTMLElement) => control.addEventListener('change', syncConditionalBuilder));
+  conditionalBuilder?.querySelector('[data-conditional-mode]')?.addEventListener('change', syncConditionalBuilder);
   syncConditionalBuilder();
   const relationEditor = panel.querySelector('[data-relation-editor]');
   const syncRelationValue = (): void => {
@@ -4241,7 +5121,7 @@ function showActionEditor(root: HTMLElement, action: CommandAction, pointer: str
   };
   relationEditor?.querySelectorAll('select,input').forEach((control: HTMLElement) => control.addEventListener('change', syncRelationValue));
   syncRelationValue();
-  wireCatalogControl(panel, action, session, catalogs, status);
+  wireCatalogControl(panel, action, session, catalogs, status, undefined, pointer);
   form.addEventListener('submit', async (event: Event) => {
     event.preventDefault();
     if (sourceOnly) return;
@@ -4260,7 +5140,17 @@ function showActionEditor(root: HTMLElement, action: CommandAction, pointer: str
   (sourceOnly ? panel.querySelector('[data-open-source]') as HTMLElement | null : name ?? value)?.focus();
 }
 
-function wireCatalogControl(panel: HTMLElement, action: CommandAction, session: DocumentSession, catalogs: CatalogRegistry, status: HTMLElement, onValueSelected?: () => void): void {
+function catalogValueForActionTarget(action: CommandAction, session: DocumentSession, pointer: string, value: CatalogJsonValue): CatalogJsonValue {
+  if (action.id !== 'semantic.temporalReferenceSystem' || value === null || typeof value !== 'object' || Array.isArray(value)) return value;
+  const target = valueAtPointer(session.value, pointer);
+  const targetType = target && typeof target === 'object' && !Array.isArray(target) ? (target as Readonly<Record<string, unknown>>).type : undefined;
+  if (targetType === 'object' || targetType === 'tuple') return value;
+  const propertyValue: Record<string, CatalogJsonValue> = {};
+  for (const [key, entry] of Object.entries(value)) if (key !== 'position') propertyValue[key] = entry;
+  return propertyValue;
+}
+
+function wireCatalogControl(panel: HTMLElement, action: CommandAction, session: DocumentSession, catalogs: CatalogRegistry, status: HTMLElement, onValueSelected?: () => void, pointer = ''): void {
   const input = panel.querySelector('[data-catalog-value]') as HTMLInputElement | null;
   const display = panel.querySelector('[data-catalog-display]') as HTMLInputElement | null;
   const open = panel.querySelector('[data-catalog-open]') as HTMLButtonElement | null;
@@ -4275,6 +5165,8 @@ function wireCatalogControl(panel: HTMLElement, action: CommandAction, session: 
   let lastResult: CatalogMergeResult | undefined;
   let lastQuery = '';
   let selectedSuggestionIndex: number | undefined;
+  let querySelection: { readonly start: number; readonly end: number; readonly direction: 'forward' | 'backward' | 'none' } | undefined;
+  let focusQueryAfterRender = false;
   let releaseTrap = (): void => undefined;
   const close = (): void => {
     if (activeRequest) catalogs.cancel(activeRequest);
@@ -4285,7 +5177,8 @@ function wireCatalogControl(panel: HTMLElement, action: CommandAction, session: 
     open.focus();
   };
   const applicationValue = (value: CatalogJsonValue): { readonly value: CatalogJsonValue; readonly duplicate: boolean } => {
-    if (family !== 'semanticConcept') return { value, duplicate: false };
+    const targetValue = catalogValueForActionTarget(action, session, pointer, value);
+    if (family !== 'semanticConcept') return { value: targetValue, duplicate: false };
     let current: CatalogJsonValue[] = [];
     try {
       const parsed = JSON.parse(input.value);
@@ -4293,9 +5186,9 @@ function wireCatalogControl(panel: HTMLElement, action: CommandAction, session: 
     } catch {
       current = [];
     }
-    const encoded = JSON.stringify(value);
+    const encoded = JSON.stringify(targetValue);
     const duplicate = current.some((entry) => JSON.stringify(entry) === encoded);
-    return { value: duplicate ? current : [...current, value], duplicate };
+    return { value: duplicate ? current : [...current, targetValue], duplicate };
   };
   const applyValue = (value: CatalogJsonValue, label: string, source: string): void => {
     const application = applicationValue(value);
@@ -4320,8 +5213,22 @@ function wireCatalogControl(panel: HTMLElement, action: CommandAction, session: 
   const renderDrawer = (): void => {
     if (!drawer || !lastResult) return;
     const manifests = catalogs.listProviders().filter((provider) => provider.families.includes(family));
-    const query = (drawer.querySelector('[data-catalog-query]') as HTMLInputElement | null)?.value ?? lastQuery;
-    drawer.innerHTML = catalogBrowserView(manifests, lastResult, family, query, activeProviderId, selectionPreview());
+    const previousQuery = drawer.querySelector('[data-catalog-query]') as HTMLInputElement | null;
+    const query = previousQuery?.value ?? lastQuery;
+    if (previousQuery && document.activeElement === previousQuery) {
+      focusQueryAfterRender = true;
+      querySelection = {
+        start: previousQuery.selectionStart ?? query.length,
+        end: previousQuery.selectionEnd ?? query.length,
+        direction: previousQuery.selectionDirection ?? 'none',
+      };
+    }
+    const next = document.createElement('div');
+    next.innerHTML = catalogBrowserView(manifests, lastResult, family, query, activeProviderId, selectionPreview());
+    const replacementQuery = next.querySelector('[data-catalog-query]');
+    if (previousQuery && replacementQuery) replacementQuery.replaceWith(previousQuery);
+    drawer.innerHTML = '';
+    while (next.firstChild) drawer.append(next.firstChild);
     wireDrawer();
   };
   const wireDrawer = (): void => {
@@ -4334,10 +5241,19 @@ function wireCatalogControl(panel: HTMLElement, action: CommandAction, session: 
       void search(query);
     }));
     const queryInput = drawer.querySelector('[data-catalog-query]') as HTMLInputElement | null;
-    queryInput?.addEventListener('input', () => {
-      selectedSuggestionIndex = undefined;
-      void search(queryInput.value);
-    });
+    if (queryInput && queryInput.dataset.catalogQueryWired !== 'true') {
+      queryInput.dataset.catalogQueryWired = 'true';
+      queryInput.addEventListener('input', () => {
+        selectedSuggestionIndex = undefined;
+        querySelection = {
+          start: queryInput.selectionStart ?? queryInput.value.length,
+          end: queryInput.selectionEnd ?? queryInput.value.length,
+          direction: queryInput.selectionDirection ?? 'none',
+        };
+        focusQueryAfterRender = true;
+        void search(queryInput.value);
+      });
+    }
     drawer.querySelectorAll('[data-catalog-suggestion]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
       selectedSuggestionIndex = Number(button.dataset.catalogSuggestion);
       renderDrawer();
@@ -4387,7 +5303,13 @@ function wireCatalogControl(panel: HTMLElement, action: CommandAction, session: 
     drawer.querySelector('[data-catalog-workspace]')?.addEventListener('click', () => {
       status.textContent = 'No workspace catalog provider is configured. Workspace providers are supplied by the editor host.';
     });
-    queryInput?.focus();
+    if (queryInput && focusQueryAfterRender) {
+      queryInput.focus();
+      const selection = querySelection ?? { start: queryInput.value.length, end: queryInput.value.length, direction: 'none' as const };
+      const maximum = queryInput.value.length;
+      queryInput.setSelectionRange(Math.min(selection.start, maximum), Math.min(selection.end, maximum), selection.direction);
+      focusQueryAfterRender = false;
+    }
   };
   const search = async (query: string): Promise<void> => {
     const sequence = ++searchSequence;
@@ -4416,6 +5338,8 @@ function wireCatalogControl(panel: HTMLElement, action: CommandAction, session: 
     drawer.setAttribute('aria-label', `${family} catalog`);
     root.append(drawer);
     releaseTrap = trapFocus(drawer, close);
+    focusQueryAfterRender = true;
+    querySelection = { start: 0, end: 0, direction: 'none' };
     void search('');
   });
 }
@@ -4461,13 +5385,13 @@ export function catalogBrowserView(
   const selectedReference = typeof selectedValue?.reference === 'string' ? selectedValue.reference : undefined;
   const selectedKind = selected ? catalogValueKind(family, selected) : undefined;
   const selectionHtml = selected && selection
-    ? `<aside class="js-catalog-preview" data-catalog-selection-preview><strong>Selection preview</strong><dl><dt>Exact emitted JSON</dt><dd><code>${escapeHtml(selection.emittedJson)}</code></dd>${selectedReference ? `<dt>Reference</dt><dd><code>${escapeHtml(selectedReference)}</code></dd>` : ''}<dt>Kind</dt><dd>${escapeHtml(selectedKind ?? '')}</dd>${selected.provenance.map((source) => `<dt>Source authority</dt><dd><code>${escapeHtml(source.source)}</code></dd><dt>Version</dt><dd>${escapeHtml(source.version)}</dd><dt>Availability</dt><dd>Bundled offline${source.stale ? ' · stale' : ''}</dd><dt>Trust</dt><dd>${source.trusted ? 'Trusted built-in' : 'Advisory seed'}</dd>`).join('')}</dl><button data-catalog-apply ${selection.duplicate ? 'disabled' : ''}>${selection.duplicate ? 'Already selected' : family === 'semanticConcept' ? 'Add concept' : 'Apply value'}</button></aside>`
+    ? `<aside class="js-catalog-preview" data-catalog-selection-preview><div class="js-catalog-preview-head"><strong>Selection preview</strong><button data-catalog-apply ${selection.duplicate ? 'disabled' : ''}>${selection.duplicate ? 'Already selected' : family === 'semanticConcept' ? 'Add concept' : 'Apply value'}</button></div><dl><dt>Exact emitted JSON</dt><dd><code>${escapeHtml(selection.emittedJson)}</code></dd>${selectedReference ? `<dt>Reference</dt><dd><code>${escapeHtml(selectedReference)}</code></dd>` : ''}<dt>Kind</dt><dd>${escapeHtml(selectedKind ?? '')}</dd>${selected.provenance.map((source) => `<dt>Source authority</dt><dd><code>${escapeHtml(source.source)}</code></dd><dt>Version</dt><dd>${escapeHtml(source.version)}</dd><dt>Availability</dt><dd>Bundled offline${source.stale ? ' · stale' : ''}</dd><dt>Trust</dt><dd>${source.trusted ? 'Trusted built-in' : 'Advisory seed'}</dd>`).join('')}</dl></aside>`
     : '<aside class="js-catalog-preview"><p>Select a result to review its exact JSON, reference, kind, source, version, availability, and trust before applying it.</p></aside>';
   const customPolicy = catalogCustomValueKind(family);
   const custom = customPolicy === 'string'
-    ? `<div class="js-catalog-custom"><p>This family is open. Enter a domain-specific value when no catalog entry applies.</p><div><input data-catalog-custom placeholder="Custom value"><button data-catalog-custom-apply>Apply custom</button></div><code data-catalog-custom-preview>""</code></div>`
+    ? `<div class="js-catalog-custom"><p>This family is open. Enter a domain-specific value when no catalog entry applies.</p><div><input data-catalog-custom aria-label="Custom catalog value" placeholder="Custom value"><button data-catalog-custom-apply>Apply custom</button></div><code data-catalog-custom-preview>""</code></div>`
     : customPolicy === 'reference'
-      ? `<div class="js-catalog-custom"><p>This family is open. Custom semantic values require a complete reference object.</p><label>Reference URI<input data-catalog-custom-reference placeholder="urn:example:concept"></label><label>Kind<input data-catalog-custom-kind placeholder="custom-concept"></label><code data-catalog-custom-preview>${escapeHtml(family === 'semanticConcept' ? '[]' : '{"reference":"","kind":""}')}</code><button data-catalog-custom-apply>${family === 'semanticConcept' ? 'Add custom concept' : 'Apply custom reference'}</button></div>`
+      ? `<div class="js-catalog-custom"><p>This family is open. Custom semantic values require a complete reference object.</p><label>Reference URI<input data-catalog-custom-reference value="${escapeAttribute(family === 'semanticConcept' ? '' : selectedReference ?? '')}" placeholder="urn:example:concept"></label><label>Kind<input data-catalog-custom-kind value="${escapeAttribute(family === 'semanticConcept' ? '' : selectedKind ?? '')}" placeholder="custom-concept"></label><code data-catalog-custom-preview>${escapeHtml(family === 'semanticConcept' ? '[]' : selectedValue ? JSON.stringify(selectedValue) : '{"reference":"","kind":""}')}</code><button data-catalog-custom-apply>${family === 'semanticConcept' ? 'Add custom concept' : selectedReference ? 'Apply reference' : 'Apply custom reference'}</button></div>`
       : '<div class="js-catalog-closed" data-catalog-closed>Only JSON Structure preset values can be applied in this closed family.</div>';
   const vocabulary = customPolicy === 'closed' ? 'Closed JSON Structure preset family' : 'Advisory open vocabulary';
   return `<div class="js-catalog-provider-list"><div class="js-panel-head">Providers</div>${providerButtons}</div><section class="js-catalog-content"><header class="js-catalog-head"><div><strong>${escapeHtml(humanizeIdentifier(family))}</strong><small>${vocabulary} · offline source preservation</small></div><button data-catalog-close aria-label="Close catalog">${fluentIcon('dismiss')}</button></header><input class="js-catalog-search" data-catalog-query type="search" value="${escapeAttribute(query)}" placeholder="Search values, labels, aliases, and exact JSON" aria-label="Search catalog"><div class="js-catalog-results">${issues}${suggestions}</div>${selectionHtml}${custom}</section>`;
@@ -4488,15 +5412,23 @@ function typedValueEditor(schemaType: string | undefined, current: unknown, labe
 
 function conditionalBranchEditor(target: Readonly<Record<string, unknown>> | undefined, session: DocumentSession, label: string): string {
   const references = effectiveReferenceChoices(session);
-  const options = (current: unknown): string => {
+  const options = (current: unknown, placeholder: string): string => {
     const encoded = JSON.stringify(current);
     const reference = relationReference(current);
-const choices = [{ value: JSON.stringify({ type: 'string' }), label: 'Inline string' }, ...references.map((choice) => ({ value: JSON.stringify({ $ref: `#${choice.pointer}` }), label: choice.name }))];
+    const choices = [
+      { value: JSON.stringify({}), label: 'Constraint-only schema' },
+      { value: JSON.stringify({ type: 'object', properties: {} }), label: 'Inline object schema' },
+      { value: JSON.stringify({ type: 'string' }), label: 'Inline string schema' },
+      { value: JSON.stringify({ type: 'number' }), label: 'Inline number schema' },
+      { value: JSON.stringify({ type: 'boolean' }), label: 'Inline boolean schema' },
+      { value: JSON.stringify({ type: 'array', items: { type: 'string' } }), label: 'Inline array schema' },
+      ...references.map((choice) => ({ value: JSON.stringify({ $ref: `#${choice.pointer}` }), label: `Reference ${choice.name}` })),
+    ];
     if (current !== undefined && (!reference || !choices.some((choice) => choice.value === encoded))) choices.unshift({ value: encoded, label: reference ? definitionTypeLabel(reference.slice(1)) : 'Inline branch' });
-    return `<option value="">Not set</option>${choices.map((choice) => `<option value="${escapeAttribute(choice.value)}" ${choice.value === encoded ? 'selected' : ''}>${escapeHtml(choice.label)}</option>`).join('')}`;
+    return `<option value="" ${current === undefined ? 'selected' : ''}>${escapeHtml(placeholder)}</option>${choices.map((choice) => `<option value="${escapeAttribute(choice.value)}" ${choice.value === encoded ? 'selected' : ''}>${escapeHtml(choice.label)}</option>`).join('')}`;
   };
-  const fields = (['if', 'then', 'else'] as const).map((keyword) => `<label>${keyword}<select data-conditional-value="${keyword}">${options(target?.[keyword])}</select></label>`).join('');
-  return `<fieldset data-conditional-builder><legend>${label}</legend>${fields}<input name="value" type="hidden"></fieldset>`;
+  const mode = target?.then !== undefined && target?.else !== undefined ? 'both' : target?.else !== undefined ? 'else' : 'then';
+  return `<fieldset class="js-conditional-builder" data-conditional-builder><legend>${label}</legend><p>Define one condition and the constraint applied for each selected outcome. The rule is written atomically when you apply it.</p><label class="js-conditional-condition"><span><strong>IF</strong><small>Condition to evaluate</small></span><select data-conditional-value="if" required>${options(target?.if, 'Choose a condition schema')}</select></label><label><span><strong>Consequences</strong><small>Select the valid outcome shape</small></span><select data-conditional-mode><option value="then" ${mode === 'then' ? 'selected' : ''}>Then only</option><option value="else" ${mode === 'else' ? 'selected' : ''}>Else only</option><option value="both" ${mode === 'both' ? 'selected' : ''}>Then and else</option></select></label><label data-conditional-role="then"><span><strong>THEN</strong><small>Constraint when the condition matches</small></span><select data-conditional-value="then">${options(target?.then, 'Choose a matching consequence')}</select></label><label data-conditional-role="else"><span><strong>ELSE</strong><small>Constraint when the condition does not match</small></span><select data-conditional-value="else">${options(target?.else, 'Choose a non-matching consequence')}</select></label><input name="value" type="hidden"></fieldset>`;
 }
 function schemaBranchEditor(current: unknown, session: DocumentSession, label: string): string {
   const branches = Array.isArray(current) ? current : [];
@@ -4583,7 +5515,7 @@ function actionControlHtml(action: CommandAction, pointer: string, session: Docu
     if (control.item === 'schema') return '<div class="js-empty">Schema branches are edited in Source so each branch remains explicit.</div>';
     if (control.item === 'reference') {
       const references = action.keyword === 'scope' ? collectionPointers(session.value).map((pointer) => ({ name: pointer, pointer: pointer.replace(/^#/, '') })) : effectiveReferenceChoices(session);
-      return `<fieldset data-structured-list><legend>${label}</legend><select data-list-options multiple size="${Math.min(8, Math.max(3, references.length))}" aria-describedby="action-help">${references.map((definition) => { const value = action.keyword === 'scope' ? `#${definition.pointer}` : `#${definition.pointer}`; return `<option value="${escapeAttribute(value)}" ${selected.includes(value) ? 'selected' : ''}>${escapeHtml(definition.name)}</option>`; }).join('')}</select><input name="value" type="hidden"></fieldset>`;
+      return `<fieldset data-structured-list><legend>${label}</legend><select data-list-options multiple size="${Math.min(8, Math.max(3, references.length))}" aria-label="${escapeAttribute(label)}" aria-describedby="action-help">${references.map((definition) => { const value = action.keyword === 'scope' ? `#${definition.pointer}` : `#${definition.pointer}`; return `<option value="${escapeAttribute(value)}" ${selected.includes(value) ? 'selected' : ''}>${escapeHtml(definition.name)}</option>`; }).join('')}</select><input name="value" type="hidden"></fieldset>`;
     }
     const placeholder = action.keyword === 'concepts' ? '{"reference":"urn:concept:example"}' : 'One value per line';
     const lines = action.keyword === 'concepts' ? selected.map((entry) => typeof entry === 'string' ? entry : JSON.stringify(entry)) : selected;
@@ -4707,7 +5639,7 @@ function isObjectSchema(value: unknown): value is Record<string, unknown> {
 
 export function mobileModeSelect(mode: Mode): string {
   const modes: readonly { readonly value: Mode; readonly label: string }[] = [
-    { value: 'design', label: 'Document' }, { value: 'graph', label: 'Graph' }, { value: 'source', label: 'Source' }, { value: 'instance', label: 'Validate' }, { value: 'conversion', label: 'Convert' },
+    { value: 'design', label: 'Design' }, { value: 'graph', label: 'Graph' }, { value: 'source', label: 'Source' }, { value: 'instance', label: 'Validate' }, { value: 'conversion', label: 'Convert' },
   ];
   const options = (items: readonly { readonly value: Mode; readonly label: string }[]): string => items.map((item) => `<option value="${item.value}" ${item.value === mode ? 'selected' : ''}>${item.label}</option>`).join('');
   return `<label class="js-mobile-mode"><span class="js-sr-only">Editor mode</span><select data-mobile-mode aria-label="Editor mode">${options(modes)}</select></label>`;
@@ -4727,7 +5659,7 @@ function enhanceWorkbenchDom(root: HTMLElement, mode: Mode): void {
 function filterTypeButtons(root: HTMLElement, query: string): void {
   const normalized = query.trim().toLocaleLowerCase();
   let visible = 0;
-  root.querySelectorAll('.js-tree-item:not(.js-tree-root-namespace)').forEach((button: HTMLElement) => {
+  root.querySelectorAll('.js-tree-item').forEach((button: HTMLElement) => {
     const match = !normalized || (button.textContent ?? '').toLocaleLowerCase().includes(normalized);
     button.hidden = !match;
     const row = button.closest('.js-tree-type-row') as HTMLElement | null;
@@ -4820,6 +5752,14 @@ function availablePropertyName(owner: Readonly<Record<string, unknown>>): string
   return `field${suffix}`;
 }
 
+function availableChoiceName(owner: Readonly<Record<string, unknown>>): string {
+  const choices = isRecord(owner.choices) ? owner.choices : {};
+  if (!Object.prototype.hasOwnProperty.call(choices, 'alternative')) return 'alternative';
+  let suffix = 2;
+  while (Object.prototype.hasOwnProperty.call(choices, `alternative${suffix}`)) suffix += 1;
+  return `alternative${suffix}`;
+}
+
 function captureWorkbenchFocus(root: HTMLElement, active: HTMLElement | null): WorkbenchFocusAnchor | undefined {
   if (!active || !root.contains(active)) return undefined;
   for (const attribute of workbenchFocusIdentityAttributes) {
@@ -4869,7 +5809,25 @@ function isRecord(value: unknown): value is Record<string, Record<string, unknow
 }
 
 function applyEdits(text: string, edits: readonly TextEdit[]): string { return [...edits].sort((a, b) => (b.range.startOffset ?? 0) - (a.range.startOffset ?? 0)).reduce((current, edit) => current.slice(0, edit.range.startOffset) + edit.newText + current.slice(edit.range.endOffset), text); }
-function selectFallback(snapshot: DocumentSnapshot, current: string | undefined): string | undefined { if (current === '/definitions' && snapshot.recovery === 'valid') return current; if (current !== undefined && snapshot.model?.nodes.some((node) => node.pointer === current)) return current; return snapshotHasInlineRoot(snapshot) ? '' : snapshot.model?.projections.definitions.find((definition) => definition.reusable)?.pointer; }
+
+function selectFallback(snapshot: DocumentSnapshot, current: string | undefined): string | undefined {
+  if (current === '/definitions' && snapshot.recovery === 'valid') return current;
+  if (current !== undefined && snapshot.model?.nodes.some((node) => node.pointer === current)) return current;
+  if (current !== undefined && snapshot.recovery === 'valid') {
+    if (current.startsWith('/definitions/') && !/\/(?:properties|relations|choices|items|values)(?:\/|$)/.test(current)) return current;
+    try {
+      const document = JSON.parse(snapshot.text);
+      const definitionPointers = snapshot.model?.projections.definitions.map((definition) => definition.pointer) ?? [];
+      const tokens = current.split('/').slice(1).map((token) => token.replace(/~1/g, '/').replace(/~0/g, '~'));
+      let currentValue: unknown = document;
+      for (const token of tokens) currentValue = isRecord(currentValue) ? currentValue[token] : undefined;
+      if (namespacePointers(document, definitionPointers).includes(current) || isRecord(currentValue) && (typeof currentValue.$import === 'string' || typeof currentValue.$importdefs === 'string')) return current;
+    } catch {
+      // Fall through to the nearest usable definition for invalid source.
+    }
+  }
+  return snapshotHasInlineRoot(snapshot) ? '' : snapshot.model?.projections.definitions.find((definition) => definition.reusable)?.pointer;
+}
 function snapshotHasInlineRoot(snapshot: DocumentSnapshot): boolean { try { return isInlineRootSchema(JSON.parse(snapshot.text)); } catch { return false; } }
 function escapeHtml(value: string): string { return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 function escapeAttribute(value: string): string { return escapeHtml(value).replace(/'/g, '&#39;'); }
