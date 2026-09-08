@@ -160,7 +160,8 @@ describe('workbench interaction markup', () => {
     ], tuplePointer, [], [], 'local', undefined, undefined, [], tupleDocument, new Set(), false, false, tuplePointer);
     expect(tupleHtml).toContain('class="js-design-section js-tuple-order"');
     expect(tupleHtml).toContain(`data-tuple-pointer="${tuplePointer}"`);
-    expect(tupleHtml).toContain(`data-inline-property-delete="${tuplePointer}/properties/second"`);
+    expect(tupleHtml).toContain(`data-property-menu="${tuplePointer}/properties/second"`);
+    expect(tupleHtml).toContain(`data-property-actions-menu="${tuplePointer}/properties/second" hidden`);
 
     const choicePointer = '/definitions/Value';
     const choiceDocument = { definitions: { Value: { type: 'choice', choices: { text: { type: 'string' } } } } };
@@ -205,37 +206,59 @@ describe('workbench interaction markup', () => {
     expect(editorStyles).toContain('font-size:25px; font-weight:650;');
   });
 
-  it('renders native inline property controls inside table cells', () => {
-    const html = designView('Person', 'object', undefined, [{ name: 'id', pointer: '/definitions/Person/properties/id', type: 'uuid', required: true, schema: { type: 'uuid' } }], undefined, [], [], 'local', undefined, undefined, [
+  it('renders compact property values and the existing editor only for the active field', () => {
+    const pointer = '/definitions/Person/properties/id';
+    const rows = [{ name: 'id', pointer, type: 'uuid', required: true, description: 'Stable identifier', schema: { type: 'uuid', description: 'Stable identifier' } }];
+    const definitions = [
       { name: 'Address', pointer: '/definitions/Common/Address' },
       { name: 'Person', pointer: '/definitions/Person' },
-    ]);
+    ];
+    const html = designView('Person', 'object', undefined, rows, undefined, [], [], 'local', undefined, undefined, definitions);
     expect(html).not.toContain('<button class="js-cell js-code" role="cell"');
     expect(html).not.toContain('<button class="js-cell js-row-action" role="cell"');
-    expect(html).toContain('data-inline-property="name"');
-    expect(html).toContain('data-inline-type-add');
-    expect(html).toContain('data-inline-type-replace="type:uuid"');
-    expect(html).not.toContain('data-inline-type-remove="type:uuid"');
+    expect(html).toContain('data-property-field-activate="name"');
+    expect(html).toContain('data-property-field-activate="type"');
+    expect(html).toContain('data-property-field-activate="description"');
+    expect(html).not.toContain('data-inline-type-add');
+    expect(html).not.toContain('data-inline-type-replace="type:uuid"');
+    expect(html).not.toContain('<textarea class="js-inline-description" rows="1"');
     expect(html).toContain('data-inline-property="nullable"');
     expect(html).toContain('data-inline-property="required"');
-    expect(html).toContain('data-inline-property="description"');
-    expect(html).toContain('<textarea class="js-inline-description" rows="1"');
     expect(html).toContain('data-inline-property="identity"');
-    expect(html).toContain('<optgroup label="Primitive types">');
-    expect(html).toContain('value="type:any"');
-    expect(html).toContain('value="type:string"');
-    expect(html).not.toContain('value="type:object"');
-    expect(html).not.toContain('value="type:array"');
-    expect(html).toContain('<optgroup label="Collection types">');
-    expect(html).toContain('array&lt;string&gt;');
-    expect(html).toContain('map&lt;string, string&gt;');
-    expect(html).toContain('<optgroup label="Reusable types">');
-    expect(html).toContain('value="ref:#/definitions/Common/Address"');
-    expect(html).toContain('>Common.Address</option>');
-    expect(html).toContain('data-type-drop="/definitions/Person/properties/id"');
-    expect(html).toContain('<span class="js-type-drop-zone" aria-hidden="true"></span>');
-    expect(html).toContain('<div class="js-cell js-action-cell" role="cell"><button class="js-row-action"');
-    expect(html).toContain('data-property-details="/definitions/Person/properties/id"');
+    expect(html).toContain(`data-property-row-select="${pointer}"`);
+    expect(html).toContain(`data-property-menu="${pointer}"`);
+    expect(html).toContain(`data-property-actions-menu="${pointer}" hidden`);
+
+    const nameHtml = designView('Person', 'object', undefined, rows, pointer, [], [], 'local', undefined, undefined, definitions, undefined, new Set(), false, false, undefined, false, { pointer, field: 'name' });
+    expect(nameHtml).toContain('<input class="js-inline-name js-code"');
+    expect(nameHtml).not.toContain('data-property-field-activate="name"');
+
+    const typeHtml = designView('Person', 'object', undefined, rows, pointer, [], [], 'local', undefined, undefined, definitions, undefined, new Set(), false, false, undefined, false, { pointer, field: 'type' });
+    expect(typeHtml).toContain('data-inline-type-add');
+    expect(typeHtml).toContain('data-inline-type-replace="type:uuid"');
+    expect(typeHtml).not.toContain('data-inline-type-remove="type:uuid"');
+    expect(typeHtml).toContain('<optgroup label="Primitive types">');
+    expect(typeHtml).toContain('value="type:any"');
+    expect(typeHtml).toContain('value="type:string"');
+    expect(typeHtml).not.toContain('value="type:object"');
+    expect(typeHtml).not.toContain('value="type:array"');
+    expect(typeHtml).toContain('<optgroup label="Collection types">');
+    expect(typeHtml).toContain('array&lt;string&gt;');
+    expect(typeHtml).toContain('map&lt;string, string&gt;');
+    expect(typeHtml).toContain('<optgroup label="Reusable types">');
+    expect(typeHtml).toContain('value="ref:#/definitions/Common/Address"');
+    expect(typeHtml).toContain('>Common.Address</option>');
+    expect(typeHtml).toContain(`data-type-drop="${pointer}"`);
+    expect(typeHtml).toContain('<span class="js-type-drop-zone" aria-hidden="true"></span>');
+    expect(typeHtml).toContain('data-property-details="/definitions/Person/properties/id"');
+
+    const descriptionHtml = designView('Person', 'object', undefined, rows, pointer, [], [], 'local', undefined, undefined, definitions, undefined, new Set(), false, false, undefined, false, { pointer, field: 'description' });
+    expect(descriptionHtml).toContain('<textarea class="js-inline-description" rows="1"');
+
+    const menuHtml = designView('Person', 'object', undefined, rows, pointer, [], [], 'local', undefined, undefined, definitions, undefined, new Set(), false, false, undefined, false, undefined, pointer);
+    expect(menuHtml).toContain(`role="menu" data-property-actions-menu="${pointer}"`);
+    expect(menuHtml).toContain(`data-inline-property-delete="${pointer}"`);
+    expect(menuHtml).toContain('>Delete property</button>');
   });
 
   it('renders collection schemas as editable expressions instead of opaque type pills', () => {
@@ -272,7 +295,7 @@ describe('workbench interaction markup', () => {
     const pointer = '/definitions/Place/properties/latitude';
     const localHtml = designView('Place', 'object', undefined, [{
       name: 'latitude', pointer, type: 'double or null', required: false, schema: { type: ['double', 'null'] },
-    }], pointer);
+    }], pointer, [], [], 'local', undefined, undefined, [], undefined, new Set(), false, false, undefined, false, { pointer, field: 'type' });
     expect(localHtml).toContain('data-inline-type-replace="type:double"');
     expect(localHtml).not.toContain('data-inline-type-remove="type:double"');
     expect(localHtml).toContain('data-inline-property="nullable"');
@@ -296,7 +319,7 @@ describe('workbench interaction markup', () => {
     const html = designView('Example', 'object', undefined, [{
       name: 'value', pointer, type: 'string or uint8', required: false,
       schema: { type: ['string', 'uint8'] },
-    }], pointer);
+    }], pointer, [], [], 'local', undefined, undefined, [], undefined, new Set(), false, false, undefined, false, { pointer, field: 'type' });
     expect(html).toContain('data-inline-type-remove="type:string"');
     expect(html).toContain('data-inline-type-remove="type:uint8"');
     expect(html).toContain('data-inline-type-replace="type:string"');

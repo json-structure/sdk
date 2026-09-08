@@ -203,6 +203,10 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
   let commandRequest = 0;
   let commandQueue: Promise<void> = Promise.resolve();
   let synchronizedRender: ReturnType<typeof setTimeout> | undefined;
+  let suppressWorkbenchFocusRestore = false;
+  let suppressPropertyRowFocusSelection: string | undefined;
+  let propertyInteractionGeneration = 0;
+  let inlinePropertyCommitPending = false;
   let themeName: 'dark' | 'light' | 'contrast' = 'dark';
   let pendingDiagnostic: Diagnostic['location'] | undefined;
   let externalLoad = 0;
@@ -213,6 +217,8 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
   let typeCreatorOpen = false;
   let typeCreatorNamespacePointer = '';
   let expandedPropertyPointer: string | undefined;
+  let activePropertyField: { readonly pointer: string; readonly field: 'name' | 'type' | 'description' } | undefined;
+  let propertyMenuPointer: string | undefined;
   const pendingPropertyFields = new Set<string>();
   let relationDraftOpen = false;
   let instanceText = '{}';
@@ -329,6 +335,8 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     documentGeneration += 1;
     startConversionChooserOpen = false;
     startConversionDialogOpen = false;
+    activePropertyField = undefined;
+    propertyMenuPointer = undefined;
     disposeSourceModel();
   };
   const loadConversionCommands = (): void => {
@@ -399,6 +407,8 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
   const select = (pointer: string | undefined, nextMode?: Mode): void => {
     selectedIdentity = undefined;
     selectedPointer = pointer;
+    activePropertyField = undefined;
+    propertyMenuPointer = undefined;
     if (nextMode) {
       if (shouldFitGraphOnEntry(mode, nextMode, graphEntered)) {
         graphEntered = true;
@@ -458,7 +468,8 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     return undefined;
   };
   const applyCommand = (command: { canExecute(context: { session: DocumentSession; documentVersion: number }): boolean; execute(context: { session: DocumentSession; documentVersion: number }): { edits: readonly TextEdit[] } }): Promise<string | undefined> => {
-    const result = commandQueue.then(() => applyCommandNow(command), () => applyCommandNow(command));
+    const operation = commandQueue.then(() => applyCommandNow(command), () => applyCommandNow(command));
+    const result = operation.catch((error: unknown) => error instanceof Error ? error.message : String(error));
     commandQueue = result.then(() => undefined, () => undefined);
     return result;
   };
@@ -474,7 +485,9 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     const preservedView = root.querySelector(`[data-panel-mode="${mode}"]`) as HTMLElement | null;
     const preservedScrollTop = preservedView?.scrollTop;
     const sourceHadFocus = Boolean(preservedSource?.contains(document.activeElement));
-    const focusAnchor = sourceHadFocus ? undefined : captureWorkbenchFocus(root, document.activeElement as HTMLElement | null);
+    const skipFocusRestore = suppressWorkbenchFocusRestore;
+    suppressWorkbenchFocusRestore = false;
+    const focusAnchor = sourceHadFocus || skipFocusRestore ? undefined : captureWorkbenchFocus(root, document.activeElement as HTMLElement | null);
     releaseDrawerTrap();
     releaseDrawerTrap = () => undefined;
     setCompactDrawerModal(root);
@@ -549,7 +562,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     graphMinimapLayout.reconcile(graph.nodes, graph.edges, { cacheKey: 'full-document', mode: 'force' });
     graphMinimapLayout.settle();
     forceGraphMinimapLayoutBySnapshot.set(snapshot, graphMinimapLayout);
-    root.innerHTML = structuredWorkbenchShell(snapshot, documentTitle, typeDefinitions, definitionPointer, rows, selectedPointer, mode, problemsOpen, designMemberMode, effectiveMembers, expandedPropertyPointer, options.chrome ?? 'document', pendingPropertyFields, relationDraftOpen, typeCreatorOpen);
+    root.innerHTML = structuredWorkbenchShell(snapshot, documentTitle, typeDefinitions, definitionPointer, rows, selectedPointer, mode, problemsOpen, designMemberMode, effectiveMembers, expandedPropertyPointer, options.chrome ?? 'document', pendingPropertyFields, relationDraftOpen, typeCreatorOpen, activePropertyField, propertyMenuPointer);
     if (startConversionChooserOpen) {
       root.querySelector('.js-shell')?.insertAdjacentHTML('beforeend', startConversionChooserDialog(conversionManifest ?? BUILTIN_CONVERSION_COMMANDS_MANIFEST));
     }
@@ -764,10 +777,130 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       if (!pointer) return;
       expandedPropertyPointer = expandedPropertyPointer === pointer ? undefined : pointer;
       selectedPointer = pointer;
+      activePropertyField = undefined;
+      propertyMenuPointer = undefined;
+      propertyInteractionGeneration += 1;
+      suppressWorkbenchFocusRestore = true;
       render();
     }));
-    root.querySelectorAll('[data-inline-property="name"]').forEach((input: HTMLInputElement) => {
-      input.addEventListener('keydown', (event: KeyboardEvent) => { if (event.key === 'Enter') { event.preventDefault(); input.blur(); } });
+    const focusActivePropertyField = (pointer: string, field: 'name' | 'type' | 'description'): void => {
+      const editor = root.querySelector(`[data-property-editor="${cssAttributeValue(pointer)}"]`) as HTMLElement | null;
+      const control = field === 'type'
+        ? editor?.querySelector('[data-inline-type-replace],[data-inline-type-add]') as HTMLElement | null
+        : editor?.querySelector(`[data-inline-property="${field}"]`) as HTMLElement | null;
+      control?.focus();
+      if (control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement) control.select();
+    };
+    const parkPropertyFocus = (): void => {
+      suppressWorkbenchFocusRestore = true;
+    };
+    const focusPropertyRow = (pointer: string): void => {
+      suppressPropertyRowFocusSelection = pointer;
+      queueMicrotask(() => {
+        const row = root.querySelector(`[data-property-row-select="${cssAttributeValue(pointer)}"]`) as HTMLElement | null;
+        if (!row) { suppressPropertyRowFocusSelection = undefined; return; }
+        row.focus();
+        if (suppressPropertyRowFocusSelection === pointer) suppressPropertyRowFocusSelection = undefined;
+      });
+    };
+    root.querySelectorAll('[data-property-field-activate]').forEach((button: HTMLButtonElement) => {
+      const activate = (): void => {
+        const pointer = button.dataset.propertyPointer;
+        const field = button.dataset.propertyFieldActivate as 'name' | 'type' | 'description' | undefined;
+        if (!pointer || !field) return;
+        if (inlinePropertyCommitPending) {
+          setInlineStatus(root, pointer, 'Finish the current property change before editing another field.');
+          return;
+        }
+        if (activePropertyField?.pointer === pointer && activePropertyField?.field === field) return;
+        suppressWorkbenchFocusRestore = true;
+        propertyInteractionGeneration += 1;
+        selectedPointer = pointer;
+        activePropertyField = { pointer, field };
+        propertyMenuPointer = undefined;
+        render();
+        queueMicrotask(() => focusActivePropertyField(pointer, field));
+      };
+      button.addEventListener('focus', activate);
+      button.addEventListener('click', activate);
+      button.addEventListener('keydown', (event: KeyboardEvent) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        activate();
+      });
+    });
+    root.querySelectorAll('[data-property-row-select]').forEach((row: HTMLElement) => {
+      const selectRow = (): void => {
+        const pointer = row.dataset.propertyRowSelect;
+        if (pointer && suppressPropertyRowFocusSelection === pointer) {
+          suppressPropertyRowFocusSelection = undefined;
+          return;
+        }
+        if (!pointer || selectedPointer === pointer && activePropertyField === undefined) return;
+        selectedPointer = pointer;
+        activePropertyField = undefined;
+        propertyMenuPointer = undefined;
+        propertyInteractionGeneration += 1;
+        suppressWorkbenchFocusRestore = true;
+        render();
+        focusPropertyRow(pointer);
+      };
+      row.addEventListener('focus', selectRow);
+      row.addEventListener('click', (event: Event) => {
+        if ((event.target as HTMLElement | null)?.closest('button,input,select,textarea,label,a')) return;
+        selectRow();
+      });
+      row.addEventListener('keydown', (event: KeyboardEvent) => {
+        if (event.target !== row) return;
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        selectRow();
+      });
+    });
+    root.querySelectorAll('[data-property-menu]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
+      const pointer = button.dataset.propertyMenu;
+      if (!pointer) return;
+      selectedPointer = pointer;
+      activePropertyField = undefined;
+      propertyMenuPointer = propertyMenuPointer === pointer ? undefined : pointer;
+      propertyInteractionGeneration += 1;
+      render();
+      queueMicrotask(() => {
+        const target = propertyMenuPointer
+          ? root.querySelector(`[data-property-menu-delete="${cssAttributeValue(pointer)}"]`)
+          : root.querySelector(`[data-property-menu="${cssAttributeValue(pointer)}"]`);
+        (target as HTMLElement | null)?.focus();
+      });
+    }));
+    root.querySelectorAll('[data-property-actions-menu]').forEach((menu: HTMLElement) => menu.addEventListener('keydown', (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      const pointer = menu.dataset.propertyActionsMenu;
+      propertyMenuPointer = undefined;
+      render();
+      queueMicrotask(() => (root.querySelector(`[data-property-menu="${cssAttributeValue(pointer ?? '')}"]`) as HTMLElement | null)?.focus());
+    }));
+    root.querySelectorAll('input[data-inline-property="name"]').forEach((input: HTMLInputElement) => {
+      input.addEventListener('keydown', (event: KeyboardEvent) => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          suppressWorkbenchFocusRestore = true;
+          propertyInteractionGeneration += 1;
+          activePropertyField = undefined;
+          render();
+          focusPropertyRow(input.dataset.propertyPointer ?? '');
+          return;
+        }
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          if (input.value.trim() === pointerLabel(input.dataset.propertyPointer ?? '')) {
+            suppressWorkbenchFocusRestore = true;
+            activePropertyField = undefined;
+            render();
+            focusPropertyRow(input.dataset.propertyPointer ?? '');
+          } else input.blur();
+        }
+      });
       input.addEventListener('change', () => {
         const pointer = input.dataset.propertyPointer;
         const nextName = input.value.trim();
@@ -776,19 +909,34 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
         if (!action) return;
         const ownerPointer = propertyOwnerPointer(pointer);
         const nextPointer = `${ownerPointer}/properties/${escapePointerToken(nextName)}`;
+        parkPropertyFocus();
+        const interactionGeneration = ++propertyInteractionGeneration;
+        inlinePropertyCommitPending = true;
+        activePropertyField = undefined;
+        render();
         void applyCommand(action.create(pointer, nextName)).then((error) => {
+          inlinePropertyCommitPending = false;
           if (error) { setInlineStatus(root, pointer, error); return; }
           if (expandedPropertyPointer === pointer) expandedPropertyPointer = nextPointer;
-          selectedPointer = nextPointer;
+          if (propertyInteractionGeneration === interactionGeneration) selectedPointer = nextPointer;
           render();
-          queueMicrotask(() => (root.querySelector(`[data-inline-property="name"][data-property-pointer="${cssAttributeValue(nextPointer)}"]`) as HTMLElement | null)?.focus());
+          if (propertyInteractionGeneration === interactionGeneration) focusPropertyRow(nextPointer);
         });
       });
     });
     const applyInlineTypes = (pointer: string, members: readonly string[], nullable: boolean): void => {
+      if (inlinePropertyCommitPending) {
+        setInlineStatus(root, pointer, 'Finish the current property change before editing another field.');
+        return;
+      }
+      parkPropertyFocus();
+      const interactionGeneration = ++propertyInteractionGeneration;
+      inlinePropertyCommitPending = true;
+      activePropertyField = undefined;
       const values = [...members.map(decodeInlineTypeMember), ...(nullable ? ['null'] : [])];
       if (values.length === 0) {
         setInlineStatus(root, pointer, 'A property must have at least one type.');
+        inlinePropertyCommitPending = false;
         render();
         return;
       }
@@ -796,12 +944,19 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       const propertyAction = pointer !== '' ? actionById('property.edit') : undefined;
       const coreAction = actionById('core.type');
       const action = propertyAction ?? coreAction;
-      if (!schema || !action) return;
+      if (!schema || !action) { inlinePropertyCommitPending = false; return; }
       selectedPointer = pointer;
       const value = propertyAction
         ? propertySchemaWithTypes(schema, values)
         : values.length === 1 ? values[0] : values;
-      void applyCommand(action.create(pointer, value)).then((error) => error && setInlineStatus(root, pointer, error));
+      render();
+      void applyCommand(action.create(pointer, value)).then((error) => {
+        inlinePropertyCommitPending = false;
+        if (error) { setInlineStatus(root, pointer, error); return; }
+        activePropertyField = undefined;
+        render();
+        if (propertyInteractionGeneration === interactionGeneration) focusPropertyRow(pointer);
+      });
     };
     root.querySelectorAll('[data-inline-type-add]').forEach((selectControl: HTMLSelectElement) => selectControl.addEventListener('change', () => {
       const pointer = selectControl.dataset.propertyPointer;
@@ -953,7 +1108,9 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       selectedPointer = nextPointer;
       const error = await applyCommand(action.create(ownerPointer, { type: 'string' }, propertyName));
       if (error) { selectedPointer = previousPointer; return error; }
-      const nameControl = ([...root.querySelectorAll('[data-inline-property="name"]')] as HTMLInputElement[]).find((control) => control.dataset.propertyPointer === nextPointer);
+      activePropertyField = { pointer: nextPointer, field: 'name' };
+      render();
+      const nameControl = ([...root.querySelectorAll('input[data-inline-property="name"]')] as HTMLInputElement[]).find((control) => control.dataset.propertyPointer === nextPointer);
       nameControl?.focus();
       nameControl?.select();
       return undefined;
@@ -973,16 +1130,38 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       nameControl?.select();
       return undefined;
     };
-    root.querySelectorAll('[data-inline-property="description"]').forEach((input: HTMLTextAreaElement) => {
+    root.querySelectorAll('textarea[data-inline-property="description"]').forEach((input: HTMLTextAreaElement) => {
       autoGrowTextarea(input);
       input.addEventListener('input', () => autoGrowTextarea(input));
+      input.addEventListener('keydown', (event: KeyboardEvent) => {
+        if (event.key !== 'Escape') return;
+        event.preventDefault();
+        suppressWorkbenchFocusRestore = true;
+        propertyInteractionGeneration += 1;
+        activePropertyField = undefined;
+        render();
+        focusPropertyRow(input.dataset.propertyPointer ?? '');
+      });
       input.addEventListener('change', () => {
         if (input.dataset.skipDescriptionChange === 'true') { delete input.dataset.skipDescriptionChange; return; }
+        const pointer = input.dataset.propertyPointer;
+        if (pointer) parkPropertyFocus();
+        const interactionGeneration = ++propertyInteractionGeneration;
+        inlinePropertyCommitPending = true;
+        input.blur();
+        activePropertyField = undefined;
         input.setCustomValidity('');
-        void commitInlineDescription(input).then((error) => {
-          if (!error) return;
-          input.setCustomValidity(error);
-          input.reportValidity();
+        const commit = commitInlineDescription(input);
+        render();
+        void commit.then((error) => {
+          inlinePropertyCommitPending = false;
+          if (!error) {
+            activePropertyField = undefined;
+            render();
+            if (pointer && propertyInteractionGeneration === interactionGeneration) focusPropertyRow(pointer);
+            return;
+          }
+          if (pointer) setInlineStatus(root, pointer, error);
         });
       });
     });
@@ -1021,14 +1200,17 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
         if (!descriptionError && editors.at(-1) !== currentEditor) {
           const currentIndex = editors.indexOf(currentEditor);
           const nextPointer = editors[currentIndex + 1]?.dataset.propertyEditor;
-          const nextName = nextPointer ? ([...root.querySelectorAll('[data-inline-property="name"]')] as HTMLInputElement[]).find((candidate) => candidate.dataset.propertyPointer === nextPointer) : undefined;
-          nextName?.focus();
-          nextName?.select();
+          if (nextPointer) {
+            activePropertyField = { pointer: nextPointer, field: 'name' };
+            selectedPointer = nextPointer;
+            render();
+            queueMicrotask(() => focusActivePropertyField(nextPointer, 'name'));
+          }
           return;
         }
         const error = descriptionError ?? await addInlineProperty(propertyOwnerPointer(pointer));
         if (!error) return;
-        const current = ([...root.querySelectorAll('[data-inline-property="description"]')] as HTMLTextAreaElement[]).find((candidate) => candidate.dataset.propertyPointer === pointer) ?? input;
+        const current = ([...root.querySelectorAll('textarea[data-inline-property="description"]')] as HTMLTextAreaElement[]).find((candidate) => candidate.dataset.propertyPointer === pointer) ?? input;
         current.setCustomValidity(error);
         current.reportValidity();
         current.focus();
@@ -1376,6 +1558,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       const pointer = button.dataset.inlinePropertyDelete;
       const action = actionById('property.delete');
       if (!pointer || !action) return;
+      propertyMenuPointer = undefined;
       void applyCommand(action.create(pointer, undefined)).then((error) => error && setInlineStatus(root, pointer, error));
     }));
     root.querySelectorAll('[data-tuple-move]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
@@ -3593,15 +3776,15 @@ function namespaceTreeSegments(pointer: string): readonly string[] {
   return pointer.split('/').filter(Boolean).map((token) => token.replace(/~1/g, '/').replace(/~0/g, '~')).filter((token) => token !== 'definitions');
 }
 
-function structuredWorkbenchShell(snapshot: DocumentSnapshot, title: string, definitions: readonly { readonly name: string; readonly pointer: string; readonly namespace: string; readonly identity?: readonly string[]; readonly imported?: boolean; readonly documentUri?: string; readonly sourcePointer?: string; readonly root?: boolean }[], definitionPointer: string | undefined, rows: readonly PropertyRow[], selectedPointer: string | undefined, mode: Mode, problemsOpen: boolean, memberMode: DesignMemberMode, effectiveMembers: EffectiveMembersResult | undefined, expandedPropertyPointer: string | undefined, chrome: NonNullable<JsonStructureEditorOptions['chrome']> = 'document', pendingPropertyFields: ReadonlySet<string> = new Set(), relationDraftOpen = false, typeCreatorOpen = false): string {
+function structuredWorkbenchShell(snapshot: DocumentSnapshot, title: string, definitions: readonly { readonly name: string; readonly pointer: string; readonly namespace: string; readonly identity?: readonly string[]; readonly imported?: boolean; readonly documentUri?: string; readonly sourcePointer?: string; readonly root?: boolean }[], definitionPointer: string | undefined, rows: readonly PropertyRow[], selectedPointer: string | undefined, mode: Mode, problemsOpen: boolean, memberMode: DesignMemberMode, effectiveMembers: EffectiveMembersResult | undefined, expandedPropertyPointer: string | undefined, chrome: NonNullable<JsonStructureEditorOptions['chrome']> = 'document', pendingPropertyFields: ReadonlySet<string> = new Set(), relationDraftOpen = false, typeCreatorOpen = false, activePropertyField?: { readonly pointer: string; readonly field: 'name' | 'type' | 'description' }, propertyMenuPointer?: string): string {
   const definition = snapshot.model?.projections.definitions.find((item) => item.pointer === definitionPointer);
-  const selectedProperty = rows.find((row) => row.pointer === selectedPointer);
   const selectedRelation = definition?.relations.find((relation) => relation.pointer === selectedPointer);
   const selectedDiagnostics = diagnosticsForPointer(snapshot.diagnostics, selectedPointer);
   const errors = snapshot.diagnostics.filter((diagnostic) => diagnostic.severity === 'error').length;
   const warnings = snapshot.diagnostics.filter((diagnostic) => diagnostic.severity === 'warning').length;
   const documentStatus = snapshot.recovery !== 'valid' || errors ? 'invalid' : warnings ? 'warnings' : 'valid';
   const documentValue = snapshot.recovery === 'valid' ? JSON.parse(snapshot.text) : {};
+  const selectedProperty = rows.find((row) => row.pointer === selectedPointer) ?? propertyRowAtPointer(documentValue, selectedPointer);
   const profile = detectMetaSchemaMode(documentValue);
   const activeCompanions = Object.entries(profile.capabilities).filter(([name, active]) => name !== 'core' && name !== 'unknownUses' && active === true).length;
   const primaryModes: readonly { readonly mode: Extract<Mode, 'design' | 'graph' | 'source' | 'instance' | 'conversion'>; readonly icon: FluentIconName; readonly label: string }[] = [
@@ -3633,7 +3816,7 @@ function structuredWorkbenchShell(snapshot: DocumentSnapshot, title: string, def
     <div class="js-workbench" data-problems-open="${problemsOpen}" data-active-mode="${mode}">
       <nav class="js-activity" aria-label="Editor modes">${activities}</nav>
       <aside class="js-outline" id="js-outline" data-drawer-panel="types" aria-label="Types"><div class="js-panel-head"><span>Types</span><span class="js-spacer"></span>      <button data-command="definition.add" title="Add type" aria-label="Add type">${fluentIcon('add')}</button><button data-quick-add-namespace="/definitions" title="Add namespace" aria-label="Add namespace">${fluentIcon('collections')}</button><button data-library-open title="Import type library" aria-label="Import type library">${fluentIcon('library')}</button><button class="js-drawer-close" data-mobile-drawer-close aria-label="Close Types">${fluentIcon('dismiss')}</button></div><input class="js-filter" type="search" placeholder="Filter types" aria-label="Filter types"><div class="js-tree" role="tree" aria-label="Types by namespace"><div class="js-tree-group">${definitions.length} definitions${inlineRootEntry ? " · inline root" : ""}</div>${inlineRootEntry}${typeTree}</div></aside>
-      <section class="js-center"><div class="js-editor-tab"><span class="js-kind" aria-hidden="true">${fluentIcon('document')}</span><span data-document-title>${escapeHtml(title)}</span></div><section class="js-view" data-panel-mode="design" ${mode === 'design' ? '' : 'hidden'}>${designView(activeName, activeType, activeDescription, rows, selectedPointer, activeIdentity, activeRelations, memberMode, effectiveMembers, expandedPropertyPointer, definitions, documentValue, pendingPropertyFields, relationDraftOpen, typeCreatorOpen, definitionPointer, snapshot.model?.rootPointer === definitionPointer)}</section><section class="js-view js-graph" data-panel-mode="graph" ${mode === 'graph' ? '' : 'hidden'}>${graphView(snapshot, selectedPointer)}</section><section class="js-view js-source-view" data-panel-mode="source" ${mode === 'source' ? '' : 'hidden'}><div class="js-source" data-source aria-label="JSON source editor"></div></section></section>
+      <section class="js-center"><div class="js-editor-tab"><span class="js-kind" aria-hidden="true">${fluentIcon('document')}</span><span data-document-title>${escapeHtml(title)}</span></div><section class="js-view" data-panel-mode="design" ${mode === 'design' ? '' : 'hidden'}>${designView(activeName, activeType, activeDescription, rows, selectedPointer, activeIdentity, activeRelations, memberMode, effectiveMembers, expandedPropertyPointer, definitions, documentValue, pendingPropertyFields, relationDraftOpen, typeCreatorOpen, definitionPointer, snapshot.model?.rootPointer === definitionPointer, activePropertyField, propertyMenuPointer)}</section><section class="js-view js-graph" data-panel-mode="graph" ${mode === 'graph' ? '' : 'hidden'}>${graphView(snapshot, selectedPointer)}</section><section class="js-view js-source-view" data-panel-mode="source" ${mode === 'source' ? '' : 'hidden'}><div class="js-source" data-source aria-label="JSON source editor"></div></section></section>
       <aside class="js-inspector" id="js-inspector" data-drawer-panel="inspector" aria-label="Properties and schema metadata"><section class="js-side-pane js-properties-pane"><div class="js-panel-head"><span>Properties</span><span class="js-spacer"></span><button class="js-drawer-close" data-mobile-drawer-close aria-label="Close Properties and schema metadata">${fluentIcon('dismiss')}</button></div><div class="js-inspector-body">${propertiesPanel}</div></section><div class="js-horizontal-splitter" data-properties-pane-splitter role="separator" aria-label="Resize Properties and Schema metadata panes" aria-orientation="horizontal" aria-valuemin="140" aria-valuemax="520" aria-valuenow="260" tabindex="0"></div><section class="js-side-pane js-document-pane"><div class="js-panel-head"><span>Schema metadata</span></div><div class="js-document-pane-body">${documentMetadata}</div></section></aside>
       <div class="js-pane-splitter js-pane-splitter-inspector" data-pane-splitter="inspector" role="separator" aria-label="Resize Properties and Schema metadata panes" aria-orientation="vertical" aria-valuemin="240" aria-valuemax="520" aria-valuenow="284" tabindex="0"></div>
       <section class="js-problems" aria-label="Problems panel"><div class="js-problems-head"><button class="js-problems-tab" data-problems-toggle aria-controls="js-problem-list" aria-expanded="${problemsOpen}">Problems <span class="js-count">${snapshot.diagnostics.length}</span></button><span class="js-spacer"></span><button data-problems-toggle aria-controls="js-problem-list" aria-expanded="${problemsOpen}" aria-label="Close Problems">${fluentIcon('dismiss')}</button></div><div class="js-problem-list" id="js-problem-list" role="list" tabindex="0">${problems(snapshot.diagnostics)}</div></section>
@@ -3751,6 +3934,26 @@ function wireApplicationMenus(root: HTMLElement): void {
   });
 }
 
+function propertyRowAtPointer(document: unknown, pointer: string | undefined): PropertyRow | undefined {
+  if (!pointer?.includes('/properties/')) return undefined;
+  const schema = valueAtPointer(document, pointer);
+  const owner = valueAtPointer(document, propertyOwnerPointer(pointer));
+  if (!isSchemaRecord(schema) || !isSchemaRecord(owner)) return undefined;
+  const name = pointerLabel(pointer);
+  const authoredRequired = Array.isArray(owner.required) ? owner.required : [];
+  const required = new Set(authoredRequired.flat().filter((entry): entry is string => typeof entry === 'string'));
+  const requiredAlternatives = authoredRequired.length > 0 && authoredRequired.every(Array.isArray);
+  return {
+    name,
+    pointer,
+    type: displayPropertyValueTypes(schema),
+    required: required.has(name),
+    ...(requiredAlternatives ? { requiredAlternatives: true } : {}),
+    description: typeof schema.description === 'string' ? schema.description : undefined,
+    schema,
+  };
+}
+
 export function workbenchShell(snapshot: DocumentSnapshot, title: string, definitions: readonly { readonly name: string; readonly pointer: string; readonly namespace: string }[], definitionPointer: string | undefined, rows: readonly PropertyRow[], selectedPointer: string | undefined, mode: Mode, problemsOpen: boolean): string {
   return structuredWorkbenchShell(snapshot, title, definitions, definitionPointer, rows, selectedPointer, mode, problemsOpen, 'local', undefined, undefined);
 }
@@ -3811,7 +4014,7 @@ function renderEvaluationTrace(trace: EvaluationTrace, selection: CrossNavigatio
   return `<details class="js-trace js-trace-${trace.status}" ${depth < 2 || trace.status !== 'valid' ? 'open' : ''} data-trace-depth="${depth}"><summary><span class="js-trace-status" aria-hidden="true">${trace.status === 'valid' ? '✓' : trace.status === 'invalid' ? '×' : '?'}</span><strong>${escapeHtml(trace.keyword)}</strong><span>${escapeHtml(trace.message ?? trace.status)}</span></summary><div class="js-trace-locations" aria-current="${selected}"><button data-trace-instance="${escapeAttribute(trace.instancePointer)}" data-trace-schema="${escapeAttribute(trace.schemaPointer)}">Instance <span class="js-code">${escapeHtml(trace.instancePointer || '/')}</span></button><button data-trace-schema="${escapeAttribute(trace.schemaPointer)}" data-trace-instance="${escapeAttribute(trace.instancePointer)}">Schema <span class="js-code">${escapeHtml(trace.schemaPointer || '/')}</span></button></div>${children ? `<div class="js-trace-children">${children}</div>` : ''}</details>`;
 }
 
-export function designView(name: string | undefined, type: string | undefined, description: string | undefined, rows: readonly PropertyRow[], selectedPointer: string | undefined, identity: readonly string[] = [], relations: readonly import('../model.js').RelationProjection[] = [], memberMode: DesignMemberMode = 'local', effectiveMembers?: EffectiveMembersResult, expandedPropertyPointer?: string, definitions: readonly { readonly name: string; readonly pointer: string; readonly identity?: readonly string[] }[] = [], document?: unknown, pendingPropertyFields: ReadonlySet<string> = new Set(), relationDraftOpen = false, typeCreatorOpen = false, definitionPointer?: string, rootActive = false): string {
+export function designView(name: string | undefined, type: string | undefined, description: string | undefined, rows: readonly PropertyRow[], selectedPointer: string | undefined, identity: readonly string[] = [], relations: readonly import('../model.js').RelationProjection[] = [], memberMode: DesignMemberMode = 'local', effectiveMembers?: EffectiveMembersResult, expandedPropertyPointer?: string, definitions: readonly { readonly name: string; readonly pointer: string; readonly identity?: readonly string[] }[] = [], document?: unknown, pendingPropertyFields: ReadonlySet<string> = new Set(), relationDraftOpen = false, typeCreatorOpen = false, definitionPointer?: string, rootActive = false, activePropertyField?: { readonly pointer: string; readonly field: 'name' | 'type' | 'description' }, propertyMenuPointer?: string): string {
   if (typeCreatorOpen) return typeCreatorView(definitions.length === 0);
   const authoredNamespaces = namespacePointers(document, definitions.map((definition) => definition.pointer));
   if (!name && !type && selectedPointer && authoredNamespaces.includes(selectedPointer)) return namespaceDesignView(selectedPointer, document, definitions);
@@ -3819,7 +4022,7 @@ export function designView(name: string | undefined, type: string | undefined, d
   const declarationPointer = definitionPointer ?? '';
   const declaration = valueAtPointer(document, declarationPointer) as Readonly<Record<string, unknown>> | undefined;
   const capabilities = resolveCapabilities(document);
-  const localPropertyRows = rows.map((row) => propertyEditorRow(row, row.pointer === selectedPointer, row.pointer === expandedPropertyPointer, identity.includes(row.name), definitions, document, pendingPropertyFields, type === 'tuple')).join('');
+  const localPropertyRows = rows.map((row) => propertyEditorRow(row, row.pointer === selectedPointer, row.pointer === expandedPropertyPointer, identity.includes(row.name), definitions, document, pendingPropertyFields, type === 'tuple', new Set(), activePropertyField, propertyMenuPointer === row.pointer, selectedPointer, propertyMenuPointer, expandedPropertyPointer)).join('');
   const effectiveRows = effectiveMembers?.members.map((member) => `<div class="js-row js-effective-row" role="row" data-member-origin="${member.provenance}"><div class="js-cell" role="cell"><button class="js-property-link js-code" data-effective-source="${escapeAttribute(member.sourcePointer)}" data-effective-document="${escapeAttribute(member.documentUri)}">${escapeHtml(member.name)}</button></div><div class="js-cell js-code" role="cell">${escapeHtml(displayPropertyValueTypes(member.schema))}</div><div class="js-cell js-nullable-indicator" role="cell">${inlinePropertyNullable(member.schema) ? 'yes' : 'no'}</div><div class="js-cell js-identity-indicator" role="cell">${identity.includes(member.name) ? 'yes' : 'no'}</div><div class="js-cell ${member.required ? 'js-required' : 'js-optional'}" role="cell">${member.required ? 'required' : 'optional'}</div><div class="js-cell js-description-cell" role="cell"><span class="js-origin-chip">${escapeHtml(member.provenance)}</span>${member.addIn ? ` ${escapeHtml(member.addIn)}` : ''}${member.inheritedVia.length ? `<small>${member.inheritedVia.map(pointerLabel).map(escapeHtml).join(' → ')}</small>` : ''}${member.imports.length ? `<small>${member.imports.map((item) => `${item.keyword} ${item.importSource}`).map(escapeHtml).join(' → ')}</small>` : ''}</div><div class="js-cell js-action-cell" role="cell"><button class="js-row-action" data-effective-source="${escapeAttribute(member.sourcePointer)}" data-effective-document="${escapeAttribute(member.documentUri)}" aria-label="Open declaration of ${escapeAttribute(member.name)}">↗</button></div></div>`).join('') ?? '';
   const propertyRows = memberMode === 'effective' ? effectiveRows : localPropertyRows;
   const conflictView = memberMode === 'effective' && effectiveMembers ? `${effectiveMembers.conflicts.map((conflict) => `<div class="js-conflict"><strong>${escapeHtml(conflict.name)}</strong><span>${escapeHtml(conflict.reason)} · ${escapeHtml(conflict.winner)} wins over ${escapeHtml(conflict.loser)}</span></div>`).join('')}${effectiveMembers.diagnostics.map((diagnostic) => `<div class="js-conflict"><strong>${escapeHtml(diagnostic.code)}</strong><span>${escapeHtml(diagnostic.message)}</span></div>`).join('')}` : '';
@@ -3840,14 +4043,14 @@ export function designView(name: string | undefined, type: string | undefined, d
     : `<p class="js-description">${escapeHtml(description ?? 'No description yet.')}</p>`;
   const propertyView = type === 'object' || type === 'tuple'
     ? `${type === 'tuple' ? tupleOrderView(declarationPointer, declaration) : ''}<div class="js-section-head"><div><h2>${type === 'tuple' ? 'Tuple members' : 'Properties'}</h2><span class="js-section-meta">${memberCount} visible</span></div><div class="js-member-mode" role="group" aria-label="Property origin"><button data-member-mode="local" aria-pressed="${memberMode === 'local'}">Local</button><button data-member-mode="effective" aria-pressed="${memberMode === 'effective'}">Effective</button></div>${memberMode === 'local' ? `<button data-command="add">${addProperty}</button>` : ''}</div>${conflictView}<div class="js-grid" role="table" aria-label="${type === 'tuple' ? 'Tuple members' : 'Properties'}"><div class="js-row js-header" role="row"><div class="js-cell" role="columnheader">Name</div><div class="js-cell" role="columnheader">Type</div><div class="js-cell" role="columnheader">Nullable</div><div class="js-cell" role="columnheader">Identity</div><div class="js-cell" role="columnheader">Presence</div><div class="js-cell" role="columnheader"><span class="js-sr-only">Actions</span></div></div>${propertyRows || (memberMode === 'local' ? `<button class="js-add-row" data-command="add">${fluentIcon('add')}<span>Add a ${type === 'tuple' ? 'tuple member' : 'property'}</span></button>` : '<div class="js-empty">No effective members.</div>')}</div>`
-    : type === 'choice' ? choicesEditorView(declarationPointer, declaration, definitions)
-    : type === 'array' || type === 'set' || type === 'map' ? collectionDeclarationView(declarationPointer, declaration, definitions, document)
+    : type === 'choice' ? choicesEditorView(declarationPointer, declaration, definitions, new Set(), activePropertyField, selectedPointer, propertyMenuPointer, expandedPropertyPointer)
+    : type === 'array' || type === 'set' || type === 'map' ? collectionDeclarationView(declarationPointer, declaration, definitions, document, activePropertyField, selectedPointer, propertyMenuPointer, expandedPropertyPointer)
     : '<section class="js-design-section"><h2>Primitive declaration</h2><p class="js-description">Use the structured facets below to author constraints and annotations for this primitive.</p></section>';
   const typeEditor = typeof type === 'string' && type !== 'union' ? `<label class="js-definition-type">Type<select data-inline-definition-type="${escapeAttribute(declarationPointer)}">${definitionTypeOptions(type)}</select></label>` : '<span class="js-definition-type js-composition-type">Composition schema</span>';
   const abstractToggle = declarationPointer !== '' && (type === 'object' || type === 'tuple') ? `<label class="js-root-toggle"><input type="checkbox" data-inline-definition-abstract="${escapeAttribute(declarationPointer)}" ${declaration?.abstract === true ? 'checked' : ''}> Abstract</label>` : '';
   const deleteDefinition = definitionPointer && definitionPointer !== '' ? `<button type="button" class="js-danger" data-inline-definition-delete="${escapeAttribute(definitionPointer)}">Delete type</button>` : '';
   const inheritance = declaration && definitionPointer !== undefined ? inheritanceEditorView(definitionPointer, declaration, type, definitions) : '';
-  const facets = declaration ? structuredFacetEditor(declarationPointer, declaration, document, pendingPropertyFields, new Set(), definitions) : '';
+  const facets = declaration ? structuredFacetEditor(declarationPointer, declaration, document, pendingPropertyFields, new Set(), definitions, activePropertyField, selectedPointer, propertyMenuPointer, expandedPropertyPointer) : '';
   return `<div class="js-sheet"><header class="js-type-head"><div><div class="js-eyebrow">${name ? 'Local definition' : 'Inline schema'}</div>${editableName}${editableDescription}<p class="js-inline-status" data-inline-status="${escapeAttribute(definitionPointer ?? '')}" role="status" aria-live="polite"></p></div><div class="js-type-badges">${typeEditor}${abstractToggle}${rootToggle}${deleteDefinition}</div></header>${propertyView}${inheritance}${relationsView}${facets}</div>`;
 }
 
@@ -3898,12 +4101,12 @@ function tupleOrderView(pointer: string, declaration: Readonly<Record<string, un
   return `<section class="js-design-section js-tuple-order"><div class="js-section-head"><div><h2>Tuple order</h2><span class="js-section-meta">${order.length} members</span></div></div><ol>${order.map((name, index) => `<li><span class="js-code">${escapeHtml(name)}</span><span class="js-value-actions"><button type="button" data-tuple-move="up" data-tuple-index="${index}" data-tuple-pointer="${escapeAttribute(pointer)}" ${index === 0 ? 'disabled' : ''} aria-label="Move ${escapeAttribute(name)} earlier">${fluentIcon('arrowUp')}</button><button type="button" data-tuple-move="down" data-tuple-index="${index}" data-tuple-pointer="${escapeAttribute(pointer)}" ${index === order.length - 1 ? 'disabled' : ''} aria-label="Move ${escapeAttribute(name)} later">${fluentIcon('arrowUp', 'js-icon-down')}</button></span></li>`).join('') || '<li>No tuple members yet.</li>'}</ol></section>`;
 }
 
-function collectionDeclarationView(pointer: string, declaration: Readonly<Record<string, unknown>> | undefined, definitions: readonly { readonly name: string; readonly pointer: string }[], document?: unknown): string {
+function collectionDeclarationView(pointer: string, declaration: Readonly<Record<string, unknown>> | undefined, definitions: readonly { readonly name: string; readonly pointer: string }[], document?: unknown, activePropertyField?: { readonly pointer: string; readonly field: 'name' | 'type' | 'description' }, selectedPointer?: string, propertyMenuPointer?: string, expandedPropertyPointer?: string): string {
   if (!declaration) return '';
   const keyword = declaration.type === 'map' ? 'values' : 'items';
   const member = isRecord(declaration[keyword]) ? declaration[keyword] as Readonly<Record<string, unknown>> : {};
   const memberPointer = `${pointer}/${keyword}`;
-  return `<section class="js-design-section js-collection-editor"><div class="js-section-head"><div><h2>${declaration.type === 'map' ? 'Map values' : `${String(declaration.type)[0]!.toLocaleUpperCase()}${String(declaration.type).slice(1)} items`}</h2><span class="js-section-meta">Directly editable</span></div></div><div class="js-collection-member" data-type-drop="${escapeAttribute(memberPointer)}"><span>${keyword === 'values' ? 'Value type' : 'Item type'}</span>${inlineTypeComposer(member, memberPointer, keyword, definitions, true)}<span class="js-type-drop-zone" aria-hidden="true"></span>${inlineCollectionEditors(member, memberPointer, definitions, document)}${nestedSchemaEditor(member, memberPointer, definitions, document)}</div></section>`;
+  return `<section class="js-design-section js-collection-editor"><div class="js-section-head"><div><h2>${declaration.type === 'map' ? 'Map values' : `${String(declaration.type)[0]!.toLocaleUpperCase()}${String(declaration.type).slice(1)} items`}</h2><span class="js-section-meta">Directly editable</span></div></div><div class="js-collection-member" data-type-drop="${escapeAttribute(memberPointer)}"><span>${keyword === 'values' ? 'Value type' : 'Item type'}</span>${inlineTypeComposer(member, memberPointer, keyword, definitions, true)}<span class="js-type-drop-zone" aria-hidden="true"></span>${inlineCollectionEditors(member, memberPointer, definitions, document)}${nestedSchemaEditor(member, memberPointer, definitions, document, new Set(), new Set(), activePropertyField, selectedPointer, propertyMenuPointer, expandedPropertyPointer)}</div></section>`;
 }
 
 function coordinateReferenceSystemRow(coordinate: string, properties: readonly string[], transient: boolean): string {
@@ -3916,12 +4119,12 @@ function crsPropertyNamesAtPointer(document: unknown, pointer: string): readonly
   return isRecord(schema) && isRecord(schema.properties) ? Object.keys(schema.properties) : [];
 }
 
-function choicesEditorView(pointer: string, declaration: Readonly<Record<string, unknown>> | undefined, definitions: readonly { readonly name: string; readonly pointer: string }[], ancestors: ReadonlySet<string> = new Set()): string {
+function choicesEditorView(pointer: string, declaration: Readonly<Record<string, unknown>> | undefined, definitions: readonly { readonly name: string; readonly pointer: string }[], ancestors: ReadonlySet<string> = new Set(), activePropertyField?: { readonly pointer: string; readonly field: 'name' | 'type' | 'description' }, selectedPointer?: string, propertyMenuPointer?: string, expandedPropertyPointer?: string): string {
   const choices = isRecord(declaration?.choices) ? declaration.choices as Record<string, unknown> : {};
   const rows = Object.entries(choices).map(([name, schema]) => {
     const choicePointer = `${pointer}/choices/${escapePointerToken(name)}`;
     const typed: Readonly<Record<string, unknown>> = isSchemaRecord(schema) ? schema : { type: 'string' };
-    return `<div class="js-choice-row" data-choice-row="${escapeAttribute(choicePointer)}"><input class="js-code" data-inline-choice-name="${escapeAttribute(choicePointer)}" value="${escapeAttribute(name)}" aria-label="Choice alternative name">${inlineTypeComposer(typed, choicePointer, name, definitions, true)}${nestedSchemaEditor(typed, choicePointer, definitions, undefined, new Set(), ancestors)}<textarea rows="1" data-inline-choice-description="${escapeAttribute(choicePointer)}" aria-label="Description for ${escapeAttribute(name)}" placeholder="Alternative description">${escapeHtml(typeof typed.description === 'string' ? typed.description : '')}</textarea><button class="js-danger" data-inline-choice-delete="${escapeAttribute(choicePointer)}" aria-label="Delete ${escapeAttribute(name)}">Delete</button><p class="js-inline-status" data-inline-status="${escapeAttribute(choicePointer)}" role="status"></p></div>`;
+    return `<div class="js-choice-row" data-choice-row="${escapeAttribute(choicePointer)}"><input class="js-code" data-inline-choice-name="${escapeAttribute(choicePointer)}" value="${escapeAttribute(name)}" aria-label="Choice alternative name">${inlineTypeComposer(typed, choicePointer, name, definitions, true)}${nestedSchemaEditor(typed, choicePointer, definitions, undefined, new Set(), ancestors, activePropertyField, selectedPointer, propertyMenuPointer, expandedPropertyPointer)}<textarea rows="1" data-inline-choice-description="${escapeAttribute(choicePointer)}" aria-label="Description for ${escapeAttribute(name)}" placeholder="Alternative description">${escapeHtml(typeof typed.description === 'string' ? typed.description : '')}</textarea><button class="js-danger" data-inline-choice-delete="${escapeAttribute(choicePointer)}" aria-label="Delete ${escapeAttribute(name)}">Delete</button><p class="js-inline-status" data-inline-status="${escapeAttribute(choicePointer)}" role="status"></p></div>`;
   }).join('');
   return `<section class="js-design-section js-choice-editor"><div class="js-section-head"><div><h2>Choices</h2><span class="js-section-meta">${Object.keys(choices).length} alternatives</span></div></div><div class="js-choice-list">${rows || '<p class="js-description">No alternatives declared.</p>'}</div><div class="js-choice-add"><input data-choice-add-name class="js-code" placeholder="alternative_name" aria-label="New choice name"><select data-choice-add-type aria-label="New choice type">${definitionTypeOptions('string')}${definitions.map((definition) => `<option value="ref:#${escapeAttribute(definition.pointer)}">${escapeHtml(definitionTypeLabel(definition.pointer))} (reusable)</option>`).join('')}</select><button data-choice-add="${escapeAttribute(pointer)}">Add alternative</button></div></section>`;
 }
@@ -3938,7 +4141,7 @@ function enumFacetControl(pointer: string, action: CommandAction, value: unknown
   return `<div class="js-enum-editor" data-enum-editor="${escapeAttribute(pointer)}" data-enum-type="${escapeAttribute(type)}" data-enum-action="${escapeAttribute(action.id)}"><div class="js-enum-entry">${rows}<input data-enum-new-value type="text" aria-label="Add enum values" placeholder="${values.length ? 'Add values' : 'Enter comma-separated values'}" autocomplete="off" spellcheck="false" ${canAdd ? '' : 'disabled'}><button type="button" data-enum-add aria-label="Add enum values"${canAdd ? '' : ' disabled'}>Add</button></div><small>Press Enter or leave the field to add comma-separated <span class="js-code">${escapeHtml(type)}</span> values.</small></div>`;
 }
 
-function structuredFacetEditor(pointer: string, schema: Readonly<Record<string, unknown>>, document: unknown, pendingFields: ReadonlySet<string>, excludedActions: ReadonlySet<string> = new Set(), definitions: readonly { readonly name: string; readonly pointer: string }[] = []): string {
+function structuredFacetEditor(pointer: string, schema: Readonly<Record<string, unknown>>, document: unknown, pendingFields: ReadonlySet<string>, excludedActions: ReadonlySet<string> = new Set(), definitions: readonly { readonly name: string; readonly pointer: string }[] = [], activePropertyField?: { readonly pointer: string; readonly field: 'name' | 'type' | 'description' }, selectedPointer?: string, propertyMenuPointer?: string, expandedPropertyPointer?: string): string {
   const actions = commandActions.filter((action) => !excludedActions.has(action.id) && action.operation === 'set' && action.keyword &&
     (STRUCTURED_FACET_GROUPS.has(action.group) || STRUCTURED_CORE_FACETS.has(action.id) || action.id.startsWith('binary.')));
   const conditional = actionById('composition.conditional');
@@ -3952,9 +4155,9 @@ function structuredFacetEditor(pointer: string, schema: Readonly<Record<string, 
         : undefined
       : action.keyword ? schema[action.keyword] : undefined;
     const pending = pendingFields.has(inlineFieldKey(pointer, action.id));
-    if (current !== undefined && isCompositionArrayAction(action) && Array.isArray(current)) return [structuredCompositionFacetRow(pointer, action, current, definitions, document)];
-    if (current !== undefined && action.id === 'composition.not' && isSchemaRecord(current)) return [structuredCompositionSingleFacetRow(pointer, action, 'not', current, definitions, document)];
-    if (current !== undefined && action.id === 'composition.conditional' && isSchemaRecord(current)) return [structuredConditionalFacetRow(pointer, action, current, definitions, document)];
+    if (current !== undefined && isCompositionArrayAction(action) && Array.isArray(current)) return [structuredCompositionFacetRow(pointer, action, current, definitions, document, activePropertyField, selectedPointer, propertyMenuPointer, expandedPropertyPointer)];
+    if (current !== undefined && action.id === 'composition.not' && isSchemaRecord(current)) return [structuredCompositionSingleFacetRow(pointer, action, 'not', current, definitions, document, activePropertyField, selectedPointer, propertyMenuPointer, expandedPropertyPointer)];
+    if (current !== undefined && action.id === 'composition.conditional' && isSchemaRecord(current)) return [structuredConditionalFacetRow(pointer, action, current, definitions, document, activePropertyField, selectedPointer, propertyMenuPointer, expandedPropertyPointer)];
     return current === undefined && !pending ? [] : [structuredFacetRow(pointer, action, current, pending, schemaType, document)];
   }).join('');
   const options = candidates.filter((action) => {
@@ -3974,32 +4177,32 @@ function isCompositionArrayAction(action: CommandAction): boolean {
   return action.id === 'composition.allOf' || action.id === 'composition.anyOf' || action.id === 'composition.oneOf';
 }
 
-function structuredCompositionFacetRow(pointer: string, action: CommandAction, value: readonly unknown[], definitions: readonly { readonly name: string; readonly pointer: string }[], document: unknown): string {
+function structuredCompositionFacetRow(pointer: string, action: CommandAction, value: readonly unknown[], definitions: readonly { readonly name: string; readonly pointer: string }[], document: unknown, activePropertyField?: { readonly pointer: string; readonly field: 'name' | 'type' | 'description' }, selectedPointer?: string, propertyMenuPointer?: string, expandedPropertyPointer?: string): string {
   const keyword = action.keyword ?? action.id.slice('composition.'.length);
   const branches = value.map((branch, index) => {
     const branchPointer = `${pointer}/${keyword}/${index}`;
     if (!isSchemaRecord(branch)) return `<article class="js-composition-branch" data-composition-branch="${escapeAttribute(branchPointer)}"><strong>Branch ${index + 1}</strong><p class="js-description">This branch is not a structured schema. Use Advanced to repair it.</p></article>`;
-    return `<article class="js-composition-branch" data-composition-branch="${escapeAttribute(branchPointer)}"><header><strong>Branch ${index + 1}</strong><span class="js-code">${escapeHtml(schemaExpressionLabel(branch.type))}</span></header>${inlineTypeComposer(branch, branchPointer, `Branch ${index + 1}`, definitions, true)}${nestedSchemaEditor(branch, branchPointer, definitions, document, new Set(), new Set())}</article>`;
+    return `<article class="js-composition-branch" data-composition-branch="${escapeAttribute(branchPointer)}"><header><strong>Branch ${index + 1}</strong><span class="js-code">${escapeHtml(schemaExpressionLabel(branch.type))}</span></header>${inlineTypeComposer(branch, branchPointer, `Branch ${index + 1}`, definitions, true)}${nestedSchemaEditor(branch, branchPointer, definitions, document, new Set(), new Set(), activePropertyField, selectedPointer, propertyMenuPointer, expandedPropertyPointer)}</article>`;
   }).join('');
   const remove = action.removesActionId
     ? `<button type="button" class="js-detail-remove" data-facet-remove="${escapeAttribute(action.removesActionId)}" data-facet-pointer="${escapeAttribute(pointer)}" aria-label="Remove ${escapeAttribute(keyword)}">Remove</button>`
     : '';
   return `<div class="js-structured-facet-row js-composition-facet-row" data-facet-row="${escapeAttribute(action.id)}"><div><span>${escapeHtml(action.group)} · ${escapeHtml(action.label.replace(/^Set /, ''))}</span><div class="js-composition-branches" data-composition-keyword="${escapeAttribute(keyword)}">${branches || '<p class="js-description">No branches are authored.</p>'}</div></div><button type="button" data-facet-advanced="${escapeAttribute(action.id)}" data-facet-pointer="${escapeAttribute(pointer)}">Advanced</button>${remove}</div>`;
 }
-function structuredCompositionSingleFacetRow(pointer: string, action: CommandAction, keyword: string, branch: Readonly<Record<string, unknown>>, definitions: readonly { readonly name: string; readonly pointer: string }[], document: unknown): string {
+function structuredCompositionSingleFacetRow(pointer: string, action: CommandAction, keyword: string, branch: Readonly<Record<string, unknown>>, definitions: readonly { readonly name: string; readonly pointer: string }[], document: unknown, activePropertyField?: { readonly pointer: string; readonly field: 'name' | 'type' | 'description' }, selectedPointer?: string, propertyMenuPointer?: string, expandedPropertyPointer?: string): string {
   const branchPointer = `${pointer}/${keyword}`;
-  const editor = `<article class="js-composition-branch" data-composition-branch="${escapeAttribute(branchPointer)}"><header><strong>${escapeHtml(keyword)}</strong><span class="js-code">${escapeHtml(schemaExpressionLabel(branch.type))}</span></header>${inlineTypeComposer(branch, branchPointer, keyword, definitions, true)}${nestedSchemaEditor(branch, branchPointer, definitions, document, new Set(), new Set())}</article>`;
+  const editor = `<article class="js-composition-branch" data-composition-branch="${escapeAttribute(branchPointer)}"><header><strong>${escapeHtml(keyword)}</strong><span class="js-code">${escapeHtml(schemaExpressionLabel(branch.type))}</span></header>${inlineTypeComposer(branch, branchPointer, keyword, definitions, true)}${nestedSchemaEditor(branch, branchPointer, definitions, document, new Set(), new Set(), activePropertyField, selectedPointer, propertyMenuPointer, expandedPropertyPointer)}</article>`;
   const remove = action.removesActionId
     ? `<button type="button" class="js-detail-remove" data-facet-remove="${escapeAttribute(action.removesActionId)}" data-facet-pointer="${escapeAttribute(pointer)}" aria-label="Remove ${escapeAttribute(keyword)}">Remove</button>`
     : '';
   return `<div class="js-structured-facet-row js-composition-facet-row" data-facet-row="${escapeAttribute(action.id)}"><div><span>${escapeHtml(action.group)} · ${escapeHtml(action.label.replace(/^Set /, ''))}</span><div class="js-composition-branches">${editor}</div></div><button type="button" data-facet-advanced="${escapeAttribute(action.id)}" data-facet-pointer="${escapeAttribute(pointer)}">Advanced</button>${remove}</div>`;
 }
 
-function structuredConditionalFacetRow(pointer: string, action: CommandAction, value: Readonly<Record<string, unknown>>, definitions: readonly { readonly name: string; readonly pointer: string }[], document: unknown): string {
+function structuredConditionalFacetRow(pointer: string, action: CommandAction, value: Readonly<Record<string, unknown>>, definitions: readonly { readonly name: string; readonly pointer: string }[], document: unknown, activePropertyField?: { readonly pointer: string; readonly field: 'name' | 'type' | 'description' }, selectedPointer?: string, propertyMenuPointer?: string, expandedPropertyPointer?: string): string {
   const branches = (['if', 'then', 'else'] as const).flatMap((keyword) => {
     const branch = value[keyword];
     return isSchemaRecord(branch)
-      ? [`<article class="js-composition-branch" data-composition-branch="${escapeAttribute(`${pointer}/${keyword}`)}"><header><strong>${keyword}</strong><span class="js-code">${escapeHtml(schemaExpressionLabel(branch.type))}</span></header>${inlineTypeComposer(branch, `${pointer}/${keyword}`, keyword, definitions, true)}${nestedSchemaEditor(branch, `${pointer}/${keyword}`, definitions, document, new Set(), new Set())}</article>`]
+      ? [`<article class="js-composition-branch" data-composition-branch="${escapeAttribute(`${pointer}/${keyword}`)}"><header><strong>${keyword}</strong><span class="js-code">${escapeHtml(schemaExpressionLabel(branch.type))}</span></header>${inlineTypeComposer(branch, `${pointer}/${keyword}`, keyword, definitions, true)}${nestedSchemaEditor(branch, `${pointer}/${keyword}`, definitions, document, new Set(), new Set(), activePropertyField, selectedPointer, propertyMenuPointer, expandedPropertyPointer)}</article>`]
       : [];
   }).join('');
   const remove = action.removesActionId
@@ -4143,20 +4346,58 @@ function enumValueFromRaw(type: string, raw: string): unknown {
   return raw;
 }
 
-function propertyEditorRow(row: PropertyRow, selected: boolean, expanded: boolean, identity: boolean, definitions: readonly { readonly name: string; readonly pointer: string }[], document?: unknown, pendingPropertyFields: ReadonlySet<string> = new Set(), tupleMember = false, ancestors: ReadonlySet<string> = new Set()): string {
+function propertyEditorRow(row: PropertyRow, selected: boolean, expanded: boolean, identity: boolean, definitions: readonly { readonly name: string; readonly pointer: string }[], document?: unknown, pendingPropertyFields: ReadonlySet<string> = new Set(), tupleMember = false, ancestors: ReadonlySet<string> = new Set(), activePropertyField?: { readonly pointer: string; readonly field: 'name' | 'type' | 'description' }, menuOpen = false, selectedPropertyPointer?: string, openPropertyMenuPointer?: string, expandedPropertyPointer?: string): string {
   const schema = row.schema ?? {};
   const typeComposer = inlineTypeComposer(schema, row.pointer, row.name, definitions, true);
   const collectionEditors = inlineCollectionEditors(schema, row.pointer, definitions, document);
   const detailsId = `property-details-${encodeURIComponent(row.pointer).replace(/%/g, '-')}`;
+  const menuId = `property-menu-${encodeURIComponent(row.pointer).replace(/%/g, '-')}`;
+  const activeField = activePropertyField?.pointer === row.pointer ? activePropertyField.field : undefined;
+  const displayField = (field: 'name' | 'type' | 'description', value: string, placeholder: string, className = ''): string =>
+    `<button type="button" class="js-property-read-value ${className}" data-property-field-activate="${field}" data-inline-property="${field}" data-property-pointer="${escapeAttribute(row.pointer)}" aria-label="${escapeAttribute(`${field === 'name' ? 'Property name' : field === 'type' ? 'Property type' : 'Description for property'} ${row.name}: ${value || placeholder}`)}">${escapeHtml(value || placeholder)}</button>`;
+  const nameField = activeField === 'name'
+    ? `<span class="js-property-field-editor" data-property-field-editor><input class="js-inline-name js-code" data-inline-property="name" data-property-pointer="${escapeAttribute(row.pointer)}" value="${escapeAttribute(row.name)}" aria-label="Property name"></span>`
+    : displayField('name', row.name, 'Unnamed property', 'js-code js-property-name-value');
+  const typeField = activeField === 'type'
+    ? `<span class="js-property-field-editor js-property-type-editor" data-property-field-editor>${typeComposer}</span>`
+    : displayField('type', displayPropertyValueTypes(schema), 'No value type', 'js-code js-property-type-value');
+  const descriptionField = activeField === 'description'
+    ? `<span class="js-property-field-editor" data-property-field-editor><textarea class="js-inline-description" rows="1" data-inline-property="description" data-property-pointer="${escapeAttribute(row.pointer)}" placeholder="Add description" aria-label="Description for ${escapeAttribute(row.name)}">${escapeHtml(row.description ?? '')}</textarea></span>`
+    : displayField('description', row.description ?? '', 'Add description', 'js-property-description-value');
+  const summary = expanded ? '' : propertyAuthoredSummary(schema);
   const requiredControl = tupleMember
     ? '<span class="js-implicit-required" aria-label="Required because tuple members are implicit">required (tuple)</span>'
     : row.requiredAlternatives
     ? `<button class="js-required-sets" data-action-id="property.required-alternatives" data-action-pointer="${escapeAttribute(propertyOwnerPointer(row.pointer))}" title="This type uses alternative required sets">Edit sets</button>`
     : `<label><input type="checkbox" data-inline-property="required" data-property-pointer="${escapeAttribute(row.pointer)}" ${row.required ? 'checked' : ''}> required</label>`;
-  return `<div class="js-property-editor" data-property-editor="${escapeAttribute(row.pointer)}" aria-current="${selected}" role="rowgroup"><div class="js-row js-inline-property-row" role="row"><div class="js-cell" role="cell"><input class="js-inline-name js-code" data-inline-property="name" data-property-pointer="${escapeAttribute(row.pointer)}" value="${escapeAttribute(row.name)}" aria-label="Property name"></div><div class="js-cell js-inline-type-cell" role="cell" data-type-drop="${escapeAttribute(row.pointer)}">${typeComposer}<span class="js-type-drop-zone" aria-hidden="true"></span></div><div class="js-cell js-inline-nullable-cell" role="cell"><label><input type="checkbox" data-inline-property="nullable" data-property-pointer="${escapeAttribute(row.pointer)}" ${inlinePropertyNullable(schema) ? 'checked' : ''}> nullable</label></div><div class="js-cell js-inline-identity-cell" role="cell"><label title="If needed, checking this activates the compatible Relations capability."><input type="checkbox" data-inline-property="identity" data-property-pointer="${escapeAttribute(row.pointer)}" ${identity ? 'checked' : ''}> identity</label></div><div class="js-cell js-inline-required-cell" role="cell">${requiredControl}</div><div class="js-cell js-description-cell" role="cell"><textarea class="js-inline-description" rows="1" data-inline-property="description" data-property-pointer="${escapeAttribute(row.pointer)}" placeholder="Add description" aria-label="Description for ${escapeAttribute(row.name)}">${escapeHtml(row.description ?? '')}</textarea></div><div class="js-cell js-action-cell" role="cell"><button class="js-row-action" data-property-details="${escapeAttribute(row.pointer)}" aria-expanded="${expanded}" aria-controls="${detailsId}" aria-label="${expanded ? 'Collapse' : 'Expand'} validation and annotations for ${escapeAttribute(row.name)}">${fluentIcon('chevronRight', `js-property-chevron${expanded ? ' js-expanded' : ''}`)}</button><button class="js-row-action js-danger" data-inline-property-delete="${escapeAttribute(row.pointer)}" aria-label="Delete ${escapeAttribute(row.name)}">${fluentIcon('dismiss')}</button></div>${collectionEditors}</div><p class="js-inline-status" data-inline-status="${escapeAttribute(row.pointer)}" role="status" aria-live="polite"></p>${expanded ? propertyDetailsPanel(row, detailsId, document, pendingPropertyFields, definitions) : ''}${nestedSchemaEditor(schema, row.pointer, definitions, document, pendingPropertyFields, ancestors)}</div>`;
+  const menu = `<div class="js-property-actions-menu" id="${menuId}" role="menu" data-property-actions-menu="${escapeAttribute(row.pointer)}" ${menuOpen ? '' : 'hidden'}><button type="button" role="menuitem" class="js-danger" data-inline-property-delete="${escapeAttribute(row.pointer)}" data-property-menu-delete="${escapeAttribute(row.pointer)}">Delete property</button></div>`;
+  return `<div class="js-property-editor" data-property-editor="${escapeAttribute(row.pointer)}" aria-current="${selected}" role="rowgroup"><div class="js-row js-inline-property-row" role="row" tabindex="0" aria-selected="${selected}" data-property-row-select="${escapeAttribute(row.pointer)}"><div class="js-cell" role="cell">${nameField}</div><div class="js-cell js-inline-type-cell" role="cell" data-type-drop="${escapeAttribute(row.pointer)}">${typeField}<span class="js-type-drop-zone" aria-hidden="true"></span></div><div class="js-cell js-inline-nullable-cell" role="cell"><label><input type="checkbox" data-inline-property="nullable" data-property-pointer="${escapeAttribute(row.pointer)}" ${inlinePropertyNullable(schema) ? 'checked' : ''}> nullable</label></div><div class="js-cell js-inline-identity-cell" role="cell"><label title="If needed, checking this activates the compatible Relations capability."><input type="checkbox" data-inline-property="identity" data-property-pointer="${escapeAttribute(row.pointer)}" ${identity ? 'checked' : ''}> identity</label></div><div class="js-cell js-inline-required-cell" role="cell">${requiredControl}</div><div class="js-cell js-description-cell" role="cell">${descriptionField}</div><div class="js-cell js-action-cell" role="cell"><button class="js-row-action" data-property-details="${escapeAttribute(row.pointer)}" aria-expanded="${expanded}" aria-controls="${detailsId}" aria-label="${expanded ? 'Collapse' : 'Expand'} validation and annotations for ${escapeAttribute(row.name)}">${fluentIcon('chevronRight', `js-property-chevron${expanded ? ' js-expanded' : ''}`)}</button><button class="js-row-action js-property-menu-trigger" data-property-menu="${escapeAttribute(row.pointer)}" aria-haspopup="menu" aria-expanded="${menuOpen}" aria-controls="${menuId}" aria-label="Property actions for ${escapeAttribute(row.name)}">⋯</button>${menu}</div>${collectionEditors}</div>${summary}<p class="js-inline-status" data-inline-status="${escapeAttribute(row.pointer)}" role="status" aria-live="polite"></p>${expanded ? propertyDetailsPanel(row, detailsId, document, pendingPropertyFields, definitions, activePropertyField, selectedPropertyPointer, openPropertyMenuPointer, expandedPropertyPointer) : ''}${nestedSchemaEditor(schema, row.pointer, definitions, document, pendingPropertyFields, ancestors, activePropertyField, selectedPropertyPointer, openPropertyMenuPointer, expandedPropertyPointer)}</div>`;
 }
 
-function nestedSchemaEditor(schema: Readonly<Record<string, unknown>>, pointer: string, definitions: readonly { readonly name: string; readonly pointer: string }[], document?: unknown, pendingPropertyFields: ReadonlySet<string> = new Set(), ancestors: ReadonlySet<string> = new Set()): string {
+function propertyAuthoredSummary(schema: Readonly<Record<string, unknown>>): string {
+  const fields: readonly (readonly [string, string])[] = [
+    ['unit', 'unit'],
+    ['symbol', 'symbol'],
+    ['format', 'format'],
+    ['currency', 'currency'],
+    ['ucumUnit', 'UCUM'],
+    ['semanticRole', 'role'],
+    ['observedProperty', 'observed'],
+    ['minimum', 'min'],
+    ['maximum', 'max'],
+    ['minLength', 'min length'],
+    ['maxLength', 'max length'],
+    ['pattern', 'pattern'],
+  ];
+  const values = fields.flatMap(([keyword, label]) => {
+    const value = schema[keyword];
+    if (value === undefined) return [];
+    return [`<span class="js-property-summary-chip"><strong>${escapeHtml(label)}</strong> ${escapeHtml(structuredValueLabel(value))}</span>`];
+  }).slice(0, 4);
+  return values.length ? `<div class="js-property-authored-summary" aria-label="Authored property details">${values.join('')}</div>` : '';
+}
+
+function nestedSchemaEditor(schema: Readonly<Record<string, unknown>>, pointer: string, definitions: readonly { readonly name: string; readonly pointer: string }[], document?: unknown, pendingPropertyFields: ReadonlySet<string> = new Set(), ancestors: ReadonlySet<string> = new Set(), activePropertyField?: { readonly pointer: string; readonly field: 'name' | 'type' | 'description' }, selectedPointer?: string, propertyMenuPointer?: string, expandedPropertyPointer?: string): string {
   if (ancestors.has(pointer)) return '<p class="js-cycle-guard">Cycle reference; open the referenced declaration to continue.</p>';
   const path = new Set(ancestors).add(pointer);
   const type = typeof schema.type === 'string' ? schema.type : undefined;
@@ -4167,12 +4408,12 @@ function nestedSchemaEditor(schema: Readonly<Record<string, unknown>>, pointer: 
     const rows = Object.entries(properties).map(([name, child]) => {
       const childPointer = `${pointer}/properties/${escapePointerToken(name)}`;
       const childSchema = isSchemaRecord(child) ? child : { type: 'string' };
-      return propertyEditorRow({ name, pointer: childPointer, type: typeof childSchema.type === 'string' ? childSchema.type : 'unknown', required: required.has(name), description: typeof childSchema.description === 'string' ? childSchema.description : undefined, schema: childSchema }, childPointer === pointer, false, identity.has(name), definitions, document, pendingPropertyFields, type === 'tuple', path);
+      return propertyEditorRow({ name, pointer: childPointer, type: typeof childSchema.type === 'string' ? childSchema.type : 'unknown', required: required.has(name), description: typeof childSchema.description === 'string' ? childSchema.description : undefined, schema: childSchema }, childPointer === selectedPointer, childPointer === expandedPropertyPointer, identity.has(name), definitions, document, pendingPropertyFields, type === 'tuple', path, activePropertyField, propertyMenuPointer === childPointer, selectedPointer, propertyMenuPointer, expandedPropertyPointer);
     }).join('');
     const order = type === 'tuple' ? tupleOrderView(pointer, schema) : '';
     return `<section class="js-nested-schema js-nested-${type}" data-nested-schema="${escapeAttribute(pointer)}"><div class="js-section-head"><div><h3>${type === 'tuple' ? 'Nested tuple members' : 'Nested object properties'}</h3><span class="js-section-meta">${Object.keys(properties).length} members</span></div><button type="button" data-command="add" data-property-owner="${escapeAttribute(pointer)}">${fluentIcon('add')} Add</button></div>${order}<div class="js-grid js-nested-grid" role="table" aria-label="${type === 'tuple' ? 'Nested tuple members' : 'Nested object properties'}">${rows || '<div class="js-empty">No nested members yet.</div>'}</div></section>`;
   }
-  if (type === 'choice') return `<section class="js-nested-schema js-nested-choice" data-nested-schema="${escapeAttribute(pointer)}">${choicesEditorView(pointer, schema, definitions, path)}</section>`;
+  if (type === 'choice') return `<section class="js-nested-schema js-nested-choice" data-nested-schema="${escapeAttribute(pointer)}">${choicesEditorView(pointer, schema, definitions, path, activePropertyField, selectedPointer, propertyMenuPointer, expandedPropertyPointer)}</section>`;
   return '';
 }
 function inlinePropertyTypeMembers(schema: Readonly<Record<string, unknown>>): readonly string[] {
@@ -4444,7 +4685,7 @@ function coreFacetCompatibleWithType(actionId: string, schemaType: string | unde
   return true;
 }
 
-function propertyDetailsPanel(row: PropertyRow, id: string, document?: unknown, pendingPropertyFields: ReadonlySet<string> = new Set(), _definitions: readonly { readonly name: string; readonly pointer: string }[] = []): string {
+function propertyDetailsPanel(row: PropertyRow, id: string, document?: unknown, pendingPropertyFields: ReadonlySet<string> = new Set(), _definitions: readonly { readonly name: string; readonly pointer: string }[] = [], activePropertyField?: { readonly pointer: string; readonly field: 'name' | 'type' | 'description' }, selectedPointer?: string, propertyMenuPointer?: string, expandedPropertyPointer?: string): string {
   const schema = row.schema ?? {};
   const validationFields = [
     ['minimum', 'Minimum', 'number'], ['maximum', 'Maximum', 'number'], ['exclusiveMinimum', 'Exclusive minimum', 'number'], ['exclusiveMaximum', 'Exclusive maximum', 'number'], ['multipleOf', 'Multiple of', 'number'],
@@ -4478,7 +4719,7 @@ function propertyDetailsPanel(row: PropertyRow, id: string, document?: unknown, 
     ...structuredFields.map(([keyword]) => inlineKeywordActionId('annotation', keyword)),
   ]);
   const core = coreFacetEditor(row.pointer, schema, document, pendingPropertyFields, _definitions);
-  const advanced = structuredFacetEditor(row.pointer, schema, document, pendingPropertyFields, new Set([...represented, ...STRUCTURED_CORE_FACETS]), _definitions);
+  const advanced = structuredFacetEditor(row.pointer, schema, document, pendingPropertyFields, new Set([...represented, ...STRUCTURED_CORE_FACETS]), _definitions, activePropertyField, selectedPointer, propertyMenuPointer, expandedPropertyPointer);
   return `<section class="js-property-details" id="${id}" aria-label="Validation and annotations for ${escapeAttribute(row.name)}">${core}<div class="js-property-detail-columns"><section class="js-property-detail-group" aria-labelledby="${id}-constraints"><header><strong id="${id}-constraints">Validation constraints</strong><span>${validationCount}</span></header><div class="js-property-detail-fields">${validation || '<p class="js-detail-empty">No constraints</p>'}</div>${validationAdd}</section><section class="js-property-detail-group" aria-labelledby="${id}-annotations"><header><strong id="${id}-annotations">Annotations</strong><span>${annotationCount}</span></header><div class="js-property-detail-fields">${annotations}${structured || (!annotations ? '<p class="js-detail-empty">No annotations</p>' : '')}</div>${annotationAdd}</section></div>${advanced}<p class="js-inline-status" data-inline-status="${escapeAttribute(row.pointer)}" role="status" aria-live="polite"></p></section>`;
 }
 
@@ -5738,7 +5979,7 @@ export const workbenchFocusIdentityAttributes = [
   'data-addin', 'data-impact-direction', 'data-command', 'data-show-commands', 'data-theme-select', 'data-action-select', 'data-action-id',
   'data-libraries-load', 'data-library-read', 'data-library-operation', 'data-library-selector', 'data-library-declaration', 'data-library-provider-filter', 'data-library-search', 'data-library-preview', 'data-library-apply',
   'data-provider-configure', 'data-local-provider-configure', 'data-provider-remove', 'data-library-publish-preview', 'data-library-publish', 'data-publish-provider', 'data-publish-entry', 'data-publish-version', 'data-publish-source', 'data-publish-epoch', 'data-publish-default',
-  'data-inline-property', 'data-inline-keyword', 'data-inline-type-add', 'data-inline-type-remove', 'data-inline-collection-kind', 'data-property-details', 'data-inline-property-delete', 'data-inline-property-apply', 'data-catalog-open',
+  'data-inline-property', 'data-inline-keyword', 'data-inline-type-add', 'data-inline-type-remove', 'data-inline-collection-kind', 'data-property-row-select', 'data-property-details', 'data-inline-property-delete', 'data-inline-property-apply', 'data-catalog-open',
   'data-property-detail-select', 'data-property-detail-add', 'data-inline-relation-add', 'data-inline-relation-name', 'data-inline-relation-target', 'data-inline-relation-cardinality', 'data-inline-relation-scope', 'data-inline-relation-cancel', 'data-inline-relation-commit',
 ] as const;
 

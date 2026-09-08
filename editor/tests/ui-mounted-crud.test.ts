@@ -211,7 +211,7 @@ describe('mounted structured CRUD workbench', () => {
     let value = JSON.parse(handle!.getText());
     expect(value.definitions.Pair.tuple).toEqual(['first', 'second', 'field']);
 
-    change(element(root, '[data-property-pointer="/definitions/Pair/properties/field"][data-inline-property="name"]'), 'third');
+    change(element(root, 'input[data-property-pointer="/definitions/Pair/properties/field"][data-inline-property="name"]'), 'third');
     await settle();
     value = JSON.parse(handle!.getText());
     expect(value.definitions.Pair.tuple).toEqual(['first', 'second', 'third']);
@@ -226,11 +226,92 @@ describe('mounted structured CRUD workbench', () => {
     await settle();
     expect(JSON.parse(handle!.getText()).definitions.Pair).not.toHaveProperty('identity');
 
+    element<HTMLButtonElement>(root, '[data-property-menu="/definitions/Pair/properties/second"]').click();
+    await Promise.resolve();
     element<HTMLButtonElement>(root, '[data-inline-property-delete="/definitions/Pair/properties/second"]').click();
     await settle();
     value = JSON.parse(handle!.getText());
     expect(value.definitions.Pair.properties).not.toHaveProperty('second');
     expect(value.definitions.Pair.tuple).toEqual(['first', 'third']);
+  });
+
+  it('activates compact property fields in place and keeps selection, summaries, and deletion local to the row', async () => {
+    const distancePointer = '/definitions/Reading/properties/distance';
+    const labelPointer = '/definitions/Reading/properties/label';
+    const root = mount({
+      $schema: 'https://json-structure.org/meta/extended/v0/#',
+      definitions: {
+        Reading: {
+          type: 'object',
+          properties: {
+            distance: { type: 'double', description: 'Measured distance', unit: 'm', symbol: 'd', maxLength: 50 },
+            label: { type: 'string', description: 'Display label' },
+          },
+        },
+      },
+    });
+
+    const distanceEditor = element(root, `[data-property-editor="${distancePointer}"]`);
+    expect(distanceEditor.textContent).toContain('unit m');
+    expect(distanceEditor.textContent).toContain('symbol d');
+    expect(distanceEditor.textContent).toContain('max length 50');
+    expect(distanceEditor.querySelector('input[data-inline-property="name"]')).toBeNull();
+    expect(distanceEditor.querySelector('textarea[data-inline-property="description"]')).toBeNull();
+
+    element<HTMLButtonElement>(root, `[data-property-field-activate="name"][data-property-pointer="${distancePointer}"]`).focus();
+    await Promise.resolve();
+    const nameInput = element<HTMLInputElement>(root, `input[data-inline-property="name"][data-property-pointer="${distancePointer}"]`);
+    expect(document.activeElement).toBe(nameInput);
+    nameInput.value = 'discardedName';
+    nameInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(element(root, `[data-property-field-activate="name"][data-property-pointer="${distancePointer}"]`).textContent).toBe('distance');
+    expect(JSON.parse(handle!.getText()).definitions.Reading.properties).not.toHaveProperty('discardedName');
+
+    element<HTMLButtonElement>(root, `[data-property-field-activate="description"][data-property-pointer="${distancePointer}"]`).click();
+    await Promise.resolve();
+    change(element(root, `textarea[data-inline-property="description"][data-property-pointer="${distancePointer}"]`), 'Travel distance');
+    await settle();
+    expect(JSON.parse(handle!.getText()).definitions.Reading.properties.distance.description).toBe('Travel distance');
+    expect(element(root, `[data-property-field-activate="description"][data-property-pointer="${distancePointer}"]`).textContent).toBe('Travel distance');
+    expect(document.activeElement).toBe(element(root, `[data-property-row-select="${distancePointer}"]`));
+
+    element<HTMLButtonElement>(root, `[data-property-field-activate="description"][data-property-pointer="${distancePointer}"]`).click();
+    const cancelledDescription = element<HTMLTextAreaElement>(root, `textarea[data-inline-property="description"][data-property-pointer="${distancePointer}"]`);
+    cancelledDescription.value = 'Discarded description';
+    cancelledDescription.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+    expect(root.querySelector(`textarea[data-inline-property="description"][data-property-pointer="${distancePointer}"]`)).toBe(cancelledDescription);
+    cancelledDescription.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await settle();
+    expect(JSON.parse(handle!.getText()).definitions.Reading.properties.distance.description).toBe('Travel distance');
+
+    element<HTMLButtonElement>(root, `[data-property-field-activate="type"][data-property-pointer="${distancePointer}"]`).click();
+    await Promise.resolve();
+    change(element(root, `[data-inline-type-replace="type:double"][data-property-pointer="${distancePointer}"]`), 'type:decimal');
+    await settle();
+    expect(JSON.parse(handle!.getText()).definitions.Reading.properties.distance.type).toBe('decimal');
+    expect(document.activeElement).toBe(element(root, `[data-property-row-select="${distancePointer}"]`));
+
+    element<HTMLElement>(root, `[data-property-row-select="${labelPointer}"]`).click();
+    const selectedRow = element(root, `[data-property-row-select="${labelPointer}"]`);
+    expect(selectedRow.getAttribute('aria-selected')).toBe('true');
+    expect(element(root, '.js-inspector-body').textContent).toContain('label');
+
+    const menuTrigger = element<HTMLButtonElement>(root, `[data-property-menu="${labelPointer}"]`);
+    expect(menuTrigger.getAttribute('aria-haspopup')).toBe('menu');
+    menuTrigger.click();
+    const menu = element(root, `[data-property-actions-menu="${labelPointer}"]`);
+    expect(menu.getAttribute('role')).toBe('menu');
+    expect((menu as HTMLElement).hidden).toBe(false);
+    expect(element(root, `[data-property-menu="${labelPointer}"]`).getAttribute('aria-expanded')).toBe('true');
+    expect(menu.querySelectorAll('[role="menuitem"]')).toHaveLength(1);
+    expect(menu.textContent).toContain('Delete property');
+    menu.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(element<HTMLElement>(root, `[data-property-actions-menu="${labelPointer}"]`).hidden).toBe(true);
+
+    element<HTMLButtonElement>(root, `[data-property-details="${distancePointer}"]`).click();
+    const expanded = element(root, `[data-property-editor="${distancePointer}"]`);
+    expect(expanded.querySelector('.js-property-authored-summary')).toBeNull();
+    expect(expanded.querySelector('.js-property-details')).not.toBeNull();
   });
 
   it('normalizes inline property and choice type changes without dropping legal concepts', async () => {
@@ -251,6 +332,7 @@ describe('mounted structured CRUD workbench', () => {
     });
     element<HTMLButtonElement>(root, '[data-select="/definitions/Holder"]').click();
     await settle();
+    element<HTMLButtonElement>(root, '[data-property-pointer="/definitions/Holder/properties/measure"][data-property-field-activate="type"]').click();
     change(element(root, '[data-property-pointer="/definitions/Holder/properties/measure"][data-inline-type-replace]'), 'type:string');
     await settle();
     element<HTMLButtonElement>(root, '[data-select="/definitions/Variant"]').click();
