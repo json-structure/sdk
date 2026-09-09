@@ -156,6 +156,8 @@ describe('workbench interaction markup', () => {
     expect(html).toContain('data-namespace-import="$importdefs"');
     expect(html).not.toContain('class="js-document-pane"');
     expect(html).not.toContain('data-properties-pane-splitter');
+    expect(editorStyles).toContain('.js-document-sheet .js-section-head>.js-actions { margin:0 0 0 auto; }');
+    expect(editorStyles).toContain('.js-document-sheet .js-offer-row button,.js-document-sheet .js-offer-add button');
   });
 
   it('starts from composite type choices without opening the generic action editor', () => {

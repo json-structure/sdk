@@ -225,14 +225,19 @@ export const editorStyles = `
 .js-document-root-field select { min-width:0; min-height:34px; border:1px solid var(--js-line); border-radius:3px; padding:3px 28px 3px 8px; background:var(--js-canvas); color:var(--js-text); font-size:12px; text-transform:none; }
 .js-document-root-field select:hover,.js-document-root-field select:focus { border-color:var(--js-accent); }
 .js-document-root-field small { color:var(--js-quiet); font-size:10px; line-height:1.4; text-transform:none; }
+.js-document-sheet .js-section-head>.js-actions { margin:0 0 0 auto; }
+.js-document-sheet .js-section-head>.js-actions button,.js-document-sheet .js-choice-add button,.js-document-sheet .js-offer-row button,.js-document-sheet .js-offer-add button { min-height:34px; display:inline-flex; align-items:center; justify-content:center; gap:6px; border:1px solid var(--js-line); border-radius:3px; padding:0 12px; background:var(--js-raised); color:var(--js-muted); white-space:nowrap; }
+.js-document-sheet .js-section-head>.js-actions button:hover,.js-document-sheet .js-choice-add button:hover,.js-document-sheet .js-offer-row button:hover,.js-document-sheet .js-offer-add button:hover { border-color:var(--js-accent); color:var(--js-text); }
+.js-document-sheet .js-choice-add { align-items:stretch; }
+.js-document-sheet .js-choice-add input { min-height:34px; }
 .js-document-uses legend,.js-document-offers legend { padding:0 4px; color:var(--js-quiet); font-size:10px; text-transform:uppercase; }
 .js-document-uses label,.js-profile-use { display:flex; align-items:center; gap:5px; color:var(--js-muted); font:11px/1.3 Consolas,monospace; text-transform:none; }
 .js-document-uses input { width:auto; min-height:0; }
 .js-profile-use { min-width:0; flex-wrap:wrap; overflow-wrap:anywhere; }
 .js-profile-use small { color:var(--js-quiet); font:10px/1.3 var(--js-font); }
 .js-offer-list { display:grid; gap:6px; }
-.js-offer-row,.js-offer-add { display:grid; grid-template-columns:1fr; gap:6px; align-items:start; }
-.js-offer-row button,.js-offer-add button { min-height:28px; }
+.js-offer-row,.js-offer-add { display:grid; grid-template-columns:minmax(0,1fr) minmax(180px,240px) auto; gap:8px; align-items:stretch; }
+.js-offer-row button,.js-offer-add button { min-height:34px; }
 .js-schema-status { color:var(--js-error); font-size:11px; }
 .js-center>.js-view { grid-row:2; min-width:0; min-height:0; overflow:auto; overscroll-behavior:contain; scroll-padding-block:40px 80px; }
 .js-center>.js-graph,.js-center>.js-source-view { overflow:hidden; overscroll-behavior:none; }
@@ -1247,6 +1252,10 @@ export const editorStyles = `
   .js-graph-lenses button { min-width:0; flex:1; padding-inline:3px; }
   .js-empty-actions { width:min(240px,100%); flex-direction:column; }
   .js-empty-actions button { width:100%; }
+  .js-document-sheet .js-offer-row,.js-document-sheet .js-offer-add { grid-template-columns:1fr; }
+  .js-document-sheet .js-section-head { align-items:flex-start; flex-wrap:wrap; }
+  .js-document-sheet .js-section-head>.js-actions { width:100%; margin-inline-start:0; }
+  .js-document-sheet .js-section-head>.js-actions button,.js-document-sheet .js-choice-add button,.js-document-sheet .js-offer-row button,.js-document-sheet .js-offer-add button { width:100%; min-height:44px; }
   .js-catalog-drawer { inset-block:74px 28px; width:100%; grid-template-columns:112px minmax(0,1fr); }
   .js-catalog-provider { padding-inline:6px; }
   .js-catalog-result { grid-template-columns:1fr; }
