@@ -64,6 +64,8 @@ node_modules/
 # .NET
 [Dd]ebug/
 [Rr]elease/
+!editor/src/release/
+!editor/src/release/**
 [Bb]in/
 [Oo]bj/
 *.nupkg

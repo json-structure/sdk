@@ -65,6 +65,12 @@ describe('release integrity foundations', () => {
     expect((await scanArtifacts(root, ['worker.exe'])).some((finding) => finding.rule === 'undeclared-executable')).toBe(false);
   });
 
+  it('does not treat code references or URL path segments as release leaks', async () => {
+    const root = await fixture();
+    await writeFile(path.join(root, 'bundle.js'), 'this.ui.inputBox.password=this.password;\nconst docs="https://example.test/Home/reference";');
+    expect(await scanArtifacts(root)).toEqual([]);
+  });
+
   it('accepts only content-free opt-in telemetry fields and privacy-preserving crash fields', () => {
     expect(validateTelemetryEnvelope({ enabled: false })).toEqual([]);
     expect(validateTelemetryEnvelope({ enabled: false, event: { schemaVersion: 1 } })).toContain('disabled telemetry must not contain an event');

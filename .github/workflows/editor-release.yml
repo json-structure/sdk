@@ -2,6 +2,14 @@ name: Editor release integrity
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Version applied to manually built editor and VSIX artifacts"
+        required: false
+        type: string
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
   pull_request:
     paths:
       - "editor/**"
@@ -28,15 +36,19 @@ jobs:
           - os: windows-latest
             target: win32-x64
             python_arch: x64
+            builder_args: --win --x64
           - os: ubuntu-latest
             target: linux-x64
             python_arch: x64
+            builder_args: --linux --x64
           - os: macos-14
             target: darwin-x64
             python_arch: x64
+            builder_args: --mac --x64
           - os: macos-14
             target: darwin-arm64
             python_arch: arm64
+            builder_args: --mac --arm64
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -68,6 +80,18 @@ jobs:
           path: .structurize-wheelhouse
           key: structurize-wheels-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('editor/config/structurize-runtime.lock.json', 'editor/config/structurize-runtime-requirements.txt') }}
       - run: npm ci
+      - name: Apply release version
+        shell: bash
+        run: |
+          VERSION="${{ inputs.version }}"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          fi
+          if [ -n "$VERSION" ]; then
+            npm pkg set "version=$VERSION"
+          fi
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          echo "Building editor version $PACKAGE_VERSION"
       - name: Provision pinned Structurize dependencies
         env:
           STRUCTURIZE_ALLOW_NETWORK: '1'
@@ -76,7 +100,13 @@ jobs:
       - run: npm test
       - run: npm run test:ux:coverage
       - run: npm run test:structurize-runtime
-      - run: npm run beta:package:verified
+      - run: npm run coverage:check
+      - run: npm run release:clean
+      - run: npm run beta:build
+      - run: npm exec electron-builder -- --publish never ${{ matrix.builder_args }}
+      - run: npm run release:executables
+      - run: npm run release:scan
+      - run: npm run release:attest
       - run: npm run test:final-electron-runtime
       - run: node scripts/real-host-acceptance.mjs
       - uses: actions/upload-artifact@v4
@@ -95,7 +125,7 @@ jobs:
           if-no-files-found: error
 
   macos-notarize:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
     needs: build-test-package
     strategy:
       fail-fast: false
@@ -103,8 +133,10 @@ jobs:
         include:
           - artifact: editor-darwin-x64
             signed: editor-darwin-x64-signed
+            output: json-structure-editor-macos-x64-signed.zip
           - artifact: editor-darwin-arm64
             signed: editor-darwin-arm64-signed
+            output: json-structure-editor-macos-arm64-signed.zip
     runs-on: macos-14
     env:
       APPLE_ID: ${{ secrets.APPLE_ID }}
@@ -139,7 +171,7 @@ jobs:
           codesign --verify --deep --strict --verbose=2 verified/*.app
           spctl --assess --type execute --verbose=2 verified/*.app
           rm -f "$ZIP"
-          ditto -c -k --keepParent verified/*.app editor/release/json-structure-editor-macos-signed.zip
+          ditto -c -k --keepParent verified/*.app editor/release/${{ matrix.output }}
           node editor/scripts/release-integrity.mjs executables editor/release
           node editor/scripts/release-integrity.mjs scan editor/release
           node editor/scripts/release-integrity.mjs attest editor/release
@@ -148,11 +180,11 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.signed }}
-          path: editor/release/json-structure-editor-macos-signed.zip
+          path: editor/release/${{ matrix.output }}
           if-no-files-found: error
 
   windows-sign:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
     needs: build-test-package
     runs-on: windows-latest
     env:
@@ -236,6 +268,19 @@ jobs:
           key: structurize-wheels-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('editor/config/structurize-runtime.lock.json', 'editor/config/structurize-runtime-requirements.txt') }}
       - run: npm ci --prefix ../editor
       - run: npm ci
+      - name: Apply release version
+        shell: bash
+        run: |
+          VERSION="${{ inputs.version }}"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          fi
+          if [ -n "$VERSION" ]; then
+            npm pkg set "version=$VERSION"
+            npm pkg set "version=$VERSION" --prefix ../editor
+          fi
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          echo "Building VSIX version $PACKAGE_VERSION"
       - name: Provision pinned Structurize dependencies
         working-directory: editor
         env:
@@ -244,8 +289,8 @@ jobs:
       - run: npm run build:editor
       - run: npm test
       - run: npm run test:artifact
-      - run: npm run package -- --target ${{ matrix.target }} --out artifacts/json-structure-editor-${{ matrix.target }}.vsix
-      - run: node scripts/vsix-runtime-smoke.mjs artifacts/json-structure-editor-${{ matrix.target }}.vsix
+      - run: npm run package -- --target ${{ matrix.target }} --out artifacts/json-structure-${{ matrix.target }}.vsix
+      - run: node scripts/vsix-runtime-smoke.mjs artifacts/json-structure-${{ matrix.target }}.vsix
       - name: Report VSIX size
         shell: bash
         run: du -h artifacts/*.vsix
@@ -254,3 +299,60 @@ jobs:
           name: json-structure-editor-vsix-${{ matrix.target }}
           path: vscode/artifacts/*.vsix
           if-no-files-found: error
+
+  github-release:
+    name: Attach editor and VSIX artifacts to SDK release
+    if: |
+      always() &&
+      startsWith(github.ref, 'refs/tags/v') &&
+      needs.build-test-package.result == 'success' &&
+      needs.vscode-package.result == 'success' &&
+      needs.macos-notarize.result == 'success' &&
+      needs.windows-sign.result == 'success'
+    needs:
+      - build-test-package
+      - macos-notarize
+      - windows-sign
+      - vscode-package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: editor-linux-x64
+          path: artifacts/editor-linux-x64
+      - uses: actions/download-artifact@v4
+        with:
+          name: editor-win32-x64-signed
+          path: artifacts/editor-win32-x64
+      - uses: actions/download-artifact@v4
+        with:
+          name: editor-darwin-x64-signed
+          path: artifacts/editor-darwin-x64
+      - uses: actions/download-artifact@v4
+        with:
+          name: editor-darwin-arm64-signed
+          path: artifacts/editor-darwin-arm64
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: json-structure-editor-vsix-*
+          path: artifacts/vsix
+          merge-multiple: true
+      - name: Collect distributable files
+        shell: bash
+        run: |
+          mkdir release
+          find artifacts/editor-linux-x64 -maxdepth 1 -type f \( -name '*.AppImage' -o -name '*.deb' \) -exec cp {} release/ \;
+          find artifacts/editor-win32-x64 -maxdepth 1 -type f -name '*.exe' -exec cp {} release/ \;
+          find artifacts/editor-darwin-x64 artifacts/editor-darwin-arm64 -maxdepth 1 -type f -name 'json-structure-editor-macos-*-signed.zip' -exec cp {} release/ \;
+          find artifacts/vsix -maxdepth 1 -type f -name '*.vsix' -exec cp {} release/ \;
+          test "$(find release -maxdepth 1 -type f | wc -l)" -ge 9
+          (cd release && sha256sum * > SHA256SUMS-editor.txt)
+          find release -maxdepth 1 -type f -printf '%f\n' | sort
+      - name: Attach artifacts to SDK GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: release/*
+          fail_on_unmatched_files: true

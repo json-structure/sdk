@@ -26,8 +26,8 @@ function files(directory, root = directory, result = []) {
   return result;
 }
 function scanPayload() {
-  const credentialPattern = /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|(?:api[_-]?key|client[_-]?secret|password|access[_-]?token)\s*[:=]\s*["']?[A-Za-z0-9_+/.=-]{8,}/i;
-  const absolutePathPattern = /(?:[A-Za-z]:[\\/](?:Users|build|agent|home|git)[\\/][^\s"']+|\/(?:Users|home|builds|private\/var|workspace)\/[^\s"']+)/i;
+  const credentialPattern = /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|(?:api[_-]?key|client[_-]?secret|password|access[_-]?token)\s*[:=]\s*(?:["'][A-Za-z0-9_+/.=-]{8,}["']|(?=[A-Za-z0-9_+/.=-]{12,}(?:\s|$))(?=[A-Za-z0-9_+/.=-]*[0-9_+/\-=])[A-Za-z0-9_+/.=-]{12,})|(?:ghp|github_pat|sk_live|xox[baprs])_[A-Za-z0-9_-]{8,}/i;
+  const absolutePathPattern = /(?:^|[\s"'=])(?:[A-Za-z]:[\\/](?:Users|build|agent|home|git)[\\/][^\s"']+|\/(?:Users|home|builds|private\/var|workspace)\/[^\s"']+)/i;
   for (const entry of files(extensionRoot)) {
     if (/\.(?:pyc|pyo|pth)$/i.test(entry.path) || /(?:^|\/)node_modules\/\.cache(?:\/|$)|(?:^|\/)(?:builder-debug\.yml|builder-effective-config\.yaml|debug\.log)$/i.test(entry.path)) fail(`VSIX contains a build/debug artifact: ${entry.path}`);
     if (entry.size > 16 * 1024 * 1024 || !/\.(?:css|html|js|json|map|md|mjs|txt|xml|yaml|yml)$/i.test(entry.path)) continue;

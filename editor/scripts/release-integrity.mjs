@@ -12,6 +12,8 @@ const ALLOWLIST_DIGEST_ANCHOR = 'd44054ecf47c2ee36b6f5a1b184ea20db7f89f1041b9683
 const NATIVE_ARTIFACT_PATTERN = /\.(?:exe|dll|pyd|dylib|so(?:\.[0-9]+)*|node|appimage|msi)$/i;
 const EXTENSIONLESS_NATIVE_PATTERN = /(?:^|\/)(?:JSON Structure Editor|chrome-sandbox|python(?:3(?:\.\d+)?)?)$/i;
 const textExtensions = new Set(['.css', '.html', '.js', '.json', '.map', '.md', '.mjs', '.txt', '.xml', '.yaml', '.yml']);
+const credentialPattern = /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|(?:api[_-]?key|client[_-]?secret|password|access[_-]?token)\s*[:=]\s*(?:["'][A-Za-z0-9_+/.=-]{8,}["']|(?=[A-Za-z0-9_+/.=-]{12,}(?:\s|$))(?=[A-Za-z0-9_+/.=-]*[0-9_+/\-=])[A-Za-z0-9_+/.=-]{12,})|(?:ghp|github_pat|sk_live|xox[baprs])_[A-Za-z0-9_-]{8,}/i;
+const absolutePathPattern = /(?:^|[\s"'=])(?:[A-Za-z]:\\{1,2}(?:Users|build|agent|home|git)\\{1,2}[^\s"']+|\/(?:Users|home|builds|private\/var|workspace)\/[^\s"']+)/i;
 
 const normalize = (value) => Array.isArray(value) ? value.map(normalize) : value && typeof value === 'object'
   ? Object.fromEntries(Object.keys(value).sort((left, right) => left < right ? -1 : left > right ? 1 : 0).map((key) => [key, normalize(value[key])]))
@@ -95,8 +97,8 @@ async function scanRelease(releaseRoot, allowlist) {
     if (isNativeArtifact(relative, fileStat) && !allowlist.some((declaration) => matchesDeclaration(relative, declaration))) findings.push(`${relative}: undeclared executable`);
     if (fileStat.size <= 16 * 1024 * 1024 && textExtensions.has(path.extname(file).toLowerCase())) {
       const text = data.toString('utf8');
-      if (/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|(?:api[_-]?key|client[_-]?secret|password|access[_-]?token)\s*[:=]\s*["']?[A-Za-z0-9_+/.=-]{8,}/i.test(text)) findings.push(`${relative}: credential-like material`);
-      if (/(?:^|[\s"'=])(?:[A-Za-z]:\\{1,2}(?:Users|build|agent|home|git)\\{1,2}[^\s"']+|\/(?:Users|home|builds|private\/var|workspace)\/[^\s"']+)/i.test(text)) findings.push(`${relative}: absolute build path`);
+      if (credentialPattern.test(text)) findings.push(`${relative}: credential-like material`);
+      if (absolutePathPattern.test(text)) findings.push(`${relative}: absolute build path`);
     }
   }
   return { artifacts, findings };

@@ -22,6 +22,20 @@ that can be validated and mapped to programming language types.
 | [Ruby](./ruby/) | `jsonstructure` | ✅ Available |
 | [R](./r/) | `jsonstructure` | ✅ Available |
 
+## JSON Structure Editor
+
+The visual JSON Structure Editor is distributed in two forms from the same SDK
+version release:
+
+- Platform-specific VSIX packages for Windows, Linux, Intel macOS, and Apple
+  Silicon macOS.
+- A desktop application for Windows, Linux, Intel macOS, and Apple Silicon
+  macOS.
+
+Version tags build, test, package, sign the Windows and macOS applications, and
+attach the desktop installers and VSIX packages to the corresponding
+[GitHub release](https://github.com/json-structure/sdk/releases).
+
 ## Features
 
 All SDKs provide:
