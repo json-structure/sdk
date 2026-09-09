@@ -1467,12 +1467,22 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       }
       applyOffers({ ...current, [name]: targets.length === 1 ? targets[0]! : targets });
     });
-    root.querySelectorAll('[data-root-toggle]').forEach((checkbox: HTMLInputElement) => checkbox.addEventListener('change', () => {
-      const pointer = checkbox.dataset.rootToggle;
-      const action = actionById(checkbox.checked ? 'root.set' : 'root.remove');
-      if (pointer === undefined || !action) return;
-      void applyCommand(action.create(pointer, undefined)).then((error) => error && setInlineStatus(root, pointer, error));
-    }));
+    root.querySelector('[data-document-root]')?.addEventListener('change', (event: Event) => {
+      const select = event.currentTarget as HTMLSelectElement;
+      const pointer = select.value;
+      const currentRoot = session.snapshot().model?.rootPointer ?? '';
+      const action = actionById(pointer ? 'root.set' : 'root.remove');
+      if (!action) return;
+      void applyCommand(action.create(pointer || currentRoot, undefined)).then((error) => {
+        if (!error) {
+          queueMicrotask(() => (root.querySelector('[data-document-root]') as HTMLSelectElement | null)?.focus());
+          return;
+        }
+        render();
+        setDocumentMemberStatus(root, '$root', error);
+        queueMicrotask(() => (root.querySelector('[data-document-root]') as HTMLSelectElement | null)?.focus());
+      });
+    });
     root.querySelectorAll('[data-inline-definition-name]').forEach((input: HTMLInputElement) => {
       input.addEventListener('keydown', (event: KeyboardEvent) => { if (event.key === 'Enter') { event.preventDefault(); input.blur(); } });
       input.addEventListener('change', () => {
@@ -3754,7 +3764,7 @@ function renderTypeTree(definitions: readonly TypeTreeItem[], namespaces: readon
     const namespace = addNamespace(namespaceTreeSegments(definition.namespace));
     namespace.types.push(definition);
   }
-  const renderType = (item: TypeTreeItem): string => `<div class="js-tree-type-row"><button role="treeitem" class="js-tree-item${item.imported ? ' js-tree-item-imported' : ''}" ${item.imported ? `data-effective-source="${escapeAttribute(item.sourcePointer ?? '')}" data-effective-document="${escapeAttribute(item.documentUri ?? '')}" title="Imported from ${escapeAttribute(item.documentUri ?? '')}${escapeAttribute(item.sourcePointer ? `#${item.sourcePointer}` : '')}"` : `data-select="${escapeAttribute(item.pointer)}"`} data-type-drag="${escapeAttribute(item.pointer)}" draggable="true" aria-current="${selectedPointer === item.pointer}"${item.imported ? '' : ` data-tree-context-kind="definition" data-tree-context-pointer="${escapeAttribute(item.pointer)}"`}><span class="js-kind" aria-hidden="true">${fluentIcon('cube')}</span><span>${escapeHtml(item.name)}</span>${item.imported ? '<small>imported</small>' : ''}</button><label class="js-tree-root-toggle" title="Use as document root"><input type="checkbox" data-root-toggle="${escapeAttribute(item.pointer)}" ${item.root ? 'checked' : ''} aria-label="Use ${escapeAttribute(item.name)} as document root"><span aria-hidden="true">✓</span></label></div>`;
+  const renderType = (item: TypeTreeItem): string => `<div class="js-tree-type-row"><button role="treeitem" class="js-tree-item${item.imported ? ' js-tree-item-imported' : ''}" ${item.imported ? `data-effective-source="${escapeAttribute(item.sourcePointer ?? '')}" data-effective-document="${escapeAttribute(item.documentUri ?? '')}" title="Imported from ${escapeAttribute(item.documentUri ?? '')}${escapeAttribute(item.sourcePointer ? `#${item.sourcePointer}` : '')}"` : `data-select="${escapeAttribute(item.pointer)}"`} data-type-drag="${escapeAttribute(item.pointer)}" draggable="true" aria-current="${selectedPointer === item.pointer}"${item.imported ? '' : ` data-tree-context-kind="definition" data-tree-context-pointer="${escapeAttribute(item.pointer)}"`}><span class="js-kind" aria-hidden="true">${fluentIcon('cube')}</span><span>${escapeHtml(item.name)}</span>${item.imported ? '<small>imported</small>' : ''}</button></div>`;
   const renderNamespace = (namespace: TypeTreeNamespace): string => {
     const children = [...namespace.children.values()].sort((left, right) => left.label.localeCompare(right.label)).map(renderNamespace).join('');
     const types = [...namespace.types].sort((left, right) => left.name.localeCompare(right.name)).map(renderType).join('');
@@ -3808,6 +3818,17 @@ function structuredWorkbenchShell(snapshot: DocumentSnapshot, title: string, def
   const schemaUri = isSchemaRecord(documentValue) && typeof documentValue.$schema === 'string' ? documentValue.$schema : '';
   const documentId = isSchemaRecord(documentValue) && typeof documentValue.$id === 'string' ? documentValue.$id : '';
   const documentMetadata = documentMetadataView(documentValue, definitions, schemaUri, documentId);
+  const documentRoot = snapshot.model?.rootPointer ?? '';
+  const rootOptions = definitions.map((item) => {
+    const namespace = namespaceTreeSegments(item.namespace).join(' / ');
+    const label = `${namespace ? `${namespace} / ` : ''}${item.name}${item.imported ? ' (imported)' : ''}`;
+    return `<option value="${escapeAttribute(item.pointer)}" ${item.pointer === documentRoot ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+  }).join('');
+  const rootSelector = definitions.length
+    ? isInlineRootSchema(documentValue)
+      ? '<label class="js-document-root-selector"><span>Root type</span><select data-document-root aria-label="Document root type" disabled><option selected>Inline root</option></select></label>'
+      : `<label class="js-document-root-selector"><span>Root type</span><select data-document-root aria-label="Document root type"><option value="" ${documentRoot ? '' : 'selected'}>No explicit root</option>${rootOptions}</select></label>`
+    : '';
   const propertiesPanel = inspector(selectedProperty, definition, selectedDiagnostics, selectedRelation);
   const titleChrome = workbenchTitleChrome(title, chrome);
   return `<div class="js-shell js-chrome-${chrome}">
@@ -3815,7 +3836,7 @@ function structuredWorkbenchShell(snapshot: DocumentSnapshot, title: string, def
     <div class="js-document-toolbar" role="toolbar" aria-label="Document status"><button class="js-mobile-toggle" data-mobile-drawer="types" aria-controls="js-outline" aria-haspopup="dialog" aria-expanded="false" ${mode === 'design' || mode === 'graph' ? '' : 'hidden'}>Types</button><span class="js-chip">${escapeHtml(profile.mode)}</span>${activeCompanions ? `<span class="js-chip">${activeCompanions} companions</span>` : ''}<span class="js-spacer"></span><button class="js-mobile-toggle" data-mobile-drawer="inspector" aria-controls="js-inspector" aria-haspopup="dialog" aria-expanded="false" ${mode === 'design' ? '' : 'hidden'}>Inspector</button></div>
     <div class="js-workbench" data-problems-open="${problemsOpen}" data-active-mode="${mode}">
       <nav class="js-activity" aria-label="Editor modes">${activities}</nav>
-      <aside class="js-outline" id="js-outline" data-drawer-panel="types" aria-label="Types"><div class="js-panel-head"><span>Types</span><span class="js-spacer"></span>      <button data-command="definition.add" title="Add type" aria-label="Add type">${fluentIcon('add')}</button><button data-quick-add-namespace="/definitions" title="Add namespace" aria-label="Add namespace">${fluentIcon('collections')}</button><button data-library-open title="Import type library" aria-label="Import type library">${fluentIcon('library')}</button><button class="js-drawer-close" data-mobile-drawer-close aria-label="Close Types">${fluentIcon('dismiss')}</button></div><input class="js-filter" type="search" placeholder="Filter types" aria-label="Filter types"><div class="js-tree" role="tree" aria-label="Types by namespace"><div class="js-tree-group">${definitions.length} definitions${inlineRootEntry ? " · inline root" : ""}</div>${inlineRootEntry}${typeTree}</div></aside>
+      <aside class="js-outline" id="js-outline" data-drawer-panel="types" aria-label="Types"><div class="js-panel-head"><span>Types</span><span class="js-spacer"></span>      <button data-command="definition.add" title="Add type" aria-label="Add type">${fluentIcon('add')}</button><button data-quick-add-namespace="/definitions" title="Add namespace" aria-label="Add namespace">${fluentIcon('collections')}</button><button data-library-open title="Import type library" aria-label="Import type library">${fluentIcon('library')}</button><button class="js-drawer-close" data-mobile-drawer-close aria-label="Close Types">${fluentIcon('dismiss')}</button></div><input class="js-filter" type="search" placeholder="Filter types" aria-label="Filter types">${rootSelector}<div class="js-tree" role="tree" aria-label="Types by namespace"><div class="js-tree-group">${definitions.length} definitions${inlineRootEntry ? " · inline root" : ""}</div>${inlineRootEntry}${typeTree}</div></aside>
       <section class="js-center"><div class="js-editor-tab"><span class="js-kind" aria-hidden="true">${fluentIcon('document')}</span><span data-document-title>${escapeHtml(title)}</span></div><section class="js-view" data-panel-mode="design" ${mode === 'design' ? '' : 'hidden'}>${designView(activeName, activeType, activeDescription, rows, selectedPointer, activeIdentity, activeRelations, memberMode, effectiveMembers, expandedPropertyPointer, definitions, documentValue, pendingPropertyFields, relationDraftOpen, typeCreatorOpen, definitionPointer, snapshot.model?.rootPointer === definitionPointer, activePropertyField, propertyMenuPointer)}</section><section class="js-view js-graph" data-panel-mode="graph" ${mode === 'graph' ? '' : 'hidden'}>${graphView(snapshot, selectedPointer)}</section><section class="js-view js-source-view" data-panel-mode="source" ${mode === 'source' ? '' : 'hidden'}><div class="js-source" data-source aria-label="JSON source editor"></div></section></section>
       <aside class="js-inspector" id="js-inspector" data-drawer-panel="inspector" aria-label="Properties and schema metadata"><section class="js-side-pane js-properties-pane"><div class="js-panel-head"><span>Properties</span><span class="js-spacer"></span><button class="js-drawer-close" data-mobile-drawer-close aria-label="Close Properties and schema metadata">${fluentIcon('dismiss')}</button></div><div class="js-inspector-body">${propertiesPanel}</div></section><div class="js-horizontal-splitter" data-properties-pane-splitter role="separator" aria-label="Resize Properties and Schema metadata panes" aria-orientation="horizontal" aria-valuemin="140" aria-valuemax="520" aria-valuenow="260" tabindex="0"></div><section class="js-side-pane js-document-pane"><div class="js-panel-head"><span>Schema metadata</span></div><div class="js-document-pane-body">${documentMetadata}</div></section></aside>
       <div class="js-pane-splitter js-pane-splitter-inspector" data-pane-splitter="inspector" role="separator" aria-label="Resize Properties and Schema metadata panes" aria-orientation="vertical" aria-valuemin="240" aria-valuemax="520" aria-valuenow="284" tabindex="0"></div>
@@ -4014,7 +4035,7 @@ function renderEvaluationTrace(trace: EvaluationTrace, selection: CrossNavigatio
   return `<details class="js-trace js-trace-${trace.status}" ${depth < 2 || trace.status !== 'valid' ? 'open' : ''} data-trace-depth="${depth}"><summary><span class="js-trace-status" aria-hidden="true">${trace.status === 'valid' ? '✓' : trace.status === 'invalid' ? '×' : '?'}</span><strong>${escapeHtml(trace.keyword)}</strong><span>${escapeHtml(trace.message ?? trace.status)}</span></summary><div class="js-trace-locations" aria-current="${selected}"><button data-trace-instance="${escapeAttribute(trace.instancePointer)}" data-trace-schema="${escapeAttribute(trace.schemaPointer)}">Instance <span class="js-code">${escapeHtml(trace.instancePointer || '/')}</span></button><button data-trace-schema="${escapeAttribute(trace.schemaPointer)}" data-trace-instance="${escapeAttribute(trace.instancePointer)}">Schema <span class="js-code">${escapeHtml(trace.schemaPointer || '/')}</span></button></div>${children ? `<div class="js-trace-children">${children}</div>` : ''}</details>`;
 }
 
-export function designView(name: string | undefined, type: string | undefined, description: string | undefined, rows: readonly PropertyRow[], selectedPointer: string | undefined, identity: readonly string[] = [], relations: readonly import('../model.js').RelationProjection[] = [], memberMode: DesignMemberMode = 'local', effectiveMembers?: EffectiveMembersResult, expandedPropertyPointer?: string, definitions: readonly { readonly name: string; readonly pointer: string; readonly identity?: readonly string[] }[] = [], document?: unknown, pendingPropertyFields: ReadonlySet<string> = new Set(), relationDraftOpen = false, typeCreatorOpen = false, definitionPointer?: string, rootActive = false, activePropertyField?: { readonly pointer: string; readonly field: 'name' | 'type' | 'description' }, propertyMenuPointer?: string): string {
+export function designView(name: string | undefined, type: string | undefined, description: string | undefined, rows: readonly PropertyRow[], selectedPointer: string | undefined, identity: readonly string[] = [], relations: readonly import('../model.js').RelationProjection[] = [], memberMode: DesignMemberMode = 'local', effectiveMembers?: EffectiveMembersResult, expandedPropertyPointer?: string, definitions: readonly { readonly name: string; readonly pointer: string; readonly identity?: readonly string[] }[] = [], document?: unknown, pendingPropertyFields: ReadonlySet<string> = new Set(), relationDraftOpen = false, typeCreatorOpen = false, definitionPointer?: string, _rootActive = false, activePropertyField?: { readonly pointer: string; readonly field: 'name' | 'type' | 'description' }, propertyMenuPointer?: string): string {
   if (typeCreatorOpen) return typeCreatorView(definitions.length === 0);
   const authoredNamespaces = namespacePointers(document, definitions.map((definition) => definition.pointer));
   if (!name && !type && selectedPointer && authoredNamespaces.includes(selectedPointer)) return namespaceDesignView(selectedPointer, document, definitions);
@@ -4034,7 +4055,6 @@ export function designView(name: string | undefined, type: string | undefined, d
     : '';
   const memberCount = memberMode === 'effective' ? effectiveMembers?.members.length ?? 0 : rows.length;
   const addProperty = `${fluentIcon('add')}<span>Add property</span>`;
-  const rootToggle = definitionPointer && definitionPointer !== '' ? `<label class="js-root-toggle"><input type="checkbox" data-root-toggle="${escapeAttribute(definitionPointer)}" ${rootActive ? 'checked' : ''}> Root</label>` : '';
   const editableName = definitionPointer && definitionPointer !== ''
     ? `<input class="js-definition-name" data-inline-definition-name="${escapeAttribute(definitionPointer)}" value="${escapeAttribute(name ?? '')}" aria-label="Type name" spellcheck="false">`
     : `<h1>${escapeHtml(name ?? 'Inline schema')}</h1>`;
@@ -4051,7 +4071,7 @@ export function designView(name: string | undefined, type: string | undefined, d
   const deleteDefinition = definitionPointer && definitionPointer !== '' ? `<button type="button" class="js-danger" data-inline-definition-delete="${escapeAttribute(definitionPointer)}">Delete type</button>` : '';
   const inheritance = declaration && definitionPointer !== undefined ? inheritanceEditorView(definitionPointer, declaration, type, definitions) : '';
   const facets = declaration ? structuredFacetEditor(declarationPointer, declaration, document, pendingPropertyFields, new Set(), definitions, activePropertyField, selectedPointer, propertyMenuPointer, expandedPropertyPointer) : '';
-  return `<div class="js-sheet"><header class="js-type-head"><div><div class="js-eyebrow">${name ? 'Local definition' : 'Inline schema'}</div>${editableName}${editableDescription}<p class="js-inline-status" data-inline-status="${escapeAttribute(definitionPointer ?? '')}" role="status" aria-live="polite"></p></div><div class="js-type-badges">${typeEditor}${abstractToggle}${rootToggle}${deleteDefinition}</div></header>${propertyView}${inheritance}${relationsView}${facets}</div>`;
+  return `<div class="js-sheet"><header class="js-type-head"><div><div class="js-eyebrow">${name ? 'Local definition' : 'Inline schema'}</div>${editableName}${editableDescription}<p class="js-inline-status" data-inline-status="${escapeAttribute(definitionPointer ?? '')}" role="status" aria-live="polite"></p></div><div class="js-type-badges">${typeEditor}${abstractToggle}${deleteDefinition}</div></header>${propertyView}${inheritance}${relationsView}${facets}</div>`;
 }
 
 function inheritanceEditorView(pointer: string, declaration: Readonly<Record<string, unknown>>, type: string | undefined, definitions: readonly { readonly name: string; readonly pointer: string; readonly type?: string; readonly abstract?: boolean }[]): string {
@@ -4297,7 +4317,7 @@ function typeCreatorView(firstType: boolean): string {
   const primitiveTypes: readonly CreatableType[] = ['any', 'null', 'boolean', 'string', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32', 'int64', 'uint64', 'int128', 'uint128', 'integer', 'float8', 'float', 'double', 'decimal', 'number', 'date', 'datetime', 'time', 'duration', 'uuid', 'uri', 'binary', 'jsonpointer'];
   const primitiveOptions = primitiveTypes.map((primitive) => `<option value="${primitive}">${primitive}</option>`).join('');
   const conversionStarts = firstType ? startConversionChoices(BUILTIN_CONVERSION_COMMANDS_MANIFEST) : '';
-  return `<section class="js-type-creator" aria-labelledby="type-creator-title"><div class="js-eyebrow">${firstType ? 'Start the schema' : 'Add a type'}</div><h1 id="type-creator-title">${firstType ? 'Choose the first type' : 'Choose a type'}</h1><p class="js-description">${firstType ? 'The first type becomes the document root. You can change the root flag at any time.' : 'Create a reusable primitive or composite schema type in this document.'}</p><label class="js-type-name">Type name<input class="js-code" data-type-create-name value="${firstType ? 'Root' : 'NewType'}" autocomplete="off" spellcheck="false"></label><div class="js-composite-choices">${cards}</div><div class="js-primitive-create"><label>Core primitive<select data-type-create-primitive>${primitiveOptions}</select></label><button type="button" data-type-create-primitive-commit>Create primitive</button></div>${conversionStarts}<p class="js-action-status" data-type-create-status role="status" aria-live="polite"></p>${firstType ? '' : '<button class="js-type-create-cancel" type="button" data-type-create-cancel>Cancel</button>'}</section>`;
+  return `<section class="js-type-creator" aria-labelledby="type-creator-title"><div class="js-eyebrow">${firstType ? 'Start the schema' : 'Add a type'}</div><h1 id="type-creator-title">${firstType ? 'Choose the first type' : 'Choose a type'}</h1><p class="js-description">${firstType ? 'The first type becomes the document root. You can change the document root from the Types panel.' : 'Create a reusable primitive or composite schema type in this document.'}</p><label class="js-type-name">Type name<input class="js-code" data-type-create-name placeholder="${firstType ? 'Root' : 'New type'}" autocomplete="off" spellcheck="false"></label><div class="js-composite-choices">${cards}</div><div class="js-primitive-create"><label>Core primitive<select data-type-create-primitive>${primitiveOptions}</select></label><button type="button" data-type-create-primitive-commit>Create primitive</button></div>${conversionStarts}<p class="js-action-status" data-type-create-status role="status" aria-live="polite"></p>${firstType ? '' : '<button class="js-type-create-cancel" type="button" data-type-create-cancel>Cancel</button>'}</section>`;
 }
 
 function directStructurizeImportCommands(manifest: ConversionCommandsManifest): readonly ConversionCommand[] {
@@ -5979,7 +5999,7 @@ export const workbenchFocusIdentityAttributes = [
   'data-addin', 'data-impact-direction', 'data-command', 'data-show-commands', 'data-theme-select', 'data-action-select', 'data-action-id',
   'data-libraries-load', 'data-library-read', 'data-library-operation', 'data-library-selector', 'data-library-declaration', 'data-library-provider-filter', 'data-library-search', 'data-library-preview', 'data-library-apply',
   'data-provider-configure', 'data-local-provider-configure', 'data-provider-remove', 'data-library-publish-preview', 'data-library-publish', 'data-publish-provider', 'data-publish-entry', 'data-publish-version', 'data-publish-source', 'data-publish-epoch', 'data-publish-default',
-  'data-inline-property', 'data-inline-keyword', 'data-inline-type-add', 'data-inline-type-remove', 'data-inline-collection-kind', 'data-property-row-select', 'data-property-details', 'data-inline-property-delete', 'data-inline-property-apply', 'data-catalog-open',
+  'data-inline-property', 'data-inline-keyword', 'data-inline-type-add', 'data-inline-type-remove', 'data-inline-collection-kind', 'data-property-row-select', 'data-property-details', 'data-inline-property-delete', 'data-inline-property-apply', 'data-document-root', 'data-catalog-open',
   'data-property-detail-select', 'data-property-detail-add', 'data-inline-relation-add', 'data-inline-relation-name', 'data-inline-relation-target', 'data-inline-relation-cardinality', 'data-inline-relation-scope', 'data-inline-relation-cancel', 'data-inline-relation-commit',
 ] as const;
 

@@ -183,15 +183,13 @@ export const editorStyles = `
 .js-panel-head .js-spacer+button { margin-inline-start:0; }
 .js-panel-head .js-drawer-close { display:none; }
 .js-filter { width:calc(100% - 16px); height:28px; margin:8px; border:1px solid var(--js-line); border-radius:3px; padding:0 8px; background:var(--js-canvas); }
+.js-document-root-selector { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:center; gap:8px; margin:0 8px 4px; color:var(--js-quiet); font-size:10px; text-transform:uppercase; }
+.js-document-root-selector select { min-width:0; height:28px; border:1px solid var(--js-line); border-radius:3px; padding:0 24px 0 7px; background:var(--js-canvas); color:var(--js-muted); font-size:11px; text-transform:none; }
+.js-document-root-selector select:hover,.js-document-root-selector select:focus { border-color:var(--js-accent); color:var(--js-text); }
 .js-tree { min-height:0; overflow:auto; overscroll-behavior:contain; padding-bottom:12px; }
 .js-tree-group { padding:10px 9px 5px; color:var(--js-quiet); font-size:11px; text-transform:uppercase; }
 .js-tree-item { width:100%; height:28px; display:flex; align-items:center; gap:7px; border:0; border-inline-start:2px solid transparent; padding:0 8px 0 11px; background:transparent; color:var(--js-muted); text-align:start; }
-.js-tree-type-row { display:grid; grid-template-columns:minmax(0,1fr) 28px; align-items:center; }
-.js-tree-root-toggle { min-height:28px; display:grid; place-items:center; color:var(--js-quiet); cursor:pointer; }
-.js-tree-root-toggle input { position:absolute; opacity:0; pointer-events:none; }
-.js-tree-root-toggle span { width:22px; height:22px; display:grid; place-items:center; border:1px solid var(--js-line); border-radius:3px; }
-.js-tree-root-toggle:focus-within span { outline:2px solid var(--js-focus); outline-offset:1px; }
-.js-tree-root-toggle:has(input:checked) span { border-color:var(--js-accent); background:var(--js-accent); color:var(--js-on-accent); }
+.js-tree-type-row { display:block; }
 .js-tree-item:hover { background:var(--js-hover); color:var(--js-text); }
 .js-tree-item[aria-current="true"] { border-inline-start-color:var(--js-accent); background:var(--js-selected); color:var(--js-text); }
 .js-tree-item>span:not(.js-kind) { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -577,7 +575,10 @@ export const editorStyles = `
 .js-type-creator { width:min(920px,100%); margin:16px auto; }
 .js-type-creator h1 { margin:5px 0; font-size:25px; }
 .js-type-name { width:min(360px,100%); display:grid; gap:5px; margin-top:20px; color:var(--js-muted); font-size:11px; }
-.js-type-name input { height:32px; padding:4px 8px; }
+.js-type-name input { height:36px; border:1px solid var(--js-line-strong); border-radius:3px; padding:5px 9px; background:var(--js-canvas); color:var(--js-text); font:14px/1.3 Consolas,monospace; }
+.js-type-name input::placeholder { color:var(--js-quiet); opacity:1; }
+.js-type-name input:focus { border-color:var(--js-accent); box-shadow:0 0 0 1px var(--js-accent); }
+.js-type-name input:focus::placeholder { color:transparent; }
 .js-composite-choices { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin-top:12px; }
 .js-composite-choice { min-height:76px; display:grid; grid-template-columns:32px minmax(0,1fr); align-items:center; gap:9px; border:1px solid var(--js-line); border-radius:3px; padding:10px; background:var(--js-panel); color:var(--js-muted); text-align:start; }
 .js-composite-choice:hover,.js-composite-choice:focus-visible { border-color:var(--js-accent); background:var(--js-selected); color:var(--js-text); }

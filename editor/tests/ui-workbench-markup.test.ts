@@ -117,21 +117,36 @@ describe('workbench interaction markup', () => {
     expect(html).toContain('data-meta-schema-custom');
     expect(html).toContain('class="js-document-uses"');
     expect(html).toContain('class="js-document-offers"');
-    expect(html).not.toContain('data-document-root');
+    expect(html).toContain('data-document-root');
+    expect(html).toContain('<option value="" selected>No explicit root</option>');
     expect(html).not.toContain('data-document-import');
     expect(html).toContain('data-select="/definitions"');
+    expect(html).toContain('>Domain / Person</option>');
+    expect(html).toContain('>Shared / Identifier</option>');
     expect(html).not.toContain('class="js-breadcrumbs"');
 
     const convertHtml = workbenchShell(snapshot, 'navigation.struct.json', definitions, '/definitions/Domain/Person', [], '/definitions/Domain/Person', 'conversion', false);
     expect(convertHtml).toContain('data-mobile-drawer="types" aria-controls="js-outline" aria-haspopup="dialog" aria-expanded="false" hidden');
     expect(convertHtml).toContain('data-mobile-drawer="inspector" aria-controls="js-inspector" aria-haspopup="dialog" aria-expanded="false" hidden');
     expect(convertHtml).not.toContain('<strong>Person</strong>');
+
+    const inlineSnapshot = new DocumentSession('memory://inline-root', JSON.stringify({
+      type: 'object',
+      properties: {},
+      definitions: { Reusable: { type: 'string' } },
+    })).snapshot();
+    const inlineHtml = workbenchShell(inlineSnapshot, 'inline.struct.json', [
+      { name: 'Reusable', pointer: '/definitions/Reusable', namespace: '/definitions' },
+    ], '', [], '', 'design', false);
+    expect(inlineHtml).toContain('data-document-root aria-label="Document root type" disabled');
+    expect(inlineHtml).toContain('<option selected>Inline root</option>');
   });
 
   it('starts from composite type choices without opening the generic action editor', () => {
     const html = designView(undefined, undefined, undefined, [], undefined);
     expect(html).toContain('Choose the first type');
-    expect(html).toContain('data-type-create-name value="Root"');
+    expect(html).toContain('data-type-create-name placeholder="Root"');
+    expect(html).not.toContain('data-type-create-name value=');
     for (const type of ['object', 'array', 'set', 'map', 'tuple', 'choice']) {
       expect(html).toContain(`data-type-create="${type}"`);
     }
@@ -194,13 +209,12 @@ describe('workbench interaction markup', () => {
     }
   });
 
-  it('renders the selected reusable root as a mutually exclusive type flag', () => {
+  it('does not render root designation as a per-type flag', () => {
     const pointer = '/definitions/Root';
     const html = designView('Root', 'object', undefined, [], pointer, [], [], 'local', undefined, undefined, [], undefined, new Set(), false, false, pointer, true);
-    expect(html).toContain(`data-root-toggle="${pointer}" checked`);
+    expect(html).not.toContain('data-root-toggle');
     expect(html).toContain(`data-inline-definition-name="${pointer}" value="Root"`);
     expect(html).toContain(`data-inline-definition-description="${pointer}" placeholder="No description yet."`);
-    expect(html).toContain('> Root</label>');
     expect(html).not.toContain('Document root');
     expect(editorStyles).toContain('.json-structure-editor .js-definition-name');
     expect(editorStyles).toContain('font-size:25px; font-weight:650;');

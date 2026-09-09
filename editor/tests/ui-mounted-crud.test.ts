@@ -149,7 +149,7 @@ describe('mounted structured CRUD workbench', () => {
     expect(root.querySelector('[data-document-action="core.offers"]')).toBeNull();
     expect(root.textContent).not.toContain('{"Existing"');
     input(element(root, '.js-filter'), 'Root');
-    expect(element(root, '[data-root-toggle="/definitions/Feature"]').closest('.js-tree-type-row')?.hidden).toBe(true);
+    expect(element(root, '[data-select="/definitions/Feature"]').closest('.js-tree-type-row')?.hidden).toBe(true);
     input(element(root, '.js-filter'), '');
     change(element(root, '[data-offer-name]'), 'Renamed');
     await settle();
@@ -167,14 +167,12 @@ describe('mounted structured CRUD workbench', () => {
       RootFeature: '#/definitions/Root',
     });
 
-    expect(root.querySelector('[data-document-root]')).toBeNull();
-    element<HTMLButtonElement>(root, '[data-select="/definitions/Feature"]').click();
-    await settle();
-    const rootToggle = element<HTMLInputElement>(root, '[data-root-toggle="/definitions/Feature"]');
-    rootToggle.checked = true;
-    rootToggle.dispatchEvent(new Event('change', { bubbles: true }));
+    const rootSelector = element<HTMLSelectElement>(root, '[data-document-root]');
+    rootSelector.focus();
+    change(rootSelector, '/definitions/Feature');
     await settle();
     expect(JSON.parse(handle!.getText()).$root).toBe('#/definitions/Feature');
+    expect(document.activeElement).toBe(element(root, '[data-document-root]'));
 
     expect(root.querySelector('[data-document-import]')).toBeNull();
     element<HTMLButtonElement>(root, '[data-select="/definitions"]').click();
@@ -934,9 +932,8 @@ describe('mounted structured CRUD workbench', () => {
     await settle();
     await settle();
 
-    const importedRoot = element<HTMLInputElement>(root, '[data-root-toggle="/definitions/Imported/Target"]');
-    importedRoot.checked = true;
-    importedRoot.dispatchEvent(new Event('change', { bubbles: true }));
+    const importedRoot = element<HTMLSelectElement>(root, '[data-document-root]');
+    change(importedRoot, '/definitions/Imported/Target');
     await settle();
     expect(JSON.parse(handle!.getText()).$root).toBe('#/definitions/Imported/Target');
 
