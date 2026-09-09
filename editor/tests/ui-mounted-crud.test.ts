@@ -859,6 +859,8 @@ describe('mounted structured CRUD workbench', () => {
     });
     element<HTMLButtonElement>(root, '[data-mode="conversion"]').click();
     await settle();
+    element<HTMLButtonElement>(root, '[data-conversion-command="import.fixture"]').click();
+    await settle();
     element<HTMLButtonElement>(root, '[data-conversion-source]').click();
     await settle();
     element<HTMLButtonElement>(root, '[data-conversion-reset]').click();
@@ -887,7 +889,11 @@ describe('mounted structured CRUD workbench', () => {
     });
     element<HTMLButtonElement>(root, '[data-mode="conversion"]').click();
     await settle();
+    element<HTMLButtonElement>(root, '[data-conversion-command="import.avro"]').click();
+    await settle();
     element<HTMLButtonElement>(root, '[data-conversion-source]').click();
+    await settle();
+    element<HTMLButtonElement>(root, '[data-start-conversion-close]').click();
     await settle();
     element<HTMLButtonElement>(root, '[data-conversion-command="import.proto"]').click();
     rejectSource?.(new Error('stale picker failure'));
@@ -895,7 +901,7 @@ describe('mounted structured CRUD workbench', () => {
 
     expect(root.textContent).not.toContain('stale picker failure');
     expect(element<HTMLButtonElement>(root, '[data-conversion-command="import.proto"]').getAttribute('aria-pressed')).toBe('true');
-    expect(root.textContent).toContain('No file selected');
+    expect(root.querySelector('[data-start-conversion-dialog]')?.textContent).toContain('No file selected');
   });
 
   it('includes imported declarations in root and relation pickers and preserves imported relation refs', async () => {

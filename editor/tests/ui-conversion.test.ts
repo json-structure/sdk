@@ -13,19 +13,17 @@ const manifest: ConversionCommandsManifest = {
 };
 
 describe('conversion workbench view', () => {
-  it('requires a selected external source for import commands', () => {
+  it('presents import commands as modal launch tiles instead of inline configuration', () => {
     const importManifest: ConversionCommandsManifest = {
       ...manifest,
       commands: [{ ...manifest.commands[0]!, id: 'import.fixture', direction: 'import', sourceFormat: 'avro', targetFormat: 'json-structure' }],
     };
     const host = { listConversionCommands: async () => importManifest, selectConversionSource: async () => undefined, convert: async () => { throw new Error('not called'); } };
     const empty = conversionView(host, importManifest, 'import.fixture', undefined, undefined, '');
-    const selected = conversionView(host, importManifest, 'import.fixture', { uri: 'file:///order.avsc', name: 'order.avsc', text: '{}' }, undefined, 'Selected order.avsc.');
-    expect(empty).toContain('data-conversion-source');
-    expect(empty).toContain('No file selected');
-    expect(empty).toContain('data-conversion-run disabled');
-    expect(selected).toContain('order.avsc');
-    expect(selected).not.toContain('data-conversion-run disabled');
+    expect(empty).toContain('data-conversion-command="import.fixture"');
+    expect(empty).not.toContain('class="js-conversion-config"');
+    expect(empty).not.toContain('data-conversion-source');
+    expect(empty).not.toContain('data-conversion-run');
   });
 
   it('renders external-service imports as configuration workflows without a local file gate', () => {
@@ -49,12 +47,12 @@ describe('conversion workbench view', () => {
     };
     const host = { listConversionCommands: async () => externalManifest, selectConversionSource: async () => undefined, convert: async () => { throw new Error('not called'); } };
     const html = conversionView(host, externalManifest, 'import.structurize.k2s', undefined, undefined, '');
-    expect(html).toContain('External data source');
-    expect(html).toContain('aria-label="External data source configuration"');
-    expect(html).toContain('data-conversion-option="kusto_uri"');
-    expect(html).toContain('required aria-required="true"');
+    expect(html).toContain('data-conversion-command="import.structurize.k2s"');
+    expect(html).not.toContain('class="js-conversion-config"');
+    expect(html).not.toContain('aria-label="External data source configuration"');
+    expect(html).not.toContain('data-conversion-option="kusto_uri"');
     expect(html).not.toContain('data-conversion-source');
-    expect(html).not.toContain('data-conversion-run disabled');
+    expect(html).not.toContain('data-conversion-run');
   });
 
   it('renders typed options and committed result details', () => {

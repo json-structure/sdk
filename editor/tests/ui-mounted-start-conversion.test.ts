@@ -117,6 +117,32 @@ describe('empty-document Structurize starting points', () => {
     expect(document.activeElement).toBe(root.querySelector('[data-chrome-command="import"]'));
   });
 
+  it('opens Convert workspace import tiles in a modal dialog', async () => {
+    const root = mount({
+      listConversionCommands: async () => BUILTIN_CONVERSION_COMMANDS_MANIFEST,
+      selectConversionSource: async () => undefined,
+      convert: async () => { throw new Error('not called'); },
+    }, '{"name":"Loaded","type":"object","properties":{}}');
+
+    (root.querySelector('[data-mode="conversion"]') as HTMLButtonElement).click();
+    await settle();
+    const command = BUILTIN_CONVERSION_COMMANDS_MANIFEST.commands.find((candidate) => candidate.direction === 'import')!;
+    const tile = root.querySelector(`[data-conversion-command="${command.id}"]`) as HTMLButtonElement;
+    tile.click();
+    await settle();
+
+    const dialog = root.querySelector('[data-start-conversion-dialog]') as (HTMLElement & { readonly open: boolean }) | null;
+    expect(dialog?.open).toBe(true);
+    expect(dialog?.dataset.startCommand).toBe(command.id);
+    expect(dialog?.querySelector('[data-conversion-source]')).not.toBeNull();
+    expect(root.querySelector('[data-panel-mode="conversion"] .js-conversion-config')).toBeNull();
+
+    (dialog?.querySelector('[data-start-conversion-close]') as HTMLButtonElement).click();
+    await Promise.resolve();
+    expect(root.querySelector('[data-start-conversion-dialog]')).toBeNull();
+    expect(document.activeElement).toBe(root.querySelector(`[data-conversion-command="${command.id}"]`));
+  });
+
   it('validates and executes the Kusto external-source workflow, then opens its result', async () => {
     const requests: ConversionRequest[] = [];
     const result: ConversionResult = {

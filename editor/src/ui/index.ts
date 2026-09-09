@@ -2422,15 +2422,23 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     }));
     root.querySelectorAll('[data-conversion-command]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
       const activeRequest = conversionRequestId;
+      const commandId = button.dataset.conversionCommand;
+      const command = conversionManifest?.commands.find((candidate) => candidate.id === commandId);
       conversionGeneration += 1;
       conversionRequestId = undefined;
       conversionProgress = undefined;
-      conversionCommandId = button.dataset.conversionCommand;
+      conversionCommandId = commandId;
       conversionSource = undefined;
       conversionResult = undefined;
       conversionStatus = '';
+      conversionOptionValues = {};
+      startConversionDialogOpen = command?.direction === 'import';
       if (activeRequest && services?.cancelConversion) void services.cancelConversion(activeRequest).catch(() => undefined);
       render();
+      if (startConversionDialogOpen) {
+        focusStartConversionDialogPrimary();
+        return;
+      }
       queueMicrotask(() => ([...root.querySelectorAll('[data-conversion-command]')] as HTMLButtonElement[]).find((candidate) => candidate.dataset.conversionCommand === conversionCommandId)?.focus());
     }));
     root.querySelectorAll('[data-start-conversion-command]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
@@ -2470,7 +2478,9 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       if (activeRequest && services?.cancelConversion) void services.cancelConversion(activeRequest).catch(() => undefined);
       render();
       queueMicrotask(() => {
-        const command = commandId ? root.querySelector(`[data-start-conversion-command="${cssAttributeValue(commandId)}"]`) as HTMLElement | null : null;
+        const command = commandId
+          ? root.querySelector(`[data-conversion-command="${cssAttributeValue(commandId)}"],[data-start-conversion-command="${cssAttributeValue(commandId)}"]`) as HTMLElement | null
+          : null;
         (command ?? root.querySelector('[data-chrome-command="import"]') as HTMLElement | null)?.focus();
       });
     });
@@ -3458,14 +3468,14 @@ export function conversionView(host: EditorServices | undefined, manifest: Conve
   const sourcePicker = selected?.direction === 'import' ? conversionSourceControl(host, selected, source) : '';
   const commandOptions = selected && converter ? conversionOptionsForCommand(converter, selected) : [];
   const requiredOptions = new Set(selected?.availabilityRequirements ?? []);
-  const configuration = selected ? `<section class="js-conversion-config"><div class="js-conversion-route"><div><span>From</span><strong>${escapeHtml(selected.sourceFormat)}</strong></div><span class="js-conversion-arrow" aria-hidden="true">${fluentIcon('arrowRight')}</span><div><span>To</span><strong>${escapeHtml(selected.targetFormat)}</strong></div></div>${sourcePicker}<fieldset><legend>Options</legend>${commandOptions.map((option, index) => conversionOptionControl(option, requiredOptions.has(option.name), currentOptionValues, index === 0)).join('') || '<p class="js-description">This converter has no options.</p>'}</fieldset><button data-conversion-run ${requestId || selected.direction === 'import' && conversionRequiresLocalSource(selected) && !source ? 'disabled' : ''} class="js-primary">${escapeHtml(conversionCommandAction(selected))}</button></section>` : '';
+  const configuration = selected?.direction === 'export' ? `<section class="js-conversion-config"><div class="js-conversion-route"><div><span>From</span><strong>${escapeHtml(selected.sourceFormat)}</strong></div><span class="js-conversion-arrow" aria-hidden="true">${fluentIcon('arrowRight')}</span><div><span>To</span><strong>${escapeHtml(selected.targetFormat)}</strong></div></div>${sourcePicker}<fieldset><legend>Options</legend>${commandOptions.map((option, index) => conversionOptionControl(option, requiredOptions.has(option.name), currentOptionValues, index === 0)).join('') || '<p class="js-description">This converter has no options.</p>'}</fieldset><button data-conversion-run ${requestId ? 'disabled' : ''} class="js-primary">${escapeHtml(conversionCommandAction(selected))}</button></section>` : '';
   const resultState = result ? result.succeeded ? 'success' : 'failure' : undefined;
   return `<div class="js-sheet js-conversion-sheet"><header class="js-type-head"><div><div class="js-eyebrow">Toolchain</div><h1>Convert</h1><p class="js-description">Choose an outcome, review its options, and write generated files to a directory you approve.</p></div><div class="js-actions"><button data-conversion-reset>Reset to defaults</button>${manifest ? '<button data-conversion-load title="Refresh conversion tools">Refresh</button>' : ''}</div></header>${manifest ? `<div class="js-conversion-layout"><div class="js-conversion-catalog">${commandGroups || '<p class="js-description">No conversion commands are installed.</p>'}</div>${configuration}</div>` : '<div class="js-conversion-loading" role="status">Loading conversion tools...</div>'}${progressView}<p role="status" aria-live="polite">${escapeHtml(status)}</p>${review}${result ? `<div data-conversion-state="${resultState}" data-conversion-result="${resultState}" aria-label="Conversion ${result.succeeded ? 'succeeded' : 'failed'}"></div><section><div class="js-section-head"><h2>Outputs (${result.outputs.length})</h2>${result.outputs.length && host.openGeneratedOutput ? '<button data-conversion-open>Open outputs</button>' : ''}</div>${outputs || '<p class="js-description">No output files were committed.</p>'}</section><section><h2>Diagnostics (${result.diagnostics.length})</h2>${diagnostics || '<p class="js-description">No conversion warnings or errors.</p>'}</section>` : ''}</div>`;
 }
 
 function startConversionDialog(host: EditorServices | undefined, manifest: ConversionCommandsManifest, commandId: string | undefined, source: ConversionSource | undefined, result: ConversionResult | undefined, status: string, progress?: ProgressEvent, requestId?: string, currentOptionValues: ConversionOptionValues = {}): string {
   const selected = directStructurizeImportCommands(manifest).find((command) => command.id === commandId);
-  if (!selected) return `<dialog class="js-start-conversion-dialog" data-start-conversion-dialog aria-labelledby="start-conversion-dialog-title" open><div class="js-start-conversion-dialog-head"><strong id="start-conversion-dialog-title">Import existing schema or data</strong><button type="button" data-start-conversion-close tabindex="-1" aria-label="Close">${fluentIcon('dismiss')}</button></div><p class="js-description">Loading conversion options...</p></dialog>`;
+  if (!selected) return `<dialog class="js-start-conversion-dialog" data-start-conversion-dialog aria-labelledby="start-conversion-dialog-title"><div class="js-start-conversion-dialog-head"><strong id="start-conversion-dialog-title">Import existing schema or data</strong><button type="button" data-start-conversion-close tabindex="-1" aria-label="Close">${fluentIcon('dismiss')}</button></div><p class="js-description">Loading conversion options...</p></dialog>`;
   const converter = manifest.converters.find((candidate) => candidate.id === selected.converterId);
   const options = converter ? conversionOptionsForCommand(converter, selected) : [];
   const requiredOptions = new Set(selected.availabilityRequirements ?? []);
@@ -3474,7 +3484,7 @@ function startConversionDialog(host: EditorServices | undefined, manifest: Conve
   const outputs = result?.outputs.map((output) => `<div class="js-analysis-row"><span>${escapeHtml(output.name)}</span><span class="js-code">${escapeHtml(output.uri)}</span></div>`).join('') ?? '';
   const diagnostics = result?.diagnostics.map((diagnostic) => `<div class="js-problem"><span class="js-problem-${diagnostic.severity}">${fluentIcon(diagnostic.severity === 'error' ? 'errorCircle' : 'warning')}</span><span>${escapeHtml(diagnostic.message)}</span></div>`).join('') ?? '';
   const resultState = result ? result.succeeded ? 'success' : 'failure' : undefined;
-  return `<dialog class="js-start-conversion-dialog" data-start-conversion-dialog data-start-command="${escapeAttribute(selected.id)}" aria-labelledby="start-conversion-dialog-title" open><div class="js-start-conversion-dialog-head"><span class="js-format-icon" data-format="${escapeAttribute(selected.sourceFormat)}" aria-hidden="true">${technologyIcon(selected.sourceFormat)}</span><span><strong id="start-conversion-dialog-title">${escapeHtml(selected.label)}</strong><small>${escapeHtml(selected.cliCommand ?? selected.sourceFormat)}</small></span><button type="button" data-start-conversion-close tabindex="-1" aria-label="Close">${fluentIcon('dismiss')}</button></div><div class="js-start-conversion-dialog-body"${requestId ? ' aria-busy="true"' : ''}>${conversionSourceControl(host, selected, source)}<fieldset><legend>Import options</legend>${options.map((option, index) => conversionOptionControl(option, requiredOptions.has(option.name), currentOptionValues, index === 0)).join('') || '<p class="js-description">This importer has no options.</p>'}</fieldset><button data-conversion-run ${requestId || conversionRequiresLocalSource(selected) && !source ? 'disabled' : ''} class="js-primary">${escapeHtml(conversionCommandAction(selected))}</button>${progressView}<p class="js-action-status" data-conversion-status role="${resultState === 'failure' ? 'alert' : 'status'}" aria-live="polite">${escapeHtml(status)}</p>${result ? `<div data-conversion-state="${resultState}" data-conversion-result="${resultState}" aria-label="Conversion ${result.succeeded ? 'succeeded' : 'failed'}"></div><section><div class="js-section-head"><h2>Outputs (${result.outputs.length})</h2>${result.outputs.length && host?.openGeneratedOutput ? '<button data-conversion-open>Open outputs</button>' : ''}</div>${outputs}${diagnostics}</section>` : ''}</div></dialog>`;
+  return `<dialog class="js-start-conversion-dialog" data-start-conversion-dialog data-start-command="${escapeAttribute(selected.id)}" aria-labelledby="start-conversion-dialog-title"><div class="js-start-conversion-dialog-head"><span class="js-format-icon" data-format="${escapeAttribute(selected.sourceFormat)}" aria-hidden="true">${technologyIcon(selected.sourceFormat)}</span><span><strong id="start-conversion-dialog-title">${escapeHtml(selected.label)}</strong><small>${escapeHtml(selected.cliCommand ?? selected.sourceFormat)}</small></span><button type="button" data-start-conversion-close tabindex="-1" aria-label="Close">${fluentIcon('dismiss')}</button></div><div class="js-start-conversion-dialog-body"${requestId ? ' aria-busy="true"' : ''}>${conversionSourceControl(host, selected, source)}<fieldset><legend>Import options</legend>${options.map((option, index) => conversionOptionControl(option, requiredOptions.has(option.name), currentOptionValues, index === 0)).join('') || '<p class="js-description">This importer has no options.</p>'}</fieldset><button data-conversion-run ${requestId || conversionRequiresLocalSource(selected) && !source ? 'disabled' : ''} class="js-primary">${escapeHtml(conversionCommandAction(selected))}</button>${progressView}<p class="js-action-status" data-conversion-status role="${resultState === 'failure' ? 'alert' : 'status'}" aria-live="polite">${escapeHtml(status)}</p>${result ? `<div data-conversion-state="${resultState}" data-conversion-result="${resultState}" aria-label="Conversion ${result.succeeded ? 'succeeded' : 'failed'}"></div><section><div class="js-section-head"><h2>Outputs (${result.outputs.length})</h2>${result.outputs.length && host?.openGeneratedOutput ? '<button data-conversion-open>Open outputs</button>' : ''}</div>${outputs}${diagnostics}</section>` : ''}</div></dialog>`;
 }
 
 function conversionRequiresLocalSource(command: ConversionCommand): boolean {
