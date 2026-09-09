@@ -103,26 +103,18 @@ describe('workbench interaction markup', () => {
     expect(html).not.toContain('title="Convert this structure"');
     expect(html).toContain('data-command="definition.add" title="Add type"');
     expect(html).toContain('data-library-open title="Import type library"');
+    expect(html).toContain('data-document-open aria-current="false"');
+    expect(html).toContain('<span>Document</span>');
     expect(html).toContain('role="tree" aria-label="Types by namespace"');
     expect(html).toContain('<details class="js-tree-namespace" data-namespace-pointer="/definitions/Domain" open>');
     expect(html).toContain('data-select="/definitions/Domain" aria-current="false">Domain</button><small>2</small>');
     expect(html).toContain('data-select="/definitions/Shared" aria-current="false">Shared</button><small>1</small>');
     expect(html).toContain('data-select="/definitions/Domain/Person"');
-    expect(html).toContain('class="js-schema-strip"');
-    expect(html).toContain('data-document-member="$schema"');
-    expect(html).toContain('data-document-member="$id"');
-    expect(html).toContain('data-document-action="core.name"');
-    expect(html).toContain('data-document-action="core.description"');
-    expect(html).toContain('data-meta-schema-select');
-    expect(html).toContain('data-meta-schema-custom');
-    expect(html).toContain('class="js-document-uses"');
-    expect(html).toContain('class="js-document-offers"');
-    expect(html).toContain('data-document-root');
-    expect(html).toContain('<option value="" selected>No explicit root</option>');
+    expect(html).not.toContain('data-document-member="$schema"');
+    expect(html).not.toContain('data-document-root');
     expect(html).not.toContain('data-document-import');
-    expect(html).toContain('data-select="/definitions"');
-    expect(html).toContain('>Domain / Person</option>');
-    expect(html).toContain('>Shared / Identifier</option>');
+    expect(html).not.toContain('data-select="/definitions"');
+    expect(html).not.toContain('Root namespace</span>');
     expect(html).not.toContain('class="js-breadcrumbs"');
 
     const convertHtml = workbenchShell(snapshot, 'navigation.struct.json', definitions, '/definitions/Domain/Person', [], '/definitions/Domain/Person', 'conversion', false);
@@ -137,9 +129,33 @@ describe('workbench interaction markup', () => {
     })).snapshot();
     const inlineHtml = workbenchShell(inlineSnapshot, 'inline.struct.json', [
       { name: 'Reusable', pointer: '/definitions/Reusable', namespace: '/definitions' },
-    ], '', [], '', 'design', false);
+    ], '', [], '', 'design', false, true);
     expect(inlineHtml).toContain('data-document-root aria-label="Document root type" disabled');
     expect(inlineHtml).toContain('<option selected>Inline root</option>');
+  });
+
+  it('renders document metadata and root namespace controls on the Document page', () => {
+    const snapshot = new DocumentSession('memory://document-page', JSON.stringify({
+      $id: 'https://example.test/schema',
+      definitions: { Root: { type: 'object' } },
+    })).snapshot();
+    const html = workbenchShell(snapshot, 'document.struct.json', [
+      { name: 'Root', pointer: '/definitions/Root', namespace: '/definitions' },
+    ], '/definitions/Root', [], '/definitions/Root', 'design', false, true);
+
+    expect(html).toContain('data-document-open aria-current="true"');
+    expect(html).toContain('<h1>Document settings</h1>');
+    expect(html).toContain('data-document-member="$id"');
+    expect(html).toContain('data-meta-schema-select');
+    expect(html).toContain('class="js-document-uses"');
+    expect(html).toContain('class="js-document-offers"');
+    expect(html).toContain('data-document-root');
+    expect(html).toContain('>Root</option>');
+    expect(html).toContain('data-namespace-add-type="/definitions"');
+    expect(html).toContain('data-namespace-add-child="/definitions"');
+    expect(html).toContain('data-namespace-import="$importdefs"');
+    expect(html).not.toContain('class="js-document-pane"');
+    expect(html).not.toContain('data-properties-pane-splitter');
   });
 
   it('starts from composite type choices without opening the generic action editor', () => {

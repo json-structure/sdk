@@ -301,8 +301,9 @@ async function probeResponsiveLayout(cdp, evidenceDirectory) {
       const center = document.querySelector('.js-center');
       const mobileMode = document.querySelector('.js-mobile-mode');
       const inspector = document.querySelector('.js-inspector');
-      const documentPane = document.querySelector('.js-document-pane-body');
-      if (!(center instanceof HTMLElement) || !(mobileMode instanceof HTMLElement) || !(inspector instanceof HTMLElement) || !(documentPane instanceof HTMLElement)) return { missing: true };
+      const inspectorBody = document.querySelector('.js-inspector-body');
+      const documentButton = document.querySelector('[data-document-open]');
+      if (!(center instanceof HTMLElement) || !(mobileMode instanceof HTMLElement) || !(inspector instanceof HTMLElement) || !(inspectorBody instanceof HTMLElement) || !(documentButton instanceof HTMLButtonElement)) return { missing: true };
       const centerStyle = getComputedStyle(center);
       return {
         centerRows: centerStyle.gridTemplateRows,
@@ -310,12 +311,13 @@ async function probeResponsiveLayout(cdp, evidenceDirectory) {
         centerScrollWidth: center.scrollWidth,
         inspectorDisplay: getComputedStyle(inspector).display,
         inspectorRows: getComputedStyle(inspector).gridTemplateRows,
-        documentPaneOverflow: getComputedStyle(documentPane).overflow,
+        inspectorBodyOverflow: getComputedStyle(inspectorBody).overflow,
+        documentButtonVisible: documentButton.getBoundingClientRect().height > 0,
         mobileModeDisplay: getComputedStyle(mobileMode).display,
         documentScrollTop: document.scrollingElement.scrollTop,
       };
     })()`);
-    if (result.missing || result.documentScrollTop !== 0 || result.centerWidth <= 0 || result.centerScrollWidth > result.centerWidth + 1 || result.documentPaneOverflow !== 'auto') throw new Error(`Final Electron responsive probe failed at ${probe.width}x${probe.height}: ${JSON.stringify(result)}`);
+    if (result.missing || result.documentScrollTop !== 0 || result.centerWidth <= 0 || result.centerScrollWidth > result.centerWidth + 1 || result.inspectorBodyOverflow !== 'auto' || (probe.width > 860 && !result.documentButtonVisible)) throw new Error(`Final Electron responsive probe failed at ${probe.width}x${probe.height}: ${JSON.stringify(result)}`);
     if (probe.width <= 620 && (result.centerRows.trim().split(/\s+/).length !== 2 || Number.parseFloat(result.centerRows) < 44 || result.mobileModeDisplay === 'none')) throw new Error(`Final Electron touch layout did not expose the mobile mode row at ${probe.width}x${probe.height}: ${JSON.stringify(result)}`);
     if (probe.width <= 860 && result.inspectorDisplay !== 'none' && result.inspectorDisplay !== 'grid') throw new Error(`Final Electron narrow inspector layout was invalid at ${probe.width}x${probe.height}: ${JSON.stringify(result)}`);
     results.push({ ...probe, ...result });
@@ -426,7 +428,7 @@ async function run() {
     await cdp.click('[data-problems-toggle]');
     await cdp.waitFor('open problems pane', `document.querySelector('.js-workbench')?.dataset.problemsOpen === 'true'`);
     const scrollEvidence = await cdp.evaluateJson(`(() => {
-      const selectors = ['.js-tree', '.js-document-metadata', '[data-panel-mode="design"]', '.js-inspector', '.js-problem-list'];
+      const selectors = ['.js-tree', '[data-panel-mode="design"]', '.js-inspector-body', '.js-problem-list'];
       return selectors.map(selector => {
         const element = document.querySelector(selector);
         if (!(element instanceof HTMLElement)) return { selector, missing: true };

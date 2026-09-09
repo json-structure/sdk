@@ -64,20 +64,13 @@ afterEach(() => {
 });
 
 describe('mounted responsive workbench layout', () => {
-  it('keeps the inspector a stacked, scrollable grid at desktop and narrow widths', () => {
+  it('keeps the selection inspector scrollable at desktop and narrow widths', () => {
     const desktop = mountAt(1280, 800);
     const desktopInspector = computed(desktop, '.js-inspector');
     expect(desktopInspector.display).toBe('grid');
-    expect(compact(desktopInspector.gridTemplateRows)).toContain('minmax(140px,260px)9pxminmax(180px,1fr)');
+    expect(compact(desktopInspector.gridTemplateRows)).toBe('minmax(0,1fr)');
     expect(computed(desktop, '.js-inspector-body').overflow).toBe('auto');
-    expect(computed(desktop, '.js-document-pane-body').overflow).toBe('auto');
-    expect(computed(desktop, '[data-properties-pane-splitter]').cursor).toBe('row-resize');
-    expect(computed(desktop, '[data-properties-pane-splitter]').minHeight).toBe('9px');
-    const desktopSplitter = element(desktop, '[data-properties-pane-splitter]');
-    expect(desktopSplitter.getAttribute('role')).toBe('separator');
-    expect(desktopSplitter.getAttribute('aria-orientation')).toBe('horizontal');
-    desktopSplitter.focus();
-    expect(document.activeElement).toBe(desktopSplitter);
+    expect(desktop.querySelector('[data-properties-pane-splitter]')).toBeNull();
 
     const narrow = mountAt(800, 600);
     const inspectorToggle = element(narrow, '[data-mobile-drawer="inspector"]');
@@ -85,13 +78,10 @@ describe('mounted responsive workbench layout', () => {
     const narrowInspector = computed(narrow, '.js-inspector');
     expect(element(narrow, '.js-inspector').classList.contains('js-drawer-open')).toBe(true);
     expect(narrowInspector.display).toBe('grid');
-    expect(compact(narrowInspector.gridTemplateRows)).toContain('minmax(140px,260px)9pxminmax(180px,1fr)');
+    expect(compact(narrowInspector.gridTemplateRows)).toBe('minmax(0,1fr)');
     expect(computed(narrow, '.js-inspector-body').minHeight).toBe('0');
-    expect(computed(narrow, '.js-document-pane-body').minHeight).toBe('0');
     expect(computed(narrow, '.js-inspector-body').overflow).toBe('auto');
-    expect(computed(narrow, '.js-document-pane-body').overflow).toBe('auto');
-    expect(element(narrow, '.js-inspector').getAttribute('aria-label')).toBe('Properties and schema metadata');
-    expect(element(narrow, '[data-properties-pane-splitter]').getAttribute('aria-label')).toBe('Resize Properties and Schema metadata panes');
+    expect(element(narrow, '.js-inspector').getAttribute('aria-label')).toBe('Properties');
     expect(computed(narrow, '[data-pane-splitter="inspector"]').display).toBe('none');
     expect(compact(window.getComputedStyle(element(narrow, '.js-row')).gridTemplateColumns)).toContain('72px');
   });
@@ -108,10 +98,9 @@ describe('mounted responsive workbench layout', () => {
     await Promise.resolve();
     const inspector = element(root, '.js-inspector');
     expect(computed(root, '.js-inspector').display).toBe('grid');
-    expect(compact(computed(root, '.js-inspector').gridTemplateRows)).toBe('minmax(140px,260px)44pxminmax(140px,1fr)');
-    expect(computed(root, '[data-properties-pane-splitter]').minHeight).toBe('44px');
+    expect(compact(computed(root, '.js-inspector').gridTemplateRows)).toBe('minmax(0,1fr)');
     const close = element(inspector, '[data-mobile-drawer-close]');
-    expect(close.getAttribute('aria-label')).toBe('Close Properties and schema metadata');
+    expect(close.getAttribute('aria-label')).toBe('Close Properties');
     expect(document.activeElement).toBe(close);
     close.click();
 

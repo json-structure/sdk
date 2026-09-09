@@ -78,6 +78,8 @@ describe('mounted structured CRUD workbench', () => {
     value = JSON.parse(handle!.getText());
     expect(value.definitions.RootText).toEqual({ type: 'string' });
 
+    element<HTMLButtonElement>(root, '[data-document-open]').click();
+    await settle();
     change(element(root, '[data-meta-schema-select]'), 'https://json-structure.org/meta/extended/v0/#');
     await settle();
     change(element(root, '[data-document-action="core.name"]'), 'CatalogDocument');
@@ -113,6 +115,8 @@ describe('mounted structured CRUD workbench', () => {
       },
     });
 
+    element<HTMLButtonElement>(root, '[data-document-open]').click();
+    await settle();
     const metaSchema = element<HTMLSelectElement>(root, '[data-meta-schema-select]');
     expect([...metaSchema.options].map((option) => option.value)).toEqual(expect.arrayContaining([
       'https://json-structure.org/meta/core/v0/#',
@@ -167,6 +171,8 @@ describe('mounted structured CRUD workbench', () => {
       RootFeature: '#/definitions/Root',
     });
 
+    element<HTMLButtonElement>(root, '[data-document-open]').click();
+    await settle();
     const rootSelector = element<HTMLSelectElement>(root, '[data-document-root]');
     rootSelector.focus();
     change(rootSelector, '/definitions/Feature');
@@ -175,8 +181,6 @@ describe('mounted structured CRUD workbench', () => {
     expect(document.activeElement).toBe(element(root, '[data-document-root]'));
 
     expect(root.querySelector('[data-document-import]')).toBeNull();
-    element<HTMLButtonElement>(root, '[data-select="/definitions"]').click();
-    await settle();
     change(element(root, '[data-namespace-import="$importdefs"]'), 'https://example.test/library.struct.json');
     await settle();
     value = JSON.parse(handle!.getText());
@@ -932,11 +936,15 @@ describe('mounted structured CRUD workbench', () => {
     await settle();
     await settle();
 
+    element<HTMLButtonElement>(root, '[data-document-open]').click();
+    await settle();
     const importedRoot = element<HTMLSelectElement>(root, '[data-document-root]');
     change(importedRoot, '/definitions/Imported/Target');
     await settle();
     expect(JSON.parse(handle!.getText()).$root).toBe('#/definitions/Imported/Target');
 
+    element<HTMLButtonElement>(root, '[data-select="/definitions/Source"]').click();
+    await settle();
     element<HTMLButtonElement>(root, '[data-select="/definitions/Source/relations/target"]').click();
     await settle();
     element<HTMLButtonElement>(root, '[data-action-id="relation.edit"]').click();
