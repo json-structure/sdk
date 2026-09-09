@@ -106,7 +106,8 @@ describe('workbench interaction markup', () => {
     expect(html).toContain('data-document-open aria-current="false"');
     expect(html).toContain('<span>Document</span>');
     expect(html).toContain('role="tree" aria-label="Types by namespace"');
-    expect(html).toContain('<details class="js-tree-namespace" data-namespace-pointer="/definitions/Domain" open>');
+    expect(html).toContain('<details class="js-tree-namespace" data-namespace-pointer="/definitions/Domain" open><summary data-tree-context-kind="namespace" data-tree-context-pointer="/definitions/Domain">');
+    expect(html).toContain('<span class="js-kind" aria-hidden="true">');
     expect(html).toContain('data-select="/definitions/Domain" aria-current="false">Domain</button><small>2</small>');
     expect(html).toContain('data-select="/definitions/Shared" aria-current="false">Shared</button><small>1</small>');
     expect(html).toContain('data-select="/definitions/Domain/Person"');
@@ -215,6 +216,10 @@ describe('workbench interaction markup', () => {
     expect(namespaceHtml).toContain('data-inline-namespace-name="/definitions/Empty"');
     expect(namespaceHtml).toContain('data-namespace-delete="/definitions/Empty"');
     expect(namespaceHtml).toContain('data-namespace-delete-contents="/definitions/Empty"');
+    expect(namespaceHtml).toContain('class="js-sheet js-namespace-sheet"');
+    expect(namespaceHtml).toContain('<button data-namespace-add-child="/definitions/Empty"');
+    expect(namespaceHtml).toContain('class="js-code js-namespace-new-name"');
+    expect(namespaceHtml).toContain('class="js-actions js-namespace-delete-actions"');
 
     const facetDocument = {
       $schema: 'https://json-structure.org/meta/semantic-annotations/v0/#',

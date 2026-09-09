@@ -62,6 +62,27 @@ async function settle(): Promise<void> {
 }
 
 describe('mounted structured CRUD workbench', () => {
+  it('shows icons and context actions for namespace tree nodes', async () => {
+    const root = mount({
+      definitions: {
+        Test: {
+          foo: { type: 'string' },
+        },
+      },
+    });
+    const namespace = element<HTMLElement>(root, '[data-namespace-pointer="/definitions/Test"] > summary');
+    expect(namespace.querySelector('.js-kind .js-icon')).not.toBeNull();
+
+    namespace.dispatchEvent(new window.MouseEvent('contextmenu', { bubbles: true, clientX: 40, clientY: 60 }));
+    await Promise.resolve();
+    const menu = element(root, '.js-tree-context-menu');
+    expect(menu.getAttribute('role')).toBe('menu');
+    expect(menu.textContent).toContain('Add type');
+    expect(menu.textContent).toContain('Add namespace');
+    expect(menu.textContent).toContain('Rename namespace');
+    expect(menu.textContent).toContain('Delete empty namespace');
+  });
+
   it('creates primitive types, mutates declaration shapes, and edits document metadata', async () => {
     const root = mount({});
     change(element(root, '[data-type-create-name]'), 'RootText');
