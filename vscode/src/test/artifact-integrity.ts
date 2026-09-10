@@ -6,6 +6,7 @@ import * as path from 'node:path';
 
 const repositoryRoot = path.resolve(__dirname, '../../..');
 const editorRoot = path.join(repositoryRoot, 'editor');
+const extensionManifestPath = path.join(repositoryRoot, 'vscode', 'package.json');
 const rendererBundlePath = path.resolve(__dirname, '../../media/editor/editor.iife.js');
 const rendererBuildModulePath = path.join(editorRoot, 'scripts/vscode-renderer-build.mjs');
 const rendererReadyMarker = 'json-structure-vscode-renderer-ready-v1';
@@ -78,6 +79,25 @@ function assertRendererShape(bundle: string): void {
         if (!bundle.includes(providerId)) { throw new Error(`The generated VS Code renderer bundle is missing offline catalog provider ${providerId}.`); }
     }
     new Script(bundle, { filename: rendererBundlePath });
+}
+
+async function assertDefaultCustomEditor(): Promise<void> {
+    const manifest = JSON.parse(await readFile(extensionManifestPath, 'utf8')) as {
+        contributes?: {
+            customEditors?: Array<{
+                viewType?: string;
+                priority?: string;
+                selector?: Array<{ filenamePattern?: string }>;
+            }>;
+        };
+    };
+    const editor = manifest.contributes?.customEditors?.find((candidate) => candidate.viewType === 'jsonStructure.editor');
+    if (editor?.priority !== 'default') {
+        throw new Error('The JSON Structure custom editor must be the default editor for *.struct.json files.');
+    }
+    if (!editor.selector?.some((selector) => selector.filenamePattern === '*.struct.json')) {
+        throw new Error('The default JSON Structure custom editor is missing its *.struct.json selector.');
+    }
 }
 
 function findGeneratedRendererBytes(buildOutput: unknown, bundleFileName: string): Buffer {
@@ -165,6 +185,7 @@ async function assertFailureScenarios(generated: Uint8Array, checkedInBundle: st
 
 /** Verifies source parity and executes the checked-in VS Code renderer before any rebuild can overwrite it. */
 export async function assertRendererArtifactIntegrity(): Promise<void> {
+    await assertDefaultCustomEditor();
     const checkedInBytes = await readFile(rendererBundlePath);
     const generatedBytes = await buildRendererInMemory();
     const checkedInBundle = checkedInBytes.toString('utf8');

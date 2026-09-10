@@ -71,7 +71,7 @@
             "filenamePattern": "*.struct.json"
           }
         ],
-        "priority": "option"
+        "priority": "default"
       }
     ],
     "configuration": {
