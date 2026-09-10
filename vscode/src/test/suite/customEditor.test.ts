@@ -25,6 +25,7 @@ suite('JSON Structure custom editor protocol', () => {
     test('accepts renderer readiness handshake messages', () => {
         assert.strictEqual(isWebviewMessage({ type: 'rendererReady', protocolVersion: 1, requestId: 'renderer-1', phase: 'mounted' }), true);
         assert.strictEqual(isWebviewMessage({ type: 'rendererReady', protocolVersion: 1, requestId: 'renderer-1', phase: 'confirmed' }), true);
+        assert.strictEqual(isWebviewMessage({ type: 'rendererReady', protocolVersion: 1, requestId: 'renderer-1', phase: 'rendered' }), true);
         assert.strictEqual(isWebviewMessage({ type: 'rendererReady', protocolVersion: 1, requestId: 'renderer-1', phase: 'failed' }), false);
     });
 
@@ -35,7 +36,7 @@ suite('JSON Structure custom editor protocol', () => {
             ['jsonschema', ['rootName', 'preserveUnknownKeywords']],
             ['avro', ['rootName', 'preserveLogicalType', 'mode', 'uses', 'additional_properties', 'emit_doc']],
             ['protobuf', ['uses', 'additional_properties', 'emit_comments', 'numbers']],
-            ['structurize-cli', ['dialect', 'namespace', 'root_class_name', 'type_name', 'base_id', 'sample_size', 'choice_depth', 'infer_choices', 'infer_enums', 'preserve_composition', 'detect_inheritance', 'detect_discriminators', 'lift_inline_schemas', 'convert_empty_objects_to_maps', 'naming', 'avro_encoding', 'kusto_uri', 'kusto_database', 'table_name', 'emit_cloudevents', 'emit_xregistry']]
+            ['structurize-cli', ['dialect', 'namespace', 'root_class_name', 'type_name', 'base_id', 'sample_size', 'choice_depth', 'infer_choices', 'infer_enums', 'preserve_composition', 'detect_inheritance', 'detect_discriminators', 'lift_inline_schemas', 'convert_empty_objects_to_maps', 'naming', 'avro_encoding', 'kusto_uri', 'kusto_database', 'table_name', 'emit_cloudevents', 'emit_xregistry', 'message_type', 'proto_root', 'connection_string', 'username', 'password', 'database', 'infer_json', 'infer_xml', 'emit_cloudevents_columns', 'record_type']]
         ]);
         const request = {
             protocolVersion: 1 as const,

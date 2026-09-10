@@ -56,7 +56,7 @@ interface ResourceResultMessage {
 interface ServiceResultMessage { readonly type: 'serviceResult'; readonly protocolVersion: typeof protocolVersion; readonly requestId: string; readonly result?: unknown; readonly error?: string }
 interface ConversionProgressMessage extends ProgressEvent { readonly type: 'conversionProgress' }
 export type HostMessage = InitMessage | DocumentChangedMessage | DocumentRejectedMessage | ApplyResultMessage | DocumentSavedMessage | ShowCommandsMessage | ResourceResultMessage | ServiceResultMessage | ConversionProgressMessage;
-export type WebviewMessage = { readonly type: 'rendererReady'; readonly protocolVersion: typeof protocolVersion; readonly requestId: string; readonly phase: 'mounted' | 'confirmed' } |
+export type WebviewMessage = { readonly type: 'rendererReady'; readonly protocolVersion: typeof protocolVersion; readonly requestId: string; readonly phase: 'mounted' | 'confirmed' | 'rendered' } |
   { readonly type: 'applyTextEdits'; readonly protocolVersion: typeof protocolVersion; readonly request: ApplyTextEditsRequest } |
   { readonly type: 'readResource'; readonly protocolVersion: typeof protocolVersion; readonly requestId: string; readonly uri: string } |
   { readonly type: 'listConversionCommands' | 'selectConversionSource' | 'convert' | 'cancelConversion' | 'openGeneratedOutput' | 'libraryRequest' | 'listLibraryEntries' | 'readLibraryDocument'; readonly protocolVersion: typeof protocolVersion; readonly requestId: string; readonly request?: unknown };
@@ -78,6 +78,7 @@ export interface VsCodeWebviewClientOptions {
   readonly clearTimeout?: typeof clearTimeout;
   readonly sourceReplaceDelayMs?: number;
   readonly requestTimeoutMs?: number;
+  readonly readinessRequestId?: string;
 }
 
 interface PendingRequest { readonly request: ApplyTextEditsRequest; readonly resolve: (result: ApplyResult) => void; readonly reject: (error: Error) => void; readonly timeout: ReturnType<typeof setTimeout>; }
@@ -316,6 +317,7 @@ export function createVsCodeWebviewClient(options: VsCodeWebviewClientOptions): 
       rejectPending('The VS Code webview was reinitialized.');
       editor?.dispose();
       editor = options.mount?.(value, host, replaceDocument);
+      if (options.readinessRequestId && editor) options.vscode.postMessage({ type: 'rendererReady', protocolVersion, requestId: options.readinessRequestId, phase: 'rendered' });
     } else if (!replacement) {
       synchronizing = true;
       editor?.setText(value.text, value.documentVersion);
@@ -361,7 +363,7 @@ export function startVsCodeWebview(): VsCodeWebviewClient {
     window.addEventListener('message', confirm);
   }
   const client = createVsCodeWebviewClient({
-    vscode, window, document,
+    vscode, window, document, readinessRequestId: requestId ?? undefined,
     mount: (initial, host, onChange) => mountJsonStructureEditor(document.querySelector('#editor') as HTMLElement, {
       text: initial.text, uri: initial.uri, title: initial.title, documentVersion: initial.documentVersion, host, onChange, styleNonce, chrome: 'embedded'
     })

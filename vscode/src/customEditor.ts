@@ -37,6 +37,7 @@ interface PanelState {
     readonly documentUri: string;
     readonly disposables: vscode.Disposable[];
     readyRequestId?: string;
+    initialDocumentPosted: boolean;
     rendererReady: boolean;
 }
 
@@ -86,7 +87,7 @@ export class JsonStructureCustomEditorProvider implements vscode.CustomTextEdito
             throw error;
         }
         const webview = webviewPanel.webview;
-        const state: PanelState = { panel: webviewPanel, webview, documentUri: document.uri.toString(), disposables: [], rendererReady: false };
+        const state: PanelState = { panel: webviewPanel, webview, documentUri: document.uri.toString(), disposables: [], initialDocumentPosted: false, rendererReady: false };
         this.panels.add(state);
         if (webviewPanel.active) this.activePanel = state;
         webview.options = {
@@ -122,7 +123,11 @@ export class JsonStructureCustomEditorProvider implements vscode.CustomTextEdito
                 if (message.phase === 'mounted') {
                     state.readyRequestId = message.requestId;
                     postWebviewMessage(webview, { type: 'rendererReadyAck', protocolVersion, requestId: message.requestId });
-                } else if (!state.rendererReady && state.readyRequestId === message.requestId) {
+                    if (!state.initialDocumentPosted) {
+                        state.initialDocumentPosted = true;
+                        postDocument('init');
+                    }
+                } else if (message.phase === 'rendered' && !state.rendererReady && state.readyRequestId === message.requestId) {
                     state.rendererReady = true;
                     this.markRendererReady(state.documentUri);
                     postWebviewMessage(webview, { type: 'rendererReadyAck', protocolVersion, requestId: message.requestId });
@@ -170,7 +175,6 @@ export class JsonStructureCustomEditorProvider implements vscode.CustomTextEdito
             disposeSubscription.dispose();
             if (this.activePanel === state) this.activePanel = [...this.panels].find((candidate) => candidate.panel.active);
         });
-        postDocument('init');
     }
 
     private enqueueDocumentEdit(uri: string, operation: () => Promise<void>): Promise<void> {

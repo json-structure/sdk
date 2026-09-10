@@ -163,6 +163,22 @@ async function executeRendererReadiness(bundle: string): Promise<void> {
         if (!hasReadinessMessage(messages, 'confirmed', requestId)) {
             throw new Error('The VS Code renderer did not complete its confirmed readiness handshake.');
         }
+        window.dispatchEvent(new window.MessageEvent('message', {
+            data: {
+                type: 'init',
+                protocolVersion: mounted.protocolVersion,
+                uri: 'file:///artifact-integrity/schema.struct.json',
+                title: 'schema.struct.json',
+                text: '{"$schema":"https://json-structure.org/meta/core/v0/#","name":"ArtifactIntegrity","definitions":{}}',
+                documentVersion: 1,
+            },
+        }));
+        if (!window.document.querySelector('.js-shell')) {
+            throw new Error('The VS Code renderer completed its handshake without rendering the editor workbench.');
+        }
+        if (!hasReadinessMessage(messages, 'rendered', requestId)) {
+            throw new Error('The VS Code renderer did not report a rendered workbench.');
+        }
     } finally {
         window.close();
     }
