@@ -14,6 +14,7 @@ export interface CompositionEditorOptions {
   readonly instanceVersion?: number;
   readonly references?: readonly CompositionReferenceChoice[];
   readonly active: boolean;
+  readonly addComposerOpen?: boolean;
   readonly statusMessage?: string;
 }
 const arrays = ['allOf','anyOf','oneOf'] as const;
@@ -55,6 +56,9 @@ export function compositionEditorView(options: CompositionEditorOptions): string
   if (!schemaRecord(schema)) return '';
   const keys = COMPOSITION_KEYWORDS.filter(k => Object.hasOwn(schema,k));
   if (!options.active && !keys.length) return '';
+  if (!keys.length && !options.addComposerOpen) {
+    return '<section class="js-design-section js-composition-editor js-composition-empty" data-composition-editor data-composition-target="'+e(options.targetPointer)+'" data-authored-keywords=""><div class="js-section-head"><div><h2>Rules</h2><span class="js-section-meta">None</span></div><button type="button" data-composition-add-start="'+e(options.targetPointer)+'">Add rule</button></div>'+(options.statusMessage?'<p class="js-inline-status" role="status">'+e(options.statusMessage)+'</p>':'')+'</section>';
+  }
   const pointer = options.targetPointer;
   const groups = arrays.filter(k => Object.hasOwn(schema,k)).map(keyword => {
     const value = schema[keyword], validArray = Array.isArray(value);
@@ -66,7 +70,11 @@ export function compositionEditorView(options: CompositionEditorOptions): string
   const authoredBranches = branches.filter(k => Object.hasOwn(schema,k));
   if (authoredBranches.length) groups.push('<li class="js-rule-node js-rule-conditional" data-rule-keyword="conditional" data-conditional-owner="'+e(pointer)+'" data-conditional-keywords="'+authoredBranches.join(' ')+'"><div class="js-rule-row"><strong class="js-rule-operator">CONDITIONAL</strong><span>'+authoredBranches.map(k=>labels[k]).join(' + ')+' · same instance</span>'+(options.active?menu('Actions for conditional','<button data-composition-delete-conditional data-composition-target="'+e(pointer)+'">Delete conditional</button>'):'')+'</div><ol class="js-rule-operands js-rule-branches">'+branches.map(keyword => Object.hasOwn(schema,keyword) ? operandRow(schema[keyword],pointer+'/'+keyword,options,keyword) : '<li class="js-rule-branch-empty js-rule-add" data-branch-keyword="'+keyword+'" data-branch-presence="not-authored"><strong>'+labels[keyword]+'</strong><span>Not authored</span>'+(options.active?seedControl(options.references)+'<button data-composition-add-branch="'+keyword+'" data-composition-target="'+e(pointer)+'">Add '+labels[keyword]+'</button>':'')+'</li>').join('')+'</ol></li>');
   const remaining = COMPOSITION_KEYWORDS.filter(k => !Object.hasOwn(schema,k));
-  const add = options.active && remaining.length ? '<div class="js-rule-add js-rule-add-root"><label>Add rule<select data-composition-add-rule-kind aria-label="Rule to add">'+remaining.map(k=>'<option value="'+k+'">'+labels[k]+'</option>').join('')+'</select></label>'+seedControl(options.references)+'<button data-composition-add-rule data-composition-target="'+e(pointer)+'">Add rule</button></div>' : '';
+  const add = options.active && remaining.length
+    ? options.addComposerOpen
+      ? '<div class="js-rule-add js-rule-add-root"><label>Add rule<select data-composition-add-rule-kind aria-label="Rule to add">'+remaining.map(k=>'<option value="'+k+'">'+labels[k]+'</option>').join('')+'</select></label>'+seedControl(options.references)+'<button data-composition-add-rule data-composition-target="'+e(pointer)+'">Add rule</button><button type="button" data-composition-add-cancel>Cancel</button></div>'
+      : '<div class="js-rule-add-compact"><button type="button" data-composition-add-start="'+e(pointer)+'">Add rule</button></div>'
+    : '';
   const diagnostics = options.diagnostics.filter(d=>d.location?.pointer && keys.some(k=> d.location!.pointer === pointer+'/'+k));
   return '<section class="js-design-section js-composition-editor" data-composition-editor data-composition-target="'+e(pointer)+'" data-authored-keywords="'+keys.join(' ')+'"><div class="js-section-head"><h2>Rules</h2><span>'+keys.length+' authored keywords</span></div>'+(!options.active?'<p class="js-capability-note">Rules are preserved but read-only because Conditional Composition is not active for this document.</p>':'')+(options.statusMessage?'<p class="js-inline-status" role="status">'+e(options.statusMessage)+'</p>':'')+'<ol class="js-rule-list" aria-label="Composition rules">'+(groups.join('')||'<li>No rules constrain this schema.</li>')+'</ol>'+add+(diagnostics.length?'<ul aria-label="Schema diagnostics">'+diagnostics.map(d=>'<li>'+e(d.code+': '+d.message)+'</li>').join('')+'</ul>':'')+'</section>';
 }

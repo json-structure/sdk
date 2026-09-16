@@ -45,22 +45,33 @@ export async function driveMountedCorpus(root, roots, manifestCarriers, options=
     button.scrollIntoView?.({block:'nearest'});if(options.requireLayout){const bounds=button.getBoundingClientRect(),style=getComputedStyle(button);if(bounds.width<1||bounds.height<1||style.visibility==='hidden'||style.display==='none'||button.closest('[inert]'))fail('Navigation action is not visibly selectable: '+button.outerHTML);}button.focus();button.click();await settle();
   };
   const sheet=()=>root.querySelector('[data-schema-sheet]');
+  const surface=()=>sheet()??root.querySelector('[data-panel-mode="design"]');
+  const formOf=value=>!rec(value)?'malformed':Object.hasOwn(value,'$ref')?(typeof value.$ref!=='string'?'malformed':keys.some(k=>Object.hasOwn(value,k))?'legacy-reference-rules':'legacy-reference'):!Object.hasOwn(value,'type')?(Object.keys(value).length?'no-type':'empty'):rec(value.type)?(typeof value.type.$ref==='string'?'typed-reference':'malformed'):value.type==='any'?'explicit-any':typeof value.type==='string'||Array.isArray(value.type)&&value.type.length?'explicit-type':'malformed';
+  const usesPrimary=(node,form=formOf(node.value))=>(node.step.kind==='root'||node.step.kind==='definition')&&(form==='explicit-type'||form==='explicit-any')&&!(rec(node.value)&&Array.isArray(node.value.type));
   const verify=node=>{
     const {pointer,label}=node.step, value=node.value;
     const bar=root.querySelector('[data-schema-location-bar]');
-    if(!bar)fail('No location bar at '+pointer);
-    eq(bar.dataset.schemaPointer,pointer,'exact pointer');eq(bar.dataset.schemaRelationship,label,'relationship at '+pointer);stats.relationships++;
-    const current=sheet();if(!current)fail('No schema sheet at '+pointer);
-    eq(current.dataset.schemaSheet,pointer,'sheet pointer');
-    const form=!rec(value)?'malformed':Object.hasOwn(value,'$ref')?(typeof value.$ref!=='string'?'malformed':keys.some(k=>Object.hasOwn(value,k))?'legacy-reference-rules':'legacy-reference'):!Object.hasOwn(value,'type')?(Object.keys(value).length?'no-type':'empty'):rec(value.type)?(typeof value.type.$ref==='string'?'typed-reference':'malformed'):value.type==='any'?'explicit-any':typeof value.type==='string'||Array.isArray(value.type)&&value.type.length?'explicit-type':'malformed';
-    eq(current.querySelector('[data-schema-declaration]')?.dataset.declarationForm,form,'declaration form at '+pointer);
-    if(form==='no-type'||form==='empty')eq(current.querySelector('[data-declaration-label]')?.textContent,'No declared type','absent type is not any');
-    if(rec(value)&&typeof value.type==='string')eq(current.querySelector('[data-inline-definition-type]')?.value,value.type,'type control retains '+value.type+' at '+pointer);
-    if(!rec(value)){if(!current.querySelector('[data-schema-opaque]'))fail('Opaque source not represented at '+pointer);return;}
+    const current=sheet();
+    const form=formOf(value);
+    const primary=usesPrimary(node,form);
+    if(primary){
+      if(current)fail('Ordinary root/definition unexpectedly opened a schema sheet at '+pointer);
+      if(bar)fail('Ordinary root/definition unexpectedly rendered a location bar at '+pointer);
+    }else{
+      if(!bar)fail('No location bar at '+pointer);
+      eq(bar.dataset.schemaPointer,pointer,'exact pointer');eq(bar.dataset.schemaRelationship,label,'relationship at '+pointer);stats.relationships++;
+      if(!current)fail('No schema sheet at '+pointer);
+      eq(current.dataset.schemaSheet,pointer,'sheet pointer');
+      eq(current.querySelector('[data-schema-declaration]')?.dataset.declarationForm,form,'declaration form at '+pointer);
+      if(form==='no-type'||form==='empty')eq(current.querySelector('[data-declaration-label]')?.textContent,'No declared type','absent type is not any');
+    }
+    const active=surface();if(!active)fail('No active Design surface at '+pointer);
+    if(rec(value)&&typeof value.type==='string')eq(active.querySelector('[data-inline-definition-type]')?.value,value.type,'type control retains '+value.type+' at '+pointer);
+    if(!rec(value)){if(!current?.querySelector('[data-schema-opaque]'))fail('Opaque source not represented at '+pointer);return;}
     const reference=typeof value.$ref==='string'?value.$ref:rec(value.type)&&typeof value.type.$ref==='string'?value.type.$ref:undefined;
-    if(reference){eq(current.querySelector('[data-schema-reference]')?.dataset.schemaReference,reference,'reference bytes at '+pointer);if(typeof value.$ref==='string')stats.legacyReferences++;else stats.canonicalReferences++;}
+    if(reference){eq(active.querySelector('[data-schema-reference]')?.dataset.schemaReference,reference,'reference bytes at '+pointer);if(typeof value.$ref==='string')stats.legacyReferences++;else stats.canonicalReferences++;}
     const authored=keys.filter(k=>Object.hasOwn(value,k));
-    const rules=current.querySelector('[data-composition-editor]');
+    const rules=active.querySelector('[data-composition-editor]');
     if(authored.length){eq(rules?.dataset.authoredKeywords.split(' '),authored,'authored keyword set at '+pointer);eq(manifestCarriers[pointer],authored,'independent manifest carrier '+pointer);stats.carriers++;stats.keywords+=authored.length;stats.visitedCarriers.push(pointer);}
     else if(rules)eq(rules.dataset.authoredKeywords,'','no invented rules');
     for(const keyword of ['allOf','anyOf','oneOf'])if(Object.hasOwn(value,keyword)){
@@ -78,13 +89,15 @@ export async function driveMountedCorpus(root, roots, manifestCarriers, options=
     }
     const excluded=new Set(['type','$ref','properties','items','values','choices','definitions',...keys]);
     for(const[key,member]of Object.entries(value))if(!excluded.has(key)){
-      const row=[...current.querySelectorAll('[data-schema-member]')].find(el=>el.dataset.schemaMember===key);
-      eq(row?.querySelector('pre')?.textContent,JSON.stringify(member,null,2),'complete contained member '+pointer+'/'+key);
+      if(current){
+        const row=[...current.querySelectorAll('[data-schema-member]')].find(el=>el.dataset.schemaMember===key);
+        eq(row?.querySelector('pre')?.textContent,JSON.stringify(member,null,2),'complete contained member '+pointer+'/'+key);
+      }
     }
-    if(current.querySelector('.js-composition-schema-editor,.js-rule-nested,.js-rule-disclosure'))fail('Recursive/reduced operand editor at '+pointer);
+    if(active.querySelector('.js-composition-schema-editor,.js-rule-nested,.js-rule-disclosure'))fail('Recursive/reduced operand editor at '+pointer);
   };
   const childButton=step=>{
-    const current=sheet();if(step.kind==='operand'||step.kind==='branch'){
+    const current=surface();if(step.kind==='operand'||step.kind==='branch'){
       const group=current.querySelector('[data-rule-keyword="'+(step.kind==='branch'?'conditional':step.keyword)+'"]');
       if(step.kind==='branch')return group?.querySelector('[data-branch-keyword="'+step.keyword+'"] [data-schema-open]');
       return group?.querySelectorAll('[data-schema-open]')[step.index??0];
@@ -99,7 +112,9 @@ export async function driveMountedCorpus(root, roots, manifestCarriers, options=
       eq(root.ownerDocument.activeElement?.hasAttribute('data-schema-heading'),true,'drill-in heading focus');
       await visit(child);
       await click(root.querySelector('[data-schema-back]'));
-      const bar=root.querySelector('[data-schema-location-bar]');eq(bar.dataset.schemaPointer,node.step.pointer,'Back restores parent');eq(bar.dataset.schemaRelationship,node.step.label,'Back restores relationship');
+      const bar=root.querySelector('[data-schema-location-bar]');
+      if(usesPrimary(node)){if(sheet())fail('Back did not restore primary owner surface');if(bar)fail('Back retained nested location bar on primary owner');}
+      else {eq(bar?.dataset.schemaPointer,node.step.pointer,'Back restores parent');eq(bar?.dataset.schemaRelationship,node.step.label,'Back restores relationship');}
       eq(root.ownerDocument.activeElement?.dataset.schemaOpen,child.step.pointer,'Back restores invoking row');
     }
   };

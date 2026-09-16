@@ -306,7 +306,7 @@ describe('workbench interaction markup', () => {
     expect(menuHtml).toContain('>Delete property</button>');
   });
 
-  it('renders accurate collection summaries with Open schema instead of nested mini-editors', () => {
+  it('keeps collection members editable inline while retaining compact schema drill-in', () => {
     const pointer = '/definitions/Route/properties/waypoints';
     const html = designView('Route', 'object', undefined, [{
       name: 'waypoints', pointer, type: 'array', required: false,
@@ -315,10 +315,44 @@ describe('workbench interaction markup', () => {
       { name: 'Point', pointer: '/definitions/Geo/Point' },
     ]);
     expect(html).toContain('array&lt;Geo.Point&gt;');
+    expect(html).toContain('js-collection-expression');
+    expect(html).toContain('>Item type</span>');
+    expect(html).toContain(`data-property-pointer="${pointer}/items"`);
+    expect(html).toContain(`data-inline-type-replace="ref:#/definitions/Geo/Point"`);
     expect(html).toContain('data-schema-open="'+pointer+'"');
     expect(html).toContain('Open local schema waypoints');
-    expect(html).not.toContain('js-collection-expression');
-    expect(html).not.toContain('data-nested-schema');
+    expect(html).not.toContain('class="js-schema-location-bar"');
+  });
+
+  it('keeps ordinary definitions on the established renderer and places Rules after primary editing', () => {
+    const pointer = '/definitions/Measurement';
+    const document = {
+      $schema: 'https://json-structure.org/meta/validation/v0/#',
+      definitions: {
+        Measurement: {
+          type: 'object',
+          properties: { value: { type: 'decimal', precision: 20, scale: 8 } },
+        },
+      },
+    };
+    const html = designView('Measurement', 'object', undefined, [{
+      name: 'value',
+      pointer: `${pointer}/properties/value`,
+      type: 'decimal',
+      required: false,
+      schema: document.definitions.Measurement.properties.value,
+    }], pointer, [], [], 'local', undefined, undefined, [], document, new Set(), false, false, pointer, false, undefined, undefined, {
+      document,
+      targetPointer: pointer,
+      diagnostics: [],
+      active: true,
+    });
+    expect(html).toContain('class="js-type-head"');
+    expect(html).not.toContain('data-schema-sheet');
+    expect(html).not.toContain('data-schema-location-bar');
+    expect(html).toContain('data-composition-add-start');
+    expect(html).not.toContain('data-composition-add-rule-kind');
+    expect(html.indexOf('<h2>Properties</h2>')).toBeLessThan(html.indexOf('data-composition-editor'));
   });
 
   it('renders structured collection branches inside nullable unions without losing members', () => {

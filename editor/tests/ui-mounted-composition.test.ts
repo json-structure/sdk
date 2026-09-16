@@ -26,7 +26,9 @@ describe('mounted schema-location authoring journeys',()=>{
   });
   it('authors all seven rules independently, with empty or explicit seeds and never silent type:any',async()=>{
     const root=mount({$schema:meta,type:'string'});
-    for(const keyword of ['then','else','if','allOf','anyOf','oneOf','not']){change(root,'.js-rule-add-root [data-composition-add-rule-kind]',keyword);click(root,'.js-rule-add-root [data-composition-add-rule]');await settle();expect(value()[keyword]).toEqual(['allOf','anyOf','oneOf'].includes(keyword)?[{}]:{});}
+    expect(root.querySelector('[data-schema-sheet]')).toBeNull();
+    expect(root.querySelector('.js-type-head')).not.toBeNull();
+    for(const keyword of ['then','else','if','allOf','anyOf','oneOf','not']){if(!root.querySelector('.js-rule-add-root'))click(root,'[data-composition-add-start]');change(root,'.js-rule-add-root [data-composition-add-rule-kind]',keyword);click(root,'.js-rule-add-root [data-composition-add-rule]');await settle();expect(value()[keyword]).toEqual(['allOf','anyOf','oneOf'].includes(keyword)?[{}]:{});}
     click(root,'[data-branch-keyword="if"] [data-composition-remove-branch]');await settle();expect(Object.hasOwn(value(),'if')).toBe(false);expect(value().then).toEqual({});expect(value().else).toEqual({});expect(root.querySelector('[data-operand-pointer="/if"]')).toBeNull();
   });
   it('adds complete type, canonical reference and source seeds without erasing legacy bytes',async()=>{

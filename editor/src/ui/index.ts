@@ -12,7 +12,7 @@ import {
   UnwrapCompositionOperandCommand, WrapCompositionOperandCommand, type EditorCommand
 } from '../commands.js';
 import type { CompositionArrayKeyword, CompositionKeyword } from '../composition.js';
-import { SchemaLocationIndex, SchemaLocationNavigation, transformSchemaPointer, type PointerTransformation, type SchemaNavigationSnapshot } from '../schema-locations.js';
+import { SchemaLocationIndex, SchemaLocationNavigation, transformSchemaPointer, type PointerTransformation, type SchemaLocation, type SchemaNavigationSnapshot } from '../schema-locations.js';
 import { ReplaceSchemaSourceCommand, ChangeCollectionKindCommand } from '../schema-location-commands.js';
 import { schemaLocationBar, schemaDeclarationView, schemaMemberInventory, schemaChildLocations, schemaOpenButton, type SchemaSheetOptions } from './schema-sheet.js';
 import { loadExternalDocuments } from '../external-documents.js';
@@ -242,6 +242,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
   const pendingPropertyFields = new Set<string>();
   let relationDraftOpen = false;
   let compositionStatus = '';
+  let compositionAddTarget: string | undefined;
   let instanceText = '{}';
   let instanceResult: InstanceValidationResult | undefined;
   let instanceWorkspace: InstanceWorkspace | undefined;
@@ -362,6 +363,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     propertyMenuPointer = undefined;
     schemaNavigation.reset();
     schemaEditHistory.length = 0;
+    compositionAddTarget = undefined;
     instanceResult = undefined; instanceWorkspace = undefined; instanceRootPointer = undefined; instanceVersion += 1;
     disposeSourceModel();
   };
@@ -435,6 +437,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
   };
   const select = (pointer: string | undefined, nextMode?: Mode): void => {
     selectedIdentity = undefined;
+    if (pointer !== selectedPointer || nextMode !== undefined) compositionAddTarget = undefined;
     if ((nextMode === undefined || pointer !== selectedPointer) && pointer !== undefined && schemaLocations.at(pointer)) schemaNavigation.open(pointer);
     selectedPointer = pointer;
     activePropertyField = undefined;
@@ -460,20 +463,29 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       }
     }, 0);
   };
+  const owningSchemaPointer = (pointer: string): string => {
+    const owner = [...schemaLocations.ancestors(pointer)].reverse().find((location) => location.kind === 'definition' || location.kind === 'root');
+    return owner?.pointer ?? '';
+  };
   const openSchema = (pointer: string, invokerId?: string): void => {
     if (!schemaNavigation.open(pointer,invokerId)) return;
-    selectedPointer = pointer; selectedIdentity = undefined; documentPageOpen = false;
+    const location = schemaNavigation.current;
+    selectedPointer = location && schemaLocationUsesSheet(location) ? owningSchemaPointer(pointer) : pointer;
+    selectedIdentity = undefined; documentPageOpen = false;
     activePropertyField = undefined; propertyMenuPointer = undefined; expandedPropertyPointer = undefined;
-    mode = 'design'; lastRepresentationMode = 'design'; focusSchemaHeading = true;
+    compositionAddTarget = undefined;
+    mode = 'design'; lastRepresentationMode = 'design'; focusSchemaHeading = Boolean(location && schemaLocationUsesSheet(location));
     render();
   };
   const travelSchema = (direction: 'back' | 'forward'): void => {
     const location = direction === 'back' ? schemaNavigation.back() : schemaNavigation.forward();
     if (!location) return;
-    selectedPointer = location.pointer; documentPageOpen = false; mode = 'design'; lastRepresentationMode = 'design';
+    selectedPointer = schemaLocationUsesSheet(location) ? owningSchemaPointer(location.pointer) : location.pointer;
+    documentPageOpen = false; mode = 'design'; lastRepresentationMode = 'design';
     activePropertyField = undefined; propertyMenuPointer = undefined;
+    compositionAddTarget = undefined;
     schemaFocusId = direction === 'back' ? schemaNavigation.focusId : undefined;
-    focusSchemaHeading = !schemaFocusId;
+    focusSchemaHeading = !schemaFocusId && schemaLocationUsesSheet(location);
     render();
   };
   const showSchemaLocationPicker = (): void => {
@@ -614,13 +626,22 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     selectedPointer = selectFallback(snapshot, selectedPointer);
     const selectedLocation = selectedPointer === undefined ? undefined : schemaLocations.at(selectedPointer);
     const namespaceSelected = selectedPointer !== undefined && !selectedLocation && namespacePointers(session.value,typeDefinitions.map(d=>d.pointer)).includes(selectedPointer);
-    if (selectedLocation && (selectedLocation.kind === 'definition' || !schemaNavigation.current && (selectedLocation.kind !== 'root' || isInlineRootSchema(session.value)))) schemaNavigation.open(selectedLocation.pointer);
+    const currentOwnerPointer = schemaNavigation.current
+      ? [...schemaLocations.ancestors(schemaNavigation.current.pointer)].reverse().find((location) => location.kind === 'definition' || location.kind === 'root')?.pointer
+      : undefined;
+    if (selectedLocation && (selectedLocation.kind === 'definition' || selectedLocation.kind === 'root' && isInlineRootSchema(session.value)) && currentOwnerPointer !== selectedLocation.pointer) schemaNavigation.open(selectedLocation.pointer);
     if (schemaNavigation.current && !namespaceSelected) schemaNavigation.reconcile(selectedPointer);
+    const activeLocation = schemaNavigation.current;
+    const sheetLocation = activeLocation && schemaLocationUsesSheet(activeLocation) ? activeLocation : undefined;
+    const sheetOwner = sheetLocation
+      ? [...schemaLocations.ancestors(sheetLocation.pointer)].reverse().find((location) => location.kind === 'definition' || location.kind === 'root')
+      : undefined;
     const selectedDefinition = selectedPointer === '' ? undefined : definitions.find((definition) => definition.pointer === selectedPointer) ?? definitions.find((definition) => selectedPointer?.startsWith(`${definition.pointer}/`));
-    const definitionPointer = namespaceSelected ? undefined : schemaNavigation.current?.pointer ?? selectedDefinition?.pointer ?? (isInlineRootSchema(session.value) ? '' : undefined);
-    const rows = definitionPointer === undefined ? [] : projectSchemaProperties(session.value, definitionPointer);
-    const effectiveMembers = definitionPointer !== undefined && session.value && typeof session.value === 'object' && !Array.isArray(session.value)
-      ? resolveEffectiveMembers(session.value as Record<string, unknown>, definitionPointer, { documentUri: session.uri, resolvedDocuments: session.resolvedSchemaDocuments, addIns: selectedAddIns })
+    const definitionPointer = namespaceSelected ? undefined : sheetOwner?.pointer ?? selectedDefinition?.pointer ?? (isInlineRootSchema(session.value) ? '' : undefined);
+    const activeSchemaPointer = sheetLocation?.pointer ?? definitionPointer;
+    const rows = activeSchemaPointer === undefined ? [] : projectSchemaProperties(session.value, activeSchemaPointer);
+    const effectiveMembers = activeSchemaPointer !== undefined && session.value && typeof session.value === 'object' && !Array.isArray(session.value)
+      ? resolveEffectiveMembers(session.value as Record<string, unknown>, activeSchemaPointer, { documentUri: session.uri, resolvedDocuments: session.resolvedSchemaDocuments, addIns: selectedAddIns })
       : undefined;
     const instanceRoots = definitions.filter((definition) => definition.type !== undefined).map((definition) => ({ pointer: definition.pointer, label: definition.name }));
     const defaultInstanceRoot = snapshot.model?.rootPointer ?? (isInlineRootSchema(session.value) ? '' : instanceRoots[0]?.pointer);
@@ -652,18 +673,19 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     graphMinimapLayout.settle();
     forceGraphMinimapLayoutBySnapshot.set(snapshot, graphMinimapLayout);
     const compositionEvaluation = instanceResult;
-    const compositionOptions: CompositionEditorOptions | undefined = definitionPointer === undefined ? undefined : {
+    const compositionOptions: CompositionEditorOptions | undefined = activeSchemaPointer === undefined ? undefined : {
       document: session.value,
-      targetPointer: definitionPointer,
+      targetPointer: activeSchemaPointer,
       diagnostics: snapshot.diagnostics,
       evaluation: compositionEvaluation,
       references: effectiveReferenceChoices(session).map((choice) => ({ value: `#${choice.pointer}`, label: choice.name })),
       active: session.capabilities.conditionalCompositionActive,
+      addComposerOpen: compositionAddTarget === activeSchemaPointer,
       statusMessage: compositionStatus,
       documentVersion: snapshot.documentVersion,
       instanceVersion,
     };
-    root.innerHTML = structuredWorkbenchShell(snapshot, documentTitle, typeDefinitions, definitionPointer, rows, selectedPointer, mode, problemsOpen, designMemberMode, effectiveMembers, expandedPropertyPointer, options.chrome ?? 'document', pendingPropertyFields, relationDraftOpen, typeCreatorOpen, activePropertyField, propertyMenuPointer, documentPageOpen, compositionOptions, definitionPointer === undefined ? undefined : { index: schemaLocations, navigation: schemaNavigation, source: snapshot.text, knownMembers: schemaKnownMembers() });
+    root.innerHTML = structuredWorkbenchShell(snapshot, documentTitle, typeDefinitions, definitionPointer, rows, selectedPointer, mode, problemsOpen, designMemberMode, effectiveMembers, expandedPropertyPointer, options.chrome ?? 'document', pendingPropertyFields, relationDraftOpen, typeCreatorOpen, activePropertyField, propertyMenuPointer, documentPageOpen, compositionOptions, sheetLocation ? { index: schemaLocations, navigation: schemaNavigation, source: snapshot.text, knownMembers: schemaKnownMembers() } : undefined);
     root.querySelectorAll('[data-schema-open]').forEach((button: HTMLElement) => { button.dataset.schemaLocationId = schemaLocations.at(button.dataset.schemaOpen ?? '')?.id ?? ''; });
     if (startConversionChooserOpen) {
       root.querySelector('.js-shell')?.insertAdjacentHTML('beforeend', startConversionChooserDialog(conversionManifest ?? BUILTIN_CONVERSION_COMMANDS_MANIFEST));
@@ -809,7 +831,8 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
           render();
           return;
         }
-        if (pointer !== undefined && schemaLocations.at(pointer)) { schemaNavigation.open(pointer); focusSchemaHeading = true; }
+        const location = pointer === undefined ? undefined : schemaLocations.at(pointer);
+        if (location) { schemaNavigation.open(pointer!); focusSchemaHeading = schemaLocationUsesSheet(location); }
         select(pointer);
       };
       target.addEventListener('click', selectType);
@@ -2388,8 +2411,19 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       else if(keyword==='anyOf')applyCompositionCommand(new SetAnyOfCommand(target,value===undefined?undefined:[value]));
       else applyCompositionCommand(new SetOneOfCommand(target,value===undefined?undefined:[value]));
     };
+    root.querySelectorAll('[data-composition-add-start]').forEach((button: HTMLButtonElement)=>button.addEventListener('click',()=>{
+      compositionAddTarget=button.dataset.compositionAddStart ?? schemaNavigation.current?.pointer ?? definitionPointer;
+      render();
+      queueMicrotask(() => (root.querySelector('[data-composition-add-rule-kind]') as HTMLElement | null)?.focus());
+    }));
+    root.querySelectorAll('[data-composition-add-cancel]').forEach((button: HTMLButtonElement)=>button.addEventListener('click',()=>{
+      const target=schemaNavigation.current?.pointer ?? definitionPointer;
+      compositionAddTarget=undefined;
+      render();
+      queueMicrotask(() => (root.querySelector(`[data-composition-add-start="${cssAttributeValue(target ?? '')}"]`) as HTMLElement | null)?.focus());
+    }));
     root.querySelectorAll('[data-composition-seed-kind]').forEach((control: HTMLSelectElement)=>control.addEventListener('change',()=>{const label=control.closest('.js-rule-add')?.querySelector('[data-composition-seed-source-label]');if(label)label.hidden=control.value!=='source';}));
-    root.querySelectorAll('[data-composition-add-rule]').forEach((button: HTMLButtonElement)=>button.addEventListener('click',()=>{const keyword=button.closest('.js-rule-add')?.querySelector('[data-composition-add-rule-kind]')?.value as CompositionKeyword; const seed=seedAt(button);if(keyword&&seed)setRule(button.dataset.compositionTarget ?? '',keyword,seed);}));
+    root.querySelectorAll('[data-composition-add-rule]').forEach((button: HTMLButtonElement)=>button.addEventListener('click',()=>{const keyword=button.closest('.js-rule-add')?.querySelector('[data-composition-add-rule-kind]')?.value as CompositionKeyword; const seed=seedAt(button);if(keyword&&seed){compositionAddTarget=undefined;setRule(button.dataset.compositionTarget ?? '',keyword,seed);}}));
     root.querySelectorAll('[data-composition-delete-rule]').forEach((button: HTMLButtonElement)=>button.addEventListener('click',()=>setRule(button.dataset.compositionTarget ?? '',button.dataset.compositionDeleteRule as CompositionKeyword,undefined)));
     root.querySelectorAll('[data-composition-convert]').forEach((control: HTMLSelectElement)=>control.addEventListener('change',()=>applyCompositionCommand(new ConvertCompositionRuleCommand(control.dataset.compositionTarget ?? '',control.getAttribute('data-composition-from') as CompositionArrayKeyword,control.value as CompositionArrayKeyword))));
     root.querySelectorAll('[data-composition-add-operand]').forEach((button: HTMLButtonElement)=>button.addEventListener('click',()=>{const seed=seedAt(button);if(seed)applyCompositionCommand(new AddCompositionOperandCommand(button.dataset.compositionTarget ?? '',button.dataset.compositionKeyword as CompositionArrayKeyword,seed));}));
@@ -3941,13 +3975,18 @@ function namespaceTreeSegments(pointer: string): readonly string[] {
 
 function structuredWorkbenchShell(snapshot: DocumentSnapshot, title: string, definitions: readonly { readonly name: string; readonly pointer: string; readonly namespace: string; readonly identity?: readonly string[]; readonly imported?: boolean; readonly documentUri?: string; readonly sourcePointer?: string; readonly root?: boolean }[], definitionPointer: string | undefined, rows: readonly PropertyRow[], selectedPointer: string | undefined, mode: Mode, problemsOpen: boolean, memberMode: DesignMemberMode, effectiveMembers: EffectiveMembersResult | undefined, expandedPropertyPointer: string | undefined, chrome: NonNullable<JsonStructureEditorOptions['chrome']> = 'document', pendingPropertyFields: ReadonlySet<string> = new Set(), relationDraftOpen = false, typeCreatorOpen = false, activePropertyField?: { readonly pointer: string; readonly field: 'name' | 'type' | 'description' }, propertyMenuPointer?: string, documentPageOpen = false, compositionOptions?: CompositionEditorOptions, schemaSheet?: SchemaSheetOptions): string {
   const definition = snapshot.model?.projections.definitions.find((item) => item.pointer === definitionPointer);
-  const selectedRelation = definition?.relations.find((relation) => relation.pointer === selectedPointer);
-  const selectedDiagnostics = diagnosticsForPointer(snapshot.diagnostics, selectedPointer);
+  const schemaOwnerPointer = schemaSheet?.navigation.current
+    ? [...schemaSheet.index.ancestors(schemaSheet.navigation.current.pointer)].reverse().find((location) => location.kind === 'definition' || location.kind === 'root')?.pointer
+    : undefined;
+  const navigationSelection = schemaOwnerPointer ?? selectedPointer;
+  const inspectorSelection = schemaSheet ? definitionPointer : selectedPointer;
+  const selectedRelation = definition?.relations.find((relation) => relation.pointer === inspectorSelection);
+  const selectedDiagnostics = diagnosticsForPointer(snapshot.diagnostics, inspectorSelection);
   const errors = snapshot.diagnostics.filter((diagnostic) => diagnostic.severity === 'error').length;
   const warnings = snapshot.diagnostics.filter((diagnostic) => diagnostic.severity === 'warning').length;
   const documentStatus = snapshot.recovery !== 'valid' || errors ? 'invalid' : warnings ? 'warnings' : 'valid';
   const documentValue = snapshot.recovery === 'valid' ? JSON.parse(snapshot.text) : {};
-  const selectedProperty = rows.find((row) => row.pointer === selectedPointer) ?? propertyRowAtPointer(documentValue, selectedPointer);
+  const selectedProperty = schemaSheet ? undefined : rows.find((row) => row.pointer === selectedPointer) ?? propertyRowAtPointer(documentValue, selectedPointer);
   const profile = detectMetaSchemaMode(documentValue);
   const activeCompanions = Object.entries(profile.capabilities).filter(([name, active]) => name !== 'core' && name !== 'unknownUses' && active === true).length;
   const primaryModes: readonly { readonly mode: Extract<Mode, 'design' | 'graph' | 'source' | 'instance' | 'conversion'>; readonly icon: FluentIconName; readonly label: string }[] = [
@@ -3957,7 +3996,7 @@ function structuredWorkbenchShell(snapshot: DocumentSnapshot, title: string, def
     { mode: 'instance', icon: 'checkmarkCircle', label: 'Validate' },
     { mode: 'conversion', icon: 'arrowSwap', label: 'Convert' },
   ];
-  const typeTree = renderTypeTree(definitions, namespacePointers(documentValue, definitions.map((definition) => definition.pointer)), documentPageOpen ? undefined : selectedPointer);
+  const typeTree = renderTypeTree(definitions, namespacePointers(documentValue, definitions.map((definition) => definition.pointer)), documentPageOpen ? undefined : navigationSelection);
   const activeDeclaration = definitionPointer !== undefined ? valueAtPointer(documentValue, definitionPointer) : undefined;
   const activeType = definition?.type ?? (isRecord(activeDeclaration) && typeof activeDeclaration.type === 'string' ? activeDeclaration.type : undefined);
   const activeDescription = definition?.description ?? (isRecord(activeDeclaration) && typeof activeDeclaration.description === 'string' ? activeDeclaration.description : undefined);
@@ -3965,7 +4004,7 @@ function structuredWorkbenchShell(snapshot: DocumentSnapshot, title: string, def
   const activeIdentity = definition?.identity ?? [];
   const activeRelations = definition?.relations ?? [];
   const inlineRootEntry = isInlineRootSchema(documentValue)
-    ? `<button role="treeitem" class="js-tree-item js-tree-inline-root" data-select="" aria-current="${selectedPointer === ''}"><span class="js-kind" aria-hidden="true">${fluentIcon('document')}</span><span>Inline root</span><small>root</small></button>`
+    ? `<button role="treeitem" class="js-tree-item js-tree-inline-root" data-select="" aria-current="${navigationSelection === ''}"><span class="js-kind" aria-hidden="true">${fluentIcon('document')}</span><span>Inline root</span><small>root</small></button>`
     : '';
   const activities = primaryModes.map((item) => `<button class="js-activity-button" data-mode="${item.mode}" aria-label="${item.label}" title="${item.label}" aria-pressed="${mode === item.mode}">${fluentIcon(item.icon)}</button>`).join('');
   const schemaUri = isSchemaRecord(documentValue) && typeof documentValue.$schema === 'string' ? documentValue.$schema : '';
@@ -4208,54 +4247,62 @@ export function designView(name: string | undefined, type: string | undefined, d
   const authoredNamespaces = namespacePointers(document, definitions.map((definition) => definition.pointer));
   if (!name && !type && selectedPointer && authoredNamespaces.includes(selectedPointer)) return namespaceDesignView(selectedPointer, document, definitions);
   if (!schemaSheet?.navigation.current && !name && !type && !(definitionPointer === '' && isInlineRootSchema(document))) return typeCreatorView(definitions.length === 0);
-  const declarationPointer = definitionPointer ?? '';
+  const declarationPointer = schemaSheet?.navigation.current?.pointer ?? definitionPointer ?? '';
   const rawDeclaration = valueAtPointer(document, declarationPointer);
   const declaration = isSchemaRecord(rawDeclaration) ? rawDeclaration : undefined;
   if (schemaSheet?.navigation.current && !declaration) {
     const location = schemaSheet.navigation.current;
     const authored = location.range?.startOffset !== undefined && location.range.endOffset !== undefined ? schemaSheet.source.slice(location.range.startOffset,location.range.endOffset) : JSON.stringify(rawDeclaration,null,2);
-    return schemaLocationBar(schemaSheet) + '<div class="js-sheet js-schema-sheet" data-schema-sheet="' + escapeAttribute(declarationPointer) + '">' + schemaDeclarationView(location,'','',compositionOptions) + '<section class="js-design-section"><h2>Rules</h2><p>Opaque value; no schema rules can be interpreted.</p></section><section class="js-design-section"><h2>Structure</h2><p>Not a schema object.</p></section><section class="js-design-section"><h2>Constraints and annotations</h2><p>No interpreted members.</p></section><section class="js-design-section"><h2>Unsupported source members</h2><pre data-schema-opaque>' + escapeHtml(authored ?? '') + '</pre><button data-composition-source="' + escapeAttribute(declarationPointer) + '">Edit source</button></section></div>';
+    return schemaLocationBar(schemaSheet) + '<div class="js-sheet js-schema-sheet" data-schema-sheet="' + escapeAttribute(declarationPointer) + '">' + schemaDeclarationView(location,'','',compositionOptions) + '<section class="js-design-section"><h2>Structure</h2><p>Not a schema object.</p></section><section class="js-design-section"><h2>Constraints and annotations</h2><p>No interpreted members.</p></section><section class="js-design-section"><h2>Unsupported source members</h2><pre data-schema-opaque>' + escapeHtml(authored ?? '') + '</pre><button data-composition-source="' + escapeAttribute(declarationPointer) + '">Edit source</button></section></div>';
   }
+  const activeType = schemaSheet
+    ? typeof declaration?.type === 'string' ? declaration.type : undefined
+    : type;
+  const activeIdentity = schemaSheet && Array.isArray(declaration?.identity)
+    ? declaration.identity.filter((entry): entry is string => typeof entry === 'string')
+    : identity;
+  const activeRelations = schemaSheet ? [] : relations;
   const capabilities = resolveCapabilities(document);
-  const localPropertyRows = rows.map((row) => propertyEditorRow(row, row.pointer === selectedPointer, row.pointer === expandedPropertyPointer, identity.includes(row.name), definitions, document, pendingPropertyFields, type === 'tuple', new Set(), activePropertyField, propertyMenuPointer === row.pointer, selectedPointer, propertyMenuPointer, expandedPropertyPointer)).join('');
-  const effectiveRows = effectiveMembers?.members.map((member) => `<div class="js-row js-effective-row" role="row" data-member-origin="${member.provenance}"><div class="js-cell" role="cell"><button class="js-property-link js-code" data-effective-source="${escapeAttribute(member.sourcePointer)}" data-effective-document="${escapeAttribute(member.documentUri)}">${escapeHtml(member.name)}</button></div><div class="js-cell js-code" role="cell">${escapeHtml(displayPropertyValueTypes(member.schema))}</div><div class="js-cell js-nullable-indicator" role="cell">${inlinePropertyNullable(member.schema) ? 'yes' : 'no'}</div><div class="js-cell js-identity-indicator" role="cell">${identity.includes(member.name) ? 'yes' : 'no'}</div><div class="js-cell ${member.required ? 'js-required' : 'js-optional'}" role="cell">${member.required ? 'required' : 'optional'}</div><div class="js-cell js-description-cell" role="cell"><span class="js-origin-chip">${escapeHtml(member.provenance)}</span>${member.addIn ? ` ${escapeHtml(member.addIn)}` : ''}${member.inheritedVia.length ? `<small>${member.inheritedVia.map(pointerLabel).map(escapeHtml).join(' → ')}</small>` : ''}${member.imports.length ? `<small>${member.imports.map((item) => `${item.keyword} ${item.importSource}`).map(escapeHtml).join(' → ')}</small>` : ''}</div><div class="js-cell js-action-cell" role="cell"><button class="js-row-action" data-effective-source="${escapeAttribute(member.sourcePointer)}" data-effective-document="${escapeAttribute(member.documentUri)}" aria-label="Open declaration of ${escapeAttribute(member.name)}">↗</button></div></div>`).join('') ?? '';
+  const localPropertyRows = rows.map((row) => propertyEditorRow(row, row.pointer === selectedPointer, row.pointer === expandedPropertyPointer, activeIdentity.includes(row.name), definitions, document, pendingPropertyFields, activeType === 'tuple', new Set(), activePropertyField, propertyMenuPointer === row.pointer, selectedPointer, propertyMenuPointer, expandedPropertyPointer)).join('');
+  const effectiveRows = effectiveMembers?.members.map((member) => `<div class="js-row js-effective-row" role="row" data-member-origin="${member.provenance}"><div class="js-cell" role="cell"><button class="js-property-link js-code" data-effective-source="${escapeAttribute(member.sourcePointer)}" data-effective-document="${escapeAttribute(member.documentUri)}">${escapeHtml(member.name)}</button></div><div class="js-cell js-code" role="cell">${escapeHtml(displayPropertyValueTypes(member.schema))}</div><div class="js-cell js-nullable-indicator" role="cell">${inlinePropertyNullable(member.schema) ? 'yes' : 'no'}</div><div class="js-cell js-identity-indicator" role="cell">${activeIdentity.includes(member.name) ? 'yes' : 'no'}</div><div class="js-cell ${member.required ? 'js-required' : 'js-optional'}" role="cell">${member.required ? 'required' : 'optional'}</div><div class="js-cell js-description-cell" role="cell"><span class="js-origin-chip">${escapeHtml(member.provenance)}</span>${member.addIn ? ` ${escapeHtml(member.addIn)}` : ''}${member.inheritedVia.length ? `<small>${member.inheritedVia.map(pointerLabel).map(escapeHtml).join(' → ')}</small>` : ''}${member.imports.length ? `<small>${member.imports.map((item) => `${item.keyword} ${item.importSource}`).map(escapeHtml).join(' → ')}</small>` : ''}</div><div class="js-cell js-action-cell" role="cell"><button class="js-row-action" data-effective-source="${escapeAttribute(member.sourcePointer)}" data-effective-document="${escapeAttribute(member.documentUri)}" aria-label="Open declaration of ${escapeAttribute(member.name)}">↗</button></div></div>`).join('') ?? '';
   const propertyRows = memberMode === 'effective' ? effectiveRows : localPropertyRows;
   const conflictView = memberMode === 'effective' && effectiveMembers ? `${effectiveMembers.conflicts.map((conflict) => `<div class="js-conflict"><strong>${escapeHtml(conflict.name)}</strong><span>${escapeHtml(conflict.reason)} · ${escapeHtml(conflict.winner)} wins over ${escapeHtml(conflict.loser)}</span></div>`).join('')}${effectiveMembers.diagnostics.map((diagnostic) => `<div class="js-conflict"><strong>${escapeHtml(diagnostic.code)}</strong><span>${escapeHtml(diagnostic.message)}</span></div>`).join('')}` : '';
-  const relationRows = relations.map((relation) => `<button class="js-relation-row" data-select="${escapeAttribute(relation.pointer)}" aria-current="${relation.pointer === selectedPointer}"><span><strong>${escapeHtml(relation.name)}</strong><small>${escapeHtml(relation.targetTypeRef ?? 'No target')}</small></span><span class="js-chip">${escapeHtml(relation.cardinality ?? 'single')}</span><span class="js-relation-scope">${escapeHtml(formatRelationScope(relation.scope))}</span><span aria-hidden="true">${fluentIcon('chevronRight', 'js-chevron')}</span></button>`).join('');
+  const relationRows = activeRelations.map((relation) => `<button class="js-relation-row" data-select="${escapeAttribute(relation.pointer)}" aria-current="${relation.pointer === selectedPointer}"><span><strong>${escapeHtml(relation.name)}</strong><small>${escapeHtml(relation.targetTypeRef ?? 'No target')}</small></span><span class="js-chip">${escapeHtml(relation.cardinality ?? 'single')}</span><span class="js-relation-scope">${escapeHtml(formatRelationScope(relation.scope))}</span><span aria-hidden="true">${fluentIcon('chevronRight', 'js-chevron')}</span></button>`).join('');
   const relationDraft = relationDraftOpen ? inlineRelationDraft(definitions, document) : '';
   const relationCapability = capabilities.relationsActive ? '' : '<p class="js-capability-note">Adding an identity or relation will activate the compatible Relations capability for this document.</p>';
-  const relationsView = type === 'object' || type === 'tuple'
-    ? `<section class="js-design-section"><div class="js-section-head"><div><h2>Relations</h2><span class="js-section-meta">${relations.length}</span></div><button data-inline-relation-add ${relationDraftOpen ? 'disabled' : ''}>${fluentIcon('add')}<span>Add relation</span></button></div>${relationCapability}<div class="js-relation-list">${relationRows}${relationDraft || (!relationRows ? '<p class="js-description">No relations declared.</p>' : '')}</div></section>`
+  const relationsView = !schemaSheet && (activeType === 'object' || activeType === 'tuple')
+    ? `<section class="js-design-section"><div class="js-section-head"><div><h2>Relations</h2><span class="js-section-meta">${activeRelations.length}</span></div><button data-inline-relation-add ${relationDraftOpen ? 'disabled' : ''}>${fluentIcon('add')}<span>Add relation</span></button></div>${relationCapability}<div class="js-relation-list">${relationRows}${relationDraft || (!relationRows ? '<p class="js-description">No relations declared.</p>' : '')}</div></section>`
     : '';
   const memberCount = memberMode === 'effective' ? effectiveMembers?.members.length ?? 0 : rows.length;
   const addProperty = `${fluentIcon('add')}<span>Add property</span>`;
+  const definitionName = name ?? (schemaSheet?.navigation.current?.kind === 'definition' ? schemaSheet.navigation.current.key : undefined);
   const editableName = definitionPointer && definitionPointer !== ''
-    ? `<input class="js-definition-name" data-inline-definition-name="${escapeAttribute(definitionPointer)}" value="${escapeAttribute(name ?? '')}" aria-label="Type name" spellcheck="false">`
-    : `<h1>${escapeHtml(name ?? 'Inline schema')}</h1>`;
+    ? `<input class="js-definition-name" data-inline-definition-name="${escapeAttribute(definitionPointer)}" value="${escapeAttribute(definitionName ?? '')}" aria-label="Type name" spellcheck="false">`
+    : `<h1>${escapeHtml(definitionName ?? 'Inline schema')}</h1>`;
   const editableDescription = definitionPointer && definitionPointer !== ''
     ? `<textarea class="js-definition-description" rows="1" data-inline-definition-description="${escapeAttribute(definitionPointer)}" placeholder="No description yet." aria-label="Type description">${escapeHtml(description ?? '')}</textarea>`
     : `<p class="js-description">${escapeHtml(description ?? 'No description yet.')}</p>`;
-  const propertyView = type === 'object' || type === 'tuple' || isSchemaRecord(declaration?.properties)
-    ? `${type === 'tuple' ? tupleOrderView(declarationPointer, declaration) : ''}<div class="js-section-head"><div><h2>${type === 'tuple' ? 'Tuple members' : 'Properties'}</h2><span class="js-section-meta">${memberCount} visible</span></div><div class="js-member-mode" role="group" aria-label="Property origin"><button data-member-mode="local" aria-pressed="${memberMode === 'local'}">Local</button><button data-member-mode="effective" aria-pressed="${memberMode === 'effective'}">Effective</button></div>${memberMode === 'local' ? `<button data-command="add">${addProperty}</button>` : ''}</div>${conflictView}<div class="js-grid" role="table" aria-label="${type === 'tuple' ? 'Tuple members' : 'Properties'}"><div class="js-row js-header" role="row"><div class="js-cell" role="columnheader">Name</div><div class="js-cell" role="columnheader">Type</div><div class="js-cell" role="columnheader">Nullable</div><div class="js-cell" role="columnheader">Identity</div><div class="js-cell" role="columnheader">Presence</div><div class="js-cell" role="columnheader"><span class="js-sr-only">Actions</span></div></div>${propertyRows || (memberMode === 'local' ? `<div role="row"><div role="cell" aria-colspan="7"><button class="js-add-row" data-command="add">${fluentIcon('add')}<span>Add a ${type === 'tuple' ? 'tuple member' : 'property'}</span></button></div></div>` : '<div class="js-empty">No effective members.</div>')}</div>`
-    : type === 'choice' ? choicesEditorView(declarationPointer, declaration, definitions, new Set(), activePropertyField, selectedPointer, propertyMenuPointer, expandedPropertyPointer)
-    : type === 'array' || type === 'set' || type === 'map' ? collectionDeclarationView(declarationPointer, declaration, definitions, document, activePropertyField, selectedPointer, propertyMenuPointer, expandedPropertyPointer)
+  const propertyView = activeType === 'object' || activeType === 'tuple' || isSchemaRecord(declaration?.properties)
+    ? `${activeType === 'tuple' ? tupleOrderView(declarationPointer, declaration) : ''}<div class="js-section-head"><div><h2>${activeType === 'tuple' ? 'Tuple members' : 'Properties'}</h2><span class="js-section-meta">${memberCount} visible</span></div><div class="js-member-mode" role="group" aria-label="Property origin"><button data-member-mode="local" aria-pressed="${memberMode === 'local'}">Local</button><button data-member-mode="effective" aria-pressed="${memberMode === 'effective'}">Effective</button></div>${memberMode === 'local' ? `<button data-command="add" data-property-owner="${escapeAttribute(declarationPointer)}">${addProperty}</button>` : ''}</div>${conflictView}<div class="js-grid" role="table" aria-label="${activeType === 'tuple' ? 'Tuple members' : 'Properties'}"><div class="js-row js-header" role="row"><div class="js-cell" role="columnheader">Name</div><div class="js-cell" role="columnheader">Type</div><div class="js-cell" role="columnheader">Nullable</div><div class="js-cell" role="columnheader">Identity</div><div class="js-cell" role="columnheader">Presence</div><div class="js-cell" role="columnheader"><span class="js-sr-only">Actions</span></div></div>${propertyRows || (memberMode === 'local' ? `<div role="row"><div role="cell" aria-colspan="7"><button class="js-add-row" data-command="add" data-property-owner="${escapeAttribute(declarationPointer)}">${fluentIcon('add')}<span>Add a ${activeType === 'tuple' ? 'tuple member' : 'property'}</span></button></div></div>` : '<div class="js-empty">No effective members.</div>')}</div>`
+    : activeType === 'choice' ? choicesEditorView(declarationPointer, declaration, definitions, document, new Set(), activePropertyField, selectedPointer, propertyMenuPointer, expandedPropertyPointer)
+    : activeType === 'array' || activeType === 'set' || activeType === 'map' ? collectionDeclarationView(declarationPointer, declaration, definitions, document, activePropertyField, selectedPointer, propertyMenuPointer, expandedPropertyPointer)
     : '<section class="js-design-section"><h3>No local structural members</h3><p class="js-description">Use constraints and annotations below. References and sibling rules remain independent.</p></section>';
-  const typeEditor = schemaSheet ? schemaDeclarationTypeControl(declarationPointer, declaration, definitions) : typeof type === 'string' && type !== 'union' ? `<label class="js-definition-type">Type<select data-inline-definition-type="${escapeAttribute(declarationPointer)}">${definitionTypeOptions(type)}</select></label>` : '<span class="js-definition-type js-composition-type">Composition schema</span>';
-  const abstractToggle = declarationPointer !== '' && (type === 'object' || type === 'tuple') ? `<label class="js-root-toggle"><input type="checkbox" data-inline-definition-abstract="${escapeAttribute(declarationPointer)}" ${declaration?.abstract === true ? 'checked' : ''}> Abstract</label>` : '';
+  const typeEditor = schemaSheet ? schemaDeclarationTypeControl(declarationPointer, declaration, definitions) : typeof activeType === 'string' && activeType !== 'union' ? `<label class="js-definition-type">Type<select data-inline-definition-type="${escapeAttribute(declarationPointer)}">${definitionTypeOptions(activeType)}</select></label>` : '<span class="js-definition-type js-composition-type">Composition schema</span>';
+  const abstractToggle = declarationPointer !== '' && (activeType === 'object' || activeType === 'tuple') ? `<label class="js-root-toggle"><input type="checkbox" data-inline-definition-abstract="${escapeAttribute(declarationPointer)}" ${declaration?.abstract === true ? 'checked' : ''}> Abstract</label>` : '';
   const deleteDefinition = definitionPointer && definitionPointer !== '' && (!schemaSheet || schemaSheet.navigation.current?.kind === 'definition') ? `<button type="button" class="js-danger" data-inline-definition-delete="${escapeAttribute(definitionPointer)}">Delete type</button>` : '';
-  const inheritance = declaration && definitionPointer !== undefined ? inheritanceEditorView(definitionPointer, declaration, type, definitions) : '';
+  const inheritance = declaration ? inheritanceEditorView(declarationPointer, declaration, activeType, definitions) : '';
   const composition = declaration && compositionOptions ? compositionEditorView(compositionOptions) : '';
   const facets = declaration ? structuredFacetEditor(declarationPointer, declaration, document, pendingPropertyFields) : '';
   if (schemaSheet?.navigation.current) {
     const location = schemaSheet.navigation.current;
     const editableMetadata = location.kind === 'definition' ? editableName + editableDescription + abstractToggle + deleteDefinition : '';
     const handled = new Set<string>();
-    if (type === 'object' || type === 'tuple' || isSchemaRecord(declaration?.properties)) rows.forEach((row: HTMLElement)=>handled.add(row.pointer));
-    if (type === 'choice' && isSchemaRecord(declaration?.choices)) Object.keys(declaration.choices).forEach(key=>handled.add(declarationPointer+'/choices/'+escapePointerToken(key)));
-    if (type === 'array' || type === 'set' || type === 'map') handled.add(declarationPointer + (type === 'map' ? '/values' : '/items'));
-    return schemaLocationBar(schemaSheet) + '<div class="js-sheet js-schema-sheet" data-schema-sheet="' + escapeAttribute(declarationPointer) + '">' + schemaDeclarationView(location,typeEditor,editableMetadata,compositionOptions) + (composition || '<section class="js-design-section"><h2>Rules</h2><p>No rules authored.</p></section>') + '<section class="js-design-section js-schema-structure"><h2>Structure</h2>' + propertyView + schemaChildLocations(schemaSheet,handled) + inheritance + relationsView + '</section><section class="js-design-section"><h2>Constraints and annotations</h2>' + facets + schemaMemberInventory(location,schemaSheet.knownMembers,false) + '</section><section class="js-design-section"><h2>Unsupported source members</h2>' + schemaMemberInventory(location,schemaSheet.knownMembers,true) + '<button data-composition-source="' + escapeAttribute(declarationPointer) + '">Edit source</button></section></div>';
+    if (activeType === 'object' || activeType === 'tuple' || isSchemaRecord(declaration?.properties)) rows.forEach((row: HTMLElement)=>handled.add(row.pointer));
+    if (activeType === 'choice' && isSchemaRecord(declaration?.choices)) Object.keys(declaration.choices).forEach(key=>handled.add(declarationPointer+'/choices/'+escapePointerToken(key)));
+    if (activeType === 'array' || activeType === 'set' || activeType === 'map') handled.add(declarationPointer + (activeType === 'map' ? '/values' : '/items'));
+    return schemaLocationBar(schemaSheet) + '<div class="js-sheet js-schema-sheet" data-schema-sheet="' + escapeAttribute(declarationPointer) + '">' + schemaDeclarationView(location,typeEditor,editableMetadata,compositionOptions) + '<section class="js-design-section js-schema-structure"><h2>Structure</h2>' + propertyView + schemaChildLocations(schemaSheet,handled) + inheritance + relationsView + '</section><section class="js-design-section"><h2>Constraints and annotations</h2>' + facets + schemaMemberInventory(location,schemaSheet.knownMembers,false) + '</section>' + composition + '<section class="js-design-section"><h2>Unsupported source members</h2>' + schemaMemberInventory(location,schemaSheet.knownMembers,true) + '<button data-composition-source="' + escapeAttribute(declarationPointer) + '">Edit source</button></section></div>';
   }
-  return `<div class="js-sheet"><header class="js-type-head"><div><div class="js-eyebrow">${name ? 'Local definition' : 'Inline schema'}</div>${editableName}${editableDescription}<p class="js-inline-status" data-inline-status="${escapeAttribute(definitionPointer ?? '')}" role="status" aria-live="polite"></p></div><div class="js-type-badges">${typeEditor}${abstractToggle}${deleteDefinition}</div></header>${propertyView}${inheritance}${composition}${relationsView}${facets}</div>`;
+  return `<div class="js-sheet"><header class="js-type-head"><div><div class="js-eyebrow">${name ? 'Local definition' : 'Inline schema'}</div>${editableName}${editableDescription}<p class="js-inline-status" data-inline-status="${escapeAttribute(definitionPointer ?? '')}" role="status" aria-live="polite"></p></div><div class="js-type-badges">${typeEditor}${abstractToggle}${deleteDefinition}</div></header>${propertyView}${inheritance}${relationsView}${facets}${composition}</div>`;
 }
 
 function inheritanceEditorView(pointer: string, declaration: Readonly<Record<string, unknown>>, type: string | undefined, definitions: readonly { readonly name: string; readonly pointer: string; readonly type?: string; readonly abstract?: boolean }[]): string {
@@ -4306,12 +4353,12 @@ function tupleOrderView(pointer: string, declaration: Readonly<Record<string, un
   return `<section class="js-design-section js-tuple-order"><div class="js-section-head"><div><h2>Tuple order</h2><span class="js-section-meta">${order.length} members</span></div></div><ol>${order.map((name, index) => `<li><span class="js-code">${escapeHtml(name)}</span><span class="js-value-actions"><button type="button" data-tuple-move="up" data-tuple-index="${index}" data-tuple-pointer="${escapeAttribute(pointer)}" ${index === 0 ? 'disabled' : ''} aria-label="Move ${escapeAttribute(name)} earlier">${fluentIcon('arrowUp')}</button><button type="button" data-tuple-move="down" data-tuple-index="${index}" data-tuple-pointer="${escapeAttribute(pointer)}" ${index === order.length - 1 ? 'disabled' : ''} aria-label="Move ${escapeAttribute(name)} later">${fluentIcon('arrowUp', 'js-icon-down')}</button></span></li>`).join('') || '<li>No tuple members yet.</li>'}</ol></section>`;
 }
 
-function collectionDeclarationView(pointer: string, declaration: Readonly<Record<string, unknown>> | undefined, definitions: readonly { readonly name: string; readonly pointer: string }[], _document?: unknown, _activePropertyField?: { readonly pointer: string; readonly field: 'name' | 'type' | 'description' }, _selectedPointer?: string, _propertyMenuPointer?: string, _expandedPropertyPointer?: string): string {
+function collectionDeclarationView(pointer: string, declaration: Readonly<Record<string, unknown>> | undefined, definitions: readonly { readonly name: string; readonly pointer: string }[], document?: unknown, activePropertyField?: { readonly pointer: string; readonly field: 'name' | 'type' | 'description' }, selectedPointer?: string, propertyMenuPointer?: string, expandedPropertyPointer?: string): string {
   if (!declaration) return '';
   const keyword = declaration.type === 'map' ? 'values' : 'items';
   const member = isRecord(declaration[keyword]) ? declaration[keyword] as Readonly<Record<string, unknown>> : {};
   const memberPointer = `${pointer}/${keyword}`;
-  return `<section class="js-design-section js-collection-editor"><div class="js-section-head"><div><h2>${declaration.type === 'map' ? 'Map values' : `${String(declaration.type)[0]!.toLocaleUpperCase()}${String(declaration.type).slice(1)} items`}</h2><span class="js-section-meta">Directly editable</span></div></div><div class="js-collection-member" data-schema-child-kind="${keyword}" data-schema-child-key="${keyword}" data-type-drop="${escapeAttribute(memberPointer)}"><span>${keyword === 'values' ? 'Value type' : 'Item type'}</span>${inlineTypeComposer(member, memberPointer, keyword, definitions, true)}<span class="js-type-drop-zone" aria-hidden="true"></span>${Object.hasOwn(declaration,keyword) ? schemaOpenButton(memberPointer,keyword) : '<span>Not authored</span>'}</div></section>`;
+  return `<section class="js-design-section js-collection-editor"><div class="js-section-head"><div><h2>${declaration.type === 'map' ? 'Map values' : `${String(declaration.type)[0]!.toLocaleUpperCase()}${String(declaration.type).slice(1)} items`}</h2><span class="js-section-meta">Directly editable</span></div></div><div class="js-collection-member" data-schema-child-kind="${keyword}" data-schema-child-key="${keyword}" data-type-drop="${escapeAttribute(memberPointer)}"><span>${keyword === 'values' ? 'Value type' : 'Item type'}</span>${inlineTypeComposer(member, memberPointer, keyword, definitions, true)}<span class="js-type-drop-zone" aria-hidden="true"></span>${Object.hasOwn(declaration,keyword) ? schemaOpenButton(memberPointer,keyword,true) : '<span>Not authored</span>'}${inlineCollectionEditors(member, memberPointer, definitions, document)}${nestedSchemaEditor(member, memberPointer, definitions, document, new Set(), new Set(), activePropertyField, selectedPointer, propertyMenuPointer, expandedPropertyPointer)}</div></section>`;
 }
 
 function coordinateReferenceSystemRow(coordinate: string, properties: readonly string[], transient: boolean): string {
@@ -4324,12 +4371,12 @@ function crsPropertyNamesAtPointer(document: unknown, pointer: string): readonly
   return isRecord(schema) && isRecord(schema.properties) ? Object.keys(schema.properties) : [];
 }
 
-function choicesEditorView(pointer: string, declaration: Readonly<Record<string, unknown>> | undefined, definitions: readonly { readonly name: string; readonly pointer: string }[], _ancestors: ReadonlySet<string> = new Set(), _activePropertyField?: { readonly pointer: string; readonly field: 'name' | 'type' | 'description' }, _selectedPointer?: string, _propertyMenuPointer?: string, _expandedPropertyPointer?: string): string {
+function choicesEditorView(pointer: string, declaration: Readonly<Record<string, unknown>> | undefined, definitions: readonly { readonly name: string; readonly pointer: string }[], document?: unknown, ancestors: ReadonlySet<string> = new Set(), activePropertyField?: { readonly pointer: string; readonly field: 'name' | 'type' | 'description' }, selectedPointer?: string, propertyMenuPointer?: string, expandedPropertyPointer?: string): string {
   const choices = isRecord(declaration?.choices) ? declaration.choices as Record<string, unknown> : {};
   const rows = Object.entries(choices).map(([name, schema]) => {
     const choicePointer = `${pointer}/choices/${escapePointerToken(name)}`;
-    const typed: Readonly<Record<string, unknown>> = isSchemaRecord(schema) ? schema : {};
-    return `<div class="js-choice-row" data-schema-child-kind="choice" data-schema-child-key="${escapeAttribute(name)}" data-choice-row="${escapeAttribute(choicePointer)}"><input class="js-code" data-inline-choice-name="${escapeAttribute(choicePointer)}" value="${escapeAttribute(name)}" aria-label="Choice alternative name">${inlineTypeComposer(typed, choicePointer, name, definitions, true)}${schemaOpenButton(choicePointer,name)}<textarea rows="1" data-inline-choice-description="${escapeAttribute(choicePointer)}" aria-label="Description for ${escapeAttribute(name)}" placeholder="Alternative description">${escapeHtml(typeof typed.description === 'string' ? typed.description : '')}</textarea><button class="js-danger" data-inline-choice-delete="${escapeAttribute(choicePointer)}" aria-label="Delete ${escapeAttribute(name)}">Delete</button><p class="js-inline-status" data-inline-status="${escapeAttribute(choicePointer)}" role="status"></p></div>`;
+    const typed: Readonly<Record<string, unknown>> = isSchemaRecord(schema) ? schema : { type: 'string' };
+    return `<div class="js-choice-row" data-schema-child-kind="choice" data-schema-child-key="${escapeAttribute(name)}" data-choice-row="${escapeAttribute(choicePointer)}"><input class="js-code" data-inline-choice-name="${escapeAttribute(choicePointer)}" value="${escapeAttribute(name)}" aria-label="Choice alternative name">${inlineTypeComposer(typed, choicePointer, name, definitions, true)}<textarea rows="1" data-inline-choice-description="${escapeAttribute(choicePointer)}" aria-label="Description for ${escapeAttribute(name)}" placeholder="Alternative description">${escapeHtml(typeof typed.description === 'string' ? typed.description : '')}</textarea><span class="js-choice-action-cell">${schemaOpenButton(choicePointer,name,true)}<button class="js-danger js-choice-delete" data-inline-choice-delete="${escapeAttribute(choicePointer)}" aria-label="Delete ${escapeAttribute(name)}">Delete</button></span>${nestedSchemaEditor(typed, choicePointer, definitions, document, new Set(), ancestors, activePropertyField, selectedPointer, propertyMenuPointer, expandedPropertyPointer)}<p class="js-inline-status" data-inline-status="${escapeAttribute(choicePointer)}" role="status"></p></div>`;
   }).join('');
   return `<section class="js-design-section js-choice-editor"><div class="js-section-head"><div><h2>Choices</h2><span class="js-section-meta">${Object.keys(choices).length} alternatives</span></div></div><div class="js-choice-list">${rows || '<p class="js-description">No alternatives declared.</p>'}</div><div class="js-choice-add"><input data-choice-add-name class="js-code" placeholder="alternative_name" aria-label="New choice name"><select data-choice-add-type aria-label="New choice type">${definitionTypeOptions('string')}${definitions.map((definition) => `<option value="ref:#${escapeAttribute(definition.pointer)}">${escapeHtml(definitionTypeLabel(definition.pointer))} (reusable)</option>`).join('')}</select><button data-choice-add="${escapeAttribute(pointer)}">Add alternative</button></div></section>`;
 }
@@ -4409,7 +4456,10 @@ function dependentRequiredFacetRow(pointer: string, value: unknown): string {
 
 function regexSchemaFacetRow(pointer: string, action: CommandAction, value: unknown): string {
   const entries = isRecord(value) ? Object.entries(value) : [];
-  const rows = entries.map(([pattern, schema]) => `<div class="js-regex-schema-row" data-regex-schema-row data-regex-pattern="${escapeAttribute(pattern)}"><input data-regex-pattern-input value="${escapeAttribute(pattern)}" aria-label="Regular expression pattern"><button type="button" data-regex-schema-remove aria-label="Remove regular expression schema">${fluentIcon('dismiss')}</button><span class="js-code">${escapeHtml(schemaExpressionLabel(isRecord(schema) ? schema.type : undefined))}</span></div>`).join('');
+  const rows = entries.map(([pattern, schema]) => {
+    const schemaPointer = `${pointer}/${escapePointerToken(action.keyword ?? '')}/${escapePointerToken(pattern)}`;
+    return `<div class="js-regex-schema-row" data-regex-schema-row data-regex-pattern="${escapeAttribute(pattern)}" data-schema-child-kind="schema-keyword" data-schema-child-key="${escapeAttribute(pattern)}"><input data-regex-pattern-input value="${escapeAttribute(pattern)}" aria-label="Regular expression pattern">${schemaOpenButton(schemaPointer,pattern,true)}<button type="button" data-regex-schema-remove aria-label="Remove regular expression schema">${fluentIcon('dismiss')}</button><span class="js-code">${escapeHtml(schemaExpressionLabel(isRecord(schema) ? schema.type : undefined))}</span></div>`;
+  }).join('');
   return `<div class="js-structured-facet-row" data-facet-row="${escapeAttribute(action.id)}"><label><span>${escapeHtml(action.group)} · ${escapeHtml(action.label.replace(/^Set /, ''))}</span><div class="js-regex-schema" data-regex-schema-map="${escapeAttribute(pointer)}" data-regex-schema-action="${escapeAttribute(action.id)}">${rows}<div class="js-regex-schema-add"><input data-regex-schema-new-pattern aria-label="New regular expression pattern"><select data-regex-schema-new-type aria-label="New regular expression schema type"><option value="string">string</option><option value="object">object</option></select><button type="button" data-regex-schema-add aria-label="Add regular expression schema">Add</button></div></div></label></div>`;
 }
 
@@ -4449,7 +4499,11 @@ function structuredFacetRow(pointer: string, action: CommandAction, value: unkno
   const remove = pending
     ? `<button type="button" data-facet-cancel="${escapeAttribute(inlineFieldKey(pointer, action.id))}">Cancel</button>`
     : `<button type="button" class="js-detail-remove" data-facet-remove="${escapeAttribute(action.removesActionId ?? `${action.id}.remove`)}" data-facet-pointer="${escapeAttribute(pointer)}">Remove</button>`;
-  return `<div class="js-structured-facet-row" data-facet-row="${escapeAttribute(action.id)}"><label><span>${escapeHtml(action.group)} · ${escapeHtml(structuredFacetLabel(action))}</span>${catalog}</label>${remove}</div>`;
+  const schemaChild = value !== undefined && action.keyword && (STRUCTURED_SCHEMA_FACETS.has(action.id) || action.id === 'core.additional-properties' && isSchemaRecord(value))
+    ? ` data-schema-child-kind="schema-keyword" data-schema-child-key="${escapeAttribute(action.keyword)}"`
+    : '';
+  const drillIn = schemaChild ? schemaOpenButton(`${pointer}/${escapePointerToken(action.keyword!)}`, structuredFacetLabel(action), true) : '';
+  return `<div class="js-structured-facet-row" data-facet-row="${escapeAttribute(action.id)}"${schemaChild}><label><span>${escapeHtml(action.group)} · ${escapeHtml(structuredFacetLabel(action))}</span>${catalog}</label>${drillIn}${remove}</div>`;
 }
 
 function typeCreatorView(firstType: boolean): string {
@@ -4517,7 +4571,7 @@ function enumValueFromRaw(type: string, raw: string): unknown {
 function propertyEditorRow(row: PropertyRow, selected: boolean, expanded: boolean, identity: boolean, definitions: readonly { readonly name: string; readonly pointer: string }[], document?: unknown, pendingPropertyFields: ReadonlySet<string> = new Set(), tupleMember = false, _ancestors: ReadonlySet<string> = new Set(), activePropertyField?: { readonly pointer: string; readonly field: 'name' | 'type' | 'description' }, menuOpen = false, _selectedPropertyPointer?: string, _openPropertyMenuPointer?: string, _expandedPropertyPointer?: string): string {
   const schema = row.schema ?? {};
   const typeComposer = inlineTypeComposer(schema, row.pointer, row.name, definitions, true);
-  const collectionEditors = "";
+  const collectionEditors = inlineCollectionEditors(schema, row.pointer, definitions, document);
   const detailsId = `property-details-${encodeURIComponent(row.pointer).replace(/%/g, '-')}`;
   const menuId = `property-menu-${encodeURIComponent(row.pointer).replace(/%/g, '-')}`;
   const activeField = activePropertyField?.pointer === row.pointer ? activePropertyField.field : undefined;
@@ -4539,7 +4593,27 @@ function propertyEditorRow(row: PropertyRow, selected: boolean, expanded: boolea
     ? `<button class="js-required-sets" data-action-id="property.required-alternatives" data-action-pointer="${escapeAttribute(propertyOwnerPointer(row.pointer))}" title="This type uses alternative required sets">Edit sets</button>`
     : `<label><input type="checkbox" data-inline-property="required" data-property-pointer="${escapeAttribute(row.pointer)}" ${row.required ? 'checked' : ''}> required</label>`;
   const menu = `<div class="js-property-actions-menu" id="${menuId}" role="menu" data-property-actions-menu="${escapeAttribute(row.pointer)}" ${menuOpen ? '' : 'hidden'}><button type="button" role="menuitem" class="js-danger" data-inline-property-delete="${escapeAttribute(row.pointer)}" data-property-menu-delete="${escapeAttribute(row.pointer)}">Delete property</button></div>`;
-  return `<div class="js-property-editor" data-schema-child-kind="${tupleMember ? 'tuple-member' : 'property'}" data-schema-child-key="${escapeAttribute(row.name)}" data-property-editor="${escapeAttribute(row.pointer)}" aria-current="${selected}" role="rowgroup"><div class="js-row js-inline-property-row" role="row" tabindex="0" aria-selected="${selected}" data-property-row-select="${escapeAttribute(row.pointer)}"><div class="js-cell" role="cell">${nameField}</div><div class="js-cell js-inline-type-cell" role="cell" data-type-drop="${escapeAttribute(row.pointer)}">${typeField}<span class="js-type-drop-zone" aria-hidden="true"></span></div><div class="js-cell js-inline-nullable-cell" role="cell"><label><input type="checkbox" data-inline-property="nullable" data-property-pointer="${escapeAttribute(row.pointer)}" ${inlinePropertyNullable(schema) ? 'checked' : ''}> nullable</label></div><div class="js-cell js-inline-identity-cell" role="cell"><label title="If needed, checking this activates the compatible Relations capability."><input type="checkbox" data-inline-property="identity" data-property-pointer="${escapeAttribute(row.pointer)}" ${identity ? 'checked' : ''}> identity</label></div><div class="js-cell js-inline-required-cell" role="cell">${requiredControl}</div><div class="js-cell js-description-cell" role="cell">${descriptionField}</div><div class="js-cell js-action-cell" role="cell">${schemaOpenButton(row.pointer,row.name)}<button class="js-row-action" data-property-details="${escapeAttribute(row.pointer)}" aria-expanded="${expanded}" aria-controls="${detailsId}" aria-label="${expanded ? 'Collapse' : 'Expand'} validation and annotations for ${escapeAttribute(row.name)}">${fluentIcon('chevronRight', `js-property-chevron${expanded ? ' js-expanded' : ''}`)}</button><button class="js-row-action js-property-menu-trigger" data-property-menu="${escapeAttribute(row.pointer)}" aria-haspopup="menu" aria-expanded="${menuOpen}" aria-controls="${menuId}" aria-label="Property actions for ${escapeAttribute(row.name)}">⋯</button>${menu}</div>${collectionEditors}</div><div role="row" class="js-property-supplement"><div role="cell" aria-colspan="7">${summary}<p class="js-inline-status" data-inline-status="${escapeAttribute(row.pointer)}" role="status" aria-live="polite"></p>${expanded ? propertyDetailsPanel(row, detailsId, document, pendingPropertyFields, definitions) : ''}</div></div></div>`;
+  return `<div class="js-property-editor" data-schema-child-kind="${tupleMember ? 'tuple-member' : 'property'}" data-schema-child-key="${escapeAttribute(row.name)}" data-property-editor="${escapeAttribute(row.pointer)}" aria-current="${selected}" role="rowgroup"><div class="js-row js-inline-property-row" role="row" tabindex="0" aria-selected="${selected}" data-property-row-select="${escapeAttribute(row.pointer)}"><div class="js-cell" role="cell">${nameField}</div><div class="js-cell js-inline-type-cell" role="cell" data-type-drop="${escapeAttribute(row.pointer)}">${typeField}<span class="js-type-drop-zone" aria-hidden="true"></span></div><div class="js-cell js-inline-nullable-cell" role="cell"><label><input type="checkbox" data-inline-property="nullable" data-property-pointer="${escapeAttribute(row.pointer)}" ${inlinePropertyNullable(schema) ? 'checked' : ''}> nullable</label></div><div class="js-cell js-inline-identity-cell" role="cell"><label title="If needed, checking this activates the compatible Relations capability."><input type="checkbox" data-inline-property="identity" data-property-pointer="${escapeAttribute(row.pointer)}" ${identity ? 'checked' : ''}> identity</label></div><div class="js-cell js-inline-required-cell" role="cell">${requiredControl}</div><div class="js-cell js-description-cell" role="cell">${descriptionField}</div><div class="js-cell js-action-cell" role="cell">${schemaOpenButton(row.pointer,row.name,true)}<button class="js-row-action" data-property-details="${escapeAttribute(row.pointer)}" aria-expanded="${expanded}" aria-controls="${detailsId}" aria-label="${expanded ? 'Collapse' : 'Expand'} validation and annotations for ${escapeAttribute(row.name)}">${fluentIcon('chevronRight', `js-property-chevron${expanded ? ' js-expanded' : ''}`)}</button><button class="js-row-action js-property-menu-trigger" data-property-menu="${escapeAttribute(row.pointer)}" aria-haspopup="menu" aria-expanded="${menuOpen}" aria-controls="${menuId}" aria-label="Property actions for ${escapeAttribute(row.name)}">⋯</button>${menu}</div>${collectionEditors}</div><div role="row" class="js-property-supplement"><div role="cell" aria-colspan="7">${summary}<p class="js-inline-status" data-inline-status="${escapeAttribute(row.pointer)}" role="status" aria-live="polite"></p>${expanded ? propertyDetailsPanel(row, detailsId, document, pendingPropertyFields, definitions) : ''}${nestedSchemaEditor(schema, row.pointer, definitions, document, pendingPropertyFields, _ancestors, activePropertyField, _selectedPropertyPointer, _openPropertyMenuPointer, _expandedPropertyPointer)}</div></div></div>`;
+}
+
+function nestedSchemaEditor(schema: Readonly<Record<string, unknown>>, pointer: string, definitions: readonly { readonly name: string; readonly pointer: string }[], document?: unknown, pendingPropertyFields: ReadonlySet<string> = new Set(), ancestors: ReadonlySet<string> = new Set(), activePropertyField?: { readonly pointer: string; readonly field: 'name' | 'type' | 'description' }, selectedPointer?: string, propertyMenuPointer?: string, expandedPropertyPointer?: string): string {
+  if (ancestors.has(pointer)) return '<p class="js-cycle-guard">Cycle reference; open the referenced declaration to continue.</p>';
+  const path = new Set(ancestors).add(pointer);
+  const type = typeof schema.type === 'string' ? schema.type : undefined;
+  if (type === 'object' || type === 'tuple') {
+    const properties = isSchemaRecord(schema.properties) ? schema.properties : {};
+    const required = new Set(Array.isArray(schema.required) ? schema.required.flat().filter((entry): entry is string => typeof entry === 'string') : []);
+    const identity = new Set(Array.isArray(schema.identity) ? schema.identity.filter((entry): entry is string => typeof entry === 'string') : []);
+    const rows = Object.entries(properties).map(([name, child]) => {
+      const childPointer = `${pointer}/properties/${escapePointerToken(name)}`;
+      const childSchema = isSchemaRecord(child) ? child : { type: 'string' };
+      return propertyEditorRow({ name, pointer: childPointer, type: typeof childSchema.type === 'string' ? childSchema.type : 'unknown', required: required.has(name), description: typeof childSchema.description === 'string' ? childSchema.description : undefined, schema: childSchema }, childPointer === selectedPointer, childPointer === expandedPropertyPointer, identity.has(name), definitions, document, pendingPropertyFields, type === 'tuple', path, activePropertyField, propertyMenuPointer === childPointer, selectedPointer, propertyMenuPointer, expandedPropertyPointer);
+    }).join('');
+    const order = type === 'tuple' ? tupleOrderView(pointer, schema) : '';
+    return `<section class="js-nested-schema js-nested-${type}" data-nested-schema="${escapeAttribute(pointer)}"><div class="js-section-head"><div><h3>${type === 'tuple' ? 'Nested tuple members' : 'Nested object properties'}</h3><span class="js-section-meta">${Object.keys(properties).length} members</span></div><button type="button" data-command="add" data-property-owner="${escapeAttribute(pointer)}">${fluentIcon('add')} Add</button></div>${order}<div class="js-grid js-nested-grid" role="table" aria-label="${type === 'tuple' ? 'Nested tuple members' : 'Nested object properties'}">${rows || '<div class="js-empty">No nested members yet.</div>'}</div></section>`;
+  }
+  if (type === 'choice') return `<section class="js-nested-schema js-nested-choice" data-nested-schema="${escapeAttribute(pointer)}">${choicesEditorView(pointer, schema, definitions, document, path, activePropertyField, selectedPointer, propertyMenuPointer, expandedPropertyPointer)}</section>`;
+  return '';
 }
 
 function propertyAuthoredSummary(schema: Readonly<Record<string, unknown>>): string {
@@ -4677,6 +4751,28 @@ function inlineTypeMemberCollectionKind(member: string): 'array' | 'set' | 'map'
   if (!member.startsWith('json:')) return undefined;
   const value = JSON.parse(member.slice('json:'.length));
   return isCollectionSchema(value) ? value.type : undefined;
+}
+
+function inlineCollectionEditors(schema: Readonly<Record<string, unknown>>, pointer: string, definitions: readonly { readonly name: string; readonly pointer: string }[], document?: unknown): string {
+  const collections: Array<{ readonly schema: Readonly<Record<string, unknown>>; readonly pointer: string }> = [];
+  if (isCollectionSchema(schema)) collections.push({ schema, pointer });
+  if (Array.isArray(schema.type)) {
+    schema.type.forEach((member, index) => {
+      if (isCollectionSchema(member)) collections.push({ schema: member, pointer: `${pointer}/type/${index}` });
+    });
+  }
+  if (!collections.length) return '';
+  const editors = collections.map(({ schema: collection, pointer: collectionPointer }) => {
+    const keyword = collection.type === 'map' ? 'values' : 'items';
+    const member = collection[keyword];
+    const memberSchema = isSchemaRecord(member) ? member : {};
+    const memberPointer = `${collectionPointer}/${keyword}`;
+    const label = collection.type === 'map' ? 'Value type' : 'Item type';
+    const nestedCollections = inlineCollectionEditors(memberSchema, memberPointer, definitions, document);
+    const memberFacets = structuredFacetEditor(memberPointer, memberSchema, document, new Set());
+    return `<div class="js-collection-expression"><select class="js-collection-kind js-code" data-inline-collection-kind data-property-pointer="${escapeAttribute(collectionPointer)}" aria-label="Change collection kind">${(['array', 'set', 'map'] as const).map((type) => `<option value="${type}" ${type === collection.type ? 'selected' : ''}>${type}</option>`).join('')}</select><span class="js-collection-angle">&lt;</span><div class="js-collection-member"><span>${label}</span>${inlineTypeComposer(memberSchema, memberPointer, label, definitions, false)}${nestedCollections}${memberFacets}</div><span class="js-collection-angle">&gt;</span></div>`;
+  }).join('');
+  return `<div class="js-cell js-composite-cell" role="cell" aria-label="Collection member schemas">${editors}</div>`;
 }
 
 function isCollectionSchema(value: unknown): value is Readonly<Record<string, unknown>> & { readonly type: 'array' | 'set' | 'map' } {
@@ -6006,7 +6102,7 @@ export const workbenchFocusIdentityAttributes = [
   'data-mobile-mode', 'data-mobile-drawer', 'data-mobile-drawer-close', 'data-member-mode', 'data-effective-source',
   'data-graph-search', 'data-graph-lens', 'data-graph-direction', 'data-graph-edge-select', 'data-graph-breadcrumb', 'data-graph-back', 'data-graph-forward', 'data-graph-home', 'data-graph-out', 'data-graph-fit', 'data-graph-relayout', 'data-graph-zoom-out', 'data-graph-zoom-in',
   'data-instance-input', 'data-instance-text', 'data-instance-root', 'data-instance-reset', 'data-instance-clear', 'data-instance-validate', 'data-instance-diagnostic', 'data-trace-instance', 'data-trace-schema',
-  'data-composition-add-rule-kind', 'data-composition-add-rule', 'data-composition-delete-rule', 'data-composition-convert', 'data-composition-add-operand-kind', 'data-composition-add-operand', 'data-composition-move', 'data-composition-duplicate', 'data-composition-delete-operand', 'data-composition-wrap-kind', 'data-composition-wrap', 'data-composition-negate', 'data-composition-unwrap', 'data-composition-set-reference', 'data-composition-apply-reference', 'data-composition-add-branch', 'data-composition-remove-branch', 'data-composition-delete-conditional', 'data-composition-source', 'data-composition-disclosure',
+  'data-composition-add-start', 'data-composition-add-cancel', 'data-composition-add-rule-kind', 'data-composition-add-rule', 'data-composition-delete-rule', 'data-composition-convert', 'data-composition-add-operand-kind', 'data-composition-add-operand', 'data-composition-move', 'data-composition-duplicate', 'data-composition-delete-operand', 'data-composition-wrap-kind', 'data-composition-wrap', 'data-composition-negate', 'data-composition-unwrap', 'data-composition-set-reference', 'data-composition-apply-reference', 'data-composition-add-branch', 'data-composition-remove-branch', 'data-composition-delete-conditional', 'data-composition-source', 'data-composition-disclosure',
   'data-start-conversion-command', 'data-start-conversion-close', 'data-conversion-command', 'data-conversion-option', 'data-conversion-load', 'data-conversion-reset', 'data-conversion-source', 'data-conversion-run', 'data-conversion-cancel', 'data-conversion-open',
   'data-addin', 'data-impact-direction', 'data-command', 'data-theme-select', 'data-action-select', 'data-action-id',
   'data-libraries-load', 'data-library-read', 'data-library-operation', 'data-library-selector', 'data-library-declaration', 'data-library-provider-filter', 'data-library-search', 'data-library-preview', 'data-library-apply',
@@ -6095,6 +6191,11 @@ function selectFallback(snapshot: DocumentSnapshot, current: string | undefined)
   return snapshotHasInlineRoot(snapshot) ? '' : snapshot.model?.projections.definitions.find((definition) => definition.reusable)?.pointer;
 }
 function snapshotHasInlineRoot(snapshot: DocumentSnapshot): boolean { try { return isInlineRootSchema(JSON.parse(snapshot.text)); } catch { return false; } }
+function schemaLocationUsesSheet(location: SchemaLocation): boolean {
+  if (location.kind !== 'root' && location.kind !== 'definition') return true;
+  if (isSchemaRecord(location.value) && Array.isArray(location.value.type)) return true;
+  return !['explicit-type', 'explicit-any'].includes(location.form);
+}
 function escapeHtml(value: string): string { return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 function escapeAttribute(value: string): string { return escapeHtml(value).replace(/'/g, '&#39;'); }
 

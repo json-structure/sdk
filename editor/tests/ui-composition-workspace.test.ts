@@ -41,4 +41,11 @@ describe('compact Rules renderer units — not navigation acceptance',()=>{
   it('keeps inactive authored rules read-only',()=>{
     const html=compositionEditorView({document:{allOf:[{}]},targetPointer:'',diagnostics:[],active:false});expect(html).toContain('read-only');expect(html).not.toContain('data-composition-add-rule');
   });
+  it('keeps empty active Rules compact until Add rule is invoked',()=>{
+    const compact=compositionEditorView({document:{type:'object'},targetPointer:'',diagnostics:[],active:true});
+    expect(compact).toContain('js-composition-empty');expect(compact).toContain('Rules');expect(compact).toContain('None');
+    expect(compact).toContain('data-composition-add-start');expect(compact).not.toContain('data-composition-seed-kind');
+    const expanded=compositionEditorView({document:{type:'object'},targetPointer:'',diagnostics:[],active:true,addComposerOpen:true});
+    expect(expanded).toContain('data-composition-seed-kind');expect(expanded).toContain('data-composition-add-cancel');
+  });
 });

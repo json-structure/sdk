@@ -78,7 +78,7 @@ const inventory: InteractiveControl[] = [...controls.entries()]
 
 describe('exhaustive interactive UX control inventory', () => {
   it('discovers the expected control-family baseline', () => {
-    expect(inventory).toHaveLength(283);
+    expect(inventory).toHaveLength(287);
   });
 
   for (const control of inventory) {

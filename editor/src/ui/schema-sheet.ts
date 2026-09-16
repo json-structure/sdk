@@ -8,18 +8,23 @@ export interface SchemaSheetOptions {
   readonly source: string;
   readonly knownMembers: ReadonlySet<string>;
 }
-export function schemaOpenButton(pointer: string, label: string): string { return '<button type="button" data-schema-open="'+e(pointer)+'" aria-label="Open local schema '+e(label)+'">Open schema</button>'; }
+export function schemaOpenButton(pointer: string, label: string, compact = false): string {
+  return '<button type="button" '+(compact?'class="js-row-action js-schema-open-action" ':'')+'data-schema-open="'+e(pointer)+'" aria-label="Open local schema '+e(label)+'">'+(compact?'<span aria-hidden="true">↗</span>':'Open schema')+'</button>';
+}
 export function schemaLocationBar(options: SchemaSheetOptions): string {
   const location = options.navigation.current;
   if (!location) return '';
   const ancestors = options.index.ancestors(location.pointer);
-  return '<nav class="js-schema-location-bar" aria-label="Schema location" data-schema-location-bar data-schema-pointer="'+e(location.pointer)+'" data-schema-relationship="'+e(location.label)+'"><div class="js-location-history"><button data-schema-back '+(!options.navigation.canBack?'disabled':'')+' aria-label="Back to previous schema">Back</button><button data-schema-forward '+(!options.navigation.canForward?'disabled':'')+' aria-label="Forward to next schema">Forward</button></div><ol class="js-schema-breadcrumbs" aria-label="Schema breadcrumbs">'+ancestors.map((item,index)=>'<li '+(index<ancestors.length-2?'class="js-breadcrumb-ancestor"':'')+'><button data-schema-breadcrumb="'+e(item.pointer)+'" '+(item.id===location.id?'aria-current="location"':'')+'>'+e(item.label)+'</button></li>').join('')+'</ol><span class="js-location-relationship" data-schema-location-relationship>'+e(location.label)+'</span><code dir="ltr" class="js-exact-pointer" data-schema-location-pointer>'+e(location.pointer || '\"\" (document root)')+'</code><button data-schema-location-source="'+e(location.pointer)+'">Source</button><button data-schema-goto aria-label="Go to Schema Location">Go to…</button></nav>';
+  return '<nav class="js-schema-location-bar" aria-label="Schema location" data-schema-location-bar data-schema-pointer="'+e(location.pointer)+'" data-schema-relationship="'+e(location.label)+'"><div class="js-location-history"><button data-schema-back '+(!options.navigation.canBack?'disabled':'')+' aria-label="Back to previous schema">Back</button><button data-schema-forward '+(!options.navigation.canForward?'disabled':'')+' aria-label="Forward to next schema">Forward</button></div><ol class="js-schema-breadcrumbs" aria-label="Schema breadcrumbs">'+ancestors.map((item,index)=>'<li '+(index<ancestors.length-2?'class="js-breadcrumb-ancestor"':'')+'><button data-schema-breadcrumb="'+e(item.pointer)+'" '+(item.id===location.id?'aria-current="location"':'')+'>'+e(item.label)+'</button></li>').join('')+'</ol><code dir="ltr" class="js-exact-pointer" data-schema-location-pointer>'+e(location.pointer || '\"\" (document root)')+'</code><button data-schema-location-source="'+e(location.pointer)+'">Source</button><button data-schema-goto aria-label="Go to Schema Location">Go to…</button></nav>';
 }
 export function schemaDeclarationView(location: SchemaLocation, typeControl: string, metadata: string, evaluation?: CompositionEditorOptions): string {
   const value = location.value;
   const ref = schemaRecord(value) && (typeof value.$ref === 'string' ? value.$ref : schemaRecord(value.type) && typeof value.type.$ref === 'string' ? value.type.$ref : undefined);
   const reference = ref ? '<div class="js-schema-reference"><code dir="ltr" data-schema-reference="'+e(ref)+'">'+e(ref)+'</code><button data-schema-reference-go="'+e(ref)+'">Go to referenced type</button></div>' : '';
-  return '<section class="js-design-section js-schema-declaration" data-schema-declaration data-declaration-form="'+location.form+'"><h1 data-schema-heading tabindex="-1">'+e(location.label)+'</h1><h2>Declaration</h2><p data-declaration-label>'+e(schemaDeclarationLabel(value))+'</p>'+metadata+typeControl+reference+(evaluation?schemaEvaluationResult(evaluation,location.pointer,'schema'):'')+'</section>';
+  const heading = metadata
+    ? '<div class="js-eyebrow js-schema-heading-anchor" data-schema-heading tabindex="-1">Schema location</div>'
+    : '<header class="js-schema-context-header"><div class="js-eyebrow">Nested schema</div><h1 data-schema-heading tabindex="-1">'+e(location.label)+'</h1></header>';
+  return '<section class="js-design-section js-schema-declaration" data-schema-declaration data-declaration-form="'+location.form+'">'+heading+'<p data-declaration-label>'+e(schemaDeclarationLabel(value))+'</p>'+metadata+typeControl+reference+(evaluation?schemaEvaluationResult(evaluation,location.pointer,'schema'):'')+'</section>';
 }
 export function schemaChildLocations(options: SchemaSheetOptions, excluded: ReadonlySet<string> = new Set()): string {
   const current = options.navigation.current; if (!current) return '';
