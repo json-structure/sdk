@@ -109,6 +109,8 @@ jobs:
       - run: npm run release:attest
       - run: npm run test:final-electron-runtime
       - run: node scripts/real-host-acceptance.mjs
+      - run: npm run test:schema-location-electron
+        if: matrix.target == 'win32-x64'
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
@@ -292,6 +294,8 @@ jobs:
       - run: npm run package -- --target ${{ matrix.target }} --out artifacts/json-structure-${{ matrix.target }}.vsix
       - run: node scripts/vsix-runtime-smoke.mjs artifacts/json-structure-${{ matrix.target }}.vsix
       - run: node scripts/vsix-ui-acceptance.mjs artifacts/json-structure-${{ matrix.target }}.vsix
+      - run: npm run test:lossless-text
+      - run: npm run test:schema-location-artifact -- artifacts/json-structure-${{ matrix.target }}.vsix
       - name: Report VSIX size
         shell: bash
         run: du -h artifacts/*.vsix

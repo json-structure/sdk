@@ -648,8 +648,8 @@ describe('workbench interaction markup', () => {
     expect(editorStyles).toContain('.js-workbench { grid-template-columns:minmax(0,1fr); }');
     expect(editorStyles).toContain('.js-center,.js-problems { grid-column:1; }');
     expect(editorStyles).toContain('flex-wrap:nowrap; overflow:visible; padding:0;');
-    expect(editorStyles).toContain('minmax(72px,1fr) minmax(88px,1fr) 132px');
-    expect(editorStyles).toContain('overflow-y:auto; overflow-x:hidden');
+    expect(editorStyles).toContain('minmax(80px,1fr) minmax(100px,1fr) 88px');
+    expect(editorStyles).toContain('overflow:auto; overflow-x:hidden');
   });
 
   it('shows only unsupported source members in a collapsed disclosure', () => {

@@ -344,7 +344,7 @@ exports.activate = function activate(context) {
     })()`, contextId, sessionId)) {
       fail('could not navigate to RulesTarget through the type navigator');
     }
-    await waitFor(client, contextId, sessionId, 'Schema Sheet for the selected type', `document.querySelector('[data-schema-location-bar]')?.dataset.schemaPointer === '/definitions/RulesTarget' && document.querySelector('[data-rule-keyword="allOf"]') !== null`);
+    await waitFor(client, contextId, sessionId, 'primary Design renderer for the selected type', `document.querySelector('[data-schema-location-bar]') === null && document.querySelector('[data-schema-sheet]') === null && document.querySelector('[data-inline-definition-name]')?.value === 'RulesTarget' && document.querySelector('[data-rule-keyword="allOf"]') !== null && document.querySelector('[data-select="/definitions/RulesTarget"]')?.getAttribute('aria-current') === 'true'`);
     if (!await client.evaluate(`(() => { const button=document.querySelector('[data-rule-keyword="allOf"] [data-schema-open]');if(!button)return false;button.scrollIntoView({block:'center'});button.click();return true; })()`,contextId,sessionId)) fail('could not open the rule operand through its visible schema action');
     await waitFor(client,contextId,sessionId,'complete operand Schema Sheet',`document.querySelector('[data-schema-location-bar]')?.dataset.schemaPointer === '/definitions/RulesTarget/allOf/0' && document.querySelector('[data-schema-declaration]')?.dataset.declarationForm === 'no-type' && !document.querySelector('.js-composition-schema-editor')`);
 

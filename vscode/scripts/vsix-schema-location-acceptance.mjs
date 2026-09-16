@@ -49,7 +49,9 @@ try{
         const root=document.querySelector('.json-structure-editor');
         const click=selector=>{const button=root.querySelector(selector);if(!button)throw new Error('Missing mutation control '+selector);button.scrollIntoView({block:'nearest'});button.focus();button.click();};
         if(getComputedStyle(root.querySelector('.js-outline')).display==='none')click('[data-mobile-drawer="types"]');
-        click('.js-tree-inline-root');click('[data-schema-child-key="payload"] [data-schema-open]');
+        click('.js-tree-inline-root');
+        if(root.querySelector('[data-schema-child-key="payload"] [data-schema-open]')?.closest('[hidden]'))click('[data-schema-child-key="payload"] [data-property-menu]');
+        click('[data-schema-child-key="payload"] [data-schema-open]');
         const seed=root.querySelector('[data-rule-keyword="oneOf"] > .js-rule-add [data-composition-seed-kind]');seed.value='ref:#/definitions/BasePayload';seed.dispatchEvent(new Event('change',{bubbles:true}));
         click('[data-rule-keyword="oneOf"] > .js-rule-add [data-composition-add-operand]');
         return true;

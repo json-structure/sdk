@@ -89,26 +89,32 @@ export async function driveMountedCorpus(root, roots, manifestCarriers, options=
     }
     if(active.querySelector('.js-composition-schema-editor,.js-rule-nested,.js-rule-disclosure'))fail('Recursive/reduced operand editor at '+pointer);
   };
-  const childButton=step=>{
+  const childButton=async step=>{
     const current=surface();if(step.kind==='operand'||step.kind==='branch'){
       const group=current.querySelector('[data-rule-keyword="'+(step.kind==='branch'?'conditional':step.keyword)+'"]');
       if(step.kind==='branch')return group?.querySelector('[data-branch-keyword="'+step.keyword+'"] [data-schema-open]');
       return group?.querySelectorAll('[data-schema-open]')[step.index??0];
     }
-    const row=[...current.querySelectorAll('[data-schema-child-kind]')].find(el=>el.dataset.schemaChildKind===step.kind&&el.dataset.schemaChildKey===step.key);
-    return row?.querySelector('[data-schema-open]');
+    const locate=()=>[...surface().querySelectorAll('[data-schema-child-kind]')].find(el=>el.dataset.schemaChildKind===step.kind&&el.dataset.schemaChildKey===step.key);
+    let row=locate(),button=row?.querySelector('[data-schema-open]');
+    if(button?.closest('[hidden]')){
+      await click(row?.querySelector('[data-property-menu]'));
+      row=locate();button=row?.querySelector('[data-schema-open]');
+    }
+    return button;
   };
   const visit=async node=>{
     verify(node);stats.locations++;
     for(const child of node.children){
-      await click(childButton(child.step));
+      await click(await childButton(child.step));
       eq(root.ownerDocument.activeElement?.hasAttribute('data-schema-heading'),true,'drill-in heading focus');
       await visit(child);
       await click(root.querySelector('[data-schema-back]'));
       const bar=root.querySelector('[data-schema-location-bar]');
       if(usesPrimary(node)){if(sheet())fail('Back did not restore primary owner surface');if(bar)fail('Back retained nested location bar on primary owner');}
       else {eq(bar?.dataset.schemaPointer,node.step.pointer,'Back restores parent');eq(bar?.dataset.schemaRelationship,node.step.label,'Back restores relationship');}
-      eq(root.ownerDocument.activeElement?.dataset.schemaOpen,child.step.pointer,'Back restores invoking row');
+      const active=root.ownerDocument.activeElement;
+      eq(active?.dataset.schemaOpen??active?.closest('[data-property-editor]')?.dataset.propertyEditor,child.step.pointer,'Back restores invoking control');
     }
   };
   for(const node of roots){

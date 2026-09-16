@@ -22,7 +22,7 @@ describe('mounted schema-location authoring journeys',()=>{
     click(root,operand('allOf',0)+' [data-schema-open]');expect(pointer(root)).toBe('/allOf/0');expect(document.activeElement.hasAttribute('data-schema-heading')).toBe(true);
     click(root,'[data-property-field-activate="name"]');change(root,'input[data-inline-property="name"]','town');await settle();expect(value().allOf[0].properties).toHaveProperty('town');
     click(root,'[data-schema-child-key="town"] [data-schema-open]');expect(pointer(root)).toBe('/allOf/0/properties/town');expect(root.querySelector('[data-facet-row="core.max-length"]')).not.toBeNull();
-    click(root,'[data-schema-back]');expect(document.activeElement.dataset.schemaOpen).toBe('/allOf/0/properties/town');click(root,'[data-schema-back]');expect(pointer(root)).toBe('');expect(document.activeElement.dataset.schemaOpen).toBe('/allOf/0');
+    click(root,'[data-schema-back]');expect(document.activeElement.closest('[data-property-editor]')?.dataset.propertyEditor).toBe('/allOf/0/properties/town');click(root,'[data-schema-back]');expect(pointer(root)).toBe('');expect(document.activeElement.dataset.schemaOpen).toBe('/allOf/0');
   });
   it('authors all seven rules independently, with empty or explicit seeds and never silent type:any',async()=>{
     const root=mount({$schema:meta,type:'string'});

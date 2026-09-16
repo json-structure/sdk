@@ -448,7 +448,8 @@ describe('mounted structured CRUD workbench', () => {
     expect(menu.getAttribute('role')).toBe('menu');
     expect((menu as HTMLElement).hidden).toBe(false);
     expect(element(root, `[data-property-menu="${labelPointer}"]`).getAttribute('aria-expanded')).toBe('true');
-    expect(menu.querySelectorAll('[role="menuitem"]')).toHaveLength(1);
+    expect(menu.querySelectorAll('[role="menuitem"]')).toHaveLength(2);
+    expect(menu.textContent).toContain('Open schema');
     expect(menu.textContent).toContain('Delete property');
     menu.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     expect(element<HTMLElement>(root, `[data-property-actions-menu="${labelPointer}"]`).hidden).toBe(true);

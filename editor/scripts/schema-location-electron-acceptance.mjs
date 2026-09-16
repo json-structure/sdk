@@ -53,10 +53,12 @@ try {
         })()`);
         const contrasts=await client.evaluate(`(()=>{
           const host=document.querySelector(".json-structure-editor"),original=host.dataset.theme;
-          const rgb=value=>value.match(/[\\d.]+/g).slice(0,3).map(Number);
+          const rgba=value=>{const parts=value.match(/[\\d.]+/g)?.map(Number)??[];return [parts[0]??0,parts[1]??0,parts[2]??0,parts[3]??1];};
+          const over=(front,back)=>{const alpha=front[3]+back[3]*(1-front[3]);return alpha===0?[0,0,0,0]:[(front[0]*front[3]+back[0]*back[3]*(1-front[3]))/alpha,(front[1]*front[3]+back[1]*back[3]*(1-front[3]))/alpha,(front[2]*front[3]+back[2]*back[3]*(1-front[3]))/alpha,alpha];};
+          const background=element=>{let result=[0,0,0,0],current=element;while(current&&result[3]<.999){result=over(result,rgba(getComputedStyle(current).backgroundColor));current=current.parentElement;}return result;};
           const luminance=color=>color.map(channel=>{const value=channel/255;return value<=.04045?value/12.92:((value+.055)/1.055)**2.4;}).reduce((sum,value,index)=>sum+value*[.2126,.7152,.0722][index],0);
-          const ratio=(foreground,background)=>{const values=[luminance(rgb(foreground)),luminance(rgb(background))].sort((a,b)=>b-a);return (values[0]+.05)/(values[1]+.05);};
-          const results=["dark","light","contrast"].map(theme=>{host.dataset.theme=theme;const controls=[...document.querySelectorAll(".js-schema-action:not(:disabled),.js-schema-breadcrumb-action:not(:disabled)")].filter(control=>control.getBoundingClientRect().width>0);return {theme,min:Math.min(...controls.map(control=>{const style=getComputedStyle(control);return ratio(style.color,style.backgroundColor);})),count:controls.length};});
+          const ratio=(foreground,background)=>{const values=[luminance(foreground),luminance(background)].sort((a,b)=>b-a);return (values[0]+.05)/(values[1]+.05);};
+          const results=["dark","light","contrast"].map(theme=>{host.dataset.theme=theme;const controls=[...document.querySelectorAll(".js-schema-action:not(:disabled),.js-schema-breadcrumb-action:not(:disabled)")].filter(control=>control.getBoundingClientRect().width>0);const measured=controls.map(control=>{const value=ratio(rgba(getComputedStyle(control).color).slice(0,3),background(control).slice(0,3));return {label:control.getAttribute("aria-label")||control.textContent.trim(),value};});return {theme,min:Math.min(...measured.map(item=>item.value)),count:controls.length,lowest:measured.sort((a,b)=>a.value-b.value).slice(0,3)};});
           host.dataset.theme=original;return results;
         })()`);
         const expectedRail=viewport.width<=620?0:46;
