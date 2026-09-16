@@ -6,6 +6,8 @@ import { DocumentSession } from '../src/session.js';
 import { resolveEffectiveMembers } from '../src/phase4/effective-members.js';
 import { InstanceWorkspace } from '../src/phase4/instance-workspace.js';
 import { editorStyles } from '../src/ui/prototype-styles.js';
+import { SchemaLocationIndex, SchemaLocationNavigation } from '../src/schema-locations.js';
+import { schemaLocationBar, schemaMemberInventory, schemaOpenButton } from '../src/ui/schema-sheet.js';
 
 type Rgb = readonly [number, number, number];
 
@@ -17,7 +19,15 @@ function themeToken(selector: string, name: string): string {
   return match[1];
 }
 
+function styleBlock(selector: string): string {
+  const start = editorStyles.indexOf(`${selector} {`);
+  if (start < 0) throw new Error(`Missing style block ${selector}`);
+  return editorStyles.slice(start, editorStyles.indexOf('\n}', start));
+}
+
 function rgb(value: string): Rgb {
+  const short = value.match(/^#([0-9a-f])([0-9a-f])([0-9a-f])$/i);
+  if (short) return [1, 2, 3].map((index) => Number.parseInt(short[index]! + short[index]!, 16)) as unknown as Rgb;
   const match = value.match(/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
   if (!match) throw new Error(`Expected a hex color, got ${value}`);
   return [Number.parseInt(match[1]!, 16), Number.parseInt(match[2]!, 16), Number.parseInt(match[3]!, 16)];
@@ -599,6 +609,71 @@ describe('workbench interaction markup', () => {
     expect(contrast(darkQuiet, darkSelected)).toBeGreaterThanOrEqual(4.5);
     expect(contrast(lightAccent, lightRaised)).toBeGreaterThanOrEqual(4.5);
     expect(contrast(lightAccent, lightSelected)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('uses theme-safe schema controls with WCAG AA contrast in every theme', () => {
+    const control = styleBlock('.js-schema-action');
+    expect(control).toContain('background:var(--js-raised)');
+    expect(control).toContain('color:var(--js-text)');
+    for (const selector of [':host,.json-structure-editor', '.json-structure-editor[data-theme="light"]', '.json-structure-editor[data-theme="contrast"]']) {
+      expect(contrast(rgb(themeToken(selector, '--js-text')), rgb(themeToken(selector, '--js-raised'))), selector).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(rgb(themeToken(selector, '--js-text')), rgb(themeToken(selector, '--js-chrome'))), selector).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(rgb(themeToken(selector, '--js-quiet')), rgb(themeToken(selector, '--js-panel'))), selector).toBeGreaterThanOrEqual(4.5);
+    }
+    const index = new SchemaLocationIndex();
+    index.refresh({ type: 'object', properties: { nested: { type: 'string' } } });
+    const navigation = new SchemaLocationNavigation(index);
+    navigation.open('');
+    navigation.open('/properties/nested');
+    const html = schemaLocationBar({ index, navigation, source: '', knownMembers: new Set() });
+    expect(html).not.toContain('js-location-relationship');
+    expect(html.match(/data-schema-location-pointer/g)).toHaveLength(1);
+    expect(html.indexOf('data-schema-location-pointer')).toBeGreaterThan(html.indexOf('js-schema-location-details'));
+    for (const attribute of ['data-schema-back', 'data-schema-forward', 'data-schema-breadcrumb', 'data-schema-location-source', 'data-schema-goto']) {
+      expect(html).toMatch(new RegExp(`<(?:button|summary)[^>]*class="[^"]*js-schema-(?:action|breadcrumb-action)[^"]*"[^>]*${attribute}|<(?:button|summary)[^>]*${attribute}[^>]*class="[^"]*js-schema-(?:action|breadcrumb-action)`));
+    }
+    expect(schemaOpenButton('/properties/nested', 'nested')).toContain('class="js-schema-action"');
+    expect(schemaOpenButton('/properties/nested', 'nested', true)).toContain('js-schema-action-icon');
+  });
+
+  it('keeps the nested location bar single-row and restores phone-width Design containment', () => {
+    const bar = styleBlock('.js-schema-location-bar');
+    expect(bar).toContain('min-height:38px');
+    expect(bar).toContain('flex-wrap:nowrap');
+    expect(editorStyles).not.toContain('.js-schema-location-bar button,.js-schema-sheet button');
+    expect(editorStyles).not.toContain('.js-schema-sheet select,.js-schema-sheet input:not([type="checkbox"]) { min-height:44px; }');
+    expect(editorStyles).not.toContain('The schema-location workspace keeps its 46px activity rail');
+    expect(editorStyles).toContain('@media (max-width:620px) {');
+    expect(editorStyles).toContain('.js-activity { display:none; }');
+    expect(editorStyles).toContain('.js-workbench { grid-template-columns:minmax(0,1fr); }');
+    expect(editorStyles).toContain('.js-center,.js-problems { grid-column:1; }');
+    expect(editorStyles).toContain('flex-wrap:nowrap; overflow:visible; padding:0;');
+    expect(editorStyles).toContain('minmax(72px,1fr) minmax(88px,1fr) 132px');
+    expect(editorStyles).toContain('overflow-y:auto; overflow-x:hidden');
+  });
+
+  it('shows only unsupported source members in a collapsed disclosure', () => {
+    const index = new SchemaLocationIndex();
+    index.refresh({
+      $schema: 'https://json-structure.org/meta/validation/v0/#',
+      $id: 'urn:inventory',
+      name: 'Inventory',
+      description: 'Structured metadata',
+      type: 'decimal',
+      precision: 20,
+      scale: 8,
+      required: ['value'],
+      additionalProperties: false,
+      'x-vendor-extension': { retained: true },
+    });
+    const location = index.at('')!;
+    const html = schemaMemberInventory(location, new Set(['$schema', '$id', 'name', 'description', 'precision', 'scale', 'required', 'additionalProperties']));
+    expect(html).toContain('<details class="js-schema-unsupported-members">');
+    expect(html).not.toContain('<details class="js-schema-unsupported-members" open');
+    expect(html).toContain('data-schema-member="x-vendor-extension"');
+    for (const member of ['$schema', '$id', 'name', 'description', 'precision', 'scale', 'required', 'additionalProperties']) {
+      expect(html).not.toContain(`data-schema-member="${member}"`);
+    }
   });
 
   it('renders effective member origin, inheritance path, add-in, and conflict provenance', () => {

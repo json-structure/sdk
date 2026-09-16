@@ -87,13 +87,6 @@ export async function driveMountedCorpus(root, roots, manifestCarriers, options=
       if(group.hasAttribute('data-rule-pointer'))fail('Synthetic conditional rule pointer');
       for(const keyword of ['if','then','else']){const row=group.querySelector('[data-branch-keyword="'+keyword+'"]');const present=Object.hasOwn(value,keyword);eq(row?.dataset.branchPresence,present?'authored':'not-authored','branch presence '+keyword);if(present)eq(row.dataset.operandPointer,pointer+'/'+keyword,'exact branch pointer');else{if(row.hasAttribute('data-operand-pointer'))fail('Synthetic missing branch pointer');if(!row.textContent.includes('Not authored'))fail('Missing Not authored state');}}
     }
-    const excluded=new Set(['type','$ref','properties','items','values','choices','definitions',...keys]);
-    for(const[key,member]of Object.entries(value))if(!excluded.has(key)){
-      if(current){
-        const row=[...current.querySelectorAll('[data-schema-member]')].find(el=>el.dataset.schemaMember===key);
-        eq(row?.querySelector('pre')?.textContent,JSON.stringify(member,null,2),'complete contained member '+pointer+'/'+key);
-      }
-    }
     if(active.querySelector('.js-composition-schema-editor,.js-rule-nested,.js-rule-disclosure'))fail('Recursive/reduced operand editor at '+pointer);
   };
   const childButton=step=>{

@@ -44,9 +44,26 @@ try {
         if(!compact)throw new Error(entry.id+' compact/200% equivalent navigation failed');
         await client.evaluate(axe.source);
         const accessibility=await client.evaluate('axe.run(document.querySelector("[data-panel-mode=design]"),{runOnly:{type:"tag",values:["wcag2a","wcag2aa","wcag21a","wcag21aa"]}}).then(r=>r.violations.map(v=>({id:v.id,impact:v.impact,nodes:v.nodes.map(n=>({target:n.target,summary:n.failureSummary,html:n.html}))})))');
-        const layout=await client.evaluate('({rail:document.querySelector(".js-activity").getBoundingClientRect().width,pointerDirection:getComputedStyle(document.querySelector("[data-schema-location-pointer]")).direction,headingFocused:document.activeElement?.hasAttribute("data-schema-heading")})');
-        if(layout?.rail!==46 || layout?.pointerDirection!=='ltr')throw new Error(entry.id+' rail/pointer direction regression '+JSON.stringify(layout));
-        console.log('PACKAGED_ELECTRON_COMPACT '+entry.id+' '+JSON.stringify({viewport,locations:compact.locations,layout,accessibility}));
+        await client.evaluate('document.querySelector("[data-schema-open]")?.click();true');
+        await wait('document.querySelector("[data-schema-location-bar]") !== null');
+        const layout=await client.evaluate(`(()=>{
+          const activity=document.querySelector(".js-activity"),center=document.querySelector(".js-center"),design=document.querySelector("[data-panel-mode=design]"),bar=document.querySelector("[data-schema-location-bar]"),pointer=document.querySelector("[data-schema-location-pointer]");
+          const rows=[...document.querySelectorAll(".js-inline-property-row")].map(row=>row.getBoundingClientRect().height);
+          return {rail:getComputedStyle(activity).display==="none"?0:activity.getBoundingClientRect().width,centerWidth:center.clientWidth,centerScrollWidth:center.scrollWidth,designWidth:design.clientWidth,designScrollWidth:design.scrollWidth,barHeight:bar.getBoundingClientRect().height,maxPropertyRowHeight:Math.max(0,...rows),pointerDirection:getComputedStyle(pointer).direction,headingFocused:document.activeElement?.hasAttribute("data-schema-heading")};
+        })()`);
+        const contrasts=await client.evaluate(`(()=>{
+          const host=document.querySelector(".json-structure-editor"),original=host.dataset.theme;
+          const rgb=value=>value.match(/[\\d.]+/g).slice(0,3).map(Number);
+          const luminance=color=>color.map(channel=>{const value=channel/255;return value<=.04045?value/12.92:((value+.055)/1.055)**2.4;}).reduce((sum,value,index)=>sum+value*[.2126,.7152,.0722][index],0);
+          const ratio=(foreground,background)=>{const values=[luminance(rgb(foreground)),luminance(rgb(background))].sort((a,b)=>b-a);return (values[0]+.05)/(values[1]+.05);};
+          const results=["dark","light","contrast"].map(theme=>{host.dataset.theme=theme;const controls=[...document.querySelectorAll(".js-schema-action:not(:disabled),.js-schema-breadcrumb-action:not(:disabled)")].filter(control=>control.getBoundingClientRect().width>0);return {theme,min:Math.min(...controls.map(control=>{const style=getComputedStyle(control);return ratio(style.color,style.backgroundColor);})),count:controls.length};});
+          host.dataset.theme=original;return results;
+        })()`);
+        const expectedRail=viewport.width<=620?0:46;
+        const maxBarHeight=viewport.width<=620?54:40;
+        if(layout?.rail!==expectedRail || layout?.pointerDirection!=='ltr' || layout?.barHeight>maxBarHeight || layout?.centerScrollWidth>layout?.centerWidth+1 || layout?.designScrollWidth>layout?.designWidth+1 || layout?.maxPropertyRowHeight>180)throw new Error(entry.id+' compact layout regression '+JSON.stringify({viewport,layout}));
+        if(contrasts.some(result=>result.count===0||result.min<4.5))throw new Error(entry.id+' schema control contrast regression '+JSON.stringify(contrasts));
+        console.log('PACKAGED_ELECTRON_COMPACT '+entry.id+' '+JSON.stringify({viewport,locations:compact.locations,layout,contrasts,accessibility}));
         if(accessibility?.some(v=>v.impact==='critical'||v.impact==='serious'))throw new Error(entry.id+' serious/critical accessibility violations');
         }
       }

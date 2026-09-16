@@ -21,7 +21,7 @@ describe('mounted schema-location authoring journeys',()=>{
     const root=mount({$schema:meta,allOf:[{type:'object',properties:{city:{type:'string',maxLength:32}}}]});
     click(root,operand('allOf',0)+' [data-schema-open]');expect(pointer(root)).toBe('/allOf/0');expect(document.activeElement.hasAttribute('data-schema-heading')).toBe(true);
     click(root,'[data-property-field-activate="name"]');change(root,'input[data-inline-property="name"]','town');await settle();expect(value().allOf[0].properties).toHaveProperty('town');
-    click(root,'[data-schema-child-key="town"] [data-schema-open]');expect(pointer(root)).toBe('/allOf/0/properties/town');expect(root.textContent).toContain('maxLength');
+    click(root,'[data-schema-child-key="town"] [data-schema-open]');expect(pointer(root)).toBe('/allOf/0/properties/town');expect(root.querySelector('[data-facet-row="core.max-length"]')).not.toBeNull();
     click(root,'[data-schema-back]');expect(document.activeElement.dataset.schemaOpen).toBe('/allOf/0/properties/town');click(root,'[data-schema-back]');expect(pointer(root)).toBe('');expect(document.activeElement.dataset.schemaOpen).toBe('/allOf/0');
   });
   it('authors all seven rules independently, with empty or explicit seeds and never silent type:any',async()=>{
@@ -46,7 +46,7 @@ describe('mounted schema-location authoring journeys',()=>{
     const root=mount({$schema:meta,allOf:[{type:'string',description:'Alpha'},{type:'int32',description:'Beta'}]});
     click(root,operand('allOf',0)+' [data-schema-open]');click(root,'[data-schema-back]');
     key(root,operand('allOf',0)+' [data-schema-open]','ArrowDown',{altKey:true});await settle();expect(value().allOf[1].description).toBe('Alpha');expect(document.activeElement.dataset.schemaOpen).toBe('/allOf/1');
-    click(root,'[data-schema-forward]');expect(pointer(root)).toBe('/allOf/1');expect(get(root,'[data-schema-member="description"] pre').textContent).toBe('"Alpha"');
+    click(root,'[data-schema-forward]');expect(pointer(root)).toBe('/allOf/1');expect(get(root,'[data-schema-authored-description]').textContent).toBe('Alpha');
     key(root,'[data-schema-heading]','z',{ctrlKey:true});await settle();expect(value().allOf[0].description).toBe('Alpha');expect(pointer(root)).toBe('');expect(document.activeElement.dataset.schemaOpen).toBe('/allOf/0');
     key(root,'[data-schema-heading]','y',{ctrlKey:true});await settle();expect(value().allOf[1].description).toBe('Alpha');expect(document.activeElement.dataset.schemaOpen).toBe('/allOf/1');
   });
@@ -66,6 +66,7 @@ describe('mounted schema-location authoring journeys',()=>{
   it('edits an opaque source token explicitly and returns to Design with all siblings intact',async()=>{
     const source='{ "$schema": "'+meta+'", "allOf": [7, { "$ref" : "#/definitions/Base", "x-extra" : [1,2] }], "definitions": {"Base":{"type":"string"}}, "keep" : "verbatim" }';
     const root=mount(source);click(root,operand('allOf',0)+' [data-schema-open]');expect(get(root,'[data-schema-declaration]').dataset.declarationForm).toBe('malformed');click(root,'[data-composition-source]');
+    expect([...root.querySelectorAll('.js-schema-source-dialog button')].every(button=>button.classList.contains('js-schema-action'))).toBe(true);
     get(root,'[data-schema-source-text]').value='{"type":"string","description":"repaired"}';click(root,'[data-schema-source-apply]');await settle();expect(pointer(root)).toBe('/allOf/0');expect(handle!.getText()).toBe(source.replace('[7,','[{"type":"string","description":"repaired"},'));expect(document.activeElement.hasAttribute('data-schema-heading')).toBe(true);
     key(root,'[data-schema-heading]','z',{ctrlKey:true});await settle();expect(handle!.getText()).toBe(source);
   });
@@ -76,8 +77,21 @@ describe('mounted schema-location authoring journeys',()=>{
     const trace=get(root,'[data-trace-schema-open="/items"]');trace.click();expect(pointer(root)).toBe('/items');
     change(root,'[data-inline-definition-type]','int64');await settle();expect(root.querySelector('[data-evaluation-state="Stale"]')).not.toBeNull();
   });
+  it('does not repeat structured decimal facets in the unsupported source inventory',()=>{
+    const root=mount({$schema:meta,type:'object',properties:{value:{type:'decimal',precision:20,scale:8,'x-vendor':{retained:true}}}});
+    click(root,'[data-schema-child-key="value"] [data-schema-open]');
+    expect(root.querySelector('[data-facet-row="core.precision"]')).not.toBeNull();
+    expect(root.querySelector('[data-facet-row="core.scale"]')).not.toBeNull();
+    expect(root.querySelector('[data-schema-member="precision"]')).toBeNull();
+    expect(root.querySelector('[data-schema-member="scale"]')).toBeNull();
+    const unsupported=get(root,'.js-schema-unsupported-members');expect(unsupported.hasAttribute('open')).toBe(false);
+    expect(unsupported.querySelector('[data-schema-member="x-vendor"]')).not.toBeNull();
+  });
   it('has keyboard overflow/Escape restoration and a Go to Schema Location palette fallback',async()=>{
     const root=mount({$schema:meta,then:{}});key(root,'[data-branch-keyword="then"] [data-schema-open]','F10',{shiftKey:true});const menu=get(root,'[data-branch-keyword="then"] .js-rule-menu');expect(menu.open).toBe(true);document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));expect(menu.open).toBe(false);expect(document.activeElement.tagName).toBe('SUMMARY');
-    key(root,'[data-schema-heading]','P',{ctrlKey:true,shiftKey:true});expect(root.textContent).toContain('Go to Schema Location');key(root,'[data-action-select]','Escape');
+    const origin=get(root,'[data-schema-heading]');key(root,'[data-schema-heading]','P',{ctrlKey:true,shiftKey:true});expect(root.textContent).toContain('Go to Schema Location');
+    change(root,'[data-action-select]','schema-location.go');key(root,'[data-action-select]','Enter');expect(document.activeElement.hasAttribute('data-schema-location-input')).toBe(true);
+    expect([...root.querySelectorAll('.js-schema-picker button')].every(button=>button.classList.contains('js-schema-action'))).toBe(true);
+    key(root,'[data-schema-location-input]','Escape');expect(document.activeElement).toBe(origin);
   });
 });
