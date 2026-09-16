@@ -46,3 +46,5 @@ export * from './performance/parser-budget.js';
 
 export * from './schema-locations.js';
 export * from './schema-location-commands.js';
+
+export * from './overlay-context.js';

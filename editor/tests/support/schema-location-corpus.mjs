@@ -63,10 +63,10 @@ export async function driveMountedCorpus(root, roots, manifestCarriers, options=
       if(!current)fail('No schema sheet at '+pointer);
       eq(current.dataset.schemaSheet,pointer,'sheet pointer');
       eq(current.querySelector('[data-schema-declaration]')?.dataset.declarationForm,form,'declaration form at '+pointer);
-      if(form==='no-type'||form==='empty')eq(current.querySelector('[data-declaration-label]')?.textContent,'No declared type','absent type is not any');
+      if(form==='no-type'||form==='empty')eq(current.querySelector('[data-declaration-label]')?.textContent,current.hasAttribute('data-overlay-context')?'Constraint set':'No declared type','absent type is an implied-base constraint set, never any');
     }
     const active=surface();if(!active)fail('No active Design surface at '+pointer);
-    if(rec(value)&&typeof value.type==='string')eq(active.querySelector('[data-inline-definition-type]')?.value,value.type,'type control retains '+value.type+' at '+pointer);
+    if(rec(value)&&typeof value.type==='string'){if(active.hasAttribute('data-overlay-context')){eq(active.querySelector('[data-overlay-authored-type]')?.dataset.overlayAuthoredType,value.type,'read-only authored type retained at '+pointer);if(active.querySelector('[data-inline-definition-type]'))fail('Contextual mode unexpectedly exposes an arbitrary type picker');}else eq(active.querySelector('[data-inline-definition-type]')?.value,value.type,'type control retains '+value.type+' at '+pointer);}
     if(!rec(value)){if(!current?.querySelector('[data-schema-opaque]'))fail('Opaque source not represented at '+pointer);return;}
     const reference=typeof value.$ref==='string'?value.$ref:rec(value.type)&&typeof value.type.$ref==='string'?value.type.$ref:undefined;
     if(reference){eq(active.querySelector('[data-schema-reference]')?.dataset.schemaReference,reference,'reference bytes at '+pointer);if(typeof value.$ref==='string')stats.legacyReferences++;else stats.canonicalReferences++;}

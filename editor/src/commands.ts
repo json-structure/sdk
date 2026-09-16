@@ -1,3 +1,4 @@
+import { OverlayContextResolver, OVERLAY_EDITABLE_FACETS, type OverlayContext } from './overlay-context.js';
 import { SchemaLocationIndex, type PointerTransformation } from './schema-locations.js';
 import type { DocumentVersion, TextEdit, TextRange } from './contracts.js';
 import type { DocumentSession } from './session.js';
@@ -22,7 +23,7 @@ import {
   type SemanticAnnotationKeyword,
   type SemanticAnnotationKeywordMap
 } from './parser.js';
-import { effectiveValidationTypes, VALIDATION_KEYWORDS, validationIssues, validationValueIsSchemaBacked, type ValidationKeyword, type ValidationKeywordMap } from './validation.js';
+import { effectiveValidationTypes, VALIDATION_KEYWORDS, validationIssues, validationKeywordIssue, validationValueIsSchemaBacked, type ValidationKeyword, type ValidationKeywordMap } from './validation.js';
 import { unitsValueValid, type UnitsKeyword, type UnitsKeywordMap } from './units.js';
 import { alternateNamesPlacementValid, alternateNamesValueValid, type AlternateNamesKeyword, type AlternateNamesKeywordMap } from './alternate-names.js';
 import { ResolvedSchemaContext } from './phase4/resolved-schema.js';
@@ -1502,7 +1503,103 @@ function compositionCommandReady(session: DocumentSession, documentVersion: Docu
   return documentVersion === session.snapshot().documentVersion && session.snapshot().recovery === 'valid' && session.capabilities.conditionalCompositionActive;
 }
 
-/** Adds one full schema operand to an ALL, ANY, or EXACTLY ONE rule. */
+function editableOverlay(session: DocumentSession, pointer: string, addIns: readonly string[]): { resolver: OverlayContextResolver; overlay: OverlayContext } | undefined {
+  if (!isObjectLike(session.value) || !session.capabilities.conditionalCompositionActive || !hasUniquePointerPath(session, pointer) || hasDuplicatePointerDiagnostic(session, pointer)) return undefined;
+  const resolver = new OverlayContextResolver(session.value, { documentUri: session.uri, resolvedDocuments: session.resolvedSchemaDocuments, addIns });
+  const overlay = resolver.resolve(pointer);
+  return overlay && isObjectLike(overlay.delta) ? { resolver, overlay } : undefined;
+}
+
+/** Existing Core/Validation value-shape checks; deliberately NOT a Base-versus-Delta implication test. */
+function overlayFacetValueIssue(session: DocumentSession, overlay: OverlayContext, keyword: string, value: unknown): string | undefined {
+  const schema = overlay.authoringProjection.schema;
+  const types = overlay.authoringProjection.types;
+  const type = types.determinate && types.types.length === 1 ? types.types[0] : undefined;
+  if ((VALIDATION_KEYWORDS as readonly string[]).includes(keyword) || keyword === 'maxLength') return validationKeywordIssue(keyword as ValidationKeyword, value, type);
+  if (!coreMemberValueValid(keyword as CoreDocumentMember, value)) return keyword + ' does not have the value shape required by the existing Core command.';
+  if ((keyword === 'enum' || keyword === 'const') && !coreValueMembersValid(session, { ...schema, [keyword]: value })) return keyword + ' must contain values in the applicable Core primitive representation.';
+  if ((keyword === 'precision' || keyword === 'scale') && type !== 'number' && type !== 'decimal') return keyword + ' applies only to number/decimal schemas.';
+  if (keyword === 'additionalProperties' && type !== 'object') return 'additionalProperties requires an object context.';
+  if (isObjectLike(value) && Object.hasOwn(value, 'type') && !validTypeValue(value.type)) return 'The authored type value is not a valid Core type.';
+  return undefined;
+}
+
+/** Writes a branch-local facet only. The effective type/shape is never copied into source. */
+export class SetOverlayConstraintCommand implements EditorCommand {
+  constructor(readonly targetPointer: string, readonly keyword: string, readonly value: unknown, readonly addIns: readonly string[] = []) {}
+  reason({ session, documentVersion }: CommandContext): string | undefined {
+    if (!compositionCommandReady(session, documentVersion)) return 'The contextual constraint edit is stale or Conditional Composition is inactive.';
+    const context = editableOverlay(session, this.targetPointer, this.addIns);
+    if (!context) return 'An unambiguous, source-addressable constraint set is required.';
+    if (!OVERLAY_EDITABLE_FACETS.has(this.keyword)) return 'This member is not a contextual facet. Use its structural action or Advanced / Edit Source.';
+    const delta = context.overlay.delta as Record<string, unknown>;
+    if (Object.hasOwn(delta, this.keyword) && !objectMemberContext(session, this.targetPointer, this.keyword)) return 'The authored facet has an ambiguous source location.';
+    if (this.value === undefined) return Object.hasOwn(delta, this.keyword) ? undefined : 'Only branch-local constraints can be removed.';
+    if (!context.overlay.authorable) return context.overlay.reason;
+    if ((VALIDATION_KEYWORDS as readonly string[]).includes(this.keyword) && !session.capabilities.validationActive) return 'Activate JSONStructureValidation before adding this constraint.';
+    // Compatibility/unsatisfiability diagnostics are advisory pending conditional-composition issue #5.
+    return overlayFacetValueIssue(session, context.overlay, this.keyword, this.value);
+  }
+  canExecute(context: CommandContext): boolean { return this.reason(context) === undefined; }
+  execute(context: CommandContext): CommandResult {
+    const reason = this.reason(context); if (reason) throw new Error(reason);
+    return this.value === undefined ? removeMemberCommandResult(context.session, this.targetPointer, this.keyword) : setMemberCommandResult(context.session, this.targetPointer, this.keyword, this.value);
+  }
+}
+
+/** Creates a property constraint delta; inherited property schemas and requirements remain fixed. */
+export class AddOverlayPropertyCommand implements EditorCommand {
+  constructor(readonly targetPointer: string, readonly name: string, readonly delta: Readonly<Record<string, unknown>> = {}, readonly addIns: readonly string[] = []) {}
+  reason({ session, documentVersion }: CommandContext): string | undefined {
+    if (!compositionCommandReady(session, documentVersion)) return 'The property constraint edit is stale or Conditional Composition is inactive.';
+    const context = editableOverlay(session, this.targetPointer, this.addIns);
+    if (!context?.overlay.authorable || !context.overlay.authoringProjection.types.types.includes('object')) return context?.overlay.reason ?? 'Property constraints require a determinate object base.';
+    const source = context.overlay.delta as Record<string, unknown>;
+    if (Object.hasOwn(source, 'properties') && !isObjectLike(source.properties)) return 'Malformed local properties are preserved; use Edit Source.';
+    if (isObjectLike(source.properties) && Object.hasOwn(source.properties, this.name)) return 'This property already has a local constraint set.';
+    if (Object.hasOwn(source, 'properties') && !objectMemberContext(session, this.targetPointer, 'properties')) return 'The properties source location is ambiguous.';
+    const inherited = Object.hasOwn(context.overlay.base.properties, this.name);
+    if (!inherited && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(this.name)) return 'New property names must be Core identifiers.';
+    if (!inherited && !context.overlay.operations.addProperty.enabled) return context.overlay.operations.addProperty.reason;
+    if (!isObjectLike(this.delta) || !jsonValueValid(this.delta)) return 'A property delta must be a JSON object.';
+    if (Object.hasOwn(this.delta, 'type') && !validTypeValue(this.delta.type)) return 'The authored property type is not a valid Core type.';
+    // The base remains fixed, even when the new member cannot occur in a base-admissible instance.
+    // Author the requested delta and show its compatibility diagnostics instead of inventing a validity ban.
+    return undefined;
+  }
+  canExecute(context: CommandContext): boolean { return this.reason(context) === undefined; }
+  execute(context: CommandContext): CommandResult {
+    const reason = this.reason(context); if (reason) throw new Error(reason);
+    const source = pointerValue(context.session.value, this.targetPointer) as Record<string, unknown>;
+    return isObjectLike(source.properties) ? setMemberCommandResult(context.session, this.targetPointer + '/properties', this.name, this.delta) : setMemberCommandResult(context.session, this.targetPointer, 'properties', { [this.name]: this.delta });
+  }
+}
+
+/** Adds/removes ONE local requirement, never restating or subtracting the immutable base requirements. */
+export class SetOverlayRequiredCommand implements EditorCommand {
+  constructor(readonly targetPointer: string, readonly name: string, readonly required: boolean, readonly addIns: readonly string[] = []) {}
+  reason({ session, documentVersion }: CommandContext): string | undefined {
+    if (!compositionCommandReady(session, documentVersion)) return 'The requirement edit is stale or Conditional Composition is inactive.';
+    const context = editableOverlay(session, this.targetPointer, this.addIns);
+    if (!context?.overlay.operations.addRequired.enabled) return context?.overlay.operations.addRequired.reason ?? 'A contextual object is required.';
+    if (context.overlay.base.required.includes(this.name)) return context.overlay.operations.removeBaseRequired.reason;
+    const source = context.overlay.delta as Record<string, unknown>;
+    if (!Object.hasOwn(context.overlay.authoringProjection.properties, this.name) && (this.required || !Array.isArray(source.required) || !source.required.includes(this.name))) return 'Add or constrain this property before requiring it.';
+    if (source.required !== undefined && (!Array.isArray(source.required) || !source.required.every(v => typeof v === 'string'))) return 'Alternative or malformed local required sets are preserved; use Advanced / Source.';
+    if (Object.hasOwn(source, 'required') && !objectMemberContext(session, this.targetPointer, 'required')) return 'The required source location is ambiguous.';
+    return undefined;
+  }
+  canExecute(context: CommandContext): boolean { return this.reason(context) === undefined; }
+  execute(context: CommandContext): CommandResult {
+    const reason = this.reason(context); if (reason) throw new Error(reason);
+    const source = pointerValue(context.session.value, this.targetPointer) as Record<string, unknown>;
+    const required = Array.isArray(source.required) ? [...source.required] : [];
+    const next = this.required ? [...new Set([...required, this.name])] : required.filter(name => name !== this.name);
+    return next.length ? setMemberCommandResult(context.session, this.targetPointer, 'required', next) : removeMemberCommandResult(context.session, this.targetPointer, 'required');
+  }
+}
+
+/** Adds a constraint delta, or an explicitly selected Advanced full-schema operand. */
 export class AddCompositionOperandCommand implements EditorCommand {
   constructor(readonly targetPointer: string, readonly keyword: CompositionArrayKeyword, readonly value: Readonly<Record<string, unknown>>, readonly index?: number) {}
 

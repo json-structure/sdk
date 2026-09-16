@@ -1,8 +1,13 @@
+import type { OverlayContext } from '../overlay-context.js';
 import { type SchemaLocation, type SchemaLocationIndex, type SchemaLocationNavigation, schemaDeclarationLabel, schemaRecord, schemaSummary } from '../schema-locations.js';
 import type { CompositionEditorOptions } from './composition-workspace.js';
 import { schemaEvaluationResult } from './composition-workspace.js';
 const e = (text: string): string => text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 export interface SchemaSheetOptions {
+  readonly overlay?: OverlayContext;
+  readonly overlayFullSchema?: boolean;
+  readonly overlayLocalOnly?: boolean;
+  readonly overlayDocument?: unknown;
   readonly index: SchemaLocationIndex;
   readonly navigation: SchemaLocationNavigation;
   readonly source: string;

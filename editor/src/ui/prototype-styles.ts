@@ -1455,4 +1455,23 @@ export const editorStyles = `
 
 .js-property-supplement { display:block; }
 .js-property-supplement > [role="cell"] { min-width:0; }
+
+/* Contextual constraints reuse the Schema Sheet and Effective-member row vocabulary. */
+.js-overlay-base-facets { display:flex; flex-wrap:wrap; gap:8px 20px; margin:8px 0; }
+.js-overlay-base-facets>div { min-width:0; max-width:100%; }
+.js-overlay-base-facets dt { color:var(--js-muted); font-size:12px; }
+.js-overlay-base-facets dd { margin:2px 0; max-width:540px; overflow-wrap:anywhere; }
+.js-overlay-base-facets code { white-space:pre-wrap; }
+.js-overlay-member-row { grid-template-columns:minmax(110px,1fr) minmax(80px,1fr) minmax(110px,1fr) minmax(150px,1.2fr) minmax(130px,1.4fr) 44px; }
+.js-overlay-grid { overflow-x:auto; }
+.js-overlay-grid .js-overlay-member-row { min-width:680px; }
+.js-overlay-property-add { margin-top:12px; }
+.js-overlay-property-add summary { width:fit-content; }
+.js-overlay-property-add [aria-disabled=true] { color:var(--js-muted); }
+.js-overlay-advanced>summary { width:auto; min-width:80px; padding:4px 10px; font-size:13px; }
+.js-overlay-advanced>div { min-width:270px; }
+.js-overlay-diagnostics ul { padding-left:18px; }
+.js-overlay-diagnostics li { margin:6px 0; overflow-wrap:anywhere; }
+.js-overlay-diagnostics li[data-overlay-classification=conflict]>strong,.js-overlay-diagnostics li[data-overlay-classification=expansion]>strong { color:var(--js-warn); }
+.js-overlay-diagnostics li[data-overlay-classification=redundant]>strong { color:var(--js-muted); }
 `;

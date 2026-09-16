@@ -44,6 +44,9 @@ import { fluentIcon, type FluentIconName } from './fluent-icons.js';
 import { jsonStructureLogo } from './brand-logo.js';
 import { technologyIcon } from './technology-icons.js';
 import { sameSelection, type SelectionIdentity } from '../selection.js';
+import { OverlayContextResolver, OVERLAY_EDITABLE_FACETS, type OverlayContext } from '../overlay-context.js';
+import { overlayEditorView, overlayAdvancedMenu } from './overlay-editor.js';
+import { AddOverlayPropertyCommand, SetOverlayConstraintCommand, SetOverlayRequiredCommand } from '../commands.js';
 import { compositionEditorView, type CompositionEditorOptions } from './composition-workspace.js';
 
 export { diagnosticsForPointer, pointerLabel, projectGraph, projectProperties } from './helpers.js';
@@ -243,6 +246,8 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
   let relationDraftOpen = false;
   let compositionStatus = '';
   let compositionAddTarget: string | undefined;
+  const fullSchemaLocations = new Set<string>();
+  let overlayMemberMode: DesignMemberMode = 'effective';
   let instanceText = '{}';
   let instanceResult: InstanceValidationResult | undefined;
   let instanceWorkspace: InstanceWorkspace | undefined;
@@ -362,6 +367,8 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     activePropertyField = undefined;
     propertyMenuPointer = undefined;
     schemaNavigation.reset();
+    fullSchemaLocations.clear();
+    overlayMemberMode = 'effective';
     schemaEditHistory.length = 0;
     compositionAddTarget = undefined;
     instanceResult = undefined; instanceWorkspace = undefined; instanceRootPointer = undefined; instanceVersion += 1;
@@ -498,7 +505,13 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     panel.querySelector('form')?.addEventListener('submit',(event: Event)=>{ event.preventDefault(); const pointer = panel.querySelector('[data-schema-location-input]')!.value; if (!schemaLocations.at(pointer)) { panel.querySelector('[data-schema-picker-status]')!.textContent='No selectable schema at this exact JSON Pointer.'; return; } close(); openSchema(pointer); });
     panel.querySelector('input')?.focus();
   };
-  const editSchemaSource = (pointer: string): void => {
+  const showImportedSourceOrigin = (documentUri: string, pointer: string): void => {
+    mode = 'analysis';
+    refactoringStatus = 'Declared in ' + documentUri + ' at ' + (pointer || '"" (document root)') + '. Imported source is read-only here. Open the import source from the Imports lens or Libraries.';
+    render();
+  };
+  const editSchemaSource = (pointer: string, documentUri = session.uri): void => {
+    if (documentUri !== session.uri) { showImportedSourceOrigin(documentUri, pointer); return; }
     const range = session.model?.nodes.find(node=>node.pointer===pointer)?.range;
     if (range?.startOffset === undefined || range.endOffset === undefined) { openSourceView(pointer); return; }
     const invoker = document.activeElement as HTMLElement | null;
@@ -521,7 +534,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     }
     const snapshot = session.snapshot();
     const context = { session, documentVersion: snapshot.documentVersion };
-    if (!command.canExecute(context)) return 'This command cannot be applied to the current selection or document state.';
+    if (!command.canExecute(context)) return (command as typeof command & { reason?: (current: typeof context) => string | undefined }).reason?.(context) ?? 'This command cannot be applied to the current selection or document state.';
     const beforeNavigation = schemaNavigation.capture();
     const beforeSheetPointer = schemaNavigation.current?.pointer ?? selectedPointer ?? '';
     const activeSchemaControl = (document.activeElement as HTMLElement | null)?.closest('[data-operand-pointer],[data-schema-open]') as HTMLElement | null;
@@ -566,6 +579,19 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     commandQueue = result.then(() => undefined, () => undefined);
     return result;
   };
+  const fullSchema = (pointer: string): boolean => schemaLocations.ancestors(pointer).some(location => fullSchemaLocations.has(location.id));
+  const contextualOverlay = (pointer: string): { resolver: OverlayContextResolver; context: OverlayContext } | undefined => {
+    if (fullSchema(pointer) || !isSchemaRecord(session.value)) return undefined;
+    const resolver = new OverlayContextResolver(session.value, { documentUri: session.uri, resolvedDocuments: session.resolvedSchemaDocuments, addIns: selectedAddIns });
+    const context = resolver.resolve(pointer);
+    return context ? { resolver, context } : undefined;
+  };
+  const facetDocument = (pointer: string): unknown => {
+    const overlay = contextualOverlay(pointer);
+    return overlay ? overlay.resolver.applicabilityDocument(overlay.context) : session.value;
+  };
+  const facetCommand = (action: CommandAction, pointer: string, value: unknown): EditorCommand => contextualOverlay(pointer) && action.keyword && OVERLAY_EDITABLE_FACETS.has(action.keyword)
+    ? new SetOverlayConstraintCommand(pointer, action.keyword, value, selectedAddIns) : action.create(pointer, value);
   const render = (): void => {
     if (activeGraphLocationKey) graphCameraByLocation.set(activeGraphLocationKey, graphNavigation.snapshot().camera);
     if (disposed) return;
@@ -639,6 +665,8 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     const selectedDefinition = selectedPointer === '' ? undefined : definitions.find((definition) => definition.pointer === selectedPointer) ?? definitions.find((definition) => selectedPointer?.startsWith(`${definition.pointer}/`));
     const definitionPointer = namespaceSelected ? undefined : sheetOwner?.pointer ?? selectedDefinition?.pointer ?? (isInlineRootSchema(session.value) ? '' : undefined);
     const activeSchemaPointer = sheetLocation?.pointer ?? definitionPointer;
+    const overlayResolver = isSchemaRecord(session.value) ? new OverlayContextResolver(session.value, { index: schemaLocations, documentUri: session.uri, resolvedDocuments: session.resolvedSchemaDocuments, addIns: selectedAddIns }) : undefined;
+    const overlay = sheetLocation ? overlayResolver?.resolve(sheetLocation.pointer) : undefined;
     const rows = activeSchemaPointer === undefined ? [] : projectSchemaProperties(session.value, activeSchemaPointer);
     const effectiveMembers = activeSchemaPointer !== undefined && session.value && typeof session.value === 'object' && !Array.isArray(session.value)
       ? resolveEffectiveMembers(session.value as Record<string, unknown>, activeSchemaPointer, { documentUri: session.uri, resolvedDocuments: session.resolvedSchemaDocuments, addIns: selectedAddIns })
@@ -676,6 +704,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     const compositionOptions: CompositionEditorOptions | undefined = activeSchemaPointer === undefined ? undefined : {
       document: session.value,
       targetPointer: activeSchemaPointer,
+      overlayResolver,
       diagnostics: snapshot.diagnostics,
       evaluation: compositionEvaluation,
       references: effectiveReferenceChoices(session).map((choice) => ({ value: `#${choice.pointer}`, label: choice.name })),
@@ -685,7 +714,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       documentVersion: snapshot.documentVersion,
       instanceVersion,
     };
-    root.innerHTML = structuredWorkbenchShell(snapshot, documentTitle, typeDefinitions, definitionPointer, rows, selectedPointer, mode, problemsOpen, designMemberMode, effectiveMembers, expandedPropertyPointer, options.chrome ?? 'document', pendingPropertyFields, relationDraftOpen, typeCreatorOpen, activePropertyField, propertyMenuPointer, documentPageOpen, compositionOptions, sheetLocation ? { index: schemaLocations, navigation: schemaNavigation, source: snapshot.text, knownMembers: schemaKnownMembers() } : undefined);
+    root.innerHTML = structuredWorkbenchShell(snapshot, documentTitle, typeDefinitions, definitionPointer, rows, selectedPointer, mode, problemsOpen, designMemberMode, effectiveMembers, expandedPropertyPointer, options.chrome ?? 'document', pendingPropertyFields, relationDraftOpen, typeCreatorOpen, activePropertyField, propertyMenuPointer, documentPageOpen, compositionOptions, sheetLocation ? { index: schemaLocations, navigation: schemaNavigation, source: snapshot.text, knownMembers: schemaKnownMembers(), overlay, overlayFullSchema: fullSchema(sheetLocation.pointer), overlayLocalOnly: overlayMemberMode === 'local', overlayDocument: overlay && overlayResolver?.applicabilityDocument(overlay) } : undefined);
     root.querySelectorAll('[data-schema-open]').forEach((button: HTMLElement) => { button.dataset.schemaLocationId = schemaLocations.at(button.dataset.schemaOpen ?? '')?.id ?? ''; });
     root.querySelectorAll('[data-property-editor]').forEach((editor: HTMLElement) => {
       const open = editor.querySelector('[data-schema-open]') as HTMLElement | null;
@@ -1433,15 +1462,13 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     root.querySelectorAll('[data-effective-source]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
       const sourcePointer = button.dataset.effectiveSource;
       const sourceDocument = button.dataset.effectiveDocument;
-      if (!sourcePointer) return;
+      if (sourcePointer === undefined) return;
       if (!sourceDocument || sourceDocument === session.uri) {
         pendingDiagnostic = { uri: session.uri, pointer: sourcePointer, range: session.model?.nodes.find((node) => node.pointer === sourcePointer)?.range };
         select(sourcePointer, 'source');
       } else {
         selectedPointer = definitionPointer;
-        mode = 'analysis';
-        refactoringStatus = `Declared in ${sourceDocument} at ${sourcePointer}. Open the import source from the Imports lens or Libraries.`;
-        render();
+        showImportedSourceOrigin(sourceDocument, sourcePointer);
       }
     }));
     root.querySelectorAll('[data-command="definition.add"]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
@@ -1826,7 +1853,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
     }));
     root.querySelectorAll('[data-action-id]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => openAction(button.dataset.actionId!, button.dataset.actionPointer ?? selectedPointer)));
     const ensureInlineActionCapability = async (action: CommandAction, pointer: string): Promise<string | undefined> => {
-      const availability = actionAvailability(action, pointer, session.value);
+      const availability = actionAvailability(action, pointer, facetDocument(pointer));
       if (availability.enabled) return undefined;
       if (!availability.reason?.startsWith('Activate ') || !action.capability || action.capability === 'core') return availability.reason;
       const document = session.value as Record<string, unknown>;
@@ -1892,7 +1919,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
         currentCapabilities.importActive && !afterSchemaCapabilities.importActive ? usesByCapability.import : undefined,
         currentCapabilities.relationsActive && !afterSchemaCapabilities.relationsActive ? usesByCapability.relations : undefined,
       ].filter((use): use is string => use !== undefined);
-      if (!actionAvailability(action, pointer, session.value).enabled) {
+      if (!actionAvailability(action, pointer, facetDocument(pointer)).enabled) {
         const use = usesByCapability[action.capability];
         if (use) preservationUses.push(use);
       }
@@ -1907,15 +1934,15 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
           if (error) return error;
         }
       }
-      return actionAvailability(action, pointer, session.value).enabled ? undefined : actionAvailability(action, pointer, session.value).reason;
+      return actionAvailability(action, pointer, facetDocument(pointer)).enabled ? undefined : actionAvailability(action, pointer, facetDocument(pointer)).reason;
     };
     const applyStructuredFacet = async (action: CommandAction, pointer: string, raw: string, checked = false): Promise<void> => {
       const capabilityError = await ensureInlineActionCapability(action, pointer);
       if (capabilityError) { setInlineStatus(root, pointer, capabilityError); return; }
       let value: unknown;
-      try { value = parseActionValue(action, raw, checked, effectiveSchemaType(session.value, pointer)); }
+      try { value = parseActionValue(action, raw, checked, effectiveSchemaType(facetDocument(pointer), pointer)); }
       catch (error) { setInlineStatus(root, pointer, error instanceof Error ? error.message : String(error)); return; }
-      const error = await applyCommand(action.create(pointer, value));
+      const error = await applyCommand(facetCommand(action, pointer, value));
       if (error) { setInlineStatus(root, pointer, error); return; }
       if (pendingPropertyFields.delete(inlineFieldKey(pointer, action.id))) render();
     };
@@ -1965,13 +1992,13 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       if (effectiveDefault !== undefined && raw === effectiveDefault) {
         if (!authored) return;
         const removeAction = actionById(action.removesActionId ?? `${action.id}.remove`);
-        if (removeAction) void applyCommand(removeAction.create(pointer, undefined)).then((error) => error && setInlineStatus(root, pointer, error));
+        if (removeAction) void applyCommand(facetCommand(removeAction, pointer, undefined)).then((error) => error && setInlineStatus(root, pointer, error));
         return;
       }
       if (control.dataset.valueKind !== 'boolean' && raw === '') {
         if (!authored) return;
         const removeAction = actionById(action.removesActionId ?? `${action.id}.remove`);
-        if (removeAction) void applyCommand(removeAction.create(pointer, undefined)).then((error) => error && setInlineStatus(root, pointer, error));
+        if (removeAction) void applyCommand(facetCommand(removeAction, pointer, undefined)).then((error) => error && setInlineStatus(root, pointer, error));
         return;
       }
       void applyStructuredFacet(action, pointer, raw, (control as HTMLInputElement).checked);
@@ -1991,7 +2018,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       }
       if (policy === 'unspecified') {
         const removeAction = actionById(action.removesActionId ?? `${action.id}.remove`);
-        if (removeAction) void applyCommand(removeAction.create(pointer, undefined)).then((error) => error && setInlineStatus(root, pointer, error));
+        if (removeAction) void applyCommand(facetCommand(removeAction, pointer, undefined)).then((error) => error && setInlineStatus(root, pointer, error));
         return;
       }
       void applyStructuredFacet(action, pointer, policy);
@@ -2027,7 +2054,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
         if (!command) return;
         const capabilityError = await ensureInlineActionCapability(command, pointer);
         if (capabilityError) { setInlineStatus(root, pointer, capabilityError); return; }
-        const error = await applyCommand(command.create(pointer, values.length ? values : undefined));
+        const error = await applyCommand(facetCommand(command, pointer, values.length ? values : undefined));
         if (error) { setInlineStatus(root, pointer, error); return; }
         pendingPropertyFields.delete(inlineFieldKey(pointer, action.id));
       };
@@ -2063,13 +2090,13 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       if (control.value === '') {
         if (schema.const === undefined) return;
         const removeAction = actionById(action.removesActionId ?? 'core.const.remove');
-        if (removeAction) void applyCommand(removeAction.create(pointer, undefined)).then((error) => error && setInlineStatus(root, pointer, error));
+        if (removeAction) void applyCommand(facetCommand(removeAction, pointer, undefined)).then((error) => error && setInlineStatus(root, pointer, error));
         return;
       }
       let value: unknown;
       try { value = type === 'null' ? null : enumValueFromControl(type, control); }
       catch (error) { setInlineStatus(root, pointer, error instanceof Error ? error.message : String(error)); return; }
-      void applyCommand(action.create(pointer, value)).then((error) => error && setInlineStatus(root, pointer, error));
+      void applyCommand(facetCommand(action, pointer, value)).then((error) => error && setInlineStatus(root, pointer, error));
     }));
     root.querySelectorAll('[data-localized-descriptions]').forEach((container: HTMLElement) => {
       const pointer = container.dataset.localizedDescriptions;
@@ -2296,7 +2323,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       container.querySelectorAll('[data-crs-coordinate-row]').forEach((row: HTMLElement) => bindCoordinateRow(row));
       container.querySelector('[data-crs-apply]')?.addEventListener('click', () => {
         const next = value();
-        if (next) void applyCommand(action.create(pointer, next)).then((error) => error && setInlineStatus(root, pointer, error));
+        if (next) void applyCommand(facetCommand(action, pointer, next)).then((error) => error && setInlineStatus(root, pointer, error));
       });
       container.querySelector('[data-crs-coordinate-add]')?.addEventListener('click', () => {
         const add = container.querySelector('[data-crs-coordinate-add-select]') as HTMLSelectElement | null;
@@ -2338,7 +2365,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       const pointer = button.dataset.facetPointer;
       const action = actionById(button.dataset.facetRemove ?? '');
       if (pointer === undefined || !action) return;
-      void applyCommand(action.create(pointer, undefined)).then((error) => error && setInlineStatus(root, pointer, error));
+      void applyCommand(facetCommand(action, pointer, undefined)).then((error) => error && setInlineStatus(root, pointer, error));
     }));
     root.querySelectorAll('[data-facet-cancel]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
       const key = button.dataset.facetCancel;
@@ -2399,23 +2426,58 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       const action = actionById(id);
       if (action && pointer !== undefined) showActionEditor(root, action, pointer, session, catalogRegistry, applyCommand, undefined, () => openSourceView(pointer));
     }
-    const applyCompositionCommand = (command: EditorCommand): void => {
-      compositionStatus=''; void applyCommand(command).then(message=>{if(message){compositionStatus=message;render();}});
+    const applyCompositionCommand = (command: EditorCommand, openPointer?: string): void => {
+      compositionStatus = '';
+      void applyCommand(command).then(message => {
+        if (message) { compositionStatus = message; setInlineStatus(root, schemaNavigation.current?.pointer ?? '', message); render(); return; }
+        if (openPointer !== undefined) {
+          openSchema(openPointer, schemaLocations.at(openPointer)?.id);
+          const history = schemaEditHistory.at(-1); if (history) history.after = schemaNavigation.capture();
+        }
+      });
     };
-    const seedAt = (button: HTMLElement): Readonly<Record<string,unknown>> | undefined => {
-      const owner=button.closest('.js-rule-add'); const kind=owner?.querySelector('[data-composition-seed-kind]')?.value ?? 'empty';
-      if(kind==='source') { try {const value=JSON.parse(owner?.querySelector('[data-composition-seed-source]')?.value ?? '');if(isSchemaRecord(value))return value;}catch {} compositionStatus='A new operand needs a complete schema object source seed.';render();return undefined; }
-      if(kind.startsWith('ref:'))return {type:{$ref:kind.slice(4)}};
-      if(kind.startsWith('type:')) {const type=kind.slice(5); if(type==='object')return {type,properties:{value:{type:'string'}}}; if(type==='tuple')return {type,properties:{value:{type:'string'}},tuple:['value']}; if(type==='choice')return {type,choices:{Value:{type:'string'}}}; if(type==='array'||type==='set')return {type,items:{type:'string'}}; if(type==='map')return {type,values:{type:'string'}};return {type};}
-      return {};
+    const setRule = (target: string, keyword: CompositionKeyword, value: Readonly<Record<string,unknown>> | undefined, open = false): void => {
+      const pointer = open ? target + '/' + keyword + (['allOf', 'anyOf', 'oneOf'].includes(keyword) ? '/0' : '') : undefined;
+      if(keyword==='if'||keyword==='then'||keyword==='else')applyCompositionCommand(new SetConditionalBranchCommand(target,keyword,value), pointer);
+      else if(keyword==='not')applyCompositionCommand(new SetNotCommand(target,value), pointer);
+      else if(keyword==='allOf')applyCompositionCommand(new SetAllOfCommand(target,value===undefined?undefined:[value]), pointer);
+      else if(keyword==='anyOf')applyCompositionCommand(new SetAnyOfCommand(target,value===undefined?undefined:[value]), pointer);
+      else applyCompositionCommand(new SetOneOfCommand(target,value===undefined?undefined:[value]), pointer);
     };
-    const setRule = (target: string, keyword: CompositionKeyword, value: Readonly<Record<string,unknown>> | undefined): void => {
-      if(keyword==='if'||keyword==='then'||keyword==='else')applyCompositionCommand(new SetConditionalBranchCommand(target,keyword,value));
-      else if(keyword==='not')applyCompositionCommand(new SetNotCommand(target,value));
-      else if(keyword==='allOf')applyCompositionCommand(new SetAllOfCommand(target,value===undefined?undefined:[value]));
-      else if(keyword==='anyOf')applyCompositionCommand(new SetAnyOfCommand(target,value===undefined?undefined:[value]));
-      else applyCompositionCommand(new SetOneOfCommand(target,value===undefined?undefined:[value]));
-    };
+    root.querySelectorAll('[data-overlay-member-mode]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => { overlayMemberMode = button.dataset.overlayMemberMode as DesignMemberMode; render(); }));
+    root.querySelectorAll('[data-overlay-full-schema]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
+      const location = schemaLocations.at(button.dataset.overlayFullSchema ?? ''); if (!location) return;
+      fullSchemaLocations.add(location.id); focusSchemaHeading = true; render();
+    }));
+    root.querySelectorAll('[data-overlay-contextual]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
+      schemaLocations.ancestors(button.dataset.overlayContextual ?? '').forEach(location => fullSchemaLocations.delete(location.id)); focusSchemaHeading = true; render();
+    }));
+    root.querySelectorAll('[data-overlay-reference]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
+      const pointer = button.dataset.overlayReference ?? '';
+      const choices = effectiveReferenceChoices(session);
+      const panel = document.createElement('div'); panel.className = 'js-command-palette js-schema-picker'; panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-modal', 'true'); panel.setAttribute('aria-label', 'Use reusable constraint schema/reference');
+      panel.innerHTML = '<form><h2>Use reusable constraint schema/reference</h2><p>Add a canonical typed reference. Existing local constraints remain unchanged.</p><label>Reusable constraint schema<select data-overlay-reference-choice>' + choices.map(choice => '<option value="#' + escapeAttribute(choice.pointer) + '">' + escapeHtml(choice.name) + '</option>').join('') + '</select></label><p role="status" data-overlay-reference-status></p><div class="js-schema-dialog-actions"><button type="submit" class="js-schema-action" data-overlay-reference-apply>Use reference</button><button type="button" class="js-schema-action" data-overlay-reference-cancel>Cancel</button></div></form>';
+      root.append(panel); let release = (): void => undefined; const close = (): void => { release(); panel.remove(); button.focus(); }; release = trapFocus(panel, close);
+      panel.querySelector('[data-overlay-reference-cancel]')?.addEventListener('click', close);
+      panel.querySelector('[data-overlay-reference-apply]')?.closest('form')?.addEventListener('submit', (event: Event) => {
+        event.preventDefault(); const reference = panel.querySelector('[data-overlay-reference-choice]')?.value ?? '';
+        const command = new SetCompositionOperandReferenceCommand(pointer, reference);
+        if (!command.canExecute({ session, documentVersion: session.snapshot().documentVersion })) { panel.querySelector('[data-overlay-reference-status]')!.textContent = 'Choose a resolvable reusable type. Legacy direct references are preserved; use Edit Source to change their form explicitly.'; return; }
+        close(); applyCompositionCommand(command);
+      });
+      panel.querySelector('select')?.focus();
+    }));
+    root.querySelectorAll('[data-overlay-property-open]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
+      const owner = button.dataset.overlayOwner ?? '', name = button.dataset.overlayPropertyOpen ?? '';
+      applyCompositionCommand(new AddOverlayPropertyCommand(owner, name, {}, selectedAddIns), owner + '/properties/' + escapePointerToken(name));
+    }));
+    root.querySelectorAll('[data-overlay-property-add]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
+      const owner = button.dataset.overlayPropertyAdd ?? '', row = button.closest('.js-overlay-property-add');
+      const name = row?.querySelector('[data-overlay-new-name]')?.value.trim() ?? '';
+      const type = row?.querySelector('[data-overlay-new-type]')?.value;
+      applyCompositionCommand(new AddOverlayPropertyCommand(owner, name, type ? { type } : {}, selectedAddIns), owner + '/properties/' + escapePointerToken(name));
+    }));
+    root.querySelectorAll('[data-overlay-required]').forEach((control: HTMLInputElement) => control.addEventListener('change', () => applyCompositionCommand(new SetOverlayRequiredCommand(control.dataset.overlayOwner ?? '', control.dataset.overlayRequired ?? '', control.checked, selectedAddIns))));
     root.querySelectorAll('[data-composition-add-start]').forEach((button: HTMLButtonElement)=>button.addEventListener('click',()=>{
       compositionAddTarget=button.dataset.compositionAddStart ?? schemaNavigation.current?.pointer ?? definitionPointer;
       render();
@@ -2427,21 +2489,21 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       render();
       queueMicrotask(() => (root.querySelector(`[data-composition-add-start="${cssAttributeValue(target ?? '')}"]`) as HTMLElement | null)?.focus());
     }));
-    root.querySelectorAll('[data-composition-seed-kind]').forEach((control: HTMLSelectElement)=>control.addEventListener('change',()=>{const label=control.closest('.js-rule-add')?.querySelector('[data-composition-seed-source-label]');if(label)label.hidden=control.value!=='source';}));
-    root.querySelectorAll('[data-composition-add-rule]').forEach((button: HTMLButtonElement)=>button.addEventListener('click',()=>{const keyword=button.closest('.js-rule-add')?.querySelector('[data-composition-add-rule-kind]')?.value as CompositionKeyword; const seed=seedAt(button);if(keyword&&seed){compositionAddTarget=undefined;setRule(button.dataset.compositionTarget ?? '',keyword,seed);}}));
+
+    root.querySelectorAll('[data-composition-add-rule]').forEach((button: HTMLButtonElement)=>button.addEventListener('click',()=>{const keyword=button.closest('.js-rule-add')?.querySelector('[data-composition-add-rule-kind]')?.value as CompositionKeyword; if(keyword){compositionAddTarget=undefined;setRule(button.dataset.compositionTarget ?? '',keyword,{},true);}}));
     root.querySelectorAll('[data-composition-delete-rule]').forEach((button: HTMLButtonElement)=>button.addEventListener('click',()=>setRule(button.dataset.compositionTarget ?? '',button.dataset.compositionDeleteRule as CompositionKeyword,undefined)));
     root.querySelectorAll('[data-composition-convert]').forEach((control: HTMLSelectElement)=>control.addEventListener('change',()=>applyCompositionCommand(new ConvertCompositionRuleCommand(control.dataset.compositionTarget ?? '',control.getAttribute('data-composition-from') as CompositionArrayKeyword,control.value as CompositionArrayKeyword))));
-    root.querySelectorAll('[data-composition-add-operand]').forEach((button: HTMLButtonElement)=>button.addEventListener('click',()=>{const seed=seedAt(button);if(seed)applyCompositionCommand(new AddCompositionOperandCommand(button.dataset.compositionTarget ?? '',button.dataset.compositionKeyword as CompositionArrayKeyword,seed));}));
+    root.querySelectorAll('[data-composition-add-operand]').forEach((button: HTMLButtonElement)=>button.addEventListener('click',()=>{const target=button.dataset.compositionTarget ?? '', keyword=button.dataset.compositionKeyword as CompositionArrayKeyword; const values=valueAtPointer(session.value,target+'/'+keyword); if(Array.isArray(values))applyCompositionCommand(new AddCompositionOperandCommand(target,keyword,{}), target+'/'+keyword+'/'+values.length);}));
     root.querySelectorAll('[data-composition-delete-operand]').forEach((button: HTMLButtonElement)=>button.addEventListener('click',()=>applyCompositionCommand(new DeleteCompositionOperandCommand(button.dataset.compositionOperand ?? ''))));
     root.querySelectorAll('[data-composition-duplicate]').forEach((button: HTMLButtonElement)=>button.addEventListener('click',()=>applyCompositionCommand(new DuplicateCompositionOperandCommand(button.dataset.compositionOperand ?? ''))));
     root.querySelectorAll('[data-composition-move]').forEach((button: HTMLButtonElement)=>button.addEventListener('click',()=>applyCompositionCommand(new MoveCompositionOperandCommand(button.dataset.compositionOperand ?? '',button.dataset.compositionMove as 'up'|'down'))));
     root.querySelectorAll('[data-composition-wrap]').forEach((button: HTMLButtonElement)=>button.addEventListener('click',()=>applyCompositionCommand(new WrapCompositionOperandCommand(button.dataset.compositionOperand ?? '',button.closest('.js-rule-operand')?.querySelector('[data-composition-wrap-kind]')?.value as CompositionArrayKeyword ?? 'allOf'))));
     root.querySelectorAll('[data-composition-negate]').forEach((button: HTMLButtonElement)=>button.addEventListener('click',()=>applyCompositionCommand(new NegateCompositionOperandCommand(button.dataset.compositionOperand ?? ''))));
     root.querySelectorAll('[data-composition-unwrap]').forEach((button: HTMLButtonElement)=>button.addEventListener('click',()=>applyCompositionCommand(new UnwrapCompositionOperandCommand(button.dataset.compositionOperand ?? ''))));
-    root.querySelectorAll('[data-composition-add-branch]').forEach((button: HTMLButtonElement)=>button.addEventListener('click',()=>{const seed=seedAt(button);if(seed)applyCompositionCommand(new SetConditionalBranchCommand(button.dataset.compositionTarget ?? '',button.dataset.compositionAddBranch as 'if'|'then'|'else',seed));}));
+    root.querySelectorAll('[data-composition-add-branch]').forEach((button: HTMLButtonElement)=>button.addEventListener('click',()=>{const target=button.dataset.compositionTarget ?? '', keyword=button.dataset.compositionAddBranch as 'if'|'then'|'else';applyCompositionCommand(new SetConditionalBranchCommand(target,keyword,{}),target+'/'+keyword);}));
     root.querySelectorAll('[data-composition-remove-branch]').forEach((button: HTMLButtonElement)=>button.addEventListener('click',()=>applyCompositionCommand(new SetConditionalBranchCommand(button.dataset.compositionTarget ?? '',button.dataset.compositionRemoveBranch as 'if'|'then'|'else',undefined))));
     root.querySelectorAll('[data-composition-delete-conditional]').forEach((button: HTMLButtonElement)=>button.addEventListener('click',()=>applyCompositionCommand(new SetConditionalCompositionCommand(button.dataset.compositionTarget ?? '',undefined))));
-    root.querySelectorAll('[data-composition-source]').forEach((button: HTMLButtonElement)=>button.addEventListener('click',()=>editSchemaSource(button.dataset.compositionSource ?? '')));
+    root.querySelectorAll('[data-composition-source]').forEach((button: HTMLButtonElement)=>button.addEventListener('click',()=>editSchemaSource(button.dataset.compositionSource ?? '', button.dataset.effectiveDocument)));
     root.querySelectorAll('[data-operand-pointer]').forEach((row: HTMLElement)=>row.addEventListener('keydown',(event: KeyboardEvent)=>{
       if(event.altKey && (event.key==='ArrowUp'||event.key==='ArrowDown')) {event.preventDefault();event.stopPropagation();applyCompositionCommand(new MoveCompositionOperandCommand(row.dataset.operandPointer ?? '',event.key==='ArrowUp'?'up':'down'));}
       if(event.shiftKey && event.key==='F10') {event.preventDefault();const menu=row.querySelector('.js-rule-menu');if(menu){menu.open=true;menu.querySelector('button:not([disabled]),select')?.focus();}}
@@ -4255,10 +4317,14 @@ export function designView(name: string | undefined, type: string | undefined, d
   const declarationPointer = schemaSheet?.navigation.current?.pointer ?? definitionPointer ?? '';
   const rawDeclaration = valueAtPointer(document, declarationPointer);
   const declaration = isSchemaRecord(rawDeclaration) ? rawDeclaration : undefined;
+  if (schemaSheet?.overlay && !schemaSheet.overlayFullSchema) {
+    const overlay = schemaSheet.overlay;
+    return overlayEditorView(overlay, schemaSheet, declaration ? structuredFacetEditor(declarationPointer, declaration, schemaSheet.overlayDocument ?? document, pendingPropertyFields, new Set(), true, overlay) : '', compositionOptions, schemaSheet.overlayLocalOnly);
+  }
   if (schemaSheet?.navigation.current && !declaration) {
     const location = schemaSheet.navigation.current;
     const authored = location.range?.startOffset !== undefined && location.range.endOffset !== undefined ? schemaSheet.source.slice(location.range.startOffset,location.range.endOffset) : JSON.stringify(rawDeclaration,null,2);
-    return schemaLocationBar(schemaSheet) + '<div class="js-sheet js-schema-sheet" data-schema-sheet="' + escapeAttribute(declarationPointer) + '">' + schemaDeclarationView(location,'','',compositionOptions) + '<section class="js-design-section"><h2>Structure</h2><p>Not a schema object.</p></section><section class="js-design-section"><h2>Constraints and annotations</h2><p>No interpreted members.</p></section><section class="js-design-section"><h2>Unsupported source value</h2><pre data-schema-opaque>' + escapeHtml(authored ?? '') + '</pre><button type="button" class="js-schema-action" data-composition-source="' + escapeAttribute(declarationPointer) + '">Edit source</button></section></div>';
+    return schemaLocationBar(schemaSheet) + '<div class="js-sheet js-schema-sheet" data-schema-sheet="' + escapeAttribute(declarationPointer) + '">' + schemaDeclarationView(location,'','',compositionOptions) + (schemaSheet.overlay ? overlayAdvancedMenu(declarationPointer, true) : '') + '<section class="js-design-section"><h2>Structure</h2><p>Not a schema object.</p></section><section class="js-design-section"><h2>Constraints and annotations</h2><p>No interpreted members.</p></section><section class="js-design-section"><h2>Unsupported source value</h2><pre data-schema-opaque>' + escapeHtml(authored ?? '') + '</pre><button type="button" class="js-schema-action" data-composition-source="' + escapeAttribute(declarationPointer) + '">Edit source</button></section></div>';
   }
   const activeType = schemaSheet
     ? typeof declaration?.type === 'string' ? declaration.type : undefined
@@ -4305,7 +4371,7 @@ export function designView(name: string | undefined, type: string | undefined, d
     if (activeType === 'object' || activeType === 'tuple' || isSchemaRecord(declaration?.properties)) rows.forEach((row: HTMLElement)=>handled.add(row.pointer));
     if (activeType === 'choice' && isSchemaRecord(declaration?.choices)) Object.keys(declaration.choices).forEach(key=>handled.add(declarationPointer+'/choices/'+escapePointerToken(key)));
     if (activeType === 'array' || activeType === 'set' || activeType === 'map') handled.add(declarationPointer + (activeType === 'map' ? '/values' : '/items'));
-    return schemaLocationBar(schemaSheet) + '<div class="js-sheet js-schema-sheet" data-schema-sheet="' + escapeAttribute(declarationPointer) + '">' + schemaDeclarationView(location,typeEditor,editableMetadata,compositionOptions) + '<section class="js-design-section js-schema-structure"><h2>Structure</h2>' + propertyView + schemaChildLocations(schemaSheet,handled) + inheritance + relationsView + '</section><section class="js-design-section"><h2>Constraints and annotations</h2>' + facets + '</section>' + composition + schemaMemberInventory(location,schemaSheet.knownMembers) + '<div class="js-schema-source-actions"><button type="button" class="js-schema-action" data-composition-source="' + escapeAttribute(declarationPointer) + '">Edit source</button></div></div>';
+    return schemaLocationBar(schemaSheet) + '<div class="js-sheet js-schema-sheet" data-schema-sheet="' + escapeAttribute(declarationPointer) + '">' + schemaDeclarationView(location,typeEditor,editableMetadata,compositionOptions) + (schemaSheet.overlay ? overlayAdvancedMenu(declarationPointer, true) : '') + '<section class="js-design-section js-schema-structure"><h2>Structure</h2>' + propertyView + schemaChildLocations(schemaSheet,handled) + inheritance + relationsView + '</section><section class="js-design-section"><h2>Constraints and annotations</h2>' + facets + '</section>' + composition + schemaMemberInventory(location,schemaSheet.knownMembers) + '<div class="js-schema-source-actions"><button type="button" class="js-schema-action" data-composition-source="' + escapeAttribute(declarationPointer) + '">Edit source</button></div></div>';
   }
   return `<div class="js-sheet"><header class="js-type-head"><div><div class="js-eyebrow">${name ? 'Local definition' : 'Inline schema'}</div>${editableName}${editableDescription}<p class="js-inline-status" data-inline-status="${escapeAttribute(definitionPointer ?? '')}" role="status" aria-live="polite"></p></div><div class="js-type-badges">${typeEditor}${abstractToggle}${deleteDefinition}</div></header>${propertyView}${inheritance}${relationsView}${facets}${composition}</div>`;
 }
@@ -4412,15 +4478,18 @@ function enumFacetControl(pointer: string, action: CommandAction, value: unknown
   return `<div class="js-enum-editor" data-enum-editor="${escapeAttribute(pointer)}" data-enum-type="${escapeAttribute(type)}" data-enum-action="${escapeAttribute(action.id)}"><div class="js-enum-entry">${rows}<input data-enum-new-value type="text" aria-label="Add enum values" placeholder="${values.length ? 'Add values' : 'Enter comma-separated values'}" autocomplete="off" spellcheck="false" ${canAdd ? '' : 'disabled'}><button type="button" data-enum-add aria-label="Add enum values"${canAdd ? '' : ' disabled'}>Add</button></div><small>Press Enter or leave the field to add comma-separated <span class="js-code">${escapeHtml(type)}</span> values.</small></div>`;
 }
 
-function structuredFacetEditor(pointer: string, schema: Readonly<Record<string, unknown>>, document: unknown, pendingFields: ReadonlySet<string>, excludedActions: ReadonlySet<string> = new Set(), showWhenEmpty = true): string {
-  const actions = commandActions.filter((action) => !excludedActions.has(action.id) && action.operation === 'set' && action.keyword &&
+function structuredFacetEditor(pointer: string, schema: Readonly<Record<string, unknown>>, document: unknown, pendingFields: ReadonlySet<string>, excludedActions: ReadonlySet<string> = new Set(), showWhenEmpty = true, overlay?: OverlayContext): string {
+  const actions = commandActions.filter((action) => (!overlay || !!action.keyword && OVERLAY_EDITABLE_FACETS.has(action.keyword)) && !excludedActions.has(action.id) && action.operation === 'set' && action.keyword &&
     (STRUCTURED_FACET_GROUPS.has(action.group) || STRUCTURED_CORE_FACETS.has(action.id) || action.id.startsWith('binary.')));
-  const effective = effectiveValidationTypes(document, schema);
+  const effective = overlay?.authoringProjection.types ?? effectiveValidationTypes(document, schema);
   const schemaType = effective.determinate && effective.types.length === 1 ? effective.types[0] : undefined;
   const rows = actions.flatMap((action) => {
     const current = action.keyword ? schema[action.keyword] : undefined;
     const pending = pendingFields.has(inlineFieldKey(pointer, action.id));
-    return current === undefined && !pending ? [] : [structuredFacetRow(pointer, action, current, pending, schemaType, document)];
+    if (current === undefined && !pending) return [];
+    const availability = actionAvailability(action, pointer, document);
+    if (overlay && !availability.enabled && !availability.reason?.startsWith('Activate ')) return ['<div class="js-structured-facet-row" data-overlay-incompatible-facet="' + escapeAttribute(action.keyword!) + '"><strong>' + escapeHtml(action.keyword!) + '</strong><pre>' + escapeHtml(JSON.stringify(current)) + '</pre><span>' + escapeHtml(availability.reason ?? 'Incompatible with the base') + '</span><button type="button" class="js-schema-action" data-composition-source="' + escapeAttribute(pointer + '/' + action.keyword) + '">Edit Source</button></div>'];
+    return [structuredFacetRow(pointer, action, current, pending, schemaType, document)];
   }).join('');
   const options = actions.filter((action) => {
     const current = action.keyword && schema[action.keyword] !== undefined;
@@ -4429,7 +4498,7 @@ function structuredFacetEditor(pointer: string, schema: Readonly<Record<string, 
     return availability.enabled || availability.reason?.startsWith('Activate ');
   }).map((action) => `<option value="${escapeAttribute(action.id)}">${escapeHtml(action.group)} · ${escapeHtml(structuredFacetLabel(action))}</option>`).join('');
   if (!rows && !showWhenEmpty) return '';
-  return `<details class="js-structured-facets" open><summary>Validation and annotations</summary><div class="js-structured-facet-list">${rows || '<p class="js-description">No structured facets are authored.</p>'}</div>${options ? `<div class="js-detail-add"><label>Add structured facet<select data-facet-select="${escapeAttribute(pointer)}"><option value="">Choose facet</option>${options}</select></label><button type="button" data-facet-add="${escapeAttribute(pointer)}">Add</button></div>` : ''}</details>`;
+  return `<details class="js-structured-facets" open><summary>Validation and annotations</summary><div class="js-structured-facet-list">${rows || (overlay ? '<p class="js-description">No additional constraints</p>' : '<p class="js-description">No structured facets are authored.</p>')}</div>${options ? `<div class="js-detail-add"><label>Add structured facet<select data-facet-select="${escapeAttribute(pointer)}"><option value="">Choose facet</option>${options}</select></label><button type="button" data-facet-add="${escapeAttribute(pointer)}">Add</button></div>` : ''}</details>`;
 }
 
 function localizedDescriptionsFacetRow(pointer: string, value: unknown): string {
@@ -6103,7 +6172,8 @@ interface WorkbenchFocusAnchor {
 }
 
 export const workbenchFocusIdentityAttributes = [
-  'data-schema-heading', 'data-schema-open', 'data-schema-back', 'data-schema-forward', 'data-schema-goto', 'data-schema-location-source', 'data-schema-source-return', 'data-schema-reference-go', 'data-schema-result', 'data-trace-schema-open', 'data-composition-seed-kind', 'data-schema-source-text', 'data-schema-source-apply',
+  'data-overlay-contextual', 'data-overlay-full-schema', 'data-overlay-reference', 'data-overlay-reference-apply', 'data-overlay-reference-cancel', 'data-overlay-reference-choice', 'data-overlay-member-mode', 'data-overlay-new-name', 'data-overlay-new-type', 'data-overlay-property-open', 'data-overlay-property-add', 'data-overlay-required',
+  'data-schema-heading', 'data-schema-open', 'data-schema-back', 'data-schema-forward', 'data-schema-goto', 'data-schema-location-source', 'data-schema-source-return', 'data-schema-reference-go', 'data-schema-result', 'data-trace-schema-open', 'data-schema-source-text', 'data-schema-source-apply',
   'data-select', 'data-mode', 'data-graph-select', 'data-problem', 'data-problems-toggle',
   'data-mobile-mode', 'data-mobile-drawer', 'data-mobile-drawer-close', 'data-member-mode', 'data-effective-source',
   'data-graph-search', 'data-graph-lens', 'data-graph-direction', 'data-graph-edge-select', 'data-graph-breadcrumb', 'data-graph-back', 'data-graph-forward', 'data-graph-home', 'data-graph-out', 'data-graph-fit', 'data-graph-relayout', 'data-graph-zoom-out', 'data-graph-zoom-in',

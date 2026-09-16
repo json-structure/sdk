@@ -20,27 +20,29 @@ describe('mounted schema-location authoring journeys',()=>{
   it('drills into complete object operands and reuses full property editing, then restores invoking row focus',async()=>{
     const root=mount({$schema:meta,allOf:[{type:'object',properties:{city:{type:'string',maxLength:32}}}]});
     click(root,operand('allOf',0)+' [data-schema-open]');expect(pointer(root)).toBe('/allOf/0');expect(document.activeElement.hasAttribute('data-schema-heading')).toBe(true);
-    click(root,'[data-property-field-activate="name"]');change(root,'input[data-inline-property="name"]','town');await settle();expect(value().allOf[0].properties).toHaveProperty('town');
+    click(root,'.js-overlay-advanced summary');click(root,'[data-overlay-full-schema]');click(root,'[data-property-field-activate="name"]');change(root,'input[data-inline-property="name"]','town');await settle();expect(value().allOf[0].properties).toHaveProperty('town');
     click(root,'[data-schema-child-key="town"] [data-schema-open]');expect(pointer(root)).toBe('/allOf/0/properties/town');expect(root.querySelector('[data-facet-row="core.max-length"]')).not.toBeNull();
     click(root,'[data-schema-back]');expect(document.activeElement.closest('[data-property-editor]')?.dataset.propertyEditor).toBe('/allOf/0/properties/town');click(root,'[data-schema-back]');expect(pointer(root)).toBe('');expect(document.activeElement.dataset.schemaOpen).toBe('/allOf/0');
   });
-  it('authors all seven rules independently, with empty or explicit seeds and never silent type:any',async()=>{
+  it('authors all seven rules independently, with contextual empty deltas and never silent type:any',async()=>{
     const root=mount({$schema:meta,type:'string'});
     expect(root.querySelector('[data-schema-sheet]')).toBeNull();
     expect(root.querySelector('.js-type-head')).not.toBeNull();
-    for(const keyword of ['then','else','if','allOf','anyOf','oneOf','not']){if(!root.querySelector('.js-rule-add-root'))click(root,'[data-composition-add-start]');change(root,'.js-rule-add-root [data-composition-add-rule-kind]',keyword);click(root,'.js-rule-add-root [data-composition-add-rule]');await settle();expect(value()[keyword]).toEqual(['allOf','anyOf','oneOf'].includes(keyword)?[{}]:{});}
+    for(const keyword of ['then','else','if','allOf','anyOf','oneOf','not']){if(!root.querySelector('.js-rule-add-root'))click(root,'[data-composition-add-start]');change(root,'.js-rule-add-root [data-composition-add-rule-kind]',keyword);click(root,'.js-rule-add-root [data-composition-add-rule]');await settle();expect(value()[keyword]).toEqual(['allOf','anyOf','oneOf'].includes(keyword)?[{}]:{});click(root,'[data-schema-back]');}
     click(root,'[data-branch-keyword="if"] [data-composition-remove-branch]');await settle();expect(Object.hasOwn(value(),'if')).toBe(false);expect(value().then).toEqual({});expect(value().else).toEqual({});expect(root.querySelector('[data-operand-pointer="/if"]')).toBeNull();
   });
-  it('adds complete type, canonical reference and source seeds without erasing legacy bytes',async()=>{
+  it('authors canonical references and exact source through Advanced without erasing legacy bytes',async()=>{
     const fixture=readFileSync(join(dirname(fileURLToPath(import.meta.url)),'fixtures/conditional-composition-adversarial/17-legacy-property-direct-ref.struct.json'),'utf8');const root=mount(fixture);const authored=JSON.parse(fixture);
     click(root,'[data-schema-child-key="payload"] [data-schema-open]');expect(get(root,'[data-schema-declaration]').dataset.declarationForm).toBe('legacy-reference-rules');
-    change(root,'[data-rule-keyword="oneOf"] > .js-rule-add [data-composition-seed-kind]','ref:#/definitions/BasePayload');click(root,'[data-rule-keyword="oneOf"] > .js-rule-add [data-composition-add-operand]');await settle();
+    click(root,'[data-rule-keyword="oneOf"] > .js-rule-add [data-composition-add-operand]');await settle();
+    click(root,'.js-overlay-advanced summary');click(root,'[data-overlay-reference]');change(root,'[data-overlay-reference-choice]','#/definitions/BasePayload');click(root,'[data-overlay-reference-apply]');await settle();
     expect(value().properties.payload.oneOf.at(-1)).toEqual({type:{$ref:'#/definitions/BasePayload'}});
     expect(value().properties.payload.$ref).toBe(authored.properties.payload.$ref);
     expect(value().properties.payload.oneOf.slice(0,-1)).toEqual(authored.properties.payload.oneOf);
     const legacy=(v:unknown):string[]=>v&&typeof v==='object'?(Array.isArray(v)?v.flatMap(legacy):[...(Object.hasOwn(v,'$ref')&&Object.keys(v).includes('$ref')?[String((v as Record<string,unknown>).$ref)]:[]),...Object.entries(v).filter(([k])=>k!=='type').flatMap(([,c])=>legacy(c))]):[];
     expect(legacy(value())).toEqual(legacy(authored));expect(legacy(value())).toHaveLength(8);
-    change(root,'[data-rule-keyword="oneOf"] > .js-rule-add [data-composition-seed-kind]','source');get(root,'[data-rule-keyword="oneOf"] [data-composition-seed-source]').value='{"type":"decimal","const":"0.00000001","precision":20,"scale":8,"description":"exact"}';click(root,'[data-rule-keyword="oneOf"] > .js-rule-add [data-composition-add-operand]');await settle();expect(value().properties.payload.oneOf.at(-1).const).toBe('0.00000001');
+    click(root,'[data-schema-back]');click(root,'[data-rule-keyword="oneOf"] > .js-rule-add [data-composition-add-operand]');await settle();
+    click(root,'.js-overlay-advanced summary');click(root,'.js-overlay-advanced [data-composition-source]');get(root,'[data-schema-source-text]').value='{"type":"decimal","const":"0.00000001","precision":20,"scale":8,"description":"exact"}';click(root,'[data-schema-source-apply]');await settle();expect(value().properties.payload.oneOf.at(-1).const).toBe('0.00000001');
   });
   it('reorders logical selection and forward history, with keyboard undo/redo restoring focus',async()=>{
     const root=mount({$schema:meta,allOf:[{type:'string',description:'Alpha'},{type:'int32',description:'Beta'}]});

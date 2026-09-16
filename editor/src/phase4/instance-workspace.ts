@@ -1,8 +1,10 @@
-import { coreScalarValueValid } from '../parser.js';
+import { OverlayContextResolver, type OverlayContext } from '../overlay-context.js';
+import { compareNumeric, multipleOf } from '../numeric.js';
+import { coreScalarValueValid, decimalValueIssues } from '../parser.js';
 import { resolveCapabilities } from '../capabilities.js';
 import { compileSafeRegex, MAX_SAFE_REGEX_INPUT_LENGTH, MAX_SAFE_REGEX_PATTERN_LENGTH, type SafeRegexCompilation } from '../safe-regex.js';
 import { resolveEffectiveMembers } from './effective-members.js';
-import { ResolvedSchemaContext, type ResolvedSchemaDocument } from './resolved-schema.js';
+import { ResolvedSchemaContext, type ResolvedSchemaDocument, type ResolvedSchemaLocation } from './resolved-schema.js';
 
 export type EvaluationStatus = 'valid' | 'invalid' | 'indeterminate';
 
@@ -118,38 +120,6 @@ function statusOf(evaluations: readonly Evaluation[]): EvaluationStatus {
     evaluations.some((entry) => entry.status === 'indeterminate') ? 'indeterminate' : 'valid';
 }
 
-function numericParts(value: number | string): { coefficient: bigint; scale: number } | undefined {
-  const text = String(value);
-  const match = /^(-?)(\d+)(?:\.(\d+))?(?:[eE]([+-]?\d+))?$/.exec(text);
-  if (!match) return undefined;
-  const fraction = match[3] ?? '';
-  let coefficient = BigInt(`${match[1]}${match[2]}${fraction}`);
-  let scale = fraction.length - Number(match[4] ?? 0);
-  if (scale < 0) {
-    coefficient *= 10n ** BigInt(-scale);
-    scale = 0;
-  }
-  return { coefficient, scale };
-}
-
-function compareNumeric(left: number | string, right: number | string): number | undefined {
-  const a = numericParts(left);
-  const b = numericParts(right);
-  if (!a || !b) return undefined;
-  const scale = Math.max(a.scale, b.scale);
-  const av = a.coefficient * 10n ** BigInt(scale - a.scale);
-  const bv = b.coefficient * 10n ** BigInt(scale - b.scale);
-  return av < bv ? -1 : av > bv ? 1 : 0;
-}
-
-function multipleOf(value: number | string, divisor: number | string): boolean | undefined {
-  const a = numericParts(value);
-  const b = numericParts(divisor);
-  if (!a || !b || b.coefficient === 0n) return undefined;
-  const scale = Math.max(a.scale, b.scale);
-  return (a.coefficient * 10n ** BigInt(scale - a.scale)) % (b.coefficient * 10n ** BigInt(scale - b.scale)) === 0n;
-}
-
 function validFormat(value: string, format: string): boolean | undefined {
   switch (format) {
     case 'ipv4': return /^(?:\d{1,3}\.){3}\d{1,3}$/.test(value) && value.split('.').every((part) => Number(part) <= 255);
@@ -186,11 +156,14 @@ function patternCompilationMessage(compilation: Exclude<SafeRegexCompilation, { 
 export class InstanceWorkspace {
   private readonly depthBudget: number;
   private readonly schemaContext: ResolvedSchemaContext;
+  private declarationMappings?: readonly ResolvedSchemaLocation[];
+  private readonly overlayContexts = new Map<string, OverlayContextResolver>();
   private readonly schemaOptions: Pick<InstanceWorkspaceOptions, 'documentUri' | 'resolvedDocuments'>;
   private readonly selectedAddIns: readonly string[];
   private readonly externalRelationResolver?: ExternalRelationResolver;
   private readonly capabilities;
   private readonly effectiveSchemaCache = new Map<string, Readonly<Record<string, unknown>>>();
+  private readonly authoredSchemas = new WeakMap<Readonly<Record<string, unknown>>, Readonly<Record<string, unknown>>>();
   private readonly propertyOrigins = new WeakMap<Readonly<Record<string, unknown>>, ReadonlyMap<string, SchemaOrigin>>();
   private readonly relationOrigins = new WeakMap<Readonly<Record<string, unknown>>, ReadonlyMap<string, SchemaOrigin>>();
   private readonly inheritedConstraintLayers = new WeakMap<Readonly<Record<string, unknown>>, readonly EffectiveConstraintLayer[]>();
@@ -227,6 +200,19 @@ export class InstanceWorkspace {
       return evaluation;
     }
     const evaluation = this.evaluate(rootSchema, this.instance, '', rootPointer, 0, new Set(), rootDocumentUri);
+    return this.completeEvaluation(evaluation);
+  }
+
+  /** Evaluates an exact authored schema in its original document/import context, without rebasing it to root. */
+  validateAt(schemaPointer: string, documentUri = this.schemaContext.rootUri): InstanceValidationResult {
+    const location = this.overlayResolver(documentUri)?.index.at(schemaPointer);
+    const evaluation = location && isRecord(location.value)
+      ? this.evaluate(location.value, this.instance, '', schemaPointer, 0, new Set(), documentUri)
+      : this.failure('instance.schema-indeterminate', 'No authored schema exists at the requested document location.', '', schemaPointer, 'schema', 'indeterminate');
+    return this.completeEvaluation(evaluation);
+  }
+
+  private completeEvaluation(evaluation: Evaluation): InstanceValidationResult {
     const annotate = (trace: EvaluationTrace, occurrencePath: string): EvaluationTrace => ({ ...trace, ...this.versions, occurrencePath, children: trace.children.map((child,index) => annotate(child, occurrencePath + '/' + index)) });
     this.lastResult = { ...evaluation, ...this.versions, trace: annotate(evaluation.trace, '') };
     return this.lastResult;
@@ -314,7 +300,7 @@ export class InstanceWorkspace {
   private evaluateShape(schema: Readonly<Record<string, unknown>>, instance: unknown, instancePointer: string, schemaPointer: string, depth: number, active: Set<string>, documentUri: string): Evaluation[] {
     const results: Evaluation[] = [];
     const type = schema.type;
-    if ((type === 'object' || schema.properties !== undefined || schema.required !== undefined) && isRecord(instance)) {
+    if ((type === 'object' || schema.properties !== undefined || schema.required !== undefined || schema.additionalProperties !== undefined) && isRecord(instance)) {
       const properties = isRecord(schema.properties) ? schema.properties : {};
       const origins = this.propertyOrigins.get(schema);
       for (const [name, propertySchema] of Object.entries(properties)) {
@@ -353,15 +339,66 @@ export class InstanceWorkspace {
     return results;
   }
 
+  private overlayResolver(documentUri: string): OverlayContextResolver | undefined {
+    let resolver = this.overlayContexts.get(documentUri);
+    if (!resolver) {
+      const document = this.schemaContext.documentFor(documentUri);
+      if (!document) return undefined;
+      const resolvedDocuments = [{ uri: this.schemaContext.rootUri, document: this.schema }, ...(this.schemaOptions.resolvedDocuments ?? [])].filter(entry => entry.document !== document);
+      resolver = new OverlayContextResolver(document, { documentUri, resolvedDocuments, addIns: this.selectedAddIns });
+      this.overlayContexts.set(documentUri, resolver);
+    }
+    return resolver;
+  }
+
+  private overlayLocation(schemaPointer: string, documentUri: string, schema: Readonly<Record<string, unknown>>): { readonly resolver: OverlayContextResolver; readonly pointer: string } | undefined {
+    const resolver = this.overlayResolver(documentUri);
+    if (!resolver) return undefined;
+    const authored = this.authoredSchemas.get(schema) ?? schema;
+    // Source mapping must not dereference aliases or walk effective children. Their locally authored
+    // rules (including conditional descendants) stay under the declaration's original source pointer.
+    // Reference evaluation can carry a namespace from ANY intermediate importing document, not only root.
+    if (!this.declarationMappings) {
+      const visibleFrom = new Set([this.schemaContext.rootUri, ...(this.schemaOptions.resolvedDocuments ?? []).map(document => document.uri)]);
+      this.declarationMappings = [...visibleFrom].flatMap(uri => this.schemaContext.declarations(uri));
+    }
+    const owners = this.declarationMappings.filter(location => location.documentUri === documentUri &&
+      (schemaPointer === location.effectivePointer || schemaPointer.startsWith(location.effectivePointer + '/')))
+      .sort((left, right) => right.effectivePointer.length - left.effectivePointer.length);
+    for (const owner of owners) {
+      const pointer = owner.sourcePointer + schemaPointer.slice(owner.effectivePointer.length);
+      if (resolver.index.at(pointer)?.value === authored) return { resolver, pointer };
+    }
+    // Identity distinguishes a direct source path from a coincidentally identical imported prefix.
+    return resolver.index.at(schemaPointer)?.value === authored ? { resolver, pointer: schemaPointer } : undefined;
+  }
+
+  private overlayAt(schemaPointer: string, documentUri: string, schema: Readonly<Record<string, unknown>>): OverlayContext | undefined {
+    if (!this.capabilities.conditionalCompositionActive) return undefined;
+    const location = this.overlayLocation(schemaPointer, documentUri, schema);
+    return location?.resolver.resolve(location.pointer);
+  }
+
   private evaluateAdditionalProperties(constraintSchema: Readonly<Record<string, unknown>>, effectiveSchema: Readonly<Record<string, unknown>>, instance: unknown, instancePointer: string, schemaPointer: string, depth: number, active: Set<string>, documentUri: string): Evaluation[] {
     if (!isRecord(instance) || !hasOwn(constraintSchema, 'additionalProperties')) return [];
+    const policy = constraintSchema.additionalProperties;
+    if (policy === true) return [];
+    if (policy !== false && !isRecord(policy)) return [this.failure('instance.schema-indeterminate', 'additionalProperties requires a boolean or schema policy.', instancePointer, childPointer(schemaPointer, 'additionalProperties'), 'additionalProperties', 'indeterminate')];
     const results: Evaluation[] = [];
     const properties = isRecord(effectiveSchema.properties) ? effectiveSchema.properties : {};
-    const declared = new Set([...Object.keys(properties), ...(isRecord(effectiveSchema.relations) ? Object.keys(effectiveSchema.relations) : [])]);
+    // A branch-local closed policy closes the EFFECTIVE shape, not just the few properties in its delta.
+    // Independently closed bases/references are still evaluated separately at their own source locations.
+    const overlay = this.overlayAt(schemaPointer, documentUri, constraintSchema);
+    const projected = overlay?.authoringProjection;
+    const declared = new Set([...Object.keys(properties), ...Object.keys(projected?.properties ?? {}), ...(isRecord(effectiveSchema.relations) ? Object.keys(effectiveSchema.relations) : []), ...(isRecord(projected?.schema.relations) ? Object.keys(projected.schema.relations) : [])]);
     for (const [name, value] of Object.entries(instance)) {
       if (declared.has(name) || (instancePointer === '' && name === '$uses')) continue;
-      if (constraintSchema.additionalProperties === false) results.push(this.failure('instance.additional-property', `Property ${name} is not declared.`, childPointer(instancePointer, name), childPointer(schemaPointer, 'additionalProperties'), 'additionalProperties'));
-      else if (isRecord(constraintSchema.additionalProperties)) results.push(this.evaluate(constraintSchema.additionalProperties, value, childPointer(instancePointer, name), childPointer(schemaPointer, 'additionalProperties'), depth + 1, active, documentUri));
+      if (projected?.reasons.length) {
+        results.push(this.failure('instance.shape-indeterminate', 'The complete contextual member set is indeterminate: ' + projected.reasons.join('; '), childPointer(instancePointer, name), childPointer(schemaPointer, 'additionalProperties'), 'additionalProperties', 'indeterminate'));
+        continue;
+      }
+      if (policy === false) results.push(this.failure('instance.additional-property', `Property ${name} is not declared.`, childPointer(instancePointer, name), childPointer(schemaPointer, 'additionalProperties'), 'additionalProperties'));
+      else results.push(this.evaluate(policy, value, childPointer(instancePointer, name), childPointer(schemaPointer, 'additionalProperties'), depth + 1, active, documentUri));
     }
     return results;
   }
@@ -383,7 +420,7 @@ export class InstanceWorkspace {
   }
 
   private evaluateValueConstraints(schema: Readonly<Record<string, unknown>>, instance: unknown, instancePointer: string, schemaPointer: string, depth: number, active: Set<string>, documentUri: string): Evaluation[] {
-    const results: Evaluation[] = [];
+    const results = this.evaluateContextualDecimal(schema, instance, instancePointer, schemaPointer, documentUri);
     const check = (keyword: string, valid: boolean, message: string): void => { if (!valid) results.push(this.failure(`instance.${keyword}`, message, instancePointer, childPointer(schemaPointer, keyword), keyword)); };
     if (hasOwn(schema, 'const')) check('const', deepEqual(instance, schema.const), 'Value does not equal const.');
     if (Array.isArray(schema.enum)) check('enum', schema.enum.some((value) => deepEqual(value, instance)), 'Value is not one of the enumerated values.');
@@ -424,6 +461,30 @@ export class InstanceWorkspace {
       }
     }
     if (isRecord(instance)) this.evaluateObjectConstraints(schema, instance, instancePointer, schemaPointer, depth, active, results, check, documentUri);
+    return results;
+  }
+
+  private evaluateContextualDecimal(schema: Readonly<Record<string, unknown>>, instance: unknown, instancePointer: string, schemaPointer: string, documentUri: string): Evaluation[] {
+    const keywords = (['precision', 'scale'] as const).filter(keyword => hasOwn(schema, keyword));
+    const firstKeyword = keywords[0];
+    // Literal decimal types already use the same checks in validScalar; only inherited/reference types need this path.
+    if (firstKeyword === undefined || typeof schema.type === 'string') return [];
+    const location = this.overlayLocation(schemaPointer, documentUri, schema);
+    const projection = location && (location.resolver.resolve(location.pointer)?.authoringProjection ?? location.resolver.projectSchema(location.pointer));
+    const types = projection?.types;
+    if (types?.determinate && !types.types.includes('decimal')) return [];
+    if (!projection || !types?.determinate || types.types.length !== 1) return [this.failure('instance.contextual-type-indeterminate', 'Cannot determine the contextual type for decimal qualifiers.', instancePointer, childPointer(schemaPointer, firstKeyword), firstKeyword, 'indeterminate')];
+    const results: Evaluation[] = [];
+    const valid = new Set<string>();
+    for (const keyword of keywords) {
+      const value = schema[keyword];
+      if (typeof value === 'number' && Number.isInteger(value) && value >= 0) valid.add(keyword);
+      else results.push(this.failure('instance.schema-indeterminate', keyword + ' requires a non-negative integer.', instancePointer, childPointer(schemaPointer, keyword), keyword, 'indeterminate'));
+    }
+    // The other parameter is inherited; locally authored values retain their own bounds, not a serialized copied type.
+    const issues = decimalValueIssues(instance, { ...projection.schema, ...schema });
+    if (issues.includes('type')) results.push(this.failure('instance.decimal-representation', 'Value is not in the inherited decimal representation.', instancePointer, childPointer(schemaPointer, firstKeyword), firstKeyword));
+    for (const keyword of keywords) if (issues.includes(keyword) && valid.has(keyword)) results.push(this.failure('instance.' + keyword, 'Decimal value exceeds ' + keyword + '.', instancePointer, childPointer(schemaPointer, keyword), keyword));
     return results;
   }
 
@@ -477,6 +538,7 @@ export class InstanceWorkspace {
       ...(effectiveRelations.identity === undefined ? {} : { identity: effectiveRelations.identity }),
       ...(effectiveRelations.relations.size === 0 ? {} : { relations: Object.fromEntries([...effectiveRelations.relations].map(([name, relation]) => [name, relation.schema])) })
     };
+    this.authoredSchemas.set(effective, this.authoredSchemas.get(schema) ?? schema);
     if (result) this.propertyOrigins.set(effective, new Map(result.members.map((member) => [member.name, { documentUri: member.documentUri, schemaPointer: member.declaredAt }])));
     this.relationOrigins.set(effective, new Map([...effectiveRelations.relations].map(([name, relation]) => [name, relation.origin])));
     this.inheritedConstraintLayers.set(effective, constraintLayers);

@@ -48,11 +48,11 @@ export function schemaDeclarationLabel(value: unknown): string {
     default: return 'Declared type: ' + (schemaRecord(value) && typeof value.type === 'string' ? value.type : 'type union');
   }
 }
-export function schemaSummary(value: unknown): string {
+export function schemaSummary(value: unknown, contextual = false): string {
   const form = schemaForm(value);
   if (!schemaRecord(value)) return 'Malformed / opaque ' + (value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value);
   const ref = typeof value.$ref === 'string' ? value.$ref : schemaRecord(value.type) && typeof value.type.$ref === 'string' ? value.type.$ref : undefined;
-  const kind = form === 'empty' ? 'Empty schema {}' : form === 'no-type' ? (COMPOSITION_KEYWORDS.some(k => Object.hasOwn(value,k)) ? 'Composition-only · No declared type' : 'No declared type') : ref ? schemaDeclarationLabel(value) + ' · ' + ref : schemaDeclarationLabel(value);
+  const kind = form === 'empty' ? (contextual ? 'Constraint set · No additional constraints' : 'Empty schema {}') : form === 'no-type' ? contextual ? 'Constraint set' : (COMPOSITION_KEYWORDS.some(k => Object.hasOwn(value,k)) ? 'Composition-only · No declared type' : 'No declared type') : ref ? schemaDeclarationLabel(value) + ' · ' + ref : schemaDeclarationLabel(value);
   const badges = COMPOSITION_KEYWORDS.filter(k => Object.hasOwn(value,k)).map(k => ({ allOf:'ALL', anyOf:'ANY', oneOf:'ONE', not:'NOT', if:'IF', then:'THEN', else:'ELSE' })[k]);
   const shape = schemaRecord(value.properties) ? ' · ' + Object.keys(value.properties).length + (value.type === 'tuple' ? ' tuple members' : ' properties') : schemaRecord(value.choices) ? ' · ' + Object.keys(value.choices).length + ' choices' : Object.hasOwn(value,'items') ? ' · Items' : Object.hasOwn(value,'values') ? ' · Values' : '';
   return kind + shape + (badges.length ? ' · ' + badges.join(' + ') : '');

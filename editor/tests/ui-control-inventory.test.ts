@@ -42,6 +42,7 @@ const passiveAttributes = new Map<string, string>([
   ['data-composition-action', 'Consumed through the enclosing data-action-id command editor.'],
   ['data-composition-keyword', 'Carries the target operator consumed through data-composition-add-operand.'],
   ['data-instance-schema', 'Identifies the schema-side trace target consumed by delegated trace navigation.'],
+  ['data-overlay-base-required-property', 'An intentionally disabled read-only checkbox conveys an immutable inherited requirement; no mutation handler is permitted.'],
   ['data-list-options', 'Carries list editor configuration consumed through data-inline-keyword.'],
   ['data-property-owner', 'Scopes nested property commands handled through data-command.'],
   ['data-refactor-destination', 'Read when the enclosing refactoring preview command is activated.'],
@@ -78,7 +79,7 @@ const inventory: InteractiveControl[] = [...controls.entries()]
 
 describe('exhaustive interactive UX control inventory', () => {
   it('discovers the expected control-family baseline', () => {
-    expect(inventory).toHaveLength(287);
+    expect(inventory).toHaveLength(299);
   });
 
   for (const control of inventory) {
@@ -97,6 +98,7 @@ describe('exhaustive interactive UX control inventory', () => {
       'data-composition-keyword',
       'data-instance-schema',
       'data-list-options',
+      'data-overlay-base-required-property',
       'data-property-owner',
       'data-refactor-destination',
       'data-start-cli-command',

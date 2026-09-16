@@ -162,9 +162,9 @@ export class ResolvedSchemaContext {
     return !!candidate && this.locationAssignable(candidate, target, new Set());
   }
 
-  /** Lists every unambiguous effective declaration visible from the root document. */
-  declarations(): readonly ResolvedSchemaLocation[] {
-    return [...this.index(this.rootUri).declarations.entries()]
+  /** Lists unambiguous declarations visible from the selected document, including its import namespaces. */
+  declarations(fromDocumentUri = this.rootUri): readonly ResolvedSchemaLocation[] {
+    return [...this.index(fromDocumentUri).declarations.entries()]
       .filter(([, locations]) => locations.length === 1)
       .map(([, locations]) => locations[0]!)
       .filter((location) => location.effectivePointer.startsWith('/definitions/'))

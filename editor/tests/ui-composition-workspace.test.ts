@@ -46,6 +46,6 @@ describe('compact Rules renderer units — not navigation acceptance',()=>{
     expect(compact).toContain('js-composition-empty');expect(compact).toContain('Rules');expect(compact).toContain('None');
     expect(compact).toContain('data-composition-add-start');expect(compact).not.toContain('data-composition-seed-kind');
     const expanded=compositionEditorView({document:{type:'object'},targetPointer:'',diagnostics:[],active:true,addComposerOpen:true});
-    expect(expanded).toContain('data-composition-seed-kind');expect(expanded).toContain('data-composition-add-cancel');
+    expect(expanded).not.toContain('data-composition-seed-kind');expect(expanded).not.toContain('Complete seed');expect(expanded).toContain('data-composition-add-cancel');
   });
 });

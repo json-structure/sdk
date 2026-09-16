@@ -327,7 +327,7 @@ function collectCoreDeclarationDiagnostics(
     }
     return names;
   };
-  const validateSchema = (schema: Record<string, unknown>, pointer: string, compositionBranch = false): void => {
+  const validateSchema = (schema: Record<string, unknown>, pointer: string, compositionBranch = false, contextualDelta = compositionBranch): void => {
     if (Object.prototype.hasOwnProperty.call(schema, '$ref') && !Object.prototype.hasOwnProperty.call(schema, 'type')) {
       if (compositionBranch) {
         const reference = typeReference(schema);
@@ -338,7 +338,7 @@ function collectCoreDeclarationDiagnostics(
       return;
     }
     const hasType = Object.prototype.hasOwnProperty.call(schema, 'type');
-    if (!hasType && !compositionBranch) {
+    if (!hasType && !contextualDelta) {
       diagnose(pointer, 'A schema declaration must contain type.');
       return;
     }
@@ -400,7 +400,7 @@ function collectCoreDeclarationDiagnostics(
       });
     }
     const propertiesPresent = Object.prototype.hasOwnProperty.call(schema, 'properties');
-    const propertiesApplicable = schema.type === 'object' || schema.type === 'tuple' || compositionBranch && !hasType;
+    const propertiesApplicable = schema.type === 'object' || schema.type === 'tuple' || contextualDelta && !hasType;
     if (schema.type === 'object' && !propertiesPresent) {
       diagnose(pointer, 'An object declaration must contain properties.');
     }
@@ -420,13 +420,13 @@ function collectCoreDeclarationDiagnostics(
         if (isRecord(schema[keyword])) validateSchema(schema[keyword], `${pointer}/${keyword}`, true);
       }
     }
-    if (isRecord(schema.additionalProperties)) validateSchema(schema.additionalProperties, `${pointer}/additionalProperties`);
+    if (isRecord(schema.additionalProperties)) validateSchema(schema.additionalProperties, `${pointer}/additionalProperties`, false, contextualDelta);
     for (const keyword of ['items', 'values'] as const) {
-      if (isRecord(schema[keyword])) validateSchema(schema[keyword], `${pointer}/${keyword}`);
+      if (isRecord(schema[keyword])) validateSchema(schema[keyword], `${pointer}/${keyword}`, false, contextualDelta);
     }
     if (isRecord(schema.choices)) {
       for (const [name, choice] of Object.entries(schema.choices)) {
-        if (isRecord(choice)) validateSchema(choice, `${pointer}/choices/${pointerPart(name)}`);
+        if (isRecord(choice)) validateSchema(choice, `${pointer}/choices/${pointerPart(name)}`, false, contextualDelta);
       }
     }
     if (validationActive) {
@@ -456,7 +456,7 @@ function collectCoreDeclarationDiagnostics(
         diagnose(propertyPointer, `Property '${name}' must be a schema object.`);
         continue;
       }
-      validateSchema(property, propertyPointer);
+      validateSchema(property, propertyPointer, false, contextualDelta);
     }
   };
   const validateNamespace = (namespace: Record<string, unknown>, pointer: string): void => {
@@ -2272,13 +2272,21 @@ function integerStringInRange(value: unknown, signed: boolean, minimum: bigint, 
   return parsed >= minimum && parsed <= maximum;
 }
 function decimalTextValid(value: string, declaration: Readonly<Record<string, unknown>>): boolean {
-  if (!CORE_DECIMAL_TEXT.test(value)) return false;
+  return decimalValueIssues(value, declaration).length === 0;
+}
+
+/** Shared decimal representation/qualifier checks, including contextual deltas with no authored type. */
+export function decimalValueIssues(value: unknown, declaration: Readonly<Record<string, unknown>>): readonly ('type' | 'precision' | 'scale')[] {
+  if (typeof value !== 'string' || !CORE_DECIMAL_TEXT.test(value)) return ['type'];
   const unsigned = value.startsWith('-') ? value.slice(1) : value;
   const [integer, fraction] = unsigned.split('.') as [string, string];
   const digits = `${integer}${fraction}`.replace(/^0+/, '') || '0';
   const precision = Number.isInteger(declaration.precision) ? declaration.precision as number : 34;
   const scale = Number.isInteger(declaration.scale) ? declaration.scale as number : 7;
-  return digits.length <= precision && fraction.length <= scale;
+  const issues: ('precision' | 'scale')[] = [];
+  if (digits.length > precision) issues.push('precision');
+  if (fraction.length > scale) issues.push('scale');
+  return issues;
 }
 function fullDateValid(value: string): boolean {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
