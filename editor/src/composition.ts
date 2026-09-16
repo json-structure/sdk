@@ -56,7 +56,7 @@ export function compositionSchemaValueValid(value: unknown, schemaValid: (schema
  * Validates conditional composition group valid and narrows the value type when applicable.
  */
 export function conditionalCompositionGroupValid(value: ConditionalCompositionGroup, schemaValid: (schema: unknown) => boolean): boolean {
-  return schemaValid(value.if) && (value.then !== undefined || value.else !== undefined) &&
+  return schemaValid(value.if) &&
     (value.then === undefined || schemaValid(value.then)) &&
     (value.else === undefined || schemaValid(value.else));
 }

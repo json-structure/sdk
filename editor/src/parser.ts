@@ -1517,15 +1517,6 @@ function collectCompositionDiagnostics(
         pushKeywordDiagnostic(diagnostics, uri, keywordPointer, `${keyword} must be a schema object.`, text);
       }
     }
-    if (active) {
-      const hasIf = Object.prototype.hasOwnProperty.call(candidate, 'if');
-      const hasThen = Object.prototype.hasOwnProperty.call(candidate, 'then');
-      const hasElse = Object.prototype.hasOwnProperty.call(candidate, 'else');
-      if (!hasIf && hasThen) pushKeywordDiagnostic(diagnostics, uri, `${candidatePointer}/then`, 'then requires an if branch.', text);
-      if (!hasIf && hasElse) pushKeywordDiagnostic(diagnostics, uri, `${candidatePointer}/else`, 'else requires an if branch.', text);
-      if (hasIf && !hasThen && !hasElse) pushKeywordDiagnostic(diagnostics, uri, `${candidatePointer}/if`, 'if requires a then or else branch.', text);
-    }
-
     visitDefinitions(candidate.definitions, `${candidatePointer}/definitions`);
     visitSchemaMap(candidate.properties, `${candidatePointer}/properties`);
     if (isRecord(candidate.additionalProperties)) visitSchema(candidate.additionalProperties, `${candidatePointer}/additionalProperties`);

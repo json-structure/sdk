@@ -9,7 +9,7 @@ import { parseActionValue } from '../src/ui/action-runtime.js';
 describe('UI command action registry', () => {
   it('exposes every supported command family through metadata', () => {
     expect(new Set(commandActions.map((action) => action.group))).toEqual(new Set([
-      'Document', 'Root', 'Definitions', 'Properties', 'Core', 'References', 'Imports', 'Relations', 'Validation', 'Composition', 'Units', 'Alternate names', 'Semantic annotations'
+      'Document', 'Root', 'Definitions', 'Properties', 'Core', 'References', 'Imports', 'Relations', 'Validation', 'Units', 'Alternate names', 'Semantic annotations'
     ]));
   });
 
@@ -53,7 +53,7 @@ describe('UI command action registry', () => {
     expect(actionById('choice.delete')).toMatchObject({ targets: ['choice'], operation: 'delete' });
     expect(actionById('import.set')).toMatchObject({ control: { kind: 'structured-object', family: 'import' } });
     expect(actionById('validation.contains')).toMatchObject({ control: { kind: 'advanced-json' } });
-    expect(actionById('composition.allOf')).toMatchObject({ control: { kind: 'advanced-json' } });
+    expect(commandActions.some((action) => action.id.startsWith('composition.'))).toBe(false);
     expect(actionById('core.extends')).toMatchObject({ control: { kind: 'structured-list', item: 'reference' } });
     expect(actionById('reference.type')).toMatchObject({ control: { kind: 'reference-picker' } });
     expect(actionById('relation.add')).toMatchObject({ control: { kind: 'relation-editor' }, capability: 'relations' });
@@ -70,7 +70,7 @@ describe('UI command action registry', () => {
     expect(actionById('units.symbols')?.schemaTypes).toBeUndefined();
     expect(actionById('units.currency')?.schemaTypes).toBeUndefined();
     expect(actionById('units.unit.remove')).toMatchObject({ requiresValue: false, capability: 'units', operation: 'remove' });
-    expect(commandActions.filter((action) => ['Validation', 'Composition', 'Units', 'Alternate names', 'Semantic annotations'].includes(action.group) && action.operation === 'set')
+    expect(commandActions.filter((action) => ['Validation', 'Units', 'Alternate names', 'Semantic annotations'].includes(action.group) && action.operation === 'set')
       .every((action) => action.control?.kind !== 'source-only')).toBe(true);
     expect(commandActions.filter((action) => action.operation === 'set').every((action) => action.control || action.id === 'root.set')).toBe(true);
   });
@@ -99,6 +99,22 @@ describe('UI command action registry', () => {
     expect(actionAvailability(actionById('semantic.measurementConditioning')!, '/properties/dateField', document).enabled).toBe(false);
     expect(actionAvailability(actionById('semantic.temporalReferenceSystem')!, '/properties/dateField', document).enabled).toBe(true);
     expect(actionAvailability(actionById('semantic.measurementConditioning')!, '/properties/value', document).enabled).toBe(true);
+  });
+
+  it('rejects type-incompatible actions before offering capability activation', () => {
+    const document = {
+      $schema: 'https://json-structure.org/meta/core/v0/#',
+      type: 'object',
+      properties: {},
+    };
+    expect(actionAvailability(actionById('validation.minimum')!, '', document)).toMatchObject({
+      enabled: false,
+      reason: expect.stringContaining('requires a number'),
+    });
+    expect(actionAvailability(actionById('validation.propertyNames')!, '', document)).toMatchObject({
+      enabled: false,
+      reason: expect.stringContaining('Activate JSONStructureValidation'),
+    });
   });
 
   it('disables hand-authored commands on incompatible selections', () => {
@@ -164,7 +180,6 @@ describe('UI command action registry', () => {
       ['core.const', amount, 1],
       ['reference.type', amount, '#/definitions/Target'],
       ['validation.minimum', amount, 0],
-      ['composition.allOf', amount, [{ type: 'number' }]],
       ['units.unit', amount, 'm'],
       ['alternate-enums.altenums', code, { json: { a: 'A' } }],
       ['localized-descriptions.descriptions', amount, { 'lang:en': 'Amount' }],
@@ -176,8 +191,8 @@ describe('UI command action registry', () => {
       expect(action.create(pointer, value).canExecute(context), id).toBe(true);
     }
     expect(actionById('alternate-names.altnames')?.targets).not.toContain('choice');
-    expect(actionById('semantic.referenceRole')?.targets).toContain('choice');
-    expect(actionAvailability(actionById('semantic.referenceRole')!, amount, document).enabled).toBe(true);
+    expect(actionById('semantic.referenceRole')?.targets).toEqual(['property']);
+    expect(actionAvailability(actionById('semantic.referenceRole')!, amount, document).enabled).toBe(false);
     expect(actionAvailability(actionById('core.const')!, amount, document).enabled).toBe(true);
     expect(actionAvailability(actionById('core.type')!, amount, document).enabled).toBe(true);
 

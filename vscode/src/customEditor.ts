@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { LosslessText } from './losslessText';
 import { realpath } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
@@ -43,6 +44,7 @@ interface PanelState {
 
 export class JsonStructureCustomEditorProvider implements vscode.CustomTextEditorProvider {
     private readonly panels = new Set<PanelState>();
+    private readonly authoredTexts = new Map<string, LosslessText>();
     private readonly readyDocuments = new Map<string, number>();
     private readonly documentEditQueues = new Map<string, Promise<void>>();
     private activePanel: PanelState | undefined;
@@ -78,7 +80,20 @@ export class JsonStructureCustomEditorProvider implements vscode.CustomTextEdito
     }
 
     async resolveCustomTextEditor(document: vscode.TextDocument, webviewPanel: vscode.WebviewPanel): Promise<void> {
-        const initialText = document.getText();
+        const documentKey = document.uri.toString();
+        let authored = this.authoredTexts.get(documentKey);
+        if (!authored) {
+            let bytes: Uint8Array | undefined;
+            try {
+                const stat = await vscode.workspace.fs.stat(document.uri);
+                if (stat.size <= maxPrimaryDocumentBytes) bytes = await vscode.workspace.fs.readFile(document.uri);
+            } catch { /* Untitled and unavailable resources use the native model until a file exists. */ }
+            authored = new LosslessText(document.getText(), bytes, document.eol === vscode.EndOfLine.CRLF ? '\r\n' : '\n');
+            this.authoredTexts.set(documentKey, authored);
+        }
+        const sourceText = authored;
+        sourceText.observe(document.getText());
+        const initialText = sourceText.text;
         try {
             validatePrimaryDocument(initialText);
             assertWebviewMessageBudget(createDocumentMessage('init', document, initialText));
@@ -97,7 +112,8 @@ export class JsonStructureCustomEditorProvider implements vscode.CustomTextEdito
         webviewPanel.webview.html = this.renderHtml(webview);
 
         const postDocument = (type: 'init' | 'documentChanged'): void => {
-            const text = document.getText();
+            sourceText.observe(document.getText());
+            const text = sourceText.text;
             try {
                 validatePrimaryDocument(text);
                 postWebviewMessage(webview, createDocumentMessage(type, document, text));
@@ -108,11 +124,25 @@ export class JsonStructureCustomEditorProvider implements vscode.CustomTextEdito
             }
         };
         state.disposables.push(vscode.workspace.onDidChangeTextDocument((event) => {
-            if (event.document.uri.toString() === document.uri.toString()) postDocument('documentChanged');
+            if (event.document.uri.toString() === document.uri.toString()) {
+                sourceText.observe(document.getText(), event.contentChanges, document.eol === vscode.EndOfLine.CRLF ? '\r\n' : '\n');
+                postDocument('documentChanged');
+            }
         }));
         state.disposables.push(vscode.workspace.onDidSaveTextDocument((saved) => {
             if (saved.uri.toString() === document.uri.toString()) {
-                postWebviewMessage(webview, { type: 'documentSaved', protocolVersion, documentVersion: saved.version });
+                const version = saved.version;
+                void this.enqueueDocumentEdit(documentKey, async () => {
+                    sourceText.observe(saved.getText());
+                    try {
+                        const persisted = await vscode.workspace.fs.readFile(saved.uri);
+                        const restore = sourceText.bytesToRestore(persisted);
+                        if (restore && saved.version === version && !saved.isDirty) await vscode.workspace.fs.writeFile(saved.uri, restore);
+                    } catch (error) {
+                        void vscode.window.showWarningMessage('JSON Structure could not preserve the authored source line endings: ' + (error instanceof Error ? error.message : String(error)));
+                    }
+                    postWebviewMessage(webview, { type: 'documentSaved', protocolVersion, documentVersion: saved.version });
+                });
             }
         }));
         state.disposables.push(webviewPanel.onDidChangeViewState((event) => {
@@ -170,6 +200,7 @@ export class JsonStructureCustomEditorProvider implements vscode.CustomTextEdito
         }));
         const disposeSubscription = webviewPanel.onDidDispose(() => {
             this.panels.delete(state);
+            if (![...this.panels].some(panel => panel.documentUri === documentKey)) this.authoredTexts.delete(documentKey);
             if (state.rendererReady) this.unmarkRendererReady(state.documentUri);
             for (const disposable of state.disposables) disposable.dispose();
             disposeSubscription.dispose();
@@ -187,7 +218,9 @@ export class JsonStructureCustomEditorProvider implements vscode.CustomTextEdito
     }
 
     private async applyTextEdits(document: vscode.TextDocument, edits: readonly TextEditMessage['request']['edits'][number][]): Promise<boolean> {
-        const currentText = document.getText();
+        const authored = this.authoredTexts.get(document.uri.toString());
+        authored?.observe(document.getText());
+        const currentText = authored?.text ?? document.getText();
         validatePrimaryDocument(currentText);
         const orderedEdits = [...edits].sort((left, right) => left.range.startOffset - right.range.startOffset || left.range.endOffset - right.range.endOffset);
         const parts: string[] = [];
@@ -201,10 +234,16 @@ export class JsonStructureCustomEditorProvider implements vscode.CustomTextEdito
         validatePrimaryDocument(parts.join(''));
 
         const workspaceEdit = new vscode.WorkspaceEdit();
-        for (const edit of edits) {
+        const mapped = authored?.prepare(edits) ?? edits;
+        for (const edit of mapped) {
             workspaceEdit.replace(document.uri, new vscode.Range(document.positionAt(edit.range.startOffset), document.positionAt(edit.range.endOffset)), edit.newText);
         }
-        return vscode.workspace.applyEdit(workspaceEdit);
+        try {
+            const applied = await vscode.workspace.applyEdit(workspaceEdit);
+            if (applied) authored?.observe(document.getText());
+            else authored?.cancel();
+            return applied;
+        } catch (error) { authored?.cancel(); throw error; }
     }
 
     private postApplyResult(webview: vscode.Webview, requestId: string, document: vscode.TextDocument, applied: boolean, message?: string): void {
@@ -278,10 +317,23 @@ export class JsonStructureCustomEditorProvider implements vscode.CustomTextEdito
     private renderHtml(webview: vscode.Webview): string {
         const nonce = createNonce();
         const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', 'editor', 'editor.iife.js'));
+        const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', 'editor', 'editor.css'));
         const readinessRequestId = randomUUID();
 
-        return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="json-structure-style-nonce" content="${nonce}"><meta name="json-structure-renderer-readiness" content="${readinessRequestId}"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}'; worker-src blob:"><title>JSON Structure Editor</title><style nonce="${nonce}">html,body,#editor{width:100%;height:100%;min-width:0;min-height:0;margin:0;overflow:hidden;overscroll-behavior:none}#editor{position:fixed;inset:0}body{background:#121719}</style></head><body><div id="editor"></div><script nonce="${nonce}" src="${scriptUri}"></script></body></html>`;
+        return renderCustomEditorHtml({
+            nonce,
+            readinessRequestId,
+            scriptUri: scriptUri.toString(),
+            styleUri: styleUri.toString(),
+            cspSource: webview.cspSource,
+            acceptanceMode: process.env.JSON_STRUCTURE_VSIX_UI_ACCEPTANCE === '1',
+        });
     }
+}
+
+export function renderCustomEditorHtml(options: { readonly nonce: string; readonly readinessRequestId: string; readonly scriptUri: string; readonly styleUri: string; readonly cspSource: string; readonly acceptanceMode?: boolean }): string {
+    const { nonce, readinessRequestId, scriptUri, styleUri, cspSource, acceptanceMode = false } = options;
+    return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="json-structure-style-nonce" content="${nonce}"><meta name="json-structure-renderer-readiness" content="${readinessRequestId}">${acceptanceMode ? '<meta name="json-structure-acceptance" content="enabled">' : ''}<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${cspSource} 'nonce-${nonce}'; script-src ${cspSource} 'nonce-${nonce}'; worker-src ${cspSource} blob:; font-src ${cspSource} data:; img-src ${cspSource} data:"><title>JSON Structure Editor</title><link rel="stylesheet" href="${styleUri}"><style nonce="${nonce}">html,body,#editor{width:100%;height:100%;min-width:0;min-height:0;margin:0;overflow:hidden;overscroll-behavior:none}#editor{position:fixed;inset:0}body{background:#121719}</style></head><body><div id="editor"></div><script nonce="${nonce}" src="${scriptUri}"></script></body></html>`;
 }
 
 export type LibraryResourceReader = (uri: string) => Promise<{ readonly uri: string; readonly document: unknown } | undefined>;

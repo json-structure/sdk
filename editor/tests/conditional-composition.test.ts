@@ -1,11 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AddCompositionOperandCommand,
+  AddCompositionReferenceCommand,
+  ConvertCompositionRuleCommand,
+  DeleteCompositionOperandCommand,
   DocumentSession,
+  DuplicateCompositionOperandCommand,
+  MoveCompositionOperandCommand,
+  NegateCompositionOperandCommand,
   SetAllOfCommand,
   SetAnyOfCommand,
   SetConditionalCompositionCommand,
   SetNotCommand,
   SetOneOfCommand,
+  SetConditionalBranchCommand,
+  UnwrapCompositionOperandCommand,
+  WrapCompositionOperandCommand,
   parseDocument,
   resolveReferences,
   type EditorCommand,
@@ -154,7 +164,7 @@ describe('Conditional Composition authoring', () => {
     const session = new DocumentSession('memory://composition-negative', source);
     expect(new SetAllOfCommand('', []).canExecute({ session, documentVersion: 1 })).toBe(false);
     expect(new SetAllOfCommand('', [{ type: 'missing' }]).canExecute({ session, documentVersion: 1 })).toBe(false);
-    expect(new SetConditionalCompositionCommand('', { if: { properties: { kind: { type: 'string' } } } }).canExecute({ session, documentVersion: 1 })).toBe(false);
+    expect(new SetConditionalCompositionCommand('', { if: { properties: { kind: { type: 'string' } } } }).canExecute({ session, documentVersion: 1 })).toBe(true);
     expect(new SetConditionalCompositionCommand('', {
       if: { properties: { kind: { type: 'string' } } },
       then: { properties: { value: { type: 'string' } } }
@@ -186,16 +196,16 @@ describe('Conditional Composition authoring', () => {
       type: 'array',
       contains: { type: 'string', then: { type: 'number' } }
     }));
-    expect(validationOwned.diagnostics.some((item) => item.location?.pointer === '/contains/then' && item.message.includes('requires an if'))).toBe(true);
+    expect(validationOwned.diagnostics.some((item) => item.location?.pointer === '/contains/then' && item.message.includes('requires an if'))).toBe(false);
 
     const malformed = parseDocument('memory://composition-malformed', `{"$schema":"${validation}","type":"string","allOf":[],"anyOf":{},"oneOf":[1],"not":[],"if":{"type":"string"},"then":1}`);
     for (const pointer of ['/allOf', '/anyOf', '/oneOf', '/not', '/then']) {
       expect(malformed.diagnostics.some((item) => item.code === 'json.keyword-invalid' && item.location?.pointer === pointer), pointer).toBe(true);
     }
     const missingIf = parseDocument('memory://composition-missing-if', JSON.stringify({ $schema: validation, type: 'string', else: { type: 'number' } }));
-    expect(missingIf.diagnostics.some((item) => item.location?.pointer === '/else' && item.message.includes('requires an if'))).toBe(true);
+    expect(missingIf.diagnostics.some((item) => item.location?.pointer === '/else' && item.message.includes('requires an if'))).toBe(false);
     const missingConsequent = parseDocument('memory://composition-missing-consequent', JSON.stringify({ $schema: validation, type: 'string', if: { type: 'number' } }));
-    expect(missingConsequent.diagnostics.some((item) => item.location?.pointer === '/if' && item.message.includes('then or else'))).toBe(true);
+    expect(missingConsequent.diagnostics.some((item) => item.location?.pointer === '/if' && item.message.includes('then or else'))).toBe(false);
 
     const nested = parseDocument('memory://composition-nested-validation', JSON.stringify({
       $schema: validation,
@@ -372,5 +382,76 @@ describe('Conditional Composition authoring', () => {
       expect(new SetAllOfCommand('', [branch]).canExecute({ session, documentVersion: 1 }), label).toBe(false);
       expect(new SetNotCommand('', branch).canExecute({ session, documentVersion: 1 }), label).toBe(false);
     }
+  });
+  it('edits recursive operands structurally while preserving legacy and unsupported operand bytes', () => {
+    const legacy = '{"$ref":"#/definitions/Text","description":"\\u0061"}';
+    const unsupported = '{"x-legacy":{"spelling":"\\u0062"}}';
+    const source = `{"$schema":"${validation}","definitions":{"Text":{"type":"string"}},"allOf":[${legacy},${unsupported},{"type":"number"}]}`;
+    const session = new DocumentSession('memory://composition-structural', source);
+    const context = () => ({ session, documentVersion: session.snapshot().documentVersion });
+
+    const duplicate = new DuplicateCompositionOperandCommand('/allOf/0');
+    expect(duplicate.canExecute(context())).toBe(true);
+    session.applyTextEdits(duplicate.execute(context()).edits);
+    expect(session.snapshot().text.split(legacy)).toHaveLength(3);
+    expect(session.undo().text).toBe(source);
+    session.redo();
+
+    const move = new MoveCompositionOperandCommand('/allOf/1', 'down');
+    session.applyTextEdits(move.execute(context()).edits);
+    expect(session.snapshot().text).toContain(unsupported);
+    expect(session.snapshot().text).toContain(legacy);
+
+    const remove = new DeleteCompositionOperandCommand('/allOf/1');
+    session.applyTextEdits(remove.execute(context()).edits);
+    expect(session.snapshot().text).not.toContain(unsupported);
+    expect(session.canUndo).toBe(true);
+    expect(session.undo().text).toContain(unsupported);
+  });
+
+  it('converts, wraps, unwraps, and negates nested rules with exact inverse edits', () => {
+    const source = `{"$schema":"${validation}","allOf":[{"type":"string","description":"\\u0061"}]}`;
+    const converted = apply(source, new ConvertCompositionRuleCommand('', 'allOf', 'anyOf'));
+    expect(converted.changed).toContain('"anyOf"');
+    expect(converted.changed).toContain('"description":"\\u0061"');
+    expect(converted.restored).toBe(source);
+
+    const wrapped = apply(source, new WrapCompositionOperandCommand('/allOf/0', 'oneOf'));
+    expect(JSON.parse(wrapped.changed).allOf[0]).toEqual({ oneOf: [{ type: 'string', description: 'a' }] });
+    expect(wrapped.changed).toContain('"description":"\\u0061"');
+    expect(wrapped.restored).toBe(source);
+
+    const unwrapped = apply(wrapped.changed, new UnwrapCompositionOperandCommand('/allOf/0'));
+    expect(unwrapped.changed).toBe(source);
+    expect(unwrapped.restored).toBe(wrapped.changed);
+
+    const negated = apply(source, new NegateCompositionOperandCommand('/allOf/0'));
+    expect(JSON.parse(negated.changed).allOf[0]).toEqual({ not: { type: 'string', description: 'a' } });
+    expect(negated.restored).toBe(source);
+    expect(apply(negated.changed, new NegateCompositionOperandCommand('/allOf/0')).changed).toBe(source);
+  });
+
+  it('authors canonical typed refs and independently manages conditional branches', () => {
+    const source = JSON.stringify({
+      $schema: validation,
+      definitions: { Text: { type: 'string' } },
+      anyOf: [{ type: 'number' }],
+      if: { type: 'string' }
+    });
+    const session = new DocumentSession('memory://composition-canonical-ref', source);
+    const context = () => ({ session, documentVersion: session.snapshot().documentVersion });
+    session.applyTextEdits(new AddCompositionReferenceCommand('', 'anyOf', '#/definitions/Text').execute(context()).edits);
+    expect((JSON.parse(session.snapshot().text).anyOf as unknown[])[1]).toEqual({ type: { $ref: '#/definitions/Text' } });
+    expect((JSON.parse(session.snapshot().text).anyOf as Record<string, unknown>[])[1]).not.toHaveProperty('$ref');
+
+    session.applyTextEdits(new AddCompositionOperandCommand('', 'anyOf', { allOf: [{ type: 'boolean' }] }).execute(context()).edits);
+    expect((JSON.parse(session.snapshot().text).anyOf as unknown[])[2]).toEqual({ allOf: [{ type: 'boolean' }] });
+
+    session.applyTextEdits(new SetConditionalBranchCommand('', 'then', { type: 'number' }).execute(context()).edits);
+    session.applyTextEdits(new SetConditionalBranchCommand('', 'if', undefined).execute(context()).edits);
+    const independent = JSON.parse(session.snapshot().text) as Record<string, unknown>;
+    expect(independent).not.toHaveProperty('if');
+    expect(independent).toHaveProperty('then', { type: 'number' });
+    expect(parseDocument('memory://conditional-independent', session.snapshot().text).diagnostics.some((item) => item.message.includes('requires an if'))).toBe(false);
   });
 });

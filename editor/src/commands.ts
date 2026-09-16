@@ -1,10 +1,13 @@
+import { SchemaLocationIndex, type PointerTransformation } from './schema-locations.js';
 import type { DocumentVersion, TextEdit, TextRange } from './contracts.js';
 import type { DocumentSession } from './session.js';
 import {
   compositionArrayValueValid,
   compositionSchemaValueValid,
   conditionalCompositionGroupValid,
+  type CompositionArrayKeyword,
   type CompositionKeywordMap,
+  type ConditionalBranchKeyword,
   type ConditionalCompositionGroup
 } from './composition.js';
 import {
@@ -73,7 +76,7 @@ export interface RelationSchema {
 /**
  * Defines the command result shape.
  */
-export interface CommandResult { readonly edits: readonly TextEdit[]; readonly inverseEdits: readonly TextEdit[]; }
+export interface CommandResult { readonly edits: readonly TextEdit[]; readonly inverseEdits: readonly TextEdit[]; readonly pointerTransforms?: readonly PointerTransformation[]; }
 /**
  * Defines the command context shape.
  */
@@ -1187,7 +1190,9 @@ function editableCompositionTarget(session: DocumentSession, pointer: string): R
   if (!isObjectLike(value) || !hasUniquePointerPath(session, pointer) || hasDuplicatePointerDiagnostic(session, pointer)) return undefined;
   const compositionOwned = pointer === '' || /\/(?:allOf|anyOf|oneOf)\/\d+$/.test(pointer) || /\/(?:not|if|then|else)$/.test(pointer);
   const projectedNonSchema = session.model?.projections.definitions.some((definition) => definition.pointer === pointer && definition.coreForm === 'composed');
-  return isTypeDeclaration(value) || compositionOwned || projectedNonSchema ? value : undefined;
+  if (isTypeDeclaration(value) || compositionOwned || projectedNonSchema) return value;
+  const locations = new SchemaLocationIndex(); locations.refresh(session.value,session.model);
+  return locations.at(pointer) ? value : undefined;
 }
 function validSchemaValue(session: DocumentSession, value: unknown): boolean {
   const root = pointerValue(session.value, '');
@@ -1237,10 +1242,6 @@ function validCompositionSchemaValue(session: DocumentSession, value: unknown, v
       !compositionArrayValueValid(value[keyword], (schema) => validCompositionSchemaValue(session, schema, visited))) return false;
   }
   if (Object.prototype.hasOwnProperty.call(value, 'not') && !validCompositionSchemaValue(session, value.not, visited)) return false;
-  const hasIf = Object.prototype.hasOwnProperty.call(value, 'if');
-  const hasThen = Object.prototype.hasOwnProperty.call(value, 'then');
-  const hasElse = Object.prototype.hasOwnProperty.call(value, 'else');
-  if ((hasThen || hasElse) && !hasIf || hasIf && !hasThen && !hasElse) return false;
   for (const keyword of ['if', 'then', 'else'] as const) {
     if (Object.prototype.hasOwnProperty.call(value, keyword) && !validCompositionSchemaValue(session, value[keyword], visited)) return false;
   }
@@ -1438,6 +1439,294 @@ export class SetValidationKeywordCommand<K extends ValidationKeyword> implements
   }
 }
 
+interface CompositionArrayContext {
+  readonly ownerPointer: string;
+  readonly keyword: CompositionArrayKeyword;
+  readonly arrayPointer: string;
+  readonly values: readonly unknown[];
+  readonly range: TextRange;
+  readonly itemRanges: readonly TextRange[];
+}
+
+function compositionArrayContext(session: DocumentSession, ownerPointer: string, keyword: CompositionArrayKeyword): CompositionArrayContext | undefined {
+  const owner = editableCompositionTarget(session, ownerPointer);
+  const values = owner?.[keyword];
+  const arrayPointer = objectMemberPointer(ownerPointer, keyword);
+  const range = session.model?.nodes.find((node) => node.pointer === arrayPointer)?.range;
+  if (!owner || !Array.isArray(values) || !range || hasDuplicatePointerDiagnostic(session, arrayPointer)) return undefined;
+  const itemRanges = values.map((_entry, index) => session.model?.nodes.find((node) => node.pointer === `${arrayPointer}/${index}`)?.range);
+  return itemRanges.every((item): item is TextRange => item !== undefined)
+    ? { ownerPointer, keyword, arrayPointer, values, range, itemRanges }
+    : undefined;
+}
+
+function compositionOperandContext(session: DocumentSession, operandPointer: string): (CompositionArrayContext & { readonly index: number }) | undefined {
+  const match = /^(.*)\/(allOf|anyOf|oneOf)\/(\d+)$/.exec(operandPointer);
+  if (!match) return undefined;
+  const index = Number(match[3]);
+  const context = compositionArrayContext(session, match[1]!, match[2] as CompositionArrayKeyword);
+  return context && index >= 0 && index < context.values.length ? { ...context, index } : undefined;
+}
+
+function lineIndentAt(source: string, offset: number): string {
+  const lineStart = source.lastIndexOf('\n', Math.max(0, offset - 1)) + 1;
+  return /^[ \t]*/.exec(source.slice(lineStart, offset))?.[0] ?? '';
+}
+
+function compositionArraySource(source: string, context: CompositionArrayContext, items: readonly string[]): string {
+  const offsets = sourceOffsets(context.range, 'Composition array source range is unavailable.');
+  const authored = source.slice(offsets.start, offsets.end);
+  if (!authored.includes('\n')) return `[${items.join(',')}]`;
+  const closingIndent = lineIndentAt(source, offsets.start);
+  const itemIndent = context.itemRanges[0]
+    ? lineIndentAt(source, sourceOffsets(context.itemRanges[0], 'Composition operand source range is unavailable.').start)
+    : `${closingIndent}  `;
+  return items.length === 0 ? '[]' : `[\n${itemIndent}${items.join(`,\n${itemIndent}`)}\n${closingIndent}]`;
+}
+
+function compositionArrayItemsSource(session: DocumentSession, context: CompositionArrayContext): string[] {
+  const source = session.snapshot().text;
+  return context.itemRanges.map((range) => {
+    const offsets = sourceOffsets(range, 'Composition operand source range is unavailable.');
+    return source.slice(offsets.start, offsets.end);
+  });
+}
+
+function replaceCompositionArraySource(session: DocumentSession, context: CompositionArrayContext, items: readonly string[]): CommandResult {
+  const source = session.snapshot().text;
+  const next = compositionArraySource(source, context, items);
+  return commandResultForEdits(source, [{ range: context.range, newText: next }]);
+}
+
+function compositionCommandReady(session: DocumentSession, documentVersion: DocumentVersion): boolean {
+  return documentVersion === session.snapshot().documentVersion && session.snapshot().recovery === 'valid' && session.capabilities.conditionalCompositionActive;
+}
+
+/** Adds one full schema operand to an ALL, ANY, or EXACTLY ONE rule. */
+export class AddCompositionOperandCommand implements EditorCommand {
+  constructor(readonly targetPointer: string, readonly keyword: CompositionArrayKeyword, readonly value: Readonly<Record<string, unknown>>, readonly index?: number) {}
+
+  canExecute({ session, documentVersion }: CommandContext): boolean {
+    if (!compositionCommandReady(session, documentVersion) || !validCompositionSchemaValue(session, this.value)) return false;
+    const context = compositionArrayContext(session, this.targetPointer, this.keyword);
+    const index = this.index ?? context?.values.length ?? -1;
+    return context !== undefined && index >= 0 && index <= context.values.length;
+  }
+
+  execute(context: CommandContext): CommandResult {
+    if (!this.canExecute(context)) throw new Error('AddCompositionOperand command preconditions are not satisfied.');
+    const array = compositionArrayContext(context.session, this.targetPointer, this.keyword)!;
+    const items = compositionArrayItemsSource(context.session, array);
+    items.splice(this.index ?? items.length, 0, JSON.stringify(this.value));
+    return { ...replaceCompositionArraySource(context.session, array, items), pointerTransforms: array.values.flatMap((_value, index) => index >= (this.index ?? array.values.length) ? [{ from: array.arrayPointer + '/' + index, to: array.arrayPointer + '/' + (index+1) }] : []) };
+  }
+}
+
+/** Adds a newly authored canonical typed reference operand. */
+export class AddCompositionReferenceCommand extends AddCompositionOperandCommand {
+  constructor(targetPointer: string, keyword: CompositionArrayKeyword, reference: string, index?: number) {
+    super(targetPointer, keyword, { type: { $ref: reference } }, index);
+  }
+}
+
+/** Deletes one operand; deleting the final operand removes the complete rule. */
+export class DeleteCompositionOperandCommand implements EditorCommand {
+  constructor(readonly operandPointer: string) {}
+
+  canExecute({ session, documentVersion }: CommandContext): boolean {
+    return compositionCommandReady(session, documentVersion) && compositionOperandContext(session, this.operandPointer) !== undefined;
+  }
+
+  execute(context: CommandContext): CommandResult {
+    if (!this.canExecute(context)) throw new Error('DeleteCompositionOperand command preconditions are not satisfied.');
+    const array = compositionOperandContext(context.session, this.operandPointer)!;
+    if (array.values.length === 1) return { ...removeMemberCommandResult(context.session, array.ownerPointer, array.keyword), pointerTransforms: [{ from: array.arrayPointer }] };
+    const items = compositionArrayItemsSource(context.session, array);
+    items.splice(array.index, 1);
+    return { ...replaceCompositionArraySource(context.session, array, items), pointerTransforms: [{ from: this.operandPointer }, ...array.values.flatMap((_value,index) => index > array.index ? [{ from: array.arrayPointer + '/' + index, to: array.arrayPointer + '/' + (index-1) }] : [])] };
+  }
+}
+
+/** Duplicates an operand from its exact authored source bytes. */
+export class DuplicateCompositionOperandCommand implements EditorCommand {
+  constructor(readonly operandPointer: string) {}
+
+  canExecute({ session, documentVersion }: CommandContext): boolean {
+    return compositionCommandReady(session, documentVersion) && compositionOperandContext(session, this.operandPointer) !== undefined;
+  }
+
+  execute(context: CommandContext): CommandResult {
+    if (!this.canExecute(context)) throw new Error('DuplicateCompositionOperand command preconditions are not satisfied.');
+    const array = compositionOperandContext(context.session, this.operandPointer)!;
+    const items = compositionArrayItemsSource(context.session, array);
+    items.splice(array.index + 1, 0, items[array.index]!);
+    return { ...replaceCompositionArraySource(context.session, array, items), pointerTransforms: array.values.flatMap((_value,index) => index > array.index ? [{ from: array.arrayPointer + '/' + index, to: array.arrayPointer + '/' + (index+1) }] : []) };
+  }
+}
+
+/** Moves an operand without changing its authored schema source. */
+export class MoveCompositionOperandCommand implements EditorCommand {
+  constructor(readonly operandPointer: string, readonly direction: 'up' | 'down') {}
+
+  canExecute({ session, documentVersion }: CommandContext): boolean {
+    if (!compositionCommandReady(session, documentVersion)) return false;
+    const array = compositionOperandContext(session, this.operandPointer);
+    return array !== undefined && (this.direction === 'up' ? array.index > 0 : array.index + 1 < array.values.length);
+  }
+
+  execute(context: CommandContext): CommandResult {
+    if (!this.canExecute(context)) throw new Error('MoveCompositionOperand command preconditions are not satisfied.');
+    const array = compositionOperandContext(context.session, this.operandPointer)!;
+    const items = compositionArrayItemsSource(context.session, array);
+    const destination = array.index + (this.direction === 'up' ? -1 : 1);
+    [items[array.index], items[destination]] = [items[destination]!, items[array.index]!];
+    return { ...replaceCompositionArraySource(context.session, array, items), pointerTransforms: [{ from: this.operandPointer, to: array.arrayPointer + '/' + destination }, { from: array.arrayPointer + '/' + destination, to: this.operandPointer }] };
+  }
+}
+
+/** Converts ALL/ANY/EXACTLY ONE by editing only the authored keyword token. */
+export class ConvertCompositionRuleCommand implements EditorCommand {
+  constructor(readonly targetPointer: string, readonly from: CompositionArrayKeyword, readonly to: CompositionArrayKeyword) {}
+
+  canExecute({ session, documentVersion }: CommandContext): boolean {
+    if (!compositionCommandReady(session, documentVersion) || this.from === this.to) return false;
+    const target = editableCompositionTarget(session, this.targetPointer);
+    return compositionArrayContext(session, this.targetPointer, this.from) !== undefined &&
+      target !== undefined && !Object.prototype.hasOwnProperty.call(target, this.to) &&
+      objectMemberContext(session, this.targetPointer, this.from) !== undefined;
+  }
+
+  execute(context: CommandContext): CommandResult {
+    if (!this.canExecute(context)) throw new Error('ConvertCompositionRule command preconditions are not satisfied.');
+    const member = objectMemberContext(context.session, this.targetPointer, this.from)!;
+    return { ...commandResultForEdits(context.session.snapshot().text, [{ range: member.keyRange, newText: JSON.stringify(this.to) }]), pointerTransforms: [{ from: this.targetPointer + '/' + this.from, to: this.targetPointer + '/' + this.to }] };
+  }
+}
+
+function compositionOperandSource(session: DocumentSession, operandPointer: string): { readonly value: Record<string, unknown>; readonly range: TextRange; readonly source: string } | undefined {
+  const value = pointerValue(session.value, operandPointer);
+  const range = session.model?.nodes.find((node) => node.pointer === operandPointer)?.range;
+  if (!isObjectLike(value) || !range || !hasUniquePointerPath(session, operandPointer) || hasDuplicatePointerDiagnostic(session, operandPointer)) return undefined;
+  const offsets = sourceOffsets(range, 'Composition operand source range is unavailable.');
+  return { value, range, source: session.snapshot().text.slice(offsets.start, offsets.end) };
+}
+
+/** Wraps one operand in a nested ALL, ANY, EXACTLY ONE, or NOT rule. */
+export class WrapCompositionOperandCommand implements EditorCommand {
+  constructor(readonly operandPointer: string, readonly keyword: CompositionArrayKeyword | 'not') {}
+
+  canExecute({ session, documentVersion }: CommandContext): boolean {
+    const operand = compositionOperandSource(session, this.operandPointer);
+    return compositionCommandReady(session, documentVersion) && operand !== undefined;
+  }
+
+  execute(context: CommandContext): CommandResult {
+    if (!this.canExecute(context)) throw new Error('WrapCompositionOperand command preconditions are not satisfied.');
+    const operand = compositionOperandSource(context.session, this.operandPointer)!;
+    const next = this.keyword === 'not' ? `{"not":${operand.source}}` : `{"${this.keyword}":[${operand.source}]}`;
+    return { ...commandResultForEdits(context.session.snapshot().text, [{ range: operand.range, newText: next }]), pointerTransforms: [{ from: this.operandPointer, to: this.operandPointer + '/' + this.keyword + (this.keyword === 'not' ? '' : '/0') }] };
+  }
+}
+
+export function compositionUnwrapReason(value: unknown): string | undefined {
+  if (!isObjectLike(value)) return 'Only a schema object can be unwrapped.';
+  if (Object.keys(value).length !== 1) return 'Unsafe unwrap: would discard sibling declaration, constraints or annotations.';
+  const keyword = Object.keys(value)[0]!;
+  if (keyword === 'not' && isObjectLike(value.not)) return undefined;
+  if ((keyword === 'allOf' || keyword === 'anyOf' || keyword === 'oneOf') && Array.isArray(value[keyword]) && value[keyword].length === 1 && isObjectLike(value[keyword][0])) return undefined;
+  return 'Unsafe unwrap: requires exactly one schema operand in a single-purpose wrapper.';
+}
+
+function unwrapCompositionOperand(session: DocumentSession, operandPointer: string): { readonly range: TextRange; readonly source: string } | undefined {
+  const operand = compositionOperandSource(session, operandPointer);
+  if (!operand || compositionUnwrapReason(operand.value)) return undefined;
+  const keyword = Object.keys(operand.value)[0];
+  const childPointer = keyword === 'not' ? `${operandPointer}/not` :
+    (keyword === 'allOf' || keyword === 'anyOf' || keyword === 'oneOf') && Array.isArray(operand.value[keyword]) && operand.value[keyword].length === 1
+      ? `${operandPointer}/${keyword}/0` : undefined;
+  if (!childPointer) return undefined;
+  const childRange = session.model?.nodes.find((node) => node.pointer === childPointer)?.range;
+  if (!childRange) return undefined;
+  const offsets = sourceOffsets(childRange, 'Nested composition operand source range is unavailable.');
+  return { range: operand.range, source: session.snapshot().text.slice(offsets.start, offsets.end) };
+}
+
+/** Removes a single-purpose wrapper while preserving the nested operand bytes. */
+export class UnwrapCompositionOperandCommand implements EditorCommand {
+  constructor(readonly operandPointer: string) {}
+
+  canExecute({ session, documentVersion }: CommandContext): boolean {
+    return compositionCommandReady(session, documentVersion) && unwrapCompositionOperand(session, this.operandPointer) !== undefined;
+  }
+
+  execute(context: CommandContext): CommandResult {
+    if (!this.canExecute(context)) throw new Error(compositionUnwrapReason(pointerValue(context.session.value, this.operandPointer)) ?? 'UnwrapCompositionOperand command preconditions are not satisfied.');
+    const unwrapped = unwrapCompositionOperand(context.session, this.operandPointer)!;
+    const value = pointerValue(context.session.value, this.operandPointer) as Record<string, unknown>;
+    const keyword = Object.keys(value)[0]!;
+    return { ...commandResultForEdits(context.session.snapshot().text, [{ range: unwrapped.range, newText: unwrapped.source }]), pointerTransforms: [{ from: this.operandPointer }, { from: this.operandPointer + '/' + keyword + (keyword === 'not' ? '' : '/0'), to: this.operandPointer }] };
+  }
+}
+
+/** Negates an operand, or removes its exact single NOT wrapper. */
+export class NegateCompositionOperandCommand implements EditorCommand {
+  constructor(readonly operandPointer: string) {}
+
+  canExecute({ session, documentVersion }: CommandContext): boolean {
+    const operand = compositionOperandSource(session, this.operandPointer);
+    return compositionCommandReady(session, documentVersion) && operand !== undefined &&
+      (Object.keys(operand.value).length === 1 && Object.prototype.hasOwnProperty.call(operand.value, 'not')
+        ? unwrapCompositionOperand(session, this.operandPointer) !== undefined
+        : true);
+  }
+
+  execute(context: CommandContext): CommandResult {
+    if (!this.canExecute(context)) throw new Error('NegateCompositionOperand command preconditions are not satisfied.');
+    const operand = compositionOperandSource(context.session, this.operandPointer)!;
+    const unwrapped = Object.keys(operand.value).length === 1 && Object.prototype.hasOwnProperty.call(operand.value, 'not')
+      ? unwrapCompositionOperand(context.session, this.operandPointer)
+      : undefined;
+    const next = unwrapped?.source ?? `{"not":${operand.source}}`;
+    return { ...commandResultForEdits(context.session.snapshot().text, [{ range: operand.range, newText: next }]), pointerTransforms: unwrapped ? [{ from: this.operandPointer }, { from: this.operandPointer + '/not', to: this.operandPointer }] : [{ from: this.operandPointer, to: this.operandPointer + '/not' }] };
+  }
+}
+
+/** Replaces an operand with a newly authored canonical typed reference. */
+export class SetCompositionOperandReferenceCommand implements EditorCommand {
+  constructor(readonly operandPointer: string, readonly reference: string) {}
+
+  canExecute({ session, documentVersion }: CommandContext): boolean {
+    const operand = compositionOperandSource(session, this.operandPointer);
+    const value = { type: { $ref: this.reference } };
+    return documentVersion === session.snapshot().documentVersion && session.snapshot().recovery === 'valid' && editableCompositionTarget(session,this.operandPointer) !== undefined && operand !== undefined && !Object.prototype.hasOwnProperty.call(operand.value, '$ref') && validCompositionSchemaValue(session, value);
+  }
+
+  execute(context: CommandContext): CommandResult {
+    if (!this.canExecute(context)) throw new Error('SetCompositionOperandReference command preconditions are not satisfied.');
+    return setMemberCommandResult(context.session, this.operandPointer, 'type', { $ref: this.reference });
+  }
+}
+
+/** Independently adds, replaces, or removes one conditional branch. */
+export class SetConditionalBranchCommand implements EditorCommand {
+  constructor(readonly targetPointer: string, readonly keyword: ConditionalBranchKeyword, readonly value: Readonly<Record<string, unknown>> | undefined) {}
+
+  canExecute({ session, documentVersion }: CommandContext): boolean {
+    if (!compositionCommandReady(session, documentVersion)) return false;
+    const target = editableCompositionTarget(session, this.targetPointer);
+    if (!target) return false;
+    const authored = Object.prototype.hasOwnProperty.call(target, this.keyword);
+    if (authored && !objectMemberContext(session, this.targetPointer, this.keyword)) return false;
+    return this.value === undefined ? authored : validCompositionSchemaValue(session, this.value);
+  }
+
+  execute(context: CommandContext): CommandResult {
+    if (!this.canExecute(context)) throw new Error('SetConditionalBranch command preconditions are not satisfied.');
+    return this.value === undefined
+      ? removeMemberCommandResult(context.session, this.targetPointer, this.keyword)
+      : setMemberCommandResult(context.session, this.targetPointer, this.keyword, this.value);
+  }
+}
 /**
  * Command that updates composition keyword on a schema declaration.
  */
@@ -2275,7 +2564,7 @@ export class RenamePropertyCommand implements EditorCommand {
       ...memberMutationEdits(context.session, ownerPointer, propertyOwnerMutations(property.owner, property.propertyName, this.newName)),
       ...referenceRewriteEdits(context.session, this.propertyPointer, nextPointer)
     ];
-    return commandResultForEdits(source, edits);
+    return { ...commandResultForEdits(source, edits), pointerTransforms: [{ from: this.propertyPointer, to: nextPointer }] };
   }
 }
 

@@ -458,9 +458,6 @@ async function createWindow(): Promise<void> {
   const developmentUrl = selectDevelopmentUrl(app.isPackaged, process.env.VITE_DEV_SERVER_URL);
   allowedRendererUrl = developmentUrl ?? pathToFileURL(join(rendererDirectory, 'index.html')).href;
   const expectedUrl = allowedRendererUrl;
-  window.webContents.on('did-finish-load', () => {
-    if (!window.isDestroyed()) window.webContents.setZoomFactor(1);
-  });
   window.webContents.on('before-input-event', (event, input) => {
     const command = windowCommandForShortcut(input, process.platform);
     if (!command) return;

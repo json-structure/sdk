@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { Script } from 'node:vm';
 import * as path from 'node:path';
@@ -8,6 +8,8 @@ const repositoryRoot = path.resolve(__dirname, '../../..');
 const editorRoot = path.join(repositoryRoot, 'editor');
 const extensionManifestPath = path.join(repositoryRoot, 'vscode', 'package.json');
 const rendererBundlePath = path.resolve(__dirname, '../../media/editor/editor.iife.js');
+const rendererStylePath = path.resolve(__dirname, '../../media/editor/editor.css');
+const rendererOutputRoot = path.resolve(__dirname, '../../media/editor');
 const rendererBuildModulePath = path.join(editorRoot, 'scripts/vscode-renderer-build.mjs');
 const rendererReadyMarker = 'json-structure-vscode-renderer-ready-v1';
 const requireFromEditor = createRequire(path.join(editorRoot, 'package.json'));
@@ -63,18 +65,19 @@ function sha256(bytes: Uint8Array): string {
     return createHash('sha256').update(bytes).digest('hex');
 }
 
-function assertRendererParity(checkedIn: Uint8Array | undefined, generated: Uint8Array): void {
-    if (!checkedIn) { throw new Error('The checked-in VS Code renderer bundle is missing.'); }
+function assertRendererParity(label: string, checkedIn: Uint8Array | undefined, generated: Uint8Array): void {
+    if (!checkedIn) { throw new Error(`The checked-in VS Code renderer asset is missing: ${label}.`); }
     const checkedInBytes = Buffer.from(checkedIn);
     const generatedBytes = Buffer.from(generated);
     if (checkedInBytes.equals(generatedBytes)) { return; }
-    throw new Error(`The checked-in VS Code renderer bundle is stale; source build sha256=${sha256(generatedBytes)}, checked-in sha256=${sha256(checkedInBytes)}.`);
+    throw new Error(`The checked-in VS Code renderer asset is stale: ${label}; source build sha256=${sha256(generatedBytes)}, checked-in sha256=${sha256(checkedInBytes)}.`);
 }
 
 function assertRendererShape(bundle: string): void {
     if (Buffer.byteLength(bundle, 'utf8') < 1024) { throw new Error('The generated VS Code renderer bundle is missing or unexpectedly small.'); }
     if (!bundle.includes(rendererReadyMarker)) { throw new Error('The generated VS Code renderer bundle is missing its readiness marker.'); }
     if (!bundle.includes('startVsCodeWebview') || !bundle.includes('acquireVsCodeApi')) { throw new Error('The generated VS Code renderer bundle does not contain the VS Code webview entry point.'); }
+    if (!bundle.includes('data-composition-editor') || !bundle.includes('Exactly one')) { throw new Error('The generated VS Code renderer bundle does not contain inline Rules authoring.'); }
     for (const providerId of builtInCatalogProviderIds) {
         if (!bundle.includes(providerId)) { throw new Error(`The generated VS Code renderer bundle is missing offline catalog provider ${providerId}.`); }
     }
@@ -100,26 +103,47 @@ async function assertDefaultCustomEditor(): Promise<void> {
     }
 }
 
-function findGeneratedRendererBytes(buildOutput: unknown, bundleFileName: string): Buffer {
+function generatedRendererAssets(buildOutput: unknown): ReadonlyMap<string, Buffer> {
+    const assets = new Map<string, Buffer>();
     const outputs = Array.isArray(buildOutput) ? buildOutput : [buildOutput];
     for (const output of outputs) {
         if (!isRecord(output) || !Array.isArray(output.output)) { continue; }
         for (const asset of output.output) {
-            if (isRecord(asset) && asset.type === 'chunk' && asset.fileName === bundleFileName && typeof asset.code === 'string') {
-                return Buffer.from(asset.code, 'utf8');
+            if (!isRecord(asset) || typeof asset.fileName !== 'string') { continue; }
+            if (asset.type === 'chunk' && typeof asset.code === 'string') {
+                assets.set(asset.fileName, Buffer.from(asset.code, 'utf8'));
+            } else if (asset.type === 'asset' && (typeof asset.source === 'string' || asset.source instanceof Uint8Array)) {
+                assets.set(asset.fileName, Buffer.from(asset.source));
             }
         }
     }
-    throw new Error(`The source renderer build did not produce ${bundleFileName}.`);
+    return assets;
 }
 
-async function buildRendererInMemory(): Promise<Buffer> {
+async function buildRendererInMemory(): Promise<ReadonlyMap<string, Buffer>> {
     const rendererBuild: {
         readonly buildVscodeRenderer: (options: { write: boolean; emptyOutDir: boolean }) => Promise<unknown>;
         readonly rendererBundleFileName: string;
     } = requireFromEditor(rendererBuildModulePath);
     const buildOutput = await rendererBuild.buildVscodeRenderer({ write: false, emptyOutDir: false });
-    return findGeneratedRendererBytes(buildOutput, rendererBuild.rendererBundleFileName);
+    const assets = generatedRendererAssets(buildOutput);
+    if (!assets.has(rendererBuild.rendererBundleFileName)) {
+        throw new Error(`The source renderer build did not produce ${rendererBuild.rendererBundleFileName}.`);
+    }
+    return assets;
+}
+
+async function checkedInRendererFiles(directory = rendererOutputRoot, prefix = ''): Promise<readonly string[]> {
+    const files: string[] = [];
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+        const relativePath = path.posix.join(prefix, entry.name);
+        if (entry.isDirectory()) {
+            files.push(...await checkedInRendererFiles(path.join(directory, entry.name), relativePath));
+        } else if (entry.isFile()) {
+            files.push(relativePath);
+        }
+    }
+    return files.sort();
 }
 
 function hasReadinessMessage(messages: readonly unknown[], phase: string, requestId: string): boolean {
@@ -169,12 +193,15 @@ async function executeRendererReadiness(bundle: string): Promise<void> {
                 protocolVersion: mounted.protocolVersion,
                 uri: 'file:///artifact-integrity/schema.struct.json',
                 title: 'schema.struct.json',
-                text: '{"$schema":"https://json-structure.org/meta/core/v0/#","name":"ArtifactIntegrity","definitions":{}}',
+                text: '{"$schema":"https://json-structure.org/meta/validation/v0/#","name":"ArtifactIntegrity","type":"string","allOf":[{"type":"string"}]}',
                 documentVersion: 1,
             },
         }));
         if (!window.document.querySelector('.js-shell')) {
             throw new Error('The VS Code renderer completed its handshake without rendering the editor workbench.');
+        }
+        if (!window.document.querySelector('[data-composition-editor]')) {
+            throw new Error('The VS Code renderer did not render Rules in the Design surface.');
         }
         if (!hasReadinessMessage(messages, 'rendered', requestId)) {
             throw new Error('The VS Code renderer did not report a rendered workbench.');
@@ -194,8 +221,8 @@ async function assertExpectedFailure(label: string, operation: () => void | Prom
 }
 
 async function assertFailureScenarios(generated: Uint8Array, checkedInBundle: string): Promise<void> {
-    await assertExpectedFailure('missing asset', () => assertRendererParity(undefined, generated));
-    await assertExpectedFailure('stale asset', () => assertRendererParity(Buffer.from('stale renderer bytes'), generated));
+    await assertExpectedFailure('missing asset', () => assertRendererParity(rendererBundlePath, undefined, generated));
+    await assertExpectedFailure('stale asset', () => assertRendererParity(rendererBundlePath, Buffer.from('stale renderer bytes'), generated));
     await assertExpectedFailure('throwing asset', () => executeRendererReadiness(`${checkedInBundle}\nthrow new Error('artifact integrity throwing-asset probe');`));
 }
 
@@ -203,10 +230,26 @@ async function assertFailureScenarios(generated: Uint8Array, checkedInBundle: st
 export async function assertRendererArtifactIntegrity(): Promise<void> {
     await assertDefaultCustomEditor();
     const checkedInBytes = await readFile(rendererBundlePath);
-    const generatedBytes = await buildRendererInMemory();
+    const checkedInStyle = await readFile(rendererStylePath, 'utf8');
+    const generatedAssets = await buildRendererInMemory();
+    const generatedBytes = generatedAssets.get('editor.iife.js');
+    if (!generatedBytes) { throw new Error('The generated VS Code renderer bundle is missing.'); }
     const checkedInBundle = checkedInBytes.toString('utf8');
     await assertFailureScenarios(generatedBytes, checkedInBundle);
-    assertRendererParity(checkedInBytes, generatedBytes);
+    const generatedFiles = [...generatedAssets.keys()].sort();
+    const checkedInFiles = await checkedInRendererFiles();
+    if (JSON.stringify(checkedInFiles) !== JSON.stringify(generatedFiles)) {
+        throw new Error(`The checked-in VS Code renderer asset set differs from the source build; generated=${generatedFiles.join(', ')}, checked-in=${checkedInFiles.join(', ')}.`);
+    }
+    for (const [relativePath, generated] of generatedAssets) {
+        assertRendererParity(relativePath, await readFile(path.join(rendererOutputRoot, ...relativePath.split('/'))), generated);
+    }
+    if (!checkedInStyle.includes('.monaco-editor') || !checkedInStyle.includes('.monaco-editor .inputarea')) {
+        throw new Error('The checked-in VS Code renderer stylesheet does not contain Monaco editor layout rules.');
+    }
+    if (checkedInBundle.includes('"/assets/') || checkedInBundle.includes("'/assets/")) {
+        throw new Error('The checked-in VS Code renderer contains root-relative worker asset URLs.');
+    }
     assertRendererShape(checkedInBundle);
     await executeRendererReadiness(checkedInBundle);
 }

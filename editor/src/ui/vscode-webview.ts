@@ -297,13 +297,16 @@ export function createVsCodeWebviewClient(options: VsCodeWebviewClientOptions): 
       editor?.acknowledgeText?.(snapshot.text, snapshot.documentVersion);
       return;
     }
-    const acknowledgedChange = value.type === 'documentChanged' && snapshot && !replacement && !replacementInFlight && replacementAwaitingVersion === undefined && value.documentVersion >= snapshot.documentVersion && value.text === snapshot.text;
+    const acknowledgedChange = value.type === 'documentChanged' && snapshot && value.documentVersion >= snapshot.documentVersion && value.text === snapshot.text;
     if (acknowledgedChange && snapshot) {
       snapshot = { ...snapshot, documentVersion: value.documentVersion };
       editor?.acknowledgeText?.(snapshot.text, snapshot.documentVersion);
+      // Save/file-watcher metadata echoes must not discard queued Source or Design-undo text.
+      if (replacementAwaitingVersion !== undefined && value.documentVersion >= replacementAwaitingVersion) { replacementAwaitingVersion = undefined; void flushReplacement(); }
       return;
     }
     const preserveReplacement = value.type === 'documentChanged' && (replacementInFlight || replacementAwaitingVersion !== undefined);
+    const acknowledgedReplacement = preserveReplacement && replacement?.text === value.text && editor?.getText() === value.text;
     if (replaceTimer !== undefined) { cancel(replaceTimer); replaceTimer = undefined; }
     if (!preserveReplacement || replacement?.text === value.text) replacement = undefined;
     const uri = value.type === 'init' ? value.uri : snapshot?.uri ?? '';
@@ -319,9 +322,14 @@ export function createVsCodeWebviewClient(options: VsCodeWebviewClientOptions): 
       editor = options.mount?.(value, host, replaceDocument);
       if (options.readinessRequestId && editor) options.vscode.postMessage({ type: 'rendererReady', protocolVersion, requestId: options.readinessRequestId, phase: 'rendered' });
     } else if (!replacement) {
-      synchronizing = true;
-      editor?.setText(value.text, value.documentVersion);
-      synchronizing = false;
+      // A Source/Design-undo echo acknowledges the text already mounted locally.
+      // Replacing the document here would erase schema-location and undo/redo history.
+      if (acknowledgedReplacement) editor?.acknowledgeText?.(value.text, value.documentVersion);
+      else {
+        synchronizing = true;
+        editor?.setText(value.text, value.documentVersion);
+        synchronizing = false;
+      }
     }
   }
 

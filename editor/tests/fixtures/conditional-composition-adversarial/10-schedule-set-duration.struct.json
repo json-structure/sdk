@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-structure.org/meta/validation/v0/#",
+  "$id": "https://example.test/conditional/schedule-window-set",
+  "name": "Schedule",
+  "description": "A set selects exactly one tuple representation for each absolute or relative window.",
+  "type": "object",
+  "properties": {
+    "timezone": {
+      "type": "string",
+      "pattern": "^[A-Za-z_]+/[A-Za-z_]+$",
+      "maxLength": 64
+    },
+    "windows": {
+      "type": "set",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": {
+        "oneOf": [
+          {
+            "type": {
+              "$ref": "#/definitions/AbsoluteWindow"
+            }
+          },
+          {
+            "type": {
+              "$ref": "#/definitions/RelativeWindow"
+            }
+          }
+        ]
+      }
+    },
+    "recurring": {
+      "type": "boolean"
+    },
+    "period": {
+      "type": "duration"
+    },
+    "exclusions": {
+      "type": "array",
+      "items": {
+        "type": "date"
+      },
+      "uniqueItems": true,
+      "maxItems": 366
+    }
+  },
+  "required": [
+    "timezone",
+    "windows",
+    "recurring"
+  ],
+  "additionalProperties": false,
+  "if": {
+    "name": "RecurringCondition",
+    "type": "object",
+    "properties": {
+      "recurring": {
+        "type": "boolean",
+        "const": true
+      }
+    },
+    "required": [
+      "recurring"
+    ],
+    "additionalProperties": true
+  },
+  "then": {
+    "allOf": [
+      {
+        "name": "PeriodRequired",
+        "type": "object",
+        "properties": {
+          "period": {
+            "type": "duration"
+          }
+        },
+        "required": [
+          "period"
+        ],
+        "additionalProperties": true
+      },
+      {
+        "not": {
+          "name": "ZeroPeriod",
+          "type": "object",
+          "properties": {
+            "period": {
+              "type": "duration",
+              "const": "PT0S"
+            }
+          },
+          "required": [
+            "period"
+          ],
+          "additionalProperties": true
+        }
+      }
+    ]
+  },
+  "definitions": {
+    "AbsoluteWindow": {
+      "name": "AbsoluteWindow",
+      "type": "tuple",
+      "properties": {
+        "start": {
+          "type": "datetime"
+        },
+        "end": {
+          "type": "datetime",
+          "not": {
+            "type": "datetime",
+            "const": "1970-01-01T00:00:00Z"
+          }
+        }
+      },
+      "tuple": [
+        "start",
+        "end"
+      ]
+    },
+    "RelativeWindow": {
+      "name": "RelativeWindow",
+      "type": "tuple",
+      "properties": {
+        "offset": {
+          "type": "duration"
+        },
+        "span": {
+          "type": "duration",
+          "not": {
+            "type": "duration",
+            "const": "PT0S"
+          }
+        }
+      },
+      "tuple": [
+        "offset",
+        "span"
+      ]
+    }
+  }
+}

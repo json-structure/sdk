@@ -21,15 +21,22 @@ export interface EvaluationTrace {
   readonly schemaPointer: string;
   readonly message?: string;
   readonly children: readonly EvaluationTrace[];
+  readonly application?: 'applied' | 'not-applied';
+  readonly occurrencePath?: string;
+  readonly documentVersion?: number;
+  readonly instanceVersion?: number;
 }
 
 export interface InstanceValidationResult {
+  readonly documentVersion?: number;
+  readonly instanceVersion?: number;
   readonly status: EvaluationStatus;
   readonly diagnostics: readonly InstanceDiagnostic[];
   readonly trace: EvaluationTrace;
 }
 
 export interface CrossNavigationSelection {
+  readonly occurrencePath?: string;
   readonly source: 'instance' | 'schema' | 'diagnostic';
   readonly instancePointer: string;
   readonly schemaPointer: string;
@@ -47,6 +54,8 @@ export type ExternalRelationResolver = (request: ExternalRelationRequest) => Eva
 
 export interface InstanceWorkspaceOptions {
   readonly depthBudget?: number;
+  readonly documentVersion?: number;
+  readonly instanceVersion?: number;
   readonly documentUri?: string;
   readonly resolvedDocuments?: readonly ResolvedSchemaDocument[];
   readonly externalRelationResolver?: ExternalRelationResolver;
@@ -187,8 +196,10 @@ export class InstanceWorkspace {
   private readonly inheritedConstraintLayers = new WeakMap<Readonly<Record<string, unknown>>, readonly EffectiveConstraintLayer[]>();
   private currentSelection: CrossNavigationSelection = { source: 'instance', instancePointer: '', schemaPointer: '' };
   private lastResult?: InstanceValidationResult;
+  private readonly versions: { readonly documentVersion?: number; readonly instanceVersion?: number };
 
   constructor(readonly schema: Readonly<Record<string, unknown>>, readonly instance: unknown, options: InstanceWorkspaceOptions = {}) {
+    this.versions = { documentVersion: options.documentVersion, instanceVersion: options.instanceVersion };
     this.depthBudget = Math.max(0, options.depthBudget ?? 64);
     this.schemaContext = new ResolvedSchemaContext(schema, options);
     this.capabilities = resolveCapabilities(schema);
@@ -216,8 +227,9 @@ export class InstanceWorkspace {
       return evaluation;
     }
     const evaluation = this.evaluate(rootSchema, this.instance, '', rootPointer, 0, new Set(), rootDocumentUri);
-    this.lastResult = evaluation;
-    return evaluation;
+    const annotate = (trace: EvaluationTrace, occurrencePath: string): EvaluationTrace => ({ ...trace, ...this.versions, occurrencePath, children: trace.children.map((child,index) => annotate(child, occurrencePath + '/' + index)) });
+    this.lastResult = { ...evaluation, ...this.versions, trace: annotate(evaluation.trace, '') };
+    return this.lastResult;
   }
 
   selectInstance(instancePointer: string, schemaPointer = this.currentSelection.schemaPointer): CrossNavigationSelection {
@@ -252,8 +264,8 @@ export class InstanceWorkspace {
 
     if (typeof schema.$ref === 'string') {
       const resolved = this.schemaContext.resolve(schema.$ref, documentUri);
-      if (!resolved) return this.failure('instance.ref-unresolved', `Local reference ${schema.$ref} cannot be resolved.`, instancePointer, childPointer(schemaPointer, '$ref'), '$ref', 'indeterminate');
-      return this.evaluate(this.effectiveSchema(resolved.schema, resolved.effectivePointer, resolved.documentUri), instance, instancePointer, resolved.effectivePointer, depth + 1, nextActive, resolved.documentUri);
+      if (!resolved) evaluations.push(this.failure('instance.ref-unresolved', `Local reference ${schema.$ref} cannot be resolved.`, instancePointer, childPointer(schemaPointer, '$ref'), '$ref', 'indeterminate'));
+      else evaluations.push(this.evaluate(this.effectiveSchema(resolved.schema, resolved.effectivePointer, resolved.documentUri), instance, instancePointer, resolved.effectivePointer, depth + 1, nextActive, resolved.documentUri));
     }
 
     const type = schema.type;
@@ -663,24 +675,34 @@ export class InstanceWorkspace {
 
   private evaluateComposition(schema: Readonly<Record<string, unknown>>, instance: unknown, instancePointer: string, schemaPointer: string, depth: number, active: Set<string>, documentUri: string): Evaluation[] {
     const results: Evaluation[] = [];
-    for (const keyword of ['allOf', 'anyOf', 'oneOf'] as const) if (Array.isArray(schema[keyword])) {
-      const branches = (schema[keyword] as readonly unknown[]).map((branch, index) => isRecord(branch) ? this.evaluate(branch, instance, instancePointer, childPointer(childPointer(schemaPointer, keyword), index), depth + 1, active, documentUri) : this.failure('instance.schema-indeterminate', 'Composition branch is not a schema.', instancePointer, childPointer(childPointer(schemaPointer, keyword), index), keyword, 'indeterminate'));
-      results.push(keyword === 'allOf' ? this.combineAll(keyword, branches, instancePointer, childPointer(schemaPointer, keyword)) : keyword === 'anyOf' ? this.combineAny(keyword, branches, instancePointer, childPointer(schemaPointer, keyword)) : this.combineOne(branches, instancePointer, childPointer(schemaPointer, keyword)));
+    const branchAt = (keyword: string, value: unknown, pointer: string): Evaluation => isRecord(value)
+      ? this.evaluate(value, instance, instancePointer, pointer, depth+1, active, documentUri)
+      : this.failure('instance.schema-indeterminate', 'Authored ' + keyword + ' value is not a schema object.', instancePointer, pointer, keyword, 'indeterminate');
+    for (const keyword of ['allOf', 'anyOf', 'oneOf'] as const) if (hasOwn(schema, keyword)) {
+      const pointer = childPointer(schemaPointer,keyword), value = schema[keyword];
+      if (!Array.isArray(value) || value.length === 0) { results.push(this.failure('instance.schema-indeterminate', keyword + ' requires a non-empty array of schemas; authored source is preserved.', instancePointer,pointer,keyword,'indeterminate')); continue; }
+      const branches = value.map((branch,index) => branchAt(keyword,branch,childPointer(pointer,index)));
+      results.push(keyword === 'allOf' ? this.combineAll(keyword,branches,instancePointer,pointer) : keyword === 'anyOf' ? this.combineAny(keyword,branches,instancePointer,pointer) : this.combineOne(branches,instancePointer,pointer));
     }
-    if (isRecord(schema.not)) {
-      const branch = this.evaluate(schema.not, instance, instancePointer, childPointer(schemaPointer, 'not'), depth + 1, active, documentUri);
+    if (hasOwn(schema,'not')) {
+      const pointer = childPointer(schemaPointer,'not'), branch = branchAt('not',schema.not,pointer);
       const status = branch.status === 'valid' ? 'invalid' : branch.status === 'invalid' ? 'valid' : 'indeterminate';
-      results.push(status === 'invalid' ? this.failure('instance.not', 'Value matches the prohibited schema.', instancePointer, childPointer(schemaPointer, 'not'), 'not') : this.result('not', status, instancePointer, childPointer(schemaPointer, 'not'), [branch.trace], status === 'indeterminate' ? branch.diagnostics : []));
+      results.push(this.result('not',status,instancePointer,pointer,[branch.trace],status === 'invalid' ? this.failure('instance.not','Value matches the prohibited schema.',instancePointer,pointer,'not').diagnostics : status === 'indeterminate' ? branch.diagnostics : []));
     }
-    if (isRecord(schema.if)) {
-      const condition = this.evaluate(schema.if, instance, instancePointer, childPointer(schemaPointer, 'if'), depth + 1, active, documentUri);
-      if (condition.status === 'indeterminate') results.push(this.result('if', 'indeterminate', instancePointer, childPointer(schemaPointer, 'if'), [condition.trace], condition.diagnostics));
-      else {
-        const keyword = condition.status === 'valid' ? 'then' : 'else';
-        const branchSchema = schema[keyword];
-        const branch = isRecord(branchSchema) ? this.evaluate(branchSchema, instance, instancePointer, childPointer(schemaPointer, keyword), depth + 1, active, documentUri) : this.result(keyword, 'valid', instancePointer, childPointer(schemaPointer, keyword));
-        results.push(this.result('if', branch.status, instancePointer, childPointer(schemaPointer, 'if'), [condition.trace, branch.trace], branch.diagnostics));
+    if (hasOwn(schema,'if')) {
+      const pointer = childPointer(schemaPointer,'if');
+      const condition = branchAt('if',schema.if,pointer);
+      const chosen = condition.status === 'valid' ? 'then' : condition.status === 'invalid' ? 'else' : undefined;
+      const children: EvaluationTrace[] = [condition.trace];
+      let branch: Evaluation | undefined;
+      for (const keyword of ['then','else'] as const) if (hasOwn(schema,keyword)) {
+        const branchPointer = childPointer(schemaPointer,keyword);
+        if (keyword === chosen) { branch = branchAt(keyword,schema[keyword],branchPointer); children.push({...branch.trace,keyword}); }
+        else children.push({ keyword, schemaPointer:branchPointer, instancePointer, status:'indeterminate', application:'not-applied', message: chosen ? 'Not applied: the other conditional branch was selected.' : 'Not applied: the condition is indeterminate.', children:[] });
       }
+      results.push(this.result('if',condition.status === 'indeterminate' ? 'indeterminate' : branch?.status ?? 'valid',instancePointer,pointer,children, condition.status === 'indeterminate' ? condition.diagnostics : branch?.diagnostics ?? []));
+    } else {
+      for (const keyword of ['then','else'] as const) if (hasOwn(schema,keyword)) results.push(this.failure('instance.conditional-without-if', 'Standalone ' + keyword + ' has no authored if. The Conditional Composition draft does not define its evaluation; no synthetic condition is assumed.',instancePointer,childPointer(schemaPointer,keyword),keyword,'indeterminate'));
     }
     return results;
   }

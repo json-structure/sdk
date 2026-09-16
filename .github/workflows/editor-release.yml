@@ -291,6 +291,7 @@ jobs:
       - run: npm run test:artifact
       - run: npm run package -- --target ${{ matrix.target }} --out artifacts/json-structure-${{ matrix.target }}.vsix
       - run: node scripts/vsix-runtime-smoke.mjs artifacts/json-structure-${{ matrix.target }}.vsix
+      - run: node scripts/vsix-ui-acceptance.mjs artifacts/json-structure-${{ matrix.target }}.vsix
       - name: Report VSIX size
         shell: bash
         run: du -h artifacts/*.vsix

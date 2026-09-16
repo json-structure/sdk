@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-structure.org/meta/validation/v0/#",
+  "$id": "https://example.test/conditional/invalid-empty-arrays",
+  "name": "EmptyOperatorArrays",
+  "description": "Each n-ary composition operator violates the at-least-one-operand requirement.",
+  "type": "object",
+  "properties": {
+    "marker": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "marker"
+  ],
+  "additionalProperties": false,
+  "allOf": [],
+  "anyOf": [],
+  "oneOf": [],
+  "if": {
+    "type": "object",
+    "name": "MarkerCondition",
+    "properties": {
+      "marker": {
+        "type": "string",
+        "const": "x"
+      }
+    },
+    "required": [
+      "marker"
+    ],
+    "additionalProperties": true
+  },
+  "then": {},
+  "else": {}
+}

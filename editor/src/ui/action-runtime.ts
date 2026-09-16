@@ -57,12 +57,6 @@ const TYPE_REQUIRED_SHAPE_MEMBERS: Readonly<Record<string, readonly string[]>> =
 
 export function actionAvailability(action: CommandAction, selectedPointer: string, document: unknown): ActionAvailability {
   const pointer = action.targets?.length === 1 && action.targets[0] === 'document' ? '' : selectedPointer;
-  if (action.capability && action.capability !== 'core') {
-    const capabilities = resolveCapabilities(document);
-    if (!capabilities[CAPABILITY_STATE[action.capability]]) {
-      return { enabled: false, pointer, reason: `Activate ${CAPABILITY_USE[action.capability]} in $uses to use this command.` };
-    }
-  }
   if (action.targets?.length) {
     const target = targetForPointer(pointer, document);
     const rootDeclaration = pointer === '' && action.targets.includes('declaration');
@@ -84,6 +78,14 @@ export function actionAvailability(action: CommandAction, selectedPointer: strin
       return { enabled: false, pointer, reason: `This command requires a ${action.schemaTypes.join(' or ')} schema.` };
     }
   }
+  const contextualReason = contextualAvailabilityReason(action, pointer, document);
+  if (contextualReason) return { enabled: false, pointer, reason: contextualReason };
+  if (action.capability && action.capability !== 'core') {
+    const capabilities = resolveCapabilities(document);
+    if (!capabilities[CAPABILITY_STATE[action.capability]]) {
+      return { enabled: false, pointer, reason: `Activate ${CAPABILITY_USE[action.capability]} in $uses to use this command.` };
+    }
+  }
   if (action.operation === 'remove' && action.keyword) {
     if (pointer === '' && (action.keyword === '$schema' || action.keyword === '$id' || action.keyword === 'name')) {
       return { enabled: false, pointer, reason: 'Required document headers cannot be removed.' };
@@ -101,6 +103,74 @@ export function actionAvailability(action: CommandAction, selectedPointer: strin
     }
   }
   return { enabled: true, pointer };
+}
+
+function contextualAvailabilityReason(action: CommandAction, pointer: string, document: unknown): string | undefined {
+  const declaration = valueAtPointer(document, pointer);
+  if (!declaration || typeof declaration !== 'object' || Array.isArray(declaration)) return undefined;
+  const schema = declaration as Readonly<Record<string, unknown>>;
+  if (action.id === 'core.additional-properties' && schema.abstract === true) return 'Abstract object schemas cannot declare additionalProperties.';
+  if ((action.id === 'validation.minContains' || action.id === 'validation.maxContains') && !Object.prototype.hasOwnProperty.call(schema, 'contains')) return 'Set contains before adding a contains count.';
+  if (action.id === 'alternate-enums.altenums') {
+    if (!Array.isArray(schema.enum) || schema.enum.length === 0 || !schema.enum.every((entry) => typeof entry === 'string') || new Set(schema.enum).size !== schema.enum.length) {
+      return 'Alternate enum names require a non-empty distinct string enum.';
+    }
+  }
+  if (action.id === 'alternate-names.altnames' && !namedSchemaTarget(pointer, document)) return 'Alternate names require a named document, reusable type, or property.';
+  if (action.id === 'semantic.statistic' && schema.derivation !== 'statistic') return 'Set derivation to statistic before adding statistic metadata.';
+  if (action.id === 'semantic.supportPeriod' && schema.phenomenonTimeRelation === undefined) return 'Set phenomenonTimeRelation before adding supportPeriod.';
+  if (action.id.startsWith('semantic.') && !semanticActionPlacementValid(action.keyword, pointer, document, schema)) return 'This semantic annotation does not apply at the selected schema position.';
+  return undefined;
+}
+
+function namedSchemaTarget(pointer: string, document: unknown): boolean {
+  if (pointer === '') return !!document && typeof document === 'object' && !Array.isArray(document) && typeof (document as Record<string, unknown>).name === 'string';
+  if (targetForPointer(pointer, document) === 'property') return true;
+  return /(?:^|\/)definitions\/[^/]+$/.test(pointer) && targetForPointer(pointer, document) === 'declaration';
+}
+
+const SEMANTIC_PROPERTY_OR_COLLECTION = new Set([
+  'observedProperty', 'semanticRole', 'derivation', 'statistic', 'temporalReferenceSystem', 'cadence', 'codedValues', 'measurementConditioning'
+]);
+const SEMANTIC_PROPERTY_ONLY = new Set(['phenomenonTimeRelation', 'supportPeriod', 'referenceRole']);
+const SEMANTIC_RECORD_ONLY = new Set([
+  'coordinateReferenceSystem', 'vectorReferenceFrames', 'tensorReferenceFrames', 'frameTransforms',
+  'linearReferenceSystem', 'colorSpaces', 'audioChannels', 'spectralBands'
+]);
+
+function semanticActionPlacementValid(keyword: string | undefined, pointer: string, document: unknown, schema: Readonly<Record<string, unknown>>): boolean {
+  if (!keyword || keyword === 'concepts') return true;
+  const memberPosition = semanticMemberPosition(pointer, document);
+  if (SEMANTIC_PROPERTY_ONLY.has(keyword)) return memberPosition === 'property';
+  if (SEMANTIC_PROPERTY_OR_COLLECTION.has(keyword)) {
+    if (memberPosition !== undefined) return true;
+    const effective = effectiveValidationTypes(document, schema);
+    const type = effective.determinate && effective.types.length === 1 ? effective.types[0] : undefined;
+    return (type === 'object' || type === 'tuple') && (keyword === 'observedProperty' || keyword === 'temporalReferenceSystem');
+  }
+  if (!SEMANTIC_RECORD_ONLY.has(keyword)) return false;
+  const effective = effectiveValidationTypes(document, schema);
+  const type = effective.determinate && effective.types.length === 1 ? effective.types[0] : undefined;
+  return type === 'object' || type === 'tuple';
+}
+
+function semanticMemberPosition(pointer: string, document: unknown): 'property' | 'collection' | undefined {
+  for (const [marker, ownerTypes, position] of [
+    ['/properties/', ['object', 'tuple'], 'property'],
+    ['/choices/', ['choice'], 'collection']
+  ] as const) {
+    const index = pointer.lastIndexOf(marker);
+    if (index >= 0 && !pointer.slice(index + marker.length).includes('/')) {
+      const owner = valueAtPointer(document, pointer.slice(0, index));
+      if (owner && typeof owner === 'object' && !Array.isArray(owner) && ownerTypes.includes((owner as Record<string, unknown>).type as never)) return position;
+    }
+  }
+  for (const [suffix, ownerTypes] of [['/items', ['array', 'set']], ['/values', ['map']]] as const) {
+    if (!pointer.endsWith(suffix)) continue;
+    const owner = valueAtPointer(document, pointer.slice(0, -suffix.length));
+    if (owner && typeof owner === 'object' && !Array.isArray(owner) && ownerTypes.includes((owner as Record<string, unknown>).type as never)) return 'collection';
+  }
+  return undefined;
 }
 
 export function catalogFamilyForAction(action: CommandAction): CatalogFamily | undefined {

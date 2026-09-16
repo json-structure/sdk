@@ -1,5 +1,8 @@
 .vscode/**
 .vscode-test/**
+.review-host/**
+build/**
+artifacts/**
 src/**
 test-fixtures/**
 scripts/**

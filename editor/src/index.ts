@@ -43,3 +43,6 @@ export * as LibraryFacade from './libraries/facade.js';
 export * as LibraryHostRuntime from './libraries/host-runtime.js';
 export * as ReleaseIntegrity from './release/index.js';
 export * from './performance/parser-budget.js';
+
+export * from './schema-locations.js';
+export * from './schema-location-commands.js';

@@ -10,6 +10,7 @@ export function normalizeRendererBundle(source) {
 
 export function createVscodeRendererConfig({ write = true, emptyOutDir = true } = {}) {
   return {
+    base: './',
     plugins: [{
       name: 'strip-generated-trailing-whitespace',
       generateBundle(_options, bundle) {

@@ -1,0 +1,261 @@
+{
+  "$schema": "https://json-structure.org/meta/validation/v0/#",
+  "$id": "https://example.test/conditional/identity-access-conjunction",
+  "name": "AccessDecision",
+  "description": "Access request combining structural, reference, negation, and conditional constraints.",
+  "type": "object",
+  "properties": {
+    "principal": {
+      "type": {
+        "$ref": "#/definitions/Principal"
+      }
+    },
+    "action": {
+      "type": "string",
+      "enum": [
+        "read",
+        "write",
+        "admin",
+        "delete"
+      ]
+    },
+    "authn": {
+      "type": {
+        "$ref": "#/definitions/AuthnContext"
+      }
+    },
+    "correlationId": {
+      "type": "uuid"
+    }
+  },
+  "required": [
+    "principal",
+    "action",
+    "authn"
+  ],
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "type": {
+        "$ref": "#/definitions/HasPrincipal"
+      }
+    },
+    {
+      "type": {
+        "$ref": "#/definitions/AuditedRequest"
+      }
+    }
+  ],
+  "not": {
+    "name": "ReservedCorrelationDelete",
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "const": "delete"
+      },
+      "correlationId": {
+        "type": "uuid",
+        "const": "00000000-0000-0000-0000-000000000000"
+      }
+    },
+    "required": [
+      "action",
+      "correlationId"
+    ],
+    "additionalProperties": true
+  },
+  "if": {
+    "name": "AdministrativeAction",
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "const": "admin"
+      }
+    },
+    "required": [
+      "action"
+    ],
+    "additionalProperties": true
+  },
+  "then": {
+    "allOf": [
+      {
+        "type": {
+          "$ref": "#/definitions/MfaProtected"
+        }
+      },
+      {
+        "not": {
+          "name": "WeakAdministrativeContext",
+          "type": "object",
+          "properties": {
+            "authn": {
+              "type": {
+                "$ref": "#/definitions/PasswordOnlyAuthn"
+              }
+            }
+          },
+          "required": [
+            "authn"
+          ],
+          "additionalProperties": true
+        }
+      }
+    ]
+  },
+  "else": {
+    "anyOf": [
+      {
+        "name": "OrdinaryAction",
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "read",
+              "write"
+            ]
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "additionalProperties": true
+      },
+      {
+        "name": "DeletionWithMfa",
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "const": "delete"
+          },
+          "authn": {
+            "type": {
+              "$ref": "#/definitions/AuthnContext"
+            }
+          }
+        },
+        "required": [
+          "action",
+          "authn"
+        ],
+        "additionalProperties": true
+      }
+    ]
+  },
+  "definitions": {
+    "Principal": {
+      "name": "Principal",
+      "type": "object",
+      "properties": {
+        "subjectId": {
+          "type": "uuid"
+        },
+        "tenant": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "subjectId",
+        "tenant"
+      ],
+      "additionalProperties": false
+    },
+    "AuthnContext": {
+      "name": "AuthnContext",
+      "type": "object",
+      "properties": {
+        "method": {
+          "type": "string",
+          "enum": [
+            "password",
+            "webauthn",
+            "service"
+          ]
+        },
+        "factorCount": {
+          "type": "int32",
+          "minimum": 1,
+          "maximum": 8
+        }
+      },
+      "required": [
+        "method",
+        "factorCount"
+      ],
+      "additionalProperties": false
+    },
+    "PasswordOnlyAuthn": {
+      "name": "PasswordOnlyAuthn",
+      "type": "object",
+      "properties": {
+        "method": {
+          "type": "string",
+          "const": "password"
+        },
+        "factorCount": {
+          "type": "int32",
+          "const": 1
+        }
+      },
+      "required": [
+        "method",
+        "factorCount"
+      ],
+      "additionalProperties": false
+    },
+    "HasPrincipal": {
+      "name": "HasPrincipal",
+      "type": "object",
+      "properties": {
+        "principal": {
+          "type": {
+            "$ref": "#/definitions/Principal"
+          }
+        }
+      },
+      "required": [
+        "principal"
+      ],
+      "additionalProperties": true
+    },
+    "AuditedRequest": {
+      "name": "AuditedRequest",
+      "type": "object",
+      "properties": {
+        "correlationId": {
+          "type": "uuid"
+        }
+      },
+      "required": [
+        "correlationId"
+      ],
+      "additionalProperties": true
+    },
+    "MfaProtected": {
+      "name": "MfaProtected",
+      "type": "object",
+      "properties": {
+        "authn": {
+          "type": {
+            "$ref": "#/definitions/AuthnContext"
+          },
+          "not": {
+            "type": {
+              "$ref": "#/definitions/PasswordOnlyAuthn"
+            }
+          }
+        }
+      },
+      "required": [
+        "authn"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

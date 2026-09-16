@@ -1,17 +1,15 @@
-import type { ConditionalCompositionGroup } from '../composition.js';
-
 import {
   AddChoiceCommand, AddDefinitionCommand, AddNamespaceCommand, AddPropertyCommand, AddRelationCommand, DeleteChoiceCommand, DeleteDefinitionCommand, DeleteImportCommand, DeleteNamespaceCommand, DeletePropertyCommand, DeleteRelationCommand,
   EditPropertyCommand, EditRelationCommand, RemoveIdentityCommand, RenameChoiceCommand, RenameDefinitionCommand, RenameNamespaceCommand, RenamePropertyCommand, RenameRelationCommand,
   RemoveObjectMemberCommand, SetCoreMemberCommand,
-  SetAlternateNamesKeywordCommand, SetBinaryAnnotationsCommand, SetCollectionMemberCommand, SetCompositionKeywordCommand,
-  SetConditionalCompositionCommand, SetDescriptionCommand, SetIdentityCommand, SetImportCommand,
+  SetAlternateNamesKeywordCommand, SetBinaryAnnotationsCommand, SetCollectionMemberCommand,
+  SetDescriptionCommand, SetIdentityCommand, SetImportCommand,
   SetRelationCardinalityCommand, SetRelationQualifierCommand, SetRelationScopeCommand, SetRequiredCommand, SetRootCommand,
   SetSemanticAnnotationCommand, SetTupleMembersCommand, SetTypeReferenceCommand, SetUnitsKeywordCommand, SetValidationKeywordCommand,
   type EditorCommand, type PropertySchema, type RelationSchema, type RequiredProperties, type SchemaTypeValue
 } from '../commands.js';
 
-export type ActionGroup = 'Document' | 'Root' | 'Definitions' | 'Properties' | 'Core' | 'References' | 'Imports' | 'Relations' | 'Validation' | 'Composition' | 'Units' | 'Alternate names' | 'Semantic annotations';
+export type ActionGroup = 'Document' | 'Root' | 'Definitions' | 'Properties' | 'Core' | 'References' | 'Imports' | 'Relations' | 'Validation' | 'Units' | 'Alternate names' | 'Semantic annotations';
 export type ActionCapability = 'core' | 'validation' | 'conditional-composition' | 'units' | 'alternate-names' | 'semantic-annotations' | 'import' | 'relations';
 export type ActionTarget = 'document' | 'namespace' | 'declaration' | 'property' | 'choice' | 'relation';
 export interface ActionOption { readonly value: string; readonly label: string; }
@@ -50,6 +48,10 @@ export interface CommandAction {
 type CommandConstructor = new (...args: any[]) => EditorCommand;
 const SCHEMA_TARGETS = ['declaration', 'property', 'choice'] as const satisfies readonly ActionTarget[];
 const SELECTABLE_SCHEMA_TARGETS = ['document', ...SCHEMA_TARGETS] as const satisfies readonly ActionTarget[];
+const PRIMITIVE_SCHEMA_TYPES = [
+  'null', 'boolean', 'string', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32', 'int64', 'uint64', 'int128', 'uint128',
+  'integer', 'float8', 'float', 'double', 'decimal', 'number', 'date', 'datetime', 'time', 'duration', 'uuid', 'uri', 'binary', 'jsonpointer'
+] as const;
 
 const set = (Command: CommandConstructor, keyword: string): CommandAction['create'] =>
   (pointer, value) => new Command(pointer, keyword, value);
@@ -76,10 +78,10 @@ const coreActions = [
     'any', 'null', 'boolean', 'string', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32', 'int64', 'uint64', 'int128', 'uint128', 'integer', 'float8', 'float', 'double', 'decimal',
     'number', 'date', 'datetime', 'time', 'duration', 'uuid', 'uri', 'binary', 'jsonpointer', 'object', 'array', 'map', 'set', 'tuple', 'choice'
   ].map((value) => ({ value, label: value })) }, SCHEMA_TARGETS, false),
-  core('enum', 'enum', 'Set enum', { kind: 'structured-list', item: 'text' }),
-  core('const', 'const', 'Set const', { kind: 'advanced-json' }),
-  core('abstract', 'abstract', 'Set abstract', { kind: 'boolean' }),
-  core('extends', '$extends', 'Set extends', { kind: 'structured-list', item: 'reference' }),
+  { ...core('enum', 'enum', 'Set enum', { kind: 'structured-list', item: 'text' }), schemaTypes: PRIMITIVE_SCHEMA_TYPES },
+  { ...core('const', 'const', 'Set const', { kind: 'advanced-json' }), schemaTypes: PRIMITIVE_SCHEMA_TYPES },
+  { ...core('abstract', 'abstract', 'Set abstract', { kind: 'boolean' }, ['declaration']), schemaTypes: ['object', 'tuple'] },
+  { ...core('extends', '$extends', 'Set extends', { kind: 'structured-list', item: 'reference' }, ['declaration']), schemaTypes: ['object', 'tuple', 'choice'] },
   core('choice', 'type', 'Set choice type', { kind: 'select', options: [{ value: 'choice', label: 'choice' }] }, SCHEMA_TARGETS, false),
   { ...core('choices', 'choices', 'Set choices', { kind: 'structured-object', family: 'choice' }), schemaTypes: ['choice'] },
   { ...core('selector', 'selector', 'Set selector', { kind: 'text' }), schemaTypes: ['choice'] },
@@ -132,9 +134,6 @@ export const commandActions: readonly CommandAction[] = [
   { id: 'relation.scope', group: 'Relations', label: 'Set relation scope', help: 'Choose one or more collection locations that contain relation targets.', valueLabel: 'Scope', control: { kind: 'structured-list', item: 'reference' }, capability: 'relations', targets: ['relation'], operation: 'set', keyword: 'scope', create: (pointer, value) => new SetRelationScopeCommand(pointer, value as never) },
   { id: 'relation.qualifier', group: 'Relations', label: 'Set relation qualifier', help: 'Set a reusable qualifier type reference.', valueLabel: 'Qualifier type', control: { kind: 'reference-picker' }, capability: 'relations', targets: ['relation'], operation: 'set', keyword: 'qualifiertype', create: (pointer, value) => new SetRelationQualifierCommand(pointer, String(value)) },
   ...keywordActions('Validation', 'validation', ['minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf', 'minLength', 'pattern', 'format', 'minItems', 'maxItems', 'uniqueItems', 'minContains', 'maxContains', 'minProperties', 'maxProperties', 'minEntries', 'maxEntries', 'default', 'contains', 'propertyNames', 'keyNames', 'has', 'dependentRequired', 'patternProperties', 'patternKeys'], SetValidationKeywordCommand as unknown as CommandConstructor),
-  ...keywordActions('Composition', 'composition', ['allOf', 'anyOf', 'oneOf', 'not'], SetCompositionKeywordCommand as unknown as CommandConstructor),
-  { id: 'composition.conditional', group: 'Composition', label: 'Set conditional composition', help: 'Set if, then, and else as one structured value.', valueLabel: 'Conditional composition', control: { kind: 'structured-object', family: 'conditional-composition' }, capability: 'conditional-composition', targets: SCHEMA_TARGETS, operation: 'set', removesActionId: 'composition.conditional.remove', create: (pointer, value) => { if (!isConditionalCompositionGroup(value)) throw new Error('Conditional composition requires an if schema.'); return new SetConditionalCompositionCommand(pointer, value); } },
-  { id: 'composition.conditional.remove', group: 'Composition', label: 'Remove conditional composition', help: 'Remove if, then, and else from the selected schema.', requiresValue: false, capability: 'conditional-composition', targets: SCHEMA_TARGETS, operation: 'remove', create: (pointer) => new SetConditionalCompositionCommand(pointer, undefined) },
   ...keywordActions('Units', 'units', ['symbol', 'symbols', 'unit', 'ucumUnit', 'currency'], SetUnitsKeywordCommand as unknown as CommandConstructor),
   ...keywordActions('Alternate names', 'alternate-names', ['altnames'], SetAlternateNamesKeywordCommand as unknown as CommandConstructor),
   ...keywordActions('Alternate names', 'alternate-enums', ['altenums'], SetAlternateNamesKeywordCommand as unknown as CommandConstructor),
@@ -157,10 +156,6 @@ function isRequiredProperties(value: unknown): value is RequiredProperties {
   return Array.isArray(value) && (value.every((entry) => typeof entry === 'string') || value.every((entry) => Array.isArray(entry) && entry.every((name) => typeof name === 'string')));
 }
 function isStringArray(value: unknown): value is readonly string[] { return Array.isArray(value) && value.every((entry) => typeof entry === 'string'); }
-function isConditionalCompositionGroup(value: unknown): value is ConditionalCompositionGroup {
-  return isRecord(value) && isRecord(value.if) && (value.then === undefined || isRecord(value.then)) && (value.else === undefined || isRecord(value.else));
-}
-
 function keywordActions(group: ActionGroup, prefix: string, keywords: readonly string[], Command: CommandConstructor): readonly CommandAction[] {
   const capability = prefix === 'validation' ? 'validation' : prefix === 'composition' ? 'conditional-composition' : prefix === 'units' ? 'units' :
     prefix.startsWith('alternate') || prefix === 'localized-descriptions' ? 'alternate-names' : prefix === 'semantic' ? 'semantic-annotations' : 'core';
@@ -187,9 +182,9 @@ function keywordActions(group: ActionGroup, prefix: string, keywords: readonly s
       ['format', 'contentEncoding', 'contentCompression', 'pattern', 'symbol', 'contentMediaType'].includes(keyword) ? { kind: 'text' } :
       keyword === 'descriptions' ? { kind: 'structured-object', family: 'localized-descriptions' } :
       keyword === 'altnames' ? { kind: 'structured-object', family: 'alternate-names' } :
-      ['allOf', 'anyOf', 'oneOf', 'not', 'contains', 'propertyNames', 'keyNames', 'has', 'dependentRequired', 'patternProperties', 'patternKeys', 'default'].includes(keyword) ? { kind: 'advanced-json' } :
+      ['contains', 'propertyNames', 'keyNames', 'has', 'dependentRequired', 'patternProperties', 'patternKeys', 'default'].includes(keyword) ? { kind: 'advanced-json' } :
       { kind: 'advanced-json' };
-    const propertyOnly = prefix === 'semantic' && ['phenomenonTimeRelation', 'supportPeriod'].includes(keyword);
+    const propertyOnly = prefix === 'semantic' && ['phenomenonTimeRelation', 'supportPeriod', 'referenceRole'].includes(keyword);
     const alternateNameOnly = prefix.startsWith('alternate') && keyword === 'altnames';
     const alternateNamesFamily = prefix.startsWith('alternate') || prefix === 'localized-descriptions';
     const targets: readonly ActionTarget[] = propertyOnly
@@ -209,6 +204,7 @@ function schemaTypesForKeyword(prefix: string, keyword: string): readonly string
   if (prefix === 'units' && (keyword === 'unit' || keyword === 'ucumUnit')) return ['number', 'integer', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32', 'int64', 'uint64', 'int128', 'uint128', 'float8', 'float', 'double', 'decimal'];
   if (prefix === 'semantic' && keyword === 'codedValues') return ['string', 'integer', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32', 'int64', 'uint64', 'int128', 'uint128'];
   if (prefix === 'semantic' && keyword === 'measurementConditioning') return ['number', 'integer', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32', 'int64', 'uint64', 'int128', 'uint128', 'float8', 'float', 'double', 'decimal'];
+  if (prefix === 'semantic' && ['coordinateReferenceSystem', 'vectorReferenceFrames', 'tensorReferenceFrames', 'frameTransforms', 'linearReferenceSystem', 'colorSpaces', 'audioChannels', 'spectralBands'].includes(keyword)) return ['object', 'tuple'];
   if (prefix !== 'validation' || keyword === 'default') return undefined;
   if (['minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf'].includes(keyword)) return ['number', 'integer', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32', 'int64', 'uint64', 'int128', 'uint128', 'float8', 'float', 'double', 'decimal'];
   if (['minLength', 'pattern', 'format'].includes(keyword)) return ['string'];

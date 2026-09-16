@@ -1,0 +1,253 @@
+{
+  "$schema": "https://json-structure.org/meta/validation/v0/#",
+  "$id": "https://example.test/conditional/scientific-measurements",
+  "name": "ExperimentRun",
+  "description": "Unit-annotated decimal measurements are specialized by nested item conditionals.",
+  "type": "object",
+  "properties": {
+    "experimentId": {
+      "type": "uuid"
+    },
+    "mode": {
+      "type": "string",
+      "enum": [
+        "raw",
+        "calibrated"
+      ]
+    },
+    "baseline": {
+      "type": "decimal",
+      "precision": 20,
+      "scale": 8
+    },
+    "samples": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10000,
+      "items": {
+        "type": {
+          "$ref": "#/definitions/Measurement"
+        },
+        "allOf": [
+          {
+            "if": {
+              "name": "TemperatureCondition",
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "temperature"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "additionalProperties": true
+            },
+            "then": {
+              "allOf": [
+                {
+                  "name": "KelvinMeasurement",
+                  "type": "object",
+                  "properties": {
+                    "value": {
+                      "type": "decimal",
+                      "precision": 20,
+                      "scale": 8,
+                      "unit": "K",
+                      "minimum": "0"
+                    }
+                  },
+                  "required": [
+                    "value"
+                  ],
+                  "additionalProperties": true
+                },
+                {
+                  "not": {
+                    "name": "UnphysicalTemperature",
+                    "type": "object",
+                    "properties": {
+                      "value": {
+                        "type": "decimal",
+                        "maximum": "-0.00000001"
+                      }
+                    },
+                    "required": [
+                      "value"
+                    ],
+                    "additionalProperties": true
+                  }
+                }
+              ]
+            },
+            "else": {
+              "oneOf": [
+                {
+                  "name": "PressureMeasurement",
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "pressure"
+                    },
+                    "value": {
+                      "type": "decimal",
+                      "precision": 20,
+                      "scale": 8,
+                      "unit": "Pa",
+                      "minimum": "0"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "value"
+                  ],
+                  "additionalProperties": true
+                },
+                {
+                  "name": "MassMeasurement",
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "mass"
+                    },
+                    "value": {
+                      "type": "decimal",
+                      "precision": 20,
+                      "scale": 8,
+                      "unit": "kg",
+                      "minimum": "0"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "value"
+                  ],
+                  "additionalProperties": true
+                }
+              ]
+            }
+          },
+          {
+            "not": {
+              "name": "NaNSentinel",
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "decimal",
+                  "const": "999999999999.99999999"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "additionalProperties": true
+            }
+          }
+        ]
+      }
+    }
+  },
+  "required": [
+    "experimentId",
+    "mode",
+    "samples"
+  ],
+  "additionalProperties": false,
+  "if": {
+    "name": "CalibratedCondition",
+    "type": "object",
+    "properties": {
+      "mode": {
+        "type": "string",
+        "const": "calibrated"
+      }
+    },
+    "required": [
+      "mode"
+    ],
+    "additionalProperties": true
+  },
+  "then": {
+    "allOf": [
+      {
+        "name": "BaselineRequired",
+        "type": "object",
+        "properties": {
+          "baseline": {
+            "type": "decimal",
+            "precision": 20,
+            "scale": 8
+          }
+        },
+        "required": [
+          "baseline"
+        ],
+        "additionalProperties": true
+      },
+      {
+        "not": {
+          "name": "ZeroBaseline",
+          "type": "object",
+          "properties": {
+            "baseline": {
+              "type": "decimal",
+              "const": "0.00000000"
+            }
+          },
+          "required": [
+            "baseline"
+          ],
+          "additionalProperties": true
+        }
+      }
+    ]
+  },
+  "else": {
+    "not": {
+      "name": "RawWithBaseline",
+      "type": "object",
+      "properties": {
+        "baseline": {
+          "type": "decimal"
+        }
+      },
+      "required": [
+        "baseline"
+      ],
+      "additionalProperties": true
+    }
+  },
+  "definitions": {
+    "Measurement": {
+      "name": "Measurement",
+      "type": "object",
+      "properties": {
+        "at": {
+          "type": "datetime"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "temperature",
+            "pressure",
+            "mass"
+          ]
+        },
+        "value": {
+          "type": "decimal",
+          "precision": 20,
+          "scale": 8
+        }
+      },
+      "required": [
+        "at",
+        "kind",
+        "value"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

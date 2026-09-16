@@ -1,0 +1,118 @@
+{
+	"$schema": "https://json-structure.org/meta/validation/v0/#",
+	"$id": "https://example.test/conditional/media-ingest-map",
+	"name": "MediaIngestMap",
+	"description": "A map supports native binary, URI, and descriptor values with homogeneous-map conditionals.",
+	"type": "map",
+	"minEntries": 1,
+	"maxEntries": 128,
+	"keyNames": {
+		"type": "string",
+		"pattern": "^[a-z][a-z0-9.-]{0,63}$"
+	},
+	"values": {
+		"oneOf": [
+			{
+				"type": "binary",
+				"contentEncoding": "base64url",
+				"contentCompression": "gzip",
+				"contentMediaType": "application/octet-stream"
+			},
+			{
+				"type": "uri"
+			},
+			{
+				"type": {
+					"$ref": "#/definitions/MediaDescriptor"
+				}
+			}
+		]
+	},
+	"allOf": [
+		{
+			"not": {
+				"type": "map",
+				"values": {
+					"type": "null"
+				}
+			}
+		},
+		{
+			"if": {
+				"type": "map",
+				"values": {
+					"type": "binary"
+				}
+			},
+			"then": {
+				"allOf": [
+					{
+						"type": "map",
+						"values": {
+							"type": "binary"
+						},
+						"maxEntries": 10
+					},
+					{
+						"not": {
+							"type": "map",
+							"values": {
+								"type": "binary",
+								"const": ""
+							}
+						}
+					}
+				]
+			},
+			"else": {
+				"anyOf": [
+					{
+						"type": "map",
+						"values": {
+							"type": "uri"
+						}
+					},
+					{
+						"type": "map",
+						"values": {
+							"type": {
+								"$ref": "#/definitions/MediaDescriptor"
+							}
+						}
+					}
+				]
+			}
+		}
+	],
+	"definitions": {
+		"MediaDescriptor": {
+			"name": "MediaDescriptor",
+			"type": "object",
+			"properties": {
+				"location": {
+					"type": "uri"
+				},
+				"digest": {
+					"type": "binary",
+					"contentEncoding": "base16",
+					"contentMediaType": "application/octet-stream"
+				},
+				"mediaType": {
+					"type": "string",
+					"pattern": "^[a-z]+/[a-z0-9.+-]+$"
+				},
+				"length": {
+					"type": "uint64",
+					"minimum": "0"
+				}
+			},
+			"required": [
+				"location",
+				"digest",
+				"mediaType",
+				"length"
+			],
+			"additionalProperties": false
+		}
+	}
+}

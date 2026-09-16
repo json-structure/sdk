@@ -12,16 +12,16 @@ function activate(root: HTMLElement, field: 'name' | 'type', pointer: string): v
 const settle = () => new Promise((resolve) => setTimeout(resolve, 80));
 
 describe('recursive Design schema controls', () => {
-  it('persists nested collection member selectors', async () => {
+  it('drills through collection members and preserves their schemas while changing collection kind', async () => {
     const root = mount({ type: 'map', values: { type: 'array', items: { type: 'set', items: { type: 'uuid' } } } });
-    const controls = [...root.querySelectorAll('[data-inline-collection-kind]')] as HTMLSelectElement[];
-    expect(controls.map((control) => control.dataset.propertyPointer)).toEqual(['/values', '/values/items']);
-    change(controls[0]!, 'set'); await settle();
-    change(root.querySelector('[data-inline-collection-kind][data-property-pointer="/values/items"]') as HTMLSelectElement, 'map'); await settle();
+    (root.querySelector('[data-schema-child-kind="values"] [data-schema-open]') as HTMLButtonElement).click();
+    expect(root.querySelector('[data-schema-location-bar]')?.dataset.schemaPointer).toBe('/values');
+    change(root.querySelector('[data-inline-definition-type]') as HTMLSelectElement,'set');await settle();
+    (root.querySelector('[data-schema-child-kind="items"] [data-schema-open]') as HTMLButtonElement).click();
+    expect(root.querySelector('[data-schema-location-bar]')?.dataset.schemaPointer).toBe('/values/items');
+    change(root.querySelector('[data-inline-definition-type]') as HTMLSelectElement,'map');await settle();
     const value = JSON.parse(handle!.getText());
-    expect(value.values.type).toBe('set');
-    expect(value.values.items.type).toBe('map');
-    expect(value.values.items.values).toEqual({ type: 'uuid' });
+    expect(value.values.type).toBe('set');expect(value.values.items.type).toBe('map');expect(value.values.items.values).toEqual({type:'uuid'});
   });
   it('adds nested types and namespaces without a definitions wrapper', async () => {
     const root = mount({
@@ -51,7 +51,8 @@ describe('recursive Design schema controls', () => {
   });
   it('renders and edits nested object properties', async () => {
     const root = mount({ type: 'object', properties: { address: { type: 'object', properties: { city: { type: 'string' } } } } });
-    expect(root.querySelector('[data-nested-schema="/properties/address"]')).not.toBeNull();
+    (root.querySelector('[data-schema-child-key="address"] [data-schema-open]') as HTMLButtonElement).click();
+    expect(root.querySelector('[data-schema-location-bar]')?.dataset.schemaPointer).toBe('/properties/address');
     const pointer = '/properties/address/properties/city';
     activate(root, 'name', pointer);
     const name = root.querySelector(`[data-inline-property="name"][data-property-pointer="${pointer}"]`) as HTMLInputElement;
@@ -73,18 +74,11 @@ describe('recursive Design schema controls', () => {
     expect(root.textContent).toContain('Inline root');
     expect(root.querySelector('[data-select="/definitions/Reusable"]')).not.toBeNull();
   });
-  it('authors a composition branch without a raw JSON escape hatch', async () => {
+  it('does not expose the removed composition command surface', () => {
     const root = mount({ $schema: 'https://json-structure.org/meta/extended/v0/#', $uses: ['JSONStructureConditionalComposition'], definitions: { Ref: { type: 'string' } }, type: 'string' });
-    (root.querySelector('[data-show-commands]') as HTMLButtonElement).click();
+    handle!.showCommandPalette();
     const select = root.querySelector('[data-action-select]') as HTMLSelectElement;
-    select.value = 'composition.allOf';
-    select.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
-    await settle();
-    (root.querySelector('[data-schema-branch-add]') as HTMLButtonElement).click();
-    const form = root.querySelector('.js-inline-editor') as HTMLElement & { requestSubmit(): void };
-    form.requestSubmit();
-    await settle();
-    expect(JSON.parse(handle!.getText()).allOf).toEqual([{ type: 'string' }]);
+    expect([...select.options].some((option) => option.value.startsWith('composition.'))).toBe(false);
   });
   it('offers reusable references for choice alternatives', async () => {
     const root = mount({ definitions: { Value: { type: 'choice', choices: {} }, Ref: { type: 'string' } } });
@@ -107,27 +101,37 @@ describe('recursive Design schema controls', () => {
     expect(value).not.toHaveProperty('$root');
     expect(value.definitions.Reusable).toEqual({ type: 'string' });
   });
-  it('renders existing composition branches as nested Design editors', async () => {
-    const root = mount({
+  it('preserves existing composition bytes while rendering Rules in the selected Design surface', () => {
+    const value = {
       $schema: 'https://json-structure.org/meta/extended/v0/#',
       $uses: ['JSONStructureConditionalComposition'],
       allOf: [{ type: 'object', properties: { address: { type: 'object', properties: { city: { type: 'string' } } } } }],
+      if: { type: 'string' },
+      then: { type: 'string', minLength: 1 },
+    };
+    const root = mount({
+      ...value,
     });
-    expect(root.querySelector('[data-composition-branch="/allOf/0"]')).not.toBeNull();
-    const pointer = '/allOf/0/properties/address/properties/city';
-    activate(root, 'name', pointer);
-    const name = root.querySelector(`[data-inline-property="name"][data-property-pointer="${pointer}"]`) as HTMLInputElement;
-    name.value = 'town'; name.dispatchEvent(new Event('change', { bubbles: true })); await settle();
-    expect(JSON.parse(handle!.getText()).allOf[0].properties.address.properties).toHaveProperty('town');
-    expect(root.querySelector('[data-composition-branch] textarea[data-facet-control]')).toBeNull();
-    expect(root.querySelector('[data-facet-advanced="composition.allOf"]')).not.toBeNull();
+    expect(JSON.parse(handle!.getText())).toEqual(value);
+    expect(root.querySelector('[data-composition-editor]')).not.toBeNull();
+    expect(root.querySelector('[data-rule-pointer="/allOf"]')).not.toBeNull();
+    expect(root.querySelector('[data-operand-pointer="/allOf/0"]')).not.toBeNull();
+    expect(root.querySelector('[data-mode="composition"]')).toBeNull();
+    expect(root.innerHTML).not.toMatch(/composition\.(?:allOf|anyOf|oneOf|not|conditional)/);
   });
 
   it('keeps nested Design authoring available beyond six levels', () => {
     let schema: Record<string, unknown> = { type: 'string' };
     for (let level = 7; level >= 1; level--) schema = { type: 'object', properties: { ['level' + level]: schema } };
     const root = mount(schema);
-    expect(root.querySelector('[data-property-field-activate="name"][data-property-pointer="/properties/level1/properties/level2/properties/level3/properties/level4/properties/level5/properties/level6/properties/level7"]')).not.toBeNull();
+    let pointer = '';
+    for (let level=1;level<=7;level++) {
+      const row=root.querySelector('[data-schema-child-key="level'+level+'"]');expect(row).not.toBeNull();
+      (row!.querySelector('[data-schema-open]') as HTMLButtonElement).click();pointer+='/properties/level'+level;
+      expect(root.querySelector('[data-schema-location-bar]')?.dataset.schemaPointer).toBe(pointer);
+      expect(root.querySelectorAll('[data-schema-sheet]')).toHaveLength(1);
+    }
+    expect(root.querySelector('[data-schema-declaration]')?.dataset.declarationForm).toBe('explicit-type');
   });
 
   it('blocks scalar to collection switches until a member schema is explicit', async () => {

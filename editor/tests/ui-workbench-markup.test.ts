@@ -60,13 +60,14 @@ describe('workbench interaction markup', () => {
     expect(html).toContain('class="js-titlebar"');
     expect(html).toContain('class="js-titlebar-drag"');
     expect(html).toContain('role="menubar"');
-    expect(html).toContain('class="js-command-center"');
+    expect(html).toContain('class="js-window-title"');
+    expect(html).not.toContain('data-show-commands');
     expect(html).toContain('data-theme-choice="dark"');
     expect(html).not.toContain('class="js-theme"');
     expect(editorStyles).toContain('-webkit-app-region:drag');
     expect(editorStyles).toContain('-webkit-app-region:no-drag');
-    expect(editorStyles).toContain('width:min(520px,72vw)');
-    expect(editorStyles).toContain('justify-self:center');
+    expect(editorStyles).toContain('inset-inline-start:50%');
+    expect(editorStyles).toContain('transform:translateX(-50%)');
     expect(workbenchTitleChrome('example.struct.json', 'embedded')).toBe('');
   });
 
@@ -74,6 +75,7 @@ describe('workbench interaction markup', () => {
     const html = mobileModeSelect('graph');
     for (const mode of ['design', 'graph', 'source', 'instance', 'conversion']) expect(html).toContain(`value="${mode}"`);
     for (const mode of ['analysis', 'libraries']) expect(html).not.toContain(`value="${mode}"`);
+    expect(html).not.toContain('value="composition"');
     expect(html).toContain('value="graph" selected');
   });
 
@@ -98,6 +100,11 @@ describe('workbench interaction markup', () => {
 
     expect(html).toContain('<nav class="js-activity" aria-label="Editor modes">');
     for (const mode of ['design', 'graph', 'source', 'instance', 'conversion']) expect(html).toContain(`data-mode="${mode}"`);
+    for (const label of ['Document', 'Graph', 'Source', 'Validate', 'Convert']) expect(html).toContain(`aria-label="${label}" title="${label}"`);
+    expect(html).not.toContain('data-mode="composition"');
+    expect(html).not.toContain('class="js-activity-label"');
+    expect(editorStyles).toContain('--js-rail:46px;');
+    expect(editorStyles).toContain('.js-activity-button { width:45px; height:43px;');
     expect(html).not.toContain('data-mode="libraries"');
     expect(html).not.toContain('class="js-tabs"');
     expect(html).not.toContain('title="Convert this structure"');
@@ -227,9 +234,10 @@ describe('workbench interaction markup', () => {
       definitions: { Record: { type: 'object', properties: {} } },
     };
     const facetHtml = designView('Record', 'object', undefined, [], '/definitions/Record', [], [], 'local', undefined, undefined, [], facetDocument, new Set(), false, false, '/definitions/Record');
-    for (const action of ['validation.propertyNames', 'validation.dependentRequired', 'validation.patternProperties', 'composition.allOf', 'composition.conditional', 'semantic.vectorReferenceFrames', 'semantic.tensorReferenceFrames', 'semantic.frameTransforms', 'semantic.linearReferenceSystem', 'semantic.colorSpaces', 'semantic.audioChannels', 'semantic.spectralBands']) {
+    for (const action of ['validation.propertyNames', 'validation.dependentRequired', 'validation.patternProperties', 'semantic.vectorReferenceFrames', 'semantic.tensorReferenceFrames', 'semantic.frameTransforms', 'semantic.linearReferenceSystem', 'semantic.colorSpaces', 'semantic.audioChannels', 'semantic.spectralBands']) {
       expect(facetHtml).toContain(`value="${action}"`);
     }
+    expect(facetHtml).not.toMatch(/composition\.(?:allOf|anyOf|oneOf|not|conditional)/);
   });
 
   it('does not render root designation as a per-type flag', () => {
@@ -298,7 +306,7 @@ describe('workbench interaction markup', () => {
     expect(menuHtml).toContain('>Delete property</button>');
   });
 
-  it('renders collection schemas as editable expressions instead of opaque type pills', () => {
+  it('renders accurate collection summaries with Open schema instead of nested mini-editors', () => {
     const pointer = '/definitions/Route/properties/waypoints';
     const html = designView('Route', 'object', undefined, [{
       name: 'waypoints', pointer, type: 'array', required: false,
@@ -307,13 +315,10 @@ describe('workbench interaction markup', () => {
       { name: 'Point', pointer: '/definitions/Geo/Point' },
     ]);
     expect(html).toContain('array&lt;Geo.Point&gt;');
-    expect(html).toContain('class="js-cell js-composite-cell"');
-    expect(html).toContain('data-inline-collection-kind');
-    expect(html).toContain('<option value="array" selected>array</option>');
-    expect(html).toContain('>Item type</span>');
-    expect(html).toContain(`data-property-pointer="${pointer}/items"`);
-    expect(html).toContain(`data-inline-type-replace="ref:#/definitions/Geo/Point"`);
-    expect(html).not.toContain(`data-inline-type-remove="ref:#/definitions/Geo/Point"`);
+    expect(html).toContain('data-schema-open="'+pointer+'"');
+    expect(html).toContain('Open local schema waypoints');
+    expect(html).not.toContain('js-collection-expression');
+    expect(html).not.toContain('data-nested-schema');
   });
 
   it('renders structured collection branches inside nullable unions without losing members', () => {
@@ -511,6 +516,7 @@ describe('workbench interaction markup', () => {
     expect(workbenchFocusIdentityAttributes).toEqual(expect.arrayContaining([
       'data-graph-select', 'data-graph-breadcrumb', 'data-graph-search',
       'data-instance-input', 'data-instance-validate', 'data-instance-diagnostic',
+      'data-composition-add-rule', 'data-composition-disclosure', 'data-composition-move', 'data-composition-source',
       'data-conversion-run', 'data-conversion-open',
       'data-libraries-load', 'data-library-read', 'data-library-publish',
     ]));
@@ -528,7 +534,6 @@ describe('workbench interaction markup', () => {
     expect(editorStyles).toContain('.js-graph-search { display:block; min-width:0; }');
     expect(editorStyles).not.toContain('.js-graph-search { display:none; }');
     expect(editorStyles).toContain('.js-node-hit-target { fill:transparent; stroke:transparent; stroke-width:44;');
-    expect(editorStyles).toContain('.js-command-trigger { width:44px; height:44px;');
     expect(editorStyles).toContain('.js-property-advanced summary { min-height:44px;');
     expect(editorStyles).toContain('.js-integrity-manifest summary { min-height:44px;');
     expect(editorStyles).toContain('.js-provider-remove { width:44px; height:44px;');

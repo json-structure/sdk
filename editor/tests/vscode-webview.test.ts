@@ -287,4 +287,25 @@ describe('VS Code webview client', () => {
     expect(windowTarget.removeEventListener).toHaveBeenCalledWith('message', expect.any(Function));
     expect(documentTarget.removeEventListener).toHaveBeenCalledWith('visibilitychange', expect.any(Function));
   });
+  it('acknowledges owned Source/Design-undo echoes without clearing local navigation and redo history',async()=>{
+    vi.useFakeTimers();
+    const messages:WebviewMessage[]=[],setText=vi.fn(),acknowledgeText=vi.fn();let localText='abc';
+    const client=createVsCodeWebviewClient({vscode:{postMessage:message=>messages.push(message)},window:{addEventListener:vi.fn(),removeEventListener:vi.fn()},document:{visibilityState:'visible',addEventListener:vi.fn(),removeEventListener:vi.fn()},sourceReplaceDelayMs:10,mount:()=>({getText:()=>localText,setText,setTitle:vi.fn(),setUri:vi.fn(),showCommandPalette:vi.fn(),dispose:vi.fn(),acknowledgeText})});
+    client.receive({type:'init',protocolVersion:1,uri:'file:///owned.struct.json',title:'Owned',text:'abc',documentVersion:1});
+    localText='latest';client.replaceDocument(localText);await vi.advanceTimersByTimeAsync(11);
+    client.receive({type:'documentChanged',protocolVersion:1,text:'latest',documentVersion:2});
+    expect(setText).not.toHaveBeenCalled();expect(acknowledgeText).toHaveBeenCalledWith('latest',2);
+    client.receive({type:'applyResult',protocolVersion:1,requestId:'source-1',result:{protocolVersion:1,requestId:'source-1',documentVersion:2,applied:true,diagnostics:[]}});
+    await Promise.resolve();client.dispose();vi.useRealTimers();
+  });
+
+  it('retains queued local edits across same-text save/file-watcher version echoes',async()=>{
+    vi.useFakeTimers();const {client,messages}=fixture();client.replaceDocument('local undo');
+    client.receive({type:'documentChanged',protocolVersion:1,text:'abc',documentVersion:2});
+    await vi.advanceTimersByTimeAsync(300);
+    expect(messages.at(-1)).toMatchObject({type:'applyTextEdits',request:{documentVersion:2,edits:[{newText:'local undo'}]}});
+    client.receive({type:'applyResult',protocolVersion:1,requestId:'source-1',result:{protocolVersion:1,requestId:'source-1',documentVersion:3,applied:true,diagnostics:[]}});
+    await Promise.resolve();client.dispose();vi.useRealTimers();
+  });
+
 });

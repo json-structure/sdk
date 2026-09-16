@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-structure.org/meta/validation/v0/#",
+  "$id": "https://example.test/conditional/coordinate-command",
+  "name": "CoordinateProtocol",
+  "description": "Reusable tuples and a tagged choice carry composition at several nested positions.",
+  "$root": "#/definitions/Frame",
+  "definitions": {
+    "Vector2": {
+      "name": "Vector2",
+      "type": "tuple",
+      "properties": {
+        "x": {
+          "type": "double",
+          "oneOf": [
+            {
+              "type": "double",
+              "minimum": -180,
+              "maximum": 180
+            },
+            {
+              "type": "double",
+              "minimum": -1,
+              "maximum": 1
+            }
+          ]
+        },
+        "y": {
+          "type": "double",
+          "not": {
+            "type": "double",
+            "const": 0
+          }
+        }
+      },
+      "tuple": [
+        "x",
+        "y"
+      ]
+    },
+    "Command": {
+      "name": "Command",
+      "type": "choice",
+      "choices": {
+        "Move": {
+          "type": {
+            "$ref": "#/definitions/Vector2"
+          },
+          "oneOf": [
+            {
+              "type": {
+                "$ref": "#/definitions/Vector2"
+              }
+            },
+            {
+              "not": {
+                "type": "null"
+              }
+            }
+          ]
+        },
+        "Sleep": {
+          "type": "duration",
+          "not": {
+            "type": "duration",
+            "const": "PT0S"
+          }
+        },
+        "Reset": {
+          "type": "null"
+        }
+      }
+    },
+    "Frame": {
+      "name": "Frame",
+      "type": "tuple",
+      "properties": {
+        "sequence": {
+          "type": "uint64"
+        },
+        "command": {
+          "type": {
+            "$ref": "#/definitions/Command"
+          }
+        }
+      },
+      "tuple": [
+        "sequence",
+        "command"
+      ],
+      "if": {
+        "name": "InitialFrameCondition",
+        "type": "tuple",
+        "properties": {
+          "sequence": {
+            "type": "uint64",
+            "const": "0"
+          },
+          "command": {
+            "type": {
+              "$ref": "#/definitions/Command"
+            }
+          }
+        },
+        "tuple": [
+          "sequence",
+          "command"
+        ]
+      },
+      "then": {
+        "not": {
+          "name": "ForbiddenInitialReset",
+          "type": "tuple",
+          "properties": {
+            "sequence": {
+              "type": "uint64",
+              "const": "0"
+            },
+            "command": {
+              "type": "choice",
+              "choices": {
+                "Reset": {
+                  "type": "null"
+                }
+              }
+            }
+          },
+          "tuple": [
+            "sequence",
+            "command"
+          ]
+        }
+      }
+    }
+  }
+}

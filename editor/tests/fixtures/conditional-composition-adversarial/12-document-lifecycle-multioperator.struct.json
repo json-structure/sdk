@@ -1,0 +1,263 @@
+{
+  "$schema": "https://json-structure.org/meta/validation/v0/#",
+  "$id": "https://example.test/conditional/document-lifecycle",
+  "name": "LifecycleDocument",
+  "description": "All four composition operators and a full conditional apply conjunctively at the root.",
+  "type": "object",
+  "properties": {
+    "documentId": {
+      "type": "uuid"
+    },
+    "state": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "published",
+        "archived"
+      ]
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "external": {
+      "type": "uri"
+    },
+    "revision": {
+      "type": "int64",
+      "minimum": "1"
+    },
+    "publishedAt": {
+      "type": "datetime"
+    },
+    "archivedAt": {
+      "type": "datetime"
+    }
+  },
+  "required": [
+    "documentId",
+    "state",
+    "revision"
+  ],
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "name": "PublishedCondition",
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "const": "published"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "additionalProperties": true
+      },
+      "then": {
+        "name": "PublishedTimestamp",
+        "type": "object",
+        "properties": {
+          "publishedAt": {
+            "type": "datetime"
+          }
+        },
+        "required": [
+          "publishedAt"
+        ],
+        "additionalProperties": true
+      }
+    },
+    {
+      "if": {
+        "name": "DraftCondition",
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "const": "draft"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "additionalProperties": true
+      },
+      "then": {
+        "not": {
+          "name": "DraftArchiveTimestamp",
+          "type": "object",
+          "properties": {
+            "archivedAt": {
+              "type": "datetime"
+            }
+          },
+          "required": [
+            "archivedAt"
+          ],
+          "additionalProperties": true
+        }
+      }
+    }
+  ],
+  "anyOf": [
+    {
+      "name": "TitledDocument",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "additionalProperties": true
+    },
+    {
+      "name": "ExternalDocument",
+      "type": "object",
+      "properties": {
+        "external": {
+          "type": "uri"
+        }
+      },
+      "required": [
+        "external"
+      ],
+      "additionalProperties": true
+    }
+  ],
+  "oneOf": [
+    {
+      "name": "LowRevision",
+      "type": "object",
+      "properties": {
+        "revision": {
+          "type": "int64",
+          "minimum": "1",
+          "maximum": "10"
+        }
+      },
+      "required": [
+        "revision"
+      ],
+      "additionalProperties": true
+    },
+    {
+      "name": "EvenRevision",
+      "type": "object",
+      "properties": {
+        "revision": {
+          "type": "int64",
+          "minimum": "2",
+          "multipleOf": "2"
+        }
+      },
+      "required": [
+        "revision"
+      ],
+      "additionalProperties": true
+    }
+  ],
+  "not": {
+    "name": "ArchivedWithoutDate",
+    "type": "object",
+    "properties": {
+      "state": {
+        "type": "string",
+        "const": "archived"
+      },
+      "archivedAt": {
+        "type": "null"
+      }
+    },
+    "required": [
+      "state",
+      "archivedAt"
+    ],
+    "additionalProperties": true
+  },
+  "if": {
+    "name": "ArchiveCondition",
+    "type": "object",
+    "properties": {
+      "state": {
+        "type": "string",
+        "const": "archived"
+      }
+    },
+    "required": [
+      "state"
+    ],
+    "additionalProperties": true
+  },
+  "then": {
+    "allOf": [
+      {
+        "name": "ArchiveTimestamp",
+        "type": "object",
+        "properties": {
+          "archivedAt": {
+            "type": "datetime"
+          }
+        },
+        "required": [
+          "archivedAt"
+        ],
+        "additionalProperties": true
+      },
+      {
+        "not": {
+          "name": "ArchiveStillDraft",
+          "type": "object",
+          "properties": {
+            "publishedAt": {
+              "type": "null"
+            }
+          },
+          "required": [
+            "publishedAt"
+          ],
+          "additionalProperties": true
+        }
+      }
+    ]
+  },
+  "else": {
+    "anyOf": [
+      {
+        "name": "DraftState",
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "const": "draft"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "additionalProperties": true
+      },
+      {
+        "name": "PublishedState",
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "const": "published"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "additionalProperties": true
+      }
+    ]
+  }
+}

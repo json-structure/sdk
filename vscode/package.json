@@ -140,6 +140,7 @@
     "lint": "eslint src --ext ts",
     "package": "vsce package --no-dependencies",
     "test:runtime-artifact": "node scripts/vsix-runtime-smoke.mjs",
+    "test:ui-artifact": "node scripts/vsix-ui-acceptance.mjs",
     "test:artifact": "npm run compile-tests && node -e \"require('./dist/test/artifact-integrity.js').assertRendererArtifactIntegrity().catch(error => { console.error(error); process.exitCode = 1; })\""
   },
   "devDependencies": {

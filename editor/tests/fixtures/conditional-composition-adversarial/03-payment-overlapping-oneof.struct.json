@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-structure.org/meta/validation/v0/#",
+  "$id": "https://example.test/conditional/payment-overlap",
+  "name": "SettlementAmount",
+  "description": "Overlapping decimal oneOf ranges make values from 50.00 through 100.00 match twice.",
+  "type": "decimal",
+  "precision": 12,
+  "scale": 2,
+  "minimum": "-1.00",
+  "exclusiveMaximum": "1000.00",
+  "oneOf": [
+    {
+      "type": "decimal",
+      "minimum": "0.00",
+      "maximum": "100.00",
+      "multipleOf": "0.01"
+    },
+    {
+      "type": "decimal",
+      "minimum": "50.00",
+      "maximum": "150.00",
+      "multipleOf": "0.05"
+    },
+    {
+      "type": "decimal",
+      "const": "-1.00"
+    }
+  ],
+  "not": {
+    "not": {
+      "type": "decimal",
+      "multipleOf": "0.01"
+    }
+  },
+  "examples": [
+    {
+      "value": "49.95",
+      "meaning": "first branch only"
+    },
+    {
+      "value": "75.00",
+      "meaning": "two branches and therefore rejected"
+    }
+  ]
+}

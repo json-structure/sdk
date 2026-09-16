@@ -1,0 +1,220 @@
+{
+	"$schema": "https://json-structure.org/meta/validation/v0/#",
+	"$id": "https://example.test/conditional/typed-reference-composition",
+	"name": "ResourceRecord",
+	"description": "Every reference-bearing composition operand uses the canonical typed-reference form.",
+	"type": "object",
+	"properties": {
+		"id": {
+			"type": "uuid"
+		},
+		"createdAt": {
+			"type": "datetime"
+		},
+		"owner": {
+			"type": "string",
+			"maxLength": 80
+		},
+		"serviceAccount": {
+			"type": "uuid"
+		},
+		"mutable": {
+			"type": "boolean"
+		},
+		"version": {
+			"type": "uint64"
+		},
+		"etag": {
+			"type": "string",
+			"pattern": "^[A-F0-9]{16}$"
+		},
+		"deleted": {
+			"type": "boolean"
+		}
+	},
+	"required": [
+		"id",
+		"createdAt",
+		"mutable",
+		"deleted"
+	],
+	"additionalProperties": false,
+	"allOf": [
+		{
+			"type": {
+				"$ref": "#/definitions/HasIdentity"
+			}
+		},
+		{
+			"type": {
+				"$ref": "#/definitions/Timestamped"
+			}
+		}
+	],
+	"anyOf": [
+		{
+			"type": {
+				"$ref": "#/definitions/HumanOwned"
+			}
+		},
+		{
+			"type": {
+				"$ref": "#/definitions/ServiceOwned"
+			}
+		}
+	],
+	"oneOf": [
+		{
+			"type": {
+				"$ref": "#/definitions/MutableResource"
+			}
+		},
+		{
+			"type": {
+				"$ref": "#/definitions/VersionedResource"
+			}
+		}
+	],
+	"not": {
+		"type": {
+			"$ref": "#/definitions/DeletedResource"
+		}
+	},
+	"if": {
+		"type": {
+			"$ref": "#/definitions/VersionedResource"
+		}
+	},
+	"then": {
+		"allOf": [
+			{
+				"type": {
+					"$ref": "#/definitions/HasEtag"
+				}
+			},
+			{
+				"not": {
+					"type": {
+						"$ref": "#/definitions/DeletedResource"
+					}
+				}
+			}
+		]
+	},
+	"else": {
+		"type": {
+			"$ref": "#/definitions/MutableResource"
+		}
+	},
+	"definitions": {
+		"HasIdentity": {
+			"name": "HasIdentity",
+			"type": "object",
+			"properties": {
+				"id": {
+					"type": "uuid"
+				}
+			},
+			"required": [
+				"id"
+			],
+			"additionalProperties": true
+		},
+		"Timestamped": {
+			"name": "Timestamped",
+			"type": "object",
+			"properties": {
+				"createdAt": {
+					"type": "datetime"
+				}
+			},
+			"required": [
+				"createdAt"
+			],
+			"additionalProperties": true
+		},
+		"HumanOwned": {
+			"name": "HumanOwned",
+			"type": "object",
+			"properties": {
+				"owner": {
+					"type": "string",
+					"minLength": 1
+				}
+			},
+			"required": [
+				"owner"
+			],
+			"additionalProperties": true
+		},
+		"ServiceOwned": {
+			"name": "ServiceOwned",
+			"type": "object",
+			"properties": {
+				"serviceAccount": {
+					"type": "uuid"
+				}
+			},
+			"required": [
+				"serviceAccount"
+			],
+			"additionalProperties": true
+		},
+		"MutableResource": {
+			"name": "MutableResource",
+			"type": "object",
+			"properties": {
+				"mutable": {
+					"type": "boolean",
+					"const": true
+				}
+			},
+			"required": [
+				"mutable"
+			],
+			"additionalProperties": true
+		},
+		"VersionedResource": {
+			"name": "VersionedResource",
+			"type": "object",
+			"properties": {
+				"version": {
+					"type": "uint64",
+					"minimum": "1"
+				}
+			},
+			"required": [
+				"version"
+			],
+			"additionalProperties": true
+		},
+		"HasEtag": {
+			"name": "HasEtag",
+			"type": "object",
+			"properties": {
+				"etag": {
+					"type": "string",
+					"pattern": "^[A-F0-9]{16}$"
+				}
+			},
+			"required": [
+				"etag"
+			],
+			"additionalProperties": true
+		},
+		"DeletedResource": {
+			"name": "DeletedResource",
+			"type": "object",
+			"properties": {
+				"deleted": {
+					"type": "boolean",
+					"const": true
+				}
+			},
+			"required": [
+				"deleted"
+			],
+			"additionalProperties": true
+		}
+	}
+}

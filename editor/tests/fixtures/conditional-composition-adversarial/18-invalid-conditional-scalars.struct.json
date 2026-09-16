@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-structure.org/meta/validation/v0/#",
+  "$id": "https://example.test/conditional/invalid-scalar-operands",
+  "name": "ScalarOperandFailures",
+  "description": "Preserved malformed shapes exercise every operand kind check.",
+  "allOf": {
+    "type": "string"
+  },
+  "anyOf": [
+    {
+      "type": "string"
+    },
+    7
+  ],
+  "oneOf": "not-an-array",
+  "not": [
+    {
+      "type": "null"
+    }
+  ],
+  "if": true,
+  "then": [],
+  "else": "fallback"
+}

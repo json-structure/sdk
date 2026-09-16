@@ -214,6 +214,128 @@ describe('mounted structured CRUD workbench', () => {
     expect(root.textContent).toContain('Imports only the external definitions section.');
   });
 
+  it('adds object schema facets through one labeled flow without empty qualifier controls', async () => {
+    const root = mount({
+      $schema: 'https://json-structure.org/meta/validation/v0/#',
+      $root: '#/definitions/Record',
+      definitions: {
+        Record: { type: 'object', properties: {} },
+      },
+    });
+
+    expect(root.querySelector('[data-schema-qualifier-type]')).toBeNull();
+    expect(root.querySelector('[data-schema-qualifier-apply]')).toBeNull();
+    expect(root.textContent).toContain('No structured facets are authored.');
+
+    let facet = element<HTMLSelectElement>(root, '[data-facet-select="/definitions/Record"]');
+    expect([...facet.options].find((option) => option.value === 'validation.propertyNames')?.textContent).toBe('Validation · Property name schema');
+    expect([...facet.options].find((option) => option.value === 'validation.has')?.textContent).toBe('Validation · At least one matching value');
+
+    change(facet, 'validation.propertyNames');
+    element<HTMLButtonElement>(root, '[data-facet-add="/definitions/Record"]').click();
+    await settle();
+    expect(JSON.parse(handle!.getText()).definitions.Record.propertyNames).toEqual({ type: 'string' });
+    expect(root.querySelector('[data-facet-row="validation.propertyNames"]')?.textContent).toContain('Validation · Property name schema');
+    expect(root.textContent).not.toContain('No structured facets are authored.');
+
+    facet = element<HTMLSelectElement>(root, '[data-facet-select="/definitions/Record"]');
+    change(facet, 'validation.has');
+    element<HTMLButtonElement>(root, '[data-facet-add="/definitions/Record"]').click();
+    await settle();
+    expect(JSON.parse(handle!.getText()).definitions.Record.has).toEqual({ type: 'object' });
+    expect(root.querySelector('[data-facet-row="validation.has"]')?.textContent).toContain('Validation · At least one matching value');
+  });
+
+  it.each([
+    {
+      type: 'object',
+      shape: { properties: {} },
+      included: ['validation.minProperties', 'validation.propertyNames', 'validation.has'],
+      excluded: ['validation.minimum', 'validation.minLength', 'validation.minItems', 'validation.minEntries'],
+    },
+    {
+      type: 'string',
+      shape: {},
+      included: ['validation.minLength', 'validation.pattern', 'validation.format'],
+      excluded: ['validation.minimum', 'validation.minItems', 'validation.minProperties', 'validation.minEntries'],
+    },
+    {
+      type: 'array',
+      shape: { items: { type: 'string' } },
+      included: ['validation.minItems', 'validation.uniqueItems', 'validation.contains'],
+      excluded: ['validation.minimum', 'validation.minLength', 'validation.minProperties', 'validation.minEntries'],
+    },
+    {
+      type: 'map',
+      shape: { values: { type: 'string' } },
+      included: ['validation.minEntries', 'validation.keyNames', 'validation.has'],
+      excluded: ['validation.minimum', 'validation.minLength', 'validation.minItems', 'validation.minProperties'],
+    },
+  ])('filters structured facet choices for $type declarations before capability activation', ({ type, shape, included, excluded }) => {
+    const root = mount({
+      $schema: 'https://json-structure.org/meta/core/v0/#',
+      $root: '#/definitions/Subject',
+      definitions: {
+        Subject: { type, ...shape },
+      },
+    });
+    const values = [...element<HTMLSelectElement>(root, '[data-facet-select="/definitions/Subject"]').options].map((option) => option.value);
+    for (const actionId of included) expect(values, actionId).toContain(actionId);
+    for (const actionId of excluded) expect(values, actionId).not.toContain(actionId);
+  });
+
+  it('excludes duplicate, primitive-only, record-only, and prerequisite-dependent facets from an object declaration', () => {
+    const root = mount({
+      $schema: 'https://json-structure.org/meta/core/v0/#',
+      $root: '#/definitions/Subject',
+      definitions: {
+        Subject: { type: 'object', properties: {} },
+      },
+    });
+    const values = [...element<HTMLSelectElement>(root, '[data-facet-select="/definitions/Subject"]').options].map((option) => option.value);
+    expect(values).not.toEqual(expect.arrayContaining([
+      'core.enum',
+      'core.const',
+      'core.abstract',
+      'core.extends',
+      'validation.minContains',
+      'validation.maxContains',
+      'alternate-enums.altenums',
+      'semantic.semanticRole',
+      'semantic.derivation',
+      'semantic.statistic',
+      'semantic.cadence',
+      'semantic.referenceRole',
+      'semantic.phenomenonTimeRelation',
+      'semantic.supportPeriod',
+    ]));
+    expect(values).toEqual(expect.arrayContaining([
+      'core.additional-properties',
+      'validation.minProperties',
+      'validation.propertyNames',
+      'semantic.observedProperty',
+      'semantic.temporalReferenceSystem',
+      'semantic.coordinateReferenceSystem',
+    ]));
+  });
+
+  it('offers dependent facets only after their prerequisite is authored', () => {
+    const root = mount({
+      $schema: 'https://json-structure.org/meta/extended/v0/#',
+      $uses: ['JSONStructureValidation', 'JSONStructureAlternateNames'],
+      $root: '#/definitions/Items',
+      definitions: {
+        Items: { type: 'array', items: { type: 'string' }, contains: { type: 'string' } },
+        Code: { type: 'string', enum: ['A', 'B'] },
+      },
+    });
+    let values = [...element<HTMLSelectElement>(root, '[data-facet-select="/definitions/Items"]').options].map((option) => option.value);
+    expect(values).toEqual(expect.arrayContaining(['validation.minContains', 'validation.maxContains']));
+    element<HTMLElement>(root, '[data-select="/definitions/Code"]').click();
+    values = [...element<HTMLSelectElement>(root, '[data-facet-select="/definitions/Code"]').options].map((option) => option.value);
+    expect(values).toContain('alternate-enums.altenums');
+  });
+
   it('keeps tuple member creation, order, rename, identity, and deletion synchronized', async () => {
     const root = mount({
       $schema: 'https://json-structure.org/meta/relations/v0/#',
@@ -793,7 +915,7 @@ describe('mounted structured CRUD workbench', () => {
 
   it('clears action JSON validity so corrected input submits without reopening', async () => {
     const root = mount({ type: 'object', properties: {} });
-    element<HTMLButtonElement>(root, '[data-show-commands]').click();
+    handle!.showCommandPalette();
     const command = element<HTMLSelectElement>(root, '[data-action-select]');
     command.value = 'core.properties';
     command.dispatchEvent(new Event('dblclick', { bubbles: true }));

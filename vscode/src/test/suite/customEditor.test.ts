@@ -3,13 +3,27 @@ import { promises as fs } from 'fs';
 import { tmpdir } from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { isWithinUriRoot, readWorkspaceResource, validatePrimaryDocument, validateResourceSize, validateResourceUri } from '../../customEditor';
+import { isWithinUriRoot, readWorkspaceResource, renderCustomEditorHtml, validatePrimaryDocument, validateResourceSize, validateResourceUri } from '../../customEditor';
 import { isSerializedMessageWithinBudget, isWebviewMessage } from '../../customEditorProtocol';
 import { buildOutputManifest, effectiveWorkerLossiness, loadConversionCommandsManifest, normalizeConversionOptions, parseWorkerEvent, publishGeneratedFiles, validateGeneratedConversionFiles, validateTemporaryDirectoryForCleanup, VsCodeConversionHost, type PublicationFileSystem } from '../../editorServices';
 import { createPublisherStore, type PublisherState } from '../../libraryPublisherStore';
 import { createVsCodeLibraryRuntime } from '../../libraryRuntime';
 
 suite('JSON Structure custom editor protocol', () => {
+    test('loads Monaco CSS and permits packaged worker resources in the webview CSP', () => {
+        const html = renderCustomEditorHtml({
+            nonce: 'test-nonce',
+            readinessRequestId: 'renderer-1',
+            scriptUri: 'vscode-webview://extension/media/editor/editor.iife.js',
+            styleUri: 'vscode-webview://extension/media/editor/editor.css',
+            cspSource: 'vscode-webview://extension',
+        });
+        assert.ok(html.includes('<link rel="stylesheet" href="vscode-webview://extension/media/editor/editor.css">'));
+        assert.ok(html.includes("worker-src vscode-webview://extension blob:"));
+        assert.ok(html.includes("style-src vscode-webview://extension 'nonce-test-nonce'"));
+        assert.ok(html.includes("script-src vscode-webview://extension 'nonce-test-nonce'"));
+    });
+
     test('accepts versioned resource read requests', () => {
         assert.strictEqual(isWebviewMessage({ type: 'readResource', protocolVersion: 1, requestId: 'resource-1', uri: 'file:///workspace/types.json' }), true);
         assert.strictEqual(isWebviewMessage({ type: 'readResource', protocolVersion: 1, requestId: '', uri: 'file:///workspace/types.json' }), false);

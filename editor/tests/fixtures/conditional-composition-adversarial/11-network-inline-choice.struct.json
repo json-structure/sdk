@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-structure.org/meta/validation/v0/#",
+  "$id": "https://example.test/conditional/network-endpoint",
+  "name": "Endpoint",
+  "description": "An inline choice is further constrained by shared conditional composition.",
+  "type": "choice",
+  "$extends": "#/definitions/EndpointBase",
+  "selector": "transport",
+  "choices": {
+    "tcp": {
+      "type": {
+        "$ref": "#/definitions/TcpEndpoint"
+      }
+    },
+    "udp": {
+      "type": {
+        "$ref": "#/definitions/UdpEndpoint"
+      }
+    },
+    "unix": {
+      "type": {
+        "$ref": "#/definitions/UnixEndpoint"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "not": {
+        "name": "DiscardPort",
+        "type": "object",
+        "properties": {
+          "port": {
+            "type": "int32",
+            "const": 0
+          }
+        },
+        "required": [
+          "port"
+        ],
+        "additionalProperties": true
+      }
+    },
+    {
+      "if": {
+        "name": "TcpCondition",
+        "type": "object",
+        "properties": {
+          "transport": {
+            "type": "string",
+            "const": "tcp"
+          }
+        },
+        "required": [
+          "transport"
+        ],
+        "additionalProperties": true
+      },
+      "then": {
+        "allOf": [
+          {
+            "type": {
+              "$ref": "#/definitions/TcpEndpoint"
+            }
+          },
+          {
+            "not": {
+              "name": "InsecureAdminPort",
+              "type": "object",
+              "properties": {
+                "port": {
+                  "type": "int32",
+                  "const": 8443
+                },
+                "tls": {
+                  "type": "boolean",
+                  "const": false
+                }
+              },
+              "required": [
+                "port",
+                "tls"
+              ],
+              "additionalProperties": true
+            }
+          }
+        ]
+      },
+      "else": {
+        "anyOf": [
+          {
+            "type": {
+              "$ref": "#/definitions/UdpEndpoint"
+            }
+          },
+          {
+            "type": {
+              "$ref": "#/definitions/UnixEndpoint"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "definitions": {
+    "EndpointBase": {
+      "name": "EndpointBase",
+      "abstract": true,
+      "type": "object",
+      "properties": {
+        "host": {
+          "type": "string",
+          "format": "hostname"
+        },
+        "port": {
+          "type": "int32",
+          "minimum": 0,
+          "maximum": 65535
+        }
+      },
+      "required": [
+        "host"
+      ]
+    },
+    "TcpEndpoint": {
+      "name": "TcpEndpoint",
+      "type": "object",
+      "$extends": "#/definitions/EndpointBase",
+      "properties": {
+        "tls": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "tls"
+      ],
+      "additionalProperties": false
+    },
+    "UdpEndpoint": {
+      "name": "UdpEndpoint",
+      "type": "object",
+      "$extends": "#/definitions/EndpointBase",
+      "properties": {
+        "multicast": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "multicast"
+      ],
+      "additionalProperties": false
+    },
+    "UnixEndpoint": {
+      "name": "UnixEndpoint",
+      "type": "object",
+      "$extends": "#/definitions/EndpointBase",
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^/",
+          "maxLength": 108
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "additionalProperties": false
+    }
+  }
+}
