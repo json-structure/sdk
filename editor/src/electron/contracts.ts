@@ -1,3 +1,4 @@
+import type { ImportedDocumentContext, StagedDocument } from './document-workflow';
 import type { ConversionRequest, ConversionResult, ConversionSource, LibraryOperation, OpenGeneratedOutputRequest, OpenGeneratedOutputResult, ProgressEvent, SelectConversionSourceRequest } from '../contracts';
 import type { ConversionCommandsManifest } from '../conversion/types';
 import type { LibraryDocument, LibraryEntry } from '../libraries/contracts';
@@ -18,12 +19,13 @@ export interface SaveFileResult {
   readonly uri?: string;
 }
 
-export interface FileOpenedEvent extends OpenFileResult {
-  path: string;
-  text: string;
+export interface CloseWindowResolution {
+  readonly approved: boolean;
 }
 
-export type HostCommand = 'new' | 'open' | 'import' | 'save' | 'save-as' | 'show-commands';
+export type FileOpenedEvent = OpenFileResult | StagedDocument<ImportedDocumentContext>;
+
+export type HostCommand = 'new' | 'open' | 'import' | 'save' | 'save-as' | 'show-commands' | 'close';
 export type WindowCommand = 'undo' | 'redo' | 'cut' | 'copy' | 'paste' | 'select-all' | 'reset-zoom' | 'zoom-in' | 'zoom-out' | 'toggle-fullscreen' | 'quit';
 
 /** Renderer-safe bridge for file workflows and opening links outside the app. */
@@ -34,10 +36,13 @@ export interface ElectronBridge {
   saveFileAs(text: string): Promise<SaveFileResult | null>;
   /** Allocates a fresh untitled URI without writing a file. */
   newDocument?(): Promise<{ readonly uri: string; readonly title: string }>;
-  /** Commits a previously selected file after the renderer accepts replacement. */
+  /** Commits a host-issued file or untitled import identity after the renderer accepts replacement. */
   activateDocument?(path: string, activationToken?: string): Promise<void>;
   /** Drops a selected replacement after Save/Discard/Cancel chooses Cancel. */
   discardDocument?(activationToken: string): Promise<void>;
+  /** Resolves Save/Discard/Cancel before the native window is allowed to close. */
+  closeWindow(request: { readonly dirty: boolean; readonly text: string }): Promise<CloseWindowResolution>;
+  finalizeWindowClose(): Promise<void>;
   openExternal(url: string): Promise<void>;
   readResource(uri: string): Promise<{ uri: string; content: string; contentHash: string }>;
   listConversionCommands(): Promise<ConversionCommandsManifest>;

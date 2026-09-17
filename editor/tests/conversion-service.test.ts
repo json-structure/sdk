@@ -105,6 +105,24 @@ function fixtureResult(request: ConversionWorkerRequest): ConversionWorkerResult
 }
 
 describe('Phase 5 conversion service', () => {
+  it('passes the current document URI only to import-closure resolution while retaining snapshot bytes', async () => {
+    const source = encoder.encode('{"$schema":"https://json-structure.org/meta/extended/v0/#","type":"string","definitions":{"shared":{"$importdefs":"./library.struct.json"}}}');
+    const resolve = vi.fn(async (request: { source: Uint8Array; documentUri?: string }) => request.source);
+    const service = new ConversionService({ worker: conversionFixtureWorker(), effectiveImports: { resolve } });
+    const result = await service.execute({ operationId: 'export-current-uri', commandId: 'export.json-structure.to-jsonschema', sourceName: 'current.struct.json', source, documentUri: 'untitled:current.struct.json', preview: true });
+    expect(result.runtime.state).toBe('completed');
+    expect(resolve).toHaveBeenCalledWith(expect.objectContaining({ source, documentUri: 'untitled:current.struct.json' }));
+  });
+
+  it('performs a real import without publishing, even when a destination was supplied', async () => {
+    const storage = new MemoryStorage(), launch = vi.fn();
+    const service = new ConversionService({ worker: conversionFixtureWorker(), storage, launcher: { launch } });
+    const result = await service.execute({ operationId: 'import-memory', commandId: 'import.jsonschema.to-json-structure', sourceName: 'source.json', source: encoder.encode('{"type":"string"}'), destination: 'must-not-write', preview: false, optionValues: { rootName: 'Root' } });
+    expect(result.runtime.state).toBe('completed'); expect(result.runtime.states).toEqual(['idle', 'preparing', 'running', 'completed']);
+    expect(result.runtime.published).toBe(false); expect(result.runtime.files['Root.struct.json']).toBeDefined();
+    expect(storage.directories.size).toBe(0); expect(launch).not.toHaveBeenCalled();
+  });
+
   it('lists a concrete built-in commands manifest', () => {
     const service = new ConversionService({ worker: conversionFixtureWorker() });
     const manifest = service.listCommands();

@@ -4,9 +4,31 @@ import { pathToFileURL } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { readResource } from '../src/electron/file-service.js';
-import { classifyGeneratedOutputPaths, commonGeneratedOutputDirectory, createConversionDocumentContext, createFileDocumentContext, createUntitledDocumentContext, DocumentActivationLedger } from '../src/electron/document-workflow.js';
+import { classifyGeneratedOutputPaths, commonGeneratedOutputDirectory, createConversionDocumentContext, createFileDocumentContext, createUntitledDocumentContext, createImportedDocumentContext, activatedDocumentContext, DocumentActivationLedger } from '../src/electron/document-workflow.js';
 
 describe('Electron document workflow', () => {
+  it('activates generated imports with an untitled URI and no approved save or resource root', () => {
+    const ledger = new DocumentActivationLedger(() => 'import-token');
+    const previous = createFileDocumentContext('C:\\schemas\\previous.struct.json', '{"old":true}'); ledger.setActive(previous);
+    const imported = createImportedDocumentContext('converted.struct.json', '{"type":"string"}', 'converted');
+    const staged = ledger.stage(imported); expect(ledger.active).toBe(previous);
+    expect(staged.path).toBeUndefined(); expect(staged.uri).toBe('untitled:json-structure-converted.struct.json');
+    expect(ledger.activate(staged.activationToken, 'C:\\Temp\\converted.struct.json')).toBeUndefined(); expect(ledger.active).toBe(previous);
+    const active = ledger.activate(staged.activationToken, staged.uri)!;
+    expect(activatedDocumentContext(active)).toEqual({ documentPath: undefined, documentRoot: undefined, documentUri: staged.uri });
+    expect(active.text).toBe(imported.text); expect(ledger.activate(staged.activationToken, staged.uri)).toBeUndefined();
+  });
+
+  it('discards rejected and stale generated-import activations without changing the current file', () => {
+    const ledger = new DocumentActivationLedger(() => 'import-token');
+    const original = createFileDocumentContext('C:\\schemas\\current.struct.json', '{}'); ledger.setActive(original);
+    const imported = createImportedDocumentContext('result.struct.json', '{"new":true}');
+    expect(ledger.stageIfCurrent(imported, 1, () => 2)).toBeUndefined();
+    const staged = ledger.stage(imported); ledger.discard(staged.activationToken);
+    expect(ledger.activate(staged.activationToken, staged.uri)).toBeUndefined();
+    expect(ledger.active).toBe(original); expect(activatedDocumentContext(ledger.active!)).toMatchObject({ documentPath: original.path });
+  });
+
   it('routes only JSON Structure generated output to the custom session', () => {
     expect(classifyGeneratedOutputPaths(['C:\\generated\\target.struct.json'])).toBe('json-structure');
     expect(classifyGeneratedOutputPaths(['C:\\generated\\schema.json'])).toBe('file');

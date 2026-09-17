@@ -13,6 +13,13 @@ const manifest: ConversionCommandsManifest = {
 };
 
 describe('conversion workbench view', () => {
+  it('describes import output as unsaved rather than committed publication', () => {
+    const host = { listConversionCommands: async () => manifest, convert: async () => { throw new Error('not called'); } };
+    const html = conversionView(host, manifest, undefined, undefined, { protocolVersion: 1, requestId: 'import', documentVersion: 1, succeeded: true, outputs: [{ uri: 'generated-import:result/schema.struct.json', name: 'schema.struct.json' }], diagnostics: [], review: { commandId: 'import.fixture', converter: { id: 'fixture', displayName: 'Fixture', version: '1' }, sourceFormat: 'a', targetFormat: 'json-structure', lifecycle: ['idle', 'preparing', 'running', 'completed'], published: false, outputMode: 'untitled-document', lossiness: 'none', warnings: [] } }, 'Import ready.');
+    expect(html).toContain('Unsaved JSON Structure document; not published'); expect(html).not.toContain('Committed atomically'); expect(html).not.toContain('data-state="publishing"');
+    expect(html).toContain('export the current editor state');
+  });
+
   it('presents import commands as modal launch tiles instead of inline configuration', () => {
     const importManifest: ConversionCommandsManifest = {
       ...manifest,

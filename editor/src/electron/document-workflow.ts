@@ -40,8 +40,25 @@ export interface FileDocumentContext {
   readonly kind: FileDocumentKind;
 }
 
-export interface StagedFileDocument extends FileDocumentContext {
-  readonly activationToken: string;
+export interface ImportedDocumentContext {
+  readonly kind: 'generated-import';
+  readonly uri: string;
+  readonly name: string;
+  readonly text: string;
+  readonly path?: never;
+}
+export type EditorDocumentContext = FileDocumentContext | ImportedDocumentContext;
+export type StagedDocument<T extends EditorDocumentContext = EditorDocumentContext> = T & { readonly activationToken: string };
+export type StagedFileDocument = StagedDocument<FileDocumentContext>;
+
+export function documentActivationIdentity(document: EditorDocumentContext): string { return document.kind === 'generated-import' ? document.uri : document.path; }
+
+export function createImportedDocumentContext(name: string, text: string, id?: string): ImportedDocumentContext {
+  return { kind: 'generated-import', uri: createUntitledDocumentContext(id).uri, name, text };
+}
+
+export function activatedDocumentContext(document: EditorDocumentContext): ConversionDocumentContext {
+  return createConversionDocumentContext(document.path, document.path === undefined ? undefined : dirname(document.path), document.uri);
 }
 export interface UntitledDocumentContext {
   readonly uri: string;
@@ -55,11 +72,11 @@ export interface ConversionDocumentContext {
 }
 
 /** Captures the approved document identity for one conversion before any asynchronous work. */
-export function createConversionDocumentContext(documentPath: string | undefined, documentRoot: string | undefined): ConversionDocumentContext {
+export function createConversionDocumentContext(documentPath: string | undefined, documentRoot: string | undefined, documentUri?: string): ConversionDocumentContext {
   return Object.freeze({
     documentPath,
     documentRoot,
-    documentUri: documentPath ? pathToFileURL(documentPath).toString() : undefined,
+    documentUri: documentPath ? pathToFileURL(documentPath).toString() : documentUri,
   });
 }
 
@@ -80,12 +97,12 @@ export function createFileDocumentContext(path: string, text: string, kind: File
  * from changing the resource root or save destination.
  */
 export class DocumentActivationLedger {
-  private readonly staged = new Map<string, FileDocumentContext>();
-  private activeDocument: FileDocumentContext | undefined;
+  private readonly staged = new Map<string, EditorDocumentContext>();
+  private activeDocument: EditorDocumentContext | undefined;
 
   constructor(private readonly tokenFactory: () => string = randomUUID) {}
 
-  stage(document: FileDocumentContext): StagedFileDocument {
+  stage<T extends EditorDocumentContext>(document: T): StagedDocument<T> {
     this.staged.clear();
     const activationToken = this.tokenFactory();
     this.staged.set(activationToken, document);
@@ -93,14 +110,16 @@ export class DocumentActivationLedger {
   }
 
   /** Stages only while the read request is still current, without an await between the guard and mutation. */
-  stageIfCurrent(document: FileDocumentContext, expectedGeneration: number, currentGeneration: () => number): StagedFileDocument | undefined {
+  stageIfCurrent<T extends EditorDocumentContext>(document: T, expectedGeneration: number, currentGeneration: () => number): StagedDocument<T> | undefined {
     if (expectedGeneration !== currentGeneration()) return undefined;
     return this.stage(document);
   }
 
-  activate(activationToken: string): FileDocumentContext | undefined {
+  peek(activationToken: string): EditorDocumentContext | undefined { return this.staged.get(activationToken); }
+
+  activate(activationToken: string, expectedIdentity?: string): EditorDocumentContext | undefined {
     const document = this.staged.get(activationToken);
-    if (!document) return undefined;
+    if (!document || expectedIdentity !== undefined && documentActivationIdentity(document) !== expectedIdentity) return undefined;
     this.staged.delete(activationToken);
     this.activeDocument = document;
     return document;
@@ -110,7 +129,7 @@ export class DocumentActivationLedger {
     this.staged.delete(activationToken);
   }
 
-  activatePath(path: string): FileDocumentContext | undefined {
+  activatePath(path: string): EditorDocumentContext | undefined {
     const match = [...this.staged.entries()].find(([, document]) => document.path === path);
     if (!match) return undefined;
     this.staged.delete(match[0]);
@@ -118,7 +137,7 @@ export class DocumentActivationLedger {
     return match[1];
   }
 
-  setActive(document: FileDocumentContext): void {
+  setActive(document: EditorDocumentContext): void {
     this.staged.clear();
     this.activeDocument = document;
   }
@@ -128,7 +147,7 @@ export class DocumentActivationLedger {
     this.activeDocument = undefined;
   }
 
-  get active(): FileDocumentContext | undefined {
+  get active(): EditorDocumentContext | undefined {
     return this.activeDocument;
   }
 }

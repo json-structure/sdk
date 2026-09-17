@@ -1229,7 +1229,7 @@ describe('Phase 5 packaged process runtime', () => {
         requestId: 'cancel-during-dialog',
         kind: 'conversion',
         documentVersion: 1,
-        commandId: 'import.jsonschema.to-json-structure',
+        commandId: 'export.json-structure.to-jsonschema',
         sourceName: 'schema.json',
         sourceText: '{"type":"string"}',
         options: {},
@@ -1281,11 +1281,11 @@ describe('Phase 5 packaged process runtime', () => {
     }
   });
 
-  it('returns review evidence that matches the atomically published manifest', async () => {
+  it('returns import integrity evidence without publishing or selecting a destination', async () => {
     const root = await mkdtemp(join(tmpdir(), 'json-structure-host-review-'));
     const destination = join(root, 'output');
     try {
-      const host = new NodeConversionHost({ runtimeRoot: resolve(process.cwd(), 'src/conversion'), destination: async () => destination });
+      const host = new NodeConversionHost({ runtimeRoot: resolve(process.cwd(), 'src/conversion'), destination: async () => { throw new Error('Import destination selection is forbidden.'); } });
       const result = await host.convert({
         protocolVersion: 1,
         requestId: 'host-review',
@@ -1303,8 +1303,9 @@ describe('Phase 5 packaged process runtime', () => {
         converter: { id: 'jsonschema', displayName: 'JSON Schema Converter', version: '1.0.0-node' },
         sourceFormat: 'json-schema',
         targetFormat: 'json-structure',
-        lifecycle: ['idle', 'preparing', 'running', 'publishing', 'completed'],
-        published: true,
+        lifecycle: ['idle', 'preparing', 'running', 'completed'],
+        published: false,
+        outputMode: 'untitled-document',
         lossiness: 'precision',
         warnings: [expect.objectContaining({ code: 'jsonschema.integer.narrowed', lossiness: 'precision' })],
         effectiveOptions: { rootName: 'Order', preserveUnknownKeywords: false },
@@ -1314,8 +1315,9 @@ describe('Phase 5 packaged process runtime', () => {
           sha256: '65befccc346ccbd219e60c09758ab83e9cf9f8ccd9122bf36caabb95f801e368',
         },
       });
-      const publishedManifest = JSON.parse(await readFile(join(destination, 'conversion-output-manifest.json'), 'utf8'));
-      expect(result.review?.manifest).toEqual(publishedManifest);
+      await expect(stat(destination)).rejects.toMatchObject({ code: 'ENOENT' });
+      expect(result.outputs[0].uri).toMatch(/^generated-import:/);
+      expect(JSON.parse(host.readImportedOutput(result.outputs[0]).text).name).toBe('Order');
       expect(result.review?.manifest?.files[0]).toMatchObject({ path: 'Order.struct.json', bytes: expect.any(Number), sha256: expect.stringMatching(/^[a-f0-9]{64}$/) });
     } finally {
       await rm(root, { recursive: true, force: true });

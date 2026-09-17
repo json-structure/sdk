@@ -89,7 +89,7 @@ export interface WriteResourceRequest extends ProtocolEnvelope { readonly kind: 
 /**
  * Defines the conversion request shape.
  */
-export interface ConversionRequest extends ProtocolEnvelope { readonly kind: 'conversion'; readonly documentVersion: DocumentVersion; readonly commandId: string; readonly sourceName: string; readonly sourceText: string; readonly options: import('./conversion/types.js').ConversionOptionValues; }
+export interface ConversionRequest extends ProtocolEnvelope { readonly kind: 'conversion'; readonly documentVersion: DocumentVersion; readonly commandId: string; readonly sourceName: string; readonly sourceText: string; readonly documentUri?: string; readonly options: import('./conversion/types.js').ConversionOptionValues; }
 /** Defines a user-selected conversion input file. */
 export interface ConversionSource { readonly uri: string; readonly name: string; readonly text: string; }
 /** Defines a request for a conversion input file. */
@@ -123,6 +123,8 @@ export interface ConversionReview {
   readonly targetFormat: string;
   readonly lifecycle: readonly ('idle' | 'preparing' | 'running' | 'publishing' | 'launching' | 'completed' | 'cancelled' | 'failed')[];
   readonly published: boolean;
+  /** Imports are held in memory for an untitled editor; exports are durably published. */
+  readonly outputMode?: 'untitled-document' | 'published-files';
   readonly lossiness: ConversionLossiness;
   readonly warnings: readonly ConversionReviewWarning[];
   readonly effectiveOptions?: import('./conversion/types.js').ConversionOptionValues;
@@ -212,7 +214,8 @@ export function isConversionRequest(value: unknown): value is ConversionRequest 
   return request.kind === 'conversion' && Number.isInteger(request.documentVersion) && (request.documentVersion as number) >= 0 &&
     typeof request.commandId === 'string' && request.commandId.trim().length > 0 &&
     typeof request.sourceName === 'string' && request.sourceName.length > 0 && request.sourceName.length <= 255 && !/[\\/]/.test(request.sourceName) &&
-    typeof request.sourceText === 'string' && request.sourceText.length <= 4 * 1024 * 1024 && isConversionOptionsRecord(request.options);
+    typeof request.sourceText === 'string' && request.sourceText.length <= 4 * 1024 * 1024 &&
+    (request.documentUri === undefined || typeof request.documentUri === 'string' && request.documentUri.length > 0 && request.documentUri.length <= 4096) && isConversionOptionsRecord(request.options);
 }
 
 /** Returns whether a value is a well-formed conversion result. */
@@ -234,7 +237,7 @@ function isConversionReview(value: unknown): value is ConversionReview {
   return typeof review.commandId === 'string' && review.commandId.length > 0 && !!converter && typeof converter === 'object' && !Array.isArray(converter) &&
     typeof (converter as Record<string, unknown>).id === 'string' && typeof (converter as Record<string, unknown>).displayName === 'string' && typeof (converter as Record<string, unknown>).version === 'string' &&
     typeof review.sourceFormat === 'string' && typeof review.targetFormat === 'string' && Array.isArray(review.lifecycle) && review.lifecycle.every((state) => lifecycle.has(String(state))) &&
-    typeof review.published === 'boolean' && lossiness.has(review.lossiness as ConversionLossiness) && Array.isArray(review.warnings) && review.warnings.every(isConversionReviewWarning) &&
+    typeof review.published === 'boolean' && (review.outputMode === undefined || review.outputMode === 'untitled-document' || review.outputMode === 'published-files') && lossiness.has(review.lossiness as ConversionLossiness) && Array.isArray(review.warnings) && review.warnings.every(isConversionReviewWarning) &&
     (review.effectiveOptions === undefined || isConversionOptionsRecord(review.effectiveOptions)) && (review.source === undefined || isConversionSourceEvidence(review.source)) &&
     (manifest === undefined || isConversionOutputManifest(manifest));
 }

@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, safeStorage, shell, type IpcMainInvokeEvent, type MenuItemConstructorOptions, type OpenDialogOptions } from 'electron';
 import type { HostCommand, OpenFileResult, WindowCommand } from './contracts';
-import { classifyGeneratedOutputPaths, commonGeneratedOutputDirectory, createConversionDocumentContext, createFileDocumentContext, createUntitledDocumentContext, DocumentActivationLedger, type ConversionDocumentContext, type FileDocumentKind } from './document-workflow';
+import { classifyGeneratedOutputPaths, commonGeneratedOutputDirectory, createConversionDocumentContext, createFileDocumentContext, createUntitledDocumentContext, createImportedDocumentContext, activatedDocumentContext, DocumentActivationLedger, type ConversionDocumentContext, type FileDocumentKind } from './document-workflow';
 import { createHash, randomUUID } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -9,6 +9,7 @@ import { atomicWrite, readBoundedFile, readFile, readResource } from './file-ser
 import { discoverImportSources, loadExternalDocuments, materializeEffectiveImports, ResolvedSchemaContext } from '../host/effective-imports';
 import { isConversionRequest, isLibraryOperationRequest, isProtocolEnvelope, PROTOCOL_VERSION, type OpenGeneratedOutputRequest } from '../contracts';
 import { NodeConversionHost } from '../conversion/node-host';
+import { GeneratedImportRegistry } from '../conversion/import-output';
 import { dispatchLibraryOperation, type LibraryHostRuntime } from '../libraries/host-runtime';
 import { createElectronLibraryRuntime, type ElectronLibraryApprovalRequest } from './library-runtime';
 import { deniedWindowOpen, isAllowedRendererNavigation, isTrustedIpcSender, selectDevelopmentUrl, selectInitialDocumentArgument } from './security';
@@ -23,11 +24,18 @@ let rendererReady = false;
 let pendingPath: string | undefined;
 let openedDocumentRoot: string | undefined;
 let approvedDocumentPath: string | undefined;
+let activeDocumentUri: string | undefined;
 const documentActivations = new DocumentActivationLedger();
 const committedGeneratedPaths = new Set<string>();
+const generatedImports = new GeneratedImportRegistry();
+const importSourceGenerations = new Map<string, number>();
+const stagedImportHandles = new Map<string, string>();
 let latestOpenRequest = 0;
 let documentStateGeneration = 0;
 let latestSaveAsRequest = 0;
+let allowWindowClose = false;
+let closeRequestPending = false;
+let quitRequested = false;
 const maxImportedResourceBytes = 4 * 1024 * 1024;
 const maxConversionSourceBytes = 4 * 1024 * 1024;
 const runtimeRoot = app.isPackaged ? join(process.resourcesPath, 'conversion') : join(app.getAppPath(), 'src', 'conversion');
@@ -75,13 +83,14 @@ async function readDesktopResource(uri: string) {
   return readResource(uri, requestedRoot, maxImportedResourceBytes, libraryReader);
 }
 
-function captureConversionDocumentContext(): ConversionDocumentContext {
-  return createConversionDocumentContext(approvedDocumentPath, openedDocumentRoot);
+function captureConversionDocumentContext(documentUri?: string): ConversionDocumentContext {
+  return createConversionDocumentContext(approvedDocumentPath, openedDocumentRoot, activeDocumentUri ?? documentUri);
 }
 
 function createConversionHost(context: ConversionDocumentContext = { documentPath: undefined, documentRoot: undefined, documentUri: undefined }): NodeConversionHost {
   return new NodeConversionHost({
     runtimeRoot,
+    imports: generatedImports,
     destination: async () => {
       if (process.env.JSON_STRUCTURE_REAL_HOST_TEST === '1' && process.env.JSON_STRUCTURE_REAL_HOST_OUTPUT_DIR) return process.env.JSON_STRUCTURE_REAL_HOST_OUTPUT_DIR;
       const result = await dialog.showOpenDialog({ title: 'Choose conversion output directory', properties: ['openDirectory', 'createDirectory'] });
@@ -151,22 +160,14 @@ function stageDocumentIfCurrent(file: { path: string; text: string }, kind: File
   return documentActivations.stageIfCurrent(context, expectedGeneration, () => latestOpenRequest);
 }
 
-function activateDocument(path: string, activationToken?: string): void {
-  if (activationToken) {
-    const staged = documentActivations.activate(activationToken);
-    if (!staged || staged.path !== path) throw new Error('The selected document is no longer available for activation.');
-    approvedDocumentPath = staged.path;
-    openedDocumentRoot = dirname(staged.path);
-    approvedImportRoots.clear();
-    documentStateGeneration += 1;
-    ++latestSaveAsRequest;
-    return;
-  }
-  const staged = documentActivations.activatePath(path);
-  const current = staged ?? documentActivations.active;
-  if (!current || current.path !== path) throw new Error('The selected document is no longer available for activation.');
-  approvedDocumentPath = current.path;
-  openedDocumentRoot = dirname(current.path);
+function activateDocument(identity: string, activationToken?: string): void {
+  const selected = activationToken ? documentActivations.activate(activationToken, identity) : documentActivations.activatePath(identity);
+  const current = selected ?? (!activationToken && documentActivations.active?.path === identity ? documentActivations.active : undefined);
+  if (!current) throw new Error('The selected document is no longer available for activation.');
+  const context = activatedDocumentContext(current);
+  approvedDocumentPath = context.documentPath;
+  openedDocumentRoot = context.documentRoot;
+  activeDocumentUri = current.uri;
   approvedImportRoots.clear();
   documentStateGeneration += 1;
   ++latestSaveAsRequest;
@@ -241,12 +242,22 @@ function registerIpcHandlers(): void {
   });
   handleTrusted('file:activate', async (_event, request: { path: string; activationToken?: string }) => {
     if (typeof request.path !== 'string' || !request.path || (request.activationToken !== undefined && typeof request.activationToken !== 'string')) throw new Error('Invalid document activation request.');
-    const path = await canonicalPath(request.path);
-    activateDocument(path, request.activationToken);
+    const staged = request.activationToken ? documentActivations.peek(request.activationToken) : undefined;
+    const identity = staged?.kind === 'generated-import' ? request.path : await canonicalPath(request.path);
+    activateDocument(identity, request.activationToken);
+    if (request.activationToken) {
+      const importHandle = stagedImportHandles.get(request.activationToken);
+      if (importHandle) {
+        generatedImports.release(importHandle);
+        importSourceGenerations.delete(importHandle);
+        stagedImportHandles.delete(request.activationToken);
+      }
+    }
   });
   handleTrusted('file:discard', (_event, request: { activationToken: string }) => {
     if (typeof request.activationToken !== 'string' || !request.activationToken) throw new Error('Invalid document discard request.');
     documentActivations.discard(request.activationToken);
+    stagedImportHandles.delete(request.activationToken);
   });
   handleTrusted('file:new', () => {
     ++latestOpenRequest;
@@ -256,7 +267,9 @@ function registerIpcHandlers(): void {
     approvedDocumentPath = undefined;
     openedDocumentRoot = undefined;
     approvedImportRoots.clear();
-    return createUntitledDocumentContext();
+    const untitled = createUntitledDocumentContext();
+    activeDocumentUri = untitled.uri;
+    return untitled;
   });
   handleTrusted('file:save', async (_event, request: { path: string; text: string }) => {
     if (!approvedDocumentPath || await canonicalPath(request.path) !== approvedDocumentPath) throw new Error('Save destination was not approved by an open or save dialog.');
@@ -274,8 +287,55 @@ function registerIpcHandlers(): void {
     openedDocumentRoot = dirname(approvedDocumentPath);
     approvedImportRoots.clear();
     documentActivations.setActive(createFileDocumentContext(approvedDocumentPath, request.text));
+    activeDocumentUri = pathToFileURL(approvedDocumentPath).toString();
     documentStateGeneration += 1;
     return { path: approvedDocumentPath, uri: pathToFileURL(approvedDocumentPath).toString() };
+  });
+  handleTrusted('window:close-document', async (_event, request: { dirty: boolean; text: string }) => {
+    if (!isRecord(request) || typeof request.dirty !== 'boolean' || typeof request.text !== 'string') throw new Error('Invalid close request.');
+    if (closeRequestPending) return { approved: false };
+    closeRequestPending = true;
+    try {
+      if (request.dirty) {
+        const owner = activeMainWindow();
+        const options = {
+          type: 'warning' as const,
+          buttons: ['Save', 'Discard', 'Cancel'],
+          defaultId: 0,
+          cancelId: 2,
+          noLink: true,
+          title: 'Save changes?',
+          message: 'Save changes before closing JSON Structure Editor?',
+          detail: 'Unsaved changes will be lost if you discard them.',
+        };
+        const decision = owner ? await dialog.showMessageBox(owner, options) : await dialog.showMessageBox(options);
+        if (decision.response === 2) {
+          quitRequested = false;
+          return { approved: false };
+        }
+        if (decision.response === 0) {
+          if (approvedDocumentPath) {
+            await atomicWrite(approvedDocumentPath, request.text);
+          } else {
+            const saveOptions = { filters: [{ name: 'JSON Structure', extensions: ['json'] }] };
+            const result = owner ? await dialog.showSaveDialog(owner, saveOptions) : await dialog.showSaveDialog(saveOptions);
+            if (result.canceled || !result.filePath) {
+              quitRequested = false;
+              return { approved: false };
+            }
+            await atomicWrite(result.filePath, request.text);
+          }
+        }
+      }
+      return { approved: true };
+    } finally {
+      closeRequestPending = false;
+    }
+  });
+  handleTrusted('window:finalize-close', () => {
+    allowWindowClose = true;
+    if (quitRequested) app.quit();
+    else activeMainWindow()?.close();
   });
   handleTrusted('external:open', async (_event, url: string) => {
     if (new URL(url).protocol !== 'https:') throw new Error('Only HTTPS external links are allowed.');
@@ -324,12 +384,24 @@ function registerIpcHandlers(): void {
   handleTrusted('conversion:run', async (_event, request: unknown) => {
     if (!isConversionRequest(request)) throw new Error('Invalid conversion request.');
     if (activeConversionHosts.has(request.requestId)) throw new Error('Conversion ' + request.requestId + ' is already running.');
-    const host = createConversionHost(captureConversionDocumentContext());
+    const command = conversionHost.listCommands().commands.find(candidate => candidate.id === request.commandId);
+    if (command?.direction === 'import') {
+      generatedImports.clear();
+      importSourceGenerations.clear();
+    }
+    const sourceGeneration = documentStateGeneration;
+    const host = createConversionHost(captureConversionDocumentContext(request.documentUri));
     activeConversionHosts.set(request.requestId, host);
     try {
       const result = await host.convert(request);
       if (result.succeeded) {
-        for (const output of result.outputs) committedGeneratedPaths.add(await canonicalPath(output.uri));
+        if (result.review?.outputMode === 'untitled-document') {
+          importSourceGenerations.clear();
+          for (const output of result.outputs) {
+            generatedImports.read(output);
+            importSourceGenerations.set(output.uri, sourceGeneration);
+          }
+        } else for (const output of result.outputs) committedGeneratedPaths.add(await canonicalPath(output.uri));
       }
       return result;
     } finally {
@@ -344,6 +416,22 @@ function registerIpcHandlers(): void {
     if (!isProtocolEnvelope(request) || request.kind !== 'open-generated-output' || !Array.isArray(request.outputs) || request.outputs.length === 0 || !request.outputs.every((output) => isRecord(output) && typeof output.uri === 'string' && output.uri.length > 0 && typeof output.name === 'string' && output.name.length > 0)) throw new Error('Invalid generated output request.');
     const requestGeneration = ++latestOpenRequest;
     try {
+      if (request.outputs.some(output => generatedImports.has(output.uri))) {
+        if (request.outputs.length !== 1) throw new Error('An imported result must open as one untitled document.');
+        const output = request.outputs[0]!;
+        if (importSourceGenerations.get(output.uri) !== documentStateGeneration) {
+          generatedImports.release(output.uri);
+          importSourceGenerations.delete(output.uri);
+          throw new Error('The source document changed; the import result is stale.');
+        }
+        const content = generatedImports.read(output);
+        stagedImportHandles.clear();
+        const opened = documentActivations.stageIfCurrent(createImportedDocumentContext(content.name, content.text), requestGeneration, () => latestOpenRequest);
+        if (!opened) throw new Error('A newer document request superseded this import.');
+        stagedImportHandles.set(opened.activationToken, output.uri);
+        activeMainWindow()?.webContents.send('file:opened', opened);
+        return { protocolVersion: PROTOCOL_VERSION, requestId: request.requestId, opened: true, message: 'Import prepared as an unsaved JSON Structure document.' };
+      }
       const outputPaths = await Promise.all(request.outputs.map(async (output) => {
         const outputPath = await canonicalPath(output.uri);
         if (!committedGeneratedPaths.has(outputPath)) throw new Error('Generated output was not committed by this editor session.');
@@ -468,8 +556,34 @@ async function createWindow(): Promise<void> {
   window.webContents.on('will-navigate', (event, url) => {
     if (!isAllowedRendererNavigation(url, expectedUrl)) event.preventDefault();
   });
+  window.on('close', (event) => {
+    if (allowWindowClose) return;
+    event.preventDefault();
+    window.webContents.send('file:command', 'close');
+  });
   window.on('closed', () => {
-    if (mainWindow === window) { mainWindow = null; allowedRendererUrl = undefined; rendererReady = false; }
+    if (mainWindow === window) {
+      mainWindow = null;
+      allowedRendererUrl = undefined;
+      rendererReady = false;
+      allowWindowClose = false;
+      closeRequestPending = false;
+      quitRequested = false;
+      approvedDocumentPath = undefined;
+      openedDocumentRoot = undefined;
+      activeDocumentUri = undefined;
+      approvedImportRoots.clear();
+      documentActivations.clear();
+      committedGeneratedPaths.clear();
+      documentStateGeneration += 1;
+      ++latestOpenRequest;
+      ++latestSaveAsRequest;
+      for (const [requestId, host] of activeConversionHosts) host.cancel(requestId);
+      activeConversionHosts.clear();
+      generatedImports.clear();
+      importSourceGenerations.clear();
+      stagedImportHandles.clear();
+    }
   });
   const initialReadGeneration = latestOpenRequest;
   const initialFile = await readInitialFile();
@@ -514,6 +628,10 @@ app.whenReady().then(() => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) void createWindow();
   });
+});
+
+app.on('before-quit', () => {
+  quitRequested = true;
 });
 
 app.on('window-all-closed', () => {

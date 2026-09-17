@@ -3,6 +3,7 @@ import { copyFile, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFi
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import type { ConversionRequest, ConversionResult, HostFile } from '../contracts.js';
 import { PROTOCOL_VERSION } from '../contracts.js';
+import { GeneratedImportRegistry, type GeneratedImportContent } from './import-output.js';
 import { NodeProcessExecutableLauncher } from './process.js';
 import { ConversionService, type EffectiveImportResolver } from './service.js';
 import type { ConversionStorage } from './storage.js';
@@ -100,16 +101,20 @@ export interface NodeConversionHostOptions {
   readonly runtimeRoot: string;
   destination(request: ConversionRequest): Promise<string | undefined>;
   launch?(path: string): Promise<void>;
+  openImport?(document: GeneratedImportContent): Promise<void>;
+  readonly imports?: GeneratedImportRegistry;
   progress?(request: ConversionRequest, phase: string, completed: number, total: number, message?: string): void;
   effectiveImports?: EffectiveImportResolver;
 }
 
 export class NodeConversionHost {
   private readonly service: ConversionService;
+  private readonly imports: GeneratedImportRegistry;
   private readonly committedOutputs = new Set<string>();
   private readonly operations = new Map<string, AbortController>();
 
   constructor(private readonly options: NodeConversionHostOptions) {
+    this.imports = options.imports ?? new GeneratedImportRegistry();
     this.service = new ConversionService({
       worker: new PackagedExecutableWorkerAdapter('worker-runtime/converter-worker.cjs', new NodeProcessExecutableLauncher(options.runtimeRoot)),
       storage: new NodeFilesystemConversionStorage(),
@@ -126,14 +131,16 @@ export class NodeConversionHost {
     try {
       if (controller.signal.aborted) return cancelledResult(request);
       const prepared = this.service.prepare(request.commandId, request.options);
-      const destination = await this.options.destination(request);
-      if (!destination || controller.signal.aborted) return cancelledResult(request);
+      const isImport = prepared.command.direction === 'import';
+      const destination = isImport ? undefined : await this.options.destination(request);
+      if ((!isImport && !destination) || controller.signal.aborted) return cancelledResult(request);
       const source = new TextEncoder().encode(request.sourceText);
       const result = await this.service.execute({
         operationId: randomUUID(),
         commandId: request.commandId,
         sourceName: request.sourceName,
         source,
+        documentUri: request.documentUri,
         destination,
         preview: false,
         optionValues: prepared.effectiveOptions,
@@ -141,15 +148,18 @@ export class NodeConversionHost {
         signal: controller.signal,
         onProgress: (progress) => this.options.progress?.(request, progress.phase, progress.completed, progress.total, progress.message),
       });
-      const outputs: HostFile[] = result.runtime.published
-        ? Object.keys(result.runtime.files).sort().map((outputPath) => ({ uri: containedPath(destination, outputPath), name: outputPath.replace(/^.*[\\/]/, '') }))
+      if (controller.signal.aborted && !result.runtime.published) return cancelledResult(request);
+      const outputs: readonly HostFile[] = isImport && result.runtime.state === 'completed'
+        ? this.imports.register(randomUUID(), result.runtime.files)
+        : result.runtime.published
+        ? Object.keys(result.runtime.files).sort().map((outputPath) => ({ uri: containedPath(destination!, outputPath), name: outputPath.replace(/^.*[\\/]/, '') }))
         : [];
       if (result.runtime.published) for (const output of outputs) this.committedOutputs.add(resolve(output.uri));
       return {
         protocolVersion: PROTOCOL_VERSION,
         requestId: request.requestId,
         documentVersion: request.documentVersion,
-        succeeded: result.runtime.state === 'completed' && result.runtime.published,
+        succeeded: result.runtime.state === 'completed' && (isImport || result.runtime.published),
         outputs,
         diagnostics: result.diagnostics,
         review: {
@@ -159,6 +169,7 @@ export class NodeConversionHost {
           targetFormat: result.command.targetFormat,
           lifecycle: result.runtime.states,
           published: result.runtime.published,
+          outputMode: isImport ? 'untitled-document' : 'published-files',
           lossiness: result.runtime.lossiness,
           warnings: result.runtime.warnings,
           effectiveOptions: result.effectiveOptions,
@@ -175,7 +186,15 @@ export class NodeConversionHost {
     this.operations.get(requestId)?.abort();
   }
 
+  readImportedOutput(output: HostFile): GeneratedImportContent { return this.imports.read(output); }
+
   async open(output: HostFile): Promise<void> {
+    if (this.imports.has(output.uri)) {
+      if (!this.options.openImport) throw new Error('This host cannot open an untitled import document.');
+      const document = this.imports.consume(output);
+      await this.options.openImport(document);
+      return;
+    }
     const canonical = resolve(output.uri);
     if (!this.committedOutputs.has(canonical)) throw new Error('Generated output was not committed by this editor session.');
     await readFile(canonical);

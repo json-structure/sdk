@@ -1,10 +1,10 @@
+import { randomUUID } from 'node:crypto';
 import * as vscode from 'vscode';
 import { LosslessText } from './losslessText';
 import { realpath } from 'node:fs/promises';
-import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { customEditorProtocolVersion as protocolVersion, isSerializedMessageWithinBudget, isWebviewMessage, type TextEditMessage } from './customEditorProtocol';
-import { customEditorViewType, isConversionRequest, isProtocolEnvelope, VsCodeConversionHost, type OpenGeneratedOutputRequest } from './editorServices';
+import { customEditorViewType, openUntitledJsonStructureDocument, isConversionRequest, isProtocolEnvelope, VsCodeConversionHost, type OpenGeneratedOutputRequest } from './editorServices';
 import { dispatchLibraryOperation, type LibraryCatalogEntry, type LibraryHostResolution, type LibraryHostRuntime, type LibraryOperation } from '@json-structure/editor-foundation/library-host-runtime';
 import { createVsCodeLibraryRuntime } from './libraryRuntime';
 
@@ -18,14 +18,7 @@ export const defaultUntitledDocument = JSON.stringify({
 
 /** Opens a fresh untitled document in the same custom editor as file-backed documents. */
 export async function createNewJsonStructureDocument(): Promise<vscode.TextDocument> {
-    const name = `UntitledStructure-${randomUUID()}.struct.json`;
-    const uri = vscode.Uri.parse(`untitled:${encodeURIComponent(name)}`);
-    const document = await vscode.workspace.openTextDocument(uri);
-    const edit = new vscode.WorkspaceEdit();
-    edit.insert(uri, new vscode.Position(0, 0), defaultUntitledDocument);
-    if (!await vscode.workspace.applyEdit(edit)) throw new Error('VS Code rejected the new document content.');
-    await vscode.commands.executeCommand('vscode.openWith', uri, jsonStructureEditorViewType);
-    return document;
+    return openUntitledJsonStructureDocument(defaultUntitledDocument);
 }
 const maxImportedResourceBytes = 4 * 1024 * 1024;
 const maxPrimaryDocumentBytes = 4 * 1024 * 1024;
@@ -200,7 +193,10 @@ export class JsonStructureCustomEditorProvider implements vscode.CustomTextEdito
         }));
         const disposeSubscription = webviewPanel.onDidDispose(() => {
             this.panels.delete(state);
-            if (![...this.panels].some(panel => panel.documentUri === documentKey)) this.authoredTexts.delete(documentKey);
+            if (![...this.panels].some(panel => panel.documentUri === documentKey)) {
+                this.authoredTexts.delete(documentKey);
+                this.conversionHost.releaseForDocument(documentKey);
+            }
             if (state.rendererReady) this.unmarkRendererReady(state.documentUri);
             for (const disposable of state.disposables) disposable.dispose();
             disposeSubscription.dispose();

@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ConversionRequest, ConversionResult, SelectConversionSourceRequest } from '../src/contracts.js';
 import { BUILTIN_CONVERSION_COMMANDS_MANIFEST } from '../src/conversion/manifest.js';
+import { createAlphaEditorController, type FileBridge } from '../src/ui/bootstrap.js';
 import { mountJsonStructureEditor, type JsonStructureEditorHandle } from '../src/ui/index.js';
 
 let handle: JsonStructureEditorHandle | undefined;
@@ -31,6 +32,59 @@ afterEach(() => {
 });
 
 describe('empty-document Structurize starting points', () => {
+  it('automatically loads import content as untitled and dirty even when auto-open metadata is false', async () => {
+    const text = JSON.stringify({ $schema: 'https://json-structure.org/meta/core/v0/#', $id: 'urn:test:loaded', name: 'Loaded', type: 'string' });
+    const manifest = { ...BUILTIN_CONVERSION_COMMANDS_MANIFEST, commands: BUILTIN_CONVERSION_COMMANDS_MANIFEST.commands.map(command => ({ ...command, defaultAutoOpen: false })) };
+    const saveFile = vi.fn(async (path: string) => ({ path })), saveFileAs = vi.fn(async () => ({ path: 'C:\\chosen\\result.struct.json' }));
+    const bridge: FileBridge = { openFile: async () => null, saveFile, saveFileAs, activateDocument: async () => undefined, onFileOpened: () => () => undefined, onFileCommand: () => () => undefined };
+    let controller: ReturnType<typeof createAlphaEditorController>;
+    const openGeneratedOutput = vi.fn(async () => { await controller.acceptExternalFile({ kind: 'generated-import', name: 'schema.struct.json', uri: 'untitled:converted.struct.json', text, activationToken: 'import-token' }); return { protocolVersion: 1 as const, requestId: 'opened', opened: true }; });
+    const root = mount({ listConversionCommands: async () => manifest, selectConversionSource: async () => ({ uri: 'file:///source/input.json', name: 'input.json', text: '{"type":"string"}' }), convert: async request => ({ protocolVersion: 1, requestId: request.requestId, documentVersion: request.documentVersion, succeeded: true, outputs: [{ uri: 'generated-import:approved/schema.struct.json', name: 'schema.struct.json' }], diagnostics: [] }), openGeneratedOutput });
+    controller = createAlphaEditorController(handle!, bridge, () => true);
+    (root.querySelector('[data-start-conversion-command="import.jsonschema.to-json-structure"]') as HTMLButtonElement).click(); await settle();
+    (root.querySelector('[data-start-conversion-dialog] [data-conversion-source]') as HTMLButtonElement).click(); await settle();
+    expect(root.querySelector('[data-start-conversion-dialog]')?.textContent).toContain('new unsaved JSON Structure document');
+    (root.querySelector('[data-start-conversion-dialog] [data-conversion-run]') as HTMLButtonElement).click(); await settle();
+    expect(openGeneratedOutput).toHaveBeenCalledOnce(); expect(handle!.getText()).toBe(text); expect(controller.path).toBeUndefined(); expect(controller.dirty).toBe(true);
+    await controller.save(); expect(saveFile).not.toHaveBeenCalled(); expect(saveFileAs).toHaveBeenCalledWith(text); controller.dispose();
+  });
+
+  it('exports the latest unsaved editor snapshot without selecting an input file', async () => {
+    const requests: ConversionRequest[] = [], selectSource = vi.fn(async () => { throw new Error('Export must not select an input file.'); });
+    const original = JSON.stringify({ $schema: 'https://json-structure.org/meta/core/v0/#', $id: 'urn:test:export', name: 'Original', type: 'string' });
+    const root = mount({ listConversionCommands: async () => BUILTIN_CONVERSION_COMMANDS_MANIFEST, selectConversionSource: selectSource, convert: async request => { requests.push(request); return { protocolVersion: 1, requestId: request.requestId, documentVersion: request.documentVersion, succeeded: true, outputs: [], diagnostics: [] }; } }, original);
+    const unsaved = original.replace('Original', 'Unsaved'); handle!.setText(unsaved); handle!.setUri('untitled:current.struct.json');
+    (root.querySelector('[data-mode="conversion"]') as HTMLButtonElement).click(); await settle();
+    (root.querySelector('[data-conversion-command="export.json-structure.to-jsonschema"]') as HTMLButtonElement).click(); await settle();
+    expect(root.querySelector('[data-conversion-source]')).toBeNull();
+    (root.querySelector('[data-conversion-run]') as HTMLButtonElement).click(); await settle();
+    expect(selectSource).not.toHaveBeenCalled(); expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({ sourceName: 'current.struct.json', sourceText: unsaved, documentUri: 'untitled:current.struct.json' });
+  });
+
+  it('does not reopen a completed import after a later document replacement', async () => {
+    const openGeneratedOutput = vi.fn(async () => ({ protocolVersion: 1 as const, requestId: 'declined-open', opened: false, message: 'Replacement declined.' }));
+    const root = mount({ listConversionCommands: async () => BUILTIN_CONVERSION_COMMANDS_MANIFEST, selectConversionSource: async () => ({ uri: 'file:///input.json', name: 'input.json', text: '{"type":"string"}' }), convert: async request => ({ protocolVersion: 1, requestId: request.requestId, documentVersion: request.documentVersion, succeeded: true, outputs: [{ uri: 'generated-import:ready/schema.struct.json', name: 'schema.struct.json' }], diagnostics: [] }), openGeneratedOutput });
+    (root.querySelector('[data-start-conversion-command="import.jsonschema.to-json-structure"]') as HTMLButtonElement).click(); await settle();
+    (root.querySelector('[data-conversion-source]') as HTMLButtonElement).click(); await settle(); (root.querySelector('[data-conversion-run]') as HTMLButtonElement).click(); await settle();
+    expect(openGeneratedOutput).toHaveBeenCalledOnce();
+    const text = '{"$schema":"https://json-structure.org/meta/core/v0/#","$id":"urn:other","name":"Other","type":"string"}'; handle!.setText(text);
+    (root.querySelector('[data-mode="conversion"]') as HTMLButtonElement).click(); await settle();
+    (root.querySelector('[data-conversion-open]') as HTMLButtonElement).click(); await settle();
+    expect(openGeneratedOutput).toHaveBeenCalledOnce(); expect(handle!.getText()).toBe(text); expect(root.textContent).toContain('stale import result');
+  });
+
+  it('does not auto-open an import result after the document changed while the worker was running', async () => {
+    let finish!: (result: ConversionResult) => void; let request!: ConversionRequest;
+    const openGeneratedOutput = vi.fn(async () => ({ protocolVersion: 1 as const, requestId: 'open-stale', opened: true }));
+    const root = mount({ listConversionCommands: async () => BUILTIN_CONVERSION_COMMANDS_MANIFEST, selectConversionSource: async () => ({ uri: 'file:///input.json', name: 'input.json', text: '{"type":"string"}' }), convert: async value => { request = value; return new Promise(resolve => { finish = resolve; }); }, openGeneratedOutput });
+    (root.querySelector('[data-start-conversion-command="import.jsonschema.to-json-structure"]') as HTMLButtonElement).click(); await settle();
+    (root.querySelector('[data-conversion-source]') as HTMLButtonElement).click(); await settle(); (root.querySelector('[data-conversion-run]') as HTMLButtonElement).click(); await settle();
+    const changed = '{"$schema":"https://json-structure.org/meta/core/v0/#","$id":"urn:new","name":"Newer","type":"string"}'; handle!.setText(changed);
+    finish({ protocolVersion: 1, requestId: request.requestId, documentVersion: request.documentVersion, succeeded: true, outputs: [{ uri: 'generated-import:old/schema.struct.json', name: 'schema.struct.json' }], diagnostics: [] }); await settle();
+    expect(openGeneratedOutput).not.toHaveBeenCalled(); expect(handle!.getText()).toBe(changed);
+  });
+
   it('represents every import command and opens its manifest-defined source/options flow', async () => {
     const sourceRequests: SelectConversionSourceRequest[] = [];
     const root = mount({

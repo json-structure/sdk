@@ -7,7 +7,7 @@ import { validateGeneratedConversionFiles } from './validation.js';
 import type { ConversionProgress, ConversionWarning, ConversionWorkerTransport } from './worker.js';
 
 export interface EffectiveImportResolver {
-  resolve(request: { commandId: string; sourceName: string; source: Uint8Array; signal: AbortSignal }): Promise<Uint8Array>;
+  resolve(request: { commandId: string; sourceName: string; source: Uint8Array; documentUri?: string; signal: AbortSignal }): Promise<Uint8Array>;
 }
 
 export interface ConversionServiceDependencies {
@@ -22,6 +22,8 @@ export interface ConversionExecutionRequest {
   commandId: string;
   sourceName: string;
   source: Uint8Array;
+  /** Resolution base only; source bytes always come from the current editor snapshot. */
+  documentUri?: string;
   destination?: string;
   preview: boolean;
   optionValues?: ConversionOptionValues;
@@ -68,7 +70,7 @@ export class ConversionService {
     let source: Uint8Array<ArrayBufferLike> = new Uint8Array(request.source);
     if (command.direction === 'export' && this.effectiveImports && declaresImports(source)) {
       try {
-        source = await this.effectiveImports.resolve({ commandId: command.id, sourceName: request.sourceName, source, signal });
+        source = await this.effectiveImports.resolve({ commandId: command.id, sourceName: request.sourceName, source, ...(request.documentUri === undefined ? {} : { documentUri: request.documentUri }), signal });
       } catch (error) {
         const failure = error instanceof Error ? error : new Error(String(error));
         if (signal.aborted || failure.name === 'AbortError') {
@@ -85,6 +87,7 @@ export class ConversionService {
       source,
       destination: request.destination,
       preview: request.preview,
+      outputMode: command.direction === 'import' ? 'memory' : 'publish',
       options: effectiveOptions,
       defaultAutoOpen: command.defaultAutoOpen,
       launch: request.launch,

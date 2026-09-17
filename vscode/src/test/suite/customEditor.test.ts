@@ -405,17 +405,20 @@ suite('JSON Structure custom editor protocol', () => {
         let releaseDestination: ((value: vscode.Uri) => void) | undefined;
         const pendingDestination = new Promise<vscode.Uri>((resolve) => { releaseDestination = resolve; });
         const extensionUri = vscode.Uri.file(path.resolve(__dirname, '../../..'));
-        const host = new VsCodeConversionHost(extensionUri, { selectDestination: () => pendingDestination });
+        let destinationStarted!: () => void;
+        const choosing = new Promise<void>(resolve => { destinationStarted = resolve; });
+        const host = new VsCodeConversionHost(extensionUri, { selectDestination: () => { destinationStarted(); return pendingDestination; } });
         const conversion = host.convert({
             protocolVersion: 1,
             requestId: 'cancel-picker',
             kind: 'conversion',
             documentVersion: 1,
-            commandId: 'import.jsonschema.to-json-structure',
+            commandId: 'export.json-structure.to-jsonschema',
             sourceName: 'schema.json',
             sourceText: '{"type":"string"}',
             options: {}
         });
+        await choosing;
         host.cancel('cancel-picker');
         releaseDestination?.(vscode.Uri.file(path.join(__dirname, 'unused-output')));
         const result = await conversion;

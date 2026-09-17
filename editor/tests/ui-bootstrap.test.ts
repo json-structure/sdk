@@ -6,6 +6,44 @@ function editor(): AlphaEditorSurface & { text: string; uri?: string } {
 }
 
 describe('ALPHA UI bootstrap', () => {
+  it('loads an approved generated import as untitled and dirty, and Save always invokes Save As', async () => {
+    const surface = editor(), calls: string[] = [];
+    const bridge: FileBridge = {
+      openFile: async () => ({ path: 'C:\\schemas\\old.struct.json', text: '{"old":true}' }),
+      saveFile: async (path) => { calls.push('save:' + path); return { path }; },
+      saveFileAs: async text => { calls.push('save-as:' + text); return { path: 'C:\\chosen\\imported.struct.json', uri: 'file:///C:/chosen/imported.struct.json' }; },
+      activateDocument: async (identity, token) => { calls.push('activate:' + identity + ':' + token); },
+      onFileOpened: () => () => undefined, onFileCommand: () => () => undefined
+    };
+    const controller = createAlphaEditorController(surface, bridge, () => true); await controller.open();
+    const text = '{"$schema":"https://json-structure.org/meta/core/v0/#","$id":"urn:test:import","name":"Imported","type":"string"}';
+    await controller.acceptExternalFile({ kind: 'generated-import', name: 'schema.struct.json', uri: 'untitled:imported.struct.json', text, activationToken: 'approved-import' });
+    expect(controller.path).toBeUndefined(); expect(controller.dirty).toBe(true); expect(surface.uri).toBe('untitled:imported.struct.json'); expect(surface.text).toBe(text);
+    controller.syncDirty(); expect(controller.dirty).toBe(true);
+    await controller.save();
+    expect(calls).toContain('activate:untitled:imported.struct.json:approved-import');
+    expect(calls.filter(call => call.startsWith('save:'))).toEqual([]); expect(calls).toContain('save-as:' + text);
+    expect(controller.path).toBe('C:\\chosen\\imported.struct.json'); expect(controller.dirty).toBe(false);
+    expect(surface.uri).toBe('file:///C:/chosen/imported.struct.json');
+  });
+
+  it('keeps a generated import dirty after cancelled Save As and preserves dirty-document replacement confirmation', async () => {
+    const surface = editor(), discarded: string[] = [], activations: string[] = [];
+    let allowReplace = true;
+    const bridge: FileBridge = {
+      openFile: async () => null, saveFile: async path => ({ path }), saveFileAs: async () => null,
+      activateDocument: async (_identity, token) => { activations.push(token!); }, discardDocument: async token => { discarded.push(token); },
+      onFileOpened: () => () => undefined, onFileCommand: () => () => undefined
+    };
+    const controller = createAlphaEditorController(surface, bridge, () => allowReplace);
+    await controller.acceptExternalFile({ kind: 'generated-import', name: 'first.struct.json', uri: 'untitled:first.struct.json', text: '{"first":true}', activationToken: 'first' });
+    await controller.save(); expect(controller.path).toBeUndefined(); expect(controller.dirty).toBe(true);
+    allowReplace = false;
+    await controller.acceptExternalFile({ kind: 'generated-import', name: 'second.struct.json', uri: 'untitled:second.struct.json', text: '{"second":true}', activationToken: 'second' });
+    expect(surface.text).toBe('{"first":true}'); expect(surface.uri).toBe('untitled:first.struct.json');
+    expect(activations).toEqual(['first']); expect(discarded).toEqual(['second']); expect(controller.dirty).toBe(true);
+  });
+
   it('starts with a minimal valid untitled document', () => {
     expect(JSON.parse(defaultUntitledDocument)).toEqual({
       $schema: 'https://json-structure.org/meta/core/v0/#',

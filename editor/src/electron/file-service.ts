@@ -2,10 +2,7 @@ import { promises as fs } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-
-const maxPrimaryDocumentBytes = 4 * 1024 * 1024;
-const maxPrimaryDocumentDepth = 128;
-const maxPrimaryDocumentNodes = 100_000;
+import { MAX_PRIMARY_DOCUMENT_BYTES, validatePrimaryDocument } from '../conversion/import-output';
 
 export interface InitialFile {
   path: string;
@@ -26,7 +23,7 @@ export async function readFile(path: string): Promise<InitialFile | null> {
   try {
     const stats = await handle.stat();
     if (!stats.isFile()) throw new Error('Primary document is not a file.');
-    if (stats.size > maxPrimaryDocumentBytes) throw new Error(`Primary document exceeds the ${maxPrimaryDocumentBytes}-byte limit (received ${stats.size} bytes).`);
+    if (stats.size > MAX_PRIMARY_DOCUMENT_BYTES) throw new Error(`Primary document exceeds the ${MAX_PRIMARY_DOCUMENT_BYTES}-byte limit (received ${stats.size} bytes).`);
     const text = await handle.readFile('utf8');
     validatePrimaryDocument(text);
     return { path: canonicalPath, text };
@@ -35,46 +32,7 @@ export async function readFile(path: string): Promise<InitialFile | null> {
   }
 }
 
-export function validatePrimaryDocument(text: string): void {
-  const bytes = Buffer.byteLength(text, 'utf8');
-  if (bytes > maxPrimaryDocumentBytes) throw new Error(`Primary document exceeds the ${maxPrimaryDocumentBytes}-byte limit (received ${bytes} bytes).`);
-
-  let depth = 0;
-  let nodes = 0;
-  let inString = false;
-  let escaped = false;
-  let inPrimitive = false;
-  const addNode = (): void => {
-    nodes += 1;
-    if (nodes > maxPrimaryDocumentNodes) throw new Error(`Primary document exceeds the ${maxPrimaryDocumentNodes}-node structural limit.`);
-  };
-  for (const character of text) {
-    if (inString) {
-      if (escaped) escaped = false;
-      else if (character === '\\') escaped = true;
-      else if (character === '"') inString = false;
-      continue;
-    }
-    if (character === '"') {
-      addNode();
-      inString = true;
-      inPrimitive = false;
-    } else if (character === '{' || character === '[') {
-      addNode();
-      depth += 1;
-      if (depth > maxPrimaryDocumentDepth) throw new Error(`Primary document exceeds the ${maxPrimaryDocumentDepth}-level nesting limit.`);
-      inPrimitive = false;
-    } else if (character === '}' || character === ']') {
-      depth = Math.max(0, depth - 1);
-      inPrimitive = false;
-    } else if (character === ',' || character === ':' || /\s/.test(character)) {
-      inPrimitive = false;
-    } else if (!inPrimitive) {
-      addNode();
-      inPrimitive = true;
-    }
-  }
-}
+export { validatePrimaryDocument };
 
 /**
  * Writes beside the destination and renames into place so readers never observe a partial file.

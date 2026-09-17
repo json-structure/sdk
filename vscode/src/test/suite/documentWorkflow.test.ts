@@ -43,6 +43,65 @@ async function waitForCustomTab(uri: vscode.Uri): Promise<vscode.Tab> {
 }
 
 suite('JSON Structure document workflow', () => {
+    test('opens an imported conversion as an unsaved untitled custom document without destination selection', async () => {
+        const extensionUri = vscode.Uri.file(path.resolve(__dirname, '../../..'));
+        let destinationCalls = 0;
+        const host = new VsCodeConversionHost(extensionUri, {
+            selectDestination: async () => { destinationCalls += 1; throw new Error('Import must not select a destination.'); },
+            readResource: async () => { throw new Error('Import must not resolve the current editor input schema.'); }
+        });
+        const result = await host.convert({ protocolVersion: 1, requestId: 'untitled-import', kind: 'conversion', documentVersion: 1, commandId: 'import.jsonschema.to-json-structure', sourceName: 'input.json', sourceText: '{"type":"string"}', options: {} });
+        assert.strictEqual(result.succeeded, true); assert.strictEqual(destinationCalls, 0);
+        assert.match(result.outputs[0].uri, /^generated-import:/);
+        const review = result.review as { published: boolean; outputMode: string; lifecycle: string[] };
+        assert.strictEqual(review.published, false); assert.strictEqual(review.outputMode, 'untitled-document'); assert.ok(!review.lifecycle.includes('publishing'));
+        await assert.rejects(host.openOutputs([{ uri: 'C:\\Temp\\unapproved.struct.json', name: 'unapproved.struct.json' }]), /not committed/);
+        await assert.rejects(host.openOutputs([{ ...result.outputs[0], name: 'forged.struct.json' }]), /not generated/);
+        const imported = await host.openOutputs(result.outputs);
+        assert.ok(imported); assert.strictEqual(imported.isUntitled, true); assert.strictEqual(imported.isDirty, true);
+        assert.strictEqual(imported.uri.scheme, 'untitled'); assert.notStrictEqual(imported.uri.toString(), result.outputs[0].uri);
+        assert.strictEqual(JSON.parse(imported.getText()).definitions.Root.type, 'string');
+        const tab = await waitForCustomTab(imported.uri); assert.strictEqual(customInput(tab).viewType, customEditorViewType);
+        await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
+    });
+
+    test('refuses to open a generated import after its source document version changed', async () => {
+        const source = await vscode.workspace.openTextDocument({ content: '{"before":true}', language: 'json' });
+        const host = new VsCodeConversionHost(vscode.Uri.file(path.resolve(__dirname, '../../..')), { selectDestination: async () => { throw new Error('Import destination'); } });
+        const result = await host.convert({ protocolVersion: 1, requestId: 'stale-untitled-import', kind: 'conversion', documentVersion: source.version, commandId: 'import.jsonschema.to-json-structure', sourceName: 'input.json', sourceText: '{"type":"string"}', options: {} }, undefined, source.uri.toString());
+        assert.strictEqual(result.succeeded, true);
+        const edit = new vscode.WorkspaceEdit(); edit.insert(source.uri, new vscode.Position(0, 0), ' '); assert.ok(await vscode.workspace.applyEdit(edit));
+        await assert.rejects(host.openOutputs(result.outputs), /stale/);
+        assert.strictEqual(source.getText(), ' {"before":true}'); assert.strictEqual(source.isDirty, true);
+        await vscode.window.showTextDocument(source); await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
+    });
+
+    test('drops an import that becomes stale while its worker is running', async () => {
+        const source = await vscode.workspace.openTextDocument({ content: '{"before":true}', language: 'json' });
+        const host = new VsCodeConversionHost(vscode.Uri.file(path.resolve(__dirname, '../../..')), { selectDestination: async () => { throw new Error('Import destination'); } });
+        const conversion = host.convert({ protocolVersion: 1, requestId: 'worker-stale-import', kind: 'conversion', documentVersion: source.version, commandId: 'import.jsonschema.to-json-structure', sourceName: 'input.json', sourceText: '{"type":"string"}', options: {} }, undefined, source.uri.toString());
+        const edit = new vscode.WorkspaceEdit(); edit.insert(source.uri, new vscode.Position(0, 0), ' '); assert.ok(await vscode.workspace.applyEdit(edit));
+        const result = await conversion;
+        assert.strictEqual(result.succeeded, false); assert.deepStrictEqual(result.outputs, []);
+        assert.match((result.diagnostics[0] as { message: string }).message, /changed while converting/);
+        await vscode.window.showTextDocument(source); await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
+    });
+
+    test('releases pending imports only for the disposed source document', async () => {
+        const firstSource = await vscode.workspace.openTextDocument({ content: '{"first":true}', language: 'json' });
+        const secondSource = await vscode.workspace.openTextDocument({ content: '{"second":true}', language: 'json' });
+        const host = new VsCodeConversionHost(vscode.Uri.file(path.resolve(__dirname, '../../..')), { selectDestination: async () => { throw new Error('Import destination'); } });
+        const first = await host.convert({ protocolVersion: 1, requestId: 'first-pending-import', kind: 'conversion', documentVersion: firstSource.version, commandId: 'import.jsonschema.to-json-structure', sourceName: 'first.json', sourceText: '{"type":"string"}', options: {} }, undefined, firstSource.uri.toString());
+        const second = await host.convert({ protocolVersion: 1, requestId: 'second-pending-import', kind: 'conversion', documentVersion: secondSource.version, commandId: 'import.jsonschema.to-json-structure', sourceName: 'second.json', sourceText: '{"type":"number"}', options: {} }, undefined, secondSource.uri.toString());
+        host.releaseForDocument(firstSource.uri.toString());
+        await assert.rejects(host.openOutputs(first.outputs), /not committed/);
+        const opened = await host.openOutputs(second.outputs);
+        assert.ok(opened); assert.strictEqual(opened.isUntitled, true);
+        await vscode.window.showTextDocument(firstSource); await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
+        await vscode.window.showTextDocument(secondSource); await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
+        await vscode.window.showTextDocument(opened); await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
+    });
+
     test('verifies the existing renderer artifact before a rebuild', async () => {
         await assertRendererArtifactIntegrity();
     });
@@ -107,6 +166,9 @@ suite('JSON Structure document workflow', () => {
             await writeFile(mainPath, JSON.stringify(main, null, 2), 'utf8');
             await writeFile(libraryPath, JSON.stringify(library, null, 2), 'utf8');
             const document = await vscode.workspace.openTextDocument(mainUri);
+            const unsaved = { ...main, definitions: { ...main.definitions, Main: { ...main.definitions.Main, properties: { ...main.definitions.Main.properties, unsaved: { type: 'int32' } } } } };
+            const edit = new vscode.WorkspaceEdit(); edit.replace(mainUri, new vscode.Range(document.positionAt(0), document.positionAt(document.getText().length)), JSON.stringify(unsaved, null, 2));
+            assert.ok(await vscode.workspace.applyEdit(edit)); assert.strictEqual(document.isDirty, true);
             const extensionUri = vscode.Uri.file(path.resolve(__dirname, '../../..'));
             const host = new VsCodeConversionHost(extensionUri, {
                 selectDestination: async () => vscode.Uri.file(outputPath),
@@ -132,6 +194,9 @@ suite('JSON Structure document workflow', () => {
             const generated = JSON.parse((await readFile(path.join(outputPath, 'schema.json'), 'utf8')));
             assert.strictEqual(generated.$defs.vendor.Value.type, 'string');
             assert.strictEqual(generated.properties.name.$ref, '#/$defs/vendor/Value');
+            assert.strictEqual(generated.properties.unsaved.type, 'integer');
+            assert.ok(!JSON.parse(await readFile(mainPath, 'utf8')).definitions.Main.properties.unsaved);
+            await vscode.window.showTextDocument(document); await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
         } finally {
             await rm(root, { recursive: true, force: true });
             await vscode.commands.executeCommand('workbench.action.closeAllEditors');

@@ -6,6 +6,10 @@ import type { JsonStructureEditorHandle } from '../src/ui/index.js';
 
 let handle: JsonStructureEditorHandle | undefined;
 let emitOpened: ((file: { path: string; text: string }) => void) | undefined;
+let emitCommand: ((command: 'new' | 'open' | 'save' | 'save-as' | 'show-commands' | 'close') => void) | undefined;
+let closeRequests: { readonly dirty: boolean; readonly text: string }[] = [];
+let closeApproved = false;
+let finalizedClose = 0;
 
 function mount(initialText: string): HTMLElement {
   const container = document.createElement('div');
@@ -18,11 +22,13 @@ function mount(initialText: string): HTMLElement {
     newDocument: async () => ({ uri: 'untitled:mounted.struct.json', title: 'Untitled JSON Structure' }),
     activateDocument: async () => undefined,
     discardDocument: async () => undefined,
+    closeWindow: async (request) => { closeRequests.push(request); return { approved: closeApproved }; },
+    finalizeWindowClose: async () => { finalizedClose += 1; },
     onFileOpened(listener) {
       openedListeners.add(listener);
       return () => openedListeners.delete(listener);
     },
-    onFileCommand: () => () => undefined,
+    onFileCommand(listener) { emitCommand = listener; return () => { emitCommand = undefined; }; },
   };
   emitOpened = (file) => openedListeners.forEach((listener) => listener(file));
   Object.defineProperty(window, 'electronAPI', { configurable: true, value: bridge });
@@ -45,11 +51,33 @@ afterEach(() => {
   handle?.dispose();
   handle = undefined;
   emitOpened = undefined;
+  emitCommand = undefined;
+  closeRequests = [];
+  closeApproved = false;
+  finalizedClose = 0;
   document.body.innerHTML = '';
   Reflect.deleteProperty(window, 'electronAPI');
 });
 
 describe('mounted Electron document workflows', () => {
+  it('sends the latest dirty editor text through the guarded native close workflow', async () => {
+    mount('{"before":true}');
+    handle?.setText('{"unsaved":true}');
+    emitCommand?.('close');
+    await settle();
+    expect(closeRequests).toEqual([{ dirty: true, text: '{"unsaved":true}' }]);
+    expect(finalizedClose).toBe(0);
+  });
+
+  it('finalizes an approved close only after the editor is made inert', async () => {
+    const root = mount('{"clean":true}');
+    closeApproved = true;
+    emitCommand?.('close');
+    await settle();
+    expect(root.inert).toBe(true);
+    expect(finalizedClose).toBe(1);
+  });
+
   it('delivers an external file through the typed bridge with a new URI-backed session', async () => {
     const root = mount('{"before":true}');
     if (!emitOpened) throw new Error('Bridge event is not installed.');

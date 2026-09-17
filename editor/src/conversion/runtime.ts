@@ -20,6 +20,7 @@ export interface ConversionRunRequest {
   options?: ConversionOptionValues;
   destination?: string;
   preview?: boolean;
+  outputMode?: 'memory' | 'publish';
   defaultAutoOpen?: boolean;
   launch?: LaunchPreference;
   signal?: AbortSignal;
@@ -84,7 +85,8 @@ export class ConversionRuntime {
       lossiness = aggregateLossiness(result.lossiness, warnings);
       request.validateOutput?.(files);
       manifest = createOutputManifest(files);
-      if (request.preview) {
+      if (signal.aborted) throw abortError();
+      if (request.preview || request.outputMode === 'memory') {
         lifecycle.transition('completed');
         return { state: 'completed', states: lifecycle.states, files, warnings, lossiness, manifest, published };
       }

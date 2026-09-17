@@ -8,7 +8,7 @@ export const defaultUntitledDocument = JSON.stringify({
   definitions: {},
 }, null, 4);
 
-export type HostCommand = 'new' | 'open' | 'save' | 'save-as' | 'show-commands';
+export type HostCommand = 'new' | 'open' | 'save' | 'save-as' | 'show-commands' | 'close';
 export type WindowCommand = 'undo' | 'redo' | 'cut' | 'copy' | 'paste' | 'select-all' | 'reset-zoom' | 'zoom-in' | 'zoom-out' | 'toggle-fullscreen' | 'quit';
 
 /** Renderer-safe file bridge shape consumed by the shared UI bootstrap. */
@@ -21,6 +21,8 @@ export interface FileBridge {
   openExternal?(url: string): Promise<void>;
   activateDocument?(path: string, activationToken?: string): Promise<void>;
   discardDocument?(activationToken: string): Promise<void>;
+  closeWindow?(request: { readonly dirty: boolean; readonly text: string }): Promise<{ readonly approved: boolean }>;
+  finalizeWindowClose?(): Promise<void>;
   onFileOpened(listener: (file: FileBridgeDocument) => void): () => void;
   onFileCommand(listener: (command: HostCommand) => void): () => void;
   executeWindowCommand?(command: WindowCommand): Promise<void>;
@@ -38,13 +40,22 @@ export interface FileBridge {
 }
 
 /** The editor operations required for ALPHA file lifecycle management. */
-export interface FileBridgeDocument {
+export interface FileBridgeFileDocument {
   readonly path: string;
   readonly text: string;
   readonly uri?: string;
   readonly activationToken?: string;
   readonly kind?: 'file' | 'generated';
 }
+export interface FileBridgeImportedDocument {
+  readonly kind: 'generated-import';
+  readonly uri: string;
+  readonly name: string;
+  readonly text: string;
+  readonly activationToken: string;
+  readonly path?: never;
+}
+export type FileBridgeDocument = FileBridgeFileDocument | FileBridgeImportedDocument;
 
 export interface AlphaEditorSurface {
   getText(): string;
@@ -82,7 +93,7 @@ export interface AlphaEditorController {
 export function createAlphaEditorController(editor: AlphaEditorSurface, bridge: FileBridge | undefined, confirmReplace: (message: string) => boolean = window.confirm, onStateChange: () => void = () => undefined): AlphaEditorController {
   let path: string | undefined;
   let dirty = false;
-  let savedText = editor.getText();
+  let savedText: string | undefined = editor.getText();
   let replacing = false;
   let revision = 0;
   let documentGeneration = 0;
@@ -91,8 +102,10 @@ export function createAlphaEditorController(editor: AlphaEditorSurface, bridge: 
     if (file.activationToken) await bridge?.discardDocument?.(file.activationToken);
   };
   const replace = async (file: FileBridgeDocument): Promise<void> => {
+    const imported = file.kind === 'generated-import';
+    if (imported && !file.uri.startsWith('untitled:')) throw new Error('Generated imports require an untitled document identity.');
     // An external open is allowed only after the user accepts losing dirty text.
-    if (dirty && !confirmReplace(`Replace unsaved changes with ${fileName(file.path)}?`)) {
+    if (dirty && !confirmReplace(`Replace unsaved changes with ${(file.kind === 'generated-import' ? file.name : fileName(file.path))}?`)) {
       await discardStaged(file);
       return;
     }
@@ -100,18 +113,18 @@ export function createAlphaEditorController(editor: AlphaEditorSurface, bridge: 
     replacing = true;
     documentGeneration += 1;
     try {
-      if (file.activationToken) await bridge?.activateDocument?.(file.path, file.activationToken);
+      if (file.activationToken) await bridge?.activateDocument?.(file.kind === 'generated-import' ? file.uri : file.path, file.activationToken);
       if (request !== replacementRequest) {
         await discardStaged(file);
         return;
       }
       revision += 1;
-      path = file.path;
-      dirty = false;
-      savedText = file.text;
-      editor.setUri?.(file.uri ?? filePathUri(file.path));
+      path = imported ? undefined : file.path;
+      dirty = imported;
+      savedText = imported ? undefined : file.text;
+      editor.setUri?.(file.kind === 'generated-import' ? file.uri : file.uri ?? filePathUri(file.path));
       editor.setText(file.text);
-      editor.markSaved?.();
+      if (!imported) editor.markSaved?.();
     } catch {
       await discardStaged(file);
     } finally {
@@ -180,7 +193,7 @@ export function createAlphaEditorController(editor: AlphaEditorSurface, bridge: 
     },
     acceptExternalFile: replace,
     markDirty() { revision += 1; dirty = true; onStateChange(); },
-    syncDirty() { revision += 1; const next = editor.getText() !== savedText; if (dirty !== next) { dirty = next; onStateChange(); } },
+    syncDirty() { revision += 1; const next = savedText === undefined || editor.getText() !== savedText; if (dirty !== next) { dirty = next; onStateChange(); } },
     markClean() { savedText = editor.getText(); dirty = false; editor.markSaved?.(); onStateChange(); },
     dispose() { unsubscribe?.(); }
   };
@@ -240,6 +253,21 @@ export function bootstrapJsonStructureEditor(container: HTMLElement, demoText: s
   if (bridge) {
     const execute = (command: HostCommand): void => {
       if (command === 'show-commands') { editor.showCommandPalette(); return; }
+      if (command === 'close') {
+        if (!bridge.closeWindow || !bridge.finalizeWindowClose || container.inert) return;
+        container.inert = true;
+        const text = editor.getText();
+        void bridge.closeWindow({ dirty: controller?.dirty ?? false, text }).then(async (resolution) => {
+          if (!resolution.approved) {
+            container.inert = false;
+            return;
+          }
+          await bridge.finalizeWindowClose!();
+        }, () => {
+          container.inert = false;
+        });
+        return;
+      }
       const operation = command === 'new' ? controller?.newDocument() : command === 'open' ? controller?.open() : command === 'save' ? controller?.save() : controller?.saveAs();
       void operation?.then(renderFileState);
     };

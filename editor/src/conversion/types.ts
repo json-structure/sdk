@@ -1,3 +1,14 @@
+export {
+  GeneratedImportRegistry,
+  MAX_PRIMARY_DOCUMENT_BYTES,
+  MAX_PRIMARY_DOCUMENT_DEPTH,
+  MAX_PRIMARY_DOCUMENT_NODES,
+  MAX_PENDING_IMPORT_BYTES,
+  MAX_PENDING_IMPORT_DOCUMENTS,
+  validatePrimaryDocument,
+  type GeneratedImportHandle,
+  type GeneratedImportContent,
+} from './import-output.js';
 export type ConversionOption =
   | { name: string; type: 'boolean'; description?: string; default?: boolean }
   | { name: string; type: 'string'; description?: string; default?: string; allowedValues?: readonly string[] }

@@ -1,8 +1,8 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { NodeProcessExecutableLauncher } from '@json-structure/editor-foundation/conversion-process';
 import { createHash, randomUUID } from 'node:crypto';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { CONVERSION_WORKER_LIMITS, ConversionWorkerQuotaTracker, parseCommandsManifest, validateGeneratedConversionFiles as validateGeneratedConversionFileRecord, validateOptionValues, validateWorkerOutputQuotas, type ConversionCommandsManifest, type ConversionOptionValues, type ConversionWorkerLimits } from '@json-structure/editor-foundation/conversion-types';
+import { CONVERSION_WORKER_LIMITS, GeneratedImportRegistry, parseCommandsManifest, validateGeneratedConversionFiles as validateGeneratedConversionFileRecord, validateOptionValues, validateWorkerOutputQuotas, type ConversionCommandsManifest, type ConversionOptionValues, type ConversionWorkerLimits } from '@json-structure/editor-foundation/conversion-types';
 import { discoverImportSources, loadExternalDocuments, materializeEffectiveImports, ResolvedSchemaContext, resourceSnapshot } from '@json-structure/editor-foundation/host/effective-imports';
 
 export interface ConversionRequest {
@@ -13,6 +13,7 @@ export interface ConversionRequest {
     readonly commandId: string;
     readonly sourceName: string;
     readonly sourceText: string;
+    readonly documentUri?: string;
     readonly options: ConversionOptionValues;
 }
 export interface HostFile { readonly uri: string; readonly name: string }
@@ -25,6 +26,17 @@ export function classifyGeneratedOutputs(outputs: readonly HostFile[]): Generate
     if (outputs.length > 1) return 'directory';
     return outputs[0]!.uri.toLocaleLowerCase().endsWith('.struct.json') ? 'json-structure' : 'file';
 }
+/** Untitled URIs deliberately carry no filesystem path; native Save performs Save As. */
+export async function openUntitledJsonStructureDocument(text: string, isCurrent: () => boolean = () => true): Promise<vscode.TextDocument> {
+    const assertCurrent = (): void => { if (!isCurrent()) throw new Error('The conversion source changed; the import result is stale.'); };
+    assertCurrent();
+    // The content overload creates an unassociated untitled document, with no suggested filesystem target.
+    const document = await vscode.workspace.openTextDocument({ content: text, language: 'json' });
+    assertCurrent();
+    await vscode.commands.executeCommand('vscode.openWith', document.uri, customEditorViewType);
+    return document;
+}
+
 type Lossiness = 'none' | 'formatting' | 'metadata' | 'precision' | 'unsupported-feature' | 'data-loss';
 interface WorkerWarning { readonly code: string; readonly message: string; readonly lossiness: Exclude<Lossiness, 'none'>; readonly sourceLocation?: string; readonly targetPath?: string; readonly details?: Readonly<Record<string, string | number | boolean>> }
 interface WorkerResult { readonly files: readonly { path: string; contentBase64: string }[]; readonly warnings: readonly WorkerWarning[]; readonly lossiness: Lossiness }
@@ -75,6 +87,7 @@ export function isConversionRequest(value: unknown): value is ConversionRequest 
     return request.kind === 'conversion' && Number.isInteger(request.documentVersion) && (request.documentVersion as number) >= 0 &&
         typeof request.commandId === 'string' && request.commandId.length > 0 && typeof request.sourceName === 'string' && request.sourceName.length > 0 &&
         request.sourceName.length <= 255 && !/[\\/]/.test(request.sourceName) && typeof request.sourceText === 'string' && request.sourceText.length <= 4 * 1024 * 1024 &&
+        (request.documentUri === undefined || typeof request.documentUri === 'string' && request.documentUri.length > 0 && request.documentUri.length <= 4096) &&
         isConversionOptionsRecord(request.options);
 }
 
@@ -99,7 +112,9 @@ export interface VsCodeConversionHostOptions {
 
 export class VsCodeConversionHost {
     private readonly committed = new Set<string>();
-    private readonly operations = new Map<string, { child?: ChildProcessWithoutNullStreams; controller: AbortController }>();
+    private readonly imports = new GeneratedImportRegistry();
+    private readonly importSources = new Map<string, { readonly uri: string; readonly version: number }>();
+    private readonly operations = new Map<string, { controller: AbortController }>();
     private readonly manifest: Promise<ConversionCommandsManifest>;
     private readonly workerLimits: ConversionWorkerLimits;
     constructor(private readonly extensionUri: vscode.Uri, private readonly options: VsCodeConversionHostOptions = {}) {
@@ -120,18 +135,26 @@ export class VsCodeConversionHost {
             const options = normalizeConversionOptions(manifest, request);
             if (!command || !converter) throw new Error(`Conversion metadata for '${request.commandId}' is unavailable.`);
             if (controller.signal.aborted) return cancelledConversionResult(request);
-            const destination = this.options.selectDestination
+            const isImport = command.direction === 'import';
+            const destination = isImport ? undefined : this.options.selectDestination
                 ? await this.options.selectDestination()
                 : (await vscode.window.showOpenDialog({ title: 'Choose conversion output directory', canSelectFolders: true, canSelectFiles: false, canSelectMany: false }))?.[0];
-            if (!destination || controller.signal.aborted) return cancelledConversionResult(request);
-            const sourceText = documentUri && this.options.readResource
+            if ((!isImport && !destination) || controller.signal.aborted) return cancelledConversionResult(request);
+            const sourceText = command.direction === 'export' && documentUri && this.options.readResource
                 ? await materializeVsCodeImportClosure(request.sourceText, request.sourceName, documentUri, this.options.readResource, controller.signal)
                 : request.sourceText;
             if (controller.signal.aborted) return cancelledConversionResult(request);
             const result = await this.runWorker({ ...request, sourceText, options }, onProgress);
             validateGeneratedConversionFiles(command.targetFormat, result.files);
-            const outputs = await publishGeneratedFiles(this.options.publicationFileSystem ?? vscode.workspace.fs, destination, result.files, controller.signal);
-            for (const output of outputs) this.committed.add(path.resolve(output.uri));
+            if (controller.signal.aborted) return cancelledConversionResult(request);
+            if (isImport && documentUri && !isCurrentDocumentVersion(documentUri, request.documentVersion)) return staleConversionResult(request);
+            const outputs = isImport
+                ? this.imports.register(randomUUID(), Object.fromEntries(result.files.map(file => [file.path, Buffer.from(file.contentBase64, 'base64')])))
+                : await publishGeneratedFiles(this.options.publicationFileSystem ?? vscode.workspace.fs, destination!, result.files, controller.signal);
+            if (isImport) {
+                if (documentUri) for (const output of outputs) this.importSources.set(output.uri, { uri: documentUri, version: request.documentVersion });
+            }
+            if (!isImport) for (const output of outputs) this.committed.add(path.resolve(output.uri));
             const source = Buffer.from(request.sourceText, 'utf8');
             return {
                 protocolVersion: 1,
@@ -145,8 +168,9 @@ export class VsCodeConversionHost {
                     converter: { id: converter.id, displayName: converter.displayName, version: converter.version },
                     sourceFormat: command.sourceFormat,
                     targetFormat: command.targetFormat,
-                    lifecycle: ['idle', 'preparing', 'running', 'publishing', 'completed'],
-                    published: true,
+                    lifecycle: isImport ? ['idle', 'preparing', 'running', 'completed'] : ['idle', 'preparing', 'running', 'publishing', 'completed'],
+                    published: !isImport,
+                    outputMode: isImport ? 'untitled-document' : 'published-files',
                     lossiness: effectiveWorkerLossiness(result),
                     warnings: result.warnings,
                     effectiveOptions: options,
@@ -163,14 +187,30 @@ export class VsCodeConversionHost {
     cancel(requestId: string): void {
         const operation = this.operations.get(requestId);
         operation?.controller.abort();
-        operation?.child?.kill('SIGTERM');
     }
 
-    async open(output: HostFile): Promise<void> {
+    releaseForDocument(documentUri: string): void {
+        for (const [outputUri, source] of this.importSources) {
+            if (source.uri !== documentUri) continue;
+            this.imports.release(outputUri);
+            this.importSources.delete(outputUri);
+        }
+    }
+
+    async open(output: HostFile): Promise<vscode.TextDocument | undefined> {
         return this.openOutputs([output]);
     }
 
-    async openOutputs(outputs: readonly HostFile[]): Promise<void> {
+    async openOutputs(outputs: readonly HostFile[]): Promise<vscode.TextDocument | undefined> {
+        if (outputs.some(output => this.imports.has(output.uri))) {
+            if (outputs.length !== 1) throw new Error('An imported result must open as one untitled document.');
+            const output = outputs[0]!;
+            const imported = this.imports.consume(output);
+            const source = this.importSources.get(output.uri);
+            this.importSources.delete(output.uri);
+            const isCurrent = (): boolean => !source || vscode.workspace.textDocuments.some(document => document.uri.toString() === source.uri && document.version === source.version);
+            return openUntitledJsonStructureDocument(imported.text, isCurrent);
+        }
         if (outputs.length === 0) throw new Error('No generated outputs were supplied.');
         const resolved = outputs.map((output) => path.resolve(output.uri));
         for (const file of resolved) {
@@ -185,66 +225,16 @@ export class VsCodeConversionHost {
         await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(target));
     }
 
-    private runWorker(request: ConversionRequest, onProgress?: (progress: ConversionProgress) => void): Promise<WorkerResult> {
-        const worker = vscode.Uri.joinPath(this.extensionUri, 'media', 'conversion', 'worker-runtime', 'converter-worker.cjs').fsPath;
-        return new Promise((resolve, reject) => {
-            const operation = this.operations.get(request.requestId);
-            if (!operation || operation.child) { reject(new Error(`Conversion ${request.requestId} is already running.`)); return; }
-            if (operation.controller.signal.aborted) { reject(abortError()); return; }
-            const operationId = randomUUID();
-            const child = spawn(process.execPath, [`--max-old-space-size=${this.workerLimits.maxOldSpaceMb}`, worker], { stdio: 'pipe', windowsHide: true, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } });
-            operation.child = child;
-            const quotas = new ConversionWorkerQuotaTracker(this.workerLimits);
-            let carry = '';
-            let stderrCarry = '';
-            let result: WorkerResult | undefined;
-            let failure: Error | undefined;
-            const fail = (error: unknown): void => {
-                if (!failure) failure = error instanceof Error ? error : new Error(String(error));
-                child.kill('SIGKILL');
-            };
-            child.stdout.on('data', (chunk: Buffer) => {
-                try {
-                    quotas.consume('stdout', chunk.byteLength);
-                    const lines = (carry + chunk.toString('utf8')).split(/\r?\n/); carry = lines.pop() ?? '';
-                    quotas.validateLine(carry);
-                    for (const line of lines) if (line.trim()) {
-                        quotas.validateLine(line);
-                        const event = parseWorkerEvent(line, this.workerLimits);
-                        if (event.operationId !== operationId) continue;
-                        if (event.type === 'progress') onProgress?.({ phase: event.phase, completed: event.completed, total: event.total, message: event.message });
-                        if (event.type === 'result') result = { files: event.files, warnings: event.warnings, lossiness: event.lossiness };
-                        if (event.type === 'error') failure = new Error(`${event.code}: ${event.message}`);
-                    }
-                } catch (error) {
-                    fail(error);
-                }
-            });
-            child.stderr.on('data', (chunk: Buffer) => {
-                try {
-                    quotas.consume('stderr', chunk.byteLength);
-                    const lines = (stderrCarry + chunk.toString('utf8')).split(/\r?\n/); stderrCarry = lines.pop() ?? '';
-                    quotas.validateLine(stderrCarry);
-                    for (const line of lines) if (line.trim()) quotas.validateLine(line);
-                } catch (error) {
-                    fail(error);
-                }
-            });
-            child.stdin.on('error', fail);
-            const timeout = setTimeout(() => fail(new Error(`Converter exceeded the ${this.workerLimits.maxExecutionMs}ms execution quota.`)), this.workerLimits.maxExecutionMs);
-            timeout.unref();
-            child.on('error', (error) => { clearTimeout(timeout); reject(error); });
-            child.on('exit', (code) => {
-                clearTimeout(timeout);
-                operation.child = undefined;
-                if (operation.controller.signal.aborted) reject(abortError());
-                else if (failure) reject(failure);
-                else if (code !== 0) reject(new Error(code === null ? 'Conversion cancelled.' : `Converter exited with code ${String(code)}.`));
-                else if (result) resolve(result);
-                else reject(new Error('Converter exited without a result.'));
-            });
-            child.stdin.end(JSON.stringify({ type: 'request', requestId: randomUUID(), operationId, commandId: request.commandId, sourceName: request.sourceName, sourceBase64: Buffer.from(request.sourceText).toString('base64'), options: request.options, preview: false }) + '\n');
+    private async runWorker(request: ConversionRequest, onProgress?: (progress: ConversionProgress) => void): Promise<WorkerResult> {
+        const operation = this.operations.get(request.requestId);
+        if (!operation) throw new Error('The conversion operation is no longer active.');
+        const result = await new NodeProcessExecutableLauncher(vscode.Uri.joinPath(this.extensionUri, 'media', 'conversion').fsPath, this.workerLimits).invoke({
+            executablePath: 'worker-runtime/converter-worker.cjs', arguments: [],
+            request: { operationId: randomUUID(), commandId: request.commandId, sourceName: request.sourceName, source: Buffer.from(request.sourceText, 'utf8'), options: request.options, preview: false },
+            signal: operation.controller.signal,
+            onProgress: progress => onProgress?.(progress),
         });
+        return { files: Object.entries(result.files).map(([path, content]) => ({ path, contentBase64: Buffer.from(content).toString('base64') })), warnings: result.warnings, lossiness: result.lossiness };
     }
 }
 
@@ -309,6 +299,21 @@ function cancelledConversionResult(request: ConversionRequest): { protocolVersio
         outputs: [],
         diagnostics: [{ code: 'conversion.cancelled', message: 'Conversion was cancelled.', severity: 'info' }]
     };
+}
+
+function staleConversionResult(request: ConversionRequest): { protocolVersion: 1; requestId: string; documentVersion: number; succeeded: false; outputs: readonly HostFile[]; diagnostics: readonly unknown[] } {
+    return {
+        protocolVersion: 1,
+        requestId: request.requestId,
+        documentVersion: request.documentVersion,
+        succeeded: false,
+        outputs: [],
+        diagnostics: [{ code: 'conversion.stale-source', message: 'The source document changed while converting.', severity: 'info' }]
+    };
+}
+
+function isCurrentDocumentVersion(documentUri: string, version: number): boolean {
+    return vscode.workspace.textDocuments.some(document => document.uri.toString() === documentUri && document.version === version);
 }
 
 export function validateGeneratedConversionFiles(targetFormat: string, files: WorkerResult['files']): void {

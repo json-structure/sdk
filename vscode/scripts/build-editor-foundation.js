@@ -6,6 +6,7 @@ const cli = join(editorRoot, 'node_modules', 'tsup', 'dist', 'cli-default.js');
 const result = spawnSync(process.execPath, [
   cli,
   'src/conversion/types.ts',
+  'src/conversion/process.ts',
   'src/libraries/host-runtime.ts',
   'src/host/effective-imports.ts',
   '--format',
