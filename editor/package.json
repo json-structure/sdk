@@ -22,6 +22,7 @@
     "provision:structurize-runtime": "node scripts/provision-structurize-runtime.mjs",
     "test:final-electron-runtime": "node scripts/final-electron-runtime-smoke.mjs",
     "test:structurize-runtime": "npm run prepare:structurize-runtime && node scripts/structurize-runtime-smoke.mjs",
+    "test:electron-conversion": "npm run alpha:build && node scripts/electron-conversion-acceptance.mjs",
     "test:conversion-integration": "node scripts/run-conversion-integration.mjs",
     "beta:dev": "npm run alpha:dev",
     "release:clean": "node -e \"require('node:fs').rmSync('release',{recursive:true,force:true})\"",

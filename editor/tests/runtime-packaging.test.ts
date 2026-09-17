@@ -27,10 +27,12 @@ describe('Structurize runtime packaging contract', () => {
   it('uses semantic smoke instead of help-only checks and requires validated reuse metadata', async () => {
     const smoke = await readFile(join(projectRoot, 'scripts', 'structurize-runtime-smoke.mjs'), 'utf8');
     const prepare = await readFile(join(projectRoot, 'scripts', 'prepare-structurize-runtime.mjs'), 'utf8');
+    const worker = await readFile(join(projectRoot, 'src', 'conversion', 'worker-runtime', 'converter-worker.cjs'), 'utf8');
     expect(smoke).toContain('STRUCTURIZE_OFFLINE_ROUTES.length');
     expect(smoke).toContain('k2s=GATED');
     expect(smoke).toContain('assertBridgeResult');
     expect(smoke).not.toContain("await run([route, '--help'])");
+    expect(worker).toContain("resolve(__dirname, '..', '..', '..', 'build', 'structurize-runtime')");
     for (const marker of ['sourceFingerprint', 'dependenciesFingerprint', 'requiredFiles', 'runtimeTreeDigest', 'interpreter', 'dependencyLicenses', 'pass --force']) expect(prepare).toContain(marker);
   });
 

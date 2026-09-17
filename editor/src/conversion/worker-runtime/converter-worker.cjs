@@ -1689,6 +1689,7 @@ function resolveBundledStructurizeInvocation() {
   if (allowLocalOverride && process.env.STRUCTURIZE_RUNTIME_ROOT) roots.push(resolve(process.env.STRUCTURIZE_RUNTIME_ROOT));
   else {
     roots.push(resolve(process.cwd(), 'build', 'structurize-runtime'));
+    roots.push(resolve(__dirname, '..', '..', '..', 'build', 'structurize-runtime'));
     roots.push(join(__dirname, 'structurize-runtime'));
   }
   const seen = new Set();
