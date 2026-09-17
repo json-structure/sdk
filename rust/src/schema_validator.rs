@@ -256,6 +256,7 @@ impl SchemaValidator {
         if let Some(extends_val) = obj.get("$extends") {
             self.validate_extends(
                 extends_val,
+                obj,
                 root_schema,
                 locator,
                 result,
@@ -271,6 +272,25 @@ impl SchemaValidator {
         }
 
         let type_name = obj.get("type").and_then(Value::as_str);
+        if obj.get("abstract") == Some(&Value::Bool(true)) {
+            if !matches!(type_name, Some("object" | "tuple")) {
+                result.add_error(ValidationError::schema_error(
+                    SchemaErrorCode::SchemaConstraintTypeMismatch,
+                    "abstract is only valid on object and tuple schemas",
+                    path,
+                    locator.get_location(path),
+                ));
+            }
+            if obj.contains_key("additionalProperties") {
+                let additional_path = format!("{}/additionalProperties", path);
+                result.add_error(ValidationError::schema_error(
+                    SchemaErrorCode::SchemaAdditionalPropertiesInvalid,
+                    "Abstract types implicitly allow additional properties and must not declare additionalProperties",
+                    &additional_path,
+                    locator.get_location(&additional_path),
+                ));
+            }
+        }
         self.validate_units_keywords(obj, locator, result, path, type_name, &enabled_extensions);
         self.validate_relations_keywords(
             obj,
@@ -472,14 +492,23 @@ impl SchemaValidator {
     ) {
         let offers_path = format!("{}/$offers", path);
         match offers {
-            Value::Array(arr) => {
-                for (i, ext) in arr.iter().enumerate() {
-                    if !ext.is_string() {
+            Value::Object(offers) => {
+                for (name, offer) in offers {
+                    let offer_path = format!("{}/{}", offers_path, name);
+                    let valid = match offer {
+                        Value::String(reference) => reference.starts_with("#/definitions/"),
+                        Value::Array(references) => !references.is_empty()
+                            && references.iter().all(|reference| {
+                                reference.as_str().is_some_and(|value| value.starts_with("#/definitions/"))
+                            }),
+                        _ => false,
+                    };
+                    if !valid {
                         result.add_error(ValidationError::schema_error(
                             SchemaErrorCode::SchemaOffersInvalidExtension,
-                            "Extension name must be a string",
-                            &format!("{}/{}", offers_path, i),
-                            locator.get_location(&format!("{}/{}", offers_path, i)),
+                            "Each $offers entry must be a JSON Pointer or non-empty array of JSON Pointers",
+                            &offer_path,
+                            locator.get_location(&offer_path),
                         ));
                     }
                 }
@@ -487,7 +516,7 @@ impl SchemaValidator {
             _ => {
                 result.add_error(ValidationError::schema_error(
                     SchemaErrorCode::SchemaOffersNotArray,
-                    "$offers must be an array",
+                    "$offers must be an object mapping add-in names to JSON Pointers",
                     &offers_path,
                     locator.get_location(&offers_path),
                 ));
@@ -1451,15 +1480,104 @@ impl SchemaValidator {
             }
         }
 
-        // Validate selector if present
+        let is_inline = obj.contains_key("$extends");
+        if is_inline {
+            if !obj.contains_key("selector") {
+                result.add_error(ValidationError::schema_error(
+                    SchemaErrorCode::SchemaChoiceInvalid,
+                    "Inline choice with $extends must declare selector",
+                    path,
+                    locator.get_location(path),
+                ));
+            }
+        } else if obj.contains_key("selector") {
+            let selector_path = format!("{}/selector", path);
+            result.add_error(ValidationError::schema_error(
+                SchemaErrorCode::SchemaChoiceInvalid,
+                "Tagged choice must not declare selector; $extends selects the inline representation",
+                &selector_path,
+                locator.get_location(&selector_path),
+            ));
+        }
+
         if let Some(selector) = obj.get("selector") {
             let selector_path = format!("{}/selector", path);
-            if !selector.is_string() {
+            if selector.as_str().is_none_or(str::is_empty) {
                 result.add_error(ValidationError::schema_error(
                     SchemaErrorCode::SchemaSelectorNotString,
-                    "selector must be a string",
+                    "selector must be a non-empty string",
                     &selector_path,
                     locator.get_location(&selector_path),
+                ));
+            }
+        }
+
+        if is_inline {
+            self.validate_inline_choice_alternatives(obj, root_schema, locator, result, path);
+        }
+    }
+
+    fn validate_inline_choice_alternatives(
+        &self,
+        obj: &serde_json::Map<String, Value>,
+        root_schema: &Value,
+        locator: &JsonSourceLocator,
+        result: &mut ValidationResult,
+        path: &str,
+    ) {
+        let base_refs: HashSet<&str> = match obj.get("$extends") {
+            Some(Value::String(reference)) => std::iter::once(reference.as_str()).collect(),
+            Some(Value::Array(references)) => references.iter().filter_map(Value::as_str).collect(),
+            _ => return,
+        };
+        let Some(choices) = obj.get("choices").and_then(Value::as_object) else {
+            return;
+        };
+
+        for (name, choice) in choices {
+            let choice_path = format!("{}/choices/{}", path, name);
+            let resolved = if let Some(reference) = choice.get("$ref").and_then(Value::as_str) {
+                self.resolve_ref(reference, root_schema)
+            } else if let Some(reference) = choice
+                .get("type")
+                .and_then(Value::as_object)
+                .and_then(|type_obj| type_obj.get("$ref"))
+                .and_then(Value::as_str)
+            {
+                self.resolve_ref(reference, root_schema)
+            } else {
+                Some(choice)
+            };
+            let Some(choice_obj) = resolved.and_then(Value::as_object) else {
+                result.add_error(ValidationError::schema_error(
+                    SchemaErrorCode::SchemaChoiceInvalid,
+                    "Inline choice alternatives must resolve to object schemas",
+                    &choice_path,
+                    locator.get_location(&choice_path),
+                ));
+                continue;
+            };
+            if choice_obj.get("type").and_then(Value::as_str) != Some("object") {
+                result.add_error(ValidationError::schema_error(
+                    SchemaErrorCode::SchemaChoiceInvalid,
+                    "Inline choice alternatives must resolve to object schemas",
+                    &choice_path,
+                    locator.get_location(&choice_path),
+                ));
+                continue;
+            }
+
+            let choice_bases: HashSet<&str> = match choice_obj.get("$extends") {
+                Some(Value::String(reference)) => std::iter::once(reference.as_str()).collect(),
+                Some(Value::Array(references)) => references.iter().filter_map(Value::as_str).collect(),
+                _ => HashSet::new(),
+            };
+            if !base_refs.iter().all(|base| choice_bases.contains(base)) {
+                result.add_error(ValidationError::schema_error(
+                    SchemaErrorCode::SchemaChoiceInvalid,
+                    "Every inline choice alternative must extend the declared common base",
+                    &choice_path,
+                    locator.get_location(&choice_path),
                 ));
             }
         }
@@ -1850,6 +1968,7 @@ impl SchemaValidator {
     fn validate_extends(
         &self,
         extends_val: &Value,
+        extending_schema: &serde_json::Map<String, Value>,
         root_schema: &Value,
         locator: &JsonSourceLocator,
         result: &mut ValidationResult,
@@ -1936,13 +2055,23 @@ impl SchemaValidator {
             if ref_str.starts_with("#/definitions/") {
                 if let Some(resolved) = self.resolve_ref(&ref_str, root_schema) {
                     let resolved_type = resolved.get("type").and_then(Value::as_str);
-                    if resolved_type.is_some() && !matches!(resolved_type, Some("object" | "tuple" | "map" | "array" | "set" | "choice")) {
+                    let extending_type = extending_schema.get("type").and_then(Value::as_str);
+                    let expected_type = if extending_type == Some("choice") {
+                        Some("object")
+                    } else {
+                        extending_type
+                    };
+                    if !matches!(extending_type, Some("object" | "tuple" | "choice")) {
                         result.add_error(ValidationError::schema_error(
                             SchemaErrorCode::SchemaConstraintTypeMismatch,
-                            format!(
-                                "$extends target '{}' must not resolve to a primitive type",
-                                ref_str
-                            ),
+                            "$extends is only valid on object, tuple, and inline choice schemas",
+                            &ref_path,
+                            locator.get_location(&ref_path),
+                        ));
+                    } else if resolved_type != expected_type || resolved.get("abstract") != Some(&Value::Bool(true)) {
+                        result.add_error(ValidationError::schema_error(
+                            SchemaErrorCode::SchemaConstraintTypeMismatch,
+                            format!("$extends target '{}' must resolve to an abstract {} schema", ref_str, expected_type.unwrap_or("object")),
                             &ref_path,
                             locator.get_location(&ref_path),
                         ));
@@ -2438,7 +2567,6 @@ mod tests {
             "$id": "https://example.com/schema",
             "name": "TestSchema",
             "type": "choice",
-            "selector": "kind",
             "choices": {
                 "text": { "type": "string" },
                 "number": { "type": "int32" }
@@ -2540,8 +2668,7 @@ mod tests {
         let result = validator.validate(schema);
         assert!(result.all_errors().iter().any(|err| {
             err.code == SchemaErrorCode::SchemaConstraintTypeMismatch.as_str()
-                && err.message
-                    == "$extends target '#/definitions/Base' must not resolve to a primitive type"
+                && err.message.contains("must resolve to an abstract object schema")
         }));
     }
 

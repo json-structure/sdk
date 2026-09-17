@@ -254,6 +254,14 @@ pub enum InstanceErrorCode {
     InstancePatternPropertyMismatch,
     InstancePropertyNameInvalid,
 
+    // Root document metadata errors
+    InstanceSchemaMissing,
+    InstanceSchemaInvalid,
+    InstanceSchemaMismatch,
+    InstanceUsesInvalid,
+    InstanceUsesUnknown,
+    InstanceUsesConflict,
+
     // Array errors
     InstanceArrayExpected,
     InstanceArrayTooShort,
@@ -363,6 +371,12 @@ impl InstanceErrorCode {
             Self::InstanceDependentRequiredMissing => "INSTANCE_DEPENDENT_REQUIRED_MISSING",
             Self::InstancePatternPropertyMismatch => "INSTANCE_PATTERN_PROPERTY_MISMATCH",
             Self::InstancePropertyNameInvalid => "INSTANCE_PROPERTY_NAME_INVALID",
+            Self::InstanceSchemaMissing => "INSTANCE_SCHEMA_MISSING",
+            Self::InstanceSchemaInvalid => "INSTANCE_SCHEMA_INVALID",
+            Self::InstanceSchemaMismatch => "INSTANCE_SCHEMA_MISMATCH",
+            Self::InstanceUsesInvalid => "INSTANCE_USES_INVALID",
+            Self::InstanceUsesUnknown => "INSTANCE_USES_UNKNOWN",
+            Self::InstanceUsesConflict => "INSTANCE_USES_CONFLICT",
             Self::InstanceArrayExpected => "INSTANCE_ARRAY_EXPECTED",
             Self::InstanceArrayTooShort => "INSTANCE_ARRAY_TOO_SHORT",
             Self::InstanceArrayTooLong => "INSTANCE_ARRAY_TOO_LONG",

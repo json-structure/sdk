@@ -687,29 +687,67 @@ fn test_tuple_wrong_type() {
 fn test_choice_with_selector() {
     let schema = json!({
         "type": "choice",
+        "$extends": "#/definitions/Base",
         "selector": "type",
+        "definitions": {
+            "Base": {
+                "abstract": true,
+                "type": "object",
+                "properties": { "id": { "type": "string" } },
+                "required": ["id"]
+            },
+            "Card": {
+                "type": "object",
+                "$extends": "#/definitions/Base",
+                "properties": { "cardNumber": { "type": "string" } },
+                "additionalProperties": false
+            },
+            "Cash": {
+                "type": "object",
+                "$extends": "#/definitions/Base",
+                "properties": { "amount": { "type": "decimal" } },
+                "additionalProperties": false
+            }
+        },
         "choices": {
-            "card": {"type": "object", "properties": {"cardNumber": {"type": "string"}}},
-            "cash": {"type": "object", "properties": {"amount": {"type": "decimal"}}}
+            "card": { "type": { "$ref": "#/definitions/Card" } },
+            "cash": { "type": { "$ref": "#/definitions/Cash" } }
         }
     });
     let validator = InstanceValidator::new();
     
-    let result = validator.validate(r#"{"type": "card", "cardNumber": "1234"}"#, &schema);
+    let result = validator.validate(r#"{"type":"card","id":"1","cardNumber":"1234"}"#, &schema);
     assert!(result.is_valid(), "Valid choice with selector should pass");
     
-    let result = validator.validate(r#"{"type": "cash", "amount": 100}"#, &schema);
+    let result = validator.validate(r#"{"type":"cash","id":"1","amount":100}"#, &schema);
     assert!(result.is_valid(), "Valid cash choice should pass");
+
+    let missing_base = validator.validate(r#"{"type":"card","cardNumber":"1234"}"#, &schema);
+    assert!(!missing_base.is_valid(), "Inherited required properties must be enforced");
+
+    let unrelated = validator.validate(
+        r#"{"type":"card","id":"1","cardNumber":"1234","extra":true}"#,
+        &schema,
+    );
+    assert!(!unrelated.is_valid(), "Closed choice must reject unrelated properties");
 }
 
 #[test]
 fn test_choice_unknown_selector_value() {
     let schema = json!({
         "type": "choice",
+        "$extends": "#/definitions/Base",
         "selector": "type",
+        "definitions": {
+            "Base": {
+                "abstract": true,
+                "type": "object",
+                "properties": { "id": { "type": "string" } }
+            }
+        },
         "choices": {
-            "card": {"type": "object", "properties": {"cardNumber": {"type": "string"}}},
-            "cash": {"type": "object", "properties": {"amount": {"type": "decimal"}}}
+            "card": {"type": "object", "$extends": "#/definitions/Base", "properties": {"cardNumber": {"type": "string"}}},
+            "cash": {"type": "object", "$extends": "#/definitions/Base", "properties": {"amount": {"type": "decimal"}}}
         }
     });
     let validator = InstanceValidator::new();
@@ -1010,6 +1048,103 @@ fn test_format_not_applied_without_extended() {
 // =============================================================================
 // $extends Validation
 // =============================================================================
+
+#[test]
+fn test_root_schema_metadata_is_not_an_additional_property() {
+    let schema = json!({
+        "$id": "https://example.com/person",
+        "type": "object",
+        "properties": {
+            "name": { "type": "string" }
+        },
+        "required": ["name"],
+        "additionalProperties": false
+    });
+    let validator = InstanceValidator::new();
+
+    let valid = validator.validate(
+        r#"{"$schema":"https://example.com/person","name":"Ada"}"#,
+        &schema,
+    );
+    assert!(valid.is_valid(), "$schema must not be treated as application data");
+
+    let missing = validator.validate(r#"{"name":"Ada"}"#, &schema);
+    assert!(!missing.is_valid(), "A root JSON document must declare $schema");
+
+    let mismatch = validator.validate(
+        r#"{"$schema":"https://example.com/other","name":"Ada"}"#,
+        &schema,
+    );
+    assert!(!mismatch.is_valid(), "$schema must match the supplied schema $id");
+}
+
+#[test]
+fn test_nested_schema_remains_an_application_property() {
+    let schema = json!({
+        "$id": "https://example.com/envelope",
+        "type": "object",
+        "properties": {
+            "nested": {
+                "type": "object",
+                "properties": { "value": { "type": "string" } },
+                "additionalProperties": false
+            }
+        },
+        "additionalProperties": false
+    });
+    let validator = InstanceValidator::new();
+
+    let result = validator.validate(
+        r#"{"$schema":"https://example.com/envelope","nested":{"$schema":"https://example.com/nested","value":"x"}}"#,
+        &schema,
+    );
+    assert!(!result.is_valid(), "Nested $schema must not receive root treatment");
+}
+
+#[test]
+fn test_root_uses_applies_offered_addin_to_closed_object() {
+    let schema = json!({
+        "$id": "https://example.com/order",
+        "$offers": { "Audited": "#/definitions/Audited" },
+        "type": "object",
+        "properties": { "id": { "type": "string" } },
+        "required": ["id"],
+        "additionalProperties": false,
+        "definitions": {
+            "Audited": {
+                "abstract": true,
+                "type": "object",
+                "properties": { "auditId": { "type": "string" } },
+                "required": ["auditId"]
+            }
+        }
+    });
+    let validator = InstanceValidator::new();
+
+    let valid = validator.validate(
+        r#"{"$schema":"https://example.com/order","$uses":["Audited"],"id":"1","auditId":"a1"}"#,
+        &schema,
+    );
+    assert!(valid.is_valid(), "Selected add-in must augment the closed root schema");
+
+    let not_selected = validator.validate(
+        r#"{"$schema":"https://example.com/order","id":"1","auditId":"a1"}"#,
+        &schema,
+    );
+    assert!(!not_selected.is_valid(), "Add-in properties require explicit selection");
+
+    let unknown = validator.validate(
+        r#"{"$schema":"https://example.com/order","$uses":["Unknown"],"id":"1"}"#,
+        &schema,
+    );
+    assert!(!unknown.is_valid(), "Unknown add-ins must be rejected");
+
+    let malformed = validator.validate(
+        r#"{"$schema":"https://example.com/order","$uses":"Audited","id":"1"}"#,
+        &schema,
+    );
+    assert!(!malformed.is_valid(), "$uses must be an array");
+}
 
 #[test]
 fn test_extends_simple() {
