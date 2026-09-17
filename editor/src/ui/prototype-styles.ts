@@ -527,8 +527,9 @@ export const editorStyles = `
 .js-namespace-imports label { display:grid; gap:4px; color:var(--js-muted); font-size:11px; }
 .js-namespace-imports small { color:var(--js-quiet); line-height:1.35; }
 .js-namespace-new-name { width:100%; min-height:34px; border:1px solid var(--js-line); border-radius:3px; padding:3px 8px; background:var(--js-canvas); color:var(--js-text); }
-.js-namespace-delete-actions { justify-content:flex-end; gap:8px; }
-.js-namespace-delete-actions .js-danger { margin-inline-start:0; }
+.js-namespace-delete-actions { justify-content:flex-start; }
+.js-namespace-delete-actions .js-danger { min-height:34px; margin-inline-start:0; border-color:transparent; padding:0 10px; background:transparent; }
+.js-namespace-delete-actions .js-danger:hover,.js-namespace-delete-actions .js-danger:focus-visible { border-color:color-mix(in srgb,var(--js-error) 45%,transparent); background:color-mix(in srgb,var(--js-error) 10%,transparent); color:var(--js-error); }
 .js-identity-list { display:flex; flex-wrap:wrap; gap:6px; margin:0; padding:0; list-style:none; }
 .js-identity-list li { display:inline-flex; align-items:center; overflow:hidden; border:1px solid var(--js-line); border-radius:3px; background:var(--js-panel); }
 .js-order { min-width:25px; align-self:stretch; display:grid; place-items:center; border-inline-end:1px solid var(--js-line); background:var(--js-raised); color:var(--js-accent); font:11px/1 Consolas,monospace; }

@@ -1497,7 +1497,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
       menu.setAttribute('role', 'menu');
       menu.style.left = `${pointerEvent.clientX}px`;
       menu.style.top = `${pointerEvent.clientY}px`;
-      menu.innerHTML = `<button role="menuitem" data-tree-menu-action="add-type">Add type</button><button role="menuitem" data-tree-menu-action="add-namespace">Add namespace</button>${pointer && kind === 'namespace' ? '<button role="menuitem" data-tree-menu-action="rename">Rename namespace</button><button role="menuitem" class="js-danger" data-tree-menu-action="delete">Delete empty namespace</button>' : ''}${kind === 'definition' ? '<button role="menuitem" data-tree-menu-action="rename">Rename type</button><button role="menuitem" class="js-danger" data-tree-menu-action="delete">Delete type</button>' : ''}`;
+      menu.innerHTML = `<button role="menuitem" data-tree-menu-action="add-type">Add type</button><button role="menuitem" data-tree-menu-action="add-namespace">Add namespace</button>${pointer && kind === 'namespace' ? '<button role="menuitem" data-tree-menu-action="rename">Rename namespace</button><button role="menuitem" class="js-danger" data-tree-menu-action="delete">Delete namespace</button>' : ''}${kind === 'definition' ? '<button role="menuitem" data-tree-menu-action="rename">Rename type</button><button role="menuitem" class="js-danger" data-tree-menu-action="delete">Delete type</button>' : ''}`;
       root.append(menu);
       menu.querySelectorAll('[data-tree-menu-action]').forEach((button: HTMLButtonElement) => button.addEventListener('click', () => {
         const action = button.dataset.treeMenuAction;
@@ -1510,7 +1510,7 @@ export function mountJsonStructureEditor(container: HTMLElement, options: JsonSt
         } else if (action === 'add-namespace') openAction('namespace.add', namespacePointer === '/definitions' ? '' : namespacePointer);
         else if (action === 'rename') openAction(kind === 'definition' ? 'definition.rename' : 'namespace.rename', pointer);
         else if (action === 'delete') {
-          const command = actionById(kind === 'definition' ? 'definition.delete' : 'namespace.delete');
+          const command = actionById(kind === 'definition' ? 'definition.delete' : namespaceContainsDeclarations(valueAtPointer(session.value, pointer)) ? 'namespace.delete-contents' : 'namespace.delete');
           if (command) void applyCommand(command.create(pointer, undefined));
         }
       }));
@@ -4424,8 +4424,17 @@ function namespaceDesignView(pointer: string, document: unknown, definitions: re
   const childNamespaces = namespacePointers(document, definitions.map((definition) => definition.pointer)).filter((candidate) => candidate !== pointer && candidate.startsWith(`${pointer}/`));
   const imports = (['$import', '$importdefs'] as const).map((keyword) => `<label><span>${keyword}</span><input data-namespace-import="${keyword}" data-namespace-pointer="${escapeAttribute(importPointer)}" value="${escapeAttribute(typeof importOwner?.[keyword] === 'string' ? importOwner[keyword] as string : '')}" placeholder="https://example.test/schema.struct.json"><small>${keyword === '$import' ? 'Imports the external root type and its definitions.' : 'Imports only the external definitions section.'}</small></label>`).join('');
   const title = rootNamespace ? `<h1>${name}</h1>` : `<input class="js-definition-name" data-inline-namespace-name="${escapeAttribute(pointer)}" value="${escapeAttribute(name)}" aria-label="Namespace name">`;
-  const deletion = rootNamespace ? '' : `<section class="js-design-section"><div class="js-section-head"><div><h2>Safe deletion</h2></div></div><p class="js-description">Empty namespaces can be deleted directly. Deleting contents is explicit and remains blocked while external references target this namespace.</p><div class="js-actions js-namespace-delete-actions"><button class="js-danger" data-namespace-delete="${escapeAttribute(pointer)}">Delete empty namespace</button><button class="js-danger" data-namespace-delete-contents="${escapeAttribute(pointer)}">Delete namespace and contents</button></div></section>`;
+  const hasContents = namespaceContainsDeclarations(valueAtPointer(document, pointer));
+  const deletion = rootNamespace ? '' : `<section class="js-design-section js-namespace-deletion"><div class="js-section-head"><div><h2>Delete namespace</h2></div></div><p class="js-description">${hasContents ? `Deletes this namespace and its ${childDefinitions.length} ${childDefinitions.length === 1 ? 'definition' : 'definitions'}. Deletion remains blocked while references target this namespace.` : 'Deletes this empty namespace. Deletion remains blocked while references target it.'}</p><div class="js-actions js-namespace-delete-actions"><button class="js-danger" ${hasContents ? 'data-namespace-delete-contents' : 'data-namespace-delete'}="${escapeAttribute(pointer)}">Delete namespace</button></div></section>`;
   return `<div class="js-sheet js-namespace-sheet"><header class="js-type-head"><div><div class="js-eyebrow">Namespace</div>${title}<p class="js-description">${childDefinitions.length} definitions · ${childNamespaces.length} child namespaces</p><p class="js-inline-status" data-inline-status="${escapeAttribute(pointer)}" role="status" aria-live="polite"></p></div><div class="js-type-badges"><button data-namespace-add-type="${escapeAttribute(operationPointer)}">${fluentIcon('add')} Add type</button></div></header><section class="js-design-section"><div class="js-section-head"><div><h2>Child namespaces</h2></div><button data-namespace-add-child="${escapeAttribute(operationPointer)}">${fluentIcon('add')} Add namespace</button></div><input data-namespace-add-name class="js-code js-namespace-new-name" value="Namespace" aria-label="Child namespace name"></section><section class="js-design-section"><div class="js-section-head"><div><h2>Direct imports</h2></div></div><div class="js-namespace-imports">${imports}</div><p class="js-capability-note">Imports belong to the selected namespace. <span class="js-code">$import</span> includes the external root type; <span class="js-code">$importdefs</span> does not.</p></section>${deletion}</div>`;
+}
+
+function namespaceContainsDeclarations(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  return Object.entries(value).some(([key, member]) => {
+    if (key === 'definitions') return isRecord(member) && Object.keys(member).length > 0;
+    return key === '$import' || key === '$importdefs' || isRecord(member);
+  });
 }
 
 function definitionTypeOptions(current: string | undefined): string {

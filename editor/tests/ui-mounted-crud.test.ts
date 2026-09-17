@@ -80,7 +80,34 @@ describe('mounted structured CRUD workbench', () => {
     expect(menu.textContent).toContain('Add type');
     expect(menu.textContent).toContain('Add namespace');
     expect(menu.textContent).toContain('Rename namespace');
-    expect(menu.textContent).toContain('Delete empty namespace');
+    expect(menu.textContent).toContain('Delete namespace');
+  });
+
+  it('shows one contextual namespace deletion action for empty and populated namespaces', async () => {
+    const root = mount({
+      definitions: {
+        Empty: {},
+        Domain: {
+          Record: { type: 'object' },
+        },
+      },
+    });
+
+    element<HTMLButtonElement>(root, '[data-select="/definitions/Domain"]').click();
+    await settle();
+    expect(root.querySelectorAll('.js-namespace-delete-actions button')).toHaveLength(1);
+    expect(element(root, '.js-namespace-delete-actions button').textContent).toBe('Delete namespace');
+    expect(root.querySelector('[data-namespace-delete-contents="/definitions/Domain"]')).not.toBeNull();
+    expect(root.querySelector('[data-namespace-delete="/definitions/Domain"]')).toBeNull();
+    element<HTMLButtonElement>(root, '[data-namespace-delete-contents="/definitions/Domain"]').click();
+    await settle();
+    expect(JSON.parse(handle!.getText()).definitions).not.toHaveProperty('Domain');
+
+    element<HTMLButtonElement>(root, '[data-select="/definitions/Empty"]').click();
+    await settle();
+    expect(root.querySelectorAll('.js-namespace-delete-actions button')).toHaveLength(1);
+    expect(root.querySelector('[data-namespace-delete="/definitions/Empty"]')).not.toBeNull();
+    expect(root.querySelector('[data-namespace-delete-contents="/definitions/Empty"]')).toBeNull();
   });
 
   it('creates primitive types, mutates declaration shapes, and edits document metadata', async () => {

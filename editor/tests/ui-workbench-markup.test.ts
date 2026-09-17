@@ -232,11 +232,17 @@ describe('workbench interaction markup', () => {
     const namespaceHtml = designView(undefined, undefined, undefined, [], '/definitions/Empty', [], [], 'local', undefined, undefined, [], namespaceDocument);
     expect(namespaceHtml).toContain('data-inline-namespace-name="/definitions/Empty"');
     expect(namespaceHtml).toContain('data-namespace-delete="/definitions/Empty"');
-    expect(namespaceHtml).toContain('data-namespace-delete-contents="/definitions/Empty"');
+    expect(namespaceHtml).not.toContain('data-namespace-delete-contents="/definitions/Empty"');
     expect(namespaceHtml).toContain('class="js-sheet js-namespace-sheet"');
     expect(namespaceHtml).toContain('<button data-namespace-add-child="/definitions/Empty"');
     expect(namespaceHtml).toContain('class="js-code js-namespace-new-name"');
     expect(namespaceHtml).toContain('class="js-actions js-namespace-delete-actions"');
+
+    const populatedNamespaceDocument = { definitions: { Domain: { Record: { type: 'object' } } } };
+    const populatedNamespaceHtml = designView(undefined, undefined, undefined, [], '/definitions/Domain', [], [], 'local', undefined, undefined, [], populatedNamespaceDocument);
+    expect(populatedNamespaceHtml).toContain('data-namespace-delete-contents="/definitions/Domain"');
+    expect(populatedNamespaceHtml).not.toContain('data-namespace-delete="/definitions/Domain"');
+    expect(populatedNamespaceHtml.match(/>Delete namespace</g)).toHaveLength(2);
 
     const facetDocument = {
       $schema: 'https://json-structure.org/meta/semantic-annotations/v0/#',
