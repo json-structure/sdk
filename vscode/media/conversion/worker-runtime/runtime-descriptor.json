@@ -5,7 +5,7 @@
   "files": [
     {
       "path": "worker-runtime/converter-worker.cjs",
-      "sha256": "a47ac49664022181ba17c5776045a173fd17d05edba6356d72c18108ee494a09"
+      "sha256": "10fc426d3c72794103cae5d6190046a6b438ed5dc09a2c62ea4827f2de82bce6"
     },
     {
       "path": "worker-runtime/commands-manifest.json",
