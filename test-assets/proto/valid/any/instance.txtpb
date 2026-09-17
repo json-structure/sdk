@@ -1,0 +1,7 @@
+# message: Envelope
+id: "e-1"
+payload {
+  [type.googleapis.com/Envelope] {
+    id: "inner"
+  }
+}

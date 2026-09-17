@@ -1,5 +1,8 @@
 .vscode/**
 .vscode-test/**
+.review-host/**
+build/**
+artifacts/**
 src/**
 test-fixtures/**
 scripts/**
@@ -13,4 +16,5 @@ vsc-extension-quickstart.md
 **/*.d.ts
 !dist/extension.js
 node_modules/**
+dist/test/**
 ../**

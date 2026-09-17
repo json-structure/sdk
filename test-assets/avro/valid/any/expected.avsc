@@ -1,0 +1,26 @@
+{
+  "type": "record",
+  "name": "Envelope",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string"
+    },
+    {
+      "name": "payload",
+      "type": {
+        "type": "record",
+        "name": "Envelope_payload",
+        "fields": []
+      }
+    },
+    {
+      "name": "meta",
+      "type": {
+        "type": "record",
+        "name": "Envelope_meta",
+        "fields": []
+      }
+    }
+  ]
+}

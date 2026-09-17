@@ -1,0 +1,12 @@
+{
+  "version": 2,
+  "messages": {},
+  "enums": {
+    "Colour": {
+      "values": {
+        "RED": 1,
+        "GREEN": 2
+      }
+    }
+  }
+}

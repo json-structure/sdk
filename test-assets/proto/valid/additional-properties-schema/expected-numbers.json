@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "messages": {
+    "Bag": {
+      "fields": {
+        "id": 1
+      }
+    }
+  },
+  "enums": {}
+}

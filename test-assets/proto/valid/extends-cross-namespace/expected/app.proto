@@ -1,0 +1,9 @@
+syntax = "proto3";
+
+package app;
+
+message Ticket {
+  string createdBy = 1;
+  string id = 2;
+  string title = 3;
+}

@@ -1,0 +1,288 @@
+{
+	"$schema": "https://json-structure.org/meta/validation/v0/#",
+	"$id": "https://example.test/conditional/industrial-interlock",
+	"name": "IndustrialInterlock",
+	"description": "Deeply nested fail-safe logic with deliberately intersecting operating envelopes.",
+	"type": "object",
+	"properties": {
+		"mode": {
+			"type": "string",
+			"enum": [
+				"automatic",
+				"manual",
+				"maintenance"
+			]
+		},
+		"temperature": {
+			"type": "double",
+			"unit": "K",
+			"minimum": -50,
+			"maximum": 500
+		},
+		"pressure": {
+			"type": "double",
+			"unit": "kPa",
+			"minimum": 0,
+			"maximum": 5000
+		},
+		"override": {
+			"type": "boolean"
+		},
+		"operator": {
+			"type": "string",
+			"minLength": 3,
+			"maxLength": 80
+		}
+	},
+	"required": [
+		"mode",
+		"temperature",
+		"pressure",
+		"override"
+	],
+	"additionalProperties": false,
+	"allOf": [
+		{
+			"anyOf": [
+				{
+					"name": "AutomaticEnvelope",
+					"type": "object",
+					"properties": {
+						"mode": {
+							"type": "string",
+							"const": "automatic"
+						},
+						"pressure": {
+							"type": "double",
+							"maximum": 2500
+						}
+					},
+					"required": [
+						"mode",
+						"pressure"
+					],
+					"additionalProperties": true
+				},
+				{
+					"name": "AttendedEnvelope",
+					"type": "object",
+					"properties": {
+						"mode": {
+							"type": "string",
+							"enum": [
+								"manual",
+								"maintenance"
+							]
+						},
+						"operator": {
+							"type": "string",
+							"minLength": 3
+						}
+					},
+					"required": [
+						"mode",
+						"operator"
+					],
+					"additionalProperties": true
+				}
+			]
+		},
+		{
+			"oneOf": [
+				{
+					"name": "ThermalBand",
+					"type": "object",
+					"properties": {
+						"temperature": {
+							"type": "double",
+							"minimum": 0,
+							"maximum": 200
+						}
+					},
+					"required": [
+						"temperature"
+					],
+					"additionalProperties": true
+				},
+				{
+					"name": "PressureBand",
+					"type": "object",
+					"properties": {
+						"pressure": {
+							"type": "double",
+							"minimum": 100,
+							"maximum": 1000
+						}
+					},
+					"required": [
+						"pressure"
+					],
+					"additionalProperties": true
+				}
+			]
+		},
+		{
+			"if": {
+				"allOf": [
+					{
+						"name": "AutomaticCondition",
+						"type": "object",
+						"properties": {
+							"mode": {
+								"type": "string",
+								"const": "automatic"
+							}
+						},
+						"required": [
+							"mode"
+						],
+						"additionalProperties": true
+					},
+					{
+						"not": {
+							"name": "OverrideCondition",
+							"type": "object",
+							"properties": {
+								"override": {
+									"type": "boolean",
+									"const": true
+								}
+							},
+							"required": [
+								"override"
+							],
+							"additionalProperties": true
+						}
+					}
+				]
+			},
+			"then": {
+				"anyOf": [
+					{
+						"allOf": [
+							{
+								"name": "NominalThermal",
+								"type": "object",
+								"properties": {
+									"temperature": {
+										"type": "double",
+										"minimum": 10,
+										"maximum": 120
+									}
+								},
+								"required": [
+									"temperature"
+								],
+								"additionalProperties": true
+							},
+							{
+								"name": "NominalPressure",
+								"type": "object",
+								"properties": {
+									"pressure": {
+										"type": "double",
+										"minimum": 200,
+										"maximum": 800
+									}
+								},
+								"required": [
+									"pressure"
+								],
+								"additionalProperties": true
+							}
+						]
+					},
+					{
+						"oneOf": [
+							{
+								"name": "ColdLowPressure",
+								"type": "object",
+								"properties": {
+									"temperature": {
+										"type": "double",
+										"maximum": 10
+									},
+									"pressure": {
+										"type": "double",
+										"maximum": 200
+									}
+								},
+								"required": [
+									"temperature",
+									"pressure"
+								],
+								"additionalProperties": true
+							},
+							{
+								"not": {
+									"anyOf": [
+										{
+											"type": "null"
+										},
+										{
+											"name": "ImpossibleOverride",
+											"type": "object",
+											"properties": {
+												"override": {
+													"type": "boolean",
+													"const": true
+												}
+											},
+											"required": [
+												"override"
+											],
+											"additionalProperties": true
+										}
+									]
+								}
+							}
+						]
+					}
+				]
+			},
+			"else": {
+				"not": {
+					"anyOf": [
+						{
+							"name": "HotAndUnattended",
+							"type": "object",
+							"properties": {
+								"temperature": {
+									"type": "double",
+									"minimum": 300
+								},
+								"operator": {
+									"type": "string",
+									"maxLength": 2
+								}
+							},
+							"required": [
+								"temperature",
+								"operator"
+							],
+							"additionalProperties": true
+						},
+						{
+							"not": {
+								"not": {
+									"name": "MissingSafePressureProxy",
+									"type": "object",
+									"properties": {
+										"pressure": {
+											"type": "double",
+											"maximum": 4500
+										}
+									},
+									"required": [
+										"pressure"
+									],
+									"additionalProperties": true
+								}
+							}
+						}
+					]
+				}
+			}
+		}
+	]
+}

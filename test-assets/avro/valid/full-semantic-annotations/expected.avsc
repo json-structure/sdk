@@ -1,0 +1,59 @@
+{
+  "type": "record",
+  "name": "Observation",
+  "annotations": {
+    "concepts": [
+      {
+        "reference": "http://www.w3.org/ns/sosa/Observation",
+        "kind": "owl-class"
+      }
+    ],
+    "observedProperty": {
+      "reference": "https://vocab.nerc.ac.uk/standard_name/air_temperature/",
+      "kind": "cf-standard-name"
+    }
+  },
+  "fields": [
+    {
+      "name": "result",
+      "type": "double",
+      "annotations": {
+        "semanticRole": "result",
+        "derivation": "measured",
+        "statistic": "mean",
+        "phenomenonTimeRelation": "period",
+        "supportPeriod": {
+          "duration": "PT1H",
+          "position": "end"
+        },
+        "cadence": {
+          "kind": "regular",
+          "period": "PT1H"
+        },
+        "measurementConditioning": {
+          "frequencyWeighting": "A"
+        }
+      }
+    },
+    {
+      "name": "quality",
+      "type": {
+        "type": "enum",
+        "name": "Quality",
+        "annotations": {
+          "concepts": [
+            {
+              "reference": "http://www.w3.org/ns/sosa/hasResultQuality",
+              "kind": "rdf-property"
+            }
+          ]
+        },
+        "symbols": [
+          "good",
+          "suspect",
+          "bad"
+        ]
+      }
+    }
+  ]
+}

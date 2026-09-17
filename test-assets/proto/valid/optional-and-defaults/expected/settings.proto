@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+message Settings {
+  string id = 1;
+  // JSON Structure default: 3
+  optional int32 retries = 2;
+  optional string label = 3;
+  // JSON Structure default: true
+  optional bool enabled = 4;
+  // JSON Structure const: "settings"
+  optional string kind = 5;
+}

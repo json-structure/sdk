@@ -1,0 +1,22 @@
+{
+  "version": 2,
+  "messages": {
+    "com.example.app.Root": {
+      "fields": {
+        "left": 1,
+        "right": 2
+      }
+    },
+    "com.example.left.Thing": {
+      "fields": {
+        "a": 1
+      }
+    },
+    "com.example.right.Thing": {
+      "fields": {
+        "b": 1
+      }
+    }
+  },
+  "enums": {}
+}

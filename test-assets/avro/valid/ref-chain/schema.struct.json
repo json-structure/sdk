@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/avro/ref-chain",
+  "$root": "#/definitions/A",
+  "definitions": {
+    "A": {
+      "name": "A",
+      "type": "object",
+      "properties": { "b": { "type": { "$ref": "#/definitions/B" } } },
+      "required": ["b"]
+    },
+    "B": {
+      "name": "B",
+      "type": "object",
+      "properties": { "c": { "type": { "$ref": "#/definitions/C" } } },
+      "required": ["c"]
+    },
+    "C": {
+      "name": "C",
+      "type": "object",
+      "properties": { "d": { "type": { "$ref": "#/definitions/D" } } },
+      "required": ["d"]
+    },
+    "D": {
+      "name": "D",
+      "type": "object",
+      "properties": { "leaf": { "type": "string" } },
+      "required": ["leaf"]
+    }
+  }
+}

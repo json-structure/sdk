@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/proto/collections-of-types",
+  "$root": "#/definitions/Basket",
+  "definitions": {
+    "Item": {
+      "name": "Item",
+      "type": "object",
+      "properties": { "sku": { "type": "string" } },
+      "required": ["sku"]
+    },
+    "Colour": { "name": "Colour", "type": "string", "enum": ["RED", "BLUE"] },
+    "Basket": {
+      "name": "Basket",
+      "type": "object",
+      "properties": {
+        "items": { "type": "array", "items": { "type": { "$ref": "#/definitions/Item" } } },
+        "byId": { "type": "map", "values": { "type": { "$ref": "#/definitions/Item" } } },
+        "colours": { "type": "set", "items": { "type": { "$ref": "#/definitions/Colour" } } },
+        "inline": {
+          "type": "array",
+          "items": { "type": "object", "properties": { "n": { "type": "int32" } }, "required": ["n"] }
+        },
+        "inlineEnum": { "type": "array", "items": { "type": "string", "enum": ["A", "B"] } },
+        "grid": {
+          "type": "array",
+          "items": { "type": "array", "items": { "type": { "$ref": "#/definitions/Item" } } }
+        }
+      },
+      "required": ["items", "byId", "colours", "inline", "inlineEnum", "grid"]
+    }
+  }
+}

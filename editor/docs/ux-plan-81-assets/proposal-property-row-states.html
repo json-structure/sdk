@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Property row proposal</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: "Segoe UI", Arial, sans-serif;
+      --bg: #111416;
+      --panel: #1b2024;
+      --panel-2: #20262a;
+      --line: #384148;
+      --muted: #9facb5;
+      --text: #f4f7f8;
+      --cyan: #58c8eb;
+      --focus: #ffd84d;
+    }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; min-width: 320px; min-height: 100%; margin: 0; background: var(--bg); color: var(--text); }
+    body { overflow: auto; }
+    button, input, select { font: inherit; }
+    button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+    .app { width: 1440px; height: 1000px; display: grid; grid-template-rows: 34px 37px 1fr 22px; background: var(--bg); }
+    .menubar { display: flex; align-items: center; gap: 18px; padding: 0 14px; border-bottom: 1px solid #30373c; background: #1c2023; font-size: 13px; }
+    .brand { color: var(--cyan); font-weight: 700; }
+    .document-title { position: absolute; left: 670px; width: 520px; padding: 4px 12px; border: 1px solid #333d43; text-align: center; }
+    .topbar { display: grid; grid-template-columns: 283px 1fr 283px; border-bottom: 1px solid var(--line); background: #15191c; color: #c9d4da; }
+    .topbar > div { display: flex; align-items: center; padding: 0 16px; }
+    .topbar .right { justify-content: flex-end; }
+    .profile-tag { padding: 4px 8px; border: 1px solid #3a444a; }
+    .workspace { display: grid; grid-template-columns: 46px 237px 1fr 283px; min-height: 0; }
+    .activity { display: flex; flex-direction: column; align-items: center; gap: 18px; padding-top: 14px; border-right: 1px solid var(--line); background: #181d20; }
+    .activity span { display: grid; width: 28px; height: 28px; place-items: center; color: #dbe5e9; font-size: 19px; }
+    .activity .active { border-left: 3px solid var(--cyan); background: #24333a; color: var(--cyan); }
+    .types { border-right: 1px solid var(--line); background: #1c2125; }
+    .pane-head { display: flex; align-items: center; justify-content: space-between; height: 43px; padding: 0 10px; color: #c9d6dc; font-size: 11px; text-transform: uppercase; }
+    .filter { margin: 0 8px 10px; padding: 7px 9px; border: 1px solid #343d42; background: #111518; color: #87949c; }
+    .count { padding: 2px 10px 8px; color: #aab9c0; font-size: 11px; }
+    .tree-row { display: grid; grid-template-columns: 18px 1fr 26px; align-items: center; min-height: 31px; padding: 0 8px 0 15px; font-size: 13px; }
+    .tree-row.active { background: #24353d; border-left: 2px solid var(--cyan); }
+    .tree-icon { color: var(--cyan); }
+    .root-mark { display: grid; width: 22px; height: 22px; place-items: center; background: var(--cyan); color: #102029; }
+    .canvas { min-width: 0; overflow: hidden; padding: 0 24px; background: #121618; }
+    .doc-tab { height: 42px; margin: 0 -24px 30px; padding: 11px 14px; border-bottom: 1px solid var(--line); border-left: 1px solid var(--cyan); font-size: 13px; }
+    .definition-head { position: relative; padding-bottom: 22px; border-bottom: 1px solid var(--line); }
+    .eyebrow { color: var(--cyan); font-size: 10px; letter-spacing: .04em; text-transform: uppercase; }
+    h1 { margin: 6px 0 4px; font-size: 28px; }
+    .subtitle { margin: 0; font-size: 14px; }
+    .type-control { position: absolute; right: 0; top: 8px; display: flex; gap: 8px; }
+    .fake-control { min-width: 88px; padding: 8px 10px; border: 1px solid #384148; background: #171c1f; color: #eef5f7; }
+    .properties-title { display: flex; align-items: center; gap: 8px; margin-top: 21px; height: 36px; font-size: 13px; }
+    .tabs { display: inline-flex; }
+    .tabs span { padding: 6px 10px; border: 1px solid #3d474d; }
+    .tabs .active { border-color: var(--cyan); background: var(--cyan); color: #10212a; }
+    .add { margin-left: auto; padding: 6px 14px; border: 1px solid #3e474d; background: #272d31; color: #d7e0e4; }
+    .property-table { border: 1px solid #394148; }
+    .column-head, .property-main { display: grid; grid-template-columns: minmax(180px,1.65fr) minmax(140px,1fr) 72px 76px 72px 86px 34px 34px; align-items: center; }
+    .column-head { min-height: 28px; padding: 0 8px 0 10px; border-bottom: 1px solid #343d42; background: #202529; color: #9dabb3; font-size: 10px; text-transform: uppercase; }
+    .property-row { position: relative; border-bottom: 1px solid #333c42; background: #1d2225; }
+    .property-row:last-child { border-bottom: 0; }
+    .property-row.property-selected { background: #24353d; box-shadow: inset 3px 0 0 var(--cyan); }
+    .property-row.neutral-selected { background: #243037; box-shadow: inset 3px 0 0 var(--cyan), inset 0 0 0 1px #416578; }
+    .property-main { min-height: 42px; padding: 0 7px 0 10px; }
+    .read-value { width: calc(100% - 6px); min-width: 0; padding: 6px; border: 1px solid transparent; background: transparent; color: #f7f9fa; text-align: left; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .read-value:hover { border-color: #52636d; background: #182126; }
+    .name { font-weight: 650; }
+    .type-text { font-family: Consolas, monospace; }
+    .classic-input, .classic-select, .edit-input { width: calc(100% - 8px); height: 30px; padding: 3px 7px; border: 1px solid #384148; background: #171c1f; color: #fff; }
+    .edit-input { border: 2px solid var(--focus); font-weight: 650; }
+    .flag { display: flex; align-items: center; gap: 5px; color: #b9c7cd; font-size: 11px; }
+    .flag input { width: 13px; height: 13px; margin: 0; }
+    .icon-button { display: grid; width: 28px; height: 28px; place-items: center; border: 1px solid transparent; background: transparent; color: #d8e1e5; font-size: 16px; }
+    .icon-button:hover { border-color: #56646c; background: #252d31; }
+    .description { margin: -2px 82px 0 17px; padding: 0 0 9px; color: #cad5da; font-size: 12px; }
+    .description .read-value { padding-left: 0; color: #cad5da; font-size: 12px; }
+    .classic-description { width: 100%; height: 28px; padding: 3px 7px; border: 1px solid transparent; background: transparent; color: #e8eef1; }
+    .summary { display: flex; gap: 6px; margin: -2px 82px 0 17px; padding: 0 0 9px; color: #afc1c9; font-size: 11px; }
+    .summary span { padding: 2px 7px; border: 1px solid #42616f; background: #18272e; color: #c4e5f1; }
+    .details-panel { margin: 0 16px 14px; padding: 10px; border: 1px solid #475158; background: #1c2125; }
+    .detail-heading { margin-bottom: 9px; font-size: 12px; font-weight: 700; }
+    .detail-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .detail-group { padding: 10px; border: 1px solid #3c464c; background: #20262a; }
+    .detail-group label { display: block; margin-bottom: 5px; color: #b9c8ce; font-size: 11px; }
+    .detail-group input { width: 100%; height: 30px; padding: 4px 7px; border: 1px solid #3d474d; background: #111619; color: #fff; }
+    .overflow { position: absolute; z-index: 4; right: 8px; top: 35px; width: 176px; border: 1px solid #5c6870; background: #242a2e; box-shadow: 0 8px 24px #0009; }
+    .overflow button { display: block; width: 100%; padding: 10px 12px; border: 0; border-top: 1px solid #414b51; background: transparent; color: #f1f5f6; text-align: left; font-size: 12px; }
+    .overflow button:first-child { border-top: 0; }
+    .overflow .danger { color: #ffb3ad; }
+    .inspector { border-left: 1px solid var(--line); background: #1b2024; }
+    .inspector h2 { margin: 0; padding: 13px 12px; border-bottom: 1px solid #394148; font-size: 12px; text-transform: uppercase; }
+    .inspect-block { padding: 12px; border-bottom: 1px solid #394148; }
+    .inspect-block small { display: block; margin-bottom: 8px; color: var(--cyan); font-size: 10px; text-transform: uppercase; }
+    .inspect-block strong { font-size: 16px; }
+    .inspect-block p { margin: 6px 0 0; color: #c5d0d5; font-size: 13px; }
+    .inspect-table { display: grid; grid-template-columns: 1fr 1.35fr; gap: 10px; margin-top: 14px; color: #c2d0d6; font-size: 12px; }
+    .inspect-table b { text-align: right; color: #fff; font-family: Consolas, monospace; }
+    .problems { position: absolute; left: 283px; right: 283px; bottom: 22px; height: 32px; padding: 8px 12px; border-top: 1px solid #3a444a; background: #151a1d; font-size: 12px; }
+    .status { display: flex; align-items: center; justify-content: space-between; padding: 0 13px; background: #56bee1; color: #0c2732; font-size: 11px; }
+    @media (max-width: 700px) {
+      .app { transform-origin: top left; transform: scale(.5); }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="menubar"><span class="brand">{;}</span><span>File</span><span>Edit</span><span>View</span><span>Help</span><span class="document-title" id="document-title">Financial types</span></div>
+    <div class="topbar"><div>Types&nbsp;&nbsp; <span id="profile-tag" class="profile-tag">core</span><span id="companions-tag"></span></div><div></div><div class="right">Inspector</div></div>
+    <div class="workspace">
+      <nav class="activity" aria-label="Modes"><span class="active">▥</span><span>◇</span><span>□</span><span>✓</span><span>⇄</span></nav>
+      <aside class="types">
+        <div class="pane-head"><span>Types</span><span>＋ ⧉</span></div>
+        <div class="filter">Filter types</div>
+        <div class="count" id="definition-count">3 definitions</div>
+        <div class="tree-row"><span class="tree-icon">⬡</span><strong>Root namespace</strong><span id="root-count">3</span></div>
+        <div class="tree-row active"><span class="tree-icon">⬡</span><strong id="tree-active">Invoice</strong><span class="root-mark">✓</span></div>
+        <div class="tree-row financial-only"><span class="tree-icon">⬡</span><strong>LineItem</strong><span>✓</span></div>
+        <div class="tree-row financial-only"><span class="tree-icon">⬡</span><strong>Money</strong><span>✓</span></div>
+      </aside>
+      <main class="canvas">
+        <div class="doc-tab">▱&nbsp;&nbsp;<span id="tab-title">Financial types</span></div>
+        <section class="definition-head">
+          <div class="eyebrow">Local definition</div>
+          <h1 id="definition-name">Invoice</h1>
+          <p class="subtitle" id="definition-description">A business invoice</p>
+          <div class="type-control"><span class="fake-control">object⌄</span><span id="abstract-control" class="fake-control">□ Abstract</span><span id="root-control" class="fake-control" style="border-color:#2d9dce">☑ Root</span><span id="delete-type" class="fake-control">Delete type</span></div>
+        </section>
+        <div class="properties-title"><strong>Properties</strong><span id="visible-count">14 visible</span><span class="tabs"><span class="active">Local</span><span>Effective</span></span><button class="add">＋ Add property</button></div>
+        <section class="property-table" role="grid" aria-label="Proposed property rows">
+          <div class="column-head" role="row"><span>Name</span><span>Type</span><span></span><span>Nullable</span><span>Identity</span><span>Presence</span><span></span><span></span></div>
+          <div id="rows"></div>
+        </section>
+      </main>
+      <aside class="inspector">
+        <h2>Properties</h2>
+        <div class="inspect-block"><small id="inspect-kind">Object</small><strong id="inspect-name">Invoice</strong><p id="inspect-description">A business invoice</p></div>
+        <div class="inspect-block"><small id="inspect-section">Core</small><div class="inspect-table"><span>type</span><b id="inspect-type">object</b><span>form</span><b id="inspect-form">typed</b><span id="inspect-extra-label">required</span><b id="inspect-extra">invoiceNumber,<br>issueDate,<br>dueDate</b><span id="inspect-max-label" hidden>maxLength</span><b id="inspect-max" hidden>50</b></div></div>
+        <div class="inspect-block"><small>Schema metadata</small><p>Name</p><div id="metadata-name" class="fake-control" style="margin-top:6px">FinancialDocument</div><p>Meta-schema</p><div id="metadata-profile" class="fake-control" style="margin-top:6px">core</div></div>
+      </aside>
+    </div>
+    <div class="problems"><strong>Problems</strong>&nbsp; 0</div>
+    <div class="status"><span id="status-profile">ⓘ 0&nbsp;&nbsp; ⚠ 0&nbsp;&nbsp;&nbsp; JSON Structure core</span><span id="status-count">3 types&nbsp;&nbsp; valid</span></div>
+  </div>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const item = params.get("item") || "11";
+    const requestedState = params.get("state") || "";
+    const financialRows = [
+      ["invoiceNumber", "string", "Unique invoice identifier", true],
+      ["sequenceNumber", "int32", "Sequential invoice number for internal tracking", false],
+      ["globalSequenceNumber", "int64", "Global sequential invoice number for audit trail", false],
+      ["issueDate", "date", "Date the invoice was issued", true],
+      ["dueDate", "date", "Payment due date", true],
+      ["paymentTermsDays", "int16", "Number of days for payment terms (1–365 typical range)", false],
+      ["lineItems", "array&lt;LineItem&gt;", "Line items included in this invoice", true],
+      ["subtotal", "Money", "Subtotal before tax", true],
+      ["tax", "Money", "Calculated tax amount", false],
+      ["total", "Money", "Total invoice amount", true]
+    ];
+    const unitsRows = [
+      ["distance", "double", "", true],
+      ["duration", "double", "", false],
+      ["speed", "double", "", false],
+      ["timestamp", "datetime", "", true]
+    ];
+    const compactMode = item === "11" || item === "12";
+    const isUnits = item === "14";
+    const activeName = item === "12" && requestedState === "active";
+    const expandedProperty = item === "12" || (item === "14" && requestedState === "expanded");
+
+    function compactValue(value, kind, rowIndex) {
+      const label = kind === "name" ? "Property name" : kind === "type" ? "Property type" : "Property description";
+      return `<button type="button" class="read-value ${kind === "name" ? "name" : kind === "type" ? "type-text" : ""}" data-edit-kind="${kind}" data-row-index="${rowIndex}" aria-label="${label}: ${value}">${value || (kind === "description" ? "Add description" : "")}</button>`;
+    }
+
+    function classicValue(value, kind) {
+      if (kind === "type") return `<select class="classic-select" aria-label="Property type"><option>${value}</option></select>`;
+      if (kind === "description") return `<input class="classic-description" aria-label="Property description" value="${value}">`;
+      return `<input class="classic-input" aria-label="Property name" value="${value}">`;
+    }
+
+    function detailMarkup(name) {
+      if (item === "12" && name === "invoiceNumber") {
+        return `<div class="details-panel">
+          <div class="detail-heading">Core qualifiers <span style="color:#9facb5;font-weight:400">Type-specific attributes</span></div>
+          <div class="detail-grid">
+            <div class="detail-group"><label>Core · enum</label><input placeholder="Enter comma-separated values"></div>
+            <div class="detail-group"><label>Core · const</label><input></div>
+            <div class="detail-group"><label>Core · maximum length</label><input value="50"></div>
+          </div>
+          <div class="detail-grid" style="margin-top:10px">
+            <div class="detail-group"><label>Validation constraints</label><input value="Maximum length · 50"></div>
+            <div class="detail-group"><label>Annotations</label><input value="No annotations" disabled></div>
+            <div class="detail-group"><label>Add locally</label><input value="Choose constraint or annotation" disabled></div>
+          </div>
+        </div>`;
+      }
+      if (item === "14" && name === "distance" && expandedProperty) {
+        return `<div class="details-panel">
+          <div class="detail-heading">Annotations</div>
+          <div class="detail-grid">
+            <div class="detail-group"><label>Display symbol</label><input value="d"></div>
+            <div class="detail-group"><label>Display unit</label><input value="m"></div>
+            <div class="detail-group"><label>Add annotation</label><input value="Choose annotation" disabled></div>
+          </div>
+        </div>`;
+      }
+      return "";
+    }
+
+    function rowMarkup(row, index) {
+      const [name, type, description, required] = row;
+      const selected = (item === "12" || item === "14" || item === "19") && index === 0;
+      const neutral = item === "19" && index === 0;
+      const openMenu = item === "18" && index === 0;
+      const showSummary = item === "14" && index === 0;
+      const nameControl = activeName && index === 0
+        ? `<input class="edit-input" value="${name}" aria-label="Property name">`
+        : compactMode ? compactValue(name, "name", index) : classicValue(name, "name");
+      const typeControl = compactMode ? compactValue(type, "type", index) : classicValue(type, "type");
+      const descriptionControl = compactMode ? compactValue(description, "description", index) : classicValue(description, "description");
+      const deleteOrMenu = item === "18"
+        ? `<button type="button" class="icon-button" aria-label="Property actions" aria-haspopup="menu" aria-expanded="${openMenu}" aria-controls="property-menu-${index}">⋯</button>`
+        : `<button type="button" class="icon-button" aria-label="Delete property">×</button>`;
+      return `<article class="property-row ${selected ? "property-selected" : ""} ${neutral ? "neutral-selected" : ""}" role="row" aria-selected="${neutral}" ${neutral ? 'tabindex="0"' : ""} data-row-index="${index}">
+        <div class="property-main">
+          <div>${nameControl}</div>
+          <div>${typeControl}</div>
+          <button type="button" class="icon-button" style="width:66px;font-size:12px" aria-label="Add type alternative">＋ type</button>
+          <label class="flag"><input type="checkbox">nullable</label>
+          <label class="flag"><input type="checkbox">identity</label>
+          <label class="flag"><input type="checkbox" ${required ? "checked" : ""}>${required ? "required" : "optional"}</label>
+          <button type="button" class="icon-button disclosure" aria-label="${expandedProperty && index === 0 ? "Collapse" : "Expand"} property">${expandedProperty && index === 0 ? "⌃" : "⌄"}</button>
+          ${deleteOrMenu}
+        </div>
+        <div class="description">${descriptionControl}</div>
+        ${showSummary && !expandedProperty ? `<div class="summary"><span>unit m</span><span>symbol d</span></div>` : ""}
+        ${detailMarkup(name)}
+        ${openMenu ? `<div class="overflow" id="property-menu-${index}" role="menu" aria-label="Property actions"><button role="menuitem">Delete property</button></div>` : ""}
+      </article>`;
+    }
+
+    const rows = isUnits ? unitsRows : financialRows;
+    document.getElementById("rows").innerHTML = rows.map(rowMarkup).join("");
+
+    function bindReadValue(button) {
+      button.addEventListener("click", () => replaceWithEditor(button));
+      button.addEventListener("focus", () => {
+        if (button.dataset.suppressActivation === "true") {
+          delete button.dataset.suppressActivation;
+          return;
+        }
+        replaceWithEditor(button);
+      });
+    }
+
+    function replaceWithEditor(button) {
+      const kind = button.dataset.editKind;
+      const current = button.textContent;
+      const editor = kind === "type"
+        ? Object.assign(document.createElement("select"), { className: "classic-select", ariaLabel: "Property type" })
+        : Object.assign(document.createElement("input"), { className: kind === "name" ? "edit-input" : "classic-description", ariaLabel: kind === "name" ? "Property name" : "Property description", value: current === "Add description" ? "" : current });
+      if (kind === "type") {
+        const option = document.createElement("option");
+        option.textContent = current;
+        editor.append(option);
+      }
+      const restore = () => {
+        const value = kind === "type" ? editor.value : editor.value || (kind === "description" ? "Add description" : current);
+        const replacement = document.createElement("button");
+        replacement.type = "button";
+        replacement.className = button.className;
+        replacement.dataset.editKind = kind;
+        replacement.dataset.rowIndex = button.dataset.rowIndex;
+        replacement.textContent = value;
+        replacement.dataset.suppressActivation = "true";
+        bindReadValue(replacement);
+        editor.replaceWith(replacement);
+        replacement.focus();
+      };
+      editor.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === "Escape") {
+          event.preventDefault();
+          restore();
+        }
+      });
+      button.replaceWith(editor);
+      editor.focus();
+      if (editor.select) editor.select();
+    }
+    document.querySelectorAll("[data-edit-kind]").forEach(bindReadValue);
+
+    if (item === "14") {
+      document.getElementById("document-title").textContent = "Units fixture";
+      document.getElementById("tab-title").textContent = "Units fixture";
+      document.getElementById("definition-count").textContent = "0 definitions · inline root";
+      document.getElementById("root-count").textContent = "0";
+      document.getElementById("tree-active").textContent = "Inline root";
+      document.getElementById("definition-name").textContent = "$root";
+      document.getElementById("definition-description").textContent = "No description yet.";
+      document.getElementById("visible-count").textContent = "4 visible";
+      document.querySelectorAll(".financial-only").forEach((element) => element.remove());
+      document.getElementById("profile-tag").textContent = "extended";
+      document.getElementById("companions-tag").textContent = "  2 companions";
+      document.getElementById("abstract-control").remove();
+      document.getElementById("root-control").remove();
+      document.getElementById("delete-type").remove();
+      document.getElementById("inspect-kind").textContent = "Property";
+      document.getElementById("inspect-name").textContent = "distance";
+      document.getElementById("inspect-description").textContent = "";
+      document.getElementById("inspect-type").textContent = "double";
+      document.getElementById("inspect-form").textContent = "scalar";
+      document.getElementById("inspect-extra-label").textContent = "unit";
+      document.getElementById("inspect-extra").textContent = "m";
+      document.getElementById("metadata-name").textContent = "Reading";
+      document.getElementById("metadata-profile").textContent = "extended";
+      document.getElementById("status-profile").innerHTML = "ⓘ 0&nbsp;&nbsp; ⚠ 0&nbsp;&nbsp;&nbsp; JSON Structure extended";
+      document.getElementById("status-count").innerHTML = "0 types&nbsp;&nbsp; valid";
+    }
+
+    if (item === "12" || item === "19") {
+      document.getElementById("inspect-kind").textContent = "Property";
+      document.getElementById("inspect-name").textContent = "invoiceNumber";
+      document.getElementById("inspect-description").textContent = "Unique invoice identifier";
+      document.getElementById("inspect-type").textContent = "string";
+      document.getElementById("inspect-form").textContent = "scalar";
+      document.getElementById("inspect-extra-label").textContent = "required";
+      document.getElementById("inspect-extra").textContent = "true";
+      document.getElementById("inspect-max-label").hidden = false;
+      document.getElementById("inspect-max").hidden = false;
+    }
+
+    if (item === "14") {
+      document.querySelector(".disclosure").addEventListener("click", () => {
+        const next = new URL(location.href);
+        if (requestedState === "expanded") next.searchParams.delete("state");
+        else next.searchParams.set("state", "expanded");
+        location.href = next;
+      });
+    }
+
+    if (item === "18") {
+      const trigger = document.querySelector("[aria-haspopup='menu']");
+      const menu = document.querySelector("[role='menu']");
+      trigger.addEventListener("click", () => {
+        const expanded = trigger.getAttribute("aria-expanded") === "true";
+        trigger.setAttribute("aria-expanded", String(!expanded));
+        menu.hidden = expanded;
+        if (!expanded) menu.querySelector("button").focus();
+      });
+      menu.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+          menu.hidden = true;
+          trigger.setAttribute("aria-expanded", "false");
+          trigger.focus();
+        }
+      });
+    }
+  </script>
+</body>
+</html>

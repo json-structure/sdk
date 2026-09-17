@@ -1,0 +1,43 @@
+{
+  "type": "record",
+  "name": "Envelope",
+  "namespace": "com.example.app",
+  "fields": [
+    {
+      "name": "left",
+      "type": [
+        "null",
+        {
+          "type": "record",
+          "name": "Thing",
+          "namespace": "com.example.left",
+          "fields": [
+            {
+              "name": "a",
+              "type": "string"
+            }
+          ]
+        }
+      ],
+      "default": null
+    },
+    {
+      "name": "right",
+      "type": [
+        "null",
+        {
+          "type": "record",
+          "name": "Thing",
+          "namespace": "com.example.right",
+          "fields": [
+            {
+              "name": "b",
+              "type": "string"
+            }
+          ]
+        }
+      ],
+      "default": null
+    }
+  ]
+}

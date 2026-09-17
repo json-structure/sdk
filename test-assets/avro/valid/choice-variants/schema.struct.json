@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/avro/choice-variants",
+  "$root": "#/definitions/Node",
+  "definitions": {
+    "Node": {
+      "name": "Node",
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "choice",
+          "choices": {
+            "text": { "type": "string" },
+            "number": { "type": "double" },
+            "flag": { "type": "boolean" },
+            "nested": {
+              "type": "choice",
+              "choices": { "a": { "type": "int32" }, "b": { "type": "string" } }
+            },
+            "children": { "type": "array", "items": { "type": { "$ref": "#/definitions/Node" } } }
+          }
+        },
+        "list": {
+          "type": "array",
+          "items": {
+            "type": "choice",
+            "choices": { "x": { "type": "string" }, "y": { "type": "int32" } }
+          }
+        },
+        "bag": {
+          "type": "map",
+          "values": {
+            "type": "choice",
+            "choices": { "p": { "type": "string" }, "q": { "type": "int32" } }
+          }
+        }
+      },
+      "required": ["value", "list", "bag"]
+    }
+  }
+}

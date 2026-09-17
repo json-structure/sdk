@@ -1,0 +1,47 @@
+{
+  "type": "record",
+  "name": "Landmark",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string"
+    },
+    {
+      "name": "createdAt",
+      "type": [
+        "null",
+        "string"
+      ],
+      "default": null
+    },
+    {
+      "name": "label",
+      "type": "string"
+    },
+    {
+      "name": "location",
+      "type": {
+        "type": "record",
+        "name": "Landmark_location",
+        "fields": [
+          {
+            "name": "lat",
+            "type": "double"
+          },
+          {
+            "name": "lon",
+            "type": "double"
+          }
+        ]
+      }
+    },
+    {
+      "name": "visitors",
+      "type": [
+        "null",
+        "int"
+      ],
+      "default": null
+    }
+  ]
+}

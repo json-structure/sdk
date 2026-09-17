@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/avro/full-reserved-logicals",
+  "name": "Reserved",
+  "description": "The two reserved Avro logical types: uuid, and decimal in both modes.",
+  "type": "object",
+  "properties": {
+    "id": { "type": "uuid" },
+    "amount": { "type": "decimal", "precision": 10, "scale": 2 }
+  },
+  "required": ["id", "amount"]
+}

@@ -1,0 +1,3 @@
+kind: IllegalName
+path: #/properties/a/altnames/avro
+message: 'not-a-legal-name' is not a legal Avro name (at #/properties/a/altnames/avro)

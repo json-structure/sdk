@@ -1,0 +1,1 @@
+{"$schema":"https://json-structure.org/meta/extended/v0/#","$uses":["JSONStructureUnits"],"definitions":{"Temperature":{"type":"float64","unit":"degC","ucumUnit":"Cel","symbols":{"json":"°C","lang:en":"degrees Celsius"}}}}

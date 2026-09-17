@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+message Lossless {
+  string dec = 1;
+  string date = 2;
+  string time = 3;
+  string dt = 4;
+  string dur = 5;
+  string uuid = 6;
+  string uri = 7;
+  string ptr = 8;
+  string i128 = 9;
+  uint64 u64 = 10;
+  string u128 = 11;
+}

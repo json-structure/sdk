@@ -1,0 +1,9 @@
+syntax = "proto3";
+
+message Joint {
+  string id = 1;
+  string side = 2;
+  string shared = 3;
+  string arm = 4;
+  optional string note = 5;
+}

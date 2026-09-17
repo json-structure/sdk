@@ -1,0 +1,29 @@
+{
+  "version": 2,
+  "messages": {
+    "Account": {
+      "fields": {
+        "inserted": 2,
+        "id": 1,
+        "code": 25,
+        "label": 4,
+        "state": 3
+      },
+      "reserved": [
+        6,
+        9
+      ]
+    }
+  },
+  "enums": {
+    "Account_state": {
+      "values": {
+        "open": 7,
+        "closed": 8
+      },
+      "reserved": [
+        5
+      ]
+    }
+  }
+}

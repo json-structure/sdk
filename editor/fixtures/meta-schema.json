@@ -1,0 +1,1 @@
+{"$schema":"https://json-structure.org/schema/","$id":"https://example.test/meta","name":"MetaSeed","$uses":["https://example.test/extension"],"type":"object"}

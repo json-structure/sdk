@@ -1,0 +1,236 @@
+{
+    "$schema": "https://json-structure.org/meta/validation/v0/#",
+    "$id": "https://example.test/conditional/recursive-policy-tree",
+    "name": "PolicyTreeDocument",
+    "description": "A recursive reusable object whose arity is conditionally constrained by node kind.",
+    "$root": "#/definitions/PolicyNode",
+    "definitions": {
+        "PolicyNode": {
+            "name": "PolicyNode",
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "enum": [
+                        "all",
+                        "any",
+                        "not",
+                        "leaf"
+                    ]
+                },
+                "expression": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512
+                },
+                "children": {
+                    "type": "array",
+                    "items": {
+                        "type": {
+                            "$ref": "#/definitions/PolicyNode"
+                        },
+                        "if": {
+                            "name": "NestedLeafCondition",
+                            "type": "object",
+                            "properties": {
+                                "kind": {
+                                    "type": "string",
+                                    "const": "leaf"
+                                }
+                            },
+                            "required": [
+                                "kind"
+                            ],
+                            "additionalProperties": true
+                        },
+                        "then": {
+                            "not": {
+                                "name": "LeafWithGrandchildren",
+                                "type": "object",
+                                "properties": {
+                                    "children": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": {
+                                                "$ref": "#/definitions/PolicyNode"
+                                            }
+                                        },
+                                        "minItems": 1
+                                    }
+                                },
+                                "required": [
+                                    "children"
+                                ],
+                                "additionalProperties": true
+                            }
+                        }
+                    }
+                }
+            },
+            "required": [
+                "kind"
+            ],
+            "additionalProperties": false,
+            "allOf": [
+                {
+                    "if": {
+                        "name": "LeafCondition",
+                        "type": "object",
+                        "properties": {
+                            "kind": {
+                                "type": "string",
+                                "const": "leaf"
+                            }
+                        },
+                        "required": [
+                            "kind"
+                        ],
+                        "additionalProperties": true
+                    },
+                    "then": {
+                        "name": "LeafShape",
+                        "type": "object",
+                        "properties": {
+                            "expression": {
+                                "type": "string",
+                                "minLength": 1
+                            }
+                        },
+                        "required": [
+                            "expression"
+                        ],
+                        "additionalProperties": true
+                    },
+                    "else": {
+                        "name": "BranchShape",
+                        "type": "object",
+                        "properties": {
+                            "children": {
+                                "type": "array",
+                                "items": {
+                                    "type": {
+                                        "$ref": "#/definitions/PolicyNode"
+                                    }
+                                },
+                                "minItems": 1
+                            }
+                        },
+                        "required": [
+                            "children"
+                        ],
+                        "additionalProperties": true
+                    }
+                },
+                {
+                    "if": {
+                        "name": "NotCondition",
+                        "type": "object",
+                        "properties": {
+                            "kind": {
+                                "type": "string",
+                                "const": "not"
+                            }
+                        },
+                        "required": [
+                            "kind"
+                        ],
+                        "additionalProperties": true
+                    },
+                    "then": {
+                        "name": "UnaryNotShape",
+                        "type": "object",
+                        "properties": {
+                            "children": {
+                                "type": "array",
+                                "items": {
+                                    "type": {
+                                        "$ref": "#/definitions/PolicyNode"
+                                    }
+                                },
+                                "minItems": 1,
+                                "maxItems": 1
+                            }
+                        },
+                        "required": [
+                            "children"
+                        ],
+                        "additionalProperties": true
+                    }
+                },
+                {
+                    "if": {
+                        "anyOf": [
+                            {
+                                "name": "AllNodeCondition",
+                                "type": "object",
+                                "properties": {
+                                    "kind": {
+                                        "type": "string",
+                                        "const": "all"
+                                    }
+                                },
+                                "required": [
+                                    "kind"
+                                ],
+                                "additionalProperties": true
+                            },
+                            {
+                                "name": "AnyNodeCondition",
+                                "type": "object",
+                                "properties": {
+                                    "kind": {
+                                        "type": "string",
+                                        "const": "any"
+                                    }
+                                },
+                                "required": [
+                                    "kind"
+                                ],
+                                "additionalProperties": true
+                            }
+                        ]
+                    },
+                    "then": {
+                        "allOf": [
+                            {
+                                "name": "NaryBranchShape",
+                                "type": "object",
+                                "properties": {
+                                    "children": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": {
+                                                "$ref": "#/definitions/PolicyNode"
+                                            }
+                                        },
+                                        "minItems": 2
+                                    }
+                                },
+                                "required": [
+                                    "children"
+                                ],
+                                "additionalProperties": true
+                            },
+                            {
+                                "not": {
+                                    "name": "BranchWithExpression",
+                                    "type": "object",
+                                    "properties": {
+                                        "expression": {
+                                            "type": "string",
+                                            "minLength": 1
+                                        }
+                                    },
+                                    "required": [
+                                        "expression"
+                                    ],
+                                    "additionalProperties": true
+                                }
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+    }
+}

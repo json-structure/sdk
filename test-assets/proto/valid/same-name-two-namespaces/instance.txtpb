@@ -1,0 +1,5 @@
+# message: com.example.app.Root
+left {
+a: "l" }
+right {
+b: "r" }

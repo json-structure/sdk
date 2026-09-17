@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/proto/root-array",
+  "$root": "#/definitions/Ids",
+  "definitions": {
+    "Ids": { "name": "Ids", "type": "array", "items": { "type": "int64" } }
+  }
+}

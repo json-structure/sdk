@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/avro/full-doc-annotations",
+  "name": "Annotated",
+  "description": "Record doc",
+  "type": "object",
+  "properties": {
+    "described": { "type": "string", "description": "Has text and no constraint" },
+    "constrained": { "type": "string", "description": "Has both", "maxLength": 10, "minLength": 2, "pattern": "^[a-z]+$" },
+    "bare": { "type": "int32", "minimum": 0, "maximum": 99 },
+    "content": { "type": "string", "contentEncoding": "base64", "contentMediaType": "image/png", "contentCompression": "gzip" },
+    "plain": { "type": "boolean" },
+    "ordering": { "type": "string", "description": "All ten, out of order in the source", "contentCompression": "c", "minimum": 5, "pattern": "p", "maxLength": 1, "contentMediaType": "m", "scale": 4, "maximum": 6, "minLength": 2, "contentEncoding": "e", "precision": 3 }
+  },
+  "required": ["described","constrained","bare","content","plain","ordering"]
+}

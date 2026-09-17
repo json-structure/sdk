@@ -1,0 +1,2574 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "repository": "https://github.com/clemensv/avrotize.git",
+    "revision": "8d1c504ec2cd06ab8971503394f73bf4a97c9617",
+    "version": "3.9.2",
+    "license": "MIT"
+  },
+  "python": {
+    "version": "3.12",
+    "license": "Python Software Foundation License",
+    "platforms": [
+      "win32-x64",
+      "linux-x64",
+      "darwin-x64",
+      "darwin-arm64"
+    ],
+    "patch": "3.12.10"
+  },
+  "routes": {
+    "fbs2s": {
+      "kind": "offline",
+      "requiredPackages": [
+        "fastavro"
+      ]
+    },
+    "j2s": {
+      "kind": "offline",
+      "requiredPackages": [
+        "jsonpointer",
+        "requests",
+        "jsonschema",
+        "jsoncomparison",
+        "jinja2"
+      ]
+    },
+    "k2s": {
+      "kind": "external-service",
+      "requiredPackages": [
+        "azure-kusto-data",
+        "azure-identity"
+      ],
+      "requires": [
+        "kusto_uri",
+        "kusto_database",
+        "table_name"
+      ],
+      "message": "Kusto import requires a configured cluster URI, database, and table; local file conversion is not supported."
+    },
+    "json2s": {
+      "kind": "offline",
+      "requiredPackages": [
+        "jsoncomparison",
+        "jinja2"
+      ]
+    },
+    "xml2s": {
+      "kind": "offline",
+      "requiredPackages": [
+        "jsoncomparison",
+        "jinja2"
+      ]
+    },
+    "a2s": {
+      "kind": "offline",
+      "requiredPackages": [
+        "jsoncomparison",
+        "jinja2"
+      ]
+    },
+    "jtd2s": {
+      "kind": "offline",
+      "requiredPackages": [
+        "jsoncomparison",
+        "jinja2"
+      ]
+    },
+    "cddl2s": {
+      "kind": "offline",
+      "requiredPackages": [
+        "cddlparser",
+        "json-structure"
+      ]
+    },
+    "oas2s": {
+      "kind": "offline",
+      "requiredPackages": [
+        "requests",
+        "pyyaml",
+        "jsoncomparison",
+        "jinja2"
+      ]
+    },
+    "cue2s": {
+      "kind": "offline",
+      "requiredPackages": [
+        "jsoncomparison",
+        "jinja2"
+      ]
+    },
+    "thrift2s": {
+      "kind": "offline",
+      "requiredPackages": [
+        "jsoncomparison",
+        "jinja2"
+      ]
+    },
+    "smithy2s": {
+      "kind": "offline",
+      "requiredPackages": [
+        "jsoncomparison",
+        "jinja2"
+      ]
+    },
+    "capnp2s": {
+      "kind": "offline",
+      "requiredPackages": [
+        "jsoncomparison",
+        "jinja2"
+      ]
+    },
+    "raml2s": {
+      "kind": "offline",
+      "requiredPackages": [
+        "pyyaml",
+        "jsoncomparison",
+        "jinja2"
+      ]
+    }
+  },
+  "packages": [
+    {
+      "name": "annotated-types",
+      "version": "0.8.0",
+      "license": "MIT",
+      "wheels": {
+        "win32-x64": {
+          "filename": "annotated_types-0.8.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/99/91/8acff4f5e50511b911bbccb72b8628a49c68ce14148cd9f6431094859a90/annotated_types-0.8.0-py3-none-any.whl",
+          "sha256": "f072f4d804ea359e4eaf198b1af7a8b0943881a87f31bb764f8bf219bb9419e0",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "annotated_types-0.8.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/99/91/8acff4f5e50511b911bbccb72b8628a49c68ce14148cd9f6431094859a90/annotated_types-0.8.0-py3-none-any.whl",
+          "sha256": "f072f4d804ea359e4eaf198b1af7a8b0943881a87f31bb764f8bf219bb9419e0",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "annotated_types-0.8.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/99/91/8acff4f5e50511b911bbccb72b8628a49c68ce14148cd9f6431094859a90/annotated_types-0.8.0-py3-none-any.whl",
+          "sha256": "f072f4d804ea359e4eaf198b1af7a8b0943881a87f31bb764f8bf219bb9419e0",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "annotated_types-0.8.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/99/91/8acff4f5e50511b911bbccb72b8628a49c68ce14148cd9f6431094859a90/annotated_types-0.8.0-py3-none-any.whl",
+          "sha256": "f072f4d804ea359e4eaf198b1af7a8b0943881a87f31bb764f8bf219bb9419e0",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "attrs",
+      "version": "26.1.0",
+      "license": "MIT",
+      "wheels": {
+        "win32-x64": {
+          "filename": "attrs-26.1.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/64/b4/17d4b0b2a2dc85a6df63d1157e028ed19f90d4cd97c36717afef2bc2f395/attrs-26.1.0-py3-none-any.whl",
+          "sha256": "c647aa4a12dfbad9333ca4e71fe62ddc36f4e63b2d260a37a8b83d2f043ac309",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "attrs-26.1.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/64/b4/17d4b0b2a2dc85a6df63d1157e028ed19f90d4cd97c36717afef2bc2f395/attrs-26.1.0-py3-none-any.whl",
+          "sha256": "c647aa4a12dfbad9333ca4e71fe62ddc36f4e63b2d260a37a8b83d2f043ac309",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "attrs-26.1.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/64/b4/17d4b0b2a2dc85a6df63d1157e028ed19f90d4cd97c36717afef2bc2f395/attrs-26.1.0-py3-none-any.whl",
+          "sha256": "c647aa4a12dfbad9333ca4e71fe62ddc36f4e63b2d260a37a8b83d2f043ac309",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "attrs-26.1.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/64/b4/17d4b0b2a2dc85a6df63d1157e028ed19f90d4cd97c36717afef2bc2f395/attrs-26.1.0-py3-none-any.whl",
+          "sha256": "c647aa4a12dfbad9333ca4e71fe62ddc36f4e63b2d260a37a8b83d2f043ac309",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "azure-core",
+      "version": "1.41.0",
+      "license": "MIT",
+      "wheels": {
+        "win32-x64": {
+          "filename": "azure_core-1.41.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/5b/db/325c6d7312d2200251c52323878281045aaffcb5586612296484e4280eaa/azure_core-1.41.0-py3-none-any.whl",
+          "sha256": "522b4011e8180b1a3dcd2024396a4e7fe9ac37fb8597db47163d230b5efe892d",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "azure_core-1.41.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/5b/db/325c6d7312d2200251c52323878281045aaffcb5586612296484e4280eaa/azure_core-1.41.0-py3-none-any.whl",
+          "sha256": "522b4011e8180b1a3dcd2024396a4e7fe9ac37fb8597db47163d230b5efe892d",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "azure_core-1.41.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/5b/db/325c6d7312d2200251c52323878281045aaffcb5586612296484e4280eaa/azure_core-1.41.0-py3-none-any.whl",
+          "sha256": "522b4011e8180b1a3dcd2024396a4e7fe9ac37fb8597db47163d230b5efe892d",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "azure_core-1.41.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/5b/db/325c6d7312d2200251c52323878281045aaffcb5586612296484e4280eaa/azure_core-1.41.0-py3-none-any.whl",
+          "sha256": "522b4011e8180b1a3dcd2024396a4e7fe9ac37fb8597db47163d230b5efe892d",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "azure-identity",
+      "version": "1.25.2",
+      "license": "MIT",
+      "wheels": {
+        "win32-x64": {
+          "filename": "azure_identity-1.25.2-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/9b/77/f658c76f9e9a52c784bd836aaca6fd5b9aae176f1f53273e758a2bcda695/azure_identity-1.25.2-py3-none-any.whl",
+          "sha256": "1b40060553d01a72ba0d708b9a46d0f61f56312e215d8896d836653ffdc6753d",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "azure_identity-1.25.2-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/9b/77/f658c76f9e9a52c784bd836aaca6fd5b9aae176f1f53273e758a2bcda695/azure_identity-1.25.2-py3-none-any.whl",
+          "sha256": "1b40060553d01a72ba0d708b9a46d0f61f56312e215d8896d836653ffdc6753d",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "azure_identity-1.25.2-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/9b/77/f658c76f9e9a52c784bd836aaca6fd5b9aae176f1f53273e758a2bcda695/azure_identity-1.25.2-py3-none-any.whl",
+          "sha256": "1b40060553d01a72ba0d708b9a46d0f61f56312e215d8896d836653ffdc6753d",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "azure_identity-1.25.2-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/9b/77/f658c76f9e9a52c784bd836aaca6fd5b9aae176f1f53273e758a2bcda695/azure_identity-1.25.2-py3-none-any.whl",
+          "sha256": "1b40060553d01a72ba0d708b9a46d0f61f56312e215d8896d836653ffdc6753d",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "azure-kusto-data",
+      "version": "6.0.2",
+      "license": "MIT",
+      "wheels": {
+        "win32-x64": {
+          "filename": "azure_kusto_data-6.0.2-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/2a/ea/a5bb82bf0dc3a8ceb8c7d032f9d245edc10c107fd2522ee0764ce8f1ce7f/azure_kusto_data-6.0.2-py3-none-any.whl",
+          "sha256": "e145714bb64869f4073d667c334640815385f1c3166ecdee50a90bfb67893b6e",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "azure_kusto_data-6.0.2-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/2a/ea/a5bb82bf0dc3a8ceb8c7d032f9d245edc10c107fd2522ee0764ce8f1ce7f/azure_kusto_data-6.0.2-py3-none-any.whl",
+          "sha256": "e145714bb64869f4073d667c334640815385f1c3166ecdee50a90bfb67893b6e",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "azure_kusto_data-6.0.2-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/2a/ea/a5bb82bf0dc3a8ceb8c7d032f9d245edc10c107fd2522ee0764ce8f1ce7f/azure_kusto_data-6.0.2-py3-none-any.whl",
+          "sha256": "e145714bb64869f4073d667c334640815385f1c3166ecdee50a90bfb67893b6e",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "azure_kusto_data-6.0.2-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/2a/ea/a5bb82bf0dc3a8ceb8c7d032f9d245edc10c107fd2522ee0764ce8f1ce7f/azure_kusto_data-6.0.2-py3-none-any.whl",
+          "sha256": "e145714bb64869f4073d667c334640815385f1c3166ecdee50a90bfb67893b6e",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "boto3",
+      "version": "1.43.82",
+      "license": "Apache-2.0",
+      "wheels": {
+        "win32-x64": {
+          "filename": "boto3-1.43.82-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/70/d7/743fafc6d544b3552517d45958b093ec70b934b513d95b238abe935e54a3/boto3-1.43.82-py3-none-any.whl",
+          "sha256": "65319e8bba6e30f74a6e2727a5688725222da2ab71c6069bc484ce5bfd101c73",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "boto3-1.43.82-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/70/d7/743fafc6d544b3552517d45958b093ec70b934b513d95b238abe935e54a3/boto3-1.43.82-py3-none-any.whl",
+          "sha256": "65319e8bba6e30f74a6e2727a5688725222da2ab71c6069bc484ce5bfd101c73",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "boto3-1.43.82-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/70/d7/743fafc6d544b3552517d45958b093ec70b934b513d95b238abe935e54a3/boto3-1.43.82-py3-none-any.whl",
+          "sha256": "65319e8bba6e30f74a6e2727a5688725222da2ab71c6069bc484ce5bfd101c73",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "boto3-1.43.82-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/70/d7/743fafc6d544b3552517d45958b093ec70b934b513d95b238abe935e54a3/boto3-1.43.82-py3-none-any.whl",
+          "sha256": "65319e8bba6e30f74a6e2727a5688725222da2ab71c6069bc484ce5bfd101c73",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "botocore",
+      "version": "1.43.82",
+      "license": "Apache-2.0",
+      "wheels": {
+        "win32-x64": {
+          "filename": "botocore-1.43.82-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/46/70/78cd83cf91d954846fe034edac415a700fd919782a003f1c71b779d06cfd/botocore-1.43.82-py3-none-any.whl",
+          "sha256": "97b3e89061decc91e7745d726dae595cbe2053894611c49ea91d6fdcb2ecc36b",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "botocore-1.43.82-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/46/70/78cd83cf91d954846fe034edac415a700fd919782a003f1c71b779d06cfd/botocore-1.43.82-py3-none-any.whl",
+          "sha256": "97b3e89061decc91e7745d726dae595cbe2053894611c49ea91d6fdcb2ecc36b",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "botocore-1.43.82-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/46/70/78cd83cf91d954846fe034edac415a700fd919782a003f1c71b779d06cfd/botocore-1.43.82-py3-none-any.whl",
+          "sha256": "97b3e89061decc91e7745d726dae595cbe2053894611c49ea91d6fdcb2ecc36b",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "botocore-1.43.82-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/46/70/78cd83cf91d954846fe034edac415a700fd919782a003f1c71b779d06cfd/botocore-1.43.82-py3-none-any.whl",
+          "sha256": "97b3e89061decc91e7745d726dae595cbe2053894611c49ea91d6fdcb2ecc36b",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "cached-property",
+      "version": "2.0.1",
+      "license": "BSD",
+      "wheels": {
+        "win32-x64": {
+          "filename": "cached_property-2.0.1-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/11/0e/7d8225aab3bc1a0f5811f8e1b557aa034ac04bdf641925b30d3caf586b28/cached_property-2.0.1-py3-none-any.whl",
+          "sha256": "f617d70ab1100b7bcf6e42228f9ddcb78c676ffa167278d9f730d1c2fba69ccb",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "cached_property-2.0.1-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/11/0e/7d8225aab3bc1a0f5811f8e1b557aa034ac04bdf641925b30d3caf586b28/cached_property-2.0.1-py3-none-any.whl",
+          "sha256": "f617d70ab1100b7bcf6e42228f9ddcb78c676ffa167278d9f730d1c2fba69ccb",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "cached_property-2.0.1-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/11/0e/7d8225aab3bc1a0f5811f8e1b557aa034ac04bdf641925b30d3caf586b28/cached_property-2.0.1-py3-none-any.whl",
+          "sha256": "f617d70ab1100b7bcf6e42228f9ddcb78c676ffa167278d9f730d1c2fba69ccb",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "cached_property-2.0.1-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/11/0e/7d8225aab3bc1a0f5811f8e1b557aa034ac04bdf641925b30d3caf586b28/cached_property-2.0.1-py3-none-any.whl",
+          "sha256": "f617d70ab1100b7bcf6e42228f9ddcb78c676ffa167278d9f730d1c2fba69ccb",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "cachetools",
+      "version": "6.2.6",
+      "license": "MIT",
+      "wheels": {
+        "win32-x64": {
+          "filename": "cachetools-6.2.6-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/90/45/f458fa2c388e79dd9d8b9b0c99f1d31b568f27388f2fdba7bb66bbc0c6ed/cachetools-6.2.6-py3-none-any.whl",
+          "sha256": "8c9717235b3c651603fff0076db52d6acbfd1b338b8ed50256092f7ce9c85bda",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "cachetools-6.2.6-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/90/45/f458fa2c388e79dd9d8b9b0c99f1d31b568f27388f2fdba7bb66bbc0c6ed/cachetools-6.2.6-py3-none-any.whl",
+          "sha256": "8c9717235b3c651603fff0076db52d6acbfd1b338b8ed50256092f7ce9c85bda",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "cachetools-6.2.6-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/90/45/f458fa2c388e79dd9d8b9b0c99f1d31b568f27388f2fdba7bb66bbc0c6ed/cachetools-6.2.6-py3-none-any.whl",
+          "sha256": "8c9717235b3c651603fff0076db52d6acbfd1b338b8ed50256092f7ce9c85bda",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "cachetools-6.2.6-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/90/45/f458fa2c388e79dd9d8b9b0c99f1d31b568f27388f2fdba7bb66bbc0c6ed/cachetools-6.2.6-py3-none-any.whl",
+          "sha256": "8c9717235b3c651603fff0076db52d6acbfd1b338b8ed50256092f7ce9c85bda",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "cddlparser",
+      "version": "0.5.0",
+      "license": "MIT License",
+      "wheels": {
+        "win32-x64": {
+          "filename": "cddlparser-0.5.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/d6/c4/d898f31864742c090bb53c4c2a0fbe6552ef3dff363a885254eaf9938b75/cddlparser-0.5.0-py3-none-any.whl",
+          "sha256": "4312d0e6ab26a81cbba5a449f164c410e9d3130160fe8568c2feb79c821eef8a",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "cddlparser-0.5.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/d6/c4/d898f31864742c090bb53c4c2a0fbe6552ef3dff363a885254eaf9938b75/cddlparser-0.5.0-py3-none-any.whl",
+          "sha256": "4312d0e6ab26a81cbba5a449f164c410e9d3130160fe8568c2feb79c821eef8a",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "cddlparser-0.5.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/d6/c4/d898f31864742c090bb53c4c2a0fbe6552ef3dff363a885254eaf9938b75/cddlparser-0.5.0-py3-none-any.whl",
+          "sha256": "4312d0e6ab26a81cbba5a449f164c410e9d3130160fe8568c2feb79c821eef8a",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "cddlparser-0.5.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/d6/c4/d898f31864742c090bb53c4c2a0fbe6552ef3dff363a885254eaf9938b75/cddlparser-0.5.0-py3-none-any.whl",
+          "sha256": "4312d0e6ab26a81cbba5a449f164c410e9d3130160fe8568c2feb79c821eef8a",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "certifi",
+      "version": "2026.7.22",
+      "license": "MPL-2.0",
+      "wheels": {
+        "win32-x64": {
+          "filename": "certifi-2026.7.22-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/0b/a7/71ac2cff56fec219ed242bb11b8efb69fcc4bec75db06fb7bfe35de520e6/certifi-2026.7.22-py3-none-any.whl",
+          "sha256": "62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "certifi-2026.7.22-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/0b/a7/71ac2cff56fec219ed242bb11b8efb69fcc4bec75db06fb7bfe35de520e6/certifi-2026.7.22-py3-none-any.whl",
+          "sha256": "62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "certifi-2026.7.22-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/0b/a7/71ac2cff56fec219ed242bb11b8efb69fcc4bec75db06fb7bfe35de520e6/certifi-2026.7.22-py3-none-any.whl",
+          "sha256": "62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "certifi-2026.7.22-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/0b/a7/71ac2cff56fec219ed242bb11b8efb69fcc4bec75db06fb7bfe35de520e6/certifi-2026.7.22-py3-none-any.whl",
+          "sha256": "62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "cffi",
+      "version": "2.1.1",
+      "license": "MIT-0",
+      "wheels": {
+        "win32-x64": {
+          "filename": "cffi-2.1.1-cp312-cp312-win_amd64.whl",
+          "url": "https://files.pythonhosted.org/packages/d9/79/615cc094e2fb508cade7de88d3b4f6c4ec2bab695c97bce9153dc65aadf5/cffi-2.1.1-cp312-cp312-win_amd64.whl",
+          "sha256": "f53e442b08449d42821fa4a4fba000095af9f62742a500f978a9f557ec44339a",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "cffi-2.1.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+          "url": "https://files.pythonhosted.org/packages/b1/db/dceb9dd5b231e1da801793f8acc9f3c52a7e1afe40bb1aae37e02b0faad5/cffi-2.1.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+          "sha256": "c1453022f490d2459a11819d83ad1d586e9ff65a12ac3e705ffebd46d3685dcf",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "cffi-2.1.1-cp312-cp312-macosx_10_15_x86_64.whl",
+          "url": "https://files.pythonhosted.org/packages/10/69/43965eccfdead3b9220015fd1320e117be8c6ed01a62ffab76eeb752f5d5/cffi-2.1.1-cp312-cp312-macosx_10_15_x86_64.whl",
+          "sha256": "c8c69575568085ba0b1b10c0249d779a214aea6f6522e949a0fc9fb0fcb449d0",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "cffi-2.1.1-cp312-cp312-macosx_11_0_arm64.whl",
+          "url": "https://files.pythonhosted.org/packages/54/7d/16e5a096677b5e313ca80cd5e5170efa3ea44624a82bb111925522da64b1/cffi-2.1.1-cp312-cp312-macosx_11_0_arm64.whl",
+          "sha256": "f81b3b8f3d4e343550fa4baa0e479bba9f2d29ce9c2e9b51d1ce1718d7442fcf",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "chardet",
+      "version": "7.6.0",
+      "license": "0BSD",
+      "wheels": {
+        "win32-x64": {
+          "filename": "chardet-7.6.0-cp312-cp312-win_amd64.whl",
+          "url": "https://files.pythonhosted.org/packages/0d/53/8da1f4758286efd8faf71356facddb382788ecf1bbd7c70d63e2e18a4898/chardet-7.6.0-cp312-cp312-win_amd64.whl",
+          "sha256": "406936df1328a3284fef366eaa2bfd1cccd0ef1b10cb99781dd5b022ea644b84",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "chardet-7.6.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+          "url": "https://files.pythonhosted.org/packages/7d/a2/c4d99299e9ce7fad561f8bb56babbbbdd3bb6b4fbd7c0ec674c1dbdd2cc5/chardet-7.6.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+          "sha256": "2cf0adaca8b1c4bacfade9d0a1e4f8f70b1bb122833d6f07ab90e3adc84eb13a",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "chardet-7.6.0-cp312-cp312-macosx_10_13_x86_64.whl",
+          "url": "https://files.pythonhosted.org/packages/6f/62/64da80dad0c804e743b4156f379183578f1e33918856ae928dc9248a6002/chardet-7.6.0-cp312-cp312-macosx_10_13_x86_64.whl",
+          "sha256": "19fea52164e6e00f2a21ed418f42e4b0162a09199274c86d07ad3efd661317c4",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "chardet-7.6.0-cp312-cp312-macosx_11_0_arm64.whl",
+          "url": "https://files.pythonhosted.org/packages/44/99/934fb862d102c8756008597f4398323f32cef329f16e87fbb3bf76d4f4be/chardet-7.6.0-cp312-cp312-macosx_11_0_arm64.whl",
+          "sha256": "a12023d48d0e207791c01161d03cb3c0d85c6a15f345eb9d3d56063a63d1e40f",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "charset-normalizer",
+      "version": "3.5.1",
+      "license": "MIT",
+      "wheels": {
+        "win32-x64": {
+          "filename": "charset_normalizer-3.5.1-cp312-cp312-win_amd64.whl",
+          "url": "https://files.pythonhosted.org/packages/9d/7a/4c6c298171e6b3e745633180ff59350fc0ca0db1ffd28df1e369e0579f71/charset_normalizer-3.5.1-cp312-cp312-win_amd64.whl",
+          "sha256": "3617ac3cfd8b9888f145ad89dd6e692285834b0201c6074a5eeaad3fd4d668c2",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "charset_normalizer-3.5.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+          "url": "https://files.pythonhosted.org/packages/6f/89/bb5108dc6c3651dca963f2b0a3ba19bbcb370c94e1b6d3e0e844a58e6dca/charset_normalizer-3.5.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+          "sha256": "b9af956078716df40d985fb0dfeb2c2120c5ca92ba4ff4b388acfd01cdc14d08",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "charset_normalizer-3.5.1-cp312-cp312-macosx_10_13_universal2.whl",
+          "url": "https://files.pythonhosted.org/packages/30/27/78873dc8b6a56357517b74b6bb9568b80450e7bb4f6ef7e3fa9d22aa0bd7/charset_normalizer-3.5.1-cp312-cp312-macosx_10_13_universal2.whl",
+          "sha256": "5b6d1386bf0096d26d3a863dc0a487a5b4eb9aa93cf5ba69683d29dde6b9d60f",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "charset_normalizer-3.5.1-cp312-cp312-macosx_10_13_universal2.whl",
+          "url": "https://files.pythonhosted.org/packages/30/27/78873dc8b6a56357517b74b6bb9568b80450e7bb4f6ef7e3fa9d22aa0bd7/charset_normalizer-3.5.1-cp312-cp312-macosx_10_13_universal2.whl",
+          "sha256": "5b6d1386bf0096d26d3a863dc0a487a5b4eb9aa93cf5ba69683d29dde6b9d60f",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "click",
+      "version": "8.5.0",
+      "license": "BSD-3-Clause",
+      "wheels": {
+        "win32-x64": {
+          "filename": "click-8.5.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/58/50/6c0d534c5f134586a8e1ba4e330569e32f057e33372ae556463212fb4cd3/click-8.5.0-py3-none-any.whl",
+          "sha256": "255bc9599cf7748b4b1a446ccc735421bd08a2ae529a8b88597d3de5664ee360",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "click-8.5.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/58/50/6c0d534c5f134586a8e1ba4e330569e32f057e33372ae556463212fb4cd3/click-8.5.0-py3-none-any.whl",
+          "sha256": "255bc9599cf7748b4b1a446ccc735421bd08a2ae529a8b88597d3de5664ee360",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "click-8.5.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/58/50/6c0d534c5f134586a8e1ba4e330569e32f057e33372ae556463212fb4cd3/click-8.5.0-py3-none-any.whl",
+          "sha256": "255bc9599cf7748b4b1a446ccc735421bd08a2ae529a8b88597d3de5664ee360",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "click-8.5.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/58/50/6c0d534c5f134586a8e1ba4e330569e32f057e33372ae556463212fb4cd3/click-8.5.0-py3-none-any.whl",
+          "sha256": "255bc9599cf7748b4b1a446ccc735421bd08a2ae529a8b88597d3de5664ee360",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "cryptography",
+      "version": "46.0.5",
+      "license": "Apache-2.0 OR BSD-3-Clause",
+      "wheels": {
+        "win32-x64": {
+          "filename": "cryptography-46.0.5-cp311-abi3-win_amd64.whl",
+          "url": "https://files.pythonhosted.org/packages/e9/5a/ac0f49e48063ab4255d9e3b79f5def51697fce1a95ea1370f03dc9db76f6/cryptography-46.0.5-cp311-abi3-win_amd64.whl",
+          "sha256": "38946c54b16c885c72c4f59846be9743d699eee2b69b6988e0a00a01f46a61a4",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "cryptography-46.0.5-cp311-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+          "url": "https://files.pythonhosted.org/packages/63/e7/471ab61099a3920b0c77852ea3f0ea611c9702f651600397ac567848b897/cryptography-46.0.5-cp311-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+          "sha256": "4d7e3d356b8cd4ea5aff04f129d5f66ebdc7b6f8eae802b93739ed520c47c79b",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "cryptography-46.0.5-cp311-abi3-macosx_10_9_universal2.whl",
+          "url": "https://files.pythonhosted.org/packages/f7/81/b0bb27f2ba931a65409c6b8a8b358a7f03c0e46eceacddff55f7c84b1f3b/cryptography-46.0.5-cp311-abi3-macosx_10_9_universal2.whl",
+          "sha256": "351695ada9ea9618b3500b490ad54c739860883df6c1f555e088eaf25b1bbaad",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "cryptography-46.0.5-cp311-abi3-macosx_10_9_universal2.whl",
+          "url": "https://files.pythonhosted.org/packages/f7/81/b0bb27f2ba931a65409c6b8a8b358a7f03c0e46eceacddff55f7c84b1f3b/cryptography-46.0.5-cp311-abi3-macosx_10_9_universal2.whl",
+          "sha256": "351695ada9ea9618b3500b490ad54c739860883df6c1f555e088eaf25b1bbaad",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "dataflows-tabulator",
+      "version": "1.54.3",
+      "license": "MIT",
+      "wheels": {
+        "win32-x64": {
+          "filename": "dataflows_tabulator-1.54.3-py2.py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/e4/b0/5449ceacb94f82e238b84e39cf09096f6084942f43ccc0b8754d92f583d9/dataflows_tabulator-1.54.3-py2.py3-none-any.whl",
+          "sha256": "3bdceeb06e128d5f794b4c2d48e5788a9c9b8a8c98cf918db6f47bfc29b08fd4",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "dataflows_tabulator-1.54.3-py2.py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/e4/b0/5449ceacb94f82e238b84e39cf09096f6084942f43ccc0b8754d92f583d9/dataflows_tabulator-1.54.3-py2.py3-none-any.whl",
+          "sha256": "3bdceeb06e128d5f794b4c2d48e5788a9c9b8a8c98cf918db6f47bfc29b08fd4",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "dataflows_tabulator-1.54.3-py2.py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/e4/b0/5449ceacb94f82e238b84e39cf09096f6084942f43ccc0b8754d92f583d9/dataflows_tabulator-1.54.3-py2.py3-none-any.whl",
+          "sha256": "3bdceeb06e128d5f794b4c2d48e5788a9c9b8a8c98cf918db6f47bfc29b08fd4",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "dataflows_tabulator-1.54.3-py2.py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/e4/b0/5449ceacb94f82e238b84e39cf09096f6084942f43ccc0b8754d92f583d9/dataflows_tabulator-1.54.3-py2.py3-none-any.whl",
+          "sha256": "3bdceeb06e128d5f794b4c2d48e5788a9c9b8a8c98cf918db6f47bfc29b08fd4",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "datapackage",
+      "version": "1.15.4",
+      "license": "MIT",
+      "wheels": {
+        "win32-x64": {
+          "filename": "datapackage-1.15.4-py2.py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/2a/da/e7a15a7798a68e1b902c530397e7bf6eefe02d3486ffd60fa3c8c602f86b/datapackage-1.15.4-py2.py3-none-any.whl",
+          "sha256": "c8498b421ef29eb8f71228b789e2148d38663ef0a93680612f058aea2a31e5a2",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "datapackage-1.15.4-py2.py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/2a/da/e7a15a7798a68e1b902c530397e7bf6eefe02d3486ffd60fa3c8c602f86b/datapackage-1.15.4-py2.py3-none-any.whl",
+          "sha256": "c8498b421ef29eb8f71228b789e2148d38663ef0a93680612f058aea2a31e5a2",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "datapackage-1.15.4-py2.py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/2a/da/e7a15a7798a68e1b902c530397e7bf6eefe02d3486ffd60fa3c8c602f86b/datapackage-1.15.4-py2.py3-none-any.whl",
+          "sha256": "c8498b421ef29eb8f71228b789e2148d38663ef0a93680612f058aea2a31e5a2",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "datapackage-1.15.4-py2.py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/2a/da/e7a15a7798a68e1b902c530397e7bf6eefe02d3486ffd60fa3c8c602f86b/datapackage-1.15.4-py2.py3-none-any.whl",
+          "sha256": "c8498b421ef29eb8f71228b789e2148d38663ef0a93680612f058aea2a31e5a2",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "et_xmlfile",
+      "version": "2.0.0",
+      "license": "MIT",
+      "wheels": {
+        "win32-x64": {
+          "filename": "et_xmlfile-2.0.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/c1/8b/5fe2cc11fee489817272089c4203e679c63b570a5aaeb18d852ae3cbba6a/et_xmlfile-2.0.0-py3-none-any.whl",
+          "sha256": "7a91720bc756843502c3b7504c77b8fe44217c85c537d85037f0f536151b2caa",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "et_xmlfile-2.0.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/c1/8b/5fe2cc11fee489817272089c4203e679c63b570a5aaeb18d852ae3cbba6a/et_xmlfile-2.0.0-py3-none-any.whl",
+          "sha256": "7a91720bc756843502c3b7504c77b8fe44217c85c537d85037f0f536151b2caa",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "et_xmlfile-2.0.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/c1/8b/5fe2cc11fee489817272089c4203e679c63b570a5aaeb18d852ae3cbba6a/et_xmlfile-2.0.0-py3-none-any.whl",
+          "sha256": "7a91720bc756843502c3b7504c77b8fe44217c85c537d85037f0f536151b2caa",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "et_xmlfile-2.0.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/c1/8b/5fe2cc11fee489817272089c4203e679c63b570a5aaeb18d852ae3cbba6a/et_xmlfile-2.0.0-py3-none-any.whl",
+          "sha256": "7a91720bc756843502c3b7504c77b8fe44217c85c537d85037f0f536151b2caa",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "fastavro",
+      "version": "1.12.2",
+      "license": "MIT",
+      "wheels": {
+        "win32-x64": {
+          "filename": "fastavro-1.12.2-cp312-cp312-win_amd64.whl",
+          "url": "https://files.pythonhosted.org/packages/e2/a1/eafeb302aaaea6055d4a9c11272b4aeaf713e43fe8eaf782f43a1fee2b44/fastavro-1.12.2-cp312-cp312-win_amd64.whl",
+          "sha256": "1924349c74666c89417bd5cc2749f598e2f15f1d56ee81428b2317ab02c88aae",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "fastavro-1.12.2-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+          "url": "https://files.pythonhosted.org/packages/fc/8c/76ef4641e6c1c1aa3e6bb3c9efb5533ffda5dd975c8b5ae54e794322d9e3/fastavro-1.12.2-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+          "sha256": "25ef6855935f67582740ffa6bb978e40ec51be876117a3555c36fa2488dcdf25",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "fastavro-1.12.2-cp312-cp312-macosx_10_13_universal2.whl",
+          "url": "https://files.pythonhosted.org/packages/0e/bc/fe5731d6724d978694fbd3196bc1c0d7cab3fd0766e9551c40c39f798b52/fastavro-1.12.2-cp312-cp312-macosx_10_13_universal2.whl",
+          "sha256": "0e331896e8efffc72fa03e63b87ebfc37960113127da8e0f5152d91664ffed68",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "fastavro-1.12.2-cp312-cp312-macosx_10_13_universal2.whl",
+          "url": "https://files.pythonhosted.org/packages/0e/bc/fe5731d6724d978694fbd3196bc1c0d7cab3fd0766e9551c40c39f798b52/fastavro-1.12.2-cp312-cp312-macosx_10_13_universal2.whl",
+          "sha256": "0e331896e8efffc72fa03e63b87ebfc37960113127da8e0f5152d91664ffed68",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "fsspec",
+      "version": "2026.7.0",
+      "license": "BSD-3-Clause",
+      "wheels": {
+        "win32-x64": {
+          "filename": "fsspec-2026.7.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/fd/3c/6a2bf344106328fd04963664a60b9bb6496fc25df8e962fcdc1367285fb9/fsspec-2026.7.0-py3-none-any.whl",
+          "sha256": "b57ddbafedfaef7018c1ecab32aa200a9d7ca26b77965f64e48b70061249d279",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "fsspec-2026.7.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/fd/3c/6a2bf344106328fd04963664a60b9bb6496fc25df8e962fcdc1367285fb9/fsspec-2026.7.0-py3-none-any.whl",
+          "sha256": "b57ddbafedfaef7018c1ecab32aa200a9d7ca26b77965f64e48b70061249d279",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "fsspec-2026.7.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/fd/3c/6a2bf344106328fd04963664a60b9bb6496fc25df8e962fcdc1367285fb9/fsspec-2026.7.0-py3-none-any.whl",
+          "sha256": "b57ddbafedfaef7018c1ecab32aa200a9d7ca26b77965f64e48b70061249d279",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "fsspec-2026.7.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/fd/3c/6a2bf344106328fd04963664a60b9bb6496fc25df8e962fcdc1367285fb9/fsspec-2026.7.0-py3-none-any.whl",
+          "sha256": "b57ddbafedfaef7018c1ecab32aa200a9d7ca26b77965f64e48b70061249d279",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "greenlet",
+      "version": "3.5.5",
+      "license": "MIT AND PSF-2.0",
+      "wheels": {
+        "win32-x64": {
+          "filename": "greenlet-3.5.5-cp312-cp312-win_amd64.whl",
+          "url": "https://files.pythonhosted.org/packages/de/30/1f42b88dc587b5899ee50616ad56ee40cafaf225df4fb829f10183c62a5c/greenlet-3.5.5-cp312-cp312-win_amd64.whl",
+          "sha256": "49ddacd36af37735fab103846f4ee4d18a492dde72730d1699c0c8ebe30d9f18",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "greenlet-3.5.5-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+          "url": "https://files.pythonhosted.org/packages/78/ac/5c5b959999b6f09c3026b5dfe171575bc3121c5236ce74f495096f25b203/greenlet-3.5.5-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+          "sha256": "147b25a42e5ca5be3d42356e8f608b37af715a1c196e9bf9d1627f3341adfe1d",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "greenlet-3.5.5-cp312-cp312-macosx_11_0_universal2.whl",
+          "url": "https://files.pythonhosted.org/packages/2e/7e/9ecd0285e3153532ae07aeb88063c43c72b4221cf0d4d123b02f3682e3ff/greenlet-3.5.5-cp312-cp312-macosx_11_0_universal2.whl",
+          "sha256": "49520f0c95a48b42cf55414b8e8479beb274ea70431afc33e3f79903c71f4380",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "greenlet-3.5.5-cp312-cp312-macosx_11_0_universal2.whl",
+          "url": "https://files.pythonhosted.org/packages/2e/7e/9ecd0285e3153532ae07aeb88063c43c72b4221cf0d4d123b02f3682e3ff/greenlet-3.5.5-cp312-cp312-macosx_11_0_universal2.whl",
+          "sha256": "49520f0c95a48b42cf55414b8e8479beb274ea70431afc33e3f79903c71f4380",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "idna",
+      "version": "3.19",
+      "license": "BSD-3-Clause",
+      "wheels": {
+        "win32-x64": {
+          "filename": "idna-3.19-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/57/b0/0e52c878c53f245edd3a11020f20979b3f490f245af532c7cae3027754b5/idna-3.19-py3-none-any.whl",
+          "sha256": "815e7be7a7806d54abb586dc943addc79e8b2ee16915059658cbeff4b1b43bf4",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "idna-3.19-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/57/b0/0e52c878c53f245edd3a11020f20979b3f490f245af532c7cae3027754b5/idna-3.19-py3-none-any.whl",
+          "sha256": "815e7be7a7806d54abb586dc943addc79e8b2ee16915059658cbeff4b1b43bf4",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "idna-3.19-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/57/b0/0e52c878c53f245edd3a11020f20979b3f490f245af532c7cae3027754b5/idna-3.19-py3-none-any.whl",
+          "sha256": "815e7be7a7806d54abb586dc943addc79e8b2ee16915059658cbeff4b1b43bf4",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "idna-3.19-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/57/b0/0e52c878c53f245edd3a11020f20979b3f490f245af532c7cae3027754b5/idna-3.19-py3-none-any.whl",
+          "sha256": "815e7be7a7806d54abb586dc943addc79e8b2ee16915059658cbeff4b1b43bf4",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "ijson",
+      "version": "3.4.0.post0",
+      "license": "BSD-3-Clause AND ISC",
+      "wheels": {
+        "win32-x64": {
+          "filename": "ijson-3.4.0.post0-cp312-cp312-win_amd64.whl",
+          "url": "https://files.pythonhosted.org/packages/a1/2b/6f7ade27a8ff5758fc41006dadd2de01730def84fe3e60553b329c59e0d4/ijson-3.4.0.post0-cp312-cp312-win_amd64.whl",
+          "sha256": "e15833dcf6f6d188fdc624a31cd0520c3ba21b6855dc304bc7c1a8aeca02d4ac",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "ijson-3.4.0.post0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+          "url": "https://files.pythonhosted.org/packages/3e/04/efb30f413648b9267f5a33920ac124d7ebef3bc4063af8f6ffc8ca11ddcb/ijson-3.4.0.post0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+          "sha256": "05807edc0bcbd222dc6ea32a2b897f0c81dc7f12c8580148bc82f6d7f5e7ec7b",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "ijson-3.4.0.post0-cp312-cp312-macosx_10_13_universal2.whl",
+          "url": "https://files.pythonhosted.org/packages/7d/fe/3b6af0025288e769dbfa30485dae1b3bd3f33f00390f3ee532cbb1c33e9b/ijson-3.4.0.post0-cp312-cp312-macosx_10_13_universal2.whl",
+          "sha256": "b607a500fca26101be47d2baf7cddb457b819ab60a75ce51ed1092a40da8b2f9",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "ijson-3.4.0.post0-cp312-cp312-macosx_10_13_universal2.whl",
+          "url": "https://files.pythonhosted.org/packages/7d/fe/3b6af0025288e769dbfa30485dae1b3bd3f33f00390f3ee532cbb1c33e9b/ijson-3.4.0.post0-cp312-cp312-macosx_10_13_universal2.whl",
+          "sha256": "b607a500fca26101be47d2baf7cddb457b819ab60a75ce51ed1092a40da8b2f9",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "isodate",
+      "version": "0.7.2",
+      "license": "Copyright (c) 2021, Hugo van Kemenade and contributors",
+      "wheels": {
+        "win32-x64": {
+          "filename": "isodate-0.7.2-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/15/aa/0aca39a37d3c7eb941ba736ede56d689e7be91cab5d9ca846bde3999eba6/isodate-0.7.2-py3-none-any.whl",
+          "sha256": "28009937d8031054830160fce6d409ed342816b543597cece116d966c6d99e15",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "isodate-0.7.2-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/15/aa/0aca39a37d3c7eb941ba736ede56d689e7be91cab5d9ca846bde3999eba6/isodate-0.7.2-py3-none-any.whl",
+          "sha256": "28009937d8031054830160fce6d409ed342816b543597cece116d966c6d99e15",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "isodate-0.7.2-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/15/aa/0aca39a37d3c7eb941ba736ede56d689e7be91cab5d9ca846bde3999eba6/isodate-0.7.2-py3-none-any.whl",
+          "sha256": "28009937d8031054830160fce6d409ed342816b543597cece116d966c6d99e15",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "isodate-0.7.2-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/15/aa/0aca39a37d3c7eb941ba736ede56d689e7be91cab5d9ca846bde3999eba6/isodate-0.7.2-py3-none-any.whl",
+          "sha256": "28009937d8031054830160fce6d409ed342816b543597cece116d966c6d99e15",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "Jinja2",
+      "version": "3.1.6",
+      "license": "BSD License",
+      "wheels": {
+        "win32-x64": {
+          "filename": "jinja2-3.1.6-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/62/a1/3d680cbfd5f4b8f15abc1d571870c5fc3e594bb582bc3b64ea099db13e56/jinja2-3.1.6-py3-none-any.whl",
+          "sha256": "85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "jinja2-3.1.6-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/62/a1/3d680cbfd5f4b8f15abc1d571870c5fc3e594bb582bc3b64ea099db13e56/jinja2-3.1.6-py3-none-any.whl",
+          "sha256": "85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "jinja2-3.1.6-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/62/a1/3d680cbfd5f4b8f15abc1d571870c5fc3e594bb582bc3b64ea099db13e56/jinja2-3.1.6-py3-none-any.whl",
+          "sha256": "85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "jinja2-3.1.6-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/62/a1/3d680cbfd5f4b8f15abc1d571870c5fc3e594bb582bc3b64ea099db13e56/jinja2-3.1.6-py3-none-any.whl",
+          "sha256": "85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "jmespath",
+      "version": "1.1.0",
+      "license": "MIT",
+      "wheels": {
+        "win32-x64": {
+          "filename": "jmespath-1.1.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/14/2f/967ba146e6d58cf6a652da73885f52fc68001525b4197effc174321d70b4/jmespath-1.1.0-py3-none-any.whl",
+          "sha256": "a5663118de4908c91729bea0acadca56526eb2698e83de10cd116ae0f4e97c64",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "jmespath-1.1.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/14/2f/967ba146e6d58cf6a652da73885f52fc68001525b4197effc174321d70b4/jmespath-1.1.0-py3-none-any.whl",
+          "sha256": "a5663118de4908c91729bea0acadca56526eb2698e83de10cd116ae0f4e97c64",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "jmespath-1.1.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/14/2f/967ba146e6d58cf6a652da73885f52fc68001525b4197effc174321d70b4/jmespath-1.1.0-py3-none-any.whl",
+          "sha256": "a5663118de4908c91729bea0acadca56526eb2698e83de10cd116ae0f4e97c64",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "jmespath-1.1.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/14/2f/967ba146e6d58cf6a652da73885f52fc68001525b4197effc174321d70b4/jmespath-1.1.0-py3-none-any.whl",
+          "sha256": "a5663118de4908c91729bea0acadca56526eb2698e83de10cd116ae0f4e97c64",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "json-structure",
+      "version": "0.6.0",
+      "license": "MIT",
+      "wheels": {
+        "win32-x64": {
+          "filename": "json_structure-0.6.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/eb/c6/2f7d8bc994bc5c4cbea6b3a661868528aa83e127d02d2ada213b54086f64/json_structure-0.6.0-py3-none-any.whl",
+          "sha256": "c7487db603463c680c51de3e305c3c182e115a99181703747b278f913a76c530",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "json_structure-0.6.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/eb/c6/2f7d8bc994bc5c4cbea6b3a661868528aa83e127d02d2ada213b54086f64/json_structure-0.6.0-py3-none-any.whl",
+          "sha256": "c7487db603463c680c51de3e305c3c182e115a99181703747b278f913a76c530",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "json_structure-0.6.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/eb/c6/2f7d8bc994bc5c4cbea6b3a661868528aa83e127d02d2ada213b54086f64/json_structure-0.6.0-py3-none-any.whl",
+          "sha256": "c7487db603463c680c51de3e305c3c182e115a99181703747b278f913a76c530",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "json_structure-0.6.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/eb/c6/2f7d8bc994bc5c4cbea6b3a661868528aa83e127d02d2ada213b54086f64/json_structure-0.6.0-py3-none-any.whl",
+          "sha256": "c7487db603463c680c51de3e305c3c182e115a99181703747b278f913a76c530",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "jsoncomparison",
+      "version": "1.1.0",
+      "license": "MIT",
+      "wheels": {
+        "win32-x64": {
+          "filename": "jsoncomparison-1.1.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/a1/c6/36248771309b24da17ec0a5599cf1f92ddfef98563564f569fdf85eab4b6/jsoncomparison-1.1.0-py3-none-any.whl",
+          "sha256": "1d7aa8bc91d95a3e7c68834ff10e7c454c5cf3be225ce4dbd8c60c09a1051ed1",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "jsoncomparison-1.1.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/a1/c6/36248771309b24da17ec0a5599cf1f92ddfef98563564f569fdf85eab4b6/jsoncomparison-1.1.0-py3-none-any.whl",
+          "sha256": "1d7aa8bc91d95a3e7c68834ff10e7c454c5cf3be225ce4dbd8c60c09a1051ed1",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "jsoncomparison-1.1.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/a1/c6/36248771309b24da17ec0a5599cf1f92ddfef98563564f569fdf85eab4b6/jsoncomparison-1.1.0-py3-none-any.whl",
+          "sha256": "1d7aa8bc91d95a3e7c68834ff10e7c454c5cf3be225ce4dbd8c60c09a1051ed1",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "jsoncomparison-1.1.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/a1/c6/36248771309b24da17ec0a5599cf1f92ddfef98563564f569fdf85eab4b6/jsoncomparison-1.1.0-py3-none-any.whl",
+          "sha256": "1d7aa8bc91d95a3e7c68834ff10e7c454c5cf3be225ce4dbd8c60c09a1051ed1",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "jsonlines",
+      "version": "4.0.0",
+      "license": "BSD",
+      "wheels": {
+        "win32-x64": {
+          "filename": "jsonlines-4.0.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/f8/62/d9ba6323b9202dd2fe166beab8a86d29465c41a0288cbe229fac60c1ab8d/jsonlines-4.0.0-py3-none-any.whl",
+          "sha256": "185b334ff2ca5a91362993f42e83588a360cf95ce4b71a73548502bda52a7c55",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "jsonlines-4.0.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/f8/62/d9ba6323b9202dd2fe166beab8a86d29465c41a0288cbe229fac60c1ab8d/jsonlines-4.0.0-py3-none-any.whl",
+          "sha256": "185b334ff2ca5a91362993f42e83588a360cf95ce4b71a73548502bda52a7c55",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "jsonlines-4.0.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/f8/62/d9ba6323b9202dd2fe166beab8a86d29465c41a0288cbe229fac60c1ab8d/jsonlines-4.0.0-py3-none-any.whl",
+          "sha256": "185b334ff2ca5a91362993f42e83588a360cf95ce4b71a73548502bda52a7c55",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "jsonlines-4.0.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/f8/62/d9ba6323b9202dd2fe166beab8a86d29465c41a0288cbe229fac60c1ab8d/jsonlines-4.0.0-py3-none-any.whl",
+          "sha256": "185b334ff2ca5a91362993f42e83588a360cf95ce4b71a73548502bda52a7c55",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "jsonpath-ng",
+      "version": "1.7.0",
+      "license": "Apache 2.0",
+      "wheels": {
+        "win32-x64": {
+          "filename": "jsonpath_ng-1.7.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/35/5a/73ecb3d82f8615f32ccdadeb9356726d6cae3a4bbc840b437ceb95708063/jsonpath_ng-1.7.0-py3-none-any.whl",
+          "sha256": "f3d7f9e848cba1b6da28c55b1c26ff915dc9e0b1ba7e752a53d6da8d5cbd00b6",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "jsonpath_ng-1.7.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/35/5a/73ecb3d82f8615f32ccdadeb9356726d6cae3a4bbc840b437ceb95708063/jsonpath_ng-1.7.0-py3-none-any.whl",
+          "sha256": "f3d7f9e848cba1b6da28c55b1c26ff915dc9e0b1ba7e752a53d6da8d5cbd00b6",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "jsonpath_ng-1.7.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/35/5a/73ecb3d82f8615f32ccdadeb9356726d6cae3a4bbc840b437ceb95708063/jsonpath_ng-1.7.0-py3-none-any.whl",
+          "sha256": "f3d7f9e848cba1b6da28c55b1c26ff915dc9e0b1ba7e752a53d6da8d5cbd00b6",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "jsonpath_ng-1.7.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/35/5a/73ecb3d82f8615f32ccdadeb9356726d6cae3a4bbc840b437ceb95708063/jsonpath_ng-1.7.0-py3-none-any.whl",
+          "sha256": "f3d7f9e848cba1b6da28c55b1c26ff915dc9e0b1ba7e752a53d6da8d5cbd00b6",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "jsonpointer",
+      "version": "3.0.0",
+      "license": "Modified BSD License",
+      "wheels": {
+        "win32-x64": {
+          "filename": "jsonpointer-3.0.0-py2.py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/71/92/5e77f98553e9e75130c78900d000368476aed74276eb8ae8796f65f00918/jsonpointer-3.0.0-py2.py3-none-any.whl",
+          "sha256": "13e088adc14fca8b6aa8177c044e12701e6ad4b28ff10e65f2267a90109c9942",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "jsonpointer-3.0.0-py2.py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/71/92/5e77f98553e9e75130c78900d000368476aed74276eb8ae8796f65f00918/jsonpointer-3.0.0-py2.py3-none-any.whl",
+          "sha256": "13e088adc14fca8b6aa8177c044e12701e6ad4b28ff10e65f2267a90109c9942",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "jsonpointer-3.0.0-py2.py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/71/92/5e77f98553e9e75130c78900d000368476aed74276eb8ae8796f65f00918/jsonpointer-3.0.0-py2.py3-none-any.whl",
+          "sha256": "13e088adc14fca8b6aa8177c044e12701e6ad4b28ff10e65f2267a90109c9942",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "jsonpointer-3.0.0-py2.py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/71/92/5e77f98553e9e75130c78900d000368476aed74276eb8ae8796f65f00918/jsonpointer-3.0.0-py2.py3-none-any.whl",
+          "sha256": "13e088adc14fca8b6aa8177c044e12701e6ad4b28ff10e65f2267a90109c9942",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "jsonschema",
+      "version": "4.26.0",
+      "license": "MIT",
+      "wheels": {
+        "win32-x64": {
+          "filename": "jsonschema-4.26.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/69/90/f63fb5873511e014207a475e2bb4e8b2e570d655b00ac19a9a0ca0a385ee/jsonschema-4.26.0-py3-none-any.whl",
+          "sha256": "d489f15263b8d200f8387e64b4c3a75f06629559fb73deb8fdfb525f2dab50ce",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "jsonschema-4.26.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/69/90/f63fb5873511e014207a475e2bb4e8b2e570d655b00ac19a9a0ca0a385ee/jsonschema-4.26.0-py3-none-any.whl",
+          "sha256": "d489f15263b8d200f8387e64b4c3a75f06629559fb73deb8fdfb525f2dab50ce",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "jsonschema-4.26.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/69/90/f63fb5873511e014207a475e2bb4e8b2e570d655b00ac19a9a0ca0a385ee/jsonschema-4.26.0-py3-none-any.whl",
+          "sha256": "d489f15263b8d200f8387e64b4c3a75f06629559fb73deb8fdfb525f2dab50ce",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "jsonschema-4.26.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/69/90/f63fb5873511e014207a475e2bb4e8b2e570d655b00ac19a9a0ca0a385ee/jsonschema-4.26.0-py3-none-any.whl",
+          "sha256": "d489f15263b8d200f8387e64b4c3a75f06629559fb73deb8fdfb525f2dab50ce",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "jsonschema-specifications",
+      "version": "2025.9.1",
+      "license": "MIT",
+      "wheels": {
+        "win32-x64": {
+          "filename": "jsonschema_specifications-2025.9.1-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/41/45/1a4ed80516f02155c51f51e8cedb3c1902296743db0bbc66608a0db2814f/jsonschema_specifications-2025.9.1-py3-none-any.whl",
+          "sha256": "98802fee3a11ee76ecaca44429fda8a41bff98b00a0f2838151b113f210cc6fe",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "jsonschema_specifications-2025.9.1-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/41/45/1a4ed80516f02155c51f51e8cedb3c1902296743db0bbc66608a0db2814f/jsonschema_specifications-2025.9.1-py3-none-any.whl",
+          "sha256": "98802fee3a11ee76ecaca44429fda8a41bff98b00a0f2838151b113f210cc6fe",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "jsonschema_specifications-2025.9.1-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/41/45/1a4ed80516f02155c51f51e8cedb3c1902296743db0bbc66608a0db2814f/jsonschema_specifications-2025.9.1-py3-none-any.whl",
+          "sha256": "98802fee3a11ee76ecaca44429fda8a41bff98b00a0f2838151b113f210cc6fe",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "jsonschema_specifications-2025.9.1-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/41/45/1a4ed80516f02155c51f51e8cedb3c1902296743db0bbc66608a0db2814f/jsonschema_specifications-2025.9.1-py3-none-any.whl",
+          "sha256": "98802fee3a11ee76ecaca44429fda8a41bff98b00a0f2838151b113f210cc6fe",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "lark",
+      "version": "1.3.1",
+      "license": "MIT",
+      "wheels": {
+        "win32-x64": {
+          "filename": "lark-1.3.1-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/82/3d/14ce75ef66813643812f3093ab17e46d3a206942ce7376d31ec2d36229e7/lark-1.3.1-py3-none-any.whl",
+          "sha256": "c629b661023a014c37da873b4ff58a817398d12635d3bbb2c5a03be7fe5d1e12",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "lark-1.3.1-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/82/3d/14ce75ef66813643812f3093ab17e46d3a206942ce7376d31ec2d36229e7/lark-1.3.1-py3-none-any.whl",
+          "sha256": "c629b661023a014c37da873b4ff58a817398d12635d3bbb2c5a03be7fe5d1e12",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "lark-1.3.1-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/82/3d/14ce75ef66813643812f3093ab17e46d3a206942ce7376d31ec2d36229e7/lark-1.3.1-py3-none-any.whl",
+          "sha256": "c629b661023a014c37da873b4ff58a817398d12635d3bbb2c5a03be7fe5d1e12",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "lark-1.3.1-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/82/3d/14ce75ef66813643812f3093ab17e46d3a206942ce7376d31ec2d36229e7/lark-1.3.1-py3-none-any.whl",
+          "sha256": "c629b661023a014c37da873b4ff58a817398d12635d3bbb2c5a03be7fe5d1e12",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "linear-tsv",
+      "version": "1.1.0",
+      "license": "Apache",
+      "wheels": {
+        "win32-x64": {
+          "filename": "linear-tsv-1.1.0.tar.gz",
+          "url": "https://files.pythonhosted.org/packages/82/e5/03207a0f11e1d60df85b97b61704ed701b725a7c2feaf83f7bfbd0c2d83e/linear-tsv-1.1.0.tar.gz",
+          "sha256": "b504d78f4075615ae75de86a16e5680701a441fc84da2a2cf9f94351ab1ccbf5",
+          "kind": "sdist"
+        },
+        "linux-x64": {
+          "filename": "linear-tsv-1.1.0.tar.gz",
+          "url": "https://files.pythonhosted.org/packages/82/e5/03207a0f11e1d60df85b97b61704ed701b725a7c2feaf83f7bfbd0c2d83e/linear-tsv-1.1.0.tar.gz",
+          "sha256": "b504d78f4075615ae75de86a16e5680701a441fc84da2a2cf9f94351ab1ccbf5",
+          "kind": "sdist"
+        },
+        "darwin-x64": {
+          "filename": "linear-tsv-1.1.0.tar.gz",
+          "url": "https://files.pythonhosted.org/packages/82/e5/03207a0f11e1d60df85b97b61704ed701b725a7c2feaf83f7bfbd0c2d83e/linear-tsv-1.1.0.tar.gz",
+          "sha256": "b504d78f4075615ae75de86a16e5680701a441fc84da2a2cf9f94351ab1ccbf5",
+          "kind": "sdist"
+        },
+        "darwin-arm64": {
+          "filename": "linear-tsv-1.1.0.tar.gz",
+          "url": "https://files.pythonhosted.org/packages/82/e5/03207a0f11e1d60df85b97b61704ed701b725a7c2feaf83f7bfbd0c2d83e/linear-tsv-1.1.0.tar.gz",
+          "sha256": "b504d78f4075615ae75de86a16e5680701a441fc84da2a2cf9f94351ab1ccbf5",
+          "kind": "sdist"
+        }
+      }
+    },
+    {
+      "name": "markdown-it-py",
+      "version": "4.2.0",
+      "license": "MIT License",
+      "wheels": {
+        "win32-x64": {
+          "filename": "markdown_it_py-4.2.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/b3/81/4da04ced5a082363ecfa159c010d200ecbd959ae410c10c0264a38cac0f5/markdown_it_py-4.2.0-py3-none-any.whl",
+          "sha256": "9f7ebbcd14fe59494226453aed97c1070d83f8d24b6fc3a3bcf9a38092641c4a",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "markdown_it_py-4.2.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/b3/81/4da04ced5a082363ecfa159c010d200ecbd959ae410c10c0264a38cac0f5/markdown_it_py-4.2.0-py3-none-any.whl",
+          "sha256": "9f7ebbcd14fe59494226453aed97c1070d83f8d24b6fc3a3bcf9a38092641c4a",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "markdown_it_py-4.2.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/b3/81/4da04ced5a082363ecfa159c010d200ecbd959ae410c10c0264a38cac0f5/markdown_it_py-4.2.0-py3-none-any.whl",
+          "sha256": "9f7ebbcd14fe59494226453aed97c1070d83f8d24b6fc3a3bcf9a38092641c4a",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "markdown_it_py-4.2.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/b3/81/4da04ced5a082363ecfa159c010d200ecbd959ae410c10c0264a38cac0f5/markdown_it_py-4.2.0-py3-none-any.whl",
+          "sha256": "9f7ebbcd14fe59494226453aed97c1070d83f8d24b6fc3a3bcf9a38092641c4a",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "MarkupSafe",
+      "version": "3.0.3",
+      "license": "BSD-3-Clause",
+      "wheels": {
+        "win32-x64": {
+          "filename": "markupsafe-3.0.3-cp312-cp312-win_amd64.whl",
+          "url": "https://files.pythonhosted.org/packages/aa/5b/bec5aa9bbbb2c946ca2733ef9c4ca91c91b6a24580193e891b5f7dbe8e1e/markupsafe-3.0.3-cp312-cp312-win_amd64.whl",
+          "sha256": "26a5784ded40c9e318cfc2bdb30fe164bdb8665ded9cd64d500a34fb42067b1c",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "markupsafe-3.0.3-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+          "url": "https://files.pythonhosted.org/packages/3c/2e/8d0c2ab90a8c1d9a24f0399058ab8519a3279d1bd4289511d74e909f060e/markupsafe-3.0.3-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+          "sha256": "d6dd0be5b5b189d31db7cda48b91d7e0a9795f31430b7f271219ab30f1d3ac9d",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "markupsafe-3.0.3-cp312-cp312-macosx_10_13_x86_64.whl",
+          "url": "https://files.pythonhosted.org/packages/5a/72/147da192e38635ada20e0a2e1a51cf8823d2119ce8883f7053879c2199b5/markupsafe-3.0.3-cp312-cp312-macosx_10_13_x86_64.whl",
+          "sha256": "d53197da72cc091b024dd97249dfc7794d6a56530370992a5e1a08983ad9230e",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "markupsafe-3.0.3-cp312-cp312-macosx_11_0_arm64.whl",
+          "url": "https://files.pythonhosted.org/packages/9a/81/7e4e08678a1f98521201c3079f77db69fb552acd56067661f8c2f534a718/markupsafe-3.0.3-cp312-cp312-macosx_11_0_arm64.whl",
+          "sha256": "1872df69a4de6aead3491198eaf13810b565bdbeec3ae2dc8780f14458ec73ce",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "mdurl",
+      "version": "0.1.2",
+      "license": "MIT License",
+      "wheels": {
+        "win32-x64": {
+          "filename": "mdurl-0.1.2-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/b3/38/89ba8ad64ae25be8de66a6d463314cf1eb366222074cfda9ee839c56a4b4/mdurl-0.1.2-py3-none-any.whl",
+          "sha256": "84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "mdurl-0.1.2-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/b3/38/89ba8ad64ae25be8de66a6d463314cf1eb366222074cfda9ee839c56a4b4/mdurl-0.1.2-py3-none-any.whl",
+          "sha256": "84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "mdurl-0.1.2-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/b3/38/89ba8ad64ae25be8de66a6d463314cf1eb366222074cfda9ee839c56a4b4/mdurl-0.1.2-py3-none-any.whl",
+          "sha256": "84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "mdurl-0.1.2-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/b3/38/89ba8ad64ae25be8de66a6d463314cf1eb366222074cfda9ee839c56a4b4/mdurl-0.1.2-py3-none-any.whl",
+          "sha256": "84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "mmh3",
+      "version": "5.3.0",
+      "license": "MIT License",
+      "wheels": {
+        "win32-x64": {
+          "filename": "mmh3-5.3.0-cp312-cp312-win_amd64.whl",
+          "url": "https://files.pythonhosted.org/packages/39/86/695592b763d2c0a5739ff50e62be102a1790bd5817a5f7f9ed2ffcbe198f/mmh3-5.3.0-cp312-cp312-win_amd64.whl",
+          "sha256": "ad5e6b56000d4b1b82a380c664982371939dc8f728fcbb73d017edc035247dcb",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "mmh3-5.3.0-cp312-cp312-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl",
+          "url": "https://files.pythonhosted.org/packages/af/a6/5012e363699c598166fb955f7267975284dd51eadc0383771a1a593d4ac2/mmh3-5.3.0-cp312-cp312-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl",
+          "sha256": "98db40c6ef8bbeb028e0424736a6bef3b1d8d0a02399236eb00db0dd0b7ca957",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "mmh3-5.3.0-cp312-cp312-macosx_10_13_universal2.whl",
+          "url": "https://files.pythonhosted.org/packages/ef/97/28c3905a7e27e100ef50322798659e0af514eff600aabffbab00e3cd27ad/mmh3-5.3.0-cp312-cp312-macosx_10_13_universal2.whl",
+          "sha256": "5e7373e6834e4bdf2c24dbb1a0c6dd834bb5a189efb65723ebb58a8f3e76204b",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "mmh3-5.3.0-cp312-cp312-macosx_10_13_universal2.whl",
+          "url": "https://files.pythonhosted.org/packages/ef/97/28c3905a7e27e100ef50322798659e0af514eff600aabffbab00e3cd27ad/mmh3-5.3.0-cp312-cp312-macosx_10_13_universal2.whl",
+          "sha256": "5e7373e6834e4bdf2c24dbb1a0c6dd834bb5a189efb65723ebb58a8f3e76204b",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "msal",
+      "version": "1.38.0",
+      "license": "MIT",
+      "wheels": {
+        "win32-x64": {
+          "filename": "msal-1.38.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/c4/ca/d768f77a27d81ed0a6884f2458f8613c31c79b2eb95defbeca2273fd0754/msal-1.38.0-py3-none-any.whl",
+          "sha256": "765b9b98b6aa380ee8b8f1c75636e08863edaf0a953498955bd668650dde5d49",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "msal-1.38.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/c4/ca/d768f77a27d81ed0a6884f2458f8613c31c79b2eb95defbeca2273fd0754/msal-1.38.0-py3-none-any.whl",
+          "sha256": "765b9b98b6aa380ee8b8f1c75636e08863edaf0a953498955bd668650dde5d49",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "msal-1.38.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/c4/ca/d768f77a27d81ed0a6884f2458f8613c31c79b2eb95defbeca2273fd0754/msal-1.38.0-py3-none-any.whl",
+          "sha256": "765b9b98b6aa380ee8b8f1c75636e08863edaf0a953498955bd668650dde5d49",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "msal-1.38.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/c4/ca/d768f77a27d81ed0a6884f2458f8613c31c79b2eb95defbeca2273fd0754/msal-1.38.0-py3-none-any.whl",
+          "sha256": "765b9b98b6aa380ee8b8f1c75636e08863edaf0a953498955bd668650dde5d49",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "msal-extensions",
+      "version": "1.3.1",
+      "license": "MIT License",
+      "wheels": {
+        "win32-x64": {
+          "filename": "msal_extensions-1.3.1-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/5e/75/bd9b7bb966668920f06b200e84454c8f3566b102183bc55c5473d96cb2b9/msal_extensions-1.3.1-py3-none-any.whl",
+          "sha256": "96d3de4d034504e969ac5e85bae8106c8373b5c6568e4c8fa7af2eca9dbe6bca",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "msal_extensions-1.3.1-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/5e/75/bd9b7bb966668920f06b200e84454c8f3566b102183bc55c5473d96cb2b9/msal_extensions-1.3.1-py3-none-any.whl",
+          "sha256": "96d3de4d034504e969ac5e85bae8106c8373b5c6568e4c8fa7af2eca9dbe6bca",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "msal_extensions-1.3.1-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/5e/75/bd9b7bb966668920f06b200e84454c8f3566b102183bc55c5473d96cb2b9/msal_extensions-1.3.1-py3-none-any.whl",
+          "sha256": "96d3de4d034504e969ac5e85bae8106c8373b5c6568e4c8fa7af2eca9dbe6bca",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "msal_extensions-1.3.1-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/5e/75/bd9b7bb966668920f06b200e84454c8f3566b102183bc55c5473d96cb2b9/msal_extensions-1.3.1-py3-none-any.whl",
+          "sha256": "96d3de4d034504e969ac5e85bae8106c8373b5c6568e4c8fa7af2eca9dbe6bca",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "openpyxl",
+      "version": "3.1.5",
+      "license": "MIT",
+      "wheels": {
+        "win32-x64": {
+          "filename": "openpyxl-3.1.5-py2.py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/c0/da/977ded879c29cbd04de313843e76868e6e13408a94ed6b987245dc7c8506/openpyxl-3.1.5-py2.py3-none-any.whl",
+          "sha256": "5282c12b107bffeef825f4617dc029afaf41d0ea60823bbb665ef3079dc79de2",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "openpyxl-3.1.5-py2.py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/c0/da/977ded879c29cbd04de313843e76868e6e13408a94ed6b987245dc7c8506/openpyxl-3.1.5-py2.py3-none-any.whl",
+          "sha256": "5282c12b107bffeef825f4617dc029afaf41d0ea60823bbb665ef3079dc79de2",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "openpyxl-3.1.5-py2.py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/c0/da/977ded879c29cbd04de313843e76868e6e13408a94ed6b987245dc7c8506/openpyxl-3.1.5-py2.py3-none-any.whl",
+          "sha256": "5282c12b107bffeef825f4617dc029afaf41d0ea60823bbb665ef3079dc79de2",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "openpyxl-3.1.5-py2.py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/c0/da/977ded879c29cbd04de313843e76868e6e13408a94ed6b987245dc7c8506/openpyxl-3.1.5-py2.py3-none-any.whl",
+          "sha256": "5282c12b107bffeef825f4617dc029afaf41d0ea60823bbb665ef3079dc79de2",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "ply",
+      "version": "3.11",
+      "license": "BSD",
+      "wheels": {
+        "win32-x64": {
+          "filename": "ply-3.11-py2.py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/a3/58/35da89ee790598a0700ea49b2a66594140f44dec458c07e8e3d4979137fc/ply-3.11-py2.py3-none-any.whl",
+          "sha256": "096f9b8350b65ebd2fd1346b12452efe5b9607f7482813ffca50c22722a807ce",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "ply-3.11-py2.py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/a3/58/35da89ee790598a0700ea49b2a66594140f44dec458c07e8e3d4979137fc/ply-3.11-py2.py3-none-any.whl",
+          "sha256": "096f9b8350b65ebd2fd1346b12452efe5b9607f7482813ffca50c22722a807ce",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "ply-3.11-py2.py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/a3/58/35da89ee790598a0700ea49b2a66594140f44dec458c07e8e3d4979137fc/ply-3.11-py2.py3-none-any.whl",
+          "sha256": "096f9b8350b65ebd2fd1346b12452efe5b9607f7482813ffca50c22722a807ce",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "ply-3.11-py2.py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/a3/58/35da89ee790598a0700ea49b2a66594140f44dec458c07e8e3d4979137fc/ply-3.11-py2.py3-none-any.whl",
+          "sha256": "096f9b8350b65ebd2fd1346b12452efe5b9607f7482813ffca50c22722a807ce",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "pyarrow",
+      "version": "23.0.1",
+      "license": "Apache-2.0",
+      "wheels": {
+        "win32-x64": {
+          "filename": "pyarrow-23.0.1-cp312-cp312-win_amd64.whl",
+          "url": "https://files.pythonhosted.org/packages/f6/70/1fdda42d65b28b078e93d75d371b2185a61da89dda4def8ba6ba41ebdeb4/pyarrow-23.0.1-cp312-cp312-win_amd64.whl",
+          "sha256": "07deae7783782ac7250989a7b2ecde9b3c343a643f82e8a4df03d93b633006f0",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "pyarrow-23.0.1-cp312-cp312-manylinux_2_28_x86_64.whl",
+          "url": "https://files.pythonhosted.org/packages/2c/a5/da83046273d990f256cb79796a190bbf7ec999269705ddc609403f8c6b06/pyarrow-23.0.1-cp312-cp312-manylinux_2_28_x86_64.whl",
+          "sha256": "813d99f31275919c383aab17f0f455a04f5a429c261cc411b1e9a8f5e4aaaa05",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "pyarrow-23.0.1-cp312-cp312-macosx_12_0_x86_64.whl",
+          "url": "https://files.pythonhosted.org/packages/e1/da/3f941e3734ac8088ea588b53e860baeddac8323ea40ce22e3d0baa865cc9/pyarrow-23.0.1-cp312-cp312-macosx_12_0_x86_64.whl",
+          "sha256": "7707d2b6673f7de054e2e83d59f9e805939038eebe1763fe811ee8fa5c0cd1a7",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "pyarrow-23.0.1-cp312-cp312-macosx_12_0_arm64.whl",
+          "url": "https://files.pythonhosted.org/packages/9a/4b/4166bb5abbfe6f750fc60ad337c43ecf61340fa52ab386da6e8dbf9e63c4/pyarrow-23.0.1-cp312-cp312-macosx_12_0_arm64.whl",
+          "sha256": "f4b0dbfa124c0bb161f8b5ebb40f1a680b70279aa0c9901d44a2b5a20806039f",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "pycparser",
+      "version": "3.0",
+      "license": "BSD-3-Clause",
+      "wheels": {
+        "win32-x64": {
+          "filename": "pycparser-3.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/0c/c3/44f3fbbfa403ea2a7c779186dc20772604442dde72947e7d01069cbe98e3/pycparser-3.0-py3-none-any.whl",
+          "sha256": "b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "pycparser-3.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/0c/c3/44f3fbbfa403ea2a7c779186dc20772604442dde72947e7d01069cbe98e3/pycparser-3.0-py3-none-any.whl",
+          "sha256": "b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "pycparser-3.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/0c/c3/44f3fbbfa403ea2a7c779186dc20772604442dde72947e7d01069cbe98e3/pycparser-3.0-py3-none-any.whl",
+          "sha256": "b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "pycparser-3.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/0c/c3/44f3fbbfa403ea2a7c779186dc20772604442dde72947e7d01069cbe98e3/pycparser-3.0-py3-none-any.whl",
+          "sha256": "b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "psycopg2-binary",
+      "version": "2.9.12",
+      "license": "LGPL with exceptions",
+      "wheels": {
+        "win32-x64": {
+          "filename": "psycopg2_binary-2.9.12-cp312-cp312-win_amd64.whl",
+          "url": "https://files.pythonhosted.org/packages/5f/a8/75f4e3e11203b590150abed2cf7794b9c9c9f7eceddae955191138b44dde/psycopg2_binary-2.9.12-cp312-cp312-win_amd64.whl",
+          "sha256": "398fcd4db988c7d7d3713e2b8e18939776fd3fb447052daae4f24fa39daede4c",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "psycopg2_binary-2.9.12-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+          "url": "https://files.pythonhosted.org/packages/b0/55/44df3965b5f297c50cc0b1b594a31c67d6127a9d133045b8a66611b14dfb/psycopg2_binary-2.9.12-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+          "sha256": "9fe06d93e72f1c048e731a2e3e7854a5bfaa58fc736068df90b352cefe66f03f",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "psycopg2_binary-2.9.12-cp312-cp312-macosx_10_13_x86_64.whl",
+          "url": "https://files.pythonhosted.org/packages/e2/9f/ef4ef3c8e15083df90ca35265cfd1a081a2f0cc07bb229c6314c6af817f4/psycopg2_binary-2.9.12-cp312-cp312-macosx_10_13_x86_64.whl",
+          "sha256": "5cdc05117180c5fa9c40eea8ea559ce64d73824c39d928b7da9fb5f6a9392433",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "psycopg2_binary-2.9.12-cp312-cp312-macosx_11_0_arm64.whl",
+          "url": "https://files.pythonhosted.org/packages/b5/01/3dd14e46ba48c1e1a6ec58ee599fa1b5efa00c246d5046cd903d0eeb1af1/psycopg2_binary-2.9.12-cp312-cp312-macosx_11_0_arm64.whl",
+          "sha256": "d3227a3bc228c10d21011a99245edca923e4e8bf461857e869a507d9a41fe9f6",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "pydantic",
+      "version": "2.13.4",
+      "license": "MIT",
+      "wheels": {
+        "win32-x64": {
+          "filename": "pydantic-2.13.4-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/fd/7b/122376b1fd3c62c1ed9dc80c931ace4844b3c55407b6fb2d199377c9736f/pydantic-2.13.4-py3-none-any.whl",
+          "sha256": "45a282cde31d808236fd7ea9d919b128653c8b38b393d1c4ab335c62924d9aba",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "pydantic-2.13.4-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/fd/7b/122376b1fd3c62c1ed9dc80c931ace4844b3c55407b6fb2d199377c9736f/pydantic-2.13.4-py3-none-any.whl",
+          "sha256": "45a282cde31d808236fd7ea9d919b128653c8b38b393d1c4ab335c62924d9aba",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "pydantic-2.13.4-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/fd/7b/122376b1fd3c62c1ed9dc80c931ace4844b3c55407b6fb2d199377c9736f/pydantic-2.13.4-py3-none-any.whl",
+          "sha256": "45a282cde31d808236fd7ea9d919b128653c8b38b393d1c4ab335c62924d9aba",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "pydantic-2.13.4-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/fd/7b/122376b1fd3c62c1ed9dc80c931ace4844b3c55407b6fb2d199377c9736f/pydantic-2.13.4-py3-none-any.whl",
+          "sha256": "45a282cde31d808236fd7ea9d919b128653c8b38b393d1c4ab335c62924d9aba",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "pydantic_core",
+      "version": "2.46.4",
+      "license": "MIT",
+      "wheels": {
+        "win32-x64": {
+          "filename": "pydantic_core-2.46.4-cp312-cp312-win_amd64.whl",
+          "url": "https://files.pythonhosted.org/packages/40/8c/985c1d41ea1107c2534abd9870e4ed5c8e7669b5c308297835c001e7a1c4/pydantic_core-2.46.4-cp312-cp312-win_amd64.whl",
+          "sha256": "e9c26f834c65f5752f3f06cb08cb86a913ceb7274d0db6e267808a708b46bc89",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "pydantic_core-2.46.4-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+          "url": "https://files.pythonhosted.org/packages/5f/97/2aab507d3d00ca626e8e57c1eac6a79e4e5fbcc63eb99733ff55d1717f65/pydantic_core-2.46.4-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+          "sha256": "926c9541b14b12b1681dca8a0b75feb510b06c6341b70a8e500c2fdcff837cce",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "pydantic_core-2.46.4-cp312-cp312-macosx_10_12_x86_64.whl",
+          "url": "https://files.pythonhosted.org/packages/ce/8c/af022f0af448d7747c5154288d46b5f2bc5f17366eaa0e23e9aa04d59f3b/pydantic_core-2.46.4-cp312-cp312-macosx_10_12_x86_64.whl",
+          "sha256": "3245406455a5d98187ec35530fd772b1d799b26667980872c8d4614991e2c4a2",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "pydantic_core-2.46.4-cp312-cp312-macosx_11_0_arm64.whl",
+          "url": "https://files.pythonhosted.org/packages/19/95/6195171e385007300f0f5574592e467c568becce2d937a0b6804f218bc49/pydantic_core-2.46.4-cp312-cp312-macosx_11_0_arm64.whl",
+          "sha256": "962ccbab7b642487b1d8b7df90ef677e03134cf1fd8880bf698649b22a69371f",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "Pygments",
+      "version": "2.21.0",
+      "license": "BSD-2-Clause",
+      "wheels": {
+        "win32-x64": {
+          "filename": "pygments-2.21.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/71/46/17f022dd3e953bf20a04a028a21ec746d942f8d2af30fa0f124fa0e6a684/pygments-2.21.0-py3-none-any.whl",
+          "sha256": "2363c69b61c4a97c838da3b130dcd6468f4848992b21a82f2a63ec34377137d9",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "pygments-2.21.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/71/46/17f022dd3e953bf20a04a028a21ec746d942f8d2af30fa0f124fa0e6a684/pygments-2.21.0-py3-none-any.whl",
+          "sha256": "2363c69b61c4a97c838da3b130dcd6468f4848992b21a82f2a63ec34377137d9",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "pygments-2.21.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/71/46/17f022dd3e953bf20a04a028a21ec746d942f8d2af30fa0f124fa0e6a684/pygments-2.21.0-py3-none-any.whl",
+          "sha256": "2363c69b61c4a97c838da3b130dcd6468f4848992b21a82f2a63ec34377137d9",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "pygments-2.21.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/71/46/17f022dd3e953bf20a04a028a21ec746d942f8d2af30fa0f124fa0e6a684/pygments-2.21.0-py3-none-any.whl",
+          "sha256": "2363c69b61c4a97c838da3b130dcd6468f4848992b21a82f2a63ec34377137d9",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "pyiceberg",
+      "version": "0.11.0",
+      "license": "Apache-2.0",
+      "wheels": {
+        "win32-x64": {
+          "filename": "pyiceberg-0.11.0-cp312-cp312-win_amd64.whl",
+          "url": "https://files.pythonhosted.org/packages/56/14/dc689c0637d7f6716cae614afcce5782903cc87a781dfd47e6d6e72ce104/pyiceberg-0.11.0-cp312-cp312-win_amd64.whl",
+          "sha256": "4bb26a9308e8bb97c1d3518209d221f2a790a37b9806b8b91fee4c47be4919a6",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "pyiceberg-0.11.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+          "url": "https://files.pythonhosted.org/packages/99/ff/db75a2062a0b4b64ad0a6c677cab5b6e3ac19e0820584c597e1822f2cf7c/pyiceberg-0.11.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+          "sha256": "8dda2ad8d57e3af743ab67d976a23ca1cd54a4849110b5c2375f5d9466a4ae80",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "pyiceberg-0.11.0-cp312-cp312-macosx_10_13_x86_64.whl",
+          "url": "https://files.pythonhosted.org/packages/c6/37/b5a818444f5563ee2dacac93cc690e63396ab60308be353502dc7008168b/pyiceberg-0.11.0-cp312-cp312-macosx_10_13_x86_64.whl",
+          "sha256": "6fc89c9581d42ff2383cc9ba3f443ab9f175d8e85216ecbd819e955e9069bc46",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "pyiceberg-0.11.0-cp312-cp312-macosx_11_0_arm64.whl",
+          "url": "https://files.pythonhosted.org/packages/7d/f9/ef76d6cf62a7ba9d61a5e20216000d4b366d8eac3be5c89c2ce5c8eb38f9/pyiceberg-0.11.0-cp312-cp312-macosx_11_0_arm64.whl",
+          "sha256": "e2dfdf5438cc5ad8eb8b2e3f7a41ab6f286fe8b6fd6f5c1407381f627097e2e0",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "PyJWT",
+      "version": "2.13.0",
+      "license": "MIT",
+      "wheels": {
+        "win32-x64": {
+          "filename": "pyjwt-2.13.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/a3/5e/ecf12fdb62546d64385c158514e9b2b671f7832108ef2ecd2020ce0af2d1/pyjwt-2.13.0-py3-none-any.whl",
+          "sha256": "66adcc2aff09b3f1bbd95fc1e1577df8ac8723c978552fd43304c8a290ac5728",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "pyjwt-2.13.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/a3/5e/ecf12fdb62546d64385c158514e9b2b671f7832108ef2ecd2020ce0af2d1/pyjwt-2.13.0-py3-none-any.whl",
+          "sha256": "66adcc2aff09b3f1bbd95fc1e1577df8ac8723c978552fd43304c8a290ac5728",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "pyjwt-2.13.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/a3/5e/ecf12fdb62546d64385c158514e9b2b671f7832108ef2ecd2020ce0af2d1/pyjwt-2.13.0-py3-none-any.whl",
+          "sha256": "66adcc2aff09b3f1bbd95fc1e1577df8ac8723c978552fd43304c8a290ac5728",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "pyjwt-2.13.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/a3/5e/ecf12fdb62546d64385c158514e9b2b671f7832108ef2ecd2020ce0af2d1/pyjwt-2.13.0-py3-none-any.whl",
+          "sha256": "66adcc2aff09b3f1bbd95fc1e1577df8ac8723c978552fd43304c8a290ac5728",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "PyMySQL",
+      "version": "1.2.0",
+      "license": "MIT",
+      "wheels": {
+        "win32-x64": {
+          "filename": "pymysql-1.2.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/c4/bd/2534e130295c8cfd4f0a2e31623baab7502278f1e97bcfe61db75656a77f/pymysql-1.2.0-py3-none-any.whl",
+          "sha256": "62169ce6d5510f08e140c5e7990ee884a9764024e4a9a27b2cc11f1099322ae0",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "pymysql-1.2.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/c4/bd/2534e130295c8cfd4f0a2e31623baab7502278f1e97bcfe61db75656a77f/pymysql-1.2.0-py3-none-any.whl",
+          "sha256": "62169ce6d5510f08e140c5e7990ee884a9764024e4a9a27b2cc11f1099322ae0",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "pymysql-1.2.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/c4/bd/2534e130295c8cfd4f0a2e31623baab7502278f1e97bcfe61db75656a77f/pymysql-1.2.0-py3-none-any.whl",
+          "sha256": "62169ce6d5510f08e140c5e7990ee884a9764024e4a9a27b2cc11f1099322ae0",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "pymysql-1.2.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/c4/bd/2534e130295c8cfd4f0a2e31623baab7502278f1e97bcfe61db75656a77f/pymysql-1.2.0-py3-none-any.whl",
+          "sha256": "62169ce6d5510f08e140c5e7990ee884a9764024e4a9a27b2cc11f1099322ae0",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "pymssql",
+      "version": "2.3.13",
+      "license": "LGPL-2.1-only",
+      "wheels": {
+        "win32-x64": {
+          "filename": "pymssql-2.3.13-cp312-cp312-win_amd64.whl",
+          "url": "https://files.pythonhosted.org/packages/78/08/8cd2af9003f9fc03912b658a64f5a4919dcd68f0dd3bbc822b49a3d14fd9/pymssql-2.3.13-cp312-cp312-win_amd64.whl",
+          "sha256": "a930adda87bdd8351a5637cf73d6491936f34e525a5e513068a6eac742f69cdb",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "pymssql-2.3.13-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+          "url": "https://files.pythonhosted.org/packages/1e/7a/8028681c96241fb5fc850b87c8959402c353e4b83c6e049a99ffa67ded54/pymssql-2.3.13-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+          "sha256": "c0ea72641cb0f8bce7ad8565dbdbda4a7437aa58bce045f2a3a788d71af2e4be",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "pymssql-2.3.13-cp312-cp312-macosx_15_0_x86_64.whl",
+          "url": "https://files.pythonhosted.org/packages/43/9e/0cf0ffb9e2f73238baf766d8e31d7237b5bee3cc1bb29a376b404610994a/pymssql-2.3.13-cp312-cp312-macosx_15_0_x86_64.whl",
+          "sha256": "2b056eb175955f7fb715b60dc1c0c624969f4d24dbdcf804b41ab1e640a2b131",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "pymssql-2.3.13-cp312-cp312-macosx_14_0_arm64.whl",
+          "url": "https://files.pythonhosted.org/packages/ba/60/a2e8a8a38f7be21d54402e2b3365cd56f1761ce9f2706c97f864e8aa8300/pymssql-2.3.13-cp312-cp312-macosx_14_0_arm64.whl",
+          "sha256": "cf4f32b4a05b66f02cb7d55a0f3bcb0574a6f8cf0bee4bea6f7b104038364733",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "pyparsing",
+      "version": "3.3.2",
+      "license": "MIT",
+      "wheels": {
+        "win32-x64": {
+          "filename": "pyparsing-3.3.2-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/10/bd/c038d7cc38edc1aa5bf91ab8068b63d4308c66c4c8bb3cbba7dfbc049f9c/pyparsing-3.3.2-py3-none-any.whl",
+          "sha256": "850ba148bd908d7e2411587e247a1e4f0327839c40e2e5e6d05a007ecc69911d",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "pyparsing-3.3.2-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/10/bd/c038d7cc38edc1aa5bf91ab8068b63d4308c66c4c8bb3cbba7dfbc049f9c/pyparsing-3.3.2-py3-none-any.whl",
+          "sha256": "850ba148bd908d7e2411587e247a1e4f0327839c40e2e5e6d05a007ecc69911d",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "pyparsing-3.3.2-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/10/bd/c038d7cc38edc1aa5bf91ab8068b63d4308c66c4c8bb3cbba7dfbc049f9c/pyparsing-3.3.2-py3-none-any.whl",
+          "sha256": "850ba148bd908d7e2411587e247a1e4f0327839c40e2e5e6d05a007ecc69911d",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "pyparsing-3.3.2-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/10/bd/c038d7cc38edc1aa5bf91ab8068b63d4308c66c4c8bb3cbba7dfbc049f9c/pyparsing-3.3.2-py3-none-any.whl",
+          "sha256": "850ba148bd908d7e2411587e247a1e4f0327839c40e2e5e6d05a007ecc69911d",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "pyroaring",
+      "version": "1.1.0",
+      "license": "MIT",
+      "wheels": {
+        "win32-x64": {
+          "filename": "pyroaring-1.1.0-cp312-cp312-win_amd64.whl",
+          "url": "https://files.pythonhosted.org/packages/ea/39/dd3341e235a3794c613ea32bd35618a88ff2ae067dbe9dd7c382c8c146d2/pyroaring-1.1.0-cp312-cp312-win_amd64.whl",
+          "sha256": "51ebe5e6f48e3dc9df91a4cb62137ef72e1469acd6f37479abd9991f6d945cc9",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "pyroaring-1.1.0-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+          "url": "https://files.pythonhosted.org/packages/c5/4b/ff77d6eb4747c65aba49d345318059f1ccfbd206bbcd34686cea819187e9/pyroaring-1.1.0-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+          "sha256": "043dbbaa905f7288c515ac06a96b67a3763f35e9ae06f0c0278c0d9964d16760",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "pyroaring-1.1.0-cp312-cp312-macosx_14_0_universal2.whl",
+          "url": "https://files.pythonhosted.org/packages/1a/16/70f8268c9bac4f6d91a82df254332edfa07020fe02e97c6d3d0295ee4db3/pyroaring-1.1.0-cp312-cp312-macosx_14_0_universal2.whl",
+          "sha256": "e9c2b9aa8decdcf40ed8f4c887092c20a272f8c32215c3fee65e9db92ecf418e",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "pyroaring-1.1.0-cp312-cp312-macosx_14_0_arm64.whl",
+          "url": "https://files.pythonhosted.org/packages/96/e9/d8dcccfdac1657e6a53b6ade0c0c71d59244316810c82537a5d634f8b7fd/pyroaring-1.1.0-cp312-cp312-macosx_14_0_arm64.whl",
+          "sha256": "fdf484d26016e0c016f23f2b635d2899daec034565fdcc062ed6b10f3b26a3f4",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "python-dateutil",
+      "version": "2.9.0.post0",
+      "license": "Dual License",
+      "wheels": {
+        "win32-x64": {
+          "filename": "python_dateutil-2.9.0.post0-py2.py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/ec/57/56b9bcc3c9c6a792fcbaf139543cee77261f3651ca9da0c93f5c1221264b/python_dateutil-2.9.0.post0-py2.py3-none-any.whl",
+          "sha256": "a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "python_dateutil-2.9.0.post0-py2.py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/ec/57/56b9bcc3c9c6a792fcbaf139543cee77261f3651ca9da0c93f5c1221264b/python_dateutil-2.9.0.post0-py2.py3-none-any.whl",
+          "sha256": "a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "python_dateutil-2.9.0.post0-py2.py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/ec/57/56b9bcc3c9c6a792fcbaf139543cee77261f3651ca9da0c93f5c1221264b/python_dateutil-2.9.0.post0-py2.py3-none-any.whl",
+          "sha256": "a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "python_dateutil-2.9.0.post0-py2.py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/ec/57/56b9bcc3c9c6a792fcbaf139543cee77261f3651ca9da0c93f5c1221264b/python_dateutil-2.9.0.post0-py2.py3-none-any.whl",
+          "sha256": "a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "PyYAML",
+      "version": "6.0.3",
+      "license": "MIT",
+      "wheels": {
+        "win32-x64": {
+          "filename": "pyyaml-6.0.3-cp312-cp312-win_amd64.whl",
+          "url": "https://files.pythonhosted.org/packages/86/bf/899e81e4cce32febab4fb42bb97dcdf66bc135272882d1987881a4b519e9/pyyaml-6.0.3-cp312-cp312-win_amd64.whl",
+          "sha256": "5fcd34e47f6e0b794d17de1b4ff496c00986e1c83f7ab2fb8fcfe9616ff7477b",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "pyyaml-6.0.3-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+          "url": "https://files.pythonhosted.org/packages/8b/9d/b3589d3877982d4f2329302ef98a8026e7f4443c765c46cfecc8858c6b4b/pyyaml-6.0.3-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+          "sha256": "ba1cc08a7ccde2d2ec775841541641e4548226580ab850948cbfda66a1befcdc",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "pyyaml-6.0.3-cp312-cp312-macosx_10_13_x86_64.whl",
+          "url": "https://files.pythonhosted.org/packages/d1/33/422b98d2195232ca1826284a76852ad5a86fe23e31b009c9886b2d0fb8b2/pyyaml-6.0.3-cp312-cp312-macosx_10_13_x86_64.whl",
+          "sha256": "7f047e29dcae44602496db43be01ad42fc6f1cc0d8cd6c83d342306c32270196",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "pyyaml-6.0.3-cp312-cp312-macosx_11_0_arm64.whl",
+          "url": "https://files.pythonhosted.org/packages/89/a0/6cf41a19a1f2f3feab0e9c0b74134aa2ce6849093d5517a0c550fe37a648/pyyaml-6.0.3-cp312-cp312-macosx_11_0_arm64.whl",
+          "sha256": "fc09d0aa354569bc501d4e787133afc08552722d3ab34836a80547331bb5d4a0",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "referencing",
+      "version": "0.37.0",
+      "license": "MIT",
+      "wheels": {
+        "win32-x64": {
+          "filename": "referencing-0.37.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/2c/58/ca301544e1fa93ed4f80d724bf5b194f6e4b945841c5bfd555878eea9fcb/referencing-0.37.0-py3-none-any.whl",
+          "sha256": "381329a9f99628c9069361716891d34ad94af76e461dcb0335825aecc7692231",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "referencing-0.37.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/2c/58/ca301544e1fa93ed4f80d724bf5b194f6e4b945841c5bfd555878eea9fcb/referencing-0.37.0-py3-none-any.whl",
+          "sha256": "381329a9f99628c9069361716891d34ad94af76e461dcb0335825aecc7692231",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "referencing-0.37.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/2c/58/ca301544e1fa93ed4f80d724bf5b194f6e4b945841c5bfd555878eea9fcb/referencing-0.37.0-py3-none-any.whl",
+          "sha256": "381329a9f99628c9069361716891d34ad94af76e461dcb0335825aecc7692231",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "referencing-0.37.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/2c/58/ca301544e1fa93ed4f80d724bf5b194f6e4b945841c5bfd555878eea9fcb/referencing-0.37.0-py3-none-any.whl",
+          "sha256": "381329a9f99628c9069361716891d34ad94af76e461dcb0335825aecc7692231",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "requests",
+      "version": "2.32.5",
+      "license": "Apache-2.0",
+      "wheels": {
+        "win32-x64": {
+          "filename": "requests-2.32.5-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/1e/db/4254e3eabe8020b458f1a747140d32277ec7a271daf1d235b70dc0b4e6e3/requests-2.32.5-py3-none-any.whl",
+          "sha256": "2462f94637a34fd532264295e186976db0f5d453d1cdd31473c85a6a161affb6",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "requests-2.32.5-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/1e/db/4254e3eabe8020b458f1a747140d32277ec7a271daf1d235b70dc0b4e6e3/requests-2.32.5-py3-none-any.whl",
+          "sha256": "2462f94637a34fd532264295e186976db0f5d453d1cdd31473c85a6a161affb6",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "requests-2.32.5-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/1e/db/4254e3eabe8020b458f1a747140d32277ec7a271daf1d235b70dc0b4e6e3/requests-2.32.5-py3-none-any.whl",
+          "sha256": "2462f94637a34fd532264295e186976db0f5d453d1cdd31473c85a6a161affb6",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "requests-2.32.5-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/1e/db/4254e3eabe8020b458f1a747140d32277ec7a271daf1d235b70dc0b4e6e3/requests-2.32.5-py3-none-any.whl",
+          "sha256": "2462f94637a34fd532264295e186976db0f5d453d1cdd31473c85a6a161affb6",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "rfc3986",
+      "version": "2.0.0",
+      "license": "Apache 2.0",
+      "wheels": {
+        "win32-x64": {
+          "filename": "rfc3986-2.0.0-py2.py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/ff/9a/9afaade874b2fa6c752c36f1548f718b5b83af81ed9b76628329dab81c1b/rfc3986-2.0.0-py2.py3-none-any.whl",
+          "sha256": "50b1502b60e289cb37883f3dfd34532b8873c7de9f49bb546641ce9cbd256ebd",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "rfc3986-2.0.0-py2.py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/ff/9a/9afaade874b2fa6c752c36f1548f718b5b83af81ed9b76628329dab81c1b/rfc3986-2.0.0-py2.py3-none-any.whl",
+          "sha256": "50b1502b60e289cb37883f3dfd34532b8873c7de9f49bb546641ce9cbd256ebd",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "rfc3986-2.0.0-py2.py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/ff/9a/9afaade874b2fa6c752c36f1548f718b5b83af81ed9b76628329dab81c1b/rfc3986-2.0.0-py2.py3-none-any.whl",
+          "sha256": "50b1502b60e289cb37883f3dfd34532b8873c7de9f49bb546641ce9cbd256ebd",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "rfc3986-2.0.0-py2.py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/ff/9a/9afaade874b2fa6c752c36f1548f718b5b83af81ed9b76628329dab81c1b/rfc3986-2.0.0-py2.py3-none-any.whl",
+          "sha256": "50b1502b60e289cb37883f3dfd34532b8873c7de9f49bb546641ce9cbd256ebd",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "rich",
+      "version": "14.3.4",
+      "license": "MIT",
+      "wheels": {
+        "win32-x64": {
+          "filename": "rich-14.3.4-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/b3/76/6d163cfac87b632216f71879e6b2cf17163f773ff59c00b5ff4900a80fa3/rich-14.3.4-py3-none-any.whl",
+          "sha256": "07e7adb4690f68864777b1450859253bed81a99a31ac321ac1817b2313558952",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "rich-14.3.4-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/b3/76/6d163cfac87b632216f71879e6b2cf17163f773ff59c00b5ff4900a80fa3/rich-14.3.4-py3-none-any.whl",
+          "sha256": "07e7adb4690f68864777b1450859253bed81a99a31ac321ac1817b2313558952",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "rich-14.3.4-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/b3/76/6d163cfac87b632216f71879e6b2cf17163f773ff59c00b5ff4900a80fa3/rich-14.3.4-py3-none-any.whl",
+          "sha256": "07e7adb4690f68864777b1450859253bed81a99a31ac321ac1817b2313558952",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "rich-14.3.4-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/b3/76/6d163cfac87b632216f71879e6b2cf17163f773ff59c00b5ff4900a80fa3/rich-14.3.4-py3-none-any.whl",
+          "sha256": "07e7adb4690f68864777b1450859253bed81a99a31ac321ac1817b2313558952",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "rpds-py",
+      "version": "2026.6.3",
+      "license": "MIT",
+      "wheels": {
+        "win32-x64": {
+          "filename": "rpds_py-2026.6.3-cp312-cp312-win_amd64.whl",
+          "url": "https://files.pythonhosted.org/packages/04/3a/f0ee4d4dde9d3b69dedf1b5f74e7a40017046d55052d173e418c6a94f960/rpds_py-2026.6.3-cp312-cp312-win_amd64.whl",
+          "sha256": "2c958bf94822e9290a40aaf2a822d4bc5c88099093e3948ad6c571eca9272e5f",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "rpds_py-2026.6.3-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+          "url": "https://files.pythonhosted.org/packages/04/8f/d2f3f532616be4d06c316ef119683e832bd3d41e112bf3a88f4151c95b17/rpds_py-2026.6.3-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+          "sha256": "ecabd69db66de867690f9797f2f8fa27ba501bbc24540cbdbdc649cd15888ba6",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "rpds_py-2026.6.3-cp312-cp312-macosx_10_12_x86_64.whl",
+          "url": "https://files.pythonhosted.org/packages/5c/be/2e8974163072e7bab7df1a5acd54c4498e75e35d6d18b864d3a9d5dadc92/rpds_py-2026.6.3-cp312-cp312-macosx_10_12_x86_64.whl",
+          "sha256": "a0811d33247c3d6128a3001d763f2aa056bb3425204335400ac54f89eec3a0d0",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "rpds_py-2026.6.3-cp312-cp312-macosx_11_0_arm64.whl",
+          "url": "https://files.pythonhosted.org/packages/a4/73/319dfa745dd668efe89309141ded489126461fcecd2b8f3a3cda185129b6/rpds_py-2026.6.3-cp312-cp312-macosx_11_0_arm64.whl",
+          "sha256": "538949e262e46caa31ac01bdb3c1e8f642622922cacbabbae6a8445d9dc33eaf",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "s3transfer",
+      "version": "0.19.2",
+      "license": "Apache License 2.0",
+      "wheels": {
+        "win32-x64": {
+          "filename": "s3transfer-0.19.2-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/bc/e7/5c595c75e9f41a44f30e526eda465ea0b4eec93470e074e4a111b253f13a/s3transfer-0.19.2-py3-none-any.whl",
+          "sha256": "d8168eccca828cbb2cd573675333f3bddd254313a9c42494b84c76b539e8ba25",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "s3transfer-0.19.2-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/bc/e7/5c595c75e9f41a44f30e526eda465ea0b4eec93470e074e4a111b253f13a/s3transfer-0.19.2-py3-none-any.whl",
+          "sha256": "d8168eccca828cbb2cd573675333f3bddd254313a9c42494b84c76b539e8ba25",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "s3transfer-0.19.2-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/bc/e7/5c595c75e9f41a44f30e526eda465ea0b4eec93470e074e4a111b253f13a/s3transfer-0.19.2-py3-none-any.whl",
+          "sha256": "d8168eccca828cbb2cd573675333f3bddd254313a9c42494b84c76b539e8ba25",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "s3transfer-0.19.2-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/bc/e7/5c595c75e9f41a44f30e526eda465ea0b4eec93470e074e4a111b253f13a/s3transfer-0.19.2-py3-none-any.whl",
+          "sha256": "d8168eccca828cbb2cd573675333f3bddd254313a9c42494b84c76b539e8ba25",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "setuptools",
+      "version": "75.8.0",
+      "license": "MIT",
+      "wheels": {
+        "win32-x64": {
+          "filename": "setuptools-75.8.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/69/8a/b9dc7678803429e4a3bc9ba462fa3dd9066824d3c607490235c6a796be5a/setuptools-75.8.0-py3-none-any.whl",
+          "sha256": "e3982f444617239225d675215d51f6ba05f845d4eec313da4418fdbb56fb27e3",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "setuptools-75.8.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/69/8a/b9dc7678803429e4a3bc9ba462fa3dd9066824d3c607490235c6a796be5a/setuptools-75.8.0-py3-none-any.whl",
+          "sha256": "e3982f444617239225d675215d51f6ba05f845d4eec313da4418fdbb56fb27e3",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "setuptools-75.8.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/69/8a/b9dc7678803429e4a3bc9ba462fa3dd9066824d3c607490235c6a796be5a/setuptools-75.8.0-py3-none-any.whl",
+          "sha256": "e3982f444617239225d675215d51f6ba05f845d4eec313da4418fdbb56fb27e3",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "setuptools-75.8.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/69/8a/b9dc7678803429e4a3bc9ba462fa3dd9066824d3c607490235c6a796be5a/setuptools-75.8.0-py3-none-any.whl",
+          "sha256": "e3982f444617239225d675215d51f6ba05f845d4eec313da4418fdbb56fb27e3",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "six",
+      "version": "1.17.0",
+      "license": "MIT",
+      "wheels": {
+        "win32-x64": {
+          "filename": "six-1.17.0-py2.py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/b7/ce/149a00dd41f10bc29e5921b496af8b574d8413afcd5e30dfa0ed46c2cc5e/six-1.17.0-py2.py3-none-any.whl",
+          "sha256": "4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "six-1.17.0-py2.py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/b7/ce/149a00dd41f10bc29e5921b496af8b574d8413afcd5e30dfa0ed46c2cc5e/six-1.17.0-py2.py3-none-any.whl",
+          "sha256": "4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "six-1.17.0-py2.py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/b7/ce/149a00dd41f10bc29e5921b496af8b574d8413afcd5e30dfa0ed46c2cc5e/six-1.17.0-py2.py3-none-any.whl",
+          "sha256": "4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "six-1.17.0-py2.py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/b7/ce/149a00dd41f10bc29e5921b496af8b574d8413afcd5e30dfa0ed46c2cc5e/six-1.17.0-py2.py3-none-any.whl",
+          "sha256": "4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "SQLAlchemy",
+      "version": "2.0.52",
+      "license": "MIT",
+      "wheels": {
+        "win32-x64": {
+          "filename": "sqlalchemy-2.0.52-cp312-cp312-win_amd64.whl",
+          "url": "https://files.pythonhosted.org/packages/ed/06/543dab8ef62d4e9fb96fb31a30c2b8b14a8763bccf48d428294d6b3041c0/sqlalchemy-2.0.52-cp312-cp312-win_amd64.whl",
+          "sha256": "2d5e53e36e37129fe0be8b9d08b6e4052c10a963ee6cda56c8c10dcc194b99ca",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "sqlalchemy-2.0.52-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+          "url": "https://files.pythonhosted.org/packages/be/57/2eadf93a552568c57e8680b7e58bb5e9770d80942a1bdbaf4f2f63f0d7c8/sqlalchemy-2.0.52-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+          "sha256": "8738008376d22f30f411ea3efecf39b51110b6996d80bb73786f30bcfdd5fd3b",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "sqlalchemy-2.0.52-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/b3/3f/3582293d1e185e71d19d7c731c3e2ee20ba21981c4a1115c0806c1f62120/sqlalchemy-2.0.52-py3-none-any.whl",
+          "sha256": "3b81b8363a919ce53453591cdb93702e6bd54ade6c4fa2f468fc053baee5ed89",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "sqlalchemy-2.0.52-cp312-cp312-macosx_11_0_arm64.whl",
+          "url": "https://files.pythonhosted.org/packages/e0/d5/1b77a026d161f98a08f11af1a5f6c47b98ee7c7e2648af525a1004826c78/sqlalchemy-2.0.52-cp312-cp312-macosx_11_0_arm64.whl",
+          "sha256": "be8c49131665dfe2cc74c498aa1240ffb548d0fd901325dd11c2c7a18956f727",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "strictyaml",
+      "version": "1.7.3",
+      "license": "MIT",
+      "wheels": {
+        "win32-x64": {
+          "filename": "strictyaml-1.7.3-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/96/7c/a81ef5ef10978dd073a854e0fa93b5d8021d0594b639cc8f6453c3c78a1d/strictyaml-1.7.3-py3-none-any.whl",
+          "sha256": "fb5c8a4edb43bebb765959e420f9b3978d7f1af88c80606c03fb420888f5d1c7",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "strictyaml-1.7.3-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/96/7c/a81ef5ef10978dd073a854e0fa93b5d8021d0594b639cc8f6453c3c78a1d/strictyaml-1.7.3-py3-none-any.whl",
+          "sha256": "fb5c8a4edb43bebb765959e420f9b3978d7f1af88c80606c03fb420888f5d1c7",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "strictyaml-1.7.3-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/96/7c/a81ef5ef10978dd073a854e0fa93b5d8021d0594b639cc8f6453c3c78a1d/strictyaml-1.7.3-py3-none-any.whl",
+          "sha256": "fb5c8a4edb43bebb765959e420f9b3978d7f1af88c80606c03fb420888f5d1c7",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "strictyaml-1.7.3-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/96/7c/a81ef5ef10978dd073a854e0fa93b5d8021d0594b639cc8f6453c3c78a1d/strictyaml-1.7.3-py3-none-any.whl",
+          "sha256": "fb5c8a4edb43bebb765959e420f9b3978d7f1af88c80606c03fb420888f5d1c7",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "tableschema",
+      "version": "1.21.0",
+      "license": "MIT",
+      "wheels": {
+        "win32-x64": {
+          "filename": "tableschema-1.21.0-py2.py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/75/1c/76b0a781406971b243c4a21be7cc95fae3b3ae27e89b06b7a370d16e1fa8/tableschema-1.21.0-py2.py3-none-any.whl",
+          "sha256": "afc85b969d86ca5f8635404c0a666febfec3623b12bdf43218c5fa41688f41d6",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "tableschema-1.21.0-py2.py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/75/1c/76b0a781406971b243c4a21be7cc95fae3b3ae27e89b06b7a370d16e1fa8/tableschema-1.21.0-py2.py3-none-any.whl",
+          "sha256": "afc85b969d86ca5f8635404c0a666febfec3623b12bdf43218c5fa41688f41d6",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "tableschema-1.21.0-py2.py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/75/1c/76b0a781406971b243c4a21be7cc95fae3b3ae27e89b06b7a370d16e1fa8/tableschema-1.21.0-py2.py3-none-any.whl",
+          "sha256": "afc85b969d86ca5f8635404c0a666febfec3623b12bdf43218c5fa41688f41d6",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "tableschema-1.21.0-py2.py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/75/1c/76b0a781406971b243c4a21be7cc95fae3b3ae27e89b06b7a370d16e1fa8/tableschema-1.21.0-py2.py3-none-any.whl",
+          "sha256": "afc85b969d86ca5f8635404c0a666febfec3623b12bdf43218c5fa41688f41d6",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "tenacity",
+      "version": "9.1.4",
+      "license": "Apache 2.0",
+      "wheels": {
+        "win32-x64": {
+          "filename": "tenacity-9.1.4-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/d7/c1/eb8f9debc45d3b7918a32ab756658a0904732f75e555402972246b0b8e71/tenacity-9.1.4-py3-none-any.whl",
+          "sha256": "6095a360c919085f28c6527de529e76a06ad89b23659fa881ae0649b867a9d55",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "tenacity-9.1.4-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/d7/c1/eb8f9debc45d3b7918a32ab756658a0904732f75e555402972246b0b8e71/tenacity-9.1.4-py3-none-any.whl",
+          "sha256": "6095a360c919085f28c6527de529e76a06ad89b23659fa881ae0649b867a9d55",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "tenacity-9.1.4-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/d7/c1/eb8f9debc45d3b7918a32ab756658a0904732f75e555402972246b0b8e71/tenacity-9.1.4-py3-none-any.whl",
+          "sha256": "6095a360c919085f28c6527de529e76a06ad89b23659fa881ae0649b867a9d55",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "tenacity-9.1.4-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/d7/c1/eb8f9debc45d3b7918a32ab756658a0904732f75e555402972246b0b8e71/tenacity-9.1.4-py3-none-any.whl",
+          "sha256": "6095a360c919085f28c6527de529e76a06ad89b23659fa881ae0649b867a9d55",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "typing_extensions",
+      "version": "4.16.0",
+      "license": "PSF-2.0",
+      "wheels": {
+        "win32-x64": {
+          "filename": "typing_extensions-4.16.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/49/d3/b8441a820a491ddfc024b0b0cf0393375b75ea13866d9c66727e54c2fc80/typing_extensions-4.16.0-py3-none-any.whl",
+          "sha256": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "typing_extensions-4.16.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/49/d3/b8441a820a491ddfc024b0b0cf0393375b75ea13866d9c66727e54c2fc80/typing_extensions-4.16.0-py3-none-any.whl",
+          "sha256": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "typing_extensions-4.16.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/49/d3/b8441a820a491ddfc024b0b0cf0393375b75ea13866d9c66727e54c2fc80/typing_extensions-4.16.0-py3-none-any.whl",
+          "sha256": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "typing_extensions-4.16.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/49/d3/b8441a820a491ddfc024b0b0cf0393375b75ea13866d9c66727e54c2fc80/typing_extensions-4.16.0-py3-none-any.whl",
+          "sha256": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "typing-inspection",
+      "version": "0.4.4",
+      "license": "MIT",
+      "wheels": {
+        "win32-x64": {
+          "filename": "typing_inspection-0.4.4-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/67/81/4add07e5172b7ac40d8ed5ff580409a7801a4fe26d529bdd915401dabfbe/typing_inspection-0.4.4-py3-none-any.whl",
+          "sha256": "65b8397ba37ccbce054456aaccddfc91e6e3083c92824df348d96ca832f3f147",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "typing_inspection-0.4.4-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/67/81/4add07e5172b7ac40d8ed5ff580409a7801a4fe26d529bdd915401dabfbe/typing_inspection-0.4.4-py3-none-any.whl",
+          "sha256": "65b8397ba37ccbce054456aaccddfc91e6e3083c92824df348d96ca832f3f147",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "typing_inspection-0.4.4-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/67/81/4add07e5172b7ac40d8ed5ff580409a7801a4fe26d529bdd915401dabfbe/typing_inspection-0.4.4-py3-none-any.whl",
+          "sha256": "65b8397ba37ccbce054456aaccddfc91e6e3083c92824df348d96ca832f3f147",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "typing_inspection-0.4.4-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/67/81/4add07e5172b7ac40d8ed5ff580409a7801a4fe26d529bdd915401dabfbe/typing_inspection-0.4.4-py3-none-any.whl",
+          "sha256": "65b8397ba37ccbce054456aaccddfc91e6e3083c92824df348d96ca832f3f147",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "unicodecsv",
+      "version": "0.14.1",
+      "license": "BSD License",
+      "wheels": {
+        "win32-x64": {
+          "filename": "unicodecsv-0.14.1.tar.gz",
+          "url": "https://files.pythonhosted.org/packages/6f/a4/691ab63b17505a26096608cc309960b5a6bdf39e4ba1a793d5f9b1a53270/unicodecsv-0.14.1.tar.gz",
+          "sha256": "018c08037d48649a0412063ff4eda26eaa81eff1546dbffa51fa5293276ff7fc",
+          "kind": "sdist"
+        },
+        "linux-x64": {
+          "filename": "unicodecsv-0.14.1.tar.gz",
+          "url": "https://files.pythonhosted.org/packages/6f/a4/691ab63b17505a26096608cc309960b5a6bdf39e4ba1a793d5f9b1a53270/unicodecsv-0.14.1.tar.gz",
+          "sha256": "018c08037d48649a0412063ff4eda26eaa81eff1546dbffa51fa5293276ff7fc",
+          "kind": "sdist"
+        },
+        "darwin-x64": {
+          "filename": "unicodecsv-0.14.1.tar.gz",
+          "url": "https://files.pythonhosted.org/packages/6f/a4/691ab63b17505a26096608cc309960b5a6bdf39e4ba1a793d5f9b1a53270/unicodecsv-0.14.1.tar.gz",
+          "sha256": "018c08037d48649a0412063ff4eda26eaa81eff1546dbffa51fa5293276ff7fc",
+          "kind": "sdist"
+        },
+        "darwin-arm64": {
+          "filename": "unicodecsv-0.14.1.tar.gz",
+          "url": "https://files.pythonhosted.org/packages/6f/a4/691ab63b17505a26096608cc309960b5a6bdf39e4ba1a793d5f9b1a53270/unicodecsv-0.14.1.tar.gz",
+          "sha256": "018c08037d48649a0412063ff4eda26eaa81eff1546dbffa51fa5293276ff7fc",
+          "kind": "sdist"
+        }
+      }
+    },
+    {
+      "name": "urllib3",
+      "version": "2.7.0",
+      "license": "MIT",
+      "wheels": {
+        "win32-x64": {
+          "filename": "urllib3-2.7.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/7f/3e/5db95bcf282c52709639744ca2a8b149baccf648e39c8cc87553df9eae0c/urllib3-2.7.0-py3-none-any.whl",
+          "sha256": "9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "urllib3-2.7.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/7f/3e/5db95bcf282c52709639744ca2a8b149baccf648e39c8cc87553df9eae0c/urllib3-2.7.0-py3-none-any.whl",
+          "sha256": "9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "urllib3-2.7.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/7f/3e/5db95bcf282c52709639744ca2a8b149baccf648e39c8cc87553df9eae0c/urllib3-2.7.0-py3-none-any.whl",
+          "sha256": "9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "urllib3-2.7.0-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/7f/3e/5db95bcf282c52709639744ca2a8b149baccf648e39c8cc87553df9eae0c/urllib3-2.7.0-py3-none-any.whl",
+          "sha256": "9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "wheel",
+      "version": "0.46.1",
+      "license": "MIT",
+      "wheels": {
+        "win32-x64": {
+          "filename": "wheel-0.46.1-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/af/44/31d964a260fcda6bf2f59384231bbf4962ac796a5d36c554162b5411b8db/wheel-0.46.1-py3-none-any.whl",
+          "sha256": "f796f65d72750ccde090663e466d0ca37cd72b62870f7520b96d34cdc07d86d8",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "wheel-0.46.1-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/af/44/31d964a260fcda6bf2f59384231bbf4962ac796a5d36c554162b5411b8db/wheel-0.46.1-py3-none-any.whl",
+          "sha256": "f796f65d72750ccde090663e466d0ca37cd72b62870f7520b96d34cdc07d86d8",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "wheel-0.46.1-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/af/44/31d964a260fcda6bf2f59384231bbf4962ac796a5d36c554162b5411b8db/wheel-0.46.1-py3-none-any.whl",
+          "sha256": "f796f65d72750ccde090663e466d0ca37cd72b62870f7520b96d34cdc07d86d8",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "wheel-0.46.1-py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/af/44/31d964a260fcda6bf2f59384231bbf4962ac796a5d36c554162b5411b8db/wheel-0.46.1-py3-none-any.whl",
+          "sha256": "f796f65d72750ccde090663e466d0ca37cd72b62870f7520b96d34cdc07d86d8",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "xlrd",
+      "version": "2.0.2",
+      "license": "BSD",
+      "wheels": {
+        "win32-x64": {
+          "filename": "xlrd-2.0.2-py2.py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/1a/62/c8d562e7766786ba6587d09c5a8ba9f718ed3fa8af7f4553e8f91c36f302/xlrd-2.0.2-py2.py3-none-any.whl",
+          "sha256": "ea762c3d29f4cca48d82df517b6d89fbce4db3107f9d78713e48cd321d5c9aa9",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "xlrd-2.0.2-py2.py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/1a/62/c8d562e7766786ba6587d09c5a8ba9f718ed3fa8af7f4553e8f91c36f302/xlrd-2.0.2-py2.py3-none-any.whl",
+          "sha256": "ea762c3d29f4cca48d82df517b6d89fbce4db3107f9d78713e48cd321d5c9aa9",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "xlrd-2.0.2-py2.py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/1a/62/c8d562e7766786ba6587d09c5a8ba9f718ed3fa8af7f4553e8f91c36f302/xlrd-2.0.2-py2.py3-none-any.whl",
+          "sha256": "ea762c3d29f4cca48d82df517b6d89fbce4db3107f9d78713e48cd321d5c9aa9",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "xlrd-2.0.2-py2.py3-none-any.whl",
+          "url": "https://files.pythonhosted.org/packages/1a/62/c8d562e7766786ba6587d09c5a8ba9f718ed3fa8af7f4553e8f91c36f302/xlrd-2.0.2-py2.py3-none-any.whl",
+          "sha256": "ea762c3d29f4cca48d82df517b6d89fbce4db3107f9d78713e48cd321d5c9aa9",
+          "kind": "wheel"
+        }
+      }
+    },
+    {
+      "name": "zstandard",
+      "version": "0.25.0",
+      "license": "BSD-3-Clause",
+      "wheels": {
+        "win32-x64": {
+          "filename": "zstandard-0.25.0-cp312-cp312-win_amd64.whl",
+          "url": "https://files.pythonhosted.org/packages/79/3b/fa54d9015f945330510cb5d0b0501e8253c127cca7ebe8ba46a965df18c5/zstandard-0.25.0-cp312-cp312-win_amd64.whl",
+          "sha256": "ffef5a74088f1e09947aecf91011136665152e0b4b359c42be3373897fb39b01",
+          "kind": "wheel"
+        },
+        "linux-x64": {
+          "filename": "zstandard-0.25.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+          "url": "https://files.pythonhosted.org/packages/53/60/7be26e610767316c028a2cbedb9a3beabdbe33e2182c373f71a1c0b88f36/zstandard-0.25.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+          "sha256": "5a56ba0db2d244117ed744dfa8f6f5b366e14148e00de44723413b2f3938a902",
+          "kind": "wheel"
+        },
+        "darwin-x64": {
+          "filename": "zstandard-0.25.0-cp312-cp312-macosx_10_13_x86_64.whl",
+          "url": "https://files.pythonhosted.org/packages/82/fc/f26eb6ef91ae723a03e16eddb198abcfce2bc5a42e224d44cc8b6765e57e/zstandard-0.25.0-cp312-cp312-macosx_10_13_x86_64.whl",
+          "sha256": "7b3c3a3ab9daa3eed242d6ecceead93aebbb8f5f84318d82cee643e019c4b73b",
+          "kind": "wheel"
+        },
+        "darwin-arm64": {
+          "filename": "zstandard-0.25.0-cp312-cp312-macosx_11_0_arm64.whl",
+          "url": "https://files.pythonhosted.org/packages/aa/1c/d920d64b22f8dd028a8b90e2d756e431a5d86194caa78e3819c7bf53b4b3/zstandard-0.25.0-cp312-cp312-macosx_11_0_arm64.whl",
+          "sha256": "913cbd31a400febff93b564a23e17c3ed2d56c064006f54efec210d586171c00",
+          "kind": "wheel"
+        }
+      }
+    }
+  ],
+  "licenseFiles": [
+    "LICENSE.txt",
+    "avrotize.LICENSE",
+    "THIRD-PARTY-NOTICES.txt"
+  ],
+  "exportRoutes": [
+    "s2asn",
+    "s2fbs",
+    "s2k",
+    "s2sql",
+    "s2ib",
+    "s2pq",
+    "s2tsml",
+    "s2cs",
+    "s2py",
+    "s2cpp",
+    "s2csv",
+    "s2rust",
+    "s2ts",
+    "s2java",
+    "s2js",
+    "s2go",
+    "s2graphql",
+    "s2dp",
+    "s2cassandra",
+    "s2jtd",
+    "s2x",
+    "s2cddl",
+    "s2md",
+    "s2cue",
+    "s2thrift",
+    "s2smithy",
+    "s2capnp",
+    "s2raml"
+  ],
+  "pipelineRoutes": [
+    "p2a",
+    "x2a",
+    "surreal2a",
+    "pq2a",
+    "asn2a",
+    "kstruct2a",
+    "csv2a",
+    "sql2a",
+    "a2mongo",
+    "a2dynamodb",
+    "a2es",
+    "a2couchdb",
+    "a2neo4j",
+    "a2firebase",
+    "a2cosmos",
+    "a2hbase",
+    "a2surreal"
+  ]
+}

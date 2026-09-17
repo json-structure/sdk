@@ -1,0 +1,1 @@
+{"$schema":"https://json-structure.org/schema/","definitions":{"Draft":{"type":"object","properties":{"name":{"type":"str"

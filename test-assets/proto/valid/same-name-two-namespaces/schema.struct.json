@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/proto/same-name-two-namespaces",
+  "$root": "#/definitions/com/example/app/Root",
+  "definitions": {
+    "com": {
+      "example": {
+        "app": {
+          "Root": {
+            "name": "Root",
+            "type": "object",
+            "properties": {
+              "left": { "type": { "$ref": "#/definitions/com/example/left/Thing" } },
+              "right": { "type": { "$ref": "#/definitions/com/example/right/Thing" } }
+            },
+            "required": ["left", "right"]
+          }
+        },
+        "left": {
+          "Thing": {
+            "name": "Thing",
+            "type": "object",
+            "properties": { "a": { "type": "string" } },
+            "required": ["a"]
+          }
+        },
+        "right": {
+          "Thing": {
+            "name": "Thing",
+            "type": "object",
+            "properties": { "b": { "type": "string" } },
+            "required": ["b"]
+          }
+        }
+      }
+    }
+  }
+}

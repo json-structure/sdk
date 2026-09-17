@@ -1,0 +1,18 @@
+{
+  "version": 2,
+  "messages": {
+    "Cell_value": {
+      "fields": {
+        "string_value": 1,
+        "int32_value": 2,
+        "bool_value": 3
+      }
+    },
+    "Cell": {
+      "fields": {
+        "value": 1
+      }
+    }
+  },
+  "enums": {}
+}

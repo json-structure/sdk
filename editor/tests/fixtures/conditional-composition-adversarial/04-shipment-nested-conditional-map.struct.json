@@ -1,0 +1,186 @@
+{
+  "$schema": "https://json-structure.org/meta/validation/v0/#",
+  "$id": "https://example.test/conditional/shipment-routes",
+  "name": "ShipmentPlan",
+  "description": "Map values retain a reusable type while conditional siblings specialize hazardous routes.",
+  "type": "object",
+  "properties": {
+    "routeMode": {
+      "type": "string",
+      "enum": [
+        "air",
+        "sea",
+        "rail"
+      ]
+    },
+    "routes": {
+      "type": "map",
+      "minEntries": 1,
+      "maxEntries": 20,
+      "values": {
+        "type": {
+          "$ref": "#/definitions/RouteRule"
+        },
+        "if": {
+          "name": "HazardousRouteCondition",
+          "type": "object",
+          "properties": {
+            "hazardous": {
+              "type": "boolean",
+              "const": true
+            }
+          },
+          "required": [
+            "hazardous"
+          ],
+          "additionalProperties": true
+        },
+        "then": {
+          "allOf": [
+            {
+              "name": "PermitRequired",
+              "type": "object",
+              "properties": {
+                "permit": {
+                  "type": "string",
+                  "pattern": "^[A-Z]{2}-[0-9]{6}$"
+                }
+              },
+              "required": [
+                "permit"
+              ],
+              "additionalProperties": true
+            },
+            {
+              "not": {
+                "name": "BannedHazardousCountry",
+                "type": "object",
+                "properties": {
+                  "country": {
+                    "type": "string",
+                    "enum": [
+                      "XZ",
+                      "YY"
+                    ]
+                  }
+                },
+                "required": [
+                  "country"
+                ],
+                "additionalProperties": true
+              }
+            }
+          ]
+        },
+        "else": {
+          "anyOf": [
+            {
+              "name": "OrdinaryPriority",
+              "type": "object",
+              "properties": {
+                "priority": {
+                  "type": "int32",
+                  "minimum": 1,
+                  "maximum": 5
+                }
+              },
+              "required": [
+                "priority"
+              ],
+              "additionalProperties": true
+            },
+            {
+              "name": "NamedCarrier",
+              "type": "object",
+              "properties": {
+                "carrier": {
+                  "type": "string",
+                  "minLength": 3,
+                  "maxLength": 40
+                }
+              },
+              "required": [
+                "carrier"
+              ],
+              "additionalProperties": true
+            }
+          ]
+        }
+      }
+    }
+  },
+  "required": [
+    "routeMode",
+    "routes"
+  ],
+  "additionalProperties": false,
+  "if": {
+    "name": "AirMode",
+    "type": "object",
+    "properties": {
+      "routeMode": {
+        "type": "string",
+        "const": "air"
+      }
+    },
+    "required": [
+      "routeMode"
+    ],
+    "additionalProperties": true
+  },
+  "then": {
+    "not": {
+      "name": "OversizedAirPlan",
+      "type": "object",
+      "properties": {
+        "routes": {
+          "type": "map",
+          "values": {
+            "type": {
+              "$ref": "#/definitions/RouteRule"
+            }
+          },
+          "minEntries": 11
+        }
+      },
+      "required": [
+        "routes"
+      ],
+      "additionalProperties": true
+    }
+  },
+  "definitions": {
+    "RouteRule": {
+      "name": "RouteRule",
+      "type": "object",
+      "properties": {
+        "country": {
+          "type": "string",
+          "pattern": "^[A-Z]{2}$"
+        },
+        "priority": {
+          "type": "int32",
+          "minimum": 1,
+          "maximum": 9
+        },
+        "hazardous": {
+          "type": "boolean"
+        },
+        "permit": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "carrier": {
+          "type": "string",
+          "maxLength": 40
+        }
+      },
+      "required": [
+        "country",
+        "priority",
+        "hazardous"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

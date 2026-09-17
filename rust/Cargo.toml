@@ -13,7 +13,7 @@ categories = ["encoding", "parser-implementations"]
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+serde_json = { version = "1.0", features = ["preserve_order"] }
 thiserror = "2.0"
 regex = "1.12"
 chrono = { version = "0.4", features = ["serde"] }
@@ -22,6 +22,7 @@ url = { version = "2.5", features = ["serde"] }
 base64 = "0.22"
 indexmap = { version = "2.13", features = ["serde"] }
 clap = { version = "4.5", features = ["derive"], optional = true }
+apache-avro = { version = "0.20", optional = true }
 
 [dev-dependencies]
 pretty_assertions = "1.4"
@@ -29,11 +30,13 @@ test-case = "3.3"
 assert_cmd = "2.1"
 predicates = "3.0"
 tempfile = "3.24"
+apache-avro = "0.20"
 
 [features]
 default = []
 extended = []  # Enable extended validation keywords
 cli = ["clap"]
+avro = ["apache-avro"]  # Avro runtime integration
 
 [lib]
 name = "json_structure"

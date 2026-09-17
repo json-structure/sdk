@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/proto/additional-properties-schema",
+  "name": "Bag",
+  "type": "object",
+  "properties": { "id": { "type": "string" } },
+  "required": ["id"],
+  "additionalProperties": { "type": "int32" }
+}

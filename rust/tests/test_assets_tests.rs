@@ -59,7 +59,7 @@ fn get_schema_files(dir: &Path) -> Vec<PathBuf> {
             entries
                 .filter_map(|e| e.ok())
                 .map(|e| e.path())
-                .filter(|p| p.extension().map_or(false, |ext| ext == "json"))
+                .filter(|p| p.extension().is_some_and(|ext| ext == "json"))
                 .filter(|p| p.to_string_lossy().ends_with(".struct.json"))
                 .collect()
         })
@@ -77,7 +77,7 @@ fn get_json_files(dir: &Path) -> Vec<PathBuf> {
             entries
                 .filter_map(|e| e.ok())
                 .map(|e| e.path())
-                .filter(|p| p.extension().map_or(false, |ext| ext == "json"))
+                .filter(|p| p.extension().is_some_and(|ext| ext == "json"))
                 .collect()
         })
         .unwrap_or_default()

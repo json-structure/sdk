@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "review": {
+    "status": "independent-review-required",
+    "changePolicy": "Any fixture, expected result, diagnostic code/pointer, hash, or performance baseline change must be reviewed separately from inventory changes."
+  },
+  "fixture": {
+    "source": "avrotize",
+    "path": "..\\..\\avrotize\\test\\jsons\\kubernetes-definitions-ref.struct.json",
+    "sha256": "dcb4b449ed690d840f3c3d80f29063d73834e22469af0b125955b2acd6dff968"
+  },
+  "measurement": {
+    "sourceBytes": 480598,
+    "nodeCount": 11763,
+    "definitionCount": 3541,
+    "diagnosticCount": 61,
+    "jsonTraversalCount": 34564,
+    "modelTraversalCount": 1665293,
+    "operationCount": 1699857,
+    "allocationCount": 149084
+  },
+  "budget": {
+    "maxSourceBytes": 600000,
+    "maxDefinitions": 5000,
+    "maxOperationCount": 8000000,
+    "maxAllocationCount": 250000,
+    "maxWallClockMs": 15000
+  },
+  "methodology": {
+    "parseProjection": "One measureParsePerformance call reads the supplied UTF-8 fixture and invokes the public parseDocument API once. Counters traverse the returned JSON value and normalized model/projection graph: each value, object key, and edge is one deterministic operation; allocationCount counts reachable object/array containers exposed by those outputs.",
+    "conversion": "Not measured: no conversion worker or external converter is involved in this parser/projection gate.",
+    "render": "Not measured: no UI renderer is involved in this parser/projection gate."
+  }
+}

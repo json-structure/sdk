@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/extends-addin-base",
+  "$root": "#/definitions/Landmark",
+  "$offers": {
+    "Audited": "#/definitions/Audited"
+  },
+  "definitions": {
+    "Entity": {
+      "name": "Entity",
+      "abstract": true,
+      "type": "object",
+      "properties": { "id": { "type": "string" } },
+      "required": ["id"]
+    },
+    "Node": {
+      "name": "Node",
+      "abstract": true,
+      "type": "object",
+      "$extends": "#/definitions/Entity",
+      "properties": { "label": { "type": "string" } },
+      "required": ["label"]
+    },
+    "Landmark": {
+      "name": "Landmark",
+      "type": "object",
+      "$extends": "#/definitions/Node",
+      "properties": { "visitors": { "type": "int32" } }
+    },
+    "Audited": {
+      "name": "Audited",
+      "abstract": true,
+      "type": "object",
+      "$extends": "#/definitions/Node",
+      "properties": {
+        "auditedBy": { "type": "string" },
+        "auditedAt": { "type": "datetime" }
+      },
+      "required": ["auditedBy"]
+    }
+  }
+}

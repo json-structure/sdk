@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-structure.org/meta/extended/v0/#",
+  "$id": "https://example.test/conditional/legacy-webhook",
+  "name": "LegacyWebhook",
+  "$uses": [
+    "JSONStructureConditionalComposition"
+  ],
+  "description": "Historical JSON-Schema-style direct references are preserved at property and branch positions.",
+  "type": "object",
+  "properties": {
+    "event": {
+      "type": "string",
+      "enum": [
+        "created",
+        "updated",
+        "deleted"
+      ]
+    },
+    "payload": {
+      "$ref": "#/definitions/BasePayload",
+      "oneOf": [
+        {
+          "$ref": "#/definitions/CreatePayload"
+        },
+        {
+          "$ref": "#/definitions/UpdatePayload"
+        },
+        {
+          "$ref": "#/definitions/DeletePayload"
+        }
+      ],
+      "if": {
+        "$ref": "#/definitions/DeletePayload"
+      },
+      "then": {
+        "not": {
+          "$ref": "#/definitions/CreatePayload"
+        }
+      },
+      "else": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/CreatePayload"
+          },
+          {
+            "$ref": "#/definitions/UpdatePayload"
+          }
+        ]
+      }
+    }
+  },
+  "required": [
+    "event",
+    "payload"
+  ],
+  "additionalProperties": false,
+  "definitions": {
+    "BasePayload": {
+      "name": "BasePayload",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "uuid"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": true
+    },
+    "CreatePayload": {
+      "name": "CreatePayload",
+      "type": "object",
+      "properties": {
+        "createdAt": {
+          "type": "datetime"
+        }
+      },
+      "required": [
+        "createdAt"
+      ],
+      "additionalProperties": true
+    },
+    "UpdatePayload": {
+      "name": "UpdatePayload",
+      "type": "object",
+      "properties": {
+        "changedAt": {
+          "type": "datetime"
+        }
+      },
+      "required": [
+        "changedAt"
+      ],
+      "additionalProperties": true
+    },
+    "DeletePayload": {
+      "name": "DeletePayload",
+      "type": "object",
+      "properties": {
+        "deletedAt": {
+          "type": "datetime"
+        }
+      },
+      "required": [
+        "deletedAt"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

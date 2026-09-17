@@ -145,6 +145,118 @@ cat data.json | jstruct validate -s schema.json -
 jstruct validate -s schema.json --format json data.json
 ```
 
+### `jstruct avro` - Compile to an Avro Schema
+
+Compile a JSON Structure document into an Apache Avro schema. `$import` and
+`$importdefs` are resolved automatically, so no separate consolidation step is
+needed. The mapping is normative and deterministic — see
+[`spec/json-structure-to-avro.md`](../spec/json-structure-to-avro.md).
+
+```bash
+jstruct avro [OPTIONS] <FILES>...
+```
+
+**Options:**
+- `-b, --bundle <FILE>` - Bundle file(s) providing schemas for `$import` resolution. Repeatable.
+- `-o, --output <FILE>` - Write the `.avsc` here instead of stdout
+- `--use <ADDIN>` - Apply an add-in from `$offers`. Repeatable.
+- `--open-records <MODE>` - `warn` (default) emits a closed record and warns; `error` fails
+- `--mode <MODE>` - `compact` (default) or `full`. See below.
+- `--no-doc` - Omit Avro `doc` attributes derived from `description`
+- `--compact` - Emit compact JSON on a single line
+- `-q, --quiet` - Suppress warnings
+
+**The two modes encode identically.** `full` adds `logicalType` annotations for
+the temporal types and `uuid`, and carries what Avro cannot express — the
+constraints, the units and currencies, and the semantic annotations — in an
+`annotations` attribute beside `doc`. It changes no base type and
+therefore no byte on the wire — a `full` schema and a `compact` schema compiled
+from the same document are interchangeable as reader and writer. Choose `full`
+when the schema is going to be read by a human or a code generator, `compact`
+when it is going to be parsed at process start.
+
+`full` uses the `rfc3339-*` logical type names, which are not in the Avro
+specification. Avro requires a parser to ignore a logical type it does not
+recognize, and Rust's `apache-avro` does; some libraries do not, so an SDK
+shipping `full` mode registers the names with its runtime. See §2.5 of the spec.
+
+**Examples:**
+
+```bash
+# Compile to stdout
+jstruct avro person.struct.json
+
+# Write an .avsc to a file
+jstruct avro order.struct.json -o order.avsc
+
+# Resolve imports from a bundle and apply an add-in
+jstruct avro -b common-types.json --use Auditable order.struct.json
+
+# Emit a fully annotated schema for a human or a code generator
+jstruct avro --mode full order.struct.json -o order.avsc
+```
+
+### `jstruct proto` - Generate Protocol Buffers
+
+Generate proto3 `.proto` files. One file per namespace, importable from a gRPC
+service definition. See
+[`spec/json-structure-to-proto.md`](../spec/json-structure-to-proto.md).
+
+```bash
+jstruct proto [OPTIONS] <FILES>...
+```
+
+**Options:**
+- `-b, --bundle <FILE>` - Bundle file(s) providing schemas for `$import` resolution. Repeatable.
+- `-o, --output <DIR>` - Directory to write the file tree into. Without it, everything goes to stdout.
+- `--numbers <FILE>` - Field-number lock file. Read before generating, rewritten after.
+- `--use <ADDIN>` - Apply an add-in from `$offers`. Repeatable.
+- `--open-records <MODE>` - `warn` (default) or `error`
+- `--no-comments` - Omit comments derived from `description`
+- `-q, --quiet` - Suppress warnings
+
+**Check the lock file in.** Protobuf field numbers are a wire contract. Without
+`--numbers`, numbers are assigned positionally, which means inserting a property
+in the middle of a schema silently renumbers everything after it. With a lock
+file, existing fields keep their numbers, new fields get fresh ones, and removed
+fields become `reserved` so nobody can reuse them.
+
+**Examples:**
+
+```bash
+# Preview on stdout
+jstruct proto order.struct.json
+
+# Generate into a tree, with a checked-in number lock
+jstruct proto -o proto/ --numbers proto/numbers.json order.struct.json
+```
+
+**Names are not configurable.** The JSON Structure document is the source of
+truth for every generated name. A definition nested at `definitions/com/example/sales`
+becomes package `com.example.sales`; nest it differently and you get a different
+package. There is deliberately no flag to prefix or rewrite a namespace, because
+a wire contract that changes with a command-line argument is not a contract.
+
+### `jstruct consolidate` - Inline `$import`
+
+Resolve `$import` and `$importdefs` into a single self-contained document.
+
+```bash
+jstruct consolidate [OPTIONS] <FILES>...
+```
+
+**Options:**
+- `-b, --bundle <FILE>` - Bundle file(s) providing schemas for `$import` resolution. Repeatable.
+- `-o, --output <FILE>` - Write output here instead of stdout
+- `--compact` - Emit compact JSON on a single line
+- `-q, --quiet` - Suppress diagnostics
+
+**Examples:**
+
+```bash
+jstruct consolidate -b common-types.json order.struct.json -o order.bundled.json
+```
+
 ## Exit Codes
 
 | Code | Meaning |

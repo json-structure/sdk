@@ -1,0 +1,10 @@
+{
+  "type": "record",
+  "name": "Bag",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string"
+    }
+  ]
+}

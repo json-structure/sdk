@@ -41,6 +41,10 @@ ENV/
 htmlcov/
 .tox/
 .nox/
+/artifacts/
+/editor/artifacts/
+/editor/.vscode-test/
+/editor/coverage/ux/
 
 # Build
 *.manifest
@@ -60,6 +64,8 @@ node_modules/
 # .NET
 [Dd]ebug/
 [Rr]elease/
+!editor/src/release/
+!editor/src/release/**
 [Bb]in/
 [Oo]bj/
 *.nupkg

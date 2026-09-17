@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "messages": {
+    "Dog": {
+      "fields": {
+        "name": 1,
+        "age": 2,
+        "breed": 3
+      }
+    }
+  },
+  "enums": {}
+}

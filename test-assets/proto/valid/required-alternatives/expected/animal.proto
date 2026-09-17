@@ -1,0 +1,8 @@
+syntax = "proto3";
+
+message Animal {
+  string name = 1;
+  optional int32 fins = 2;
+  optional int32 legs = 3;
+  optional string nickname = 4;
+}

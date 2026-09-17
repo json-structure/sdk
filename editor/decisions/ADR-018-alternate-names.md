@@ -1,0 +1,15 @@
+# ADR-018: Alternate Names
+- Owner: language-service
+- Status: accepted for bounded Phase 1 authoring; specification ambiguities remain open
+- Decision:
+	- Activate the companion directly under the Validation meta-schema and under the Extended meta-schema only for exact `$uses` token `JSONStructureAlternateNames`. The draft example and both meta-schemas establish that spelling; the prose-only `JSONSchemaAlternateNames` spelling is treated as a typo and is not accepted.
+	- Treat `altnames` as valid only on structurally named Core elements: an inline root with the document's explicit `name`, a reusable declaration directly owned by a root or nested definitions namespace, or a direct member of a `properties` map. Pointer prefixes do not confer ownership, so anonymous `items`, `values`, composition branches, and other descendants remain unnamed even below a reusable declaration. Alternate names never participate in Core reference resolution or identifier collision checks.
+	- Treat `descriptions` as an additional annotation at Core schema positions. It does not replace, inherit from, or modify Core `description`, and the draft defines no locale fallback or effective-value selection.
+	- Treat `altenums` placement as a property of the enum-bearing schema itself, independent of whether that schema is named. Each purpose map is an exact mapping of every distinct string value in the local non-empty `enum`. Preserve custom purpose keys and values. Do not infer mappings or normalize purpose names.
+	- Validate the structural RFC 5646 language-tag grammar for `lang:` purpose keys, including case-insensitive uniqueness of variants and extension singletons. No advisory language or locale catalog is defined by the companion, so the catalog registry is not used.
+- Open specification ambiguities:
+	- The Extended meta-schema declares `altnames` and `altsymbols`, while the draft declares `altnames`, `altenums`, and `descriptions`. The Validation meta-schema activates the offer but therefore cannot meta-validate the complete draft vocabulary.
+	- Core permits non-string `enum` values, but `altenums` uses JSON object member names and does not define a canonical conversion from non-string enum values to keys. The bounded implementation diagnoses non-string and duplicate enum domains instead of inventing a conversion.
+	- The draft says `descriptions` can describe enumeration values but defines only a purpose-to-string map and no per-enum-value representation or placement. Enum-value descriptions are not synthesized.
+	- The draft does not define alternate-name or alternate-symbol uniqueness, collision scope, locale negotiation, fallback, or inheritance. The editor preserves authored values and applies no unstated rules.
+- Consequences: Alternate Names inspection is sparse and authored-only; emitted previews contain exact normalized JSON values. Full support remains partial pending specification alignment and complete registry-aware RFC 5646 validation.

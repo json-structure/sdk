@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "messages": {
+    "Landmark_location": {
+      "fields": {
+        "lat": 1,
+        "lon": 2
+      }
+    },
+    "Landmark": {
+      "fields": {
+        "id": 1,
+        "createdAt": 2,
+        "label": 3,
+        "location": 4,
+        "visitors": 5
+      }
+    }
+  },
+  "enums": {}
+}

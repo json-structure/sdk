@@ -1,0 +1,690 @@
+{
+  "corpus": "JSON Structure Conditional Composition adversarial corpus",
+  "version": 1,
+  "specifications": {
+    "conditionalComposition": "C:/git/json-structure/conditional-composition/draft-vasters-json-structure-cond-composition.md",
+    "core": "C:/git/json-structure/core/draft-vasters-json-structure-core.md",
+    "validation": "C:/git/json-structure/validation/draft-vasters-json-structure-validation.md",
+    "metaSchemas": [
+      "C:/git/json-structure/meta/core/v0/index.json",
+      "C:/git/json-structure/meta/extended/v0/index.json",
+      "C:/git/json-structure/meta/validation/v0/index.json"
+    ]
+  },
+  "documentCount": 20,
+  "documents": [
+    {
+      "id": "cc-01",
+      "file": "01-identity-access-conjunction.struct.json",
+      "documentId": "https://example.test/conditional/identity-access-conjunction",
+      "intendedValidity": "valid",
+      "description": "Access-control object with typed reusable constraints, sibling allOf/not, and a complete administrative-action conditional.",
+      "conditionalKeywordsByPointer": {
+        "": [
+          "allOf",
+          "not",
+          "if",
+          "then",
+          "else"
+        ],
+        "/then": [
+          "allOf"
+        ],
+        "/then/allOf/1": [
+          "not"
+        ],
+        "/else": [
+          "anyOf"
+        ],
+        "/definitions/MfaProtected/properties/authn": [
+          "not"
+        ]
+      },
+      "sourcePreservation": {
+        "required": false
+      }
+    },
+    {
+      "id": "cc-02",
+      "file": "02-telemetry-anyof-array-conditional.struct.json",
+      "documentId": "https://example.test/conditional/telemetry-array-map",
+      "intendedValidity": "valid",
+      "description": "Composition-only root choosing an array or map, with a conditional inside array items and oneOf inside map values.",
+      "conditionalKeywordsByPointer": {
+        "": [
+          "anyOf",
+          "not"
+        ],
+        "/anyOf/0/items": [
+          "if",
+          "then",
+          "else"
+        ],
+        "/anyOf/0/items/then": [
+          "allOf"
+        ],
+        "/anyOf/0/items/then/allOf/1": [
+          "not"
+        ],
+        "/anyOf/0/items/else": [
+          "anyOf"
+        ],
+        "/anyOf/1/values": [
+          "oneOf"
+        ]
+      },
+      "sourcePreservation": {
+        "required": false
+      }
+    },
+    {
+      "id": "cc-03",
+      "file": "03-payment-overlapping-oneof.struct.json",
+      "documentId": "https://example.test/conditional/payment-overlap",
+      "intendedValidity": "valid",
+      "description": "Decimal amount with intentionally overlapping oneOf ranges and double negation.",
+      "conditionalKeywordsByPointer": {
+        "": [
+          "oneOf",
+          "not"
+        ],
+        "/not": [
+          "not"
+        ]
+      },
+      "sourcePreservation": {
+        "required": false
+      }
+    },
+    {
+      "id": "cc-04",
+      "file": "04-shipment-nested-conditional-map.struct.json",
+      "documentId": "https://example.test/conditional/shipment-routes",
+      "intendedValidity": "valid",
+      "description": "Shipment object whose typed map values have hazardous-route conditionals and nested composition.",
+      "conditionalKeywordsByPointer": {
+        "": [
+          "if",
+          "then"
+        ],
+        "/properties/routes/values": [
+          "if",
+          "then",
+          "else"
+        ],
+        "/properties/routes/values/then": [
+          "allOf"
+        ],
+        "/properties/routes/values/then/allOf/1": [
+          "not"
+        ],
+        "/properties/routes/values/else": [
+          "anyOf"
+        ],
+        "/then": [
+          "not"
+        ]
+      },
+      "sourcePreservation": {
+        "required": false
+      }
+    },
+    {
+      "id": "cc-05",
+      "file": "05-coordinate-tuple-choice.struct.json",
+      "documentId": "https://example.test/conditional/coordinate-command",
+      "intendedValidity": "valid",
+      "description": "Reusable tuples and tagged choices with overlapping branches, negation, and a then-only tuple conditional.",
+      "conditionalKeywordsByPointer": {
+        "/definitions/Vector2/properties/x": [
+          "oneOf"
+        ],
+        "/definitions/Vector2/properties/y": [
+          "not"
+        ],
+        "/definitions/Command/choices/Move": [
+          "oneOf"
+        ],
+        "/definitions/Command/choices/Move/oneOf/1": [
+          "not"
+        ],
+        "/definitions/Command/choices/Sleep": [
+          "not"
+        ],
+        "/definitions/Frame": [
+          "if",
+          "then"
+        ],
+        "/definitions/Frame/then": [
+          "not"
+        ]
+      },
+      "sourcePreservation": {
+        "required": false
+      }
+    },
+    {
+      "id": "cc-06",
+      "file": "06-recursive-policy-tree.struct.json",
+      "documentId": "https://example.test/conditional/recursive-policy-tree",
+      "intendedValidity": "valid",
+      "description": "Recursive policy-node reference with conditional arity rules and nested item conditionals.",
+      "conditionalKeywordsByPointer": {
+        "/definitions/PolicyNode": [
+          "allOf"
+        ],
+        "/definitions/PolicyNode/properties/children/items": [
+          "if",
+          "then"
+        ],
+        "/definitions/PolicyNode/properties/children/items/then": [
+          "not"
+        ],
+        "/definitions/PolicyNode/allOf/0": [
+          "if",
+          "then",
+          "else"
+        ],
+        "/definitions/PolicyNode/allOf/1": [
+          "if",
+          "then"
+        ],
+        "/definitions/PolicyNode/allOf/2": [
+          "if",
+          "then"
+        ],
+        "/definitions/PolicyNode/allOf/2/if": [
+          "anyOf"
+        ],
+        "/definitions/PolicyNode/allOf/2/then": [
+          "allOf"
+        ],
+        "/definitions/PolicyNode/allOf/2/then/allOf/1": [
+          "not"
+        ]
+      },
+      "sourcePreservation": {
+        "required": false
+      }
+    },
+    {
+      "id": "cc-07",
+      "file": "07-feature-flag-absent-branches.struct.json",
+      "documentId": "https://example.test/conditional/feature-flags",
+      "intendedValidity": "valid",
+      "description": "Feature flags testing absent then/else branches plus independently present then and else keywords.",
+      "conditionalKeywordsByPointer": {
+        "": [
+          "allOf"
+        ],
+        "/allOf/0": [
+          "if",
+          "then"
+        ],
+        "/allOf/1": [
+          "if",
+          "else"
+        ],
+        "/allOf/2": [
+          "then"
+        ],
+        "/allOf/2/then": [
+          "not"
+        ],
+        "/allOf/3": [
+          "else"
+        ],
+        "/allOf/3/else": [
+          "anyOf"
+        ]
+      },
+      "sourcePreservation": {
+        "required": false
+      }
+    },
+    {
+      "id": "cc-08",
+      "file": "08-empty-operands-tautologies.struct.json",
+      "documentId": "https://example.test/conditional/empty-operands",
+      "intendedValidity": "valid",
+      "description": "Composition-only tautologies built from inert empty operands, nested negation, and deep conditional composition.",
+      "conditionalKeywordsByPointer": {
+        "": [
+          "allOf",
+          "anyOf",
+          "oneOf",
+          "not"
+        ],
+        "/allOf/1": [
+          "not"
+        ],
+        "/allOf/1/not": [
+          "not"
+        ],
+        "/allOf/2": [
+          "if",
+          "then",
+          "else"
+        ],
+        "/allOf/2/then": [
+          "anyOf"
+        ],
+        "/allOf/2/else": [
+          "oneOf"
+        ],
+        "/not": [
+          "not"
+        ]
+      },
+      "sourcePreservation": {
+        "required": false
+      }
+    },
+    {
+      "id": "cc-09",
+      "file": "09-industrial-interlock-deep.struct.json",
+      "documentId": "https://example.test/conditional/industrial-interlock",
+      "intendedValidity": "valid",
+      "description": "Deep industrial interlock combining all operators across multiple nesting levels and unit annotations.",
+      "conditionalKeywordsByPointer": {
+        "": [
+          "allOf"
+        ],
+        "/allOf/0": [
+          "anyOf"
+        ],
+        "/allOf/1": [
+          "oneOf"
+        ],
+        "/allOf/2": [
+          "if",
+          "then",
+          "else"
+        ],
+        "/allOf/2/if": [
+          "allOf"
+        ],
+        "/allOf/2/if/allOf/1": [
+          "not"
+        ],
+        "/allOf/2/then": [
+          "anyOf"
+        ],
+        "/allOf/2/then/anyOf/0": [
+          "allOf"
+        ],
+        "/allOf/2/then/anyOf/1": [
+          "oneOf"
+        ],
+        "/allOf/2/then/anyOf/1/oneOf/1": [
+          "not"
+        ],
+        "/allOf/2/then/anyOf/1/oneOf/1/not": [
+          "anyOf"
+        ],
+        "/allOf/2/else": [
+          "not"
+        ],
+        "/allOf/2/else/not": [
+          "anyOf"
+        ],
+        "/allOf/2/else/not/anyOf/1": [
+          "not"
+        ],
+        "/allOf/2/else/not/anyOf/1/not": [
+          "not"
+        ]
+      },
+      "sourcePreservation": {
+        "required": false
+      }
+    },
+    {
+      "id": "cc-10",
+      "file": "10-schedule-set-duration.struct.json",
+      "documentId": "https://example.test/conditional/schedule-window-set",
+      "intendedValidity": "valid",
+      "description": "Schedule with a set of oneOf-selected datetime or duration tuples and a then-only recurring rule.",
+      "conditionalKeywordsByPointer": {
+        "": [
+          "if",
+          "then"
+        ],
+        "/properties/windows/items": [
+          "oneOf"
+        ],
+        "/then": [
+          "allOf"
+        ],
+        "/then/allOf/1": [
+          "not"
+        ],
+        "/definitions/AbsoluteWindow/properties/end": [
+          "not"
+        ],
+        "/definitions/RelativeWindow/properties/span": [
+          "not"
+        ]
+      },
+      "sourcePreservation": {
+        "required": false
+      }
+    },
+    {
+      "id": "cc-11",
+      "file": "11-network-inline-choice.struct.json",
+      "documentId": "https://example.test/conditional/network-endpoint",
+      "intendedValidity": "valid",
+      "description": "Inline discriminated endpoint choice with inherited object types and sibling conditional rules.",
+      "conditionalKeywordsByPointer": {
+        "": [
+          "allOf"
+        ],
+        "/allOf/0": [
+          "not"
+        ],
+        "/allOf/1": [
+          "if",
+          "then",
+          "else"
+        ],
+        "/allOf/1/then": [
+          "allOf"
+        ],
+        "/allOf/1/then/allOf/1": [
+          "not"
+        ],
+        "/allOf/1/else": [
+          "anyOf"
+        ]
+      },
+      "sourcePreservation": {
+        "required": false
+      }
+    },
+    {
+      "id": "cc-12",
+      "file": "12-document-lifecycle-multioperator.struct.json",
+      "documentId": "https://example.test/conditional/document-lifecycle",
+      "intendedValidity": "valid",
+      "description": "Lifecycle object applying allOf, anyOf, oneOf, not, and if/then/else conjunctively at root.",
+      "conditionalKeywordsByPointer": {
+        "": [
+          "allOf",
+          "anyOf",
+          "oneOf",
+          "not",
+          "if",
+          "then",
+          "else"
+        ],
+        "/allOf/0": [
+          "if",
+          "then"
+        ],
+        "/allOf/1": [
+          "if",
+          "then"
+        ],
+        "/allOf/1/then": [
+          "not"
+        ],
+        "/then": [
+          "allOf"
+        ],
+        "/then/allOf/1": [
+          "not"
+        ],
+        "/else": [
+          "anyOf"
+        ]
+      },
+      "sourcePreservation": {
+        "required": false
+      }
+    },
+    {
+      "id": "cc-13",
+      "file": "13-typed-reference-composition.struct.json",
+      "documentId": "https://example.test/conditional/typed-reference-composition",
+      "intendedValidity": "valid",
+      "description": "Reference-heavy resource rule where every newly authored reference uses canonical typed-reference syntax.",
+      "conditionalKeywordsByPointer": {
+        "": [
+          "allOf",
+          "anyOf",
+          "oneOf",
+          "not",
+          "if",
+          "then",
+          "else"
+        ],
+        "/then": [
+          "allOf"
+        ],
+        "/then/allOf/1": [
+          "not"
+        ]
+      },
+      "sourcePreservation": {
+        "required": false
+      }
+    },
+    {
+      "id": "cc-14",
+      "file": "14-invalid-escaped-property.struct.json",
+      "documentId": "https://example.test/conditional/invalid-escaped-property",
+      "intendedValidity": "invalid",
+      "description": "Composition syntax around a property named a/b~c; invalid because Core property identifiers cannot contain slash or tilde.",
+      "conditionalKeywordsByPointer": {
+        "/properties/a~1b~0c": [
+          "oneOf",
+          "if",
+          "then",
+          "else"
+        ],
+        "/properties/a~1b~0c/then": [
+          "not"
+        ]
+      },
+      "sourcePreservation": {
+        "required": true,
+        "mode": "byte-for-byte",
+        "reason": "Deliberate malformed source must not be repaired.",
+        "sha256": "32069ecddb63d7f1ac25f5823d3fc244a787015079a733af2943f6b8f154df22",
+        "byteLength": 871
+      },
+      "expectedIssue": "Core identifier rule [A-Za-z_][A-Za-z0-9_]* is violated; pointer escaping remains /properties/a~1b~0c."
+    },
+    {
+      "id": "cc-15",
+      "file": "15-legacy-direct-ref-composition.struct.json",
+      "documentId": "https://example.test/conditional/legacy-direct-ref",
+      "intendedValidity": "legacy",
+      "description": "Preserved older composition form using direct reference operands instead of typed references.",
+      "conditionalKeywordsByPointer": {
+        "": [
+          "allOf",
+          "if",
+          "then",
+          "else"
+        ],
+        "/allOf/1": [
+          "anyOf"
+        ],
+        "/else": [
+          "not"
+        ]
+      },
+      "sourcePreservation": {
+        "required": true,
+        "mode": "byte-for-byte",
+        "reason": "Legacy representation must not be canonicalized.",
+        "sha256": "c2dc831c4fd1614b53c2dff890a4d794879a35dc931af8773091bd5aa9a2ea2f",
+        "byteLength": 2469
+      },
+      "expectedIssue": "Direct $ref is intentionally preserved and is not canonical JSON Structure typed-reference syntax."
+    },
+    {
+      "id": "cc-16",
+      "file": "16-invalid-empty-operator-arrays.struct.json",
+      "documentId": "https://example.test/conditional/invalid-empty-arrays",
+      "intendedValidity": "invalid",
+      "description": "Malformed n-ary operators whose arrays are all empty.",
+      "conditionalKeywordsByPointer": {
+        "": [
+          "allOf",
+          "anyOf",
+          "oneOf",
+          "if",
+          "then",
+          "else"
+        ]
+      },
+      "sourcePreservation": {
+        "required": true,
+        "mode": "byte-for-byte",
+        "reason": "Deliberate malformed source must not be repaired.",
+        "sha256": "7457215256631c5bdf3abfd5215470a7420fa25d1d16dd086191dcac2f3afa15",
+        "byteLength": 768
+      },
+      "expectedIssue": "allOf, anyOf, and oneOf each violate the minimum-one-schema requirement."
+    },
+    {
+      "id": "cc-17",
+      "file": "17-legacy-property-direct-ref.struct.json",
+      "documentId": "https://example.test/conditional/legacy-webhook",
+      "intendedValidity": "legacy",
+      "description": "Preserved JSON-Schema-style direct reference at a property and throughout conditional branches.",
+      "conditionalKeywordsByPointer": {
+        "/properties/payload": [
+          "oneOf",
+          "if",
+          "then",
+          "else"
+        ],
+        "/properties/payload/then": [
+          "not"
+        ],
+        "/properties/payload/else": [
+          "anyOf"
+        ]
+      },
+      "sourcePreservation": {
+        "required": true,
+        "mode": "byte-for-byte",
+        "reason": "Legacy representation must not be canonicalized.",
+        "sha256": "c6c2c76d32cab904b4f61755e7059e19e23221bd583cad202bcb770a6224e4cf",
+        "byteLength": 2405
+      },
+      "expectedIssue": "Direct $ref is intentionally preserved and is not canonical JSON Structure typed-reference syntax."
+    },
+    {
+      "id": "cc-18",
+      "file": "18-invalid-conditional-scalars.struct.json",
+      "documentId": "https://example.test/conditional/invalid-scalar-operands",
+      "intendedValidity": "invalid",
+      "description": "Malformed operator values covering object-vs-array, scalar operand, and scalar conditional failures.",
+      "conditionalKeywordsByPointer": {
+        "": [
+          "allOf",
+          "anyOf",
+          "oneOf",
+          "not",
+          "if",
+          "then",
+          "else"
+        ]
+      },
+      "sourcePreservation": {
+        "required": true,
+        "mode": "byte-for-byte",
+        "reason": "Deliberate malformed source must not be repaired.",
+        "sha256": "4fc708c46d46a6d13186bd41fa9856eb72cc4ddfd0258eb426d041c0ad0f5f9d",
+        "byteLength": 501
+      },
+      "expectedIssue": "Composition and conditional values have deliberately incorrect JSON types."
+    },
+    {
+      "id": "cc-19",
+      "file": "19-media-ingest-binary-map.struct.json",
+      "documentId": "https://example.test/conditional/media-ingest-map",
+      "intendedValidity": "valid",
+      "description": "Binary/URI/descriptor map with value oneOf and homogeneous-map conditional branches.",
+      "conditionalKeywordsByPointer": {
+        "": [
+          "allOf"
+        ],
+        "/values": [
+          "oneOf"
+        ],
+        "/allOf/0": [
+          "not"
+        ],
+        "/allOf/1": [
+          "if",
+          "then",
+          "else"
+        ],
+        "/allOf/1/then": [
+          "allOf"
+        ],
+        "/allOf/1/then/allOf/1": [
+          "not"
+        ],
+        "/allOf/1/else": [
+          "anyOf"
+        ]
+      },
+      "sourcePreservation": {
+        "required": false
+      }
+    },
+    {
+      "id": "cc-20",
+      "file": "20-scientific-measurement-units.struct.json",
+      "documentId": "https://example.test/conditional/scientific-measurements",
+      "intendedValidity": "valid",
+      "description": "Unit-annotated decimal measurements specialized by nested conditionals in array items.",
+      "conditionalKeywordsByPointer": {
+        "": [
+          "if",
+          "then",
+          "else"
+        ],
+        "/properties/samples/items": [
+          "allOf"
+        ],
+        "/properties/samples/items/allOf/0": [
+          "if",
+          "then",
+          "else"
+        ],
+        "/properties/samples/items/allOf/0/then": [
+          "allOf"
+        ],
+        "/properties/samples/items/allOf/0/then/allOf/1": [
+          "not"
+        ],
+        "/properties/samples/items/allOf/0/else": [
+          "oneOf"
+        ],
+        "/properties/samples/items/allOf/1": [
+          "not"
+        ],
+        "/then": [
+          "allOf"
+        ],
+        "/then/allOf/1": [
+          "not"
+        ],
+        "/else": [
+          "not"
+        ]
+      },
+      "sourcePreservation": {
+        "required": false
+      }
+    }
+  ]
+}

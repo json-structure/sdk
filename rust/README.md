@@ -182,6 +182,54 @@ Enable extensions using `$uses` in your schema:
 - **JSONStructureAlternateNames**: Alternate property names (`altnames`)
 - **JSONStructureUnits**: Unit annotations (`unit`)
 
+## Avro
+
+Compile a JSON Structure document into an Apache Avro schema. The mapping is
+normative and deterministic — see
+[`spec/json-structure-to-avro.md`](../spec/json-structure-to-avro.md).
+
+```rust
+let document: serde_json::Value = serde_json::from_str(schema_text)?;
+let avsc = json_structure::avro::compile(&document)?;
+```
+
+Enable the `avro` feature to get an `apache_avro::Schema` directly, so the
+`.avsc` never surfaces:
+
+```toml
+[dependencies]
+json-structure = { version = "0.1", features = ["avro"] }
+```
+
+```rust
+let schema = json_structure::avro::schema_from_jstruct_file("person.struct.json")?;
+let mut writer = apache_avro::Writer::new(&schema, Vec::new());
+```
+
+For an embedded schema, compile once behind a `OnceLock` and pay the cost at
+first use rather than on every serializer construction.
+
+## Protobuf and consolidation
+
+`.proto` generation and `$import` consolidation are library APIs
+(`json_structure::proto`, `json_structure::consolidate`) but are meant to be
+driven from the CLI, since `.proto` files are build-time artifacts:
+
+```bash
+jstruct proto -o proto/ --numbers proto/numbers.json order.struct.json
+jstruct consolidate -b common-types.json order.struct.json -o order.bundled.json
+```
+
+See [`spec/json-structure-to-proto.md`](../spec/json-structure-to-proto.md) and
+[CLI.md](CLI.md).
+
+## Cargo features
+
+| Feature | Default | Effect                                                       |
+| ------- | ------- | ------------------------------------------------------------ |
+| `cli`   | no      | Builds the `jstruct` binary                                   |
+| `avro`  | no      | Pulls in `apache-avro` and enables `avro::schema_from_*`      |
+
 ## Error Handling
 
 ```rust
@@ -300,6 +348,19 @@ jstruct validate --extended -s schema.json data.json
 
 # Output as JSON
 jstruct validate -s schema.json --format json data.json
+```
+
+#### Compile, Generate, Consolidate
+
+```bash
+# Compile to an Avro schema
+jstruct avro order.struct.json -o order.avsc
+
+# Generate .proto files with a checked-in field-number lock
+jstruct proto -o proto/ --numbers proto/numbers.json order.struct.json
+
+# Resolve $import/$importdefs into one self-contained document
+jstruct consolidate -b common-types.json order.struct.json
 ```
 
 ### Exit Codes

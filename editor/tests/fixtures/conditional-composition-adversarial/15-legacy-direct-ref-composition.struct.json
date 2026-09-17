@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-structure.org/meta/extended/v0/#",
+  "$id": "https://example.test/conditional/legacy-direct-ref",
+  "name": "LegacyAuditRecord",
+  "$uses": [
+    "JSONStructureConditionalComposition"
+  ],
+  "description": "Preserved pre-canonical representation with direct reference operands.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "uuid"
+    },
+    "actor": {
+      "type": "string"
+    },
+    "createdAt": {
+      "type": "datetime"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "additionalProperties": true,
+  "allOf": [
+    {
+      "$ref": "#/definitions/Identified"
+    },
+    {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/HumanActor"
+        },
+        {
+          "$ref": "#/definitions/SystemActor"
+        }
+      ]
+    }
+  ],
+  "if": {
+    "$ref": "#/definitions/HumanActor"
+  },
+  "then": {
+    "$ref": "#/definitions/Timestamped"
+  },
+  "else": {
+    "not": {
+      "$ref": "#/definitions/ForbiddenAnonymous"
+    }
+  },
+  "definitions": {
+    "Identified": {
+      "name": "Identified",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "uuid"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": true
+    },
+    "HumanActor": {
+      "name": "HumanActor",
+      "type": "object",
+      "properties": {
+        "actor": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "actor"
+      ],
+      "additionalProperties": true
+    },
+    "SystemActor": {
+      "name": "SystemActor",
+      "type": "object",
+      "properties": {
+        "actor": {
+          "type": "string",
+          "const": "system"
+        }
+      },
+      "required": [
+        "actor"
+      ],
+      "additionalProperties": true
+    },
+    "Timestamped": {
+      "name": "Timestamped",
+      "type": "object",
+      "properties": {
+        "createdAt": {
+          "type": "datetime"
+        }
+      },
+      "required": [
+        "createdAt"
+      ],
+      "additionalProperties": true
+    },
+    "ForbiddenAnonymous": {
+      "name": "ForbiddenAnonymous",
+      "type": "object",
+      "properties": {
+        "actor": {
+          "type": "string",
+          "const": "anonymous"
+        }
+      },
+      "required": [
+        "actor"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

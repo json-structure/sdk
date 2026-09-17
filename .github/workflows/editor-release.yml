@@ -1,0 +1,363 @@
+name: Editor release integrity
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version applied to manually built editor and VSIX artifacts"
+        required: false
+        type: string
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+  pull_request:
+    paths:
+      - "editor/**"
+      - "vscode/**"
+      - ".github/workflows/editor-release.yml"
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  STRUCTURIZE_SOURCE_REVISION: 8d1c504ec2cd06ab8971503394f73bf4a97c9617
+  STRUCTURIZE_SOURCE_ROOT: ${{ github.workspace }}/avrotize
+  STRUCTURIZE_SITE_PACKAGES: ${{ github.workspace }}/editor/build/structurize-site-packages
+  STRUCTURIZE_WHEELHOUSE: ${{ github.workspace }}/.structurize-wheelhouse
+  STRUCTURIZE_PROVISION_PYTHON: python
+
+jobs:
+  build-test-package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: win32-x64
+            python_arch: x64
+            builder_args: --win --x64
+          - os: ubuntu-latest
+            target: linux-x64
+            python_arch: x64
+            builder_args: --linux --x64
+          - os: macos-14
+            target: darwin-x64
+            python_arch: x64
+            builder_args: --mac --x64
+          - os: macos-14
+            target: darwin-arm64
+            python_arch: arm64
+            builder_args: --mac --arm64
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: editor
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: clemensv/avrotize
+          ref: 8d1c504ec2cd06ab8971503394f73bf4a97c9617
+          path: avrotize
+          fetch-depth: 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: editor/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.10'
+          architecture: ${{ matrix.python_arch }}
+          cache: pip
+          cache-dependency-path: editor/config/structurize-runtime-requirements.txt
+      - name: Resolve native Python root
+        shell: bash
+        run: python -c 'import sys; print("STRUCTURIZE_PYTHON_ROOT=" + sys.prefix)' >> "$GITHUB_ENV"
+      - uses: actions/cache@v4
+        with:
+          path: .structurize-wheelhouse
+          key: structurize-wheels-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('editor/config/structurize-runtime.lock.json', 'editor/config/structurize-runtime-requirements.txt') }}
+      - run: npm ci
+      - name: Apply release version
+        shell: bash
+        run: |
+          VERSION="${{ inputs.version }}"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          fi
+          if [ -n "$VERSION" ]; then
+            npm pkg set "version=$VERSION"
+          fi
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          echo "Building editor version $PACKAGE_VERSION"
+      - name: Provision pinned Structurize dependencies
+        env:
+          STRUCTURIZE_ALLOW_NETWORK: '1'
+        run: npm run provision:structurize-runtime
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run test:ux:coverage
+      - run: npm run test:structurize-runtime
+      - run: npm run coverage:check
+      - run: npm run release:clean
+      - run: npm run beta:build
+      - run: npm exec electron-builder -- --publish never ${{ matrix.builder_args }}
+      - run: npm run release:executables
+      - run: npm run release:scan
+      - run: npm run release:attest
+      - run: npm run test:final-electron-runtime
+      - run: node scripts/real-host-acceptance.mjs
+      - run: npm run test:schema-location-electron
+        if: matrix.target == 'win32-x64'
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: ux-visual-diffs-${{ matrix.target }}
+          path: editor/artifacts/ux-visual/
+          if-no-files-found: ignore
+      - name: Report packaged sizes
+        shell: bash
+        run: du -sh release/* release 2>/dev/null | sort -h
+      - uses: actions/upload-artifact@v4
+        with:
+          name: editor-${{ matrix.target }}
+          path: editor/release/
+          if-no-files-found: error
+
+  macos-notarize:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    needs: build-test-package
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - artifact: editor-darwin-x64
+            signed: editor-darwin-x64-signed
+            output: json-structure-editor-macos-x64-signed.zip
+          - artifact: editor-darwin-arm64
+            signed: editor-darwin-arm64-signed
+            output: json-structure-editor-macos-arm64-signed.zip
+    runs-on: macos-14
+    env:
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      MACOS_SIGNING_CERTIFICATE: ${{ secrets.MACOS_SIGNING_CERTIFICATE }}
+      MACOS_SIGNING_PASSWORD: ${{ secrets.MACOS_SIGNING_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: editor/release
+      - name: Require notarization credentials
+        run: test -n "$APPLE_ID" && test -n "$APPLE_APP_PASSWORD" && test -n "$APPLE_TEAM_ID" && test -n "$MACOS_SIGNING_CERTIFICATE" && test -n "$MACOS_SIGNING_PASSWORD"
+      - name: Sign, notarize, staple, and verify application
+        run: |
+          ZIP=$(find editor/release -name '*.zip' -print -quit)
+          test -n "$ZIP"
+          echo "$MACOS_SIGNING_CERTIFICATE" | base64 --decode > certificate.p12
+          security create-keychain -p temporary build.keychain
+          security import certificate.p12 -k build.keychain -P "$MACOS_SIGNING_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k temporary build.keychain
+          security list-keychains -d user -s build.keychain
+          ditto -x -k "$ZIP" verified
+          IDENTITY=$(security find-identity -v -p codesigning build.keychain | sed -n 's/.*"\(Developer ID Application:.*\)"/\1/p' | head -1)
+          test -n "$IDENTITY"
+          codesign --force --deep --options runtime --timestamp --sign "$IDENTITY" verified/*.app
+          ditto -c -k --keepParent verified/*.app signed.zip
+          xcrun notarytool submit signed.zip --apple-id "$APPLE_ID" --password "$APPLE_APP_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+          xcrun stapler staple verified/*.app
+          codesign --verify --deep --strict --verbose=2 verified/*.app
+          spctl --assess --type execute --verbose=2 verified/*.app
+          rm -f "$ZIP"
+          ditto -c -k --keepParent verified/*.app editor/release/${{ matrix.output }}
+          node editor/scripts/release-integrity.mjs executables editor/release
+          node editor/scripts/release-integrity.mjs scan editor/release
+          node editor/scripts/release-integrity.mjs attest editor/release
+          rm -f certificate.p12
+          security delete-keychain build.keychain
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.signed }}
+          path: editor/release/${{ matrix.output }}
+          if-no-files-found: error
+
+  windows-sign:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    needs: build-test-package
+    runs-on: windows-latest
+    env:
+      WINDOWS_SIGNING_CERTIFICATE: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE }}
+      WINDOWS_SIGNING_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: editor-win32-x64
+          path: editor/release
+      - name: Require signing credentials
+        shell: pwsh
+        run: if (-not $env:WINDOWS_SIGNING_CERTIFICATE -or -not $env:WINDOWS_SIGNING_PASSWORD) { throw 'Windows signing credentials are required.' }
+      - name: Sign and verify executables
+        shell: pwsh
+        run: |
+          [IO.File]::WriteAllBytes("certificate.pfx", [Convert]::FromBase64String($env:WINDOWS_SIGNING_CERTIFICATE))
+          $signtool = (Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Recurse -Filter signtool.exe | Sort-Object FullName -Descending | Select-Object -First 1).FullName
+          Get-ChildItem editor/release -Recurse -Include *.exe,*.msi | ForEach-Object { & $signtool sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /f certificate.pfx /p $env:WINDOWS_SIGNING_PASSWORD $_.FullName; if ($LASTEXITCODE) { throw "Signing failed: $($_.FullName)" }; & $signtool verify /pa /all $_.FullName; if ($LASTEXITCODE) { throw "Verification failed: $($_.FullName)" } }
+          Remove-Item certificate.pfx -Force
+          node editor/scripts/release-integrity.mjs executables editor/release
+          node editor/scripts/release-integrity.mjs scan editor/release
+          node editor/scripts/release-integrity.mjs attest editor/release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: editor-win32-x64-signed
+          path: editor/release/
+          if-no-files-found: error
+
+  vscode-package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: win32-x64
+            python_arch: x64
+          - os: ubuntu-latest
+            target: linux-x64
+            python_arch: x64
+          - os: macos-14
+            target: darwin-x64
+            python_arch: x64
+          - os: macos-14
+            target: darwin-arm64
+            python_arch: arm64
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: vscode
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/checkout@v4
+        with:
+          repository: clemensv/avrotize
+          ref: 8d1c504ec2cd06ab8971503394f73bf4a97c9617
+          path: avrotize
+          fetch-depth: 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            editor/package-lock.json
+            vscode/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.10'
+          architecture: ${{ matrix.python_arch }}
+          cache: pip
+          cache-dependency-path: editor/config/structurize-runtime-requirements.txt
+      - name: Resolve native Python root
+        shell: bash
+        run: python -c 'import sys; print("STRUCTURIZE_PYTHON_ROOT=" + sys.prefix)' >> "$GITHUB_ENV"
+      - uses: actions/cache@v4
+        with:
+          path: .structurize-wheelhouse
+          key: structurize-wheels-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('editor/config/structurize-runtime.lock.json', 'editor/config/structurize-runtime-requirements.txt') }}
+      - run: npm ci --prefix ../editor
+      - run: npm ci
+      - name: Apply release version
+        shell: bash
+        run: |
+          VERSION="${{ inputs.version }}"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          fi
+          if [ -n "$VERSION" ]; then
+            npm pkg set "version=$VERSION"
+            npm pkg set "version=$VERSION" --prefix ../editor
+          fi
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          echo "Building VSIX version $PACKAGE_VERSION"
+      - name: Provision pinned Structurize dependencies
+        working-directory: editor
+        env:
+          STRUCTURIZE_ALLOW_NETWORK: '1'
+        run: npm run provision:structurize-runtime
+      - run: npm run build:editor
+      - run: npm test
+      - run: npm run test:artifact
+      - run: npm run package -- --target ${{ matrix.target }} --out artifacts/json-structure-${{ matrix.target }}.vsix
+      - run: node scripts/vsix-runtime-smoke.mjs artifacts/json-structure-${{ matrix.target }}.vsix
+      - run: node scripts/vsix-ui-acceptance.mjs artifacts/json-structure-${{ matrix.target }}.vsix
+      - run: npm run test:lossless-text
+      - run: npm run test:schema-location-artifact -- artifacts/json-structure-${{ matrix.target }}.vsix
+      - name: Report VSIX size
+        shell: bash
+        run: du -h artifacts/*.vsix
+      - uses: actions/upload-artifact@v4
+        with:
+          name: json-structure-editor-vsix-${{ matrix.target }}
+          path: vscode/artifacts/*.vsix
+          if-no-files-found: error
+
+  github-release:
+    name: Attach editor and VSIX artifacts to SDK release
+    if: |
+      always() &&
+      startsWith(github.ref, 'refs/tags/v') &&
+      needs.build-test-package.result == 'success' &&
+      needs.vscode-package.result == 'success' &&
+      needs.macos-notarize.result == 'success' &&
+      needs.windows-sign.result == 'success'
+    needs:
+      - build-test-package
+      - macos-notarize
+      - windows-sign
+      - vscode-package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: editor-linux-x64
+          path: artifacts/editor-linux-x64
+      - uses: actions/download-artifact@v4
+        with:
+          name: editor-win32-x64-signed
+          path: artifacts/editor-win32-x64
+      - uses: actions/download-artifact@v4
+        with:
+          name: editor-darwin-x64-signed
+          path: artifacts/editor-darwin-x64
+      - uses: actions/download-artifact@v4
+        with:
+          name: editor-darwin-arm64-signed
+          path: artifacts/editor-darwin-arm64
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: json-structure-editor-vsix-*
+          path: artifacts/vsix
+          merge-multiple: true
+      - name: Collect distributable files
+        shell: bash
+        run: |
+          mkdir release
+          find artifacts/editor-linux-x64 -maxdepth 1 -type f \( -name '*.AppImage' -o -name '*.deb' \) -exec cp {} release/ \;
+          find artifacts/editor-win32-x64 -maxdepth 1 -type f -name '*.exe' -exec cp {} release/ \;
+          find artifacts/editor-darwin-x64 artifacts/editor-darwin-arm64 -maxdepth 1 -type f -name 'json-structure-editor-macos-*-signed.zip' -exec cp {} release/ \;
+          find artifacts/vsix -maxdepth 1 -type f -name '*.vsix' -exec cp {} release/ \;
+          test "$(find release -maxdepth 1 -type f | wc -l)" -ge 9
+          (cd release && sha256sum * > SHA256SUMS-editor.txt)
+          find release -maxdepth 1 -type f -printf '%f\n' | sort
+      - name: Attach artifacts to SDK GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: release/*
+          fail_on_unmatched_files: true

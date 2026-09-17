@@ -12,6 +12,8 @@ This document provides comprehensive guidelines for developing JSON Structure SD
 - [Error Codes](#error-codes)
 - [Test Assets](#test-assets)
 - [Schema Exporter (Optional)](#schema-exporter-optional)
+- [Avro Compiler](#avro-compiler)
+- [Protobuf Generator (CLI only)](#protobuf-generator-cli-only)
 - [Conformance Checklist](#conformance-checklist)
 
 ---
@@ -25,6 +27,7 @@ JSON Structure is a type-oriented schema language for JSON, designed for definin
 3. **Error Codes** - Standardized error codes matching `assets/error-messages.json`
 4. **Source Location Tracking** - Line/column tracking for error messages
 5. **Schema Exporter** (optional) - Generates schemas from native language types (only for languages with runtime introspection)
+6. **Avro Compiler** (optional) - Compiles schemas to Apache Avro so the schema can drive a serializer directly
 
 ---
 
@@ -403,6 +406,214 @@ When implementing a schema exporter:
 - .NET: [`dotnet/src/JsonStructure/Schema/JsonStructureSchemaExporter.cs`](dotnet/src/JsonStructure/Schema/JsonStructureSchemaExporter.cs)
 - Java: [`java/src/main/java/org/json_structure/schema/JsonStructureSchemaExporter.java`](java/src/main/java/org/json_structure/schema/JsonStructureSchemaExporter.java)
 - Python: [`python/src/json_structure/schema_exporter.py`](python/src/json_structure/schema_exporter.py)
+
+---
+
+## Avro Compiler
+
+The Avro compiler turns a JSON Structure document into an Apache Avro schema so
+that a developer can hand us a `.struct.json` and get a working Avro serializer.
+The `.avsc` is an implementation detail they never have to look at.
+
+Every SDK whose language has a usable Avro library should ship one. The
+normative contract is [`spec/json-structure-to-avro.md`](spec/json-structure-to-avro.md);
+the reference implementation is [`rust/src/avro/`](rust/src/avro/).
+
+### Requirements
+
+1. **Deterministic.** Two conforming implementations MUST emit byte-identical
+   output for the same input. Attribute order, field order, generated names, and
+   union branch order are all specified — see spec §7. Do not use hash sets or
+   any other unordered collection anywhere the output depends on iteration order.
+2. **Pure.** No I/O, no clock, no randomness, no global state. The compiler is a
+   function of its input document and its options.
+3. **Fast.** This runs at application startup. Budget microseconds, not
+   milliseconds, and cache the result behind a lazy initializer for embedded
+   schemas.
+4. **Loud on the things Avro cannot express** rather than quietly lossy. See
+   spec §8 for the error taxonomy and §9 for the warnings.
+5. **`$import` resolved first.** The compiler consumes a consolidated document.
+   Either resolve imports before compiling or accept a resolver.
+
+### API shape
+
+The point is that the developer never touches an `.avsc`. Find the seam in the
+language's Avro library where a schema enters, and slip the compiler in there.
+
+| Language   | Avro library                   | Natural seam                                     |
+| ---------- | ------------------------------ | ------------------------------------------------ |
+| Rust       | `apache-avro`                  | Produce an `apache_avro::Schema`                 |
+| Java       | `org.apache.avro`              | Produce a `Schema`, feed `SpecificDatumWriter`   |
+| Python     | `avro` / `fastavro`            | Produce a parsed schema dict for `fastavro`      |
+| .NET/C#    | `Apache.Avro` or `Chr.Avro`    | Produce a `Schema` for `DatumWriter<T>`          |
+| Go         | `hamba/avro` or `linkedin/goavro` | Produce an `avro.Schema`                      |
+| TypeScript | `avsc`                         | Produce a `Type` via `avsc.Type.forSchema`       |
+
+Each SDK MUST expose both the raw compile (returns the schema document, for
+inspection and for writing to disk) and the library-native path (returns the
+library's parsed schema object).
+
+### Naming
+
+Name the library-native entry point after **the function it replaces**. A
+developer adopting this is editing a line that already exists: they had a
+hand-maintained `.avsc` going into their Avro library, and now a `.struct.json`
+goes in instead. The smaller that diff looks, the better the API.
+
+| Language   | Replaces                      | Becomes                                  |
+| ---------- | ----------------------------- | ---------------------------------------- |
+| Rust       | `Schema::parse_str(avsc)`     | `avro::schema_from_jstruct_str(src)`     |
+| Java       | `new Schema.Parser().parse()` | `JsonStructureAvro.schemaFrom(src)`      |
+| Python     | `fastavro.parse_schema(d)`    | `json_structure.avro.schema_from_str(s)` |
+| .NET/C#    | `Schema.Parse(avsc)`          | `JsonStructureAvro.SchemaFrom(src)`      |
+| Go         | `avro.Parse(avsc)`            | `jsavro.SchemaFrom(src)`                 |
+| TypeScript | `avsc.Type.forSchema(d)`      | `avro.typeFromStruct(src)`               |
+
+Two rules, and they pull in opposite directions in different languages:
+
+1. **Do not repeat what the namespace already says.** In Rust, Python, and
+   TypeScript the module path carries `avro`, so the function must not; Rust's
+   clippy lints this as `module_name_repetitions`. Prefer
+   `avro::schema_from_jstruct_str` over `avro::avro_schema_from_jstruct_str`.
+   Note that `jstruct` in that name is not a repetition: it names the *input*,
+   which is the whole point of the call.
+2. **Do say it when there is no namespace to lean on.** Java and C# resolve
+   types by simple name after an import, so a bare `SchemaFrom` would be
+   ambiguous at the call site; the type name carries the qualification instead.
+
+Avoid naming a module or package after a lifecycle phase — `runtime`, `helpers`,
+`util`. A module name should say what something *is*.
+`avro::schema_from_jstruct_str` needs no second qualifier, and
+`avro::runtime::schema_from_jstruct_str` reads like the schema is being built at
+some special time rather than simply being built.
+
+### Conformance corpus
+
+[`test-assets/avro/`](test-assets/avro/) — 42 valid cases and 10 negative cases.
+The harness contract is described in its README and has seven checks: byte-match
+against the expected output, determinism across repeated runs, acceptance by a
+real Avro parser, a write/read round trip of a hand-written `instance.avro.json`
+through a real Avro writer, a comparison of the encoded bytes against
+`expected.avro.b64`, the expected warnings for every valid case, and the
+expected error for every negative case. The reference harness is
+[`rust/tests/avro_corpus.rs`](rust/tests/avro_corpus.rs).
+
+The last two of those exist because a blessed expected file cannot test the
+thing it was blessed from. `expected.avsc` proves every port agrees with the
+reference implementation; the round trip proves the reference implementation
+matches what the *source document* means, because the instance was written by
+hand against the document rather than generated from the schema.
+
+`instance.avro.json` uses the **Plain JSON** encoding from
+[avrojson.md](https://github.com/clemensv/avrotize/blob/master/avrojson.md), not
+Avro's own JSON encoding — base64 binary, quoted `long` and `decimal`, RFC 3339
+temporals, and untagged unions resolved by structure. No shipping Avro library
+reads it, so every harness writes its own schema-driven decoder, which means
+that decoder has no second opinion inside its own SDK. `expected.avro.b64`
+supplies one from outside: the same instance must encode to the same bytes
+everywhere. Cases containing a `map` are exempt, because Avro writes map entries
+in iteration order and nothing pins it.
+
+The corpus is a happy-path corpus and cannot reach a decoder's guards — mutation
+testing confirmed that relaxing the ambiguous-union rule, the omitted-field
+rule, and the decimal scale check all left it green. Each port therefore carries
+a handful of direct negative tests for its own decoder next to the harness.
+
+### Modes
+
+The compiler has two modes, and **they encode identically**. `full` adds
+`logicalType` annotations for the temporal types and `uuid`, and carries what
+Avro's type system cannot express — the constraints, the units and currencies,
+and the semantic annotations — in an `annotations` attribute. It changes no base
+type and therefore no byte. A port MUST keep that true, and the corpus asserts
+it directly by compiling every case both ways and comparing the encoded bytes.
+
+These are an *attribute*, not a suffix on `doc`. Avrotize writes the constraints
+into `doc` as `[minimum: 0]`; we deviate deliberately, because Avro schemas are
+extensible and an attribute keeps a number a number and a pattern something a
+regex engine can compile. Four consequences a port will trip over:
+
+- The attribute is governed by `mode` alone and MUST survive `emitDoc` being
+  false. `emitDoc` is about prose for a human.
+- `precision`/`scale` already carried by Avro's `decimal` logical type MUST NOT
+  be repeated inside it.
+- It is emitted on **whatever object carries `doc`**, which for a record or enum
+  is the type object, not a field object. `concepts` and `observedProperty`
+  annotate a type, so this is not a theoretical path — if your port only emits
+  at field level, `full-semantic-annotations` fails.
+- Semantic annotations that bind *property names* — `coordinateReferenceSystem`
+  and friends — MUST be dropped with a warning, in **both** modes. The names
+  they bind are JSON Structure property names, and `altnames.avro` means Avro's
+  field names may differ. Copying them verbatim silently produces an annotation
+  pointing at fields that do not exist.
+
+`full` uses the `rfc3339-*` logical type names, which are not in the Avro
+specification. Avro tells a parser to ignore a logical type it does not
+recognize, and Rust's `apache-avro` does — but Apache.Avro throws instead, so
+the .NET port registers the names with `LogicalTypeFactory` before parsing.
+Check which your library does before assuming `full` mode works; see spec §2.5.1.
+
+### Ports
+
+| Language | Compiler | Harness |
+| -------- | -------- | ------- |
+| Rust (reference) | [`rust/src/avro/`](rust/src/avro/) | [`rust/tests/avro_corpus.rs`](rust/tests/avro_corpus.rs) |
+| .NET | [`dotnet/src/JsonStructure.Avro/`](dotnet/src/JsonStructure.Avro/) | [`dotnet/tests/JsonStructure.Avro.Tests/`](dotnet/tests/JsonStructure.Avro.Tests/) |
+| Java | [`java/src/main/java/org/json_structure/avro/`](java/src/main/java/org/json_structure/avro/) | [`java/src/test/java/org/json_structure/avro/`](java/src/test/java/org/json_structure/avro/) |
+
+Two things the .NET port learned that the next port will hit as well:
+
+- **`JsonArray.Add<T>` is not `JsonValue.Create(string)`.** On .NET 8 the
+  generic overload boxes even a `string` into a `JsonValueCustomized<T>`, which
+  cannot be written without a reflection-based type-info resolver. It throws at
+  serialization time, not at the call site, and only for the schemas that reach
+  that code path.
+- **Line endings are part of the expected-output contract.** `WriteIndented`
+  breaks lines with `Environment.NewLine`. Normalize to LF on the way out, and
+  normalize the expected file on the way in, or every case fails on Windows and
+  passes on Linux.
+
+And three the Java port added:
+
+- **Absent and JSON-null are not the same key.** Jackson has a real `NullNode`
+  where `System.Text.Json` has a C# `null`, so a naive accessor makes
+  `"default": null` — which is how a nullable field asks for a null default —
+  look like no default at all. Fold `NullNode` in with absent in the accessor,
+  and read the raw node wherever the difference is load-bearing.
+- **Don't try to configure a pretty printer into byte-exactness.** Jackson's
+  `DefaultPrettyPrinter` writes `"key" : value`, with a space before the colon,
+  and indents arrays on its own scheme. Writing the bytes by hand is less code
+  than bending it and does not drift when Jackson changes.
+- **`Schema.Parser` is stateful.** It remembers every named type it has parsed
+  and rejects a redefinition, so a shared instance fails the second time it sees
+  the same schema. Mint a fresh one per call.
+
+**Do not port the corpus by relaxing it.** If a port passes on the first run,
+mutate its compiler and confirm the corpus notices — that is how both of the
+union cases above came to exist. The Java port passed 265 corpus assertions on
+its first green run; five deliberate mutations (a reordered annotation table, a
+dropped record-level `annotations`, a suppressed warning, a decimal scaled by
+ten, an off-by-one `long`) were all caught, which is what made the green
+believable.
+
+---
+
+## Protobuf Generator (CLI only)
+
+Protobuf is a build-time concern, not a runtime one. `.proto` files are
+artifacts you check in, feed to `protoc`, and `import` from a gRPC service
+definition. The generator therefore lives in the `jstruct` CLI, not in the
+runtime libraries, and SDKs are **not** expected to port it.
+
+The contract is [`spec/json-structure-to-proto.md`](spec/json-structure-to-proto.md),
+the implementation [`rust/src/proto/`](rust/src/proto/), and the corpus
+[`test-assets/proto/`](test-assets/proto/).
+
+The one thing worth knowing even if you never touch the generator: **field
+numbers are a wire contract.** `jstruct proto --numbers <lock>` keeps a
+checked-in lock file so that existing fields keep their numbers, new fields get
+fresh ones, and removed fields become `reserved`. Without it, inserting a
+property in the middle of a schema silently renumbers everything after it.
 
 ---
 

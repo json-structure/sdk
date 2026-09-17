@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "messages": {
+    "Thing": {
+      "fields": {
+        "a": 1
+      }
+    }
+  },
+  "enums": {}
+}

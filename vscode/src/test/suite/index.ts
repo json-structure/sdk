@@ -4,10 +4,12 @@ import { glob } from 'glob';
 
 export async function run(): Promise<void> {
     // Create the mocha test
+    const grep = process.env.JSON_STRUCTURE_TEST_GREP;
     const mocha = new Mocha({
         ui: 'tdd',
         color: true,
-        timeout: 60000
+        timeout: 60000,
+        ...(grep ? { grep } : {})
     });
 
     const testsRoot = path.resolve(__dirname, '.');

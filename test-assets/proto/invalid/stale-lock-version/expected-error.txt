@@ -1,0 +1,2 @@
+kind: Numbering
+message: field-number lock has version 1, but this implementation writes version 2; regenerate the lock rather than letting it be ignored (in message <lock>)

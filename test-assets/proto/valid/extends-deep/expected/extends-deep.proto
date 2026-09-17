@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+message Landmark_location {
+  double lat = 1;
+  double lon = 2;
+}
+
+message Landmark {
+  string id = 1;
+  optional string createdAt = 2;
+  string label = 3;
+  Landmark_location location = 4;
+  optional int32 visitors = 5;
+}

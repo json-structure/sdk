@@ -1,0 +1,60 @@
+{
+  "type": "record",
+  "name": "Annotated",
+  "doc": "Record doc",
+  "fields": [
+    {
+      "name": "described",
+      "type": "string",
+      "doc": "Has text and no constraint"
+    },
+    {
+      "name": "constrained",
+      "type": "string",
+      "doc": "Has both",
+      "annotations": {
+        "maxLength": 10,
+        "minLength": 2,
+        "pattern": "^[a-z]+$"
+      }
+    },
+    {
+      "name": "bare",
+      "type": "int",
+      "annotations": {
+        "minimum": 0,
+        "maximum": 99
+      }
+    },
+    {
+      "name": "content",
+      "type": "string",
+      "annotations": {
+        "contentEncoding": "base64",
+        "contentMediaType": "image/png",
+        "contentCompression": "gzip"
+      }
+    },
+    {
+      "name": "plain",
+      "type": "boolean"
+    },
+    {
+      "name": "ordering",
+      "type": "string",
+      "doc": "All ten, out of order in the source",
+      "annotations": {
+        "maxLength": 1,
+        "minLength": 2,
+        "precision": 3,
+        "scale": 4,
+        "pattern": "p",
+        "minimum": 5,
+        "maximum": 6,
+        "contentEncoding": "e",
+        "contentMediaType": "m",
+        "contentCompression": "c"
+      }
+    }
+  ]
+}

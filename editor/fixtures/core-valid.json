@@ -1,0 +1,1 @@
+{"$schema":"https://json-structure.org/schema/","$id":"https://example.test/core","name":"CoreSeed","$root":"#/definitions/Person","definitions":{"Person":{"type":"object","properties":{"id":{"type":"string"},"age":{"type":"int32"}},"required":["id"]},"Tags":{"type":"array","items":{"type":"string"}}}}

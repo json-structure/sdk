@@ -1,0 +1,161 @@
+{
+  "name": "@json-structure/editor-foundation",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "build": "tsup",
+    "build:ui": "tsup src/ui.ts --format esm --dts",
+    "build:renderer": "vite build --config vite.config.ts",
+    "build:vscode": "vite build --config vite.vscode.config.ts",
+    "build:electron": "tsup --config tsup.electron.config.ts",
+    "alpha:build": "npm run build:renderer && npm run build:electron",
+    "alpha:run": "npm run alpha:build && electron .",
+    "alpha:dev": "concurrently --kill-others-on-fail \"vite --config vite.config.ts --host 127.0.0.1\" \"node scripts/dev-electron.mjs\"",
+    "alpha:package": "npm run alpha:build && npm run prepare:structurize-runtime && electron-builder",
+    "beta:build": "npm run alpha:build && npm run prepare:structurize-runtime && npm run build:vscode && node ../vscode/scripts/copy-editor-assets.js",
+    "beta:run": "npm run beta:build && electron .",
+    "prepare:structurize-runtime": "node scripts/prepare-structurize-runtime.mjs",
+    "provision:structurize-runtime": "node scripts/provision-structurize-runtime.mjs",
+    "test:final-electron-runtime": "node scripts/final-electron-runtime-smoke.mjs",
+    "test:structurize-runtime": "npm run prepare:structurize-runtime && node scripts/structurize-runtime-smoke.mjs",
+    "test:electron-conversion": "npm run alpha:build && node scripts/electron-conversion-acceptance.mjs",
+    "test:conversion-integration": "node scripts/run-conversion-integration.mjs",
+    "beta:dev": "npm run alpha:dev",
+    "release:clean": "node -e \"require('node:fs').rmSync('release',{recursive:true,force:true})\"",
+    "beta:package": "npm run beta:build && electron-builder",
+    "release:executables": "node scripts/release-integrity.mjs executables release",
+    "release:scan": "node scripts/release-integrity.mjs scan release",
+    "release:attest": "node scripts/release-integrity.mjs attest release",
+    "beta:package:verified": "npm run coverage:check && npm run release:clean && npm run beta:package -- --publish never && npm run release:executables && npm run release:scan && npm run release:attest",
+    "test": "vitest run",
+    "test:catalog-artifacts": "node scripts/catalog-artifact-integrity.mjs",
+    "test:schema-location-electron": "node scripts/schema-location-electron-acceptance.mjs",
+    "test:real-host": "npm run beta:build && electron-builder --dir --publish never && npm run test:final-electron-runtime && node scripts/real-host-acceptance.mjs && npm run test:schema-location-electron",
+    "test:ux:coverage": "vitest run --config vitest.ux-coverage.config.ts --coverage",
+    "test:ux:real-host": "npm run alpha:build && electron-builder --dir --publish never && npm run test:final-electron-runtime && node scripts/real-host-acceptance.mjs",
+    "test:ux:update-visuals": "npm run alpha:build && electron-builder --dir --publish never && node scripts/real-host-acceptance.mjs --update-visuals",
+    "test:ux": "npm run test:ux:coverage && npm run test:ux:real-host",
+    "typecheck": "tsc --noEmit",
+    "coverage:check": "node scripts/coverage-check.mjs",
+    "coverage:generate": "node scripts/generate-coverage.mjs"
+  },
+  "devDependencies": {
+    "@types/d3-force": "^3.0.10",
+    "@types/node": "^25.0.10",
+    "@types/pngjs": "^6.0.5",
+    "@vitest/coverage-v8": "^4.0.18",
+    "axe-core": "^4.13.0",
+    "concurrently": "^9.2.1",
+    "electron": "^41.10.3",
+    "electron-builder": "latest",
+    "happy-dom": "^20.11.6",
+    "pixelmatch": "^7.2.0",
+    "pngjs": "^7.0.0",
+    "testcontainers": "^11.14.0",
+    "tsup": "^8.0.1",
+    "typescript": "^5.3.2",
+    "vite": "latest",
+    "vitest": "^4.0.18"
+  },
+  "main": "dist-electron/main.cjs",
+  "exports": {
+    "./conversion-types": {
+      "types": "./dist/conversion/types.d.ts",
+      "import": "./dist/conversion/types.js",
+      "require": "./dist/conversion/types.cjs"
+    },
+    "./conversion-process": {
+      "types": "./dist/conversion/process.d.ts",
+      "import": "./dist/conversion/process.js",
+      "require": "./dist/conversion/process.cjs"
+    },
+    "./library-host-runtime": {
+      "types": "./dist/libraries/host-runtime.d.ts",
+      "import": "./dist/libraries/host-runtime.js",
+      "require": "./dist/libraries/host-runtime.cjs"
+    },
+    "./host/effective-imports": {
+      "types": "./dist/host/effective-imports.d.ts",
+      "import": "./dist/host/effective-imports.js",
+      "require": "./dist/host/effective-imports.cjs"
+    }
+  },
+  "typesVersions": {
+    "*": {
+      "conversion-types": [
+        "dist/conversion/types.d.ts"
+      ],
+      "conversion-process": [
+        "dist/conversion/process.d.ts"
+      ],
+      "library-host-runtime": [
+        "dist/libraries/host-runtime.d.ts"
+      ],
+      "host/effective-imports": [
+        "dist/host/effective-imports.d.ts"
+      ]
+    }
+  },
+  "build": {
+    "appId": "org.json-structure.editor",
+    "productName": "JSON Structure Editor",
+    "icon": "assets/icon.png",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist-electron/**",
+      "dist/renderer/**",
+      "package.json",
+      "THIRD-PARTY-NOTICES.txt"
+    ],
+    "extraResources": [
+      {
+        "from": "src/conversion/worker-runtime",
+        "to": "conversion/worker-runtime"
+      },
+      {
+        "from": "build/structurize-runtime",
+        "to": "conversion/worker-runtime/structurize-runtime"
+      },
+      {
+        "from": "../vscode/test-fixtures/financial-types/schema.struct.json",
+        "to": "libraries/financial-types.struct.json"
+      },
+      {
+        "from": "assets/icon.png",
+        "to": "icon.png"
+      }
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ]
+    }
+  },
+  "dependencies": {
+    "@fortawesome/free-brands-svg-icons": "^7.3.1",
+    "@fortawesome/free-solid-svg-icons": "^7.3.1",
+    "d3-force": "^3.0.0",
+    "monaco-editor": "^0.56.0",
+    "re2js": "^2.8.6"
+  }
+}

@@ -1,0 +1,100 @@
+{
+    "$schema": "https://json-structure.org/meta/validation/v0/#",
+    "$id": "https://example.test/conditional/telemetry-array-map",
+    "name": "TelemetryCarrier",
+    "description": "A composition-only root accepting conditional arrays or maps of readings.",
+    "anyOf": [
+        {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 256,
+            "items": {
+                "if": {
+                    "type": "double",
+                    "minimum": 0
+                },
+                "then": {
+                    "allOf": [
+                        {
+                            "type": "double",
+                            "maximum": 1000
+                        },
+                        {
+                            "not": {
+                                "type": "double",
+                                "const": 13
+                            }
+                        }
+                    ]
+                },
+                "else": {
+                    "anyOf": [
+                        {
+                            "type": "double",
+                            "maximum": 0
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "type": "map",
+            "minEntries": 1,
+            "maxEntries": 64,
+            "values": {
+                "oneOf": [
+                    {
+                        "type": "double",
+                        "minimum": -273.15
+                    },
+                    {
+                        "type": "integer",
+                        "minimum": -1000,
+                        "maximum": 1000
+                    },
+                    {
+                        "type": {
+                            "$ref": "#/definitions/ReadingEnvelope"
+                        }
+                    }
+                ]
+            }
+        }
+    ],
+    "not": {
+        "type": "null"
+    },
+    "definitions": {
+        "ReadingEnvelope": {
+            "name": "ReadingEnvelope",
+            "type": "object",
+            "properties": {
+                "at": {
+                    "type": "datetime"
+                },
+                "value": {
+                    "type": "decimal",
+                    "precision": 18,
+                    "scale": 6,
+                    "minimum": "-273.150000"
+                },
+                "quality": {
+                    "type": "string",
+                    "enum": [
+                        "raw",
+                        "estimated",
+                        "verified"
+                    ]
+                }
+            },
+            "required": [
+                "at",
+                "value"
+            ],
+            "additionalProperties": false
+        }
+    }
+}

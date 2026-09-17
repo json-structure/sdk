@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/avro/namespaces",
+  "$root": "#/definitions/com/example/sales/Order",
+  "definitions": {
+    "com": {
+      "example": {
+        "sales": {
+          "Order": {
+            "name": "Order",
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "customer": { "type": { "$ref": "#/definitions/com/example/crm/Customer" } }
+            },
+            "required": ["id", "customer"]
+          }
+        },
+        "crm": {
+          "Customer": {
+            "name": "Customer",
+            "type": "object",
+            "properties": { "name": { "type": "string" } },
+            "required": ["name"]
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-structure.org/meta/validation/v0/#",
+  "$id": "https://example.test/conditional/feature-flags",
+  "name": "FeatureFlag",
+  "description": "Tests absent branches and independently present then or else keywords, for which no pairing constraint is stated.",
+  "type": "object",
+  "properties": {
+    "phase": {
+      "type": "string",
+      "enum": [
+        "off",
+        "preview",
+        "on"
+      ]
+    },
+    "audience": {
+      "type": "set",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "maxItems": 100
+    },
+    "expires": {
+      "type": "datetime"
+    },
+    "owner": {
+      "type": "string",
+      "minLength": 3
+    }
+  },
+  "required": [
+    "phase",
+    "owner"
+  ],
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "name": "PreviewCondition",
+        "type": "object",
+        "properties": {
+          "phase": {
+            "type": "string",
+            "const": "preview"
+          }
+        },
+        "required": [
+          "phase"
+        ],
+        "additionalProperties": true
+      },
+      "then": {
+        "name": "PreviewAudience",
+        "type": "object",
+        "properties": {
+          "audience": {
+            "type": "set",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "audience"
+        ],
+        "additionalProperties": true
+      }
+    },
+    {
+      "if": {
+        "name": "OffCondition",
+        "type": "object",
+        "properties": {
+          "phase": {
+            "type": "string",
+            "const": "off"
+          }
+        },
+        "required": [
+          "phase"
+        ],
+        "additionalProperties": true
+      },
+      "else": {
+        "name": "NonOffExpiry",
+        "type": "object",
+        "properties": {
+          "expires": {
+            "type": "datetime"
+          }
+        },
+        "required": [
+          "expires"
+        ],
+        "additionalProperties": true
+      }
+    },
+    {
+      "then": {
+        "not": {
+          "name": "StandaloneThenGuard",
+          "type": "object",
+          "properties": {
+            "owner": {
+              "type": "string",
+              "const": "root"
+            }
+          },
+          "required": [
+            "owner"
+          ],
+          "additionalProperties": true
+        }
+      }
+    },
+    {
+      "else": {
+        "anyOf": [
+          {
+            "name": "StandaloneElseOn",
+            "type": "object",
+            "properties": {
+              "phase": {
+                "type": "string",
+                "const": "on"
+              }
+            },
+            "required": [
+              "phase"
+            ],
+            "additionalProperties": true
+          },
+          {
+            "name": "StandaloneElsePreview",
+            "type": "object",
+            "properties": {
+              "phase": {
+                "type": "string",
+                "const": "preview"
+              }
+            },
+            "required": [
+              "phase"
+            ],
+            "additionalProperties": true
+          }
+        ]
+      }
+    }
+  ]
+}

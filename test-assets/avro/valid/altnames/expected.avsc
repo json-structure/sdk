@@ -1,0 +1,21 @@
+{
+  "type": "record",
+  "name": "LegacyRecord",
+  "fields": [
+    {
+      "name": "firstName",
+      "type": "string"
+    },
+    {
+      "name": "status",
+      "type": {
+        "type": "enum",
+        "name": "LegacyRecord_status",
+        "symbols": [
+          "IN_STOCK",
+          "OUT_OF_STOCK"
+        ]
+      }
+    }
+  ]
+}

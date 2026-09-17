@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-structure.org/meta/core/v0/#",
+  "$id": "https://example.com/avro/full-logical-types",
+  "name": "Logical",
+  "description": "The rfc3339-* annotations, which are transparent to any reader.",
+  "type": "object",
+  "properties": {
+    "date": { "type": "date" },
+    "time": { "type": "time" },
+    "dt": { "type": "datetime" },
+    "dur": { "type": "duration" },
+    "uri": { "type": "uri" },
+    "ptr": { "type": "jsonpointer" },
+    "i128": { "type": "int128" },
+    "u64": { "type": "uint64" },
+    "u128": { "type": "uint128" },
+    "plainString": { "type": "string" },
+    "plainInt": { "type": "int32" },
+    "blob": { "type": "binary" }
+  },
+  "required": ["date","time","dt","dur","uri","ptr","i128","u64","u128","plainString","plainInt","blob"]
+}

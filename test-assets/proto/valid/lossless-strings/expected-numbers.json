@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "messages": {
+    "Lossless": {
+      "fields": {
+        "dec": 1,
+        "date": 2,
+        "time": 3,
+        "dt": 4,
+        "dur": 5,
+        "uuid": 6,
+        "uri": 7,
+        "ptr": 8,
+        "i128": 9,
+        "u64": 10,
+        "u128": 11
+      }
+    }
+  },
+  "enums": {}
+}

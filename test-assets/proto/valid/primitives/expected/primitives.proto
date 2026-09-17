@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+import "google/protobuf/struct.proto";
+
+message Primitives {
+  string s = 1;
+  bool b = 2;
+  int32 i8 = 3;
+  int32 i16 = 4;
+  int32 i32 = 5;
+  int64 i64 = 6;
+  uint32 u8 = 7;
+  uint32 u16 = 8;
+  uint32 u32 = 9;
+  float f = 10;
+  double d = 11;
+  double n = 12;
+  bytes bin = 13;
+  google.protobuf.NullValue nul = 14;
+}

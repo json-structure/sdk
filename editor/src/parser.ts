@@ -1,0 +1,2632 @@
+import type { Diagnostic, RecoveryState, SourceLocation, TextPosition, TextRange } from './contracts.js';
+import {
+  nodeId,
+  type ConditionalCompositionProjection,
+  type DefinitionProjection,
+  type DiagnosticsProjection,
+  type ImportProjection,
+  type ModelNode,
+  type NormalizedDocument,
+  type ReferenceProjection,
+  type RelationProjection,
+  type SemanticAnnotationInspection,
+  type SemanticPlacementProjection,
+  type SemanticAnnotationsProjection,
+  type UnitsProjection,
+  type AlternateNamesProjection,
+  type ValidationProjection
+} from './model.js';
+import { VALIDATION_KEYWORDS, effectiveValidationTypes, validationIssues, type ValidationKeyword } from './validation.js';
+import { UNITS_KEYWORDS, unitsIssues, type UnitsKeyword } from './units.js';
+import { resolveCapabilities } from './capabilities.js';
+import { ALTERNATE_NAMES_KEYWORDS, alternateNamesIssues, type AlternateNamesKeyword } from './alternate-names.js';
+import { isImportUriReference } from './import-uri.js';
+
+interface ParsedValue { value: unknown; start: number; end: number; pointer: string; keyStart?: number; keyEnd?: number; }
+interface ParseOutput { value: unknown; values: ParsedValue[]; diagnostics: Diagnostic[]; recovery: RecoveryState; }
+
+interface TextIndex { readonly lineStarts: readonly number[]; }
+
+// Source ranges are requested once for nearly every diagnostic. Keep a small bounded
+// cache so range lookup remains logarithmic instead of rescanning the whole source.
+const textIndexes = new Map<string, TextIndex>();
+const parsedValues = new Map<string, readonly ParsedValue[]>();
+const parsedValueIndexes = new Map<string, ReadonlyMap<string, ParsedValue>>();
+const CACHE_LIMIT = 8;
+const nodeIndexes = new WeakMap<readonly ModelNode[], ReadonlyMap<string, readonly ModelNode[]>>();
+const pointerSegmentsCache = new Map<string, readonly string[]>();
+const POINTER_CACHE_LIMIT = 4_096;
+
+function pointerSegments(pointer: string): readonly string[] {
+  const cached = pointerSegmentsCache.get(pointer);
+  if (cached) return cached;
+  const segments = pointer.split('/').filter((part) => part.length > 0).map((part) => part.replace(/~1/g, '/').replace(/~0/g, '~'));
+  pointerSegmentsCache.set(pointer, segments);
+  while (pointerSegmentsCache.size > POINTER_CACHE_LIMIT) pointerSegmentsCache.delete(pointerSegmentsCache.keys().next().value!);
+  return segments;
+}
+function nodesByPointer(nodes: readonly ModelNode[]): ReadonlyMap<string, readonly ModelNode[]> {
+  const cached = nodeIndexes.get(nodes);
+  if (cached) return cached;
+  const index = new Map<string, ModelNode[]>();
+  for (const node of nodes) {
+    const bucket = index.get(node.pointer);
+    if (bucket) bucket.push(node);
+    else index.set(node.pointer, [node]);
+  }
+  nodeIndexes.set(nodes, index);
+  return index;
+}
+
+function nodeAt(nodes: readonly ModelNode[], pointer: string): ModelNode | undefined {
+  return nodesByPointer(nodes).get(pointer)?.[0];
+}
+
+function hasDuplicatePointer(nodes: readonly ModelNode[], pointer: string): boolean {
+  return (nodesByPointer(nodes).get(pointer)?.length ?? 0) > 1;
+}
+
+function rememberParsedValues(text: string, values: readonly ParsedValue[]): void {
+  parsedValues.set(text, values);
+  const index = new Map<string, ParsedValue>();
+  for (const value of values) index.set(value.pointer, value);
+  parsedValueIndexes.set(text, index);
+  while (parsedValues.size > CACHE_LIMIT) {
+    const oldest = parsedValues.keys().next().value;
+    if (oldest === undefined) break;
+    parsedValues.delete(oldest);
+    parsedValueIndexes.delete(oldest);
+  }
+}
+
+function sourceIndex(text: string): TextIndex {
+  const cached = textIndexes.get(text);
+  if (cached) return cached;
+  const lineStarts: number[] = [0];
+  for (let index = 0; index < text.length; index++) if (text.charCodeAt(index) === 10) lineStarts.push(index + 1);
+  const index = { lineStarts };
+  textIndexes.set(text, index);
+  while (textIndexes.size > CACHE_LIMIT) textIndexes.delete(textIndexes.keys().next().value!);
+  return index;
+}
+
+function position(text: string, offset: number): TextPosition {
+  const starts = sourceIndex(text).lineStarts;
+  let low = 0;
+  let high = starts.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (starts[middle]! <= offset) low = middle + 1;
+    else high = middle;
+  }
+  const line = Math.max(0, low - 1);
+  return { line, column: offset - starts[line]!, offset };
+}
+/**
+ * Builds a source range from byte offsets in the current document text.
+ */
+export function rangeFor(text: string, start: number, end: number): TextRange {
+  return { start: position(text, start), end: position(text, end), startOffset: start, endOffset: end };
+}
+function pointerPart(value: string): string { return value.replace(/~/g, '~0').replace(/\//g, '~1'); }
+function location(uri: string, pointer: string, range: TextRange): SourceLocation { return { uri, pointer, range }; }
+
+class StrictParser {
+  private index = 0;
+  readonly values: ParsedValue[] = [];
+  readonly diagnostics: Diagnostic[] = [];
+  constructor(private readonly text: string, private readonly uri: string) {}
+  parse(): ParseOutput {
+    this.skip();
+    let value: unknown;
+    let start = this.index;
+    try { value = this.readValue(''); start = (this.values[0]?.start ?? start); }
+    catch (error) {
+      const incomplete = this.index >= this.text.length || /unexpected end/i.test(String(error));
+      this.diagnostics.push({ code: incomplete ? 'json.incomplete' : 'json.invalid', message: incomplete ? 'JSON is incomplete.' : String(error), severity: 'error', location: location(this.uri, '', rangeFor(this.text, Math.min(this.index, this.text.length), Math.min(this.index + 1, this.text.length))) });
+      return { value: undefined, values: this.values, diagnostics: this.diagnostics, recovery: incomplete ? 'incomplete' : 'invalid' };
+    }
+    this.skip();
+    if (this.index !== this.text.length) {
+      this.diagnostics.push({ code: 'json.trailing', message: 'Unexpected content after the JSON value.', severity: 'error', location: location(this.uri, '', rangeFor(this.text, this.index, this.index + 1)) });
+      return { value, values: this.values, diagnostics: this.diagnostics, recovery: 'invalid' };
+    }
+    return { value, values: this.values, diagnostics: this.diagnostics, recovery: 'valid' };
+  }
+  private skip(): void { while (/\s/.test(this.text[this.index] ?? '')) this.index++; }
+  private readValue(pointer: string): unknown {
+    this.skip(); const start = this.index; const char = this.text[this.index];
+    let value: unknown;
+    if (char === '{') value = this.readObject(pointer);
+    else if (char === '[') value = this.readArray(pointer);
+    else if (char === '"') value = this.readString();
+    else if (char === '-' || /\d/.test(char ?? '')) value = this.readNumber();
+    else if (this.text.startsWith('true', this.index)) { this.index += 4; value = true; }
+    else if (this.text.startsWith('false', this.index)) { this.index += 5; value = false; }
+    else if (this.text.startsWith('null', this.index)) { this.index += 4; value = null; }
+    else throw new Error(`Unexpected token at offset ${this.index}.`);
+    this.values.push({ value, start, end: this.index, pointer });
+    return value;
+  }
+  private readObject(pointer: string): Record<string, unknown> {
+    this.index++; this.skip(); const result: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
+    if (this.text[this.index] === '}') { this.index++; return result; }
+    while (this.index < this.text.length) {
+      this.skip(); if (this.text[this.index] !== '"') throw new Error(`Expected an object property at offset ${this.index}.`);
+      const keyStart = this.index;
+      const key = this.readString() as string;
+      const keyEnd = this.index;
+      this.skip();
+      if (this.text[this.index++] !== ':') throw new Error(`Expected ':' at offset ${this.index - 1}.`);
+      const childPointer = `${pointer}/${pointerPart(key)}`;
+      result[key] = this.readValue(childPointer);
+      // readValue records the direct child after its nested values, so the last
+      // entry is the child without allocating/re-scanning the complete value list.
+      const child = this.values[this.values.length - 1];
+      if (child?.pointer === childPointer) { child.keyStart = keyStart; child.keyEnd = keyEnd; }
+      this.skip();
+      if (this.text[this.index] === '}') { this.index++; return result; }
+      if (this.text[this.index++] !== ',') throw new Error(`Expected ',' at offset ${this.index - 1}.`);
+    }
+    throw new Error('Unexpected end of JSON object.');
+  }
+  private readArray(pointer: string): unknown[] {
+    this.index++; this.skip(); const result: unknown[] = [];
+    if (this.text[this.index] === ']') { this.index++; return result; }
+    while (this.index < this.text.length) {
+      result.push(this.readValue(`${pointer}/${result.length}`)); this.skip();
+      if (this.text[this.index] === ']') { this.index++; return result; }
+      if (this.text[this.index++] !== ',') throw new Error(`Expected ',' at offset ${this.index - 1}.`);
+    }
+    throw new Error('Unexpected end of JSON array.');
+  }
+  private readString(): string {
+    const start = this.index++; let escaped = false;
+    while (this.index < this.text.length) {
+      const char = this.text[this.index++];
+      if (escaped) { escaped = false; continue; }
+      if (char === '\\') { escaped = true; continue; }
+      if (char === '"') return JSON.parse(this.text.slice(start, this.index)) as string;
+    }
+    throw new Error('Unexpected end of JSON string.');
+  }
+  private readNumber(): number {
+    const match = this.text.slice(this.index).match(/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/);
+    if (!match) throw new Error(`Invalid number at offset ${this.index}.`);
+    this.index += match[0].length; return Number(match[0]);
+  }
+}
+
+/**
+ * Defines the parse result shape.
+ */
+export interface ParseResult { readonly model?: NormalizedDocument; readonly value?: unknown; readonly diagnostics: readonly Diagnostic[]; readonly recovery: RecoveryState; }
+/**
+ * Parses input into document data.
+ */
+export function parseDocument(uri: string, text: string): ParseResult {
+  const parsed = new StrictParser(text, uri).parse();
+  rememberParsedValues(text, parsed.values);
+  if (parsed.recovery !== 'valid') return { diagnostics: parsed.diagnostics, recovery: parsed.recovery };
+  const nodes: ModelNode[] = [];
+  for (const entry of parsed.values) {
+    const kind = declarationKind(entry.value);
+    nodes.push({
+      id: nodeId(`node:${uri}:${entry.pointer}`), pointer: entry.pointer, kind,
+      range: rangeFor(text, entry.start, entry.end),
+      keyRange: entry.keyStart === undefined || entry.keyEnd === undefined ? undefined : rangeFor(text, entry.keyStart, entry.keyEnd),
+      location: location(uri, entry.pointer, rangeFor(text, entry.start, entry.end))
+    });
+  }
+  const duplicateDiagnostics = duplicatePointerDiagnostics(uri, text, nodes);
+  if (!isRecord(parsed.value)) {
+    const diagnostics = [...parsed.diagnostics, ...duplicateDiagnostics, {
+      code: 'core.document-root-invalid',
+      message: 'A JSON Structure document root must be an object.',
+      severity: 'error' as const,
+      location: location(uri, '', nodeAt(nodes, '')?.range ?? rangeFor(text, 0, text.length))
+    }];
+    return { value: parsed.value, diagnostics, recovery: 'valid' };
+  }
+  const root = parsed.value;
+  const projectionDiagnostics: Diagnostic[] = [];
+  collectCoreDeclarationDiagnostics(root, uri, text, projectionDiagnostics, nodes);
+  const projections = buildProjections(root, uri, text, projectionDiagnostics, nodes);
+  const diagnostics = [...parsed.diagnostics, ...duplicateDiagnostics, ...projectionDiagnostics];
+  const model: NormalizedDocument = {
+    uri,
+    documentId: typeof root?.$id === 'string' ? root.$id : undefined,
+    name: typeof root?.name === 'string' ? root.name : undefined,
+    recovery: 'valid',
+    nodes,
+    rootPointer: typeof root?.$root === 'string' ? decodePointerFragment(root.$root) : undefined,
+    unknownKeysPreserved: true,
+    projections: {
+      definitions: projections.definitions,
+      imports: projections.imports,
+      references: projections.references,
+      semanticPlacements: projections.semanticPlacements,
+      diagnostics: diagnostics.map<DiagnosticsProjection>((diagnostic) => ({
+        code: diagnostic.code,
+        severity: diagnostic.severity,
+        pointer: diagnostic.location?.pointer
+      }))
+    }
+  };
+  return { model, value: parsed.value, diagnostics, recovery: 'valid' };
+}
+
+function duplicatePointerDiagnostics(uri: string, text: string, nodes: readonly ModelNode[]): Diagnostic[] {
+  const byPointer = new Map<string, ModelNode[]>();
+  for (const node of nodes) {
+    const list = byPointer.get(node.pointer) ?? [];
+    list.push(node);
+    byPointer.set(node.pointer, list);
+  }
+  const duplicates: Diagnostic[] = [];
+  for (const [pointer, list] of byPointer.entries()) {
+    if (pointer === '' || list.length < 2) continue;
+    // Duplicate JSON object keys collapse at runtime, so keep all source locations to preserve ambiguity evidence.
+    duplicates.push({
+      code: 'json.duplicate-pointer',
+      message: `Ambiguous duplicate key for pointer ${pointer}.`,
+      severity: 'error',
+      location: location(uri, pointer, list[0].keyRange ?? list[0].range ?? rangeFor(text, 0, 0)),
+      related: list.slice(1).map((node) => location(uri, pointer, node.keyRange ?? node.range ?? rangeFor(text, 0, 0)))
+    });
+  }
+  return duplicates;
+}
+
+function collectCoreDeclarationDiagnostics(
+  root: Record<string, unknown>,
+  uri: string,
+  text: string,
+  diagnostics: Diagnostic[],
+  nodes: readonly ModelNode[]
+): void {
+  const { validationActive, conditionalCompositionActive } = resolveCapabilities(root);
+  const diagnoseName = (pointer: string, kind: 'type' | 'namespace' | 'property', name: string): void => {
+    if (IDENTIFIER.test(name)) return;
+    const node = nodeAt(nodes, pointer);
+    diagnostics.push({
+      code: 'core.identifier-invalid',
+      message: `${kind} name '${name}' must match ${IDENTIFIER.source}.`,
+      severity: 'error',
+      location: location(uri, pointer, node?.keyRange ?? node?.range ?? keywordRange(text, pointer))
+    });
+  };
+  const diagnose = (pointer: string, message: string): void => {
+    diagnostics.push({
+      code: 'core.declaration-invalid',
+      message,
+      severity: 'error',
+      location: location(uri, pointer, keywordRange(text, pointer))
+    });
+  };
+  const requireHeader = (keyword: '$schema' | '$id' | 'name', valid: (value: unknown) => boolean, message: string): void => {
+    if (!Object.prototype.hasOwnProperty.call(root, keyword) || !valid(root[keyword])) diagnose(`/${keyword}`, message);
+  };
+  const resolveLocalReference = (reference: string): Readonly<Record<string, unknown>> | undefined => {
+    const targetPointer = decodePointerFragment(reference);
+    if (targetPointer === undefined || !reusableTypePointer(root, targetPointer, nodes)) return undefined;
+    const target = pointerAtRoot(root, targetPointer);
+    return isRecord(target) ? target : undefined;
+  };
+  const inheritedPropertyNames = (schema: Readonly<Record<string, unknown>>, seen = new Set<Readonly<Record<string, unknown>>>()): Set<string> => {
+    if (seen.has(schema)) return new Set();
+    const nextSeen = new Set(seen).add(schema);
+    const names = new Set<string>();
+    const bases = typeof schema.$extends === 'string' ? [schema.$extends] : Array.isArray(schema.$extends) ? schema.$extends : [];
+    for (const reference of bases) {
+      if (typeof reference !== 'string') continue;
+      const base = resolveLocalReference(reference);
+      if (!base) continue;
+      if (isRecord(base.properties)) for (const name of Object.keys(base.properties)) names.add(name);
+      for (const name of inheritedPropertyNames(base, nextSeen)) names.add(name);
+    }
+    return names;
+  };
+  const validateSchema = (schema: Record<string, unknown>, pointer: string, compositionBranch = false, contextualDelta = compositionBranch): void => {
+    if (Object.prototype.hasOwnProperty.call(schema, '$ref') && !Object.prototype.hasOwnProperty.call(schema, 'type')) {
+      if (compositionBranch) {
+        const reference = typeReference(schema);
+        if (reference === undefined || !validPointerFragment(reference)) diagnose(`${pointer}/$ref`, 'A direct composition branch $ref must be a valid JSON Pointer URI fragment and may only have an optional string description.');
+        return;
+      }
+      diagnose(pointer, 'A schema declaration must use type: {"$ref": ...}; a direct $ref object is not a schema declaration.');
+      return;
+    }
+    const hasType = Object.prototype.hasOwnProperty.call(schema, 'type');
+    if (!hasType && !contextualDelta) {
+      diagnose(pointer, 'A schema declaration must contain type.');
+      return;
+    }
+    if (hasType && !validCoreTypeValue(schema.type) && coreForm(schema) === 'unknown') {
+      diagnose(`${pointer}/type`, 'type must name a known Core type, be a local type reference, or be a non-empty array of those forms.');
+    }
+    const primitive = effectiveCorePrimitiveType(schema, resolveLocalReference);
+    if (Object.prototype.hasOwnProperty.call(schema, 'enum')) {
+      const values = schema.enum;
+      if (!Array.isArray(values) || values.length === 0 || !deeplyUniqueJsonValues(values) ||
+          primitive.determinate && (primitive.type === undefined || !values.every((value) => coreScalarValueValid(primitive.type!, value, schema)))) {
+        diagnose(`${pointer}/enum`, 'enum requires a primitive type and a non-empty array of deeply unique values in that Core type value space.');
+      }
+    }
+    if (Object.prototype.hasOwnProperty.call(schema, 'const') && primitive.determinate &&
+        (primitive.type === undefined || !coreScalarValueValid(primitive.type, schema.const, schema))) {
+      diagnose(`${pointer}/const`, 'const requires a primitive type and a value in that Core type value space.');
+    }
+    if (Object.prototype.hasOwnProperty.call(schema, 'maxLength')) {
+      if (typeof schema.maxLength !== 'number' || !Number.isInteger(schema.maxLength) || schema.maxLength < 0 || primitive.determinate && primitive.type !== 'string') {
+        diagnose(`${pointer}/maxLength`, 'maxLength requires a string declaration and a non-negative integer value.');
+      }
+    }
+    if (Object.prototype.hasOwnProperty.call(schema, 'abstract') &&
+        (typeof schema.abstract !== 'boolean' || schema.type !== 'object' && schema.type !== 'tuple')) {
+      diagnose(`${pointer}/abstract`, 'abstract is permitted only as a boolean on object and tuple declarations.');
+    }
+    if (Object.prototype.hasOwnProperty.call(schema, '$extends')) {
+      const references = typeof schema.$extends === 'string' ? [schema.$extends] :
+        Array.isArray(schema.$extends) && schema.$extends.length > 0 && schema.$extends.every((entry) => typeof entry === 'string') ? schema.$extends : undefined;
+      const derivedType = schema.type;
+      if (!references || !['object', 'tuple', 'choice'].includes(String(derivedType)) || new Set(references).size !== references.length) {
+        diagnose(`${pointer}/$extends`, '$extends requires one or more distinct JSON Pointer references on an object, tuple, or inline choice declaration.');
+      } else {
+        references.forEach((reference, index) => {
+          const referencePointer = references.length === 1 ? `${pointer}/$extends` : `${pointer}/$extends/${index}`;
+          if (!validPointerFragment(reference)) {
+            diagnose(referencePointer, '$extends entries must be valid local JSON Pointer URI fragments.');
+            return;
+          }
+          const base = resolveLocalReference(reference);
+          if (!base) return;
+          const compatible = derivedType === 'choice' ? base.type === 'object' : base.type === derivedType;
+          if (base.abstract !== true || !compatible) {
+            diagnose(referencePointer, '$extends must reference a compatible abstract object or tuple declaration.');
+          }
+        });
+        if (isRecord(schema.properties)) {
+          const inherited = inheritedPropertyNames(schema);
+          for (const name of Object.keys(schema.properties)) {
+            if (inherited.has(name)) diagnose(`${pointer}/properties/${pointerPart(name)}`, `Property '${name}' redefines an inherited property.`);
+          }
+        }
+      }
+    }
+    if (Array.isArray(schema.type)) {
+      schema.type.forEach((member, index) => {
+        if (isRecord(member) && typeReference(member) === undefined) validateSchema(member, `${pointer}/type/${index}`);
+      });
+    }
+    const propertiesPresent = Object.prototype.hasOwnProperty.call(schema, 'properties');
+    const propertiesApplicable = schema.type === 'object' || schema.type === 'tuple' || contextualDelta && !hasType;
+    if (schema.type === 'object' && !propertiesPresent) {
+      diagnose(pointer, 'An object declaration must contain properties.');
+    }
+    if (propertiesPresent && !propertiesApplicable) {
+      diagnose(`${pointer}/properties`, 'properties is permitted only on object and tuple declarations.');
+      return;
+    }
+    if (conditionalCompositionActive) {
+      for (const keyword of ['allOf', 'anyOf', 'oneOf'] as const) {
+        if (Array.isArray(schema[keyword])) {
+          schema[keyword].forEach((branch, index) => {
+            if (isRecord(branch)) validateSchema(branch, `${pointer}/${keyword}/${index}`, true);
+          });
+        }
+      }
+      for (const keyword of ['not', 'if', 'then', 'else'] as const) {
+        if (isRecord(schema[keyword])) validateSchema(schema[keyword], `${pointer}/${keyword}`, true);
+      }
+    }
+    if (isRecord(schema.additionalProperties)) validateSchema(schema.additionalProperties, `${pointer}/additionalProperties`, false, contextualDelta);
+    for (const keyword of ['items', 'values'] as const) {
+      if (isRecord(schema[keyword])) validateSchema(schema[keyword], `${pointer}/${keyword}`, false, contextualDelta);
+    }
+    if (isRecord(schema.choices)) {
+      for (const [name, choice] of Object.entries(schema.choices)) {
+        if (isRecord(choice)) validateSchema(choice, `${pointer}/choices/${pointerPart(name)}`, false, contextualDelta);
+      }
+    }
+    if (validationActive) {
+      for (const keyword of ['contains', 'propertyNames', 'keyNames', 'has'] as const) {
+        if (isRecord(schema[keyword])) validateSchema(schema[keyword], `${pointer}/${keyword}`);
+      }
+      for (const keyword of ['patternProperties', 'patternKeys'] as const) {
+        if (!isRecord(schema[keyword])) continue;
+        for (const [name, nested] of Object.entries(schema[keyword])) {
+          if (isRecord(nested)) validateSchema(nested, `${pointer}/${keyword}/${pointerPart(name)}`);
+        }
+      }
+    }
+    if (!propertiesPresent) return;
+    if (!isRecord(schema.properties)) {
+      diagnose(`${pointer}/properties`, 'properties must be an object map of property schema declarations.');
+      return;
+    }
+    if (schema.type === 'object' && Object.keys(schema.properties).length === 0) {
+      diagnose(`${pointer}/properties`, 'An object declaration must contain at least one property.');
+    }
+    const propertiesPointer = `${pointer}/properties`;
+    for (const [name, property] of Object.entries(schema.properties)) {
+      const propertyPointer = `${propertiesPointer}/${pointerPart(name)}`;
+      diagnoseName(propertyPointer, 'property', name);
+      if (!isRecord(property)) {
+        diagnose(propertyPointer, `Property '${name}' must be a schema object.`);
+        continue;
+      }
+      validateSchema(property, propertyPointer, false, contextualDelta);
+    }
+  };
+  const validateNamespace = (namespace: Record<string, unknown>, pointer: string): void => {
+    for (const [name, member] of Object.entries(namespace)) {
+      if (name === '$import' || name === '$importdefs') continue;
+      const memberPointer = `${pointer}/${pointerPart(name)}`;
+      if (name === 'definitions') diagnose(memberPointer, 'definitions is permitted only at document root.');
+      if (!isRecord(member)) {
+        diagnose(memberPointer, `Definition or namespace '${name}' must be an object.`);
+        continue;
+      }
+      const declaration = Object.prototype.hasOwnProperty.call(member, 'type') ||
+        Object.prototype.hasOwnProperty.call(member, '$ref') ||
+        COMPOSITION_KEYWORDS.some((keyword) => Object.prototype.hasOwnProperty.call(member, keyword));
+      if (declaration) {
+        diagnoseName(memberPointer, 'type', name);
+        const nonSchemaComposition = conditionalCompositionActive && !Object.prototype.hasOwnProperty.call(member, 'type') &&
+          COMPOSITION_KEYWORDS.some((keyword) => Object.prototype.hasOwnProperty.call(member, keyword));
+        validateSchema(member, memberPointer, nonSchemaComposition);
+      } else validateNamespace(member, memberPointer);
+    }
+  };
+
+  requireHeader('$schema', (value) => typeof value === 'string' && absoluteUri(value), '$schema is required and must be an absolute URI.');
+  requireHeader('$id', (value) => typeof value === 'string' && absoluteUri(value), '$id is required and must be an absolute URI.');
+  requireHeader('name', (value) => typeof value === 'string' && IDENTIFIER.test(value), `name is required and must match ${IDENTIFIER.source}.`);
+
+  if (Object.prototype.hasOwnProperty.call(root, '$root')) {
+    const rootPointer = typeof root.$root === 'string' ? decodePointerFragment(root.$root) : undefined;
+    if (rootPointer === undefined || !rootPointer.startsWith('/definitions/')) {
+      diagnose('/$root', '$root must be a JSON Pointer URI fragment into the local definitions namespace.');
+    }
+    if (Object.prototype.hasOwnProperty.call(root, 'type')) diagnose('', '$root and an inline root type are mutually exclusive.');
+    const rootType = rootPointer === undefined ? undefined : pointerAtRoot(root, rootPointer);
+    if (isRecord(rootType) && rootType.abstract === true) diagnose('/$root', '$root must not designate an abstract type.');
+  }
+  if (Object.prototype.hasOwnProperty.call(root, '$offers')) {
+    if (!isRecord(root.$offers)) diagnose('/$offers', '$offers must be an object map.');
+    else for (const [name, offered] of Object.entries(root.$offers)) {
+      const offerPointer = `/$offers/${pointerPart(name)}`;
+      const targets = typeof offered === 'string' ? [offered] : Array.isArray(offered) && offered.length > 0 && offered.every((entry) => typeof entry === 'string') ? offered : undefined;
+      if (!targets || new Set(targets).size !== targets.length) {
+        diagnose(offerPointer, '$offers entries must be one local JSON Pointer fragment or a non-empty duplicate-free array of them.');
+        continue;
+      }
+      for (const target of targets) {
+        const targetPointer = decodePointerFragment(target);
+        if (targetPointer === undefined || !reusableTypePointer(root, targetPointer, nodes)) {
+          diagnose(offerPointer, `Offered definition ${target} does not resolve uniquely to a reusable local type.`);
+        }
+      }
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(root, 'definitions')) {
+    if (!isRecord(root.definitions)) diagnose('/definitions', 'definitions must be an object map of reusable types and namespaces.');
+    else validateNamespace(root.definitions, '/definitions');
+  }
+  if (Object.prototype.hasOwnProperty.call(root, 'type')) validateSchema(root, '');
+  else if (conditionalCompositionActive && COMPOSITION_KEYWORDS.some((keyword) => Object.prototype.hasOwnProperty.call(root, keyword))) validateSchema(root, '', true);
+
+  const visitSchema = (schema: unknown, pointer: string): void => {
+    if (!isRecord(schema)) return;
+    if (pointer !== '' && Object.prototype.hasOwnProperty.call(schema, '$root')) diagnose(`${pointer}/$root`, '$root is permitted only at document root.');
+    if (pointer !== '' && Object.prototype.hasOwnProperty.call(schema, 'definitions')) diagnose(`${pointer}/definitions`, 'definitions is permitted only at document root.');
+    if (isRecord(schema.properties)) {
+      for (const [name, property] of Object.entries(schema.properties)) visitSchema(property, `${pointer}/properties/${pointerPart(name)}`);
+    }
+    if (isRecord(schema.additionalProperties)) visitSchema(schema.additionalProperties, `${pointer}/additionalProperties`);
+    for (const keyword of ['items', 'values'] as const) {
+      visitSchema(schema[keyword], `${pointer}/${keyword}`);
+    }
+    if (conditionalCompositionActive) {
+      for (const keyword of ['not', 'if', 'then', 'else'] as const) visitSchema(schema[keyword], `${pointer}/${keyword}`);
+    }
+    if (validationActive) {
+      for (const keyword of ['contains', 'propertyNames', 'keyNames', 'has'] as const) visitSchema(schema[keyword], `${pointer}/${keyword}`);
+      for (const keyword of ['patternProperties', 'patternKeys'] as const) {
+        if (isRecord(schema[keyword])) for (const [name, value] of Object.entries(schema[keyword])) visitSchema(value, `${pointer}/${keyword}/${pointerPart(name)}`);
+      }
+    }
+    for (const keyword of ['choices'] as const) {
+      if (isRecord(schema[keyword])) for (const [name, value] of Object.entries(schema[keyword])) visitSchema(value, `${pointer}/${keyword}/${pointerPart(name)}`);
+    }
+    if (conditionalCompositionActive) {
+      for (const keyword of ['allOf', 'anyOf', 'oneOf'] as const) {
+        if (Array.isArray(schema[keyword])) schema[keyword].forEach((value, index) => visitSchema(value, `${pointer}/${keyword}/${index}`));
+      }
+    }
+  };
+  visitSchema(root, '');
+}
+
+function buildProjections(
+  root: Record<string, unknown>,
+  uri: string,
+  text: string,
+  diagnostics: Diagnostic[],
+  nodes: readonly ModelNode[]
+): {
+  definitions: DefinitionProjection[];
+  imports: ImportProjection[];
+  references: ReferenceProjection[];
+  semanticPlacements: SemanticPlacementProjection[];
+} {
+  const definitions: DefinitionProjection[] = [];
+  const imports: ImportProjection[] = [];
+  const references: ReferenceProjection[] = [];
+  const semanticPlacements: SemanticPlacementProjection[] = [];
+  const {
+    validationActive,
+    conditionalCompositionActive,
+    unitsActive,
+    semanticAnnotationsActive,
+    alternateNamesActive,
+    importActive,
+    relationsActive
+  } = resolveCapabilities(root);
+  const semanticByPointer = new Map<string, SemanticAnnotationsProjection>();
+  collectCompositionDiagnostics(root, '', uri, text, diagnostics, nodes, conditionalCompositionActive, validationActive);
+  collectSemanticPlacements(root, '', uri, text, diagnostics, semanticPlacements, semanticByPointer, semanticAnnotationsActive, validationActive, conditionalCompositionActive);
+  collectDefinitions(root, root, '', uri, text, definitions, imports, diagnostics, semanticByPointer, nodes, validationActive, conditionalCompositionActive, unitsActive, alternateNamesActive, importActive, relationsActive);
+  collectSchemaProjections(root, uri, text, definitions, diagnostics, semanticByPointer, nodes, validationActive, conditionalCompositionActive, unitsActive, alternateNamesActive, relationsActive);
+  collectReferenceProjections(root, references, validationActive, conditionalCompositionActive, relationsActive);
+  collectAbstractReferenceDiagnostics(root, references, uri, text, diagnostics, nodes);
+  collectStructuralDiagnostics(root, root, '', uri, text, diagnostics, nodes, conditionalCompositionActive, importActive);
+  return { definitions, imports, references, semanticPlacements };
+}
+
+function collectAbstractReferenceDiagnostics(
+  root: Record<string, unknown>,
+  references: readonly ReferenceProjection[],
+  uri: string,
+  text: string,
+  diagnostics: Diagnostic[],
+  nodes: readonly ModelNode[]
+): void {
+  for (const reference of references) {
+    if (reference.kind === 'extends') continue;
+    const targetPointer = decodePointerFragment(reference.target);
+    if (targetPointer === undefined || !reusableTypePointer(root, targetPointer, nodes)) continue;
+    const target = pointerAtRoot(root, targetPointer);
+    if (!isRecord(target) || target.abstract !== true) continue;
+    if (diagnostics.some((diagnostic) => diagnostic.code === 'core.declaration-invalid' && diagnostic.location?.pointer === reference.pointer)) continue;
+    const node = nodeAt(nodes, reference.pointer);
+    diagnostics.push({
+      code: 'core.declaration-invalid',
+      message: 'Abstract declarations may only be used as inheritance bases.',
+      severity: 'error',
+      location: location(uri, reference.pointer, node?.range ?? keywordRange(text, reference.pointer))
+    });
+  }
+}
+
+function collectSchemaProjections(
+  root: Record<string, unknown>,
+  uri: string,
+  text: string,
+  definitions: DefinitionProjection[],
+  diagnostics: Diagnostic[],
+  semanticByPointer: ReadonlyMap<string, SemanticAnnotationsProjection>,
+  nodes: readonly ModelNode[],
+  validationActive: boolean,
+  conditionalCompositionActive: boolean,
+  unitsActive: boolean,
+  alternateNamesActive: boolean,
+  relationsActive: boolean
+): void {
+  const visited = new Set(definitions.map((definition) => definition.pointer));
+  const diagnosed = new Set<string>();
+
+  const visitSchema = (candidate: unknown, pointer: string, namedElement = false): void => {
+    if (!isRecord(candidate)) return;
+    if (diagnosed.has(pointer)) return;
+    // Diagnose each schema location once even if multiple traversal paths can reach it.
+    diagnosed.add(pointer);
+    localTypeReferenceDiagnostics(pointer, candidate, uri, text, diagnostics);
+    relationAndIdentityLocalDiagnostics(root, pointer, candidate, uri, text, diagnostics, nodes, relationsActive);
+    const projectionCandidate = isSchemaDeclaration(candidate) || conditionalCompositionActive && coreForm(candidate, conditionalCompositionActive) === 'composed';
+    if (!visited.has(pointer) && projectionCandidate) {
+      const split = pointer.lastIndexOf('/');
+      const name = pointer === '' ? '$root' : pointer.slice(split + 1).replace(/~1/g, '/').replace(/~0/g, '~');
+      const namespacePointer = pointer === '' ? '' : pointer.slice(0, split);
+      const projection = definitionProjection(root, name, namespacePointer, pointer, candidate, false, namedElement, uri, text, diagnostics, semanticByPointer.get(pointer), nodes, validationActive, conditionalCompositionActive, unitsActive, alternateNamesActive, relationsActive);
+      if (projection) definitions.push(projection);
+      visited.add(pointer);
+    }
+
+    visitDefinitions(candidate.definitions, `${pointer}/definitions`);
+    visitSchemaMap(candidate.properties, `${pointer}/properties`, true);
+    if (isRecord(candidate.additionalProperties)) visitSchema(candidate.additionalProperties, `${pointer}/additionalProperties`);
+    visitSchemaValue(candidate.items, `${pointer}/items`);
+    visitSchemaValue(candidate.values, `${pointer}/values`);
+    visitSchemaMap(candidate.choices, `${pointer}/choices`);
+    if (validationActive) {
+      visitSchemaValue(candidate.contains, `${pointer}/contains`);
+      visitSchemaValue(candidate.propertyNames, `${pointer}/propertyNames`);
+      visitSchemaValue(candidate.keyNames, `${pointer}/keyNames`);
+      visitSchemaValue(candidate.has, `${pointer}/has`);
+      visitSchemaMap(candidate.patternProperties, `${pointer}/patternProperties`);
+      visitSchemaMap(candidate.patternKeys, `${pointer}/patternKeys`);
+    }
+    if (conditionalCompositionActive) {
+      visitSchemaArray(candidate.allOf, `${pointer}/allOf`);
+      visitSchemaArray(candidate.anyOf, `${pointer}/anyOf`);
+      visitSchemaArray(candidate.oneOf, `${pointer}/oneOf`);
+      visitSchemaValue(candidate.not, `${pointer}/not`);
+      visitSchemaValue(candidate.if, `${pointer}/if`);
+      visitSchemaValue(candidate.then, `${pointer}/then`);
+      visitSchemaValue(candidate.else, `${pointer}/else`);
+    }
+    if (Array.isArray(candidate.type)) visitSchemaArray(candidate.type, `${pointer}/type`);
+  };
+
+  const visitDefinitions = (candidate: unknown, pointer: string): void => {
+    if (!isRecord(candidate)) return;
+    for (const [key, entry] of Object.entries(candidate)) {
+      if (key === '$import' || key === '$importdefs' || !isRecord(entry)) continue;
+      const entryPointer = `${pointer}/${pointerPart(key)}`;
+      // Non-schema definition objects are namespaces and must keep traversal ownership semantics.
+      if (looksLikeSchemaObject(entry)) visitSchema(entry, entryPointer, true);
+      else visitDefinitions(entry, entryPointer);
+    }
+  };
+  const visitSchemaMap = (candidate: unknown, pointer: string, namedElements = false): void => {
+    if (!isRecord(candidate)) return;
+    for (const [key, entry] of Object.entries(candidate)) visitSchema(entry, `${pointer}/${pointerPart(key)}`, namedElements);
+  };
+  const visitSchemaArray = (candidate: unknown, pointer: string): void => {
+    if (!Array.isArray(candidate)) return;
+    candidate.forEach((entry, index) => visitSchema(entry, `${pointer}/${index}`));
+  };
+  const visitSchemaValue = (candidate: unknown, pointer: string): void => {
+    if (Array.isArray(candidate)) visitSchemaArray(candidate, pointer);
+    else visitSchema(candidate, pointer);
+  };
+
+  visitSchema(root, '', typeof root.name === 'string');
+}
+
+function collectDefinitions(
+  root: Record<string, unknown>,
+  value: unknown,
+  pointer: string,
+  uri: string,
+  text: string,
+  definitions: DefinitionProjection[],
+  imports: ImportProjection[],
+  diagnostics: Diagnostic[],
+  semanticByPointer: ReadonlyMap<string, SemanticAnnotationsProjection>,
+  nodes: readonly ModelNode[],
+  validationActive: boolean,
+  conditionalCompositionActive: boolean,
+  unitsActive: boolean,
+  alternateNamesActive: boolean,
+  importActive: boolean,
+  relationsActive: boolean
+): void {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return;
+  const object = value as Record<string, unknown>;
+  if (namespacePointer(root, pointer, nodes)) pushImportProjection(pointer, object, uri, text, imports, diagnostics, importActive);
+  const defs = object.definitions;
+  if (defs && typeof defs === 'object' && !Array.isArray(defs)) {
+    if (namespacePointer(root, `${pointer}/definitions`, nodes)) {
+      pushImportProjection(`${pointer}/definitions`, defs as Record<string, unknown>, uri, text, imports, diagnostics, importActive);
+    }
+    for (const [name, declaration] of Object.entries(defs as Record<string, unknown>)) {
+      if (name === '$import' || name === '$importdefs') continue;
+      const encoded = pointerPart(name);
+      const declarationPointer = `${pointer}/definitions/${encoded}`;
+      const projection = definitionProjection(root, name, pointer, declarationPointer, declaration, true, true, uri, text, diagnostics, semanticByPointer.get(declarationPointer), nodes, validationActive, conditionalCompositionActive, unitsActive, alternateNamesActive, relationsActive);
+      if (projection) definitions.push(projection);
+      else collectNamespaceMembers(root, declaration, declarationPointer, uri, text, definitions, imports, diagnostics, semanticByPointer, nodes, validationActive, conditionalCompositionActive, unitsActive, alternateNamesActive, importActive, relationsActive);
+      collectDefinitions(root, declaration, declarationPointer, uri, text, definitions, imports, diagnostics, semanticByPointer, nodes, validationActive, conditionalCompositionActive, unitsActive, alternateNamesActive, importActive, relationsActive);
+    }
+  }
+}
+
+function collectNamespaceMembers(
+  root: Record<string, unknown>,
+  value: unknown,
+  pointer: string,
+  uri: string,
+  text: string,
+  definitions: DefinitionProjection[],
+  imports: ImportProjection[],
+  diagnostics: Diagnostic[],
+  semanticByPointer: ReadonlyMap<string, SemanticAnnotationsProjection>,
+  nodes: readonly ModelNode[],
+  validationActive: boolean,
+  conditionalCompositionActive: boolean,
+  unitsActive: boolean,
+  alternateNamesActive: boolean,
+  importActive: boolean,
+  relationsActive: boolean
+): void {
+  if (!isRecord(value) || !namespacePointer(root, pointer, nodes)) return;
+  for (const [name, declaration] of Object.entries(value)) {
+    if (name === '$import' || name === '$importdefs' || name === 'definitions') continue;
+    const declarationPointer = `${pointer}/${pointerPart(name)}`;
+    const projection = definitionProjection(root, name, pointer, declarationPointer, declaration, true, true, uri, text, diagnostics, semanticByPointer.get(declarationPointer), nodes, validationActive, conditionalCompositionActive, unitsActive, alternateNamesActive, relationsActive);
+    if (projection) definitions.push(projection);
+    else collectNamespaceMembers(root, declaration, declarationPointer, uri, text, definitions, imports, diagnostics, semanticByPointer, nodes, validationActive, conditionalCompositionActive, unitsActive, alternateNamesActive, importActive, relationsActive);
+    collectDefinitions(root, declaration, declarationPointer, uri, text, definitions, imports, diagnostics, semanticByPointer, nodes, validationActive, conditionalCompositionActive, unitsActive, alternateNamesActive, importActive, relationsActive);
+  }
+}
+
+function definitionProjection(
+  root: Record<string, unknown>,
+  name: string,
+  namespacePointer: string,
+  pointer: string,
+  declaration: unknown,
+  reusable: boolean,
+  namedElement: boolean,
+  uri: string,
+  text: string,
+  diagnostics: Diagnostic[],
+  semantic: SemanticAnnotationsProjection | undefined,
+  nodes: readonly ModelNode[],
+  validationActive: boolean,
+  conditionalCompositionActive: boolean,
+  unitsActive: boolean,
+  alternateNamesActive: boolean,
+  relationsActive: boolean
+): DefinitionProjection | undefined {
+  if (!declaration || typeof declaration !== 'object' || Array.isArray(declaration)) return undefined;
+  const value = declaration as Record<string, unknown>;
+  const declarationCore = coreForm(value, conditionalCompositionActive);
+  if (declarationCore === 'unknown') return undefined;
+  const type = declarationType(value);
+  if (value.type !== undefined && !validCoreTypeValue(value.type)) {
+    pushKeywordDiagnostic(diagnostics, uri, `${pointer}/type`, 'type must name a known Core type, be a local type reference, or be an array of those forms.', text);
+  }
+  if (!validationActive) {
+    for (const keyword of VALIDATION_KEYWORDS) if (Object.prototype.hasOwnProperty.call(value, keyword)) {
+      pushKeywordDiagnostic(diagnostics, uri, `${pointer}/${pointerPart(keyword)}`, `${keyword} requires the JSON Structure Validation extension.`, text);
+    }
+  }
+  if (!unitsActive) {
+    for (const keyword of UNITS_KEYWORDS) if (Object.prototype.hasOwnProperty.call(value, keyword)) {
+      pushKeywordDiagnostic(diagnostics, uri, `${pointer}/${pointerPart(keyword)}`, `${keyword} requires the JSON Structure Units extension.`, text);
+    }
+  }
+  const relationItems = relationsActive ? relationProjections(pointer, value.relations, uri, text, diagnostics) : [];
+  const units = unitsActive ? unitsProjection(root, pointer, value, uri, text, diagnostics, nodes) : undefined;
+  const alternateNames = alternateNamesProjection(pointer, value, namedElement, uri, text, diagnostics, nodes, alternateNamesActive);
+  const validation = validationActive ? validationProjection(root, pointer, value, uri, text, diagnostics, nodes) : undefined;
+  const composition = conditionalCompositionActive ? compositionProjection(pointer, value, uri, text, diagnostics) : undefined;
+  const required = requiredProjection(pointer, value, type, uri, text, diagnostics);
+  const properties = schemaObjectMap(value.properties, `${pointer}/properties`, 'properties', uri, text, diagnostics);
+  const identity = relationsActive ? identityProjection(pointer, value, type, properties, nodes) : undefined;
+  const items = collectionMemberProjection(pointer, value, type, 'items', uri, text, diagnostics);
+  const values = collectionMemberProjection(pointer, value, type, 'values', uri, text, diagnostics);
+  const tuple = tupleProjection(pointer, value, type, properties, uri, text, diagnostics);
+  const description = asString(value.description, `${pointer}/description`, 'description', uri, text, diagnostics);
+  const effectiveTypes = effectiveValidationTypes(root, value);
+  const maxLengthPointer = `${pointer}/maxLength`;
+  const maxLength = effectiveTypes.determinate && effectiveTypes.types.length === 1 && effectiveTypes.types[0] === 'string' &&
+    typeof value.maxLength === 'number' && Number.isInteger(value.maxLength) && value.maxLength >= 0 && uniquePointer(nodes, maxLengthPointer)
+      ? value.maxLength : undefined;
+  const binary = binaryAnnotationsProjection(pointer, value, type, uri, text, diagnostics);
+  return {
+    pointer,
+    name,
+    namespacePointer,
+    reusable: reusable && declarationCore !== 'composed',
+    type,
+    coreForm: declarationCore,
+    extends: extendsProjection(value.$extends),
+    identity,
+    relations: relationItems,
+    units,
+    alternateNames,
+    validation,
+    composition,
+    semantic,
+    required,
+    properties,
+    items,
+    values,
+    tuple,
+    maxLength,
+    description,
+    binary
+  };
+}
+
+function alternateNamesProjection(
+  pointer: string,
+  value: Record<string, unknown>,
+  namedElement: boolean,
+  uri: string,
+  text: string,
+  diagnostics: Diagnostic[],
+  nodes: readonly ModelNode[],
+  active: boolean
+): AlternateNamesProjection | undefined {
+  const invalid = new Set<AlternateNamesKeyword>();
+  for (const keyword of ALTERNATE_NAMES_KEYWORDS) {
+    if (!Object.prototype.hasOwnProperty.call(value, keyword)) continue;
+    const keywordPointer = `${pointer}/${pointerPart(keyword)}`;
+    if (!active) {
+      pushKeywordDiagnostic(diagnostics, uri, keywordPointer, `${keyword} requires the JSON Structure Alternate Names extension.`, text);
+      invalid.add(keyword);
+    }
+    if (hasDuplicatePointer(nodes, keywordPointer)) invalid.add(keyword);
+  }
+  if (active) {
+    for (const issue of alternateNamesIssues(value, namedElement)) {
+      invalid.add(issue.keyword);
+      const issuePointer = [issue.keyword, ...issue.path].reduce((current, part) => `${current}/${pointerPart(part)}`, pointer);
+      pushKeywordDiagnostic(diagnostics, uri, issuePointer, issue.message, text);
+    }
+  }
+  const projection: Omit<AlternateNamesProjection, 'inspection'> = {
+    ...(!invalid.has('altnames') && Object.prototype.hasOwnProperty.call(value, 'altnames') ? { altnames: value.altnames as Record<string, string> } : {}),
+    ...(!invalid.has('altenums') && Object.prototype.hasOwnProperty.call(value, 'altenums') ? { altenums: value.altenums as Record<string, Record<string, string>> } : {}),
+    ...(!invalid.has('descriptions') && Object.prototype.hasOwnProperty.call(value, 'descriptions') ? { descriptions: value.descriptions as Record<string, string> } : {})
+  };
+  const inspection = ALTERNATE_NAMES_KEYWORDS.flatMap((keyword) => {
+    const authored = projection[keyword];
+    return authored === undefined ? [] : [{ keyword, authored, effective: authored, emittedJson: JSON.stringify(authored) }];
+  });
+  return hasAnyKey(projection) ? { ...projection, inspection } : undefined;
+}
+
+function identityProjection(
+  pointer: string,
+  value: Record<string, unknown>,
+  type: string | undefined,
+  properties: Readonly<Record<string, Record<string, unknown>>> | undefined,
+  nodes: readonly ModelNode[]
+): readonly string[] | undefined {
+  const identity = value.identity;
+  if ((type !== 'object' && type !== 'tuple') || !Array.isArray(identity) || identity.length === 0 ||
+      !identity.every((entry) => typeof entry === 'string' && entry.length > 0) ||
+      new Set(identity).size !== identity.length || properties === undefined ||
+      !uniquePointer(nodes, `${pointer}/identity`)) return undefined;
+  return identity.every((name) => Object.prototype.hasOwnProperty.call(properties, name) &&
+    uniquePointerPath(nodes, `${pointer}/properties/${pointerPart(name)}`)) ? identity as string[] : undefined;
+}
+
+function pushImportProjection(
+  pointer: string,
+  value: Record<string, unknown>,
+  uri: string,
+  text: string,
+  imports: ImportProjection[],
+  diagnostics: Diagnostic[],
+  active: boolean
+): void {
+  if (!active) {
+    for (const keyword of ['$import', '$importdefs'] as const) {
+      if (Object.prototype.hasOwnProperty.call(value, keyword)) {
+        pushKeywordDiagnostic(diagnostics, uri, `${pointer}/${keyword}`, `${keyword} requires the JSON Structure Import extension.`, text);
+      }
+    }
+    return;
+  }
+  const importValue = value.$import;
+  if (importValue !== undefined) {
+    const importPointer = `${pointer}/$import`;
+    if (isImportUriReference(importValue)) {
+      imports.push({
+        pointer: importPointer,
+        namespacePointer: pointer,
+        keyword: '$import',
+        source: importValue,
+        provenance: 'import'
+      });
+    } else {
+      pushKeywordDiagnostic(diagnostics, uri, importPointer, '$import must be a valid URI-reference string.', text);
+    }
+  }
+  const importDefs = value.$importdefs;
+  if (importDefs !== undefined) {
+    const importDefsPointer = `${pointer}/$importdefs`;
+    if (isImportUriReference(importDefs)) {
+      imports.push({
+        pointer: importDefsPointer,
+        namespacePointer: pointer,
+        keyword: '$importdefs',
+        source: importDefs,
+        provenance: 'importdefs'
+      });
+    } else {
+      pushKeywordDiagnostic(diagnostics, uri, importDefsPointer, '$importdefs must be a valid URI-reference string.', text);
+    }
+  }
+
+  if (value.$import !== undefined && value.$importdefs !== undefined) {
+    pushKeywordDiagnostic(diagnostics, uri, pointer, 'Only one of $import or $importdefs is permitted at a single namespace location.', text);
+  }
+}
+
+function relationProjections(pointer: string, relations: unknown, uri: string, text: string, diagnostics: Diagnostic[]): RelationProjection[] {
+  if (relations === undefined || !isRecord(relations)) return [];
+  const items: RelationProjection[] = [];
+  for (const [name, value] of Object.entries(relations)) {
+    const relationPointer = `${pointer}/relations/${pointerPart(name)}`;
+    if (!IDENTIFIER.test(name)) pushKeywordDiagnostic(diagnostics, uri, relationPointer, `relation name '${name}' is not a valid identifier.`, text);
+    if (!isRecord(value)) {
+      pushKeywordDiagnostic(diagnostics, uri, relationPointer, 'A relation must be an object.', text);
+      continue;
+    }
+    const allowed = ['targettype', 'cardinality', 'scope', 'qualifiertype'];
+    const unsupportedMembers = Object.keys(value).filter((key) => !allowed.includes(key));
+    for (const member of unsupportedMembers) {
+      pushKeywordDiagnostic(diagnostics, uri, `${relationPointer}/${pointerPart(member)}`, `Unsupported relation member '${member}'.`, text);
+    }
+    const targetRef = typeReference(value.targettype);
+    if (targetRef === undefined) pushKeywordDiagnostic(diagnostics, uri, value.targettype === undefined ? relationPointer : `${relationPointer}/targettype`, 'targettype is required and must be a type reference with a string $ref.', text);
+    const cardinality = enumString(value.cardinality, ['single', 'multiple']);
+    if (cardinality === undefined) pushKeywordDiagnostic(diagnostics, uri, value.cardinality === undefined ? relationPointer : `${relationPointer}/cardinality`, "cardinality is required and must be 'single' or 'multiple'.", text);
+    const qualifierRef = value.qualifiertype === undefined ? undefined : typeReference(value.qualifiertype);
+    if (value.qualifiertype !== undefined && qualifierRef === undefined) pushKeywordDiagnostic(diagnostics, uri, `${relationPointer}/qualifiertype`, 'qualifiertype must be a type reference with a string $ref.', text);
+    const scope = validScope(value.scope) ? value.scope as string | readonly string[] : undefined;
+    if (value.scope !== undefined && scope === undefined) pushKeywordDiagnostic(diagnostics, uri, `${relationPointer}/scope`, 'scope must be #, #/..., or an array of those schema fragments.', text);
+    if (targetRef !== undefined && cardinality !== undefined && hasOnlyKeys(value, allowed)) items.push({ pointer: relationPointer, name, targetTypeRef: targetRef, cardinality, scope, qualifierTypeRef: qualifierRef });
+  }
+  return items;
+}
+const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+function collectStructuralDiagnostics(
+  root: Record<string, unknown>,
+  value: unknown,
+  pointer: string,
+  uri: string,
+  text: string,
+  diagnostics: Diagnostic[],
+  nodes: readonly ModelNode[],
+  conditionalCompositionActive: boolean,
+  importActive: boolean
+): void {
+  if (Array.isArray(value)) {
+    value.forEach((entry, index) => collectStructuralDiagnostics(root, entry, `${pointer}/${index}`, uri, text, diagnostics, nodes, conditionalCompositionActive, importActive));
+    return;
+  }
+  if (!isRecord(value)) return;
+  if (importActive) importPlacementDiagnostics(root, pointer, value, uri, text, diagnostics, nodes);
+  for (const [key, entry] of Object.entries(value)) {
+    if (!conditionalCompositionActive && COMPOSITION_KEYWORDS.includes(key as typeof COMPOSITION_KEYWORDS[number])) continue;
+    if (!importActive && (key === '$import' || key === '$importdefs')) continue;
+    collectStructuralDiagnostics(root, entry, `${pointer}/${pointerPart(key)}`, uri, text, diagnostics, nodes, conditionalCompositionActive, importActive);
+  }
+}
+
+function requiredProjection(
+  pointer: string,
+  value: Record<string, unknown>,
+  type: string | undefined,
+  uri: string,
+  text: string,
+  diagnostics: Diagnostic[]
+): readonly string[] | readonly (readonly string[])[] | undefined {
+  if (value.required === undefined) return undefined;
+  const properties = value.properties;
+  const required = value.required;
+  const simple = Array.isArray(required) && required.every((entry) => typeof entry === 'string');
+  const alternatives = Array.isArray(required) && required.length > 0 && required.every((entry) => Array.isArray(entry) && entry.length > 0 && entry.every((name) => typeof name === 'string'));
+  const sets = simple ? [required as string[]] : alternatives ? required as string[][] : [];
+  const valid = type === 'object' && isRecord(properties) && sets.length > 0 && sets.every((set) =>
+    new Set(set).size === set.length && set.every((name) => Object.prototype.hasOwnProperty.call(properties, name)));
+  if (!valid) {
+    pushKeywordDiagnostic(diagnostics, uri, `${pointer}/required`, 'required must be a string array or non-empty array of non-empty string arrays naming object properties.', text);
+    return undefined;
+  }
+  return required as string[] | string[][];
+}
+
+function collectionMemberProjection(
+  pointer: string,
+  value: Record<string, unknown>,
+  type: string | undefined,
+  keyword: 'items' | 'values',
+  uri: string,
+  text: string,
+  diagnostics: Diagnostic[]
+): Record<string, unknown> | undefined {
+  const candidate = value[keyword];
+  const expected = keyword === 'items' ? type === 'array' || type === 'set' : type === 'map';
+  if (candidate === undefined) {
+    if (expected) pushKeywordDiagnostic(diagnostics, uri, pointer, `${keyword} is required for ${type} declarations.`, text);
+    return undefined;
+  }
+  if (!expected || !isRecord(candidate) || !isSchemaDeclaration(candidate)) {
+    pushKeywordDiagnostic(diagnostics, uri, `${pointer}/${keyword}`, `${keyword} must be a schema on the applicable collection declaration.`, text);
+    return undefined;
+  }
+  return candidate;
+}
+
+function tupleProjection(
+  pointer: string,
+  value: Record<string, unknown>,
+  type: string | undefined,
+  properties: Readonly<Record<string, Record<string, unknown>>> | undefined,
+  uri: string,
+  text: string,
+  diagnostics: Diagnostic[]
+): readonly string[] | undefined {
+  if (value.tuple === undefined) {
+    if (type === 'tuple') pushKeywordDiagnostic(diagnostics, uri, pointer, 'tuple is required for tuple declarations.', text);
+    return undefined;
+  }
+  const order = value.tuple;
+  const valid = type === 'tuple' && Array.isArray(order) && order.every((entry) => typeof entry === 'string') &&
+    new Set(order).size === order.length && properties !== undefined && order.length === Object.keys(properties).length &&
+    order.every((name) => Object.prototype.hasOwnProperty.call(properties, name));
+  if (!valid) {
+    pushKeywordDiagnostic(diagnostics, uri, `${pointer}/tuple`, 'tuple must list every tuple property exactly once.', text);
+    return undefined;
+  }
+  return order as string[];
+}
+
+function binaryAnnotationsProjection(pointer: string, value: Record<string, unknown>, type: string | undefined, uri: string, text: string, diagnostics: Diagnostic[]) {
+  if (type !== 'binary') {
+    for (const keyword of ['contentEncoding', 'contentCompression', 'contentMediaType'] as const) {
+      if (value[keyword] !== undefined) pushKeywordDiagnostic(diagnostics, uri, `${pointer}/${keyword}`, `${keyword} has an invalid value or placement.`, text);
+    }
+    return undefined;
+  }
+  const projection: { contentEncoding: { explicit?: string; effective: string }; contentCompression?: string; contentMediaType?: string } = {
+    contentEncoding: { effective: 'base64' }
+  };
+  const read = (keyword: 'contentCompression' | 'contentMediaType', valid: (candidate: unknown) => candidate is string): void => {
+    const candidate = value[keyword];
+    if (candidate === undefined) return;
+    if (valid(candidate)) projection[keyword] = candidate;
+    else pushKeywordDiagnostic(diagnostics, uri, `${pointer}/${keyword}`, `${keyword} has an invalid value or placement.`, text);
+  };
+  const contentEncoding = value.contentEncoding;
+  if (contentEncoding !== undefined) {
+    if (typeof contentEncoding === 'string' && ['base64', 'base64url', 'base16', 'base32', 'base32hex'].includes(contentEncoding)) {
+      projection.contentEncoding = { explicit: contentEncoding, effective: contentEncoding };
+    } else {
+      pushKeywordDiagnostic(diagnostics, uri, `${pointer}/contentEncoding`, 'contentEncoding has an invalid value or placement.', text);
+    }
+  }
+  read('contentCompression', (candidate): candidate is string => typeof candidate === 'string' && ['gzip', 'deflate', 'zlib', 'brotli'].includes(candidate));
+  read('contentMediaType', (candidate): candidate is string => typeof candidate === 'string' && mediaType(candidate));
+  return projection;
+}
+
+function isSchemaDeclaration(value: Record<string, unknown>): boolean {
+  if (typeof value.type === 'string') return true;
+  if (Array.isArray(value.type)) return true;
+  return typeReference(value.type) !== undefined;
+}
+
+function mediaType(value: string): boolean {
+  return /^[!#$%&'*+.^_`|~0-9A-Za-z-]+\/[!#$%&'*+.^_`|~0-9A-Za-z-]+(?:\s*;\s*[!#$%&'*+.^_`|~0-9A-Za-z-]+=(?:[!#$%&'*+.^_`|~0-9A-Za-z-]+|"[^"]*"))*$/.test(value);
+}
+
+function localTypeReferenceDiagnostics(pointer: string, value: Record<string, unknown>, uri: string, text: string, diagnostics: Diagnostic[]): void {
+  const validate = (candidate: unknown, typePointer: string): void => {
+    if (!isRecord(candidate) || !Object.prototype.hasOwnProperty.call(candidate, '$ref')) return;
+    const reference = typeReference(candidate);
+    if (reference === undefined || !validPointerFragment(reference)) {
+      pushKeywordDiagnostic(diagnostics, uri, `${typePointer}/$ref`, '$ref is permitted in a type value with an optional string description and must be a valid JSON Pointer URI fragment.', text);
+    }
+  };
+  if (Array.isArray(value.type)) {
+    value.type.forEach((member, index) => validate(member, `${pointer}/type/${index}`));
+  } else {
+    validate(value.type, `${pointer}/type`);
+  }
+  if (pointer === '' && typeReference(value.type) !== undefined) {
+    pushKeywordDiagnostic(diagnostics, uri, '/type', '$ref is not permitted inside the type of the root object.', text);
+  }
+}
+
+function relationAndIdentityLocalDiagnostics(
+  root: Record<string, unknown>,
+  pointer: string,
+  declaration: Record<string, unknown>,
+  uri: string,
+  text: string,
+  diagnostics: Diagnostic[],
+  nodes: readonly ModelNode[],
+  active: boolean
+): void {
+  const type = declaration.type;
+  const hasIdentity = Object.prototype.hasOwnProperty.call(declaration, 'identity');
+  const hasRelations = Object.prototype.hasOwnProperty.call(declaration, 'relations');
+  const objectOrTuple = type === 'object' || type === 'tuple';
+
+  if (!active) {
+    if (hasIdentity) pushKeywordDiagnostic(diagnostics, uri, `${pointer}/identity`, 'identity requires the JSON Structure Relations extension.', text);
+    if (hasRelations) pushKeywordDiagnostic(diagnostics, uri, `${pointer}/relations`, 'relations requires the JSON Structure Relations extension.', text);
+    return;
+  }
+
+  if (hasIdentity && !objectOrTuple) {
+    pushKeywordDiagnostic(diagnostics, uri, `${pointer}/identity`, 'identity is permitted only on object or tuple declarations.', text);
+  }
+  if (hasRelations && !objectOrTuple) {
+    pushKeywordDiagnostic(diagnostics, uri, `${pointer}/relations`, 'relations is permitted only on object or tuple declarations.', text);
+  }
+  if (hasRelations && !isRecord(declaration.relations)) {
+    pushKeywordDiagnostic(diagnostics, uri, `${pointer}/relations`, 'relations must be an object map of relation declarations.', text);
+  }
+
+  if (hasIdentity && objectOrTuple) {
+    const identity = declaration.identity;
+    if (!uniquePointer(nodes, `${pointer}/identity`) || !Array.isArray(identity) || identity.length === 0 || !identity.every((entry) => typeof entry === 'string' && entry.length > 0)) {
+      pushKeywordDiagnostic(diagnostics, uri, `${pointer}/identity`, 'identity must be a non-empty array of property names.', text);
+    } else {
+      if (new Set(identity).size !== identity.length) {
+        pushKeywordDiagnostic(diagnostics, uri, `${pointer}/identity`, 'identity must not contain duplicate property names.', text);
+      }
+      if (declaration.properties && isRecord(declaration.properties)) {
+        for (const [index, key] of identity.entries()) {
+          if (!Object.prototype.hasOwnProperty.call(declaration.properties, key) || !uniquePointer(nodes, `${pointer}/properties/${pointerPart(key)}`)) {
+            pushKeywordDiagnostic(diagnostics, uri, `${pointer}/identity/${index}`, `identity references unknown property '${key}'.`, text);
+          }
+        }
+      } else {
+        pushKeywordDiagnostic(diagnostics, uri, `${pointer}/identity`, 'identity requires a properties map on the same declaration.', text);
+      }
+    }
+  }
+
+  if (hasRelations && isRecord(declaration.relations)) {
+    const relationNames = Object.keys(declaration.relations);
+    const properties = declaration.properties;
+    if (isRecord(properties)) {
+      for (const relationName of relationNames) {
+        if (Object.prototype.hasOwnProperty.call(properties, relationName)) {
+          pushKeywordDiagnostic(
+            diagnostics,
+            uri,
+            `${pointer}/relations/${pointerPart(relationName)}`,
+            `relation name '${relationName}' collides with a property name in the same declaration.`,
+            text
+          );
+        }
+      }
+    }
+    for (const relationName of relationNames) {
+      if (!IDENTIFIER.test(relationName)) {
+        pushKeywordDiagnostic(diagnostics, uri, `${pointer}/relations/${pointerPart(relationName)}`, `relation name '${relationName}' is not a valid identifier.`, text);
+      }
+      const relation = declaration.relations[relationName];
+      if (!isRecord(relation)) continue;
+      const relationPointer = `${pointer}/relations/${pointerPart(relationName)}`;
+      const targetRef = typeReference(relation.targettype);
+      if (typeof targetRef === 'string' && targetRef.startsWith('#/')) {
+        const targetPointer = targetRef.slice(1);
+        const target = pointerAtRoot(root, targetPointer);
+        if (target !== undefined && uniquePointerPath(nodes, targetPointer) &&
+            (!reusableTypePointer(root, targetPointer, nodes) ||
+             !localIdentityValid(target, targetPointer, nodes) && !effectiveIdentityMayResolve(target))) {
+          pushKeywordDiagnostic(diagnostics, uri, `${relationPointer}/targettype/$ref`, 'targettype must reference a reusable object or tuple declaration with a locally valid identity.', text);
+        }
+      }
+      const qualifierRef = relation.qualifiertype === undefined ? undefined : typeReference(relation.qualifiertype);
+      if (typeof qualifierRef === 'string' && qualifierRef.startsWith('#/')) {
+        const qualifier = pointerAtRoot(root, qualifierRef.slice(1));
+        if (qualifier !== undefined && !reusableTypePointer(root, qualifierRef.slice(1), nodes)) {
+          pushKeywordDiagnostic(diagnostics, uri, `${relationPointer}/qualifiertype/$ref`, 'qualifiertype references a local declaration path that does not resolve.', text);
+        }
+      }
+      if (relation.scope !== undefined) {
+        const scopes = typeof relation.scope === 'string' ? [relation.scope] : Array.isArray(relation.scope) ? relation.scope : [];
+        for (const [index, scope] of scopes.entries()) {
+          if (typeof scope !== 'string') continue;
+          const path = Array.isArray(relation.scope) ? `${relationPointer}/scope/${index}` : `${relationPointer}/scope`;
+          if (typeof targetRef !== 'string' || scopeCollectionCompatible(root, scope, targetRef, nodes) === false) {
+            pushKeywordDiagnostic(diagnostics, uri, path, 'scope must resolve to an array, set, or map whose items or values are compatible with targettype.', text);
+          }
+        }
+      }
+    }
+  }
+}
+function pointerAtRoot(root: unknown, pointer: string): unknown {
+  const parts = pointerSegments(pointer);
+  let current: unknown = root;
+  for (const part of parts) {
+    if (!isRecord(current)) return undefined;
+    current = current[part];
+  }
+  return current;
+}
+function uniquePointer(nodes: readonly ModelNode[], pointer: string): boolean {
+  return nodesByPointer(nodes).get(pointer)?.length === 1;
+}
+function uniquePointerPath(nodes: readonly ModelNode[], pointer: string): boolean {
+  if (pointer === '') return uniquePointer(nodes, '');
+  const segments = pointer.slice(1).split('/');
+  let current = '';
+  for (const segment of segments) {
+    current += `/${segment}`;
+    if (!uniquePointer(nodes, current)) return false;
+  }
+  return true;
+}
+function isTypeDeclaration(value: unknown): value is Record<string, unknown> {
+  return isRecord(value) && validCoreTypeValue(value.type);
+}
+function reusableTypePointer(root: Record<string, unknown>, pointer: string, nodes: readonly ModelNode[]): boolean {
+  if (!pointer.startsWith('/definitions/') || !uniquePointerPath(nodes, pointer)) return false;
+  const parts = pointerSegments(pointer).slice(1);
+  let current: unknown = root.definitions;
+  if (!isRecord(current)) return false;
+  for (let index = 0; index < parts.length; index++) {
+    current = current[parts[index]];
+    if (!isRecord(current) || (index < parts.length - 1 && isTypeDeclaration(current))) return false;
+  }
+  return isTypeDeclaration(current);
+}
+function localIdentityValid(value: unknown, pointer: string, nodes: readonly ModelNode[]): boolean {
+  if (!isRecord(value) || (value.type !== 'object' && value.type !== 'tuple') || !uniquePointer(nodes, `${pointer}/identity`)) return false;
+  if (!Array.isArray(value.identity) || value.identity.length === 0 || new Set(value.identity).size !== value.identity.length || !isRecord(value.properties)) return false;
+  return value.identity.every((entry) => typeof entry === 'string' && Object.prototype.hasOwnProperty.call(value.properties, entry) &&
+    uniquePointer(nodes, `${pointer}/properties/${pointerPart(entry)}`));
+}
+function effectiveIdentityMayResolve(value: unknown): boolean {
+  return isRecord(value) && (typeReference(value.type) !== undefined || typeof value.$extends === 'string' || Array.isArray(value.$extends));
+}
+function schemaReference(value: unknown): string | undefined {
+  if (!isRecord(value)) return undefined;
+  return typeReference(value.type);
+}
+function referenceCompatible(root: Record<string, unknown>, candidate: string, target: string, seen = new Set<string>()): boolean | undefined {
+  if (candidate === target) return true;
+  const key = `${candidate}\u0000${target}`;
+  if (!candidate.startsWith('#/') || !target.startsWith('#/') || seen.has(key)) return false;
+  seen.add(key);
+  const declaration = pointerAtRoot(root, candidate.slice(1));
+  if (!isRecord(declaration)) return pointerMayResolveThroughImportOrInheritance(root, candidate.slice(1)) ? undefined : false;
+  const targetDeclaration = pointerAtRoot(root, target.slice(1));
+  if (isRecord(targetDeclaration)) {
+    const targetAlias = schemaReference(targetDeclaration);
+    if (targetAlias !== undefined) return referenceCompatible(root, candidate, targetAlias, seen);
+  }
+  const alias = schemaReference(declaration);
+  if (alias !== undefined) return referenceCompatible(root, alias, target, seen);
+  const bases = typeof declaration.$extends === 'string' ? [declaration.$extends] : Array.isArray(declaration.$extends) ? declaration.$extends : [];
+  let indeterminate = false;
+  for (const base of bases) {
+    if (typeof base !== 'string') continue;
+    const compatible = referenceCompatible(root, base, target, seen);
+    if (compatible === true) return true;
+    indeterminate ||= compatible === undefined;
+  }
+  return indeterminate ? undefined : false;
+}
+function collectionCompatible(
+  root: Record<string, unknown>,
+  value: unknown,
+  targetRef: string,
+  seen = new Set<Readonly<Record<string, unknown>>>()
+): boolean | undefined {
+  if (!isRecord(value) || seen.has(value)) return false;
+  const nextSeen = new Set(seen).add(value);
+  const alias = schemaReference(value);
+  if (alias !== undefined) {
+    const target = alias.startsWith('#/') ? pointerAtRoot(root, alias.slice(1)) : undefined;
+    return target === undefined
+      ? pointerMayResolveThroughImportOrInheritance(root, alias.slice(1)) ? undefined : false
+      : collectionCompatible(root, target, targetRef, nextSeen);
+  }
+  if (!['array', 'set', 'map'].includes(String(value.type))) return false;
+  const memberRef = schemaReference(value.type === 'map' ? value.values : value.items);
+  return memberRef !== undefined && referenceCompatible(root, memberRef, targetRef);
+}
+function scopeCollectionCompatible(root: Record<string, unknown>, scope: string, targetRef: string, nodes: readonly ModelNode[]): boolean | undefined {
+  if (scope === '#') {
+    const rootPointer = typeof root.$root === 'string' ? decodePointerFragment(root.$root) : undefined;
+    if (Object.prototype.hasOwnProperty.call(root, 'type') || rootPointer === undefined) return false;
+    if (!reusableTypePointer(root, rootPointer, nodes)) return pointerMayResolveThroughImportOrInheritance(root, rootPointer) ? undefined : false;
+    return collectionCompatible(root, pointerAtRoot(root, rootPointer), targetRef);
+  }
+  if (!scope.startsWith('#/')) return false;
+  if (!uniquePointerPath(nodes, scope.slice(1))) return pointerMayResolveThroughImportOrInheritance(root, scope.slice(1)) ? undefined : false;
+  return collectionCompatible(root, pointerAtRoot(root, scope.slice(1)), targetRef);
+}
+function pointerMayResolveThroughImportOrInheritance(root: Record<string, unknown>, pointer: string): boolean {
+  const parts = pointerSegments(pointer);
+  let current: unknown = root;
+  let declaration: Readonly<Record<string, unknown>> | undefined = root;
+  for (const part of parts) {
+    if (!isRecord(current)) return false;
+    const object = current;
+    const imports = ['$import', '$importdefs'].filter((keyword) => typeof object[keyword] === 'string');
+    if (imports.length === 1) return true;
+    if (Object.prototype.hasOwnProperty.call(object, 'type') || Object.prototype.hasOwnProperty.call(object, '$extends')) declaration = object;
+    if (!Object.prototype.hasOwnProperty.call(object, part)) {
+      return !!declaration && Object.prototype.hasOwnProperty.call(declaration, '$extends');
+    }
+    current = object[part];
+  }
+  return false;
+}
+function importPlacementDiagnostics(
+  root: Record<string, unknown>,
+  pointer: string,
+  namespace: Record<string, unknown>,
+  uri: string,
+  text: string,
+  diagnostics: Diagnostic[],
+  nodes: readonly ModelNode[]
+): void {
+  const importPresent = Object.prototype.hasOwnProperty.call(namespace, '$import');
+  const importDefsPresent = Object.prototype.hasOwnProperty.call(namespace, '$importdefs');
+  if (!importPresent && !importDefsPresent) return;
+  const allowed = namespacePointer(root, pointer, nodes);
+  if (!allowed) {
+    if (importPresent) pushKeywordDiagnostic(diagnostics, uri, `${pointer}/$import`, '$import is only permitted at document root or namespace definitions locations.', text);
+    if (importDefsPresent) pushKeywordDiagnostic(diagnostics, uri, `${pointer}/$importdefs`, '$importdefs is only permitted at document root or namespace definitions locations.', text);
+  }
+}
+function namespacePointer(root: Record<string, unknown>, pointer: string, nodes: readonly ModelNode[]): boolean {
+  if (pointer === '') return true;
+  if (pointer === '/definitions') return isRecord(root.definitions) && uniquePointerPath(nodes, pointer);
+  if (!pointer.startsWith('/definitions/') || !uniquePointerPath(nodes, pointer)) return false;
+  const parts = pointerSegments(pointer).slice(1);
+  let current: unknown = root.definitions;
+  if (!isRecord(current)) return false;
+  for (const part of parts) {
+    current = current[part];
+    if (!isRecord(current) || isTypeDeclaration(current)) return false;
+  }
+  return true;
+}
+function typeReference(value: unknown): string | undefined {
+  return isRecord(value) && hasOnlyKeys(value, ['$ref', 'description']) && typeof value.$ref === 'string' &&
+    (value.description === undefined || typeof value.description === 'string') ? value.$ref : undefined;
+}
+function validPointerFragment(value: string): boolean {
+  if (!value.startsWith('#/')) return false;
+  try {
+    const decoded = decodeURIComponent(value.slice(1));
+    return decoded.startsWith('/') && !/~(?:[^01]|$)/.test(decoded);
+  } catch {
+    return false;
+  }
+}
+function isSchemaFragmentPointer(value: unknown): value is string { return typeof value === 'string' && (value === '#' || value.startsWith('#/')); }
+function validScope(value: unknown): boolean { return value === undefined || isSchemaFragmentPointer(value) || (Array.isArray(value) && value.length > 0 && value.every(isSchemaFragmentPointer)); }
+function unitsProjection(
+  root: Record<string, unknown>,
+  pointer: string,
+  value: Record<string, unknown>,
+  uri: string,
+  text: string,
+  diagnostics: Diagnostic[],
+  nodes: readonly ModelNode[]
+): UnitsProjection | undefined {
+  const invalid = new Set<UnitsKeyword>();
+  for (const issue of unitsIssues(root, value)) {
+    if (issue.severity === 'error') invalid.add(issue.keyword);
+    diagnostics.push({
+      code: issue.severity === 'error' ? 'json.keyword-invalid' : 'units.incompatible-pair',
+      message: issue.message,
+      severity: issue.severity,
+      location: location(uri, `${pointer}/${pointerPart(issue.keyword)}`, keywordRange(text, `${pointer}/${pointerPart(issue.keyword)}`))
+    });
+  }
+  for (const keyword of UNITS_KEYWORDS) {
+    if (hasDuplicatePointer(nodes, `${pointer}/${pointerPart(keyword)}`)) invalid.add(keyword);
+  }
+  const projection: UnitsProjection = {
+    ...(!invalid.has('symbol') && typeof value.symbol === 'string' ? { symbol: value.symbol } : {}),
+    ...(!invalid.has('symbols') && isRecord(value.symbols) ? { symbols: value.symbols as Record<string, string> } : {}),
+    ...(!invalid.has('unit') && typeof value.unit === 'string' ? { unit: value.unit } : {}),
+    ...(!invalid.has('ucumUnit') && typeof value.ucumUnit === 'string' ? {
+      ucumUnit: value.ucumUnit,
+      preferredComputationalUnit: { explicit: value.ucumUnit, effective: value.ucumUnit }
+    } : {}),
+    ...(!invalid.has('currency') && typeof value.currency === 'string' ? { currency: value.currency } : {})
+  };
+  return hasAnyKey(projection) ? projection : undefined;
+}
+
+function validationProjection(
+  root: Record<string, unknown>,
+  pointer: string,
+  value: Record<string, unknown>,
+  uri: string,
+  text: string,
+  diagnostics: Diagnostic[],
+  nodes: readonly ModelNode[]
+): ValidationProjection | undefined {
+  const invalid = new Set<ValidationKeyword>();
+  for (const issue of validationIssues(value, effectiveValidationTypes(root, value))) {
+    invalid.add(issue.keyword);
+    pushKeywordDiagnostic(diagnostics, uri, `${pointer}/${pointerPart(issue.keyword)}`, issue.message, text);
+  }
+  const projection: Record<string, unknown> = {};
+  for (const keyword of VALIDATION_KEYWORDS) {
+    const keywordPointer = `${pointer}/${pointerPart(keyword)}`;
+    if (hasDuplicatePointer(nodes, keywordPointer)) invalid.add(keyword);
+    if (!invalid.has(keyword) && Object.prototype.hasOwnProperty.call(value, keyword)) projection[keyword] = value[keyword];
+  }
+  if (!invalid.has('contains') && Object.prototype.hasOwnProperty.call(value, 'contains')) {
+    projection.effectiveMinContains = {
+      ...(Object.prototype.hasOwnProperty.call(value, 'minContains') && !invalid.has('minContains') ? { explicit: value.minContains as number } : {}),
+      effective: !invalid.has('minContains') && typeof value.minContains === 'number' ? value.minContains : 1
+    };
+  }
+  return hasAnyKey(projection) ? projection : undefined;
+}
+
+function compositionProjection(
+  pointer: string,
+  value: Record<string, unknown>,
+  uri: string,
+  text: string,
+  diagnostics: Diagnostic[]
+): ConditionalCompositionProjection | undefined {
+  const values = {
+    allOf: schemaObjectArray(value.allOf, `${pointer}/allOf`, 'allOf', uri, text, diagnostics, 1),
+    anyOf: schemaObjectArray(value.anyOf, `${pointer}/anyOf`, 'anyOf', uri, text, diagnostics, 1),
+    oneOf: schemaObjectArray(value.oneOf, `${pointer}/oneOf`, 'oneOf', uri, text, diagnostics, 1),
+    not: asSchemaObject(value.not, `${pointer}/not`, 'not', uri, text, diagnostics),
+    if: asSchemaObject(value.if, `${pointer}/if`, 'if', uri, text, diagnostics),
+    then: asSchemaObject(value.then, `${pointer}/then`, 'then', uri, text, diagnostics),
+    else: asSchemaObject(value.else, `${pointer}/else`, 'else', uri, text, diagnostics)
+  };
+  const inspection = COMPOSITION_KEYWORDS.flatMap((keyword) => {
+    const authored = values[keyword];
+    return authored === undefined ? [] : [{ keyword, authored, effective: authored, emittedJson: JSON.stringify(authored) }];
+  });
+  return hasAnyKey(values) ? { ...values, inspection } : undefined;
+}
+
+function collectCompositionDiagnostics(
+  value: unknown,
+  pointer: string,
+  uri: string,
+  text: string,
+  diagnostics: Diagnostic[],
+  nodes: readonly ModelNode[],
+  active: boolean,
+  validationActive: boolean
+): void {
+  const visitSchema = (candidate: unknown, candidatePointer: string): void => {
+    if (!isRecord(candidate)) return;
+    for (const keyword of COMPOSITION_KEYWORDS) {
+      const keywordPointer = `${candidatePointer}/${keyword}`;
+      if (!Object.prototype.hasOwnProperty.call(candidate, keyword)) continue;
+      if (!active) {
+        pushKeywordDiagnostic(diagnostics, uri, keywordPointer, `${keyword} requires the JSON Structure Conditional Composition extension.`, text);
+        continue;
+      }
+      if (hasDuplicatePointer(nodes, keywordPointer)) continue;
+      const authored = candidate[keyword];
+      if (keyword === 'allOf' || keyword === 'anyOf' || keyword === 'oneOf') {
+        if (!Array.isArray(authored) || authored.length === 0 || !authored.every(isRecord)) {
+          pushKeywordDiagnostic(diagnostics, uri, keywordPointer, `${keyword} must be a non-empty array of schema objects.`, text);
+        }
+      } else if (!isRecord(authored)) {
+        pushKeywordDiagnostic(diagnostics, uri, keywordPointer, `${keyword} must be a schema object.`, text);
+      }
+    }
+    visitDefinitions(candidate.definitions, `${candidatePointer}/definitions`);
+    visitSchemaMap(candidate.properties, `${candidatePointer}/properties`);
+    if (isRecord(candidate.additionalProperties)) visitSchema(candidate.additionalProperties, `${candidatePointer}/additionalProperties`);
+    visitSchemaValue(candidate.items, `${candidatePointer}/items`);
+    visitSchemaValue(candidate.values, `${candidatePointer}/values`);
+    visitSchemaMap(candidate.choices, `${candidatePointer}/choices`);
+    if (validationActive) {
+      visitSchemaValue(candidate.contains, `${candidatePointer}/contains`);
+      visitSchemaValue(candidate.propertyNames, `${candidatePointer}/propertyNames`);
+      visitSchemaValue(candidate.keyNames, `${candidatePointer}/keyNames`);
+      visitSchemaValue(candidate.has, `${candidatePointer}/has`);
+      visitSchemaMap(candidate.patternProperties, `${candidatePointer}/patternProperties`);
+      visitSchemaMap(candidate.patternKeys, `${candidatePointer}/patternKeys`);
+    }
+    if (active) {
+      if (Array.isArray(candidate.allOf)) candidate.allOf.forEach((entry, index) => visitSchema(entry, `${candidatePointer}/allOf/${index}`));
+      if (Array.isArray(candidate.anyOf)) candidate.anyOf.forEach((entry, index) => visitSchema(entry, `${candidatePointer}/anyOf/${index}`));
+      if (Array.isArray(candidate.oneOf)) candidate.oneOf.forEach((entry, index) => visitSchema(entry, `${candidatePointer}/oneOf/${index}`));
+      for (const keyword of ['not', 'if', 'then', 'else'] as const) visitSchema(candidate[keyword], `${candidatePointer}/${keyword}`);
+    }
+    if (Array.isArray(candidate.type)) candidate.type.forEach((entry, index) => visitSchema(entry, `${candidatePointer}/type/${index}`));
+  };
+  const visitDefinitions = (candidate: unknown, candidatePointer: string): void => {
+    if (!isRecord(candidate)) return;
+    for (const [name, entry] of Object.entries(candidate)) {
+      if (name === '$import' || name === '$importdefs' || !isRecord(entry)) continue;
+      const entryPointer = `${candidatePointer}/${pointerPart(name)}`;
+      if (looksLikeSchemaObject(entry)) visitSchema(entry, entryPointer);
+      else visitDefinitions(entry, entryPointer);
+    }
+  };
+  const visitSchemaMap = (candidate: unknown, candidatePointer: string): void => {
+    if (!isRecord(candidate)) return;
+    for (const [name, entry] of Object.entries(candidate)) visitSchema(entry, `${candidatePointer}/${pointerPart(name)}`);
+  };
+  const visitSchemaValue = (candidate: unknown, candidatePointer: string): void => {
+    if (isRecord(candidate)) visitSchema(candidate, candidatePointer);
+  };
+  visitSchema(value, pointer);
+}
+
+const SEMANTIC_COLLECTION_TYPES = new Set(['array', 'set', 'map', 'choice']);
+const SEMANTIC_PROPERTY_OR_COLLECTION = new Set<SemanticAnnotationKeyword>([
+  'observedProperty', 'semanticRole', 'derivation', 'statistic', 'temporalReferenceSystem',
+  'cadence', 'codedValues', 'measurementConditioning'
+]);
+const SEMANTIC_PROPERTY_ONLY = new Set<SemanticAnnotationKeyword>(['phenomenonTimeRelation', 'supportPeriod', 'referenceRole']);
+const SEMANTIC_RECORD_ONLY = new Set<SemanticAnnotationKeyword>([
+  'coordinateReferenceSystem', 'vectorReferenceFrames', 'tensorReferenceFrames', 'frameTransforms',
+  'linearReferenceSystem', 'colorSpaces', 'audioChannels', 'spectralBands'
+]);
+function semanticMemberPosition(root: Readonly<Record<string, unknown>>, pointer: string): 'property' | 'collection' | undefined {
+  for (const [marker, ownerTypes, position] of [
+    ['/properties/', ['object', 'tuple'], 'property'],
+    ['/choices/', ['choice'], 'collection']
+  ] as const) {
+    const index = pointer.lastIndexOf(marker);
+    if (index >= 0 && !pointer.slice(index + marker.length).includes('/')) {
+      const owner = pointerAtRoot(root, pointer.slice(0, index));
+      if (isRecord(owner) && ownerTypes.includes(owner.type as never)) return position;
+    }
+  }
+  for (const [suffix, ownerTypes] of [['/items', ['array', 'set']], ['/values', ['map']]] as const) {
+    if (!pointer.endsWith(suffix)) continue;
+    const owner = pointerAtRoot(root, pointer.slice(0, -suffix.length));
+    if (isRecord(owner) && ownerTypes.includes(owner.type as never)) return 'collection';
+  }
+  return undefined;
+}
+function semanticKeywordPlacementValid(root: Readonly<Record<string, unknown>>, pointer: string, value: Record<string, unknown>, keyword: SemanticAnnotationKeyword): boolean {
+  if (keyword === 'concepts') return true;
+  const memberPosition = semanticMemberPosition(root, pointer);
+  if (SEMANTIC_PROPERTY_ONLY.has(keyword)) return memberPosition === 'property';
+  if (SEMANTIC_PROPERTY_OR_COLLECTION.has(keyword)) {
+    return memberPosition !== undefined || SEMANTIC_COLLECTION_TYPES.has(String(value.type)) ||
+      ((value.type === 'object' || value.type === 'tuple') && (keyword === 'observedProperty' || keyword === 'temporalReferenceSystem'));
+  }
+  return SEMANTIC_RECORD_ONLY.has(keyword) && (value.type === 'object' || value.type === 'tuple');
+}
+function semanticProjection(root: Record<string, unknown>, pointer: string, value: Record<string, unknown>, uri: string, text: string, diagnostics: Diagnostic[]): SemanticAnnotationsProjection | undefined {
+  const read = <T>(keyword: string, validate: (candidate: unknown) => candidate is T): T | undefined => {
+    const candidate = value[keyword];
+    if (candidate === undefined) return undefined;
+    if (!semanticKeywordPlacementValid(root, pointer, value, keyword as SemanticAnnotationKeyword)) {
+      pushKeywordDiagnostic(diagnostics, uri, `${pointer}/${keyword}`, `${keyword} is not permitted at this schema position.`, text);
+      return undefined;
+    }
+    if (validate(candidate)) return candidate;
+    pushKeywordDiagnostic(diagnostics, uri, `${pointer}/${keyword}`, `${keyword} does not have the form required by JSON Structure Semantic Annotations.`, text);
+    return undefined;
+  };
+  const projection = {
+    concepts: read('concepts', isReferencedDefinitionArray),
+    observedProperty: read('observedProperty', isReferencedDefinition),
+    semanticRole: read('semanticRole', isSemanticRole),
+    derivation: read('derivation', isDerivation),
+    statistic: read('statistic', isStatistic),
+    codedValues: read('codedValues', isReferencedDefinition),
+    measurementConditioning: read('measurementConditioning', isMeasurementConditioning),
+    referenceRole: read('referenceRole', isReferenceRole),
+    phenomenonTimeRelation: read('phenomenonTimeRelation', isPhenomenonTimeRelation),
+    supportPeriod: read('supportPeriod', isSupportPeriod),
+    temporalReferenceSystem: read('temporalReferenceSystem', isTemporalReferenceSystem),
+    cadence: read('cadence', isCadence),
+    coordinateReferenceSystem: read('coordinateReferenceSystem', isCoordinateReferenceSystem),
+    vectorReferenceFrames: read('vectorReferenceFrames', isVectorReferenceFrames),
+    tensorReferenceFrames: read('tensorReferenceFrames', isTensorReferenceFrames),
+    frameTransforms: read('frameTransforms', isFrameTransforms),
+    linearReferenceSystem: read('linearReferenceSystem', isLinearReferenceSystem),
+    colorSpaces: read('colorSpaces', isColorSpaces),
+    audioChannels: read('audioChannels', isAudioChannels),
+    spectralBands: read('spectralBands', isSpectralBands)
+  };
+  if (projection.concepts && !conceptsLocallyValid(projection.concepts, pointer)) {
+    pushKeywordDiagnostic(diagnostics, uri, `${pointer}/concepts`, 'concepts contains duplicate references, incompatible known kinds, or a known kind at the wrong schema position.', text);
+    projection.concepts = undefined;
+  }
+  if (projection.observedProperty && projection.concepts?.some((concept) => concept.reference === projection.observedProperty?.reference)) {
+    pushKeywordDiagnostic(diagnostics, uri, `${pointer}/concepts`, 'The same reference must not occur in both concepts and observedProperty.', text);
+    projection.concepts = undefined;
+  }
+  if (projection.supportPeriod && coreTemporalIntervalRequired(value) && !positiveCoreDuration(projection.supportPeriod.length)) {
+    pushKeywordDiagnostic(diagnostics, uri, `${pointer}/supportPeriod`, 'supportPeriod length must be a positive Core duration for a Core temporal value.', text);
+    projection.supportPeriod = undefined;
+  }
+  if (projection.cadence?.kind === 'fixed' && coreTemporalIntervalRequired(value) && !positiveCoreDuration(projection.cadence.period)) {
+    pushKeywordDiagnostic(diagnostics, uri, `${pointer}/cadence`, 'cadence period must be a positive Core duration for a Core temporal value.', text);
+    projection.cadence = undefined;
+  }
+  if (value.statistic !== undefined && value.derivation !== 'statistic') {
+    pushKeywordDiagnostic(diagnostics, uri, `${pointer}/statistic`, "statistic is permitted if and only if derivation is 'statistic'.", text);
+    projection.statistic = undefined;
+  } else if (value.derivation === 'statistic' && value.statistic === undefined) {
+    pushKeywordDiagnostic(diagnostics, uri, `${pointer}/derivation`, "derivation 'statistic' requires statistic.", text);
+  }
+  if (value.supportPeriod !== undefined && value.phenomenonTimeRelation !== 'interval' && value.phenomenonTimeRelation !== 'accumulation') {
+    pushKeywordDiagnostic(diagnostics, uri, `${pointer}/supportPeriod`, "supportPeriod requires phenomenonTimeRelation 'interval' or 'accumulation'.", text);
+    projection.supportPeriod = undefined;
+  }
+  const temporal = projection.temporalReferenceSystem;
+  if (temporal && (value.type === 'object' || value.type === 'tuple') !== (typeof temporal.position === 'string')) {
+    pushKeywordDiagnostic(diagnostics, uri, `${pointer}/temporalReferenceSystem`, 'temporalReferenceSystem position is required on object and tuple types and prohibited otherwise.', text);
+    projection.temporalReferenceSystem = undefined;
+  }
+  for (const keyword of ['semanticRole', 'codedValues', 'measurementConditioning'] as const) {
+    if (projection[keyword] === undefined) continue;
+    const isolated = { ...value };
+    for (const other of ['semanticRole', 'codedValues', 'measurementConditioning'] as const) {
+      if (other !== keyword) delete isolated[other];
+    }
+    if (!semanticCoreTypeCompatible(isolated, root)) {
+      pushKeywordDiagnostic(diagnostics, uri, `${pointer}/${keyword}`, `${keyword} is not compatible with the effective Core type of this declaration.`, text);
+      projection[keyword] = undefined;
+    }
+  }
+  if (value.phenomenonTimeRelation === 'accumulation' && (value.derivation !== 'statistic' || value.statistic !== 'sum')) {
+    pushKeywordDiagnostic(diagnostics, uri, `${pointer}/phenomenonTimeRelation`, "phenomenonTimeRelation 'accumulation' requires derivation 'statistic' with statistic 'sum'.", text);
+    projection.phenomenonTimeRelation = undefined;
+  }
+  if (typeof projection.semanticRole === 'string' && temporalRoleDuplicate(root, pointer, projection.semanticRole)) {
+    pushKeywordDiagnostic(diagnostics, uri, `${pointer}/semanticRole`, `${projection.semanticRole} may occur only once among sibling properties.`, text);
+    projection.semanticRole = undefined;
+  }
+  const bindingKeywords = [
+    'temporalReferenceSystem', 'coordinateReferenceSystem', 'vectorReferenceFrames', 'tensorReferenceFrames',
+    'frameTransforms', 'linearReferenceSystem', 'colorSpaces', 'audioChannels', 'spectralBands'
+  ] as const;
+  for (const keyword of bindingKeywords) {
+    if (projection[keyword] === undefined) continue;
+    const isolated = { ...value };
+    for (const other of bindingKeywords) if (other !== keyword) delete isolated[other];
+    if (!semanticBindingsValid(isolated, root)) {
+      pushKeywordDiagnostic(diagnostics, uri, `${pointer}/${keyword}`, `${keyword} references members that are not part of the effective definition of this declaration.`, text);
+      projection[keyword] = undefined;
+    }
+  }
+  return hasAnyKey(projection) ? projection : undefined;
+}
+
+const SEMANTIC_ROLES = ['observationValue','resultQuality','featureOfInterest','proximateFeatureOfInterest','ultimateFeatureOfInterest','observingProcedure','phenomenonTime','resultTime','effectiveTime','phenomenonTimeStart','phenomenonTimeEnd','effectiveTimeStart','effectiveTimeEnd','ingestionTime','scheduledTime','actualTime','forecastIssueTime','forecastLeadDuration','status'] as const;
+const DERIVATIONS = ['measured','statistic','calculated','estimated','modeled'] as const;
+const STATISTICS = ['mean','median','mode','minimum','maximum','sum','count','standardDeviation','variance','range'] as const;
+const PHENOMENON_TIME_RELATIONS = ['instant','untilNext','interval','accumulation'] as const;
+const REFERENCE_ROLES = ['position','linearElement','measure','direction'] as const;
+const TRANSFORM_ENCODINGS = ['quaternion','axisAngle','eulerAngles','rotationMatrix','homogeneousMatrix'] as const;
+const ROTATION_SEQUENCES = ['XYX','XYZ','XZX','XZY','YXY','YXZ','YZX','YZY','ZXY','ZXZ','ZYX','ZYZ'] as const;
+function enumString<const T extends readonly string[]>(value: unknown, values: T): T[number] | undefined { return typeof value === 'string' && values.includes(value) ? value as T[number] : undefined; }
+function hasOnlyKeys(value: Record<string, unknown>, allowed: readonly string[]): boolean { return Object.keys(value).every((key) => allowed.includes(key)); }
+function distinctStrings(value: unknown, minimum = 1, maximum = Infinity): value is string[] { return Array.isArray(value) && value.length >= minimum && value.length <= maximum && value.every((entry) => typeof entry === 'string') && new Set(value).size === value.length; }
+function absoluteUri(value: unknown): value is string { if (typeof value !== 'string') return false; try { return new URL(value).href.length > 0 && /^[A-Za-z][A-Za-z0-9+.-]*:/.test(value); } catch { return false; } }
+function referenceValueForKind(value: Record<string, unknown>): boolean { return typeof value.kind === 'string' && (value.kind === 'type' ? typeReference(value.reference) !== undefined : absoluteUri(value.reference)); }
+function isReferencedDefinition(value: unknown): value is Record<string, unknown> { return isRecord(value) && hasOnlyKeys(value, ['reference','kind']) && referenceValueForKind(value); }
+function isReferencedDefinitionArray(value: unknown): value is Record<string, unknown>[] { return Array.isArray(value) && value.length > 0 && value.every(isReferencedDefinition); }
+const CONCEPT_CLASS_KINDS = new Set(['rdfs-class', 'owl-class']);
+const CONCEPT_PROPERTY_KINDS = new Set(['rdf-property', 'owl-object-property', 'owl-datatype-property', 'dcterms-property']);
+function conceptsLocallyValid(value: readonly Record<string, unknown>[], pointer: string): boolean {
+  const references = value.map((entry) => entry.reference);
+  if (new Set(references).size !== references.length) return false;
+  const hasClass = value.some((entry) => CONCEPT_CLASS_KINDS.has(String(entry.kind)));
+  const hasProperty = value.some((entry) => CONCEPT_PROPERTY_KINDS.has(String(entry.kind)));
+  if (hasClass && hasProperty) return false;
+  const member = /\/(?:properties\/[^/]+|items|values|choices\/[^/]+)$/.test(pointer);
+  return (!hasClass || !member) && (!hasProperty || member);
+}
+function coreTemporalIntervalRequired(value: Readonly<Record<string, unknown>>): boolean {
+  return value.type === 'datetime' || value.type === 'date' || value.type === 'time';
+}
+function positiveCoreDuration(value: unknown): boolean {
+  if (typeof value !== 'string' || !/^P(?=\d|T\d)(?:\d+W|(?:(?:\d+Y)?(?:\d+M)?(?:\d+D)?)(?:T(?=\d)(?:\d+H)?(?:\d+M)?(?:\d+(?:\.\d+)?S)?)?)$/.test(value)) return false;
+  return /[1-9]/.test(value);
+}
+function isSemanticRole(value: unknown): value is string { return enumString(value, SEMANTIC_ROLES) !== undefined; }
+function isDerivation(value: unknown): value is string { return enumString(value, DERIVATIONS) !== undefined; }
+function isReferenceRole(value: unknown): value is string { return enumString(value, REFERENCE_ROLES) !== undefined; }
+function isPhenomenonTimeRelation(value: unknown): value is string { return enumString(value, PHENOMENON_TIME_RELATIONS) !== undefined; }
+function isStatistic(value: unknown): value is string | Record<string, unknown> {
+  if (enumString(value, STATISTICS) !== undefined) return true;
+  if (!isRecord(value) || !hasOnlyKeys(value, ['function','percentile','rank'])) return false;
+  if (value.function === 'percentile') return typeof value.percentile === 'number' && value.percentile > 0 && value.percentile < 100 && value.rank === undefined;
+  if (value.function === 'nthHighest' || value.function === 'nthLowest') return Number.isInteger(value.rank) && (value.rank as number) >= 2 && value.percentile === undefined;
+  return false;
+}
+function isSupportPeriod(value: unknown): value is Record<string, unknown> { return isRecord(value) && hasOnlyKeys(value, ['length','anchor']) && value.length !== undefined && enumString(value.anchor, ['start','end']) !== undefined; }
+function isCadence(value: unknown): value is Record<string, unknown> { return isRecord(value) && ((value.kind === 'fixed' && value.period !== undefined && hasOnlyKeys(value, ['kind','period'])) || ((value.kind === 'irregular' || value.kind === 'onChange') && hasOnlyKeys(value, ['kind']))); }
+function isTemporalReferenceSystem(value: unknown): value is Record<string, unknown> { return isRecord(value) && isReferencedBase(value) && hasOnlyKeys(value, ['reference','kind','position','sortOrder']) && optionalString(value.position) && (value.sortOrder === undefined || enumString(value.sortOrder, ['forward','backward']) !== undefined); }
+function isCoordinateReferenceSystem(value: unknown): value is Record<string, unknown> { return isRecord(value) && isReferencedBase(value) && hasOnlyKeys(value, ['reference','kind','coordinates']) && distinctStrings(value.coordinates); }
+function isReferencedBase(value: Record<string, unknown>): boolean { return referenceValueForKind(value); }
+function optionalString(value: unknown): boolean { return value === undefined || typeof value === 'string'; }
+function optionalEnum(value: unknown, allowed: readonly string[]): boolean { return value === undefined || enumString(value, allowed) !== undefined; }
+function isVectorReferenceFrame(value: unknown): value is Record<string, unknown> { return isRecord(value) && isReferencedBase(value) && hasOnlyKeys(value, ['reference','kind','components','variance']) && distinctStrings(value.components) && optionalEnum(value.variance, ['contravariant','covariant']); }
+function isVectorReferenceFrames(value: unknown): value is Record<string, unknown>[] { return Array.isArray(value) && value.length > 0 && value.every(isVectorReferenceFrame); }
+function isFrameReference(value: unknown, varianceAllowed = true): value is Record<string, unknown> { return isRecord(value) && isReferencedBase(value) && hasOnlyKeys(value, varianceAllowed ? ['reference','kind','variance'] : ['reference','kind']) && (varianceAllowed ? optionalEnum(value.variance, ['contravariant','covariant']) : value.variance === undefined); }
+function isTensorComponent(value: unknown): value is Record<string, unknown> { return isRecord(value) && hasOnlyKeys(value, ['index','property']) && Array.isArray(value.index) && value.index.length >= 2 && value.index.every((entry) => Number.isInteger(entry) && entry >= 0) && typeof value.property === 'string'; }
+function isTensorComponents(value: unknown): value is Record<string, unknown>[] { return Array.isArray(value) && value.length > 0 && value.every(isTensorComponent); }
+function tensorRank(value: Record<string, unknown>): number | undefined {
+  return Array.isArray(value.frames) ? value.frames.length : undefined;
+}
+function normalizedFrameReference(value: Record<string, unknown>): string | undefined {
+  if (typeof value.kind !== 'string') return undefined;
+  if (value.kind === 'type') {
+    const ref = typeReference(value.reference);
+    return ref === undefined ? undefined : `type:${ref}`;
+  }
+  return typeof value.reference === 'string' ? `${value.kind}:${value.reference}` : undefined;
+}
+function sameFrameReference(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
+  return normalizedFrameReference(a) !== undefined && normalizedFrameReference(a) === normalizedFrameReference(b);
+}
+function sameFrameVariance(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
+  const first = enumString(a.variance, ['contravariant', 'covariant']);
+  const second = enumString(b.variance, ['contravariant', 'covariant']);
+  return first === second;
+}
+function hasValidTensorSymmetry(value: Record<string, unknown>): boolean {
+  if (value.symmetry === undefined) return true;
+  if (!Array.isArray(value.frames) || value.frames.length !== 2) return false;
+  const [first, second] = value.frames;
+  return isRecord(first) && isRecord(second) && sameFrameReference(first, second) && sameFrameVariance(first, second);
+}
+function hasRankMatchedTensorComponents(value: Record<string, unknown>): boolean {
+  if (typeof value.components === 'string') return true;
+  if (!Array.isArray(value.components)) return false;
+  const rank = tensorRank(value);
+  if (!rank) return false;
+  return value.components.every((entry) => isTensorComponent(entry) && Array.isArray(entry.index) && entry.index.length === rank);
+}
+
+function hasMatrixIndexedComponents(value: unknown, sideLength: number): boolean {
+  if (!Array.isArray(value) || value.length === 0) return false;
+  return value.every((entry) =>
+    isTensorComponent(entry) &&
+    Array.isArray(entry.index) &&
+    entry.index.length === 2 &&
+    Number.isInteger(entry.index[0]) &&
+    Number.isInteger(entry.index[1]) &&
+    (entry.index[0] as number) >= 0 &&
+    (entry.index[1] as number) >= 0 &&
+    (entry.index[0] as number) < sideLength &&
+    (entry.index[1] as number) < sideLength
+  );
+}
+function isTensorReferenceFrame(value: unknown): value is Record<string, unknown> {
+  return isRecord(value) && hasOnlyKeys(value, ['frames','components','symmetry']) &&
+    Array.isArray(value.frames) && value.frames.length >= 2 && value.frames.every((entry) => isFrameReference(entry)) &&
+    (typeof value.components === 'string' || isTensorComponents(value.components)) &&
+    optionalEnum(value.symmetry, ['symmetric','skewSymmetric','none']) &&
+    hasRankMatchedTensorComponents(value) && hasValidTensorSymmetry(value);
+}
+function isTensorReferenceFrames(value: unknown): value is Record<string, unknown>[] { return Array.isArray(value) && value.length > 0 && value.every(isTensorReferenceFrame); }
+function isFrameTransform(value: unknown): value is Record<string, unknown> {
+  if (!isRecord(value) || !hasOnlyKeys(value, ['from','to','encoding','components','rotationSequence','translation']) || !isFrameReference(value.from, false) || !isFrameReference(value.to, false) || enumString(value.encoding, TRANSFORM_ENCODINGS) === undefined) return false;
+  const encoding = value.encoding;
+  const componentsOk = encoding === 'quaternion' || encoding === 'axisAngle'
+    ? distinctStrings(value.components, 4, 4)
+    : encoding === 'eulerAngles'
+      ? distinctStrings(value.components, 3, 3)
+      : encoding === 'rotationMatrix'
+        ? typeof value.components === 'string' || hasMatrixIndexedComponents(value.components, 3)
+        : typeof value.components === 'string' || hasMatrixIndexedComponents(value.components, 4);
+  const rotationOk = encoding === 'eulerAngles' ? enumString(value.rotationSequence, ROTATION_SEQUENCES) !== undefined : value.rotationSequence === undefined;
+  const translationOk = encoding === 'homogeneousMatrix' ? value.translation === undefined : value.translation === undefined || distinctStrings(value.translation, 3, 3);
+  return componentsOk && rotationOk && translationOk;
+}
+function isFrameTransforms(value: unknown): value is Record<string, unknown>[] { return Array.isArray(value) && value.length > 0 && value.every(isFrameTransform); }
+function isLinearReferenceSystem(value: unknown): value is Record<string, unknown> { return isRecord(value) && isReferencedBase(value) && hasOnlyKeys(value, ['reference','kind','linearElement','measure','measureEnd','direction']) && typeof value.linearElement === 'string' && typeof value.measure === 'string' && optionalString(value.measureEnd) && optionalString(value.direction); }
+function isColorSpace(value: unknown): value is Record<string, unknown> { return isRecord(value) && isReferencedBase(value) && hasOnlyKeys(value, ['reference','kind','codePoints','channels','alpha','alphaMode','transfer','illuminant','observer']) && distinctStrings(value.channels) && (value.codePoints === undefined || (Array.isArray(value.codePoints) && value.codePoints.length === 4 && value.codePoints.every((entry) => Number.isInteger(entry) && entry >= 0))) && optionalString(value.alpha) && (value.alpha === undefined || !(value.channels as string[]).includes(value.alpha as string)) && optionalEnum(value.alphaMode, ['straight','premultiplied']) && (value.alphaMode === undefined || value.alpha !== undefined) && optionalEnum(value.transfer, ['asDefined','linear']) && optionalString(value.illuminant) && optionalString(value.observer); }
+function isColorSpaces(value: unknown): value is Record<string, unknown>[] { return Array.isArray(value) && value.length > 0 && value.every(isColorSpace); }
+function isNamedOrAbsoluteUri(value: unknown, names: readonly string[]): boolean { return value === undefined || enumString(value, names) !== undefined || absoluteUri(value); }
+function isAudioChannel(value: unknown): value is Record<string, unknown> { return isRecord(value) && isReferencedBase(value) && hasOnlyKeys(value, ['reference','kind','channels','levelReference','encoding']) && distinctStrings(value.channels) && isNamedOrAbsoluteUri(value.levelReference, ['fullScale','soundPressure']) && isNamedOrAbsoluteUri(value.encoding, ['linear','float','aLaw','muLaw']); }
+function isAudioChannels(value: unknown): value is Record<string, unknown>[] { return Array.isArray(value) && value.length > 0 && value.every(isAudioChannel); }
+function isSpectralBand(value: unknown): value is Record<string, unknown> { return isRecord(value) && isReferencedBase(value) && hasOnlyKeys(value, ['reference','kind','bands','calibration']) && distinctStrings(value.bands) && optionalString(value.calibration); }
+function isSpectralBands(value: unknown): value is Record<string, unknown>[] { return Array.isArray(value) && value.length > 0 && value.every(isSpectralBand); }
+function isMeasurementConditioning(value: unknown): value is Record<string, unknown> { return isRecord(value) && Object.keys(value).length > 0 && hasOnlyKeys(value, ['weighting','timeWeighting','levelReference']) && optionalString(value.weighting) && optionalString(value.timeWeighting) && optionalString(value.levelReference); }
+/**
+ * Constant for semantic annotation keywords.
+ */
+export const SEMANTIC_ANNOTATION_KEYWORDS = [
+  'concepts', 'observedProperty', 'semanticRole', 'derivation', 'statistic', 'codedValues',
+  'measurementConditioning', 'referenceRole', 'phenomenonTimeRelation', 'supportPeriod',
+  'temporalReferenceSystem', 'cadence', 'coordinateReferenceSystem', 'vectorReferenceFrames',
+  'tensorReferenceFrames', 'frameTransforms', 'linearReferenceSystem', 'colorSpaces',
+  'audioChannels', 'spectralBands'
+] as const;
+/**
+ * Type alias for semantic annotation keyword.
+ */
+export type SemanticAnnotationKeyword = typeof SEMANTIC_ANNOTATION_KEYWORDS[number];
+/**
+ * Defines the semantic annotation keyword map shape.
+ */
+export interface SemanticAnnotationKeywordMap {
+  readonly concepts: readonly Record<string, unknown>[];
+  readonly observedProperty: Record<string, unknown>;
+  readonly semanticRole: string;
+  readonly derivation: string;
+  readonly statistic: string | Record<string, unknown>;
+  readonly codedValues: Record<string, unknown>;
+  readonly measurementConditioning: Record<string, unknown>;
+  readonly referenceRole: string;
+  readonly phenomenonTimeRelation: string;
+  readonly supportPeriod: Record<string, unknown>;
+  readonly temporalReferenceSystem: Record<string, unknown>;
+  readonly cadence: Record<string, unknown>;
+  readonly coordinateReferenceSystem: Record<string, unknown>;
+  readonly vectorReferenceFrames: readonly Record<string, unknown>[];
+  readonly tensorReferenceFrames: readonly Record<string, unknown>[];
+  readonly frameTransforms: readonly Record<string, unknown>[];
+  readonly linearReferenceSystem: Record<string, unknown>;
+  readonly colorSpaces: readonly Record<string, unknown>[];
+  readonly audioChannels: readonly Record<string, unknown>[];
+  readonly spectralBands: readonly Record<string, unknown>[];
+}
+const semanticValueValidators: { readonly [K in SemanticAnnotationKeyword]: (value: unknown) => boolean } = {
+  concepts: isReferencedDefinitionArray,
+  observedProperty: isReferencedDefinition,
+  semanticRole: isSemanticRole,
+  derivation: isDerivation,
+  statistic: isStatistic,
+  codedValues: isReferencedDefinition,
+  measurementConditioning: isMeasurementConditioning,
+  referenceRole: isReferenceRole,
+  phenomenonTimeRelation: isPhenomenonTimeRelation,
+  supportPeriod: isSupportPeriod,
+  temporalReferenceSystem: isTemporalReferenceSystem,
+  cadence: isCadence,
+  coordinateReferenceSystem: isCoordinateReferenceSystem,
+  vectorReferenceFrames: isVectorReferenceFrames,
+  tensorReferenceFrames: isTensorReferenceFrames,
+  frameTransforms: isFrameTransforms,
+  linearReferenceSystem: isLinearReferenceSystem,
+  colorSpaces: isColorSpaces,
+  audioChannels: isAudioChannels,
+  spectralBands: isSpectralBands
+};
+/**
+ * Validates semantic annotation candidate valid and narrows the value type when applicable.
+ */
+export function semanticAnnotationCandidateValid(
+  declaration: Readonly<Record<string, unknown>>,
+  keyword: SemanticAnnotationKeyword,
+  candidateValue: unknown,
+  root?: Readonly<Record<string, unknown>>,
+  pointer = '',
+  resolveReference?: (reference: string, from?: Readonly<Record<string, unknown>>) => Readonly<Record<string, unknown>> | undefined
+): boolean {
+  if (!semanticValueValidators[keyword](candidateValue)) return false;
+  const candidate = { ...declaration, [keyword]: candidateValue };
+  return semanticAnnotationSetValid(candidate, root, pointer, keyword, resolveReference);
+}
+/**
+ * Validates semantic annotation set valid and narrows the value type when applicable.
+ */
+export function semanticAnnotationSetValid(
+  candidate: Readonly<Record<string, unknown>>,
+  root?: Readonly<Record<string, unknown>>,
+  pointer = '',
+  changedKeyword?: SemanticAnnotationKeyword,
+  resolveReference?: (reference: string, from?: Readonly<Record<string, unknown>>) => Readonly<Record<string, unknown>> | undefined
+): boolean {
+  if (isReferencedDefinitionArray(candidate.concepts) && !conceptsLocallyValid(candidate.concepts, pointer)) return false;
+  const observedPropertyReference = isRecord(candidate.observedProperty) ? candidate.observedProperty.reference : undefined;
+  if (isReferencedDefinitionArray(candidate.concepts) && observedPropertyReference !== undefined && candidate.concepts.some((concept) => concept.reference === observedPropertyReference)) return false;
+  if (isRecord(candidate.supportPeriod) && coreTemporalIntervalRequired(candidate) && !positiveCoreDuration(candidate.supportPeriod.length)) return false;
+  if (isRecord(candidate.cadence) && candidate.cadence.kind === 'fixed' && coreTemporalIntervalRequired(candidate) && !positiveCoreDuration(candidate.cadence.period)) return false;
+  if (candidate.statistic !== undefined && candidate.derivation !== 'statistic') return false;
+  if (candidate.derivation === 'statistic' && candidate.statistic === undefined) return false;
+  if (candidate.supportPeriod !== undefined && candidate.phenomenonTimeRelation !== 'interval' && candidate.phenomenonTimeRelation !== 'accumulation') return false;
+  const temporal = candidate.temporalReferenceSystem;
+  if (isRecord(temporal) && (candidate.type === 'object' || candidate.type === 'tuple') !== (typeof temporal.position === 'string')) return false;
+  if (root && !semanticCoreTypeCompatible(candidate, root, resolveReference)) return false;
+  if (!semanticBindingsValid(candidate, root, resolveReference)) return false;
+  if (candidate.phenomenonTimeRelation === 'accumulation' && (candidate.derivation !== 'statistic' || candidate.statistic !== 'sum')) return false;
+  if (root && changedKeyword === 'semanticRole' && typeof candidate.semanticRole === 'string' && temporalRoleDuplicate(root, pointer, candidate.semanticRole)) return false;
+  return true;
+}
+
+const INTEGER_CORE_TYPES = new Set(['integer', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32', 'int64', 'uint64', 'int128', 'uint128']);
+const NUMERIC_CORE_TYPES = new Set(['number', ...INTEGER_CORE_TYPES, 'float8', 'float', 'double', 'decimal']);
+const TEMPORAL_POSITION_CORE_TYPES = new Set(['date', 'datetime', 'time']);
+const TEMPORAL_POSITION_ROLES = new Set([
+  'resultTime', 'phenomenonTimeStart', 'phenomenonTimeEnd', 'effectiveTimeStart', 'effectiveTimeEnd',
+  'ingestionTime', 'scheduledTime', 'actualTime', 'forecastIssueTime'
+]);
+
+function localReferencePointer(value: unknown): string | undefined {
+  if (!isRecord(value) || typeof value.$ref !== 'string' || !value.$ref.startsWith('#')) return undefined;
+  return decodePointerFragment(value.$ref);
+}
+function effectiveLocalCoreType(
+  declaration: Readonly<Record<string, unknown>>,
+  root: Readonly<Record<string, unknown>>,
+  seen = new Set<Readonly<Record<string, unknown>>>(),
+  resolveReference?: (reference: string, from?: Readonly<Record<string, unknown>>) => Readonly<Record<string, unknown>> | undefined
+): string | undefined {
+  if (seen.has(declaration) || Array.isArray(declaration.type)) return undefined;
+  const nextSeen = new Set(seen).add(declaration);
+  const bases = typeof declaration.$extends === 'string' ? [declaration.$extends] : Array.isArray(declaration.$extends) ? declaration.$extends : [];
+  const resolved = bases.map((base) => {
+    if (typeof base !== 'string') return undefined;
+    const pointer = decodePointerFragment(base);
+    const target = resolveReference?.(base, declaration) ?? (pointer === undefined ? undefined : pointerAtRoot(root, pointer));
+    return isRecord(target) ? effectiveLocalCoreType(target, root, nextSeen, resolveReference) : undefined;
+  });
+  if (!resolved.every((type): type is string => type !== undefined) || new Set(resolved).size > 1) return undefined;
+  let authoredType: string | undefined;
+  if (typeof declaration.type === 'string') authoredType = declaration.type;
+  else {
+    const typePointer = localReferencePointer(declaration.type);
+    if (typePointer !== undefined) {
+      const reference = (declaration.type as Readonly<Record<string, unknown>>).$ref as string;
+      const target = resolveReference?.(reference, declaration) ?? pointerAtRoot(root, typePointer);
+      authoredType = isRecord(target) ? effectiveLocalCoreType(target, root, nextSeen, resolveReference) : undefined;
+    }
+  }
+  if (declaration.type !== undefined && authoredType === undefined) return undefined;
+  const candidates = authoredType === undefined ? resolved : [...resolved, authoredType];
+  return candidates.length > 0 && new Set(candidates).size === 1 ? candidates[0] : undefined;
+}
+function hasFixedStates(declaration: Readonly<Record<string, unknown>>): boolean {
+  return Array.isArray(declaration.enum) || Array.isArray(declaration.concepts);
+}
+function semanticCoreTypeCompatible(
+  declaration: Readonly<Record<string, unknown>>,
+  root: Readonly<Record<string, unknown>>,
+  resolveReference?: (reference: string, from?: Readonly<Record<string, unknown>>) => Readonly<Record<string, unknown>> | undefined
+): boolean {
+  const type = effectiveLocalCoreType(declaration, root, new Set(), resolveReference);
+  if (type === undefined) return true;
+  if (declaration.codedValues !== undefined && type !== 'string' && !INTEGER_CORE_TYPES.has(type)) return false;
+  if (declaration.measurementConditioning !== undefined && !NUMERIC_CORE_TYPES.has(type)) return false;
+  const role = declaration.semanticRole;
+  if (typeof role !== 'string') return true;
+  if (TEMPORAL_POSITION_ROLES.has(role)) return TEMPORAL_POSITION_CORE_TYPES.has(type) || declaration.temporalReferenceSystem !== undefined;
+  if (role === 'phenomenonTime') return TEMPORAL_POSITION_CORE_TYPES.has(type) || type === 'object' || type === 'tuple' || declaration.temporalReferenceSystem !== undefined;
+  if (role === 'effectiveTime') return type === 'object' || type === 'tuple';
+  if (role === 'forecastLeadDuration') return type === 'duration' || (NUMERIC_CORE_TYPES.has(type) && (declaration.unit !== undefined || declaration.ucumUnit !== undefined));
+  if (role === 'status') return (type === 'string' || INTEGER_CORE_TYPES.has(type)) && hasFixedStates(declaration);
+  return true;
+}
+
+const TEMPORAL_SINGLETON_ROLES = new Set([
+  'phenomenonTime', 'resultTime', 'effectiveTime', 'phenomenonTimeStart', 'phenomenonTimeEnd',
+  'effectiveTimeStart', 'effectiveTimeEnd', 'ingestionTime', 'scheduledTime', 'actualTime',
+  'forecastIssueTime', 'forecastLeadDuration'
+]);
+function temporalRoleDuplicate(root: Readonly<Record<string, unknown>>, pointer: string, role: string): boolean {
+  if (!TEMPORAL_SINGLETON_ROLES.has(role)) return false;
+  const marker = '/properties/';
+  const index = pointer.lastIndexOf(marker);
+  if (index < 0) return false;
+  const owner = pointerAtRoot(root, pointer.slice(0, index));
+  if (!isRecord(owner) || !isRecord(owner.properties)) return false;
+  return Object.entries(owner.properties).some(([name, property]) =>
+    `${pointer.slice(0, index)}${marker}${pointerPart(name)}` !== pointer && isRecord(property) && property.semanticRole === role);
+}
+function effectivePropertyNames(
+  value: Readonly<Record<string, unknown>>,
+  root?: Readonly<Record<string, unknown>>,
+  resolveReference?: (reference: string, from?: Readonly<Record<string, unknown>>) => Readonly<Record<string, unknown>> | undefined,
+  seen = new Set<Readonly<Record<string, unknown>>>()
+): { readonly names: Set<string>; readonly determinate: boolean } {
+  if (seen.has(value)) return { names: new Set(), determinate: false };
+  const nextSeen = new Set(seen).add(value);
+  const names = isRecord(value.properties) ? new Set(Object.keys(value.properties)) : new Set<string>();
+  let determinate = isRecord(value.properties);
+  const bases = typeof value.$extends === 'string' ? [value.$extends] : Array.isArray(value.$extends) ? value.$extends : [];
+  for (const reference of bases) {
+    if (typeof reference !== 'string') { determinate = false; continue; }
+    const pointer = decodePointerFragment(reference);
+    const target = resolveReference?.(reference, value) ?? (root && pointer !== undefined ? pointerAtRoot(root, pointer) : undefined);
+    if (!isRecord(target)) { determinate = false; continue; }
+    const inherited = effectivePropertyNames(target, root, resolveReference, nextSeen);
+    determinate &&= inherited.determinate;
+    for (const name of inherited.names) names.add(name);
+  }
+  return { names, determinate };
+}
+function namesExist(names: unknown, properties: Set<string> | undefined): boolean {
+  return properties !== undefined && Array.isArray(names) && names.every((name) => typeof name === 'string' && properties.has(name));
+}
+function componentProperties(value: unknown): string[] | undefined {
+  if (typeof value === 'string') return [value];
+  if (!Array.isArray(value)) return undefined;
+  if (value.every((entry) => typeof entry === 'string')) return value as string[];
+  if (value.every((entry) => isRecord(entry) && typeof entry.property === 'string')) return value.map((entry) => (entry as Record<string, unknown>).property as string);
+  return undefined;
+}
+function semanticBindingsValid(
+  value: Readonly<Record<string, unknown>>,
+  root?: Readonly<Record<string, unknown>>,
+  resolveReference?: (reference: string, from?: Readonly<Record<string, unknown>>) => Readonly<Record<string, unknown>> | undefined
+): boolean {
+  if (value.type !== 'object' && value.type !== 'tuple') return true;
+  const effective = effectivePropertyNames(value, root, resolveReference);
+  if (!effective.determinate) return true;
+  const properties = effective.names;
+  const temporal = value.temporalReferenceSystem;
+  if (isRecord(temporal) && (typeof temporal.position !== 'string' || !properties?.has(temporal.position))) return false;
+  const coordinate = value.coordinateReferenceSystem;
+  if (isRecord(coordinate) && !namesExist(coordinate.coordinates, properties)) return false;
+  for (const keyword of ['vectorReferenceFrames', 'tensorReferenceFrames', 'frameTransforms'] as const) {
+    const entries = value[keyword];
+    if (!Array.isArray(entries)) continue;
+    for (const entry of entries) {
+      if (!isRecord(entry)) return false;
+      const components = componentProperties(entry.components);
+      if (!components || !components.every((name) => properties?.has(name))) return false;
+      if (keyword === 'frameTransforms' && entry.translation !== undefined && !namesExist(entry.translation, properties)) return false;
+    }
+  }
+  const linear = value.linearReferenceSystem;
+  if (isRecord(linear) && !['linearElement', 'measure', 'measureEnd', 'direction'].every((key) => linear[key] === undefined || (typeof linear[key] === 'string' && properties?.has(linear[key] as string)))) return false;
+  for (const [keyword, memberKey, extraKey] of [
+    ['colorSpaces', 'channels', 'alpha'], ['audioChannels', 'channels', undefined], ['spectralBands', 'bands', undefined]
+  ] as const) {
+    const entries = value[keyword];
+    if (!Array.isArray(entries)) continue;
+    for (const entry of entries) {
+      if (!isRecord(entry) || !namesExist(entry[memberKey], properties) || (extraKey && entry[extraKey] !== undefined && !properties?.has(entry[extraKey] as string))) return false;
+    }
+  }
+  return true;
+}
+
+/** Checks semantic member bindings against the effective inherited declaration. */
+export function semanticAnnotationBindingsValid(
+  value: Readonly<Record<string, unknown>>,
+  root?: Readonly<Record<string, unknown>>,
+  resolveReference?: (reference: string, from?: Readonly<Record<string, unknown>>) => Readonly<Record<string, unknown>> | undefined
+): boolean {
+  return semanticBindingsValid(value, root, resolveReference);
+}
+
+function semanticEffectiveValue(keyword: SemanticAnnotationKeyword, authored: unknown): unknown {
+  const defaultObject = (value: unknown, defaults: Readonly<Record<string, unknown>>): unknown => isRecord(value) ? { ...defaults, ...value } : value;
+  if (keyword === 'temporalReferenceSystem') return defaultObject(authored, { sortOrder: 'forward' });
+  if (keyword === 'vectorReferenceFrames' && Array.isArray(authored)) return authored.map((entry) => defaultObject(entry, { variance: 'contravariant' }));
+  if (keyword === 'colorSpaces' && Array.isArray(authored)) return authored.map((entry) => defaultObject(entry, { transfer: 'asDefined', ...(isRecord(entry) && entry.alpha !== undefined ? { alphaMode: 'straight' } : {}) }));
+  if (keyword === 'audioChannels' && Array.isArray(authored)) return authored.map((entry) => defaultObject(entry, { levelReference: 'fullScale', encoding: 'linear' }));
+  return authored;
+}
+function semanticNormativeDefaults(keyword: SemanticAnnotationKeyword, authored: unknown): unknown {
+  if (keyword === 'temporalReferenceSystem' && isRecord(authored) && authored.sortOrder === undefined) return { sortOrder: 'forward' };
+  if (keyword === 'vectorReferenceFrames' && Array.isArray(authored)) return authored.map((entry) => isRecord(entry) && entry.variance === undefined ? { variance: 'contravariant' } : {});
+  if (keyword === 'colorSpaces' && Array.isArray(authored)) return authored.map((entry) => isRecord(entry) ? {
+    ...(entry.transfer === undefined ? { transfer: 'asDefined' } : {}),
+    ...(entry.alpha !== undefined && entry.alphaMode === undefined ? { alphaMode: 'straight' } : {})
+  } : {});
+  if (keyword === 'audioChannels' && Array.isArray(authored)) return authored.map((entry) => isRecord(entry) ? {
+    ...(entry.levelReference === undefined ? { levelReference: 'fullScale' } : {}),
+    ...(entry.encoding === undefined ? { encoding: 'linear' } : {})
+  } : {});
+  return undefined;
+}
+function semanticInspection(value: Readonly<Record<string, unknown>>, projection: SemanticAnnotationsProjection): SemanticAnnotationInspection[] {
+  return SEMANTIC_ANNOTATION_KEYWORDS.filter((keyword) =>
+    Object.prototype.hasOwnProperty.call(value, keyword) && Object.prototype.hasOwnProperty.call(projection, keyword)
+  ).map((keyword) => {
+    const authored = value[keyword];
+    const normativeDefaults = semanticNormativeDefaults(keyword, authored);
+    return {
+      keyword,
+      authored,
+      effective: semanticEffectiveValue(keyword, authored),
+      ...(normativeDefaults === undefined ? {} : { normativeDefaults }),
+      emittedJson: JSON.stringify(authored),
+      resolution: ['concepts', 'observedProperty', 'codedValues', 'temporalReferenceSystem', 'coordinateReferenceSystem', 'vectorReferenceFrames', 'tensorReferenceFrames', 'frameTransforms', 'linearReferenceSystem', 'colorSpaces', 'audioChannels', 'spectralBands'].includes(keyword) ? 'indeterminate' : 'local',
+      advisory: true
+    };
+  });
+}
+function asString(value: unknown, pointer: string, keyword: string, uri: string, text: string, diagnostics: Diagnostic[]): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === 'string') return value;
+  pushKeywordDiagnostic(diagnostics, uri, pointer, `${keyword} must be a string.`, text);
+  return undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function asSchemaObject(
+  value: unknown,
+  pointer: string,
+  keyword: string,
+  uri: string,
+  text: string,
+  diagnostics: Diagnostic[]
+): Record<string, unknown> | undefined {
+  if (value === undefined) return undefined;
+  if (isRecord(value)) return value;
+  pushKeywordDiagnostic(diagnostics, uri, pointer, `${keyword} must be an object.`, text);
+  return undefined;
+}
+
+function schemaObjectArray(
+  value: unknown,
+  pointer: string,
+  keyword: string,
+  uri: string,
+  text: string,
+  diagnostics: Diagnostic[],
+  minimumItems = 0
+): readonly Record<string, unknown>[] | undefined {
+  if (value === undefined) return undefined;
+  if (Array.isArray(value) && value.length >= minimumItems && value.every((entry) => isRecord(entry))) return value;
+  const suffix = minimumItems > 0 ? ` with at least ${minimumItems} item${minimumItems === 1 ? '' : 's'}` : '';
+  pushKeywordDiagnostic(diagnostics, uri, pointer, `${keyword} must be an array of objects${suffix}.`, text);
+  return undefined;
+}
+
+function schemaObjectMap(
+  value: unknown,
+  pointer: string,
+  keyword: string,
+  uri: string,
+  text: string,
+  diagnostics: Diagnostic[]
+): Readonly<Record<string, Record<string, unknown>>> | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value) || !Object.values(value).every((entry) => isRecord(entry))) {
+    pushKeywordDiagnostic(diagnostics, uri, pointer, `${keyword} must be an object map of schema objects.`, text);
+    return undefined;
+  }
+  return value as Readonly<Record<string, Record<string, unknown>>>;
+}
+
+function hasAnyKey<T extends object>(value: T): boolean {
+  return Object.values(value).some((entry) => entry !== undefined);
+}
+
+const NUMERIC_TYPES = new Set([
+  'number', 'integer', 'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32',
+  'int64', 'uint64', 'int128', 'uint128', 'float8', 'float', 'double', 'decimal'
+]);
+const CORE_TYPES = new Set([
+  'string', 'number', 'integer', 'boolean', 'null',
+  'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32', 'int64', 'uint64', 'int128', 'uint128',
+  'float8', 'float', 'double', 'decimal', 'date', 'datetime', 'time', 'duration', 'uuid', 'uri', 'binary', 'jsonpointer',
+  'object', 'array', 'map', 'set', 'tuple', 'any', 'choice'
+]);
+const CORE_PRIMITIVE_TYPES = new Set([
+  'string', 'number', 'integer', 'boolean', 'null', 'binary',
+  'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32', 'int64', 'uint64', 'int128', 'uint128',
+  'float8', 'float', 'double', 'decimal', 'date', 'datetime', 'time', 'duration', 'uuid', 'uri', 'jsonpointer'
+]);
+const CORE_INTEGER_TEXT = /^-?(?:0|[1-9]\d*)$/;
+const CORE_UNSIGNED_INTEGER_TEXT = /^(?:0|[1-9]\d*)$/;
+const CORE_DECIMAL_TEXT = /^-?(?:0|[1-9]\d*)\.\d+$/;
+
+/** Resolves a declaration to one primitive Core type without guessing through missing references or unions. */
+export function effectiveCorePrimitiveType(
+  declaration: Readonly<Record<string, unknown>>,
+  resolveReference: (reference: string, from?: Readonly<Record<string, unknown>>) => Readonly<Record<string, unknown>> | undefined,
+  seen = new Set<Readonly<Record<string, unknown>>>()
+): { readonly type?: string; readonly determinate: boolean } {
+  if (seen.has(declaration)) return { determinate: false };
+  const type = declaration.type;
+  if (typeof type === 'string') return { type: CORE_PRIMITIVE_TYPES.has(type) ? type : undefined, determinate: CORE_TYPES.has(type) };
+  if (Array.isArray(type)) return { determinate: true };
+  const reference = typeReference(type);
+  if (reference === undefined) return { determinate: false };
+  const target = resolveReference(reference, declaration);
+  return target ? effectiveCorePrimitiveType(target, resolveReference, new Set(seen).add(declaration)) : { determinate: false };
+}
+
+/** Checks a value against the JSON representation and range of a primitive Core type. */
+export function coreScalarValueValid(typeName: string, value: unknown, declaration: Readonly<Record<string, unknown>> = {}): boolean {
+  switch (typeName) {
+    case 'string': return typeof value === 'string';
+    case 'number': return typeof value === 'number' && Number.isFinite(value);
+    case 'integer':
+    case 'int32': return integerNumberInRange(value, -2147483648, 2147483647);
+    case 'int8': return integerNumberInRange(value, -128, 127);
+    case 'uint8': return integerNumberInRange(value, 0, 255);
+    case 'int16': return integerNumberInRange(value, -32768, 32767);
+    case 'uint16': return integerNumberInRange(value, 0, 65535);
+    case 'uint32': return integerNumberInRange(value, 0, 4294967295);
+    case 'int64': return integerStringInRange(value, true, -(2n ** 63n), 2n ** 63n - 1n);
+    case 'uint64': return integerStringInRange(value, false, 0n, 2n ** 64n - 1n);
+    case 'int128': return integerStringInRange(value, true, -(2n ** 127n), 2n ** 127n - 1n);
+    case 'uint128': return integerStringInRange(value, false, 0n, 2n ** 128n - 1n);
+    case 'float8': return typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= 3.4e3;
+    case 'float': return typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= 3.4e38;
+    case 'double': return typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= 1.7e308;
+    case 'decimal': return typeof value === 'string' && decimalTextValid(value, declaration);
+    case 'boolean': return typeof value === 'boolean';
+    case 'null': return value === null;
+    case 'binary': return typeof value === 'string' && binaryTextValid(value, declaration.contentEncoding);
+    case 'date': return typeof value === 'string' && fullDateValid(value);
+    case 'datetime': return typeof value === 'string' && dateTimeValid(value);
+    case 'time': return typeof value === 'string' && fullTimeValid(value);
+    case 'duration': return typeof value === 'string' && durationValid(value);
+    case 'uuid': return typeof value === 'string' && /^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$/.test(value);
+    case 'uri': return typeof value === 'string' && uriReferenceValid(value);
+    case 'jsonpointer': return typeof value === 'string' && (value === '' || value.startsWith('/')) && !/~(?:[^01]|$)/.test(value);
+    default: return false;
+  }
+}
+
+/** Checks JSON values for structural rather than object-identity uniqueness. */
+export function deeplyUniqueJsonValues(values: readonly unknown[]): boolean {
+  return values.every((value, index) => values.slice(0, index).every((other) => !deepJsonEqual(value, other)));
+}
+
+function integerNumberInRange(value: unknown, minimum: number, maximum: number): boolean {
+  return typeof value === 'number' && Number.isInteger(value) && value >= minimum && value <= maximum;
+}
+function integerStringInRange(value: unknown, signed: boolean, minimum: bigint, maximum: bigint): boolean {
+  if (typeof value !== 'string' || !(signed ? CORE_INTEGER_TEXT : CORE_UNSIGNED_INTEGER_TEXT).test(value)) return false;
+  const parsed = BigInt(value);
+  return parsed >= minimum && parsed <= maximum;
+}
+function decimalTextValid(value: string, declaration: Readonly<Record<string, unknown>>): boolean {
+  return decimalValueIssues(value, declaration).length === 0;
+}
+
+/** Shared decimal representation/qualifier checks, including contextual deltas with no authored type. */
+export function decimalValueIssues(value: unknown, declaration: Readonly<Record<string, unknown>>): readonly ('type' | 'precision' | 'scale')[] {
+  if (typeof value !== 'string' || !CORE_DECIMAL_TEXT.test(value)) return ['type'];
+  const unsigned = value.startsWith('-') ? value.slice(1) : value;
+  const [integer, fraction] = unsigned.split('.') as [string, string];
+  const digits = `${integer}${fraction}`.replace(/^0+/, '') || '0';
+  const precision = Number.isInteger(declaration.precision) ? declaration.precision as number : 34;
+  const scale = Number.isInteger(declaration.scale) ? declaration.scale as number : 7;
+  const issues: ('precision' | 'scale')[] = [];
+  if (digits.length > precision) issues.push('precision');
+  if (fraction.length > scale) issues.push('scale');
+  return issues;
+}
+function fullDateValid(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return month >= 1 && month <= 12 && day >= 1 && day <= days[month - 1]!;
+}
+function fullTimeValid(value: string): boolean {
+  const match = /^(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:[Zz]|([+-])(\d{2}):(\d{2}))$/.exec(value);
+  return !!match && Number(match[1]) <= 23 && Number(match[2]) <= 59 && Number(match[3]) <= 60 &&
+    (match[4] === undefined || Number(match[5]) <= 23 && Number(match[6]) <= 59);
+}
+function dateTimeValid(value: string): boolean {
+  const separator = Math.max(value.indexOf('T'), value.indexOf('t'));
+  return separator > 0 && fullDateValid(value.slice(0, separator)) && fullTimeValid(value.slice(separator + 1));
+}
+function durationValid(value: string): boolean {
+  return /^P(?=\d|T\d)(?:\d+W|(?:(?:\d+Y)?(?:\d+M)?(?:\d+D)?)(?:T(?=\d)(?:\d+H)?(?:\d+M)?(?:\d+(?:\.\d+)?S)?)?)$/.test(value);
+}
+function binaryTextValid(value: string, encoding: unknown): boolean {
+  const selected = typeof encoding === 'string' ? encoding : 'base64';
+  if (selected === 'base16') return /^(?:[0-9A-Fa-f]{2})*$/.test(value);
+  if (selected === 'base64url') return /^(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-]{2}(?:==)?|[A-Za-z0-9_-]{3}=?)*$/.test(value);
+  if (selected === 'base32') return /^[A-Z2-7=]*$/i.test(value);
+  if (selected === 'base32hex') return /^[A-V0-9=]*$/i.test(value);
+  return /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value);
+}
+function uriReferenceValid(value: string): boolean {
+  if (/[\u0000-\u0020<>"{}|\\^`]/.test(value) || /%(?![0-9A-Fa-f]{2})/.test(value)) return false;
+  try { new URL(value, 'https://json-structure.invalid/'); return true; } catch { return false; }
+}
+function deepJsonEqual(left: unknown, right: unknown): boolean {
+  if (left === right) return true;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return Array.isArray(left) && Array.isArray(right) && left.length === right.length && left.every((entry, index) => deepJsonEqual(entry, right[index]));
+  }
+  if (!isRecord(left) || !isRecord(right)) return false;
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  return leftKeys.length === rightKeys.length && leftKeys.every((key) => Object.prototype.hasOwnProperty.call(right, key) && deepJsonEqual(left[key], right[key]));
+}
+
+/** Checks whether a value uses one of the Core type declaration forms. */
+export function validCoreTypeValue(value: unknown): boolean {
+  if (typeof value === 'string') return CORE_TYPES.has(value);
+  if (typeReference(value) !== undefined) return true;
+  return Array.isArray(value) && value.length > 0 && value.every((member) =>
+    typeof member === 'string' ? CORE_TYPES.has(member) : validCoreUnionObjectMember(member));
+}
+
+function validCoreUnionObjectMember(value: unknown): boolean {
+  if (typeReference(value) !== undefined) return true;
+  if (!isRecord(value) || typeof value.type !== 'string') return false;
+  if ((value.type === 'array' || value.type === 'set') && isRecord(value.items)) return validCoreTypeValue(value.items.type);
+  return value.type === 'map' && isRecord(value.values) && validCoreTypeValue(value.values.type);
+}
+
+function declarationType(value: Record<string, unknown>): string | undefined {
+  if (typeof value.type === 'string') return value.type;
+  if (typeReference(value.type) !== undefined) return '$ref';
+  if (Array.isArray(value.type)) return '$union';
+  return undefined;
+}
+
+function keywordRange(text: string, pointer: string): TextRange {
+  if (!parsedValues.has(text)) {
+    const parsed = new StrictParser(text, '').parse();
+    rememberParsedValues(text, parsed.values);
+  }
+  const index = parsedValueIndexes.get(text)!;
+  const value = index.get(pointer);
+  if (value) return rangeFor(text, value.start, value.end);
+  const parentPointer = pointer.slice(0, pointer.lastIndexOf('/'));
+  const parent = index.get(parentPointer);
+  if (parent) return rangeFor(text, parent.start, parent.end);
+  return rangeFor(text, 0, text.length);
+}
+function pushKeywordDiagnostic(
+  diagnostics: Diagnostic[],
+  uri: string,
+  pointer: string,
+  message: string,
+  text: string
+): void {
+  diagnostics.push({
+    code: 'json.keyword-invalid',
+    message,
+    severity: 'error',
+    location: location(uri, pointer, keywordRange(text, pointer))
+  });
+}
+
+function coreForm(value: Record<string, unknown>, conditionalCompositionActive = false): 'typed' | 'composed' | 'unknown' {
+  if (typeof value.type === 'string' || Array.isArray(value.type) || typeReference(value.type) !== undefined) return 'typed';
+  if (conditionalCompositionActive && COMPOSITION_KEYWORDS.some((keyword) => Object.prototype.hasOwnProperty.call(value, keyword))) return 'composed';
+  return 'unknown';
+}
+
+const COMPOSITION_KEYWORDS = ['allOf', 'anyOf', 'oneOf', 'not', 'if', 'then', 'else'] as const;
+
+function extendsProjection(value: unknown): string | readonly string[] | undefined {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value) && value.every((entry) => typeof entry === 'string')) return value;
+  return undefined;
+}
+
+function declarationKind(value: unknown): ModelNode['kind'] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return 'unknown';
+  const type = (value as Record<string, unknown>).type;
+  if (typeReference(type) !== undefined) return 'primitive';
+  if (Array.isArray(type)) return 'union';
+  if (typeof type !== 'string') return 'unknown';
+  if (type === 'object') return 'object';
+  if (type === 'array') return 'array';
+  if (type === 'set') return 'set';
+  if (type === 'map') return 'map';
+  if (type === 'tuple') return 'tuple';
+  if (type === 'choice') return 'choice';
+  if (type === 'union') return 'union';
+  if (['string', 'str', 'int32', 'float64', 'number', 'boolean', 'bool'].includes(type)) return 'primitive';
+  if (NUMERIC_TYPES.has(type)) return 'primitive';
+  return 'unknown';
+}
+
+function collectReferenceProjections(
+  root: Record<string, unknown>,
+  references: ReferenceProjection[],
+  validationActive: boolean,
+  conditionalCompositionActive: boolean,
+  relationsActive: boolean
+): void {
+  const seen = new Set<string>();
+  const push = (entry: ReferenceProjection): void => {
+    const key = `${entry.kind}|${entry.pointer}|${entry.target}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    references.push(entry);
+  };
+
+  const visitSchema = (candidate: unknown, currentPointer: string, compositionBranch = false): void => {
+    if (!isRecord(candidate)) return;
+
+    if (compositionBranch) {
+      const directReference = typeReference(candidate);
+      if (directReference !== undefined) {
+        push({ pointer: `${currentPointer}/$ref`, target: directReference, kind: 'ref' });
+        return;
+      }
+    }
+
+    if (typeof candidate.$root === 'string' && currentPointer === '') {
+      push({ pointer: '/$root', target: candidate.$root, kind: 'root' });
+    }
+    if (typeof candidate.$extends === 'string') {
+      push({ pointer: `${currentPointer}/$extends`, target: candidate.$extends, kind: 'extends' });
+    } else if (Array.isArray(candidate.$extends)) {
+      candidate.$extends.forEach((entry, index) => {
+        if (typeof entry === 'string') push({ pointer: `${currentPointer}/$extends/${index}`, target: entry, kind: 'extends' });
+      });
+    }
+    if (typeReference(candidate.type) !== undefined) {
+      push({ pointer: `${currentPointer}/type/$ref`, target: (candidate.type as Record<string, unknown>).$ref as string, kind: 'ref' });
+    } else if (Array.isArray(candidate.type)) {
+      candidate.type.forEach((member, index) => {
+        const reference = typeReference(member);
+        if (reference !== undefined) push({ pointer: `${currentPointer}/type/${index}/$ref`, target: reference, kind: 'ref' });
+        else if (isRecord(member)) visitSchema(member, `${currentPointer}/type/${index}`);
+      });
+    }
+    if (relationsActive && isRecord(candidate.relations)) {
+      for (const [name, relation] of Object.entries(candidate.relations)) {
+        if (!isRecord(relation)) continue;
+        const relationPointer = `${currentPointer}/relations/${pointerPart(name)}`;
+        const target = typeReference(relation.targettype);
+        const qualifier = typeReference(relation.qualifiertype);
+        if (target !== undefined) push({ pointer: `${relationPointer}/targettype/$ref`, target, kind: 'ref' });
+        if (qualifier !== undefined) push({ pointer: `${relationPointer}/qualifiertype/$ref`, target: qualifier, kind: 'ref' });
+      }
+    }
+    visitDefinitions(candidate.definitions, `${currentPointer}/definitions`);
+    visitSchemaMap(candidate.properties, `${currentPointer}/properties`);
+    if (isRecord(candidate.additionalProperties)) visitSchema(candidate.additionalProperties, `${currentPointer}/additionalProperties`);
+    visitSchemaValue(candidate.items, `${currentPointer}/items`);
+    visitSchemaValue(candidate.values, `${currentPointer}/values`);
+    visitSchemaMap(candidate.choices, `${currentPointer}/choices`);
+    if (validationActive) {
+      visitSchemaValue(candidate.contains, `${currentPointer}/contains`);
+      visitSchemaValue(candidate.propertyNames, `${currentPointer}/propertyNames`);
+      visitSchemaValue(candidate.keyNames, `${currentPointer}/keyNames`);
+      visitSchemaValue(candidate.has, `${currentPointer}/has`);
+      visitSchemaMap(candidate.patternProperties, `${currentPointer}/patternProperties`);
+      visitSchemaMap(candidate.patternKeys, `${currentPointer}/patternKeys`);
+    }
+    if (conditionalCompositionActive) {
+      visitCompositionArray(candidate.allOf, `${currentPointer}/allOf`);
+      visitCompositionArray(candidate.anyOf, `${currentPointer}/anyOf`);
+      visitCompositionArray(candidate.oneOf, `${currentPointer}/oneOf`);
+      visitCompositionValue(candidate.not, `${currentPointer}/not`);
+      visitCompositionValue(candidate.if, `${currentPointer}/if`);
+      visitCompositionValue(candidate.then, `${currentPointer}/then`);
+      visitCompositionValue(candidate.else, `${currentPointer}/else`);
+    }
+  };
+  const visitDefinitions = (candidate: unknown, pointer: string): void => {
+    if (!isRecord(candidate)) return;
+    for (const [key, entry] of Object.entries(candidate)) {
+      if (key === '$import' || key === '$importdefs' || !isRecord(entry)) continue;
+      const entryPointer = `${pointer}/${pointerPart(key)}`;
+      if (looksLikeSchemaObject(entry)) visitSchema(entry, entryPointer);
+      else visitDefinitions(entry, entryPointer);
+    }
+  };
+  const visitSchemaMap = (candidate: unknown, pointer: string): void => {
+    if (!isRecord(candidate)) return;
+    for (const [key, entry] of Object.entries(candidate)) visitSchema(entry, `${pointer}/${pointerPart(key)}`);
+  };
+  const visitSchemaArray = (candidate: unknown, pointer: string): void => {
+    if (Array.isArray(candidate)) candidate.forEach((entry, index) => visitSchema(entry, `${pointer}/${index}`));
+  };
+  const visitCompositionArray = (candidate: unknown, pointer: string): void => {
+    if (Array.isArray(candidate)) candidate.forEach((entry, index) => visitSchema(entry, `${pointer}/${index}`, true));
+  };
+  const visitSchemaValue = (candidate: unknown, pointer: string): void => {
+    if (Array.isArray(candidate)) visitSchemaArray(candidate, pointer);
+    else visitSchema(candidate, pointer);
+  };
+  const visitCompositionValue = (candidate: unknown, pointer: string): void => {
+    visitSchema(candidate, pointer, true);
+  };
+  visitSchema(root, '');
+}
+
+function collectSemanticPlacements(
+  value: unknown,
+  pointer: string,
+  uri: string,
+  text: string,
+  diagnostics: Diagnostic[],
+  placements: SemanticPlacementProjection[],
+  byPointer: Map<string, SemanticAnnotationsProjection>,
+  active: boolean,
+  validationActive: boolean,
+  conditionalCompositionActive: boolean
+): void {
+  const visitSchema = (candidate: unknown, candidatePointer: string): void => {
+    if (!isRecord(candidate)) return;
+
+    if (!active) {
+      for (const keyword of SEMANTIC_ANNOTATION_KEYWORDS) {
+        if (Object.prototype.hasOwnProperty.call(candidate, keyword)) {
+          pushKeywordDiagnostic(diagnostics, uri, `${candidatePointer}/${keyword}`, `${keyword} requires the JSON Structure Semantic Annotations extension.`, text);
+        }
+      }
+    }
+    const semantic = active ? semanticProjection(value as Record<string, unknown>, candidatePointer, candidate, uri, text, diagnostics) : undefined;
+    if (semantic) {
+      placements.push({ pointer: candidatePointer, annotations: semantic, inspection: semanticInspection(candidate, semantic) });
+      byPointer.set(candidatePointer, semantic);
+    }
+
+    visitDefinitions(candidate.definitions, `${candidatePointer}/definitions`);
+    visitSchemaMap(candidate.properties, `${candidatePointer}/properties`);
+    visitSchemaValue(candidate.additionalProperties, `${candidatePointer}/additionalProperties`);
+    visitSchemaValue(candidate.items, `${candidatePointer}/items`);
+    visitSchemaValue(candidate.values, `${candidatePointer}/values`);
+    visitSchemaMap(candidate.choices, `${candidatePointer}/choices`);
+    if (validationActive) {
+      visitSchemaValue(candidate.contains, `${candidatePointer}/contains`);
+      visitSchemaValue(candidate.propertyNames, `${candidatePointer}/propertyNames`);
+      visitSchemaValue(candidate.keyNames, `${candidatePointer}/keyNames`);
+      visitSchemaValue(candidate.has, `${candidatePointer}/has`);
+      visitSchemaMap(candidate.patternProperties, `${candidatePointer}/patternProperties`);
+      visitSchemaMap(candidate.patternKeys, `${candidatePointer}/patternKeys`);
+    }
+    if (conditionalCompositionActive) {
+      visitSchemaArray(candidate.allOf, `${candidatePointer}/allOf`);
+      visitSchemaArray(candidate.anyOf, `${candidatePointer}/anyOf`);
+      visitSchemaArray(candidate.oneOf, `${candidatePointer}/oneOf`);
+      for (const keyword of ['not', 'if', 'then', 'else'] as const) visitSchemaValue(candidate[keyword], `${candidatePointer}/${keyword}`);
+    }
+    if (Array.isArray(candidate.type)) visitSchemaArray(candidate.type, `${candidatePointer}/type`);
+  };
+
+  const visitDefinitions = (candidate: unknown, candidatePointer: string): void => {
+    if (!isRecord(candidate)) return;
+    for (const [key, entry] of Object.entries(candidate)) {
+      const entryPointer = `${candidatePointer}/${pointerPart(key)}`;
+      if (!isRecord(entry)) continue;
+      if (looksLikeSchemaObject(entry)) {
+        visitSchema(entry, entryPointer);
+      } else {
+        // Nested namespace containers are normative only under definitions.
+        visitDefinitions(entry, entryPointer);
+      }
+    }
+  };
+
+  const visitSchemaMap = (candidate: unknown, candidatePointer: string): void => {
+    if (!isRecord(candidate)) return;
+    for (const [key, entry] of Object.entries(candidate)) visitSchema(entry, `${candidatePointer}/${pointerPart(key)}`);
+  };
+
+  const visitSchemaArray = (candidate: unknown, candidatePointer: string): void => {
+    if (!Array.isArray(candidate)) return;
+    candidate.forEach((entry, index) => visitSchema(entry, `${candidatePointer}/${index}`));
+  };
+
+  const visitSchemaValue = (candidate: unknown, candidatePointer: string): void => {
+    if (Array.isArray(candidate)) {
+      visitSchemaArray(candidate, candidatePointer);
+      return;
+    }
+    visitSchema(candidate, candidatePointer);
+  };
+
+  visitSchema(value, pointer);
+}
+
+function looksLikeSchemaObject(value: Record<string, unknown>): boolean {
+  if (typeof value.type === 'string' || Array.isArray(value.type) || isRecord(value.type)) return true;
+  if (typeof value.$ref === 'string' || typeof value.$extends === 'string' || Array.isArray(value.$extends)) return true;
+  const schemaBearingKeys = [
+    'definitions', 'properties', 'items', 'values', 'choices',
+    'allOf', 'anyOf', 'oneOf', 'not', 'if', 'then', 'else',
+    'contains', 'propertyNames', 'keyNames', 'has', 'patternProperties', 'patternKeys'
+  ];
+  return schemaBearingKeys.some((key) => Object.prototype.hasOwnProperty.call(value, key));
+}
+
+function decodePointerFragment(value: string): string | undefined {
+  if (value === '#') return '';
+  if (!value.startsWith('#')) return undefined;
+  try {
+    const decoded = decodeURIComponent(value.slice(1));
+    return decoded.startsWith('/') && !/~(?:[^01]|$)/.test(decoded) ? decoded : undefined;
+  } catch {
+    return undefined;
+  }
+}

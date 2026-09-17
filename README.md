@@ -22,6 +22,20 @@ that can be validated and mapped to programming language types.
 | [Ruby](./ruby/) | `jsonstructure` | ✅ Available |
 | [R](./r/) | `jsonstructure` | ✅ Available |
 
+## JSON Structure Editor
+
+The visual JSON Structure Editor is distributed in two forms from the same SDK
+version release:
+
+- Platform-specific VSIX packages for Windows, Linux, Intel macOS, and Apple
+  Silicon macOS.
+- A desktop application for Windows, Linux, Intel macOS, and Apple Silicon
+  macOS.
+
+Version tags build, test, package, sign the Windows and macOS applications, and
+attach the desktop installers and VSIX packages to the corresponding
+[GitHub release](https://github.com/json-structure/sdk/releases).
+
 ## Features
 
 All SDKs provide:
@@ -30,6 +44,39 @@ All SDKs provide:
 - **Instance Validation**: Validate JSON instances against JSON Structure schemas
 - **Full Type Support**: All 34 primitive and compound types from JSON Structure Core v0
 - **Extensions**: Support for validation addins, conditional composition, and imports
+
+## Serialization: Avro and Protobuf
+
+JSON Structure describes your data once. These SDKs turn that description into
+the wire formats you actually ship on.
+
+**Avro is a runtime concern.** Hand the SDK a `.struct.json` and you get a
+working Avro serializer. The `.avsc` is an implementation detail you never have
+to look at — no code generation step, no schema file to keep in sync.
+
+```rust
+let schema = json_structure::avro::schema_from_file("person.struct.json")?;
+let mut writer = apache_avro::Writer::new(&schema, Vec::new());
+```
+
+**Protobuf is a build-time concern.** `.proto` files are artifacts you check in,
+feed to `protoc`, and `import` from a gRPC service definition, so generation
+lives in the CLI:
+
+```bash
+jstruct proto -o proto/ --numbers proto/numbers.json order.struct.json
+```
+
+The number lock file matters. Protobuf field numbers are a wire contract, and
+without a lock, inserting a property in the middle of a schema silently
+renumbers everything after it. With one, existing fields keep their numbers and
+removed fields become `reserved`.
+
+Both mappings are normative and deterministic — two conforming implementations
+emit byte-identical output for the same input:
+
+- [Mapping to Avro](spec/json-structure-to-avro.md)
+- [Mapping to Protobuf](spec/json-structure-to-proto.md)
 
 ## CLI Tool (`jstruct`)
 
@@ -66,6 +113,15 @@ jstruct check schema.struct.json another.struct.json
 
 # Validate instances against a schema (quiet—exit code only)
 jstruct validate -q -s schema.struct.json data/*.json
+
+# Compile to an Avro schema
+jstruct avro order.struct.json -o order.avsc
+
+# Generate .proto files
+jstruct proto -o proto/ order.struct.json
+
+# Resolve $import into a single self-contained document
+jstruct consolidate -b common-types.json order.struct.json
 ```
 
 See [rust/CLI.md](./rust/CLI.md) for the full command reference.
@@ -464,6 +520,10 @@ is_valid(instance_result)
 
 - [JSON Structure Specification](https://github.com/json-structure/core)
 - [JSON Structure Primer](https://github.com/json-structure/primer-and-samples)
+- [Mapping JSON Structure to Avro](spec/json-structure-to-avro.md)
+- [Mapping JSON Structure to Protobuf](spec/json-structure-to-proto.md)
+- [SDK Development Guidelines](SDK-GUIDELINES.md)
+- [`jstruct` CLI reference](rust/CLI.md)
 
 ## Contributing
 

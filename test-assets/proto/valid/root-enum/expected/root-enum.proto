@@ -1,0 +1,7 @@
+syntax = "proto3";
+
+enum Colour {
+  COLOUR_UNSPECIFIED = 0;
+  RED = 1;
+  GREEN = 2;
+}
