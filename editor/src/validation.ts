@@ -130,6 +130,15 @@ export interface EffectiveValidationTypes {
   readonly types: readonly string[];
   readonly determinate: boolean;
 }
+
+/** Returns the one value-bearing type, allowing null as an orthogonal nullable branch. */
+export function singleEffectiveValidationType(effective: EffectiveValidationTypes): string | undefined {
+  if (!effective.determinate) return undefined;
+  const valueTypes = effective.types.filter((type) => type !== 'null');
+  if (valueTypes.length === 1) return valueTypes[0];
+  return valueTypes.length === 0 && effective.types.length === 1 ? 'null' : undefined;
+}
+
 function pointerValue(root: unknown, pointer: string): unknown {
   if (pointer === '') return root;
   return pointer.slice(1).split('/').map((part) => part.replace(/~1/g, '/').replace(/~0/g, '~')).reduce<unknown>((current, part) =>

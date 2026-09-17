@@ -441,9 +441,10 @@ export const editorStyles = `
 .js-facet-add-buttons button { min-height:24px; border:0; padding:3px 7px; background:color-mix(in srgb,var(--js-raised) 72%,transparent); color:var(--js-muted); font-size:11px; }
 .js-facet-add-buttons button:hover,.js-facet-add-buttons button:focus-visible { background:var(--js-raised); color:var(--js-text); }
 .js-structured-facet-list { display:grid; gap:8px; padding:10px; }
-.js-structured-facet-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; align-items:end; border:1px solid var(--js-line); padding:8px; background:var(--js-panel); }
+.js-structured-facet-row { display:grid; grid-template-columns:minmax(0,1fr) auto 32px; gap:8px; align-items:end; border:1px solid var(--js-line); padding:8px; background:var(--js-panel); }
 .js-structured-facet-row label { display:grid; gap:5px; color:var(--js-muted); font-size:11px; }
 .js-structured-facet-row input:not([type="checkbox"]),.js-structured-facet-row textarea { width:100%; min-width:0; }
+.js-structured-facet-row>.js-detail-remove { grid-column:3; }
 .js-enum-editor { display:grid; gap:5px; }
 .js-enum-entry { min-height:32px; display:flex; flex-wrap:wrap; align-items:center; gap:4px; border:1px solid var(--js-line); padding:3px 5px; background:var(--js-canvas); }
 .js-enum-entry:focus-within { border-color:var(--js-focus); }
@@ -1462,9 +1463,11 @@ export const editorStyles = `
 .js-overlay-base-facets dt { color:var(--js-muted); font-size:12px; }
 .js-overlay-base-facets dd { margin:2px 0; max-width:540px; overflow-wrap:anywhere; }
 .js-overlay-base-facets code { white-space:pre-wrap; }
-.js-overlay-member-row { grid-template-columns:minmax(110px,1fr) minmax(80px,1fr) minmax(110px,1fr) minmax(150px,1.2fr) minmax(130px,1.4fr) 44px; }
+.js-overlay-member-row { grid-template-columns:minmax(110px,1fr) minmax(90px,1fr) 70px minmax(110px,1fr) minmax(150px,1.2fr) minmax(130px,1.4fr) minmax(118px,.7fr); }
 .js-overlay-grid { overflow-x:auto; }
-.js-overlay-grid .js-overlay-member-row { min-width:680px; }
+.js-overlay-grid .js-overlay-member-row { min-width:900px; }
+.js-overlay-member-row>.js-action-cell { padding:5px; }
+.js-overlay-constrain-action { width:100%; min-height:30px; padding:4px 8px; white-space:nowrap; }
 .js-overlay-property-add { margin-top:12px; }
 .js-overlay-property-add summary { width:fit-content; }
 .js-overlay-property-add [aria-disabled=true] { color:var(--js-muted); }

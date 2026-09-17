@@ -1,6 +1,6 @@
 import type { CatalogFamily } from '../catalogs.js';
 import { resolveCapabilities } from '../capabilities.js';
-import { effectiveValidationTypes } from '../validation.js';
+import { effectiveValidationTypes, singleEffectiveValidationType } from '../validation.js';
 import type { ActionCapability, ActionTarget, CommandAction } from './actions.js';
 
 export interface ActionAvailability {
@@ -70,10 +70,10 @@ export function actionAvailability(action: CommandAction, selectedPointer: strin
       return { enabled: false, pointer, reason: 'Select a typed schema to use this command.' };
     }
     const effectiveTypes = effectiveValidationTypes(document, value as Record<string, unknown>);
-    if (!effectiveTypes.determinate || effectiveTypes.types.length !== 1) {
+    const schemaType = singleEffectiveValidationType(effectiveTypes);
+    if (!schemaType) {
       return { enabled: false, pointer, reason: 'This command requires one determinable schema type.' };
     }
-    const schemaType = effectiveTypes.types[0];
     if (!action.schemaTypes.includes(schemaType)) {
       return { enabled: false, pointer, reason: `This command requires a ${action.schemaTypes.join(' or ')} schema.` };
     }
@@ -145,12 +145,12 @@ function semanticActionPlacementValid(keyword: string | undefined, pointer: stri
   if (SEMANTIC_PROPERTY_OR_COLLECTION.has(keyword)) {
     if (memberPosition !== undefined) return true;
     const effective = effectiveValidationTypes(document, schema);
-    const type = effective.determinate && effective.types.length === 1 ? effective.types[0] : undefined;
+    const type = singleEffectiveValidationType(effective);
     return (type === 'object' || type === 'tuple') && (keyword === 'observedProperty' || keyword === 'temporalReferenceSystem');
   }
   if (!SEMANTIC_RECORD_ONLY.has(keyword)) return false;
   const effective = effectiveValidationTypes(document, schema);
-  const type = effective.determinate && effective.types.length === 1 ? effective.types[0] : undefined;
+  const type = singleEffectiveValidationType(effective);
   return type === 'object' || type === 'tuple';
 }
 

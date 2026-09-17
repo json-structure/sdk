@@ -54,8 +54,25 @@ describe('mounted contextual Conditional Composition authoring', () => {
     expect([...root.querySelectorAll('[data-overlay-member]')].map(row => row.dataset.overlayMember)).toEqual(['id', 'age', 'title']);
     expect(get(root, '[data-overlay-base-required-property="id"]').disabled).toBe(true);
     expect(root.querySelector('[data-inline-definition-type]')).toBeNull(); expect(root.querySelector('[data-property-field-activate]')).toBeNull();
-    expect(root.textContent).not.toContain('Empty schema'); expect(root.textContent).toContain('No additional constraints');
+    expect(root.textContent).not.toContain('Empty schema'); expect(root.textContent).toContain('No local constraints yet');
+    const nullableRow = get(root, '[data-overlay-member="title"]');
+    expect(nullableRow.querySelector('.js-property-type-value')?.textContent).toBe('string');
+    expect(nullableRow.querySelector('.js-nullable-indicator')?.textContent).toBe('no');
+    const nullableStringRow = get(root, '[data-overlay-member="age"]');
+    expect(nullableStringRow.querySelector('[data-overlay-property-open]')?.textContent).toBe('Add constraints');
     expect(root.querySelector('[data-overlay-full-schema]')).not.toBeNull(); expect(root.querySelector('[data-overlay-reference]')).not.toBeNull();
+  });
+  it('renders nullable inherited types like the main property view and exposes a direct constraint action', async () => {
+    const root = mount(base({ properties: { ...base().properties, alias: { type: ['null', 'string'] } } }));
+    click(root, '[data-schema-open="/allOf/0"]');
+    const row = get(root, '[data-overlay-member="alias"]');
+    expect(row.querySelector('.js-property-type-value')?.textContent).toBe('string');
+    expect(row.querySelector('.js-nullable-indicator')?.textContent).toBe('yes');
+    expect(row.textContent).not.toContain('["null","string"]');
+    click(root, '[data-overlay-member="alias"] [data-overlay-property-open]'); await settle();
+    expect(pointer(root)).toBe('/allOf/0/properties/alias');
+    expect(value().allOf[0].properties.alias).toEqual({});
+    expect([...get(root, '[data-facet-select]').querySelectorAll('option')].map(option => option.value)).toContain('validation.minLength');
   });
   it('opens inherited properties recursively and edits only compatible local facets; undo/redo preserves exact pointers', async () => {
     const root = mount(base()); click(root, '[data-schema-open="/allOf/0"]'); click(root, '[data-overlay-property-open="age"]'); await settle();
@@ -79,6 +96,9 @@ describe('mounted contextual Conditional Composition authoring', () => {
 
     click(root, '[data-additional-properties-policy="false"]'); await settle();
     expect(value().allOf[0].additionalProperties).toBe(false);
+    const remove = get(root, '[data-facet-row="core.additional-properties"] [data-facet-remove]');
+    expect(remove.getAttribute('aria-label')).toContain('Remove Core additional properties');
+    expect(remove.textContent).not.toContain('Remove');
 
     click(root, '[data-additional-properties-policy="schema"]');
     change(root, '[data-additional-properties-schema]', JSON.stringify({ type: 'string' })); await settle();

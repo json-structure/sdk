@@ -6,7 +6,7 @@ import { InstanceWorkspace } from './phase4/instance-workspace.js';
 import { resolveEffectiveMembers, type EffectiveMemberOptions } from './phase4/effective-members.js';
 import { ResolvedSchemaContext } from './phase4/resolved-schema.js';
 import { SchemaLocationIndex, schemaRecord, schemaPointerToken, schemaValueAt, COMPOSITION_KEYWORDS } from './schema-locations.js';
-import { effectiveValidationTypes, validationKeywordIssue, VALIDATION_KEYWORDS, type EffectiveValidationTypes, type ValidationKeyword } from './validation.js';
+import { effectiveValidationTypes, singleEffectiveValidationType, validationKeywordIssue, VALIDATION_KEYWORDS, type EffectiveValidationTypes, type ValidationKeyword } from './validation.js';
 
 export type OverlayClassification = 'narrowing' | 'redundant' | 'conflict' | 'expansion' | 'indeterminate';
 export interface OverlaySourceLocation {
@@ -424,11 +424,14 @@ export class OverlayContextResolver {
 
   private context(pointer: string, ownerPointer: string, basePointer: string, branchPointer: string, base: OverlayProjection, delta: unknown, explicitNewProperty = false): OverlayContext {
     const projection = schemaRecord(delta) ? this.intersect(base, delta, pointer) : base;
-    const determinate = base.types.determinate && base.types.types.length === 1 && !base.types.types.includes('any') && !base.reasons.length;
+    const baseType = singleEffectiveValidationType(base.types);
+    const projectionType = singleEffectiveValidationType(projection.types);
+    const determinate = baseType !== undefined && baseType !== 'any' && !base.reasons.length;
     const authorable = schemaRecord(delta) && (determinate || explicitNewProperty && projection.types.determinate) && !projection.reasons.length && !Object.hasOwn(delta, '$ref');
-    const reason = !schemaRecord(delta) ? 'Malformed delta: use Advanced / Edit Source; the authored value is preserved.' : base.reasons[0] ?? projection.reasons[0] ?? (!determinate && !explicitNewProperty ? base.types.types.length > 1 ? 'The base has multiple value types. Use an explicit Advanced narrowing action.' : 'The base is composition-only, unconstrained, or indeterminate. Use an explicit Advanced action.' : Object.hasOwn(delta, '$ref') ? 'Legacy direct reference is preserved. Use Advanced to edit it without normalization.' : undefined);
+    const valueTypes = base.types.types.filter((type) => type !== 'null');
+    const reason = !schemaRecord(delta) ? 'Malformed delta: use Advanced / Edit Source; the authored value is preserved.' : base.reasons[0] ?? projection.reasons[0] ?? (!determinate && !explicitNewProperty ? valueTypes.length > 1 ? 'The base has multiple value types. Use an explicit Advanced narrowing action.' : 'The base is composition-only, unconstrained, or indeterminate. Use an explicit Advanced action.' : Object.hasOwn(delta, '$ref') ? 'Legacy direct reference is preserved. Use Advanced to edit it without normalization.' : undefined);
     const constrain = { enabled: authorable, ...(authorable ? {} : { reason }) };
-    const object = projection.types.types.length === 1 && projection.types.types[0] === 'object';
+    const object = projectionType === 'object';
     const addProperty: OverlayOperation = !authorable || !object ? { enabled: false, reason: reason ?? 'Property constraints require an object base.' } : { enabled: true, ...(base.additionalProperties.allowed !== true ? { warning: (base.additionalProperties.reason ?? 'Base openness is indeterminate.') + ' A local addition does not override it; incompatibility is diagnosed, not prohibited.' } : typeof base.schema.maxProperties === 'number' && base.required.length >= base.schema.maxProperties ? { warning: 'Base required members exhaust maxProperties. Additional members are permitted in source but cannot occur in base-admissible instances.' } : {}) };
     const diagnostics = this.diagnose(base, delta, pointer, 0);
     const resolutionReasons = new Set([...base.reasons, ...projection.reasons]);
@@ -565,4 +568,3 @@ export class OverlayContextResolver {
 export function resolveOverlayContext(document: unknown, pointer: string, options: OverlayContextOptions = {}): OverlayContext | undefined {
   return schemaRecord(document) ? new OverlayContextResolver(document, options).resolve(pointer) : undefined;
 }
-

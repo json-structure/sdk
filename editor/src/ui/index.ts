@@ -19,6 +19,7 @@ import { loadExternalDocuments } from '../external-documents.js';
 import { actionById, commandActions, type CommandAction } from './actions.js';
 import { actionAvailability, catalogFamilyForAction, parseActionValue, valueAtPointer } from './action-runtime.js';
 import { diagnosticsForPointer, displaySchemaTypeValue, isInlineRootSchema, pointerLabel, projectGraph, projectInspectorSections, projectSchemaInspectorSections, type InspectorSection, type PropertyRow } from './helpers.js';
+import { displayPropertyValueTypes } from './property-type-label.js';
 import { GraphNavigationController } from './graph-navigation.js';
 import { ForceGraphLayout, graphEdgePath, type ForceGraphLayoutOptions, type ForceGraphPosition } from './force-graph-layout.js';
 import { SemanticGraphController, type SemanticGraphView } from './semantic-graph.js';
@@ -38,7 +39,7 @@ import { renderLibraryBrowser } from './library-browser.js';
 import { CopyCollisionError, planLibraryCopy, planLibraryMaterialization, type CopyOperation, type LibraryProvenance } from '../libraries/planning.js';
 import { planAddImport, planCopyDeclarations, planExtractInlineProperty, planLocalShadow, planMaterializeDeclarations, planMoveDefinition, type RefactoringPlan } from '../phase4/refactoring.js';
 import { coreScalarValueValid, rangeFor } from '../parser.js';
-import { effectiveValidationTypes, VALIDATION_KEYWORDS, validationIssues } from '../validation.js';
+import { effectiveValidationTypes, singleEffectiveValidationType, VALIDATION_KEYWORDS, validationIssues } from '../validation.js';
 import type { editor as MonacoEditor } from 'monaco-editor';
 import { fluentIcon, type FluentIconName } from './fluent-icons.js';
 import { jsonStructureLogo } from './brand-logo.js';
@@ -4497,7 +4498,7 @@ function structuredFacetEditor(pointer: string, schema: Readonly<Record<string, 
   const actions = commandActions.filter((action) => (!overlay || !!action.keyword && OVERLAY_EDITABLE_FACETS.has(action.keyword)) && !excludedActions.has(action.id) && action.operation === 'set' && action.keyword &&
     (STRUCTURED_FACET_GROUPS.has(action.group) || STRUCTURED_CORE_FACETS.has(action.id) || action.id.startsWith('binary.')));
   const effective = overlay?.authoringProjection.types ?? effectiveValidationTypes(document, schema);
-  const schemaType = effective.determinate && effective.types.length === 1 ? effective.types[0] : undefined;
+  const schemaType = singleEffectiveValidationType(effective);
   const rows = actions.flatMap((action) => {
     const current = action.keyword ? schema[action.keyword] : undefined;
     const pending = pendingFields.has(inlineFieldKey(pointer, action.id));
@@ -4617,7 +4618,7 @@ function structuredFacetRow(pointer: string, action: CommandAction, value: unkno
     : constControl ?? control;
   const remove = pending
     ? `<button type="button" data-facet-cancel="${escapeAttribute(inlineFieldKey(pointer, action.id))}">Cancel</button>`
-    : `<button type="button" class="js-detail-remove" data-facet-remove="${escapeAttribute(action.removesActionId ?? `${action.id}.remove`)}" data-facet-pointer="${escapeAttribute(pointer)}">Remove</button>`;
+    : `<button type="button" class="js-detail-remove" data-facet-remove="${escapeAttribute(action.removesActionId ?? `${action.id}.remove`)}" data-facet-pointer="${escapeAttribute(pointer)}" aria-label="Remove ${escapeAttribute(facetLabel)}" title="Remove">${fluentIcon('dismiss')}</button>`;
   const schemaChild = value !== undefined && action.keyword && (STRUCTURED_SCHEMA_FACETS.has(action.id) || action.id === 'core.additional-properties' && isSchemaRecord(value))
     ? ` data-schema-child-kind="schema-keyword" data-schema-child-key="${escapeAttribute(action.keyword)}"`
     : '';
@@ -5165,15 +5166,7 @@ function effectiveSchemaType(document: unknown, pointer: string): string | undef
   const schema = valueAtPointer(document, pointer);
   if (!schema || typeof schema !== 'object' || Array.isArray(schema)) return undefined;
   const effective = effectiveValidationTypes(document, schema as Readonly<Record<string, unknown>>);
-  return effective.determinate && effective.types.length === 1 ? effective.types[0] : undefined;
-}
-
-function displayPropertyValueTypes(schema: Readonly<Record<string, unknown>>): string {
-  if (typeof schema.$ref === 'string') return 'Legacy reference · ' + schema.$ref;
-  if (!Object.hasOwn(schema,'type')) return 'No declared type';
-  if (isCollectionSchema(schema)) return schemaExpressionLabel(schema);
-  const values = Array.isArray(schema.type) ? schema.type.filter((value) => value !== 'null') : schema.type === 'null' ? [] : [schema.type];
-  return values.length ? values.map(schemaExpressionLabel).join(' or ') : 'null only';
+  return singleEffectiveValidationType(effective);
 }
 
 function formatRelationScope(scope: string | readonly string[] | undefined): string {
