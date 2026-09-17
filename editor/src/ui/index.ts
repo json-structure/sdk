@@ -4489,7 +4489,7 @@ function structuredFacetEditor(pointer: string, schema: Readonly<Record<string, 
     if (current === undefined && !pending) return [];
     const availability = actionAvailability(action, pointer, document);
     if (overlay && !availability.enabled && !availability.reason?.startsWith('Activate ')) return ['<div class="js-structured-facet-row" data-overlay-incompatible-facet="' + escapeAttribute(action.keyword!) + '"><strong>' + escapeHtml(action.keyword!) + '</strong><pre>' + escapeHtml(JSON.stringify(current)) + '</pre><span>' + escapeHtml(availability.reason ?? 'Incompatible with the base') + '</span><button type="button" class="js-schema-action" data-composition-source="' + escapeAttribute(pointer + '/' + action.keyword) + '">Edit Source</button></div>'];
-    return [structuredFacetRow(pointer, action, current, pending, schemaType, document)];
+    return [structuredFacetRow(pointer, action, current, pending, schemaType, document, !!overlay)];
   }).join('');
   const options = actions.filter((action) => {
     const current = action.keyword && schema[action.keyword] !== undefined;
@@ -4546,7 +4546,34 @@ function crsFacetRow(pointer: string, value: unknown, properties: readonly strin
   return `<div class="js-structured-facet-row" data-facet-row="semantic.coordinateReferenceSystem"><label><span>Semantic · Coordinate reference system</span><div class="js-coordinate-reference-system" data-coordinate-reference-system="${escapeAttribute(pointer)}"><input data-crs-reference value="${escapeAttribute(typeof current.reference === 'string' ? current.reference : isRecord(current.reference) && typeof current.reference.$ref === 'string' ? current.reference.$ref : '')}" aria-label="Coordinate reference"><input data-crs-kind value="${escapeAttribute(typeof current.kind === 'string' ? current.kind : '')}" aria-label="Coordinate system kind"><div data-crs-coordinates>${rows}</div><select data-crs-coordinate-add-select aria-label="Coordinate property"><option value="">Choose property</option>${options}</select><button type="button" data-crs-coordinate-add aria-label="Add coordinate">Add coordinate</button><button type="button" data-crs-apply aria-label="Apply coordinate reference system">Apply</button></div></label></div>`;
 }
 
-function structuredFacetRow(pointer: string, action: CommandAction, value: unknown, pending: boolean, schemaType: string | undefined, document?: unknown): string {
+function additionalPropertiesFacetControl(pointer: string, value: unknown, contextual: boolean): string {
+  const policy = value === true ? 'true' : value === false ? 'false' : isSchemaRecord(value) ? 'schema' : 'unspecified';
+  const simpleType = isSchemaRecord(value) && typeof value.type === 'string' && Object.keys(value).length === 1 ? value.type : undefined;
+  const types = ['any', 'null', 'boolean', 'string', 'integer', 'number', 'decimal', 'date', 'datetime', 'time', 'duration', 'uuid', 'uri', 'binary', 'jsonpointer', 'object', 'array', 'set', 'map', 'tuple', 'choice'];
+  const currentSchema = isSchemaRecord(value) && simpleType === undefined
+    ? `<option value="${escapeAttribute(JSON.stringify(value))}" selected>Current constraint schema</option>`
+    : '';
+  const options = types.map((type) => {
+    const schema = JSON.stringify({ type });
+    return `<option value="${escapeAttribute(schema)}" ${simpleType === type ? 'selected' : ''}>${type}</option>`;
+  }).join('');
+  const button = (name: string, label: string) => `<button type="button" data-additional-properties-policy="${name}" data-facet-pointer="${escapeAttribute(pointer)}" aria-pressed="${policy === name}">${label}</button>`;
+  return `<div class="js-additional-properties-control" data-additional-properties-control>
+    <div class="js-additional-properties-policy" role="group" aria-label="Additional properties policy">
+      ${button('unspecified', contextual ? 'Inherit base' : 'Unspecified')}
+      ${button('true', 'Allow')}
+      ${button('false', 'Disallow')}
+      ${button('schema', 'Constrain values')}
+    </div>
+    <div class="js-additional-properties-constraints" data-additional-properties-constraints ${policy === 'schema' ? '' : 'hidden'}>
+      <span>Extra-property value constraint</span>
+      <div><label>Value type<select data-additional-properties-schema data-facet-pointer="${escapeAttribute(pointer)}">${currentSchema}${options}</select></label></div>
+      <small>Select a starting value type, then open the constraint schema to refine it.</small>
+    </div>
+  </div>`;
+}
+
+function structuredFacetRow(pointer: string, action: CommandAction, value: unknown, pending: boolean, schemaType: string | undefined, document?: unknown, contextual = false): string {
   if (action.id === 'localized-descriptions.descriptions') return localizedDescriptionsFacetRow(pointer, value);
   if (action.id === 'alternate-names.altnames') return alternateNamesFacetRow(pointer, value);
   if (action.id === 'alternate-enums.altenums') return alternateEnumsFacetRow(pointer, value);
@@ -4566,7 +4593,9 @@ function structuredFacetRow(pointer: string, action: CommandAction, value: unkno
     : kind === 'json'
       ? `<textarea rows="4" data-facet-control data-facet-action="${escapeAttribute(action.id)}" data-facet-pointer="${escapeAttribute(pointer)}" data-value-kind="json" aria-label="${escapeAttribute(facetLabel)}" placeholder="Enter structured JSON">${escapeHtml(raw)}</textarea>`
       : `<input type="${kind === 'number' && !(action.control?.kind === 'number' && action.control.schemaNumeric && stringBackedNumericType(schemaType)) ? 'number' : 'text'}" data-facet-control data-facet-action="${escapeAttribute(action.id)}" data-facet-pointer="${escapeAttribute(pointer)}" data-value-kind="${kind}" aria-label="${escapeAttribute(facetLabel)}" value="${escapeAttribute(raw)}">`;
-  const catalog = action.id === 'core.enum'
+  const catalog = action.id === 'core.additional-properties'
+    ? additionalPropertiesFacetControl(pointer, value, contextual)
+    : action.id === 'core.enum'
     ? enumFacetControl(pointer, action, value, schemaType)
     : action.control?.kind === 'catalog'
     ? `<span class="js-catalog-field" data-facet-catalog="${escapeAttribute(action.id)}" data-facet-pointer="${escapeAttribute(pointer)}"><input type="hidden" data-catalog-value value="${escapeAttribute(raw)}"><input data-catalog-display value="${escapeAttribute(structuredValueLabel(value))}" aria-label="${escapeAttribute(facetLabel)}" readonly><button type="button" data-catalog-open>Browse catalog</button><small data-catalog-provenance>Catalog suggestions are advisory.</small></span>`

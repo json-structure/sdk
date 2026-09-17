@@ -71,6 +71,24 @@ describe('mounted contextual Conditional Composition authoring', () => {
     expect(value().allOf[0].properties.age).toEqual({ minimum: 18 });
     click(root, '[data-schema-back]'); expect(document.activeElement.dataset.schemaOpen).toBe('/allOf/0/properties/age');
   });
+  it('authors additional-properties policies without exposing a raw JSON facet field', async () => {
+    const root = mount(base()); click(root, '[data-schema-open="/allOf/0"]');
+    change(root, '[data-facet-select]', 'core.additional-properties'); click(root, '[data-facet-add]'); await settle();
+    expect(root.querySelector('[data-facet-row="core.additional-properties"] textarea')).toBeNull();
+    expect(get(root, '[data-additional-properties-policy="unspecified"]').textContent).toBe('Inherit base');
+
+    click(root, '[data-additional-properties-policy="false"]'); await settle();
+    expect(value().allOf[0].additionalProperties).toBe(false);
+
+    click(root, '[data-additional-properties-policy="schema"]');
+    change(root, '[data-additional-properties-schema]', JSON.stringify({ type: 'string' })); await settle();
+    expect(value().allOf[0].additionalProperties).toEqual({ type: 'string' });
+    expect(root.querySelector('[data-schema-open="/allOf/0/additionalProperties"]')).not.toBeNull();
+
+    click(root, '[data-additional-properties-policy="unspecified"]'); await settle();
+    expect(value().allOf[0]).not.toHaveProperty('additionalProperties');
+    expect(value().additionalProperties).toBe(true);
+  });
   it('adds a local property and required addition on an open object without restating base required names', async () => {
     const root = mount(base()); click(root, '[data-schema-open="/allOf/0"]');
     click(root, '.js-overlay-property-add summary'); change(root, '[data-overlay-new-name]', 'note'); click(root, '[data-overlay-property-add]'); await settle();
