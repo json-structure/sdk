@@ -200,14 +200,14 @@ jobs:
 
       - name: Upload release artifact (Unix)
         if: runner.os != 'Windows'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact_name }}-${{ steps.get_version.outputs.VERSION }}
           path: c/${{ matrix.artifact_name }}-${{ steps.get_version.outputs.VERSION }}.tar.gz
 
       - name: Upload release artifact (Windows)
         if: runner.os == 'Windows'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact_name }}-${{ steps.get_version.outputs.VERSION }}
           path: c/${{ matrix.artifact_name }}-${{ steps.get_version.outputs.VERSION }}.zip
