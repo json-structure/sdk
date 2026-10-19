@@ -106,7 +106,7 @@ jobs:
         run: cargo build --release --features cli --target ${{ matrix.target }}
 
       - name: Upload binary
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ env.CLI_NAME }}-${{ matrix.target }}
           path: rust/target/${{ matrix.target }}/release/${{ matrix.artifact }}
@@ -312,7 +312,7 @@ jobs:
           dpkg-deb --build pkg jstruct_${{ steps.version.outputs.VERSION }}_${{ matrix.arch }}.deb
 
       - name: Upload DEB package
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: jstruct-deb-${{ matrix.arch }}
           path: "*.deb"
@@ -391,7 +391,7 @@ jobs:
                    -bb rpmbuild/SPECS/jstruct.spec
 
       - name: Upload RPM package
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: jstruct-rpm-${{ matrix.arch }}
           path: "**/*.rpm"
@@ -527,7 +527,7 @@ jobs:
           & $sdkPath.FullName pack /d msix /p jstruct-${{ steps.version.outputs.VERSION }}-${{ matrix.arch }}.msix /o
 
       - name: Upload MSIX package
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: jstruct-msix-${{ matrix.arch }}
           path: "*.msix"
@@ -610,13 +610,13 @@ jobs:
           tar -czvf jstruct-${{ steps.version.outputs.VERSION }}-darwin-${{ matrix.arch }}.tar.gz -C dist jstruct
 
       - name: Upload PKG
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: jstruct-pkg-${{ matrix.arch }}
           path: "*.pkg"
 
       - name: Upload tarball
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: jstruct-tarball-darwin-${{ matrix.arch }}
           path: "*.tar.gz"
@@ -677,13 +677,13 @@ jobs:
           tar -czvf jstruct-${{ steps.version.outputs.VERSION }}-darwin-universal.tar.gz jstruct
 
       - name: Upload universal PKG
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: jstruct-pkg-universal
           path: "*.pkg"
 
       - name: Upload universal tarball
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: jstruct-tarball-darwin-universal
           path: "*.tar.gz"
@@ -729,7 +729,7 @@ jobs:
           tar -czvf jstruct-${{ steps.version.outputs.VERSION }}-linux-${{ matrix.arch }}.tar.gz -C dist jstruct
 
       - name: Upload tarball
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: jstruct-tarball-linux-${{ matrix.arch }}
           path: "*.tar.gz"
@@ -774,7 +774,7 @@ jobs:
           Compress-Archive -Path binary/jstruct.exe -DestinationPath jstruct-${{ steps.version.outputs.VERSION }}-windows-${{ matrix.arch }}.zip
 
       - name: Upload ZIP
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: jstruct-zip-windows-${{ matrix.arch }}
           path: "*.zip"

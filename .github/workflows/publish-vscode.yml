@@ -110,7 +110,7 @@ jobs:
           echo "Extension version: $VERSION"
       
       - name: Upload VSIX artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: json-structure-${{ steps.version.outputs.version }}
           path: vscode/json-structure-*.vsix
