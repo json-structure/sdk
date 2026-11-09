@@ -34,6 +34,9 @@ jobs:
       with:
         node-version: ${{ matrix.node-version }}
 
+    - name: Use npm 11 for override-aware lockfile installs
+      run: npm install --global npm@11
+
     - name: Install dependencies
       working-directory: typescript
       run: npm ci

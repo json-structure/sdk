@@ -32,6 +32,8 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '22.x'
+      - name: Use npm 11 for override-aware lockfile installs
+        run: npm install --global npm@11
       - name: Build SDK
         working-directory: typescript
         run: npm ci && npm run build

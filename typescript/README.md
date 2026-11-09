@@ -429,6 +429,24 @@ const json = JSON.stringify(obj, jsonStructureReplacer);
 - Composition: `allOf`, `anyOf`, `oneOf`, `not`
 - Conditional: `if`, `then`, `else`
 
+## Development
+
+The published SDK supports Node.js 20 and later. Development tooling requires
+Node.js 22.18+ on the 22.x line, 24.11+ on the 24.x line, or 26+.
+Use npm 11 for consistent dependency overrides and lockfile installation.
+
+```bash
+npm ci
+npm run build
+npm run typecheck
+npm run lint
+npm run test:coverage
+npm run test:runtime
+```
+
+CI runs the development tools on Node.js 22 and 24, then tests the built
+CommonJS and ESM packages on Node.js 20 without development dependencies.
+
 ## License
 
 MIT

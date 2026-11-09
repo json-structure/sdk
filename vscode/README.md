@@ -2,6 +2,8 @@
 
 This extension provides validation support for [JSON Structure](https://json-structure.org) schema documents and instance documents.
 
+Requires Visual Studio Code 1.140 or later.
+
 ## Features
 
 ### Schema Validation

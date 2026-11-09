@@ -49,6 +49,9 @@ jobs:
           cache: 'npm'
           cache-dependency-path: vscode/package-lock.json
       
+      - name: Use npm 11 for override-aware lockfile installs
+        run: npm install --global npm@11
+
       - name: Get SDK version
         id: sdk_version
         run: |
@@ -151,6 +154,9 @@ jobs:
           cache: 'npm'
           cache-dependency-path: vscode/package-lock.json
       
+      - name: Use npm 11 for override-aware lockfile installs
+        run: npm install --global npm@11
+
       - name: Update SDK dependency to npm package
         working-directory: vscode
         run: |
