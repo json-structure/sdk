@@ -27,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Go: Address staticcheck diagnostics for the golangci-lint action update.
 - VS Code: Pin API typings to the declared minimum supported editor version.
+- CLI: Install prebuilt binaries through the RPM spec's build root so packaging
+  works with newer RPM versions, including cross-architecture packages.
 
 ## [0.6.2] - 2026-06-04
 

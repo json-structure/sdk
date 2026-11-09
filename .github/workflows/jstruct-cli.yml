@@ -356,11 +356,9 @@ jobs:
       - name: Create RPM package
         run: |
           mkdir -p rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
-          mkdir -p rpmbuild/BUILDROOT/jstruct-${{ steps.version.outputs.VERSION }}-1.${{ matrix.arch }}/usr/bin
           
           # Copy binary
-          cp binary/jstruct rpmbuild/BUILDROOT/jstruct-${{ steps.version.outputs.VERSION }}-1.${{ matrix.arch }}/usr/bin/
-          chmod 755 rpmbuild/BUILDROOT/jstruct-${{ steps.version.outputs.VERSION }}-1.${{ matrix.arch }}/usr/bin/jstruct
+          cp binary/jstruct rpmbuild/SOURCES/jstruct
           
           # Create spec file
           cat > rpmbuild/SPECS/jstruct.spec << 'EOF'
@@ -380,6 +378,9 @@ jobs:
           - Instance validation against user schemas
           - Multiple output formats: text, JSON, TAP
           
+          %install
+          install -Dm755 %{_sourcedir}/jstruct %{buildroot}/usr/bin/jstruct
+
           %files
           %attr(755, root, root) /usr/bin/jstruct
           EOF
@@ -387,6 +388,7 @@ jobs:
           # Build RPM
           rpmbuild --define "_topdir $(pwd)/rpmbuild" \
                    --define "_rpmdir $(pwd)" \
+                   --define "__strip /bin/true" \
                    --target ${{ matrix.arch }} \
                    -bb rpmbuild/SPECS/jstruct.spec
 
