@@ -76,6 +76,19 @@ jobs:
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
           echo "Using SDK version: $VERSION"
       
+      - name: Wait for published SDK metadata
+        env:
+          SDK_VERSION: ${{ steps.sdk_version.outputs.VERSION }}
+        run: |
+          for attempt in {1..20}; do
+            if npm view "@json-structure/sdk@${SDK_VERSION}" version --prefer-online --fetch-retries=0 >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 30
+          done
+          echo "::error::SDK ${SDK_VERSION} is not available from npm after ten minutes"
+          exit 1
+
       - name: Update SDK dependency to npm package
         working-directory: vscode
         run: |
