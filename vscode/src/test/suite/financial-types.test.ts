@@ -25,7 +25,7 @@ suite('Financial Types Hover Test Suite', () => {
 
     // Helper to get hover content as string
     function getHoverContentString(hovers: vscode.Hover[]): string {
-        if (!hovers || hovers.length === 0) return '';
+        if (!hovers || hovers.length === 0) {return '';}
         return hovers[0].contents
             .map(c => typeof c === 'string' ? c : (c as vscode.MarkdownString).value)
             .join(' ');
@@ -52,16 +52,16 @@ suite('Financial Types Hover Test Suite', () => {
     // Get description for a property path from the schema
     function getSchemaDescription(schema: Record<string, unknown>, definitionName: string, propertyName: string): string | null {
         const definitions = schema.definitions as Record<string, unknown> | undefined;
-        if (!definitions) return null;
+        if (!definitions) {return null;}
 
         const definition = definitions[definitionName] as Record<string, unknown> | undefined;
-        if (!definition) return null;
+        if (!definition) {return null;}
 
         const properties = definition.properties as Record<string, unknown> | undefined;
-        if (!properties) return null;
+        if (!properties) {return null;}
 
         const property = properties[propertyName] as Record<string, unknown> | undefined;
-        if (!property) return null;
+        if (!property) {return null;}
 
         return property.description as string | null;
     }
@@ -324,7 +324,7 @@ suite('Financial Types Hover Test Suite', () => {
         function findLineItemPropertyPosition(doc: vscode.TextDocument, propertyName: string): vscode.Position | null {
             const text = doc.getText();
             const lineItemsStart = text.indexOf('"lineItems"');
-            if (lineItemsStart === -1) return null;
+            if (lineItemsStart === -1) {return null;}
 
             // Search for the property after lineItems starts
             const searchText = text.substring(lineItemsStart);
@@ -402,7 +402,7 @@ suite('Financial Types Hover Test Suite', () => {
         function findSubtotalAmountPosition(doc: vscode.TextDocument): vscode.Position | null {
             const text = doc.getText();
             const subtotalStart = text.indexOf('"subtotal"');
-            if (subtotalStart === -1) return null;
+            if (subtotalStart === -1) {return null;}
 
             const searchText = text.substring(subtotalStart);
             const amountMatch = searchText.match(/"amount"\s*:/);
@@ -416,7 +416,7 @@ suite('Financial Types Hover Test Suite', () => {
         function findSubtotalCurrencyPosition(doc: vscode.TextDocument): vscode.Position | null {
             const text = doc.getText();
             const subtotalStart = text.indexOf('"subtotal"');
-            if (subtotalStart === -1) return null;
+            if (subtotalStart === -1) {return null;}
 
             const searchText = text.substring(subtotalStart);
             const currencyMatch = searchText.match(/"currency"\s*:/);

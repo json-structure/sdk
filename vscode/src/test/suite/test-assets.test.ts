@@ -68,9 +68,8 @@ suite('Test Assets Coverage Suite', () => {
             const doc = await vscode.workspace.openTextDocument(schemaPath);
             await vscode.window.showTextDocument(doc);
             
-            const diagnostics = await waitForDiagnostics(doc.uri, 2000);
-            const structureDiagnostics = diagnostics.filter(d => d.source === 'JSON Structure Schema');
-            
+            await waitForDiagnostics(doc.uri, 2000);
+
             // May or may not report circular ref as error depending on SDK implementation
             // The test is mainly to ensure no crash occurs
             assert.ok(true, 'Schema with circular ref processed without crash');
@@ -292,9 +291,8 @@ suite('Test Assets Coverage Suite', () => {
             // Wait for diagnostics
             await new Promise(resolve => setTimeout(resolve, 1500));
             
-            const diagnostics = vscode.languages.getDiagnostics(doc.uri);
-            const structureDiagnostics = diagnostics.filter(d => d.source === 'JSON Structure Schema');
-            
+            vscode.languages.getDiagnostics(doc.uri);
+
             // These might be warnings or hints rather than errors
             // Just ensure the document is processed without crashes
             assert.ok(true, 'Schema with extension keywords processed');
@@ -367,7 +365,7 @@ suite('Test Assets Coverage Suite', () => {
 
     suite('Instance Validation with Test Assets', () => {
         const invalidInstancesPath = path.join(instancesPath, 'invalid');
-        const validationInstancesPath = path.join(instancesPath, 'validation');
+
 
         // We need to copy test asset instances with their schemas to test-fixtures
         // or set up schema mapping for these tests
@@ -410,7 +408,7 @@ suite('Test Assets Coverage Suite', () => {
             
             await new Promise(resolve => setTimeout(resolve, 2000));
             
-            const diagnostics = vscode.languages.getDiagnostics(doc.uri);
+            vscode.languages.getDiagnostics(doc.uri);
             // Check that document was processed
             assert.ok(true, 'Instance with missing required field processed');
         });
@@ -452,7 +450,7 @@ suite('Test Assets Coverage Suite', () => {
             const position = doc.positionAt(typePos + 1);
             
             // Execute definition provider
-            const definitions = await vscode.commands.executeCommand<vscode.Location[]>(
+            await vscode.commands.executeCommand<vscode.Location[]>(
                 'vscode.executeDefinitionProvider',
                 doc.uri,
                 position
@@ -483,7 +481,7 @@ suite('Test Assets Coverage Suite', () => {
             
             const position = doc.positionAt(countPos + 1);
             
-            const hovers = await vscode.commands.executeCommand<vscode.Hover[]>(
+            await vscode.commands.executeCommand<vscode.Hover[]>(
                 'vscode.executeHoverProvider',
                 doc.uri,
                 position
@@ -669,7 +667,7 @@ suite('Test Assets Coverage Suite', () => {
 
         test('Should handle deeply nested schemas', async function() {
             // Create deeply nested schema
-            let nested: any = { type: 'string' };
+            let nested: { type: string; properties?: Record<string, unknown> } = { type: 'string' };
             for (let i = 0; i < 10; i++) {
                 nested = {
                     type: 'object',
@@ -693,7 +691,7 @@ suite('Test Assets Coverage Suite', () => {
             
             await new Promise(resolve => setTimeout(resolve, 1500));
             
-            const diagnostics = vscode.languages.getDiagnostics(doc.uri);
+            vscode.languages.getDiagnostics(doc.uri);
             
             // Should not crash
             assert.ok(true, 'Deeply nested schema processed');
@@ -721,7 +719,7 @@ suite('Test Assets Coverage Suite', () => {
                 await new Promise(resolve => setTimeout(resolve, 1500));
                 
                 // The extension should not crash and VS Code's JSON validator handles this
-                const diagnostics = vscode.languages.getDiagnostics(doc.uri);
+                vscode.languages.getDiagnostics(doc.uri);
                 
                 // We expect VS Code's built-in JSON validation to report an error
                 assert.ok(true, 'Malformed JSON schema handled gracefully');

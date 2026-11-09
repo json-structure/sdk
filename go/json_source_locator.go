@@ -66,13 +66,13 @@ func (l *JsonSourceLocator) parseJSONPointer(path string) []string {
 		// Unescape JSON Pointer tokens
 		segment = strings.ReplaceAll(segment, "~1", "/")
 		segment = strings.ReplaceAll(segment, "~0", "~")
-		
+
 		// Handle bracket notation (e.g., "required[0]" -> "required", "0")
 		if bracketIdx := strings.Index(segment, "["); bracketIdx > 0 {
 			// Extract the property name before the bracket
 			propName := segment[:bracketIdx]
 			segments = append(segments, propName)
-			
+
 			// Extract all bracket indices
 			rest := segment[bracketIdx:]
 			for len(rest) > 0 && rest[0] == '[' {
@@ -143,13 +143,14 @@ func (l *JsonSourceLocator) findLocationInText(segments []string) JsonLocation {
 
 		char := text[offset]
 
-		if char == '{' {
+		switch char {
+		case '{':
 			// Object - find the property
 			offset = l.findObjectProperty(text, offset, segment)
 			if offset < 0 {
 				return UnknownLocation()
 			}
-		} else if char == '[' {
+		case '[':
 			// Array - find the index
 			index, err := strconv.Atoi(segment)
 			if err != nil {
@@ -159,7 +160,7 @@ func (l *JsonSourceLocator) findLocationInText(segments []string) JsonLocation {
 			if offset < 0 {
 				return UnknownLocation()
 			}
-		} else {
+		default:
 			// Not an object or array, can't navigate further
 			return UnknownLocation()
 		}
@@ -189,11 +190,12 @@ func (l *JsonSourceLocator) skipString(text string, offset int) int {
 	offset++ // Skip opening quote
 	for offset < len(text) {
 		char := text[offset]
-		if char == '\\' {
+		switch char {
+		case '\\':
 			offset += 2 // Skip escape sequence
-		} else if char == '"' {
+		case '"':
 			return offset + 1 // Return position after closing quote
-		} else {
+		default:
 			offset++
 		}
 	}

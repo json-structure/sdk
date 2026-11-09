@@ -155,8 +155,8 @@ func TestInstanceValidatorWrongType(t *testing.T) {
 // TestInstanceValidatorMinimum tests minimum constraint.
 func TestInstanceValidatorMinimum(t *testing.T) {
 	schema := map[string]interface{}{
-		"$id":    "urn:example:test-schema",
-		"name":   "TestType",
+		"$id":     "urn:example:test-schema",
+		"name":    "TestType",
 		"type":    "int32",
 		"minimum": float64(10),
 	}
@@ -179,8 +179,8 @@ func TestInstanceValidatorMinimum(t *testing.T) {
 // TestInstanceValidatorMaxLength tests maxLength constraint.
 func TestInstanceValidatorMaxLength(t *testing.T) {
 	schema := map[string]interface{}{
-		"$id":      "urn:example:test-schema",
-		"name":     "TestType",
+		"$id":       "urn:example:test-schema",
+		"name":      "TestType",
 		"type":      "string",
 		"maxLength": float64(5),
 	}
@@ -203,8 +203,8 @@ func TestInstanceValidatorMaxLength(t *testing.T) {
 // TestInstanceValidatorPattern tests pattern constraint.
 func TestInstanceValidatorPattern(t *testing.T) {
 	schema := map[string]interface{}{
-		"$id":    "urn:example:test-schema",
-		"name":   "TestType",
+		"$id":     "urn:example:test-schema",
+		"name":    "TestType",
 		"type":    "string",
 		"pattern": "^[a-z]+$",
 	}
@@ -577,7 +577,7 @@ func TestInvalidInstances(t *testing.T) {
 				}
 
 				// For object instances, remove metadata fields
-				var instance interface{} = rawInstance
+				instance := rawInstance
 				if instanceMap, ok := rawInstance.(map[string]interface{}); ok {
 					cleanInstance := make(map[string]interface{})
 					for k, v := range instanceMap {
@@ -2257,8 +2257,8 @@ func TestExclusiveConstraints(t *testing.T) {
 
 	t.Run("exclusiveMinimum valid", func(t *testing.T) {
 		schema := map[string]interface{}{
-			"$id":             "urn:example:test",
-			"type":            "number",
+			"$id":              "urn:example:test",
+			"type":             "number",
 			"exclusiveMinimum": float64(10),
 		}
 		result := validator.Validate(float64(11), schema)
@@ -2269,8 +2269,8 @@ func TestExclusiveConstraints(t *testing.T) {
 
 	t.Run("exclusiveMinimum invalid - equal", func(t *testing.T) {
 		schema := map[string]interface{}{
-			"$id":             "urn:example:test",
-			"type":            "number",
+			"$id":              "urn:example:test",
+			"type":             "number",
 			"exclusiveMinimum": float64(10),
 		}
 		result := validator.Validate(float64(10), schema)
@@ -2281,8 +2281,8 @@ func TestExclusiveConstraints(t *testing.T) {
 
 	t.Run("exclusiveMaximum valid", func(t *testing.T) {
 		schema := map[string]interface{}{
-			"$id":             "urn:example:test",
-			"type":            "number",
+			"$id":              "urn:example:test",
+			"type":             "number",
 			"exclusiveMaximum": float64(10),
 		}
 		result := validator.Validate(float64(9), schema)
@@ -2293,8 +2293,8 @@ func TestExclusiveConstraints(t *testing.T) {
 
 	t.Run("exclusiveMaximum invalid - equal", func(t *testing.T) {
 		schema := map[string]interface{}{
-			"$id":             "urn:example:test",
-			"type":            "number",
+			"$id":              "urn:example:test",
+			"type":             "number",
 			"exclusiveMaximum": float64(10),
 		}
 		result := validator.Validate(float64(10), schema)
@@ -2303,4 +2303,3 @@ func TestExclusiveConstraints(t *testing.T) {
 		}
 	})
 }
-

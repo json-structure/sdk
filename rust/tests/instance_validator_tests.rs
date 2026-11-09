@@ -13,7 +13,7 @@ fn test_string_valid() {
         "type": "string"
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate(r#""hello world""#, &schema);
     assert!(result.is_valid(), "String should be valid");
 }
@@ -24,7 +24,7 @@ fn test_string_invalid_number() {
         "type": "string"
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate("123", &schema);
     assert!(!result.is_valid(), "Number should not be valid string");
 }
@@ -35,7 +35,7 @@ fn test_string_invalid_null() {
         "type": "string"
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate("null", &schema);
     assert!(!result.is_valid(), "Null should not be valid string");
 }
@@ -50,7 +50,7 @@ fn test_boolean_true() {
         "type": "boolean"
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate("true", &schema);
     assert!(result.is_valid(), "true should be valid boolean");
 }
@@ -61,7 +61,7 @@ fn test_boolean_false() {
         "type": "boolean"
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate("false", &schema);
     assert!(result.is_valid(), "false should be valid boolean");
 }
@@ -72,9 +72,12 @@ fn test_boolean_invalid_string() {
         "type": "boolean"
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate(r#""true""#, &schema);
-    assert!(!result.is_valid(), "String 'true' should not be valid boolean");
+    assert!(
+        !result.is_valid(),
+        "String 'true' should not be valid boolean"
+    );
 }
 
 // =============================================================================
@@ -87,7 +90,7 @@ fn test_null_valid() {
         "type": "null"
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate("null", &schema);
     assert!(result.is_valid(), "null should be valid");
 }
@@ -98,7 +101,7 @@ fn test_null_invalid_string() {
         "type": "null"
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate(r#""null""#, &schema);
     assert!(!result.is_valid(), "String 'null' should not be valid null");
 }
@@ -113,10 +116,10 @@ fn test_int32_valid() {
         "type": "int32"
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate("42", &schema);
     assert!(result.is_valid(), "42 should be valid int32");
-    
+
     let result = validator.validate("-100", &schema);
     assert!(result.is_valid(), "-100 should be valid int32");
 }
@@ -127,7 +130,7 @@ fn test_int32_invalid_float() {
         "type": "int32"
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate("3.14", &schema);
     assert!(!result.is_valid(), "3.14 should not be valid int32");
 }
@@ -138,16 +141,16 @@ fn test_int8_range() {
         "type": "int8"
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate("127", &schema);
     assert!(result.is_valid(), "127 should be valid int8");
-    
+
     let result = validator.validate("-128", &schema);
     assert!(result.is_valid(), "-128 should be valid int8");
-    
+
     let result = validator.validate("128", &schema);
     assert!(!result.is_valid(), "128 should be out of range for int8");
-    
+
     let result = validator.validate("-129", &schema);
     assert!(!result.is_valid(), "-129 should be out of range for int8");
 }
@@ -158,16 +161,16 @@ fn test_uint8_range() {
         "type": "uint8"
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate("0", &schema);
     assert!(result.is_valid(), "0 should be valid uint8");
-    
+
     let result = validator.validate("255", &schema);
     assert!(result.is_valid(), "255 should be valid uint8");
-    
+
     let result = validator.validate("256", &schema);
     assert!(!result.is_valid(), "256 should be out of range for uint8");
-    
+
     let result = validator.validate("-1", &schema);
     assert!(!result.is_valid(), "-1 should be out of range for uint8");
 }
@@ -178,7 +181,7 @@ fn test_int64_valid() {
         "type": "int64"
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate("9223372036854775807", &schema);
     assert!(result.is_valid(), "Max int64 should be valid");
 }
@@ -189,11 +192,9 @@ fn test_uint64_valid() {
         "type": "uint64"
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate("18446744073709551615", &schema);
-    // Note: JSON numbers may lose precision for very large values
-    // This test checks the basic parsing works
-    assert!(result.is_valid() || true, "Max uint64 value");
+    assert!(result.is_valid(), "Max uint64 value should be valid");
 }
 
 // =============================================================================
@@ -206,10 +207,10 @@ fn test_float_valid() {
         "type": "float"
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate("3.14", &schema);
     assert!(result.is_valid(), "3.14 should be valid float");
-    
+
     let result = validator.validate("-1.5", &schema);
     assert!(result.is_valid(), "-1.5 should be valid float");
 }
@@ -220,7 +221,7 @@ fn test_double_valid() {
         "type": "double"
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate("3.141592653589793", &schema);
     assert!(result.is_valid(), "Pi should be valid double");
 }
@@ -233,19 +234,25 @@ fn test_decimal_string_valid() {
         "type": "decimal"
     });
     let validator = InstanceValidator::new();
-    
+
     // String format is the spec-compliant way
     let result = validator.validate(r#""123.456""#, &schema);
-    assert!(result.is_valid(), "String '123.456' should be valid decimal");
-    
+    assert!(
+        result.is_valid(),
+        "String '123.456' should be valid decimal"
+    );
+
     let result = validator.validate(r#""0.0875""#, &schema);
     assert!(result.is_valid(), "String '0.0875' should be valid decimal");
-    
+
     let result = validator.validate(r#""-999.99""#, &schema);
     assert!(result.is_valid(), "Negative string decimal should be valid");
-    
+
     let result = validator.validate(r#""12345678901234567890.123456789""#, &schema);
-    assert!(result.is_valid(), "High-precision string decimal should be valid");
+    assert!(
+        result.is_valid(),
+        "High-precision string decimal should be valid"
+    );
 }
 
 #[test]
@@ -255,12 +262,18 @@ fn test_decimal_number_also_valid() {
         "type": "decimal"
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate("123.456", &schema);
-    assert!(result.is_valid(), "JSON number 123.456 should be valid decimal");
-    
+    assert!(
+        result.is_valid(),
+        "JSON number 123.456 should be valid decimal"
+    );
+
     let result = validator.validate("-99.5", &schema);
-    assert!(result.is_valid(), "Negative JSON number should be valid decimal");
+    assert!(
+        result.is_valid(),
+        "Negative JSON number should be valid decimal"
+    );
 }
 
 #[test]
@@ -269,10 +282,13 @@ fn test_decimal_invalid_string_format() {
         "type": "decimal"
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate(r#""not-a-number""#, &schema);
-    assert!(!result.is_valid(), "Non-numeric string should fail decimal validation");
-    
+    assert!(
+        !result.is_valid(),
+        "Non-numeric string should fail decimal validation"
+    );
+
     let result = validator.validate(r#""12.34.56""#, &schema);
     assert!(!result.is_valid(), "Malformed decimal string should fail");
 }
@@ -283,13 +299,13 @@ fn test_decimal_wrong_type() {
         "type": "decimal"
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate("true", &schema);
     assert!(!result.is_valid(), "Boolean should fail decimal validation");
-    
+
     let result = validator.validate("null", &schema);
     assert!(!result.is_valid(), "Null should fail decimal validation");
-    
+
     let result = validator.validate(r#"["123.45"]"#, &schema);
     assert!(!result.is_valid(), "Array should fail decimal validation");
 }
@@ -304,7 +320,7 @@ fn test_date_valid() {
         "type": "date"
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate(r#""2024-01-15""#, &schema);
     assert!(result.is_valid(), "2024-01-15 should be valid date");
 }
@@ -315,12 +331,18 @@ fn test_date_invalid_format() {
         "type": "date"
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate(r#""15-01-2024""#, &schema);
-    assert!(!result.is_valid(), "15-01-2024 should be invalid date format");
-    
+    assert!(
+        !result.is_valid(),
+        "15-01-2024 should be invalid date format"
+    );
+
     let result = validator.validate(r#""2024/01/15""#, &schema);
-    assert!(!result.is_valid(), "2024/01/15 should be invalid date format");
+    assert!(
+        !result.is_valid(),
+        "2024/01/15 should be invalid date format"
+    );
 }
 
 #[test]
@@ -329,10 +351,10 @@ fn test_time_valid() {
         "type": "time"
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate(r#""14:30:00""#, &schema);
     assert!(result.is_valid(), "14:30:00 should be valid time");
-    
+
     let result = validator.validate(r#""23:59:59""#, &schema);
     assert!(result.is_valid(), "23:59:59 should be valid time");
 }
@@ -343,10 +365,10 @@ fn test_datetime_valid() {
         "type": "datetime"
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate(r#""2024-01-15T14:30:00Z""#, &schema);
     assert!(result.is_valid(), "ISO datetime should be valid");
-    
+
     let result = validator.validate(r#""2024-01-15T14:30:00+05:00""#, &schema);
     assert!(result.is_valid(), "Datetime with timezone should be valid");
 }
@@ -357,10 +379,10 @@ fn test_duration_valid() {
         "type": "duration"
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate(r#""P1Y2M3D""#, &schema);
     assert!(result.is_valid(), "P1Y2M3D should be valid duration");
-    
+
     let result = validator.validate(r#""PT1H30M""#, &schema);
     assert!(result.is_valid(), "PT1H30M should be valid duration");
 }
@@ -375,7 +397,7 @@ fn test_uuid_valid() {
         "type": "uuid"
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate(r#""550e8400-e29b-41d4-a716-446655440000""#, &schema);
     assert!(result.is_valid(), "Valid UUID should pass");
 }
@@ -386,10 +408,10 @@ fn test_uuid_invalid() {
         "type": "uuid"
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate(r#""not-a-uuid""#, &schema);
     assert!(!result.is_valid(), "Invalid UUID should fail");
-    
+
     let result = validator.validate(r#""550e8400-e29b-41d4-a716""#, &schema);
     assert!(!result.is_valid(), "Truncated UUID should fail");
 }
@@ -404,10 +426,10 @@ fn test_uri_valid() {
         "type": "uri"
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate(r#""https://example.com/path""#, &schema);
     assert!(result.is_valid(), "HTTPS URI should be valid");
-    
+
     let result = validator.validate(r#""http://localhost:8080""#, &schema);
     assert!(result.is_valid(), "HTTP localhost should be valid");
 }
@@ -418,7 +440,7 @@ fn test_uri_invalid() {
         "type": "uri"
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate(r#""not a uri""#, &schema);
     assert!(!result.is_valid(), "Plain string should not be valid URI");
 }
@@ -433,7 +455,7 @@ fn test_binary_valid() {
         "type": "binary"
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate(r#""SGVsbG8gV29ybGQ=""#, &schema);
     assert!(result.is_valid(), "Base64 string should be valid binary");
 }
@@ -444,7 +466,7 @@ fn test_binary_invalid() {
         "type": "binary"
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate(r#""not valid base64!!@@""#, &schema);
     assert!(!result.is_valid(), "Invalid base64 should fail");
 }
@@ -463,7 +485,7 @@ fn test_object_valid() {
         }
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate(r#"{"name": "John", "age": 30}"#, &schema);
     assert!(result.is_valid(), "Valid object should pass");
 }
@@ -479,7 +501,7 @@ fn test_object_missing_required() {
         "required": ["name", "age"]
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate(r#"{"name": "John"}"#, &schema);
     assert!(!result.is_valid(), "Missing required property should fail");
 }
@@ -494,9 +516,12 @@ fn test_object_additional_properties_false() {
         "additionalProperties": false
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate(r#"{"name": "John", "extra": "value"}"#, &schema);
-    assert!(!result.is_valid(), "Additional properties should fail when not allowed");
+    assert!(
+        !result.is_valid(),
+        "Additional properties should fail when not allowed"
+    );
 }
 
 #[test]
@@ -509,9 +534,12 @@ fn test_object_additional_properties_true() {
         "additionalProperties": true
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate(r#"{"name": "John", "extra": "value"}"#, &schema);
-    assert!(result.is_valid(), "Additional properties should pass when allowed");
+    assert!(
+        result.is_valid(),
+        "Additional properties should pass when allowed"
+    );
 }
 
 #[test]
@@ -523,7 +551,7 @@ fn test_object_property_type_mismatch() {
         }
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate(r#"{"age": "thirty"}"#, &schema);
     assert!(!result.is_valid(), "Wrong property type should fail");
 }
@@ -539,7 +567,7 @@ fn test_array_valid() {
         "items": {"type": "string"}
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate(r#"["a", "b", "c"]"#, &schema);
     assert!(result.is_valid(), "Valid string array should pass");
 }
@@ -551,7 +579,7 @@ fn test_array_invalid_item() {
         "items": {"type": "string"}
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate(r#"["a", 123, "c"]"#, &schema);
     assert!(!result.is_valid(), "Array with wrong item type should fail");
 }
@@ -563,7 +591,7 @@ fn test_array_empty() {
         "items": {"type": "string"}
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate(r#"[]"#, &schema);
     assert!(result.is_valid(), "Empty array should be valid");
 }
@@ -579,7 +607,7 @@ fn test_set_valid_unique() {
         "items": {"type": "int32"}
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate(r#"[1, 2, 3]"#, &schema);
     assert!(result.is_valid(), "Unique values should be valid set");
 }
@@ -591,7 +619,7 @@ fn test_set_invalid_duplicates() {
         "items": {"type": "int32"}
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate(r#"[1, 2, 2]"#, &schema);
     assert!(!result.is_valid(), "Duplicate values should fail for set");
 }
@@ -607,7 +635,7 @@ fn test_map_valid() {
         "values": {"type": "int32"}
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate(r#"{"a": 1, "b": 2, "c": 3}"#, &schema);
     assert!(result.is_valid(), "Valid map should pass");
 }
@@ -619,7 +647,7 @@ fn test_map_invalid_value() {
         "values": {"type": "int32"}
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate(r#"{"a": 1, "b": "two"}"#, &schema);
     assert!(!result.is_valid(), "Map with wrong value type should fail");
 }
@@ -639,7 +667,7 @@ fn test_tuple_valid() {
         "tuple": ["x", "y"]
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate(r#"[1.0, 2.0]"#, &schema);
     assert!(result.is_valid(), "Valid tuple should pass");
 }
@@ -655,10 +683,10 @@ fn test_tuple_wrong_length() {
         "tuple": ["x", "y"]
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate(r#"[1.0]"#, &schema);
     assert!(!result.is_valid(), "Tuple with wrong length should fail");
-    
+
     let result = validator.validate(r#"[1.0, 2.0, 3.0]"#, &schema);
     assert!(!result.is_valid(), "Tuple with extra elements should fail");
 }
@@ -674,9 +702,12 @@ fn test_tuple_wrong_type() {
         "tuple": ["name", "age"]
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate(r#"["John", "thirty"]"#, &schema);
-    assert!(!result.is_valid(), "Tuple with wrong element type should fail");
+    assert!(
+        !result.is_valid(),
+        "Tuple with wrong element type should fail"
+    );
 }
 
 // =============================================================================
@@ -715,21 +746,27 @@ fn test_choice_with_selector() {
         }
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate(r#"{"type":"card","id":"1","cardNumber":"1234"}"#, &schema);
     assert!(result.is_valid(), "Valid choice with selector should pass");
-    
+
     let result = validator.validate(r#"{"type":"cash","id":"1","amount":100}"#, &schema);
     assert!(result.is_valid(), "Valid cash choice should pass");
 
     let missing_base = validator.validate(r#"{"type":"card","cardNumber":"1234"}"#, &schema);
-    assert!(!missing_base.is_valid(), "Inherited required properties must be enforced");
+    assert!(
+        !missing_base.is_valid(),
+        "Inherited required properties must be enforced"
+    );
 
     let unrelated = validator.validate(
         r#"{"type":"card","id":"1","cardNumber":"1234","extra":true}"#,
         &schema,
     );
-    assert!(!unrelated.is_valid(), "Closed choice must reject unrelated properties");
+    assert!(
+        !unrelated.is_valid(),
+        "Closed choice must reject unrelated properties"
+    );
 }
 
 #[test]
@@ -751,9 +788,12 @@ fn test_choice_unknown_selector_value() {
         }
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate(r#"{"type": "bitcoin", "wallet": "abc"}"#, &schema);
-    assert!(!result.is_valid(), "Unknown choice selector value should fail");
+    assert!(
+        !result.is_valid(),
+        "Unknown choice selector value should fail"
+    );
 }
 
 // =============================================================================
@@ -767,10 +807,10 @@ fn test_enum_valid() {
         "enum": ["red", "green", "blue"]
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate(r#""red""#, &schema);
     assert!(result.is_valid(), "Enum value should pass");
-    
+
     let result = validator.validate(r#""blue""#, &schema);
     assert!(result.is_valid(), "Enum value should pass");
 }
@@ -782,7 +822,7 @@ fn test_enum_invalid() {
         "enum": ["red", "green", "blue"]
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate(r#""yellow""#, &schema);
     assert!(!result.is_valid(), "Value not in enum should fail");
 }
@@ -798,7 +838,7 @@ fn test_const_valid() {
         "const": "fixed"
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate(r#""fixed""#, &schema);
     assert!(result.is_valid(), "Const value should pass");
 }
@@ -810,7 +850,7 @@ fn test_const_invalid() {
         "const": "fixed"
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate(r#""different""#, &schema);
     assert!(!result.is_valid(), "Non-const value should fail");
 }
@@ -836,7 +876,7 @@ fn test_ref_valid() {
         }
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate(r#"{"person": {"name": "John"}}"#, &schema);
     assert!(result.is_valid(), "Valid ref should pass");
 }
@@ -851,12 +891,14 @@ fn test_any_accepts_all() {
         "type": "any"
     });
     let validator = InstanceValidator::new();
-    
+
     assert!(validator.validate(r#""string""#, &schema).is_valid());
     assert!(validator.validate("123", &schema).is_valid());
     assert!(validator.validate("true", &schema).is_valid());
     assert!(validator.validate("null", &schema).is_valid());
-    assert!(validator.validate(r#"{"key": "value"}"#, &schema).is_valid());
+    assert!(validator
+        .validate(r#"{"key": "value"}"#, &schema)
+        .is_valid());
     assert!(validator.validate("[1, 2, 3]", &schema).is_valid());
 }
 
@@ -873,9 +915,13 @@ fn test_format_email_valid() {
     });
     let mut validator = InstanceValidator::new();
     validator.set_extended(true);
-    
-    assert!(validator.validate(r#""user@example.com""#, &schema).is_valid());
-    assert!(validator.validate(r#""test.user@sub.domain.org""#, &schema).is_valid());
+
+    assert!(validator
+        .validate(r#""user@example.com""#, &schema)
+        .is_valid());
+    assert!(validator
+        .validate(r#""test.user@sub.domain.org""#, &schema)
+        .is_valid());
     assert!(validator.validate(r#""a@b.co""#, &schema).is_valid());
 }
 
@@ -888,9 +934,11 @@ fn test_format_email_invalid() {
     });
     let mut validator = InstanceValidator::new();
     validator.set_extended(true);
-    
+
     assert!(!validator.validate(r#""not-an-email""#, &schema).is_valid());
-    assert!(!validator.validate(r#""missing@domain""#, &schema).is_valid());
+    assert!(!validator
+        .validate(r#""missing@domain""#, &schema)
+        .is_valid());
     assert!(!validator.validate(r#""@example.com""#, &schema).is_valid());
     assert!(!validator.validate(r#""user@""#, &schema).is_valid());
 }
@@ -904,10 +952,12 @@ fn test_format_ipv4_valid() {
     });
     let mut validator = InstanceValidator::new();
     validator.set_extended(true);
-    
+
     assert!(validator.validate(r#""192.168.1.1""#, &schema).is_valid());
     assert!(validator.validate(r#""0.0.0.0""#, &schema).is_valid());
-    assert!(validator.validate(r#""255.255.255.255""#, &schema).is_valid());
+    assert!(validator
+        .validate(r#""255.255.255.255""#, &schema)
+        .is_valid());
     assert!(validator.validate(r#""10.0.0.1""#, &schema).is_valid());
 }
 
@@ -920,11 +970,13 @@ fn test_format_ipv4_invalid() {
     });
     let mut validator = InstanceValidator::new();
     validator.set_extended(true);
-    
+
     assert!(!validator.validate(r#""256.1.1.1""#, &schema).is_valid());
     assert!(!validator.validate(r#""1.2.3""#, &schema).is_valid());
     assert!(!validator.validate(r#""1.2.3.4.5""#, &schema).is_valid());
-    assert!(!validator.validate(r#""abc.def.ghi.jkl""#, &schema).is_valid());
+    assert!(!validator
+        .validate(r#""abc.def.ghi.jkl""#, &schema)
+        .is_valid());
     assert!(!validator.validate(r#""01.02.03.04""#, &schema).is_valid()); // Leading zeros
 }
 
@@ -937,7 +989,7 @@ fn test_format_ipv6_valid() {
     });
     let mut validator = InstanceValidator::new();
     validator.set_extended(true);
-    
+
     assert!(validator.validate(r#""::1""#, &schema).is_valid());
     assert!(validator.validate(r#""2001:db8::1""#, &schema).is_valid());
     assert!(validator.validate(r#""fe80::1""#, &schema).is_valid());
@@ -952,7 +1004,7 @@ fn test_format_ipv6_invalid() {
     });
     let mut validator = InstanceValidator::new();
     validator.set_extended(true);
-    
+
     assert!(!validator.validate(r#""not-ipv6""#, &schema).is_valid());
     assert!(!validator.validate(r#"":::1""#, &schema).is_valid()); // Multiple ::
 }
@@ -966,9 +1018,11 @@ fn test_format_hostname_valid() {
     });
     let mut validator = InstanceValidator::new();
     validator.set_extended(true);
-    
+
     assert!(validator.validate(r#""example.com""#, &schema).is_valid());
-    assert!(validator.validate(r#""sub.domain.example.com""#, &schema).is_valid());
+    assert!(validator
+        .validate(r#""sub.domain.example.com""#, &schema)
+        .is_valid());
     assert!(validator.validate(r#""localhost""#, &schema).is_valid());
     assert!(validator.validate(r#""my-server""#, &schema).is_valid());
 }
@@ -982,7 +1036,7 @@ fn test_format_hostname_invalid() {
     });
     let mut validator = InstanceValidator::new();
     validator.set_extended(true);
-    
+
     assert!(!validator.validate(r#""-invalid.com""#, &schema).is_valid()); // Starts with hyphen
     assert!(!validator.validate(r#""invalid-.com""#, &schema).is_valid()); // Label ends with hyphen
     assert!(!validator.validate(r#""inva lid.com""#, &schema).is_valid()); // Contains space
@@ -997,10 +1051,16 @@ fn test_format_uri_valid() {
     });
     let mut validator = InstanceValidator::new();
     validator.set_extended(true);
-    
-    assert!(validator.validate(r#""https://example.com""#, &schema).is_valid());
-    assert!(validator.validate(r#""http://localhost:8080/path""#, &schema).is_valid());
-    assert!(validator.validate(r#""ftp://files.example.com/file.txt""#, &schema).is_valid());
+
+    assert!(validator
+        .validate(r#""https://example.com""#, &schema)
+        .is_valid());
+    assert!(validator
+        .validate(r#""http://localhost:8080/path""#, &schema)
+        .is_valid());
+    assert!(validator
+        .validate(r#""ftp://files.example.com/file.txt""#, &schema)
+        .is_valid());
 }
 
 #[test]
@@ -1012,9 +1072,11 @@ fn test_format_uri_invalid() {
     });
     let mut validator = InstanceValidator::new();
     validator.set_extended(true);
-    
+
     assert!(!validator.validate(r#""not-a-uri""#, &schema).is_valid());
-    assert!(!validator.validate(r#""//missing-scheme.com""#, &schema).is_valid());
+    assert!(!validator
+        .validate(r#""//missing-scheme.com""#, &schema)
+        .is_valid());
 }
 
 #[test]
@@ -1026,9 +1088,13 @@ fn test_format_uri_reference_valid() {
     });
     let mut validator = InstanceValidator::new();
     validator.set_extended(true);
-    
-    assert!(validator.validate(r#""https://example.com""#, &schema).is_valid());
-    assert!(validator.validate(r#""/path/to/resource""#, &schema).is_valid());
+
+    assert!(validator
+        .validate(r#""https://example.com""#, &schema)
+        .is_valid());
+    assert!(validator
+        .validate(r#""/path/to/resource""#, &schema)
+        .is_valid());
     assert!(validator.validate(r#""relative/path""#, &schema).is_valid());
     assert!(validator.validate("\"#fragment\"", &schema).is_valid());
 }
@@ -1040,7 +1106,7 @@ fn test_format_not_applied_without_extended() {
         "format": "email"
     });
     let validator = InstanceValidator::new(); // extended=false by default
-    
+
     // Without extended mode, format is not validated
     assert!(validator.validate(r#""not-an-email""#, &schema).is_valid());
 }
@@ -1066,16 +1132,25 @@ fn test_root_schema_metadata_is_not_an_additional_property() {
         r#"{"$schema":"https://example.com/person","name":"Ada"}"#,
         &schema,
     );
-    assert!(valid.is_valid(), "$schema must not be treated as application data");
+    assert!(
+        valid.is_valid(),
+        "$schema must not be treated as application data"
+    );
 
     let missing = validator.validate(r#"{"name":"Ada"}"#, &schema);
-    assert!(!missing.is_valid(), "A root JSON document must declare $schema");
+    assert!(
+        !missing.is_valid(),
+        "A root JSON document must declare $schema"
+    );
 
     let mismatch = validator.validate(
         r#"{"$schema":"https://example.com/other","name":"Ada"}"#,
         &schema,
     );
-    assert!(!mismatch.is_valid(), "$schema must match the supplied schema $id");
+    assert!(
+        !mismatch.is_valid(),
+        "$schema must match the supplied schema $id"
+    );
 }
 
 #[test]
@@ -1098,7 +1173,10 @@ fn test_nested_schema_remains_an_application_property() {
         r#"{"$schema":"https://example.com/envelope","nested":{"$schema":"https://example.com/nested","value":"x"}}"#,
         &schema,
     );
-    assert!(!result.is_valid(), "Nested $schema must not receive root treatment");
+    assert!(
+        !result.is_valid(),
+        "Nested $schema must not receive root treatment"
+    );
 }
 
 #[test]
@@ -1125,13 +1203,19 @@ fn test_root_uses_applies_offered_addin_to_closed_object() {
         r#"{"$schema":"https://example.com/order","$uses":["Audited"],"id":"1","auditId":"a1"}"#,
         &schema,
     );
-    assert!(valid.is_valid(), "Selected add-in must augment the closed root schema");
+    assert!(
+        valid.is_valid(),
+        "Selected add-in must augment the closed root schema"
+    );
 
     let not_selected = validator.validate(
         r#"{"$schema":"https://example.com/order","id":"1","auditId":"a1"}"#,
         &schema,
     );
-    assert!(!not_selected.is_valid(), "Add-in properties require explicit selection");
+    assert!(
+        !not_selected.is_valid(),
+        "Add-in properties require explicit selection"
+    );
 
     let unknown = validator.validate(
         r#"{"$schema":"https://example.com/order","$uses":["Unknown"],"id":"1"}"#,
@@ -1168,10 +1252,13 @@ fn test_extends_simple() {
         "$ref": "#/definitions/Extended"
     });
     let validator = InstanceValidator::new();
-    
+
     // Valid: has both name (from Base) and age (from Extended)
     let result = validator.validate(r#"{"name": "John", "age": 30}"#, &schema);
-    assert!(result.is_valid(), "Should validate with inherited properties");
+    assert!(
+        result.is_valid(),
+        "Should validate with inherited properties"
+    );
 }
 
 #[test]
@@ -1196,10 +1283,13 @@ fn test_extends_missing_required_from_base() {
         "$ref": "#/definitions/Extended"
     });
     let validator = InstanceValidator::new();
-    
+
     // Invalid: missing name which is required from Base
     let result = validator.validate(r#"{"age": 30}"#, &schema);
-    assert!(!result.is_valid(), "Should fail when missing required property from base");
+    assert!(
+        !result.is_valid(),
+        "Should fail when missing required property from base"
+    );
 }
 
 #[test]
@@ -1231,14 +1321,23 @@ fn test_extends_array() {
         "$ref": "#/definitions/Person"
     });
     let validator = InstanceValidator::new();
-    
+
     // Valid: has all required properties from both base types
-    let result = validator.validate(r#"{"name": "John", "age": 30, "email": "john@example.com"}"#, &schema);
-    assert!(result.is_valid(), "Should validate with properties from multiple bases");
-    
+    let result = validator.validate(
+        r#"{"name": "John", "age": 30, "email": "john@example.com"}"#,
+        &schema,
+    );
+    assert!(
+        result.is_valid(),
+        "Should validate with properties from multiple bases"
+    );
+
     // Invalid: missing age from HasAge
     let result = validator.validate(r#"{"name": "John", "email": "john@example.com"}"#, &schema);
-    assert!(!result.is_valid(), "Should fail when missing required from one base");
+    assert!(
+        !result.is_valid(),
+        "Should fail when missing required from one base"
+    );
 }
 
 // =============================================================================
@@ -1255,7 +1354,7 @@ fn test_unique_items_valid() {
     });
     let mut validator = InstanceValidator::new();
     validator.set_extended(true);
-    
+
     let result = validator.validate("[1, 2, 3, 4, 5]", &schema);
     assert!(result.is_valid(), "Array with unique items should be valid");
 }
@@ -1270,9 +1369,12 @@ fn test_unique_items_duplicates() {
     });
     let mut validator = InstanceValidator::new();
     validator.set_extended(true);
-    
+
     let result = validator.validate("[1, 2, 3, 2, 5]", &schema);
-    assert!(!result.is_valid(), "Array with duplicate items should be invalid");
+    assert!(
+        !result.is_valid(),
+        "Array with duplicate items should be invalid"
+    );
 }
 
 #[test]
@@ -1290,14 +1392,20 @@ fn test_unique_items_objects() {
     });
     let mut validator = InstanceValidator::new();
     validator.set_extended(true);
-    
+
     // Valid: unique objects
     let result = validator.validate(r#"[{"id": 1}, {"id": 2}]"#, &schema);
-    assert!(result.is_valid(), "Array with unique objects should be valid");
-    
+    assert!(
+        result.is_valid(),
+        "Array with unique objects should be valid"
+    );
+
     // Invalid: duplicate objects
     let result = validator.validate(r#"[{"id": 1}, {"id": 1}]"#, &schema);
-    assert!(!result.is_valid(), "Array with duplicate objects should be invalid");
+    assert!(
+        !result.is_valid(),
+        "Array with duplicate objects should be invalid"
+    );
 }
 
 #[test]
@@ -1310,10 +1418,13 @@ fn test_unique_items_false() {
     });
     let mut validator = InstanceValidator::new();
     validator.set_extended(true);
-    
+
     // Duplicates allowed when uniqueItems is false
     let result = validator.validate("[1, 2, 2, 3]", &schema);
-    assert!(result.is_valid(), "Duplicates allowed when uniqueItems is false");
+    assert!(
+        result.is_valid(),
+        "Duplicates allowed when uniqueItems is false"
+    );
 }
 
 // =============================================================================
@@ -1332,9 +1443,12 @@ fn test_pattern_properties_valid() {
     });
     let mut validator = InstanceValidator::new();
     validator.set_extended(true);
-    
+
     let result = validator.validate(r#"{"str_name": "John", "num_age": 30}"#, &schema);
-    assert!(result.is_valid(), "Properties matching patterns should be valid");
+    assert!(
+        result.is_valid(),
+        "Properties matching patterns should be valid"
+    );
 }
 
 #[test]
@@ -1348,10 +1462,13 @@ fn test_pattern_properties_invalid_type() {
     });
     let mut validator = InstanceValidator::new();
     validator.set_extended(true);
-    
+
     // str_value should be a string but is a number
     let result = validator.validate(r#"{"str_value": 123}"#, &schema);
-    assert!(!result.is_valid(), "Wrong type for pattern property should be invalid");
+    assert!(
+        !result.is_valid(),
+        "Wrong type for pattern property should be invalid"
+    );
 }
 
 #[test]
@@ -1368,10 +1485,13 @@ fn test_pattern_properties_with_properties() {
     });
     let mut validator = InstanceValidator::new();
     validator.set_extended(true);
-    
+
     // Both explicit property and pattern property
     let result = validator.validate(r#"{"id": 1, "x_custom": "value"}"#, &schema);
-    assert!(result.is_valid(), "Mixed properties and patternProperties should work");
+    assert!(
+        result.is_valid(),
+        "Mixed properties and patternProperties should work"
+    );
 }
 
 // =============================================================================
@@ -1389,9 +1509,12 @@ fn test_property_names_pattern_valid() {
     });
     let mut validator = InstanceValidator::new();
     validator.set_extended(true);
-    
+
     let result = validator.validate(r#"{"camelCase": 1, "simple": 2}"#, &schema);
-    assert!(result.is_valid(), "Property names matching pattern should be valid");
+    assert!(
+        result.is_valid(),
+        "Property names matching pattern should be valid"
+    );
 }
 
 #[test]
@@ -1405,10 +1528,13 @@ fn test_property_names_pattern_invalid() {
     });
     let mut validator = InstanceValidator::new();
     validator.set_extended(true);
-    
+
     // Property starting with uppercase is invalid
     let result = validator.validate(r#"{"Invalid": 1}"#, &schema);
-    assert!(!result.is_valid(), "Property names not matching pattern should be invalid");
+    assert!(
+        !result.is_valid(),
+        "Property names not matching pattern should be invalid"
+    );
 }
 
 #[test]
@@ -1423,18 +1549,27 @@ fn test_property_names_min_max_length() {
     });
     let mut validator = InstanceValidator::new();
     validator.set_extended(true);
-    
+
     // Valid lengths
     let result = validator.validate(r#"{"ab": 1, "abcdefghij": 2}"#, &schema);
-    assert!(result.is_valid(), "Property names within length bounds should be valid");
-    
+    assert!(
+        result.is_valid(),
+        "Property names within length bounds should be valid"
+    );
+
     // Too short
     let result = validator.validate(r#"{"a": 1}"#, &schema);
-    assert!(!result.is_valid(), "Property name too short should be invalid");
-    
+    assert!(
+        !result.is_valid(),
+        "Property name too short should be invalid"
+    );
+
     // Too long
     let result = validator.validate(r#"{"abcdefghijk": 1}"#, &schema);
-    assert!(!result.is_valid(), "Property name too long should be invalid");
+    assert!(
+        !result.is_valid(),
+        "Property name too long should be invalid"
+    );
 }
 
 // =============================================================================
@@ -1460,9 +1595,12 @@ fn test_nested_namespace_resolution() {
         "$ref": "#/definitions/Outer/Inner"
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate(r#"{"value": "test"}"#, &schema);
-    assert!(result.is_valid(), "Nested namespace reference should resolve");
+    assert!(
+        result.is_valid(),
+        "Nested namespace reference should resolve"
+    );
 }
 
 #[test]
@@ -1489,7 +1627,10 @@ fn test_deeply_nested_namespace() {
         "$ref": "#/definitions/Level1/Level2/Level3"
     });
     let validator = InstanceValidator::new();
-    
+
     let result = validator.validate(r#"{"deep": true}"#, &schema);
-    assert!(result.is_valid(), "Deeply nested namespace reference should resolve");
+    assert!(
+        result.is_valid(),
+        "Deeply nested namespace reference should resolve"
+    );
 }

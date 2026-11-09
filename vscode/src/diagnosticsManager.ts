@@ -120,5 +120,5 @@ function findEndOfToken(lineText: string, startColumn: number): number {
 }
 
 function isDelimiter(char: string): boolean {
-    return /[\s,\[\]\{\}:]/.test(char);
+    return /[\s,[\]{}:]/.test(char);
 }

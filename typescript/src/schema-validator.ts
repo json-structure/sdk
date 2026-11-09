@@ -362,7 +362,7 @@ export class SchemaValidator {
   }
 
   private validateSingleType(context: SchemaValidationContext, type: string, schema: JsonObject, path: string): void {
-    if (!ALL_TYPES.includes(type as any)) {
+    if (!ALL_TYPES.some(knownType => knownType === type)) {
       this.addError(context, `${path}/type`, `Unknown type '${type}'`, ErrorCodes.SCHEMA_TYPE_INVALID);
       return;
     }
@@ -404,7 +404,7 @@ export class SchemaValidator {
       const t = types[i];
       if (typeof t === 'string') {
         // String type name
-        if (!ALL_TYPES.includes(t as any)) {
+        if (!ALL_TYPES.some(knownType => knownType === t)) {
           this.addError(context, `${path}/type[${i}]`, `Unknown type '${t}'`, ErrorCodes.SCHEMA_TYPE_INVALID);
         }
       } else if (this.isObject(t)) {

@@ -104,7 +104,7 @@ export class JsonStructureDocumentSymbolProvider implements vscode.DocumentSymbo
 
         // Add each definition
         for (const [name, def] of Object.entries(definitions)) {
-            if (!def || typeof def !== 'object') continue;
+            if (!def || typeof def !== 'object') {continue;}
             
             const defObj = def as Record<string, unknown>;
             const defSymbol = this.createDefinitionSymbol(document, text, name, defObj);
@@ -165,7 +165,7 @@ export class JsonStructureDocumentSymbolProvider implements vscode.DocumentSymbo
         // Add properties as children for object types
         if (def.type === 'object' && def.properties && typeof def.properties === 'object') {
             for (const [propName, propDef] of Object.entries(def.properties)) {
-                if (!propDef || typeof propDef !== 'object') continue;
+                if (!propDef || typeof propDef !== 'object') {continue;}
                 
                 const propObj = propDef as Record<string, unknown>;
                 const propSymbol = this.createPropertySymbol(document, text, name, propName, propObj, def);
@@ -192,7 +192,7 @@ export class JsonStructureDocumentSymbolProvider implements vscode.DocumentSymbo
             for (let i = 0; i < def.tuple.length; i++) {
                 const propName = def.tuple[i];
                 const propDef = properties[propName];
-                if (!propDef || typeof propDef !== 'object') continue;
+                if (!propDef || typeof propDef !== 'object') {continue;}
                 
                 const propObj = propDef as Record<string, unknown>;
                 const typeStr = typeof propObj.type === 'string' ? propObj.type : 'unknown';

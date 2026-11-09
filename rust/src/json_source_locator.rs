@@ -40,7 +40,8 @@ impl JsonSourceLocator {
         // Record root location
         self.skip_whitespace(&chars, &mut i, &mut line, &mut column);
         if i < len {
-            self.locations.insert(String::new(), JsonLocation::new(line, column));
+            self.locations
+                .insert(String::new(), JsonLocation::new(line, column));
         }
 
         while i < len {
@@ -52,7 +53,7 @@ impl JsonSourceLocator {
                     i += 1;
                     column += 1;
                     self.skip_whitespace(&chars, &mut i, &mut line, &mut column);
-                    
+
                     // Parse object properties
                     while i < len && chars[i] != '}' {
                         self.skip_whitespace(&chars, &mut i, &mut line, &mut column);
@@ -65,24 +66,30 @@ impl JsonSourceLocator {
                             let _key_line = line;
                             let _key_column = column;
                             let key = self.parse_string(&chars, &mut i, &mut line, &mut column);
-                            
+
                             // Skip colon
                             self.skip_whitespace(&chars, &mut i, &mut line, &mut column);
                             if i < len && chars[i] == ':' {
                                 i += 1;
                                 column += 1;
                             }
-                            
+
                             // Record value location
                             self.skip_whitespace(&chars, &mut i, &mut line, &mut column);
                             path_stack.push(PathSegment::Property(key.clone()));
                             let path = self.build_path(&path_stack);
                             self.locations.insert(path, JsonLocation::new(line, column));
-                            
+
                             // Skip value
-                            self.skip_value(&chars, &mut i, &mut line, &mut column, &mut path_stack);
+                            self.skip_value(
+                                &chars,
+                                &mut i,
+                                &mut line,
+                                &mut column,
+                                &mut path_stack,
+                            );
                             path_stack.pop();
-                            
+
                             // Skip comma
                             self.skip_whitespace(&chars, &mut i, &mut line, &mut column);
                             if i < len && chars[i] == ',' {
@@ -95,7 +102,7 @@ impl JsonSourceLocator {
                             column += 1;
                         }
                     }
-                    
+
                     // Skip closing brace
                     if i < len && chars[i] == '}' {
                         i += 1;
@@ -107,26 +114,26 @@ impl JsonSourceLocator {
                     i += 1;
                     column += 1;
                     let mut index = 0usize;
-                    
+
                     self.skip_whitespace(&chars, &mut i, &mut line, &mut column);
-                    
+
                     while i < len && chars[i] != ']' {
                         self.skip_whitespace(&chars, &mut i, &mut line, &mut column);
                         if i >= len || chars[i] == ']' {
                             break;
                         }
-                        
+
                         // Record element location
                         path_stack.push(PathSegment::Index(index));
                         let path = self.build_path(&path_stack);
                         self.locations.insert(path, JsonLocation::new(line, column));
-                        
+
                         // Skip value
                         self.skip_value(&chars, &mut i, &mut line, &mut column, &mut path_stack);
                         path_stack.pop();
-                        
+
                         index += 1;
-                        
+
                         // Skip comma
                         self.skip_whitespace(&chars, &mut i, &mut line, &mut column);
                         if i < len && chars[i] == ',' {
@@ -134,7 +141,7 @@ impl JsonSourceLocator {
                             column += 1;
                         }
                     }
-                    
+
                     // Skip closing bracket
                     if i < len && chars[i] == ']' {
                         i += 1;
@@ -177,18 +184,24 @@ impl JsonSourceLocator {
     }
 
     /// Parses a JSON string and returns its content.
-    fn parse_string(&self, chars: &[char], i: &mut usize, line: &mut usize, column: &mut usize) -> String {
+    fn parse_string(
+        &self,
+        chars: &[char],
+        i: &mut usize,
+        line: &mut usize,
+        column: &mut usize,
+    ) -> String {
         let mut result = String::new();
-        
+
         // Skip opening quote
         if *i < chars.len() && chars[*i] == '"' {
             *i += 1;
             *column += 1;
         }
-        
+
         while *i < chars.len() {
             let ch = chars[*i];
-            
+
             if ch == '"' {
                 // End of string
                 *i += 1;
@@ -201,7 +214,7 @@ impl JsonSourceLocator {
                 let escaped = chars[*i];
                 *i += 1;
                 *column += 1;
-                
+
                 match escaped {
                     'n' => result.push('\n'),
                     'r' => result.push('\r'),
@@ -230,7 +243,7 @@ impl JsonSourceLocator {
                 *column += 1;
             }
         }
-        
+
         result
     }
 
@@ -244,42 +257,43 @@ impl JsonSourceLocator {
         path_stack: &mut Vec<PathSegment>,
     ) {
         self.skip_whitespace(chars, i, line, column);
-        
+
         if *i >= chars.len() {
             return;
         }
-        
+
         match chars[*i] {
             '{' => {
                 *i += 1;
                 *column += 1;
                 self.skip_whitespace(chars, i, line, column);
-                
+
                 while *i < chars.len() && chars[*i] != '}' {
                     self.skip_whitespace(chars, i, line, column);
                     if *i >= chars.len() || chars[*i] == '}' {
                         break;
                     }
-                    
+
                     // Parse property name
                     if chars[*i] == '"' {
                         let key = self.parse_string(chars, i, line, column);
-                        
+
                         // Skip colon
                         self.skip_whitespace(chars, i, line, column);
                         if *i < chars.len() && chars[*i] == ':' {
                             *i += 1;
                             *column += 1;
                         }
-                        
+
                         // Record and skip value
                         self.skip_whitespace(chars, i, line, column);
                         path_stack.push(PathSegment::Property(key.clone()));
                         let path = self.build_path(path_stack);
-                        self.locations.insert(path, JsonLocation::new(*line, *column));
+                        self.locations
+                            .insert(path, JsonLocation::new(*line, *column));
                         self.skip_value(chars, i, line, column, path_stack);
                         path_stack.pop();
-                        
+
                         // Skip comma
                         self.skip_whitespace(chars, i, line, column);
                         if *i < chars.len() && chars[*i] == ',' {
@@ -291,7 +305,7 @@ impl JsonSourceLocator {
                         *column += 1;
                     }
                 }
-                
+
                 if *i < chars.len() && chars[*i] == '}' {
                     *i += 1;
                     *column += 1;
@@ -301,24 +315,25 @@ impl JsonSourceLocator {
                 *i += 1;
                 *column += 1;
                 let mut index = 0usize;
-                
+
                 self.skip_whitespace(chars, i, line, column);
-                
+
                 while *i < chars.len() && chars[*i] != ']' {
                     self.skip_whitespace(chars, i, line, column);
                     if *i >= chars.len() || chars[*i] == ']' {
                         break;
                     }
-                    
+
                     // Record and skip element
                     path_stack.push(PathSegment::Index(index));
                     let path = self.build_path(path_stack);
-                    self.locations.insert(path, JsonLocation::new(*line, *column));
+                    self.locations
+                        .insert(path, JsonLocation::new(*line, *column));
                     self.skip_value(chars, i, line, column, path_stack);
                     path_stack.pop();
-                    
+
                     index += 1;
-                    
+
                     // Skip comma
                     self.skip_whitespace(chars, i, line, column);
                     if *i < chars.len() && chars[*i] == ',' {
@@ -326,7 +341,7 @@ impl JsonSourceLocator {
                         *column += 1;
                     }
                 }
-                
+
                 if *i < chars.len() && chars[*i] == ']' {
                     *i += 1;
                     *column += 1;
@@ -339,7 +354,14 @@ impl JsonSourceLocator {
                 // Number, boolean, null - skip until delimiter
                 while *i < chars.len() {
                     let ch = chars[*i];
-                    if ch == ',' || ch == '}' || ch == ']' || ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n' {
+                    if ch == ','
+                        || ch == '}'
+                        || ch == ']'
+                        || ch == ' '
+                        || ch == '\t'
+                        || ch == '\r'
+                        || ch == '\n'
+                    {
                         break;
                     }
                     if ch == '\n' {
@@ -359,7 +381,7 @@ impl JsonSourceLocator {
         if stack.is_empty() {
             return String::new();
         }
-        
+
         let mut path = String::new();
         for segment in stack {
             path.push('/');
@@ -411,14 +433,14 @@ mod tests {
     fn test_simple_object() {
         let json = r#"{"name": "test", "value": 42}"#;
         let locator = JsonSourceLocator::new(json);
-        
+
         let root = locator.get_location("");
         assert_eq!(root.line, 1);
         assert_eq!(root.column, 1);
-        
+
         let name = locator.get_location("/name");
         assert!(!name.is_unknown());
-        
+
         let value = locator.get_location("/value");
         assert!(!value.is_unknown());
     }
@@ -431,7 +453,7 @@ mod tests {
   }
 }"#;
         let locator = JsonSourceLocator::new(json);
-        
+
         let inner = locator.get_location("/outer/inner");
         assert!(!inner.is_unknown());
         assert_eq!(inner.line, 3);
@@ -441,10 +463,10 @@ mod tests {
     fn test_array() {
         let json = r#"[1, 2, 3]"#;
         let locator = JsonSourceLocator::new(json);
-        
+
         let first = locator.get_location("/0");
         assert!(!first.is_unknown());
-        
+
         let second = locator.get_location("/1");
         assert!(!second.is_unknown());
     }
@@ -453,7 +475,7 @@ mod tests {
     fn test_unknown_path() {
         let json = r#"{"name": "test"}"#;
         let locator = JsonSourceLocator::new(json);
-        
+
         let unknown = locator.get_location("/nonexistent");
         assert!(unknown.is_unknown());
     }

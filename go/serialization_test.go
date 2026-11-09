@@ -115,8 +115,8 @@ func TestBigIntStringUnmarshal(t *testing.T) {
 			t.Fatalf("Unmarshal failed: %v", err)
 		}
 		expected := "170141183460469231731687303715884105727"
-		if v.Int.String() != expected {
-			t.Errorf("Expected %s, got %s", expected, v.Int.String())
+		if v.String() != expected {
+			t.Errorf("Expected %s, got %s", expected, v.String())
 		}
 	})
 }
@@ -317,8 +317,8 @@ func TestURIUnmarshal(t *testing.T) {
 	if err := json.Unmarshal([]byte(input), &u); err != nil {
 		t.Fatalf("Unmarshal failed: %v", err)
 	}
-	if u.URL.String() != "https://example.com/path?query=value" {
-		t.Errorf("Expected https://example.com/path?query=value, got %s", u.URL.String())
+	if u.String() != "https://example.com/path?query=value" {
+		t.Errorf("Expected https://example.com/path?query=value, got %s", u.String())
 	}
 }
 
@@ -384,18 +384,18 @@ func TestDecimalStringUnmarshal(t *testing.T) {
 // Test round-trip serialization
 func TestRoundTrip(t *testing.T) {
 	type TestStruct struct {
-		Int64Val   Int64String   `json:"int64"`
-		UInt64Val  UInt64String  `json:"uint64"`
-		Duration   Duration      `json:"duration"`
-		Date       Date          `json:"date"`
-		Time       TimeOfDay     `json:"time"`
-		DateTime   DateTime      `json:"datetime"`
-		Binary     Binary        `json:"binary"`
-		UUID       UUID          `json:"uuid"`
-		URI        URI           `json:"uri"`
-		Pointer    JSONPointer   `json:"pointer"`
-		Decimal    DecimalString `json:"decimal"`
-		BigInt     BigIntString  `json:"bigint"`
+		Int64Val  Int64String   `json:"int64"`
+		UInt64Val UInt64String  `json:"uint64"`
+		Duration  Duration      `json:"duration"`
+		Date      Date          `json:"date"`
+		Time      TimeOfDay     `json:"time"`
+		DateTime  DateTime      `json:"datetime"`
+		Binary    Binary        `json:"binary"`
+		UUID      UUID          `json:"uuid"`
+		URI       URI           `json:"uri"`
+		Pointer   JSONPointer   `json:"pointer"`
+		Decimal   DecimalString `json:"decimal"`
+		BigInt    BigIntString  `json:"bigint"`
 	}
 
 	uri, _ := NewURI("https://example.com")

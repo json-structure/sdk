@@ -1,0 +1,55 @@
+name: VS Code Extension
+
+on:
+  pull_request:
+    branches: [master, main]
+    paths:
+      - 'vscode/**'
+      - 'typescript/**'
+      - '.github/workflows/vscode.yml'
+  push:
+    branches: [master, main]
+    paths:
+      - 'vscode/**'
+      - 'typescript/**'
+      - '.github/workflows/vscode.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: VS Code ${{ matrix.version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ['1.140.0', 'stable']
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.x'
+      - name: Use npm 11 for override-aware lockfile installs
+        run: npm install --global npm@11
+      - name: Build SDK
+        working-directory: typescript
+        run: npm ci && npm run build
+      - name: Install extension dependencies
+        working-directory: vscode
+        run: npm ci
+      - name: Lint
+        working-directory: vscode
+        run: npm run lint
+      - name: Run integration tests
+        working-directory: vscode
+        env:
+          VSCODE_TEST_VERSION: ${{ matrix.version }}
+        run: xvfb-run -a npm test
+      - name: Check packaging and API version compatibility
+        working-directory: vscode
+        env:
+          SKIP_VERSION_UPDATE: '1'
+        run: npm run package

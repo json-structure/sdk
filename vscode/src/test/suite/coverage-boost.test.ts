@@ -14,7 +14,7 @@ import * as fs from 'fs';
 suite('Coverage Boost Test Suite', () => {
     // From dist/test/suite, go up 3 levels to get to workspace root
     const testFixturesPath = path.resolve(__dirname, '../../../test-fixtures');
-    const testAssetsPath = path.resolve(__dirname, '../../../../test-assets');
+
 
     // Helper to wait for diagnostics
     async function waitForDiagnostics(uri: vscode.Uri, timeoutMs = 3000): Promise<vscode.Diagnostic[]> {
@@ -58,7 +58,7 @@ suite('Coverage Boost Test Suite', () => {
             const enumPos = text.indexOf('"enum"');
             const position = doc.positionAt(enumPos + 2);
             
-            const completions = await vscode.commands.executeCommand<vscode.CompletionList>(
+            await vscode.commands.executeCommand<vscode.CompletionList>(
                 'vscode.executeCompletionItemProvider',
                 doc.uri,
                 position
@@ -91,7 +91,7 @@ suite('Coverage Boost Test Suite', () => {
             const defaultPos = text.indexOf('"default":') + 11;
             const position = doc.positionAt(defaultPos);
             
-            const completions = await vscode.commands.executeCommand<vscode.CompletionList>(
+            await vscode.commands.executeCommand<vscode.CompletionList>(
                 'vscode.executeCompletionItemProvider',
                 doc.uri,
                 position
@@ -161,7 +161,7 @@ suite('Coverage Boost Test Suite', () => {
             const refPos = text.indexOf('"$ref": ""') + 9;
             const position = doc.positionAt(refPos);
             
-            const completions = await vscode.commands.executeCommand<vscode.CompletionList>(
+            await vscode.commands.executeCommand<vscode.CompletionList>(
                 'vscode.executeCompletionItemProvider',
                 doc.uri,
                 position
@@ -191,7 +191,7 @@ suite('Coverage Boost Test Suite', () => {
             // Position inside the property object
             const position = new vscode.Position(6, 6);
             
-            const completions = await vscode.commands.executeCommand<vscode.CompletionList>(
+            await vscode.commands.executeCommand<vscode.CompletionList>(
                 'vscode.executeCompletionItemProvider',
                 doc.uri,
                 position
@@ -216,7 +216,7 @@ suite('Coverage Boost Test Suite', () => {
             
             const position = new vscode.Position(4, 2);
             
-            const completions = await vscode.commands.executeCommand<vscode.CompletionList>(
+            await vscode.commands.executeCommand<vscode.CompletionList>(
                 'vscode.executeCompletionItemProvider',
                 doc.uri,
                 position
@@ -241,7 +241,7 @@ suite('Coverage Boost Test Suite', () => {
             
             const position = new vscode.Position(4, 2);
             
-            const completions = await vscode.commands.executeCommand<vscode.CompletionList>(
+            await vscode.commands.executeCommand<vscode.CompletionList>(
                 'vscode.executeCompletionItemProvider',
                 doc.uri,
                 position
@@ -266,7 +266,7 @@ suite('Coverage Boost Test Suite', () => {
             
             const position = new vscode.Position(4, 2);
             
-            const completions = await vscode.commands.executeCommand<vscode.CompletionList>(
+            await vscode.commands.executeCommand<vscode.CompletionList>(
                 'vscode.executeCompletionItemProvider',
                 doc.uri,
                 position
@@ -291,7 +291,7 @@ suite('Coverage Boost Test Suite', () => {
             
             const position = new vscode.Position(4, 2);
             
-            const completions = await vscode.commands.executeCommand<vscode.CompletionList>(
+            await vscode.commands.executeCommand<vscode.CompletionList>(
                 'vscode.executeCompletionItemProvider',
                 doc.uri,
                 position
@@ -316,7 +316,7 @@ suite('Coverage Boost Test Suite', () => {
             
             const position = new vscode.Position(4, 2);
             
-            const completions = await vscode.commands.executeCommand<vscode.CompletionList>(
+            await vscode.commands.executeCommand<vscode.CompletionList>(
                 'vscode.executeCompletionItemProvider',
                 doc.uri,
                 position
@@ -341,7 +341,7 @@ suite('Coverage Boost Test Suite', () => {
             
             const position = new vscode.Position(4, 2);
             
-            const completions = await vscode.commands.executeCommand<vscode.CompletionList>(
+            await vscode.commands.executeCommand<vscode.CompletionList>(
                 'vscode.executeCompletionItemProvider',
                 doc.uri,
                 position
@@ -385,7 +385,7 @@ suite('Coverage Boost Test Suite', () => {
             const extendsPos = text.indexOf('#/definitions/BaseType');
             const position = doc.positionAt(extendsPos + 2);
             
-            const definitions = await vscode.commands.executeCommand<vscode.Location[]>(
+            await vscode.commands.executeCommand<vscode.Location[]>(
                 'vscode.executeDefinitionProvider',
                 doc.uri,
                 position
@@ -420,7 +420,7 @@ suite('Coverage Boost Test Suite', () => {
             const rootPos = text.indexOf('#/definitions/Person');
             const position = doc.positionAt(rootPos + 2);
             
-            const definitions = await vscode.commands.executeCommand<vscode.Location[]>(
+            await vscode.commands.executeCommand<vscode.Location[]>(
                 'vscode.executeDefinitionProvider',
                 doc.uri,
                 position
@@ -459,7 +459,7 @@ suite('Coverage Boost Test Suite', () => {
             const refPos = text.indexOf('#/definitions/Address');
             const position = doc.positionAt(refPos + 2);
             
-            const definitions = await vscode.commands.executeCommand<vscode.Location[]>(
+            await vscode.commands.executeCommand<vscode.Location[]>(
                 'vscode.executeDefinitionProvider',
                 doc.uri,
                 position
@@ -500,7 +500,7 @@ suite('Coverage Boost Test Suite', () => {
             const moneyPos = text.indexOf('"Money"');
             const position = doc.positionAt(moneyPos + 1);
             
-            const references = await vscode.commands.executeCommand<vscode.Location[]>(
+            await vscode.commands.executeCommand<vscode.Location[]>(
                 'vscode.executeReferenceProvider',
                 doc.uri,
                 position
@@ -538,7 +538,7 @@ suite('Coverage Boost Test Suite', () => {
             const refPos = text.indexOf('#/definitions/Types/Address');
             const position = doc.positionAt(refPos + 2);
             
-            const definitions = await vscode.commands.executeCommand<vscode.Location[]>(
+            await vscode.commands.executeCommand<vscode.Location[]>(
                 'vscode.executeDefinitionProvider',
                 doc.uri,
                 position
@@ -634,13 +634,8 @@ suite('Coverage Boost Test Suite', () => {
             });
             await vscode.window.showTextDocument(doc);
             
-            const diagnostics = await waitForDiagnostics(doc.uri, 2000);
-            
-            // Should report $schema must be string
-            const schemaError = diagnostics.some(d => 
-                d.message.includes('$schema') && d.message.includes('string')
-            );
-            
+            await waitForDiagnostics(doc.uri, 2000);
+
             assert.ok(true, '$schema type validation executed');
         });
 
@@ -675,7 +670,7 @@ suite('Coverage Boost Test Suite', () => {
             });
             await vscode.window.showTextDocument(doc);
             
-            const diagnostics = await waitForDiagnostics(doc.uri, 2000);
+            await waitForDiagnostics(doc.uri, 2000);
             
             assert.ok(true, 'Validation error handling executed');
         });
@@ -769,7 +764,7 @@ suite('Coverage Boost Test Suite', () => {
             // Wait for fetch attempt and 404 caching
             await new Promise(resolve => setTimeout(resolve, 3000));
             
-            const diagnostics = vscode.languages.getDiagnostics(doc.uri);
+            vscode.languages.getDiagnostics(doc.uri);
             
             // Should report schema not found
             assert.ok(true, '404 caching code path executed');
@@ -1171,7 +1166,7 @@ suite('Coverage Boost Test Suite', () => {
             
             await new Promise(resolve => setTimeout(resolve, 1500));
             
-            const codeLenses = await vscode.commands.executeCommand<vscode.CodeLens[]>(
+            await vscode.commands.executeCommand<vscode.CodeLens[]>(
                 'vscode.executeCodeLensProvider',
                 doc.uri
             );
@@ -1188,7 +1183,7 @@ suite('Coverage Boost Test Suite', () => {
                 
                 await new Promise(resolve => setTimeout(resolve, 1500));
                 
-                const codeLenses = await vscode.commands.executeCommand<vscode.CodeLens[]>(
+                await vscode.commands.executeCommand<vscode.CodeLens[]>(
                     'vscode.executeCodeLensProvider',
                     doc.uri
                 );
@@ -1282,7 +1277,7 @@ suite('Coverage Boost Test Suite', () => {
                 const posIdx = text.lastIndexOf('",') + 3;
                 const position = doc.positionAt(posIdx);
                 
-                const completions = await vscode.commands.executeCommand<vscode.CompletionList>(
+                await vscode.commands.executeCommand<vscode.CompletionList>(
                     'vscode.executeCompletionItemProvider',
                     doc.uri,
                     position
@@ -1320,7 +1315,7 @@ suite('Coverage Boost Test Suite', () => {
             const constPos = text.indexOf('"const"');
             const position = doc.positionAt(constPos + 2);
             
-            const completions = await vscode.commands.executeCommand<vscode.CompletionList>(
+            await vscode.commands.executeCommand<vscode.CompletionList>(
                 'vscode.executeCompletionItemProvider',
                 doc.uri,
                 position
@@ -1351,7 +1346,7 @@ suite('Coverage Boost Test Suite', () => {
             const nullPos = text.indexOf('"null"');
             const position = doc.positionAt(nullPos + 2);
             
-            const completions = await vscode.commands.executeCommand<vscode.CompletionList>(
+            await vscode.commands.executeCommand<vscode.CompletionList>(
                 'vscode.executeCompletionItemProvider',
                 doc.uri,
                 position
@@ -1407,7 +1402,7 @@ suite('Coverage Boost Test Suite', () => {
             
             const position = new vscode.Position(3, 4);
             
-            const completions = await vscode.commands.executeCommand<vscode.CompletionList>(
+            await vscode.commands.executeCommand<vscode.CompletionList>(
                 'vscode.executeCompletionItemProvider',
                 doc.uri,
                 position
@@ -1450,7 +1445,7 @@ suite('Coverage Boost Test Suite', () => {
             });
             await vscode.window.showTextDocument(doc);
             
-            const diagnostics = await waitForDiagnostics(doc.uri, 3000);
+            await waitForDiagnostics(doc.uri, 3000);
             
             assert.ok(true, 'Schema property range finding executed');
         });
@@ -1493,7 +1488,7 @@ suite('Coverage Boost Test Suite', () => {
             });
             await vscode.window.showTextDocument(doc);
             
-            const diagnostics = await waitForDiagnostics(doc.uri, 2000);
+            await waitForDiagnostics(doc.uri, 2000);
             
             assert.ok(true, 'Nested path range finding executed');
         });
@@ -1528,13 +1523,8 @@ suite('Coverage Boost Test Suite', () => {
             });
             await vscode.window.showTextDocument(doc);
             
-            const diagnostics = await waitForDiagnostics(doc.uri, 2000);
-            
-            // Should have error for missing required property
-            const missingReq = diagnostics.some(d => 
-                d.message.includes('required') || d.message.includes('id')
-            );
-            
+            await waitForDiagnostics(doc.uri, 2000);
+
             assert.ok(true, 'Root level error range finding executed');
         });
     });
@@ -1572,7 +1562,7 @@ suite('Coverage Boost Test Suite', () => {
             const refPos = text.indexOf('#/definitions/Item');
             const position = doc.positionAt(refPos + 2);
             
-            const definitions = await vscode.commands.executeCommand<vscode.Location[]>(
+            await vscode.commands.executeCommand<vscode.Location[]>(
                 'vscode.executeDefinitionProvider',
                 doc.uri,
                 position
@@ -1612,7 +1602,7 @@ suite('Coverage Boost Test Suite', () => {
             const personPos = text.indexOf('"Person"');
             const position = doc.positionAt(personPos + 1);
             
-            const references = await vscode.commands.executeCommand<vscode.Location[]>(
+            await vscode.commands.executeCommand<vscode.Location[]>(
                 'vscode.executeReferenceProvider',
                 doc.uri,
                 position
@@ -1944,8 +1934,6 @@ suite('Coverage Boost Test Suite', () => {
                     position
                 );
                 
-                // Check for the unknown type property
-                const prop = completions?.items.find(i => i.label === 'unknownTypeProp');
                 assert.ok(completions?.items.length, 'Should have some completions');
             } finally {
                 try { fs.unlinkSync(instancePath); } catch {}
@@ -1986,11 +1974,6 @@ suite('Coverage Boost Test Suite', () => {
                     doc.uri,
                     position
                 );
-                
-                // Check that hover contains const info
-                const hoverContent = hovers?.map(h => 
-                    h.contents.map(c => typeof c === 'string' ? c : (c as vscode.MarkdownString).value).join('\n')
-                ).join('\n') || '';
                 
                 // Verify hover exists - const value should be shown
                 assert.ok(hovers && hovers.length > 0, 'Should have hover for constProp');
@@ -2293,7 +2276,7 @@ suite('Coverage Boost Test Suite', () => {
                 await new Promise(resolve => setTimeout(resolve, 2000));
                 
                 // Just verify the extension doesn't crash
-                const diagnostics = vscode.languages.getDiagnostics(doc.uri);
+                vscode.languages.getDiagnostics(doc.uri);
                 assert.ok(true, 'Should handle short lines without crashing');
             } finally {
                 try { fs.unlinkSync(schemaPath); } catch {}

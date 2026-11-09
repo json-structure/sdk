@@ -23,7 +23,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        go-version: ['1.21', '1.22', '1.23']
+        go-version: ['1.21', '1.26.x', '1.27.x']
 
     steps:
       - uses: actions/checkout@v7
@@ -48,7 +48,7 @@ jobs:
         run: go test ./... -v -race -coverprofile=coverage.out -covermode=atomic
 
       - name: Upload coverage reports
-        if: matrix.go-version == '1.22'
+        if: matrix.go-version == '1.27.x'
         uses: codecov/codecov-action@v7
         with:
           file: go/coverage.out
@@ -67,13 +67,25 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.22'
+          go-version: '1.27.x'
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v4
+        uses: golangci/golangci-lint-action@v9
         with:
           version: latest
           working-directory: go
+
+  audit:
+    name: Go vulnerability audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.x'
+      - name: Check dependency and standard-library advisories
+        working-directory: go
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest -scan module
 
   # Go modules are automatically published when tagged
   # Users can get the module with: go get github.com/json-structure/sdk/go@v1.0.0

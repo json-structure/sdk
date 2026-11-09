@@ -1150,7 +1150,7 @@ describe('SchemaValidator', () => {
   });
 
   describe('adversarial and edge cases', () => {
-    const validate = (schema: any) => new SchemaValidator().validate(schema);
+    const validate = (schema: unknown) => new SchemaValidator().validate(schema);
 
     describe('$extends validation', () => {
       it('should accept $extends referencing an existing definition', () => {

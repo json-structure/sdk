@@ -11,6 +11,7 @@
         "plugin:@typescript-eslint/recommended"
     ],
     "rules": {
+        "@typescript-eslint/no-unused-vars": ["error", { "argsIgnorePattern": "^_", "caughtErrors": "none" }],
         "@typescript-eslint/naming-convention": [
             "warn",
             {
@@ -18,11 +19,18 @@
                 "format": ["camelCase", "PascalCase"]
             }
         ],
-        "@typescript-eslint/semi": ["warn", "always"],
         "curly": "warn",
         "eqeqeq": "warn",
         "no-throw-literal": "warn",
         "semi": "off"
     },
-    "ignorePatterns": ["dist/**", "node_modules/**"]
+    "ignorePatterns": ["dist/**", "node_modules/**"],
+    "overrides": [
+        {
+            "files": ["src/test/**/*.ts"],
+            "rules": {
+                "no-empty": ["error", { "allowEmptyCatch": true }]
+            }
+        }
+    ]
 }

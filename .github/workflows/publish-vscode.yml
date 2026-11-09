@@ -29,7 +29,10 @@ jobs:
     # - TypeScript SDK workflow succeeded (workflow_run)
     if: |
       github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       startsWith(github.event.workflow_run.head_branch, 'v'))
     
     steps:
       - name: Checkout
@@ -37,14 +40,18 @@ jobs:
         with:
           fetch-depth: 0
           submodules: recursive
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
       
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
           cache-dependency-path: vscode/package-lock.json
       
+      - name: Use npm 11 for override-aware lockfile installs
+        run: npm install --global npm@11
+
       - name: Get SDK version
         id: sdk_version
         run: |
@@ -55,11 +62,12 @@ jobs:
             # The head_branch contains the tag name for tag-triggered workflows
             TAG="${{ github.event.workflow_run.head_branch }}"
             # Only use the tag if it looks like a version tag (starts with 'v')
-            if [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            if [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] &&
+               git show-ref --verify --quiet "refs/tags/$TAG"; then
               VERSION=${TAG#v}
             else
-              # Non-tag push (e.g., master branch) - use latest from npm
-              VERSION=$(npm view @json-structure/sdk version)
+              echo "Refusing to publish without a release tag"
+              exit 1
             fi
           else
             # For workflow_dispatch without version, use latest from npm
@@ -137,14 +145,18 @@ jobs:
         with:
           fetch-depth: 0
           submodules: recursive
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
       
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
           cache-dependency-path: vscode/package-lock.json
       
+      - name: Use npm 11 for override-aware lockfile installs
+        run: npm install --global npm@11
+
       - name: Update SDK dependency to npm package
         working-directory: vscode
         run: |

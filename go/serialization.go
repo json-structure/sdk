@@ -125,7 +125,7 @@ func (b BigIntString) MarshalJSON() ([]byte, error) {
 	if b.Int == nil {
 		return json.Marshal(nil)
 	}
-	return json.Marshal(b.Int.String())
+	return json.Marshal(b.String())
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
@@ -315,7 +315,7 @@ func (t *TimeOfDay) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &s); err != nil {
 		return fmt.Errorf("invalid time: %w", err)
 	}
-	
+
 	// Try parsing with nanoseconds first
 	parsed, err := time.Parse("15:04:05.999999999", s)
 	if err != nil {
@@ -457,7 +457,7 @@ func (u URI) MarshalJSON() ([]byte, error) {
 	if u.URL == nil {
 		return json.Marshal(nil)
 	}
-	return json.Marshal(u.URL.String())
+	return json.Marshal(u.String())
 }
 
 // UnmarshalJSON implements json.Unmarshaler.

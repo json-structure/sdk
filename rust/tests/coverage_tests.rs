@@ -3,9 +3,8 @@
 //! These tests cover error paths, edge cases, and Display implementations.
 
 use json_structure::{
-    SchemaValidator, InstanceValidator,
-    SchemaErrorCode, InstanceErrorCode,
-    Severity, JsonLocation, ValidationError, ValidationResult,
+    InstanceErrorCode, InstanceValidator, JsonLocation, SchemaErrorCode, SchemaValidator, Severity,
+    ValidationError, ValidationResult,
 };
 
 // =============================================================================
@@ -19,146 +18,524 @@ mod error_code_tests {
     fn test_schema_error_codes_as_str() {
         // Test all schema error codes have correct string representation
         assert_eq!(SchemaErrorCode::SchemaNull.as_str(), "SCHEMA_NULL");
-        assert_eq!(SchemaErrorCode::SchemaInvalidType.as_str(), "SCHEMA_INVALID_TYPE");
-        assert_eq!(SchemaErrorCode::SchemaRootMissingId.as_str(), "SCHEMA_ROOT_MISSING_ID");
-        assert_eq!(SchemaErrorCode::SchemaRootMissingName.as_str(), "SCHEMA_ROOT_MISSING_NAME");
-        assert_eq!(SchemaErrorCode::SchemaRootMissingSchema.as_str(), "SCHEMA_ROOT_MISSING_SCHEMA");
-        assert_eq!(SchemaErrorCode::SchemaRootMissingType.as_str(), "SCHEMA_ROOT_MISSING_TYPE");
-        assert_eq!(SchemaErrorCode::SchemaTypeInvalid.as_str(), "SCHEMA_TYPE_INVALID");
-        assert_eq!(SchemaErrorCode::SchemaTypeNotString.as_str(), "SCHEMA_TYPE_NOT_STRING");
-        assert_eq!(SchemaErrorCode::SchemaRefNotFound.as_str(), "SCHEMA_REF_NOT_FOUND");
-        assert_eq!(SchemaErrorCode::SchemaRefNotString.as_str(), "SCHEMA_REF_NOT_STRING");
-        assert_eq!(SchemaErrorCode::SchemaRefCircular.as_str(), "SCHEMA_REF_CIRCULAR");
-        assert_eq!(SchemaErrorCode::SchemaRefInvalid.as_str(), "SCHEMA_REF_INVALID");
-        assert_eq!(SchemaErrorCode::SchemaDefinitionsMustBeObject.as_str(), "SCHEMA_DEFINITIONS_MUST_BE_OBJECT");
-        assert_eq!(SchemaErrorCode::SchemaDefinitionMissingType.as_str(), "SCHEMA_DEFINITION_MISSING_TYPE");
-        assert_eq!(SchemaErrorCode::SchemaDefinitionInvalid.as_str(), "SCHEMA_DEFINITION_INVALID");
-        assert_eq!(SchemaErrorCode::SchemaPropertiesMustBeObject.as_str(), "SCHEMA_PROPERTIES_MUST_BE_OBJECT");
-        assert_eq!(SchemaErrorCode::SchemaPropertyInvalid.as_str(), "SCHEMA_PROPERTY_INVALID");
-        assert_eq!(SchemaErrorCode::SchemaRequiredMustBeArray.as_str(), "SCHEMA_REQUIRED_MUST_BE_ARRAY");
-        assert_eq!(SchemaErrorCode::SchemaRequiredItemMustBeString.as_str(), "SCHEMA_REQUIRED_ITEM_MUST_BE_STRING");
-        assert_eq!(SchemaErrorCode::SchemaRequiredPropertyNotDefined.as_str(), "SCHEMA_REQUIRED_PROPERTY_NOT_DEFINED");
-        assert_eq!(SchemaErrorCode::SchemaAdditionalPropertiesInvalid.as_str(), "SCHEMA_ADDITIONAL_PROPERTIES_INVALID");
-        assert_eq!(SchemaErrorCode::SchemaArrayMissingItems.as_str(), "SCHEMA_ARRAY_MISSING_ITEMS");
-        assert_eq!(SchemaErrorCode::SchemaItemsInvalid.as_str(), "SCHEMA_ITEMS_INVALID");
-        assert_eq!(SchemaErrorCode::SchemaMapMissingValues.as_str(), "SCHEMA_MAP_MISSING_VALUES");
-        assert_eq!(SchemaErrorCode::SchemaValuesInvalid.as_str(), "SCHEMA_VALUES_INVALID");
-        assert_eq!(SchemaErrorCode::SchemaTupleMissingDefinition.as_str(), "SCHEMA_TUPLE_MISSING_DEFINITION");
-        assert_eq!(SchemaErrorCode::SchemaTupleMissingProperties.as_str(), "SCHEMA_TUPLE_MISSING_PROPERTIES");
-        assert_eq!(SchemaErrorCode::SchemaTupleInvalidFormat.as_str(), "SCHEMA_TUPLE_INVALID_FORMAT");
-        assert_eq!(SchemaErrorCode::SchemaTuplePropertyNotDefined.as_str(), "SCHEMA_TUPLE_PROPERTY_NOT_DEFINED");
-        assert_eq!(SchemaErrorCode::SchemaChoiceMissingChoices.as_str(), "SCHEMA_CHOICE_MISSING_CHOICES");
-        assert_eq!(SchemaErrorCode::SchemaChoicesNotObject.as_str(), "SCHEMA_CHOICES_NOT_OBJECT");
-        assert_eq!(SchemaErrorCode::SchemaChoiceInvalid.as_str(), "SCHEMA_CHOICE_INVALID");
-        assert_eq!(SchemaErrorCode::SchemaSelectorNotString.as_str(), "SCHEMA_SELECTOR_NOT_STRING");
-        assert_eq!(SchemaErrorCode::SchemaEnumNotArray.as_str(), "SCHEMA_ENUM_NOT_ARRAY");
-        assert_eq!(SchemaErrorCode::SchemaEnumEmpty.as_str(), "SCHEMA_ENUM_EMPTY");
-        assert_eq!(SchemaErrorCode::SchemaEnumDuplicates.as_str(), "SCHEMA_ENUM_DUPLICATES");
-        assert_eq!(SchemaErrorCode::SchemaConstInvalid.as_str(), "SCHEMA_CONST_INVALID");
-        assert_eq!(SchemaErrorCode::SchemaUsesNotArray.as_str(), "SCHEMA_USES_NOT_ARRAY");
-        assert_eq!(SchemaErrorCode::SchemaUsesInvalidExtension.as_str(), "SCHEMA_USES_INVALID_EXTENSION");
-        assert_eq!(SchemaErrorCode::SchemaOffersNotArray.as_str(), "SCHEMA_OFFERS_NOT_ARRAY");
-        assert_eq!(SchemaErrorCode::SchemaOffersInvalidExtension.as_str(), "SCHEMA_OFFERS_INVALID_EXTENSION");
-        assert_eq!(SchemaErrorCode::SchemaExtensionKeywordWithoutUses.as_str(), "SCHEMA_EXTENSION_KEYWORD_WITHOUT_USES");
-        assert_eq!(SchemaErrorCode::SchemaMinMaxInvalid.as_str(), "SCHEMA_MIN_MAX_INVALID");
-        assert_eq!(SchemaErrorCode::SchemaMinLengthInvalid.as_str(), "SCHEMA_MIN_LENGTH_INVALID");
-        assert_eq!(SchemaErrorCode::SchemaMaxLengthInvalid.as_str(), "SCHEMA_MAX_LENGTH_INVALID");
-        assert_eq!(SchemaErrorCode::SchemaPatternInvalid.as_str(), "SCHEMA_PATTERN_INVALID");
-        assert_eq!(SchemaErrorCode::SchemaFormatInvalid.as_str(), "SCHEMA_FORMAT_INVALID");
-        assert_eq!(SchemaErrorCode::SchemaImportNotAllowed.as_str(), "SCHEMA_IMPORT_NOT_ALLOWED");
-        assert_eq!(SchemaErrorCode::SchemaImportFailed.as_str(), "SCHEMA_IMPORT_FAILED");
-        assert_eq!(SchemaErrorCode::SchemaImportCircular.as_str(), "SCHEMA_IMPORT_CIRCULAR");
-        assert_eq!(SchemaErrorCode::SchemaAllOfNotArray.as_str(), "SCHEMA_ALLOF_NOT_ARRAY");
-        assert_eq!(SchemaErrorCode::SchemaAnyOfNotArray.as_str(), "SCHEMA_ANYOF_NOT_ARRAY");
-        assert_eq!(SchemaErrorCode::SchemaOneOfNotArray.as_str(), "SCHEMA_ONEOF_NOT_ARRAY");
-        assert_eq!(SchemaErrorCode::SchemaNotInvalid.as_str(), "SCHEMA_NOT_INVALID");
-        assert_eq!(SchemaErrorCode::SchemaIfInvalid.as_str(), "SCHEMA_IF_INVALID");
-        assert_eq!(SchemaErrorCode::SchemaThenWithoutIf.as_str(), "SCHEMA_THEN_WITHOUT_IF");
-        assert_eq!(SchemaErrorCode::SchemaElseWithoutIf.as_str(), "SCHEMA_ELSE_WITHOUT_IF");
+        assert_eq!(
+            SchemaErrorCode::SchemaInvalidType.as_str(),
+            "SCHEMA_INVALID_TYPE"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaRootMissingId.as_str(),
+            "SCHEMA_ROOT_MISSING_ID"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaRootMissingName.as_str(),
+            "SCHEMA_ROOT_MISSING_NAME"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaRootMissingSchema.as_str(),
+            "SCHEMA_ROOT_MISSING_SCHEMA"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaRootMissingType.as_str(),
+            "SCHEMA_ROOT_MISSING_TYPE"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaTypeInvalid.as_str(),
+            "SCHEMA_TYPE_INVALID"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaTypeNotString.as_str(),
+            "SCHEMA_TYPE_NOT_STRING"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaRefNotFound.as_str(),
+            "SCHEMA_REF_NOT_FOUND"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaRefNotString.as_str(),
+            "SCHEMA_REF_NOT_STRING"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaRefCircular.as_str(),
+            "SCHEMA_REF_CIRCULAR"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaRefInvalid.as_str(),
+            "SCHEMA_REF_INVALID"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaDefinitionsMustBeObject.as_str(),
+            "SCHEMA_DEFINITIONS_MUST_BE_OBJECT"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaDefinitionMissingType.as_str(),
+            "SCHEMA_DEFINITION_MISSING_TYPE"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaDefinitionInvalid.as_str(),
+            "SCHEMA_DEFINITION_INVALID"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaPropertiesMustBeObject.as_str(),
+            "SCHEMA_PROPERTIES_MUST_BE_OBJECT"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaPropertyInvalid.as_str(),
+            "SCHEMA_PROPERTY_INVALID"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaRequiredMustBeArray.as_str(),
+            "SCHEMA_REQUIRED_MUST_BE_ARRAY"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaRequiredItemMustBeString.as_str(),
+            "SCHEMA_REQUIRED_ITEM_MUST_BE_STRING"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaRequiredPropertyNotDefined.as_str(),
+            "SCHEMA_REQUIRED_PROPERTY_NOT_DEFINED"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaAdditionalPropertiesInvalid.as_str(),
+            "SCHEMA_ADDITIONAL_PROPERTIES_INVALID"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaArrayMissingItems.as_str(),
+            "SCHEMA_ARRAY_MISSING_ITEMS"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaItemsInvalid.as_str(),
+            "SCHEMA_ITEMS_INVALID"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaMapMissingValues.as_str(),
+            "SCHEMA_MAP_MISSING_VALUES"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaValuesInvalid.as_str(),
+            "SCHEMA_VALUES_INVALID"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaTupleMissingDefinition.as_str(),
+            "SCHEMA_TUPLE_MISSING_DEFINITION"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaTupleMissingProperties.as_str(),
+            "SCHEMA_TUPLE_MISSING_PROPERTIES"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaTupleInvalidFormat.as_str(),
+            "SCHEMA_TUPLE_INVALID_FORMAT"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaTuplePropertyNotDefined.as_str(),
+            "SCHEMA_TUPLE_PROPERTY_NOT_DEFINED"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaChoiceMissingChoices.as_str(),
+            "SCHEMA_CHOICE_MISSING_CHOICES"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaChoicesNotObject.as_str(),
+            "SCHEMA_CHOICES_NOT_OBJECT"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaChoiceInvalid.as_str(),
+            "SCHEMA_CHOICE_INVALID"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaSelectorNotString.as_str(),
+            "SCHEMA_SELECTOR_NOT_STRING"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaEnumNotArray.as_str(),
+            "SCHEMA_ENUM_NOT_ARRAY"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaEnumEmpty.as_str(),
+            "SCHEMA_ENUM_EMPTY"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaEnumDuplicates.as_str(),
+            "SCHEMA_ENUM_DUPLICATES"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaConstInvalid.as_str(),
+            "SCHEMA_CONST_INVALID"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaUsesNotArray.as_str(),
+            "SCHEMA_USES_NOT_ARRAY"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaUsesInvalidExtension.as_str(),
+            "SCHEMA_USES_INVALID_EXTENSION"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaOffersNotArray.as_str(),
+            "SCHEMA_OFFERS_NOT_ARRAY"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaOffersInvalidExtension.as_str(),
+            "SCHEMA_OFFERS_INVALID_EXTENSION"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaExtensionKeywordWithoutUses.as_str(),
+            "SCHEMA_EXTENSION_KEYWORD_WITHOUT_USES"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaMinMaxInvalid.as_str(),
+            "SCHEMA_MIN_MAX_INVALID"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaMinLengthInvalid.as_str(),
+            "SCHEMA_MIN_LENGTH_INVALID"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaMaxLengthInvalid.as_str(),
+            "SCHEMA_MAX_LENGTH_INVALID"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaPatternInvalid.as_str(),
+            "SCHEMA_PATTERN_INVALID"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaFormatInvalid.as_str(),
+            "SCHEMA_FORMAT_INVALID"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaImportNotAllowed.as_str(),
+            "SCHEMA_IMPORT_NOT_ALLOWED"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaImportFailed.as_str(),
+            "SCHEMA_IMPORT_FAILED"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaImportCircular.as_str(),
+            "SCHEMA_IMPORT_CIRCULAR"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaAllOfNotArray.as_str(),
+            "SCHEMA_ALLOF_NOT_ARRAY"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaAnyOfNotArray.as_str(),
+            "SCHEMA_ANYOF_NOT_ARRAY"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaOneOfNotArray.as_str(),
+            "SCHEMA_ONEOF_NOT_ARRAY"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaNotInvalid.as_str(),
+            "SCHEMA_NOT_INVALID"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaIfInvalid.as_str(),
+            "SCHEMA_IF_INVALID"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaThenWithoutIf.as_str(),
+            "SCHEMA_THEN_WITHOUT_IF"
+        );
+        assert_eq!(
+            SchemaErrorCode::SchemaElseWithoutIf.as_str(),
+            "SCHEMA_ELSE_WITHOUT_IF"
+        );
     }
 
     #[test]
     fn test_schema_error_code_display() {
         assert_eq!(format!("{}", SchemaErrorCode::SchemaNull), "SCHEMA_NULL");
-        assert_eq!(format!("{}", SchemaErrorCode::SchemaTypeInvalid), "SCHEMA_TYPE_INVALID");
+        assert_eq!(
+            format!("{}", SchemaErrorCode::SchemaTypeInvalid),
+            "SCHEMA_TYPE_INVALID"
+        );
     }
 
     #[test]
     fn test_instance_error_codes_as_str() {
         // Test all instance error codes have correct string representation
-        assert_eq!(InstanceErrorCode::InstanceTypeMismatch.as_str(), "INSTANCE_TYPE_MISMATCH");
-        assert_eq!(InstanceErrorCode::InstanceTypeUnknown.as_str(), "INSTANCE_TYPE_UNKNOWN");
-        assert_eq!(InstanceErrorCode::InstanceStringExpected.as_str(), "INSTANCE_STRING_EXPECTED");
-        assert_eq!(InstanceErrorCode::InstanceStringTooShort.as_str(), "INSTANCE_STRING_TOO_SHORT");
-        assert_eq!(InstanceErrorCode::InstanceStringTooLong.as_str(), "INSTANCE_STRING_TOO_LONG");
-        assert_eq!(InstanceErrorCode::InstanceStringPatternMismatch.as_str(), "INSTANCE_STRING_PATTERN_MISMATCH");
-        assert_eq!(InstanceErrorCode::InstanceStringFormatInvalid.as_str(), "INSTANCE_STRING_FORMAT_INVALID");
-        assert_eq!(InstanceErrorCode::InstanceNumberExpected.as_str(), "INSTANCE_NUMBER_EXPECTED");
-        assert_eq!(InstanceErrorCode::InstanceNumberTooSmall.as_str(), "INSTANCE_NUMBER_TOO_SMALL");
-        assert_eq!(InstanceErrorCode::InstanceNumberTooLarge.as_str(), "INSTANCE_NUMBER_TOO_LARGE");
-        assert_eq!(InstanceErrorCode::InstanceNumberNotMultiple.as_str(), "INSTANCE_NUMBER_NOT_MULTIPLE");
-        assert_eq!(InstanceErrorCode::InstanceIntegerExpected.as_str(), "INSTANCE_INTEGER_EXPECTED");
-        assert_eq!(InstanceErrorCode::InstanceIntegerOutOfRange.as_str(), "INSTANCE_INTEGER_OUT_OF_RANGE");
-        assert_eq!(InstanceErrorCode::InstanceBooleanExpected.as_str(), "INSTANCE_BOOLEAN_EXPECTED");
-        assert_eq!(InstanceErrorCode::InstanceNullExpected.as_str(), "INSTANCE_NULL_EXPECTED");
-        assert_eq!(InstanceErrorCode::InstanceObjectExpected.as_str(), "INSTANCE_OBJECT_EXPECTED");
-        assert_eq!(InstanceErrorCode::InstanceRequiredMissing.as_str(), "INSTANCE_REQUIRED_MISSING");
-        assert_eq!(InstanceErrorCode::InstanceAdditionalProperty.as_str(), "INSTANCE_ADDITIONAL_PROPERTY");
-        assert_eq!(InstanceErrorCode::InstancePropertyInvalid.as_str(), "INSTANCE_PROPERTY_INVALID");
-        assert_eq!(InstanceErrorCode::InstanceTooFewProperties.as_str(), "INSTANCE_TOO_FEW_PROPERTIES");
-        assert_eq!(InstanceErrorCode::InstanceTooManyProperties.as_str(), "INSTANCE_TOO_MANY_PROPERTIES");
-        assert_eq!(InstanceErrorCode::InstanceDependentRequiredMissing.as_str(), "INSTANCE_DEPENDENT_REQUIRED_MISSING");
-        assert_eq!(InstanceErrorCode::InstanceArrayExpected.as_str(), "INSTANCE_ARRAY_EXPECTED");
-        assert_eq!(InstanceErrorCode::InstanceArrayTooShort.as_str(), "INSTANCE_ARRAY_TOO_SHORT");
-        assert_eq!(InstanceErrorCode::InstanceArrayTooLong.as_str(), "INSTANCE_ARRAY_TOO_LONG");
-        assert_eq!(InstanceErrorCode::InstanceArrayNotUnique.as_str(), "INSTANCE_ARRAY_NOT_UNIQUE");
-        assert_eq!(InstanceErrorCode::InstanceArrayContainsMissing.as_str(), "INSTANCE_ARRAY_CONTAINS_MISSING");
-        assert_eq!(InstanceErrorCode::InstanceArrayItemInvalid.as_str(), "INSTANCE_ARRAY_ITEM_INVALID");
-        assert_eq!(InstanceErrorCode::InstanceTupleExpected.as_str(), "INSTANCE_TUPLE_EXPECTED");
-        assert_eq!(InstanceErrorCode::InstanceTupleLengthMismatch.as_str(), "INSTANCE_TUPLE_LENGTH_MISMATCH");
-        assert_eq!(InstanceErrorCode::InstanceTupleElementInvalid.as_str(), "INSTANCE_TUPLE_ELEMENT_INVALID");
-        assert_eq!(InstanceErrorCode::InstanceMapExpected.as_str(), "INSTANCE_MAP_EXPECTED");
-        assert_eq!(InstanceErrorCode::InstanceMapValueInvalid.as_str(), "INSTANCE_MAP_VALUE_INVALID");
-        assert_eq!(InstanceErrorCode::InstanceSetExpected.as_str(), "INSTANCE_SET_EXPECTED");
-        assert_eq!(InstanceErrorCode::InstanceSetNotUnique.as_str(), "INSTANCE_SET_NOT_UNIQUE");
-        assert_eq!(InstanceErrorCode::InstanceSetItemInvalid.as_str(), "INSTANCE_SET_ITEM_INVALID");
-        assert_eq!(InstanceErrorCode::InstanceChoiceNoMatch.as_str(), "INSTANCE_CHOICE_NO_MATCH");
-        assert_eq!(InstanceErrorCode::InstanceChoiceMultipleMatches.as_str(), "INSTANCE_CHOICE_MULTIPLE_MATCHES");
-        assert_eq!(InstanceErrorCode::InstanceChoiceUnknown.as_str(), "INSTANCE_CHOICE_UNKNOWN");
-        assert_eq!(InstanceErrorCode::InstanceChoiceSelectorMissing.as_str(), "INSTANCE_CHOICE_SELECTOR_MISSING");
-        assert_eq!(InstanceErrorCode::InstanceChoiceSelectorInvalid.as_str(), "INSTANCE_CHOICE_SELECTOR_INVALID");
-        assert_eq!(InstanceErrorCode::InstanceEnumMismatch.as_str(), "INSTANCE_ENUM_MISMATCH");
-        assert_eq!(InstanceErrorCode::InstanceConstMismatch.as_str(), "INSTANCE_CONST_MISMATCH");
-        assert_eq!(InstanceErrorCode::InstanceDateExpected.as_str(), "INSTANCE_DATE_EXPECTED");
-        assert_eq!(InstanceErrorCode::InstanceDateInvalid.as_str(), "INSTANCE_DATE_INVALID");
-        assert_eq!(InstanceErrorCode::InstanceTimeExpected.as_str(), "INSTANCE_TIME_EXPECTED");
-        assert_eq!(InstanceErrorCode::InstanceTimeInvalid.as_str(), "INSTANCE_TIME_INVALID");
-        assert_eq!(InstanceErrorCode::InstanceDateTimeExpected.as_str(), "INSTANCE_DATETIME_EXPECTED");
-        assert_eq!(InstanceErrorCode::InstanceDateTimeInvalid.as_str(), "INSTANCE_DATETIME_INVALID");
-        assert_eq!(InstanceErrorCode::InstanceDurationExpected.as_str(), "INSTANCE_DURATION_EXPECTED");
-        assert_eq!(InstanceErrorCode::InstanceDurationInvalid.as_str(), "INSTANCE_DURATION_INVALID");
-        assert_eq!(InstanceErrorCode::InstanceUuidExpected.as_str(), "INSTANCE_UUID_EXPECTED");
-        assert_eq!(InstanceErrorCode::InstanceUuidInvalid.as_str(), "INSTANCE_UUID_INVALID");
-        assert_eq!(InstanceErrorCode::InstanceUriExpected.as_str(), "INSTANCE_URI_EXPECTED");
-        assert_eq!(InstanceErrorCode::InstanceUriInvalid.as_str(), "INSTANCE_URI_INVALID");
-        assert_eq!(InstanceErrorCode::InstanceBinaryExpected.as_str(), "INSTANCE_BINARY_EXPECTED");
-        assert_eq!(InstanceErrorCode::InstanceBinaryInvalid.as_str(), "INSTANCE_BINARY_INVALID");
-        assert_eq!(InstanceErrorCode::InstanceJsonPointerExpected.as_str(), "INSTANCE_JSONPOINTER_EXPECTED");
-        assert_eq!(InstanceErrorCode::InstanceJsonPointerInvalid.as_str(), "INSTANCE_JSONPOINTER_INVALID");
-        assert_eq!(InstanceErrorCode::InstanceAllOfFailed.as_str(), "INSTANCE_ALLOF_FAILED");
-        assert_eq!(InstanceErrorCode::InstanceAnyOfFailed.as_str(), "INSTANCE_ANYOF_FAILED");
-        assert_eq!(InstanceErrorCode::InstanceOneOfFailed.as_str(), "INSTANCE_ONEOF_FAILED");
-        assert_eq!(InstanceErrorCode::InstanceOneOfMultiple.as_str(), "INSTANCE_ONEOF_MULTIPLE");
-        assert_eq!(InstanceErrorCode::InstanceNotFailed.as_str(), "INSTANCE_NOT_FAILED");
-        assert_eq!(InstanceErrorCode::InstanceIfThenFailed.as_str(), "INSTANCE_IF_THEN_FAILED");
-        assert_eq!(InstanceErrorCode::InstanceIfElseFailed.as_str(), "INSTANCE_IF_ELSE_FAILED");
-        assert_eq!(InstanceErrorCode::InstanceRefNotFound.as_str(), "INSTANCE_REF_NOT_FOUND");
+        assert_eq!(
+            InstanceErrorCode::InstanceTypeMismatch.as_str(),
+            "INSTANCE_TYPE_MISMATCH"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceTypeUnknown.as_str(),
+            "INSTANCE_TYPE_UNKNOWN"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceStringExpected.as_str(),
+            "INSTANCE_STRING_EXPECTED"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceStringTooShort.as_str(),
+            "INSTANCE_STRING_TOO_SHORT"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceStringTooLong.as_str(),
+            "INSTANCE_STRING_TOO_LONG"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceStringPatternMismatch.as_str(),
+            "INSTANCE_STRING_PATTERN_MISMATCH"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceStringFormatInvalid.as_str(),
+            "INSTANCE_STRING_FORMAT_INVALID"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceNumberExpected.as_str(),
+            "INSTANCE_NUMBER_EXPECTED"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceNumberTooSmall.as_str(),
+            "INSTANCE_NUMBER_TOO_SMALL"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceNumberTooLarge.as_str(),
+            "INSTANCE_NUMBER_TOO_LARGE"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceNumberNotMultiple.as_str(),
+            "INSTANCE_NUMBER_NOT_MULTIPLE"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceIntegerExpected.as_str(),
+            "INSTANCE_INTEGER_EXPECTED"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceIntegerOutOfRange.as_str(),
+            "INSTANCE_INTEGER_OUT_OF_RANGE"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceBooleanExpected.as_str(),
+            "INSTANCE_BOOLEAN_EXPECTED"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceNullExpected.as_str(),
+            "INSTANCE_NULL_EXPECTED"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceObjectExpected.as_str(),
+            "INSTANCE_OBJECT_EXPECTED"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceRequiredMissing.as_str(),
+            "INSTANCE_REQUIRED_MISSING"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceAdditionalProperty.as_str(),
+            "INSTANCE_ADDITIONAL_PROPERTY"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstancePropertyInvalid.as_str(),
+            "INSTANCE_PROPERTY_INVALID"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceTooFewProperties.as_str(),
+            "INSTANCE_TOO_FEW_PROPERTIES"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceTooManyProperties.as_str(),
+            "INSTANCE_TOO_MANY_PROPERTIES"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceDependentRequiredMissing.as_str(),
+            "INSTANCE_DEPENDENT_REQUIRED_MISSING"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceArrayExpected.as_str(),
+            "INSTANCE_ARRAY_EXPECTED"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceArrayTooShort.as_str(),
+            "INSTANCE_ARRAY_TOO_SHORT"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceArrayTooLong.as_str(),
+            "INSTANCE_ARRAY_TOO_LONG"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceArrayNotUnique.as_str(),
+            "INSTANCE_ARRAY_NOT_UNIQUE"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceArrayContainsMissing.as_str(),
+            "INSTANCE_ARRAY_CONTAINS_MISSING"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceArrayItemInvalid.as_str(),
+            "INSTANCE_ARRAY_ITEM_INVALID"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceTupleExpected.as_str(),
+            "INSTANCE_TUPLE_EXPECTED"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceTupleLengthMismatch.as_str(),
+            "INSTANCE_TUPLE_LENGTH_MISMATCH"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceTupleElementInvalid.as_str(),
+            "INSTANCE_TUPLE_ELEMENT_INVALID"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceMapExpected.as_str(),
+            "INSTANCE_MAP_EXPECTED"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceMapValueInvalid.as_str(),
+            "INSTANCE_MAP_VALUE_INVALID"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceSetExpected.as_str(),
+            "INSTANCE_SET_EXPECTED"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceSetNotUnique.as_str(),
+            "INSTANCE_SET_NOT_UNIQUE"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceSetItemInvalid.as_str(),
+            "INSTANCE_SET_ITEM_INVALID"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceChoiceNoMatch.as_str(),
+            "INSTANCE_CHOICE_NO_MATCH"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceChoiceMultipleMatches.as_str(),
+            "INSTANCE_CHOICE_MULTIPLE_MATCHES"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceChoiceUnknown.as_str(),
+            "INSTANCE_CHOICE_UNKNOWN"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceChoiceSelectorMissing.as_str(),
+            "INSTANCE_CHOICE_SELECTOR_MISSING"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceChoiceSelectorInvalid.as_str(),
+            "INSTANCE_CHOICE_SELECTOR_INVALID"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceEnumMismatch.as_str(),
+            "INSTANCE_ENUM_MISMATCH"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceConstMismatch.as_str(),
+            "INSTANCE_CONST_MISMATCH"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceDateExpected.as_str(),
+            "INSTANCE_DATE_EXPECTED"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceDateInvalid.as_str(),
+            "INSTANCE_DATE_INVALID"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceTimeExpected.as_str(),
+            "INSTANCE_TIME_EXPECTED"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceTimeInvalid.as_str(),
+            "INSTANCE_TIME_INVALID"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceDateTimeExpected.as_str(),
+            "INSTANCE_DATETIME_EXPECTED"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceDateTimeInvalid.as_str(),
+            "INSTANCE_DATETIME_INVALID"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceDurationExpected.as_str(),
+            "INSTANCE_DURATION_EXPECTED"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceDurationInvalid.as_str(),
+            "INSTANCE_DURATION_INVALID"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceUuidExpected.as_str(),
+            "INSTANCE_UUID_EXPECTED"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceUuidInvalid.as_str(),
+            "INSTANCE_UUID_INVALID"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceUriExpected.as_str(),
+            "INSTANCE_URI_EXPECTED"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceUriInvalid.as_str(),
+            "INSTANCE_URI_INVALID"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceBinaryExpected.as_str(),
+            "INSTANCE_BINARY_EXPECTED"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceBinaryInvalid.as_str(),
+            "INSTANCE_BINARY_INVALID"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceJsonPointerExpected.as_str(),
+            "INSTANCE_JSONPOINTER_EXPECTED"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceJsonPointerInvalid.as_str(),
+            "INSTANCE_JSONPOINTER_INVALID"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceAllOfFailed.as_str(),
+            "INSTANCE_ALLOF_FAILED"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceAnyOfFailed.as_str(),
+            "INSTANCE_ANYOF_FAILED"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceOneOfFailed.as_str(),
+            "INSTANCE_ONEOF_FAILED"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceOneOfMultiple.as_str(),
+            "INSTANCE_ONEOF_MULTIPLE"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceNotFailed.as_str(),
+            "INSTANCE_NOT_FAILED"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceIfThenFailed.as_str(),
+            "INSTANCE_IF_THEN_FAILED"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceIfElseFailed.as_str(),
+            "INSTANCE_IF_ELSE_FAILED"
+        );
+        assert_eq!(
+            InstanceErrorCode::InstanceRefNotFound.as_str(),
+            "INSTANCE_REF_NOT_FOUND"
+        );
     }
 
     #[test]
     fn test_instance_error_code_display() {
-        assert_eq!(format!("{}", InstanceErrorCode::InstanceTypeMismatch), "INSTANCE_TYPE_MISMATCH");
-        assert_eq!(format!("{}", InstanceErrorCode::InstanceEnumMismatch), "INSTANCE_ENUM_MISMATCH");
+        assert_eq!(
+            format!("{}", InstanceErrorCode::InstanceTypeMismatch),
+            "INSTANCE_TYPE_MISMATCH"
+        );
+        assert_eq!(
+            format!("{}", InstanceErrorCode::InstanceEnumMismatch),
+            "INSTANCE_ENUM_MISMATCH"
+        );
     }
 }
 
@@ -195,7 +572,7 @@ mod types_tests {
     fn test_json_location_display() {
         let known = JsonLocation::new(5, 10);
         assert_eq!(format!("{}", known), "5:10");
-        
+
         let unknown = JsonLocation::unknown();
         assert_eq!(format!("{}", unknown), "(unknown)");
     }
@@ -316,8 +693,20 @@ mod types_tests {
     fn test_validation_result_add_errors() {
         let mut result = ValidationResult::new();
         let errors = vec![
-            ValidationError::new("E1", "Error 1", "/", Severity::Error, JsonLocation::unknown()),
-            ValidationError::new("E2", "Error 2", "/", Severity::Error, JsonLocation::unknown()),
+            ValidationError::new(
+                "E1",
+                "Error 1",
+                "/",
+                Severity::Error,
+                JsonLocation::unknown(),
+            ),
+            ValidationError::new(
+                "E2",
+                "Error 2",
+                "/",
+                Severity::Error,
+                JsonLocation::unknown(),
+            ),
         ];
         result.add_errors(errors);
         assert_eq!(result.error_count(), 2);
@@ -326,13 +715,31 @@ mod types_tests {
     #[test]
     fn test_validation_result_errors_iterator() {
         let mut result = ValidationResult::new();
-        result.add_error(ValidationError::new("E1", "Error", "/", Severity::Error, JsonLocation::unknown()));
-        result.add_error(ValidationError::new("W1", "Warning", "/", Severity::Warning, JsonLocation::unknown()));
-        result.add_error(ValidationError::new("E2", "Error", "/", Severity::Error, JsonLocation::unknown()));
-        
+        result.add_error(ValidationError::new(
+            "E1",
+            "Error",
+            "/",
+            Severity::Error,
+            JsonLocation::unknown(),
+        ));
+        result.add_error(ValidationError::new(
+            "W1",
+            "Warning",
+            "/",
+            Severity::Warning,
+            JsonLocation::unknown(),
+        ));
+        result.add_error(ValidationError::new(
+            "E2",
+            "Error",
+            "/",
+            Severity::Error,
+            JsonLocation::unknown(),
+        ));
+
         let errors: Vec<_> = result.errors().collect();
         assert_eq!(errors.len(), 2);
-        
+
         let warnings: Vec<_> = result.warnings().collect();
         assert_eq!(warnings.len(), 1);
     }
@@ -340,11 +747,23 @@ mod types_tests {
     #[test]
     fn test_validation_result_merge() {
         let mut result1 = ValidationResult::new();
-        result1.add_error(ValidationError::new("E1", "Error 1", "/", Severity::Error, JsonLocation::unknown()));
-        
+        result1.add_error(ValidationError::new(
+            "E1",
+            "Error 1",
+            "/",
+            Severity::Error,
+            JsonLocation::unknown(),
+        ));
+
         let mut result2 = ValidationResult::new();
-        result2.add_error(ValidationError::new("E2", "Error 2", "/", Severity::Error, JsonLocation::unknown()));
-        
+        result2.add_error(ValidationError::new(
+            "E2",
+            "Error 2",
+            "/",
+            Severity::Error,
+            JsonLocation::unknown(),
+        ));
+
         result1.merge(result2);
         assert_eq!(result1.error_count(), 2);
     }
@@ -352,9 +771,21 @@ mod types_tests {
     #[test]
     fn test_validation_result_all_errors() {
         let mut result = ValidationResult::new();
-        result.add_error(ValidationError::new("E1", "Error", "/", Severity::Error, JsonLocation::unknown()));
-        result.add_error(ValidationError::new("W1", "Warning", "/", Severity::Warning, JsonLocation::unknown()));
-        
+        result.add_error(ValidationError::new(
+            "E1",
+            "Error",
+            "/",
+            Severity::Error,
+            JsonLocation::unknown(),
+        ));
+        result.add_error(ValidationError::new(
+            "W1",
+            "Warning",
+            "/",
+            Severity::Warning,
+            JsonLocation::unknown(),
+        ));
+
         assert_eq!(result.all_errors().len(), 2);
     }
 }
@@ -404,58 +835,67 @@ mod schema_edge_cases {
     #[test]
     fn test_definitions_not_object() {
         let validator = SchemaValidator::new();
-        let result = validator.validate(r##"{
+        let result = validator.validate(
+            r##"{
             "$id": "https://example.com/test",
             "name": "Test",
             "type": "object",
             "definitions": "not an object"
-        }"##);
+        }"##,
+        );
         assert!(!result.is_valid());
     }
 
     #[test]
     fn test_definition_missing_type() {
         let validator = SchemaValidator::new();
-        let result = validator.validate(r##"{
+        let result = validator.validate(
+            r##"{
             "$id": "https://example.com/test",
             "name": "Test",
             "type": "object",
             "definitions": {
                 "MyDef": {}
             }
-        }"##);
+        }"##,
+        );
         assert!(!result.is_valid());
     }
 
     #[test]
     fn test_type_not_string() {
         let validator = SchemaValidator::new();
-        let result = validator.validate(r##"{
+        let result = validator.validate(
+            r##"{
             "$id": "https://example.com/test",
             "name": "Test",
             "type": 123
-        }"##);
+        }"##,
+        );
         assert!(!result.is_valid());
     }
 
     #[test]
     fn test_ref_not_string() {
         let validator = SchemaValidator::new();
-        let result = validator.validate(r##"{
+        let result = validator.validate(
+            r##"{
             "$id": "https://example.com/test",
             "name": "Test",
             "type": "object",
             "properties": {
                 "ref": { "$ref": 123 }
             }
-        }"##);
+        }"##,
+        );
         assert!(!result.is_valid());
     }
 
     #[test]
     fn test_required_not_array() {
         let validator = SchemaValidator::new();
-        let result = validator.validate(r##"{
+        let result = validator.validate(
+            r##"{
             "$id": "https://example.com/test",
             "name": "Test",
             "type": "object",
@@ -463,14 +903,16 @@ mod schema_edge_cases {
                 "name": { "type": "string" }
             },
             "required": "name"
-        }"##);
+        }"##,
+        );
         assert!(!result.is_valid());
     }
 
     #[test]
     fn test_required_item_not_string() {
         let validator = SchemaValidator::new();
-        let result = validator.validate(r##"{
+        let result = validator.validate(
+            r##"{
             "$id": "https://example.com/test",
             "name": "Test",
             "type": "object",
@@ -478,14 +920,16 @@ mod schema_edge_cases {
                 "name": { "type": "string" }
             },
             "required": [123]
-        }"##);
+        }"##,
+        );
         assert!(!result.is_valid());
     }
 
     #[test]
     fn test_required_property_not_in_properties() {
         let validator = SchemaValidator::new();
-        let result = validator.validate(r##"{
+        let result = validator.validate(
+            r##"{
             "$id": "https://example.com/test",
             "name": "Test",
             "type": "object",
@@ -493,50 +937,58 @@ mod schema_edge_cases {
                 "name": { "type": "string" }
             },
             "required": ["age"]
-        }"##);
+        }"##,
+        );
         assert!(!result.is_valid());
     }
 
     #[test]
     fn test_enum_not_array() {
         let validator = SchemaValidator::new();
-        let result = validator.validate(r##"{
+        let result = validator.validate(
+            r##"{
             "$id": "https://example.com/test",
             "name": "Test",
             "type": "string",
             "enum": "not an array"
-        }"##);
+        }"##,
+        );
         assert!(!result.is_valid());
     }
 
     #[test]
     fn test_uses_not_array() {
         let validator = SchemaValidator::new();
-        let result = validator.validate(r##"{
+        let result = validator.validate(
+            r##"{
             "$id": "https://example.com/test",
             "name": "Test",
             "type": "string",
             "$uses": "JSONStructureValidation"
-        }"##);
+        }"##,
+        );
         assert!(!result.is_valid());
     }
 
     #[test]
     fn test_offers_not_array() {
         let validator = SchemaValidator::new();
-        let result = validator.validate(r##"{
+        let result = validator.validate(
+            r##"{
             "$id": "https://example.com/test",
             "name": "Test",
             "type": "string",
             "$offers": "JSONStructureValidation"
-        }"##);
+        }"##,
+        );
         assert!(!result.is_valid());
     }
 
     #[test]
     fn test_selector_not_string() {
         let validator = SchemaValidator::new();
-        let result = validator.validate(r##"{
+        let result = validator.validate(
+            r##"{
             "$id": "https://example.com/test",
             "name": "Test",
             "type": "choice",
@@ -544,39 +996,45 @@ mod schema_edge_cases {
             "choices": {
                 "a": { "type": "string" }
             }
-        }"##);
+        }"##,
+        );
         assert!(!result.is_valid());
     }
 
     #[test]
     fn test_choices_not_object() {
         let validator = SchemaValidator::new();
-        let result = validator.validate(r##"{
+        let result = validator.validate(
+            r##"{
             "$id": "https://example.com/test",
             "name": "Test",
             "type": "choice",
             "selector": "kind",
             "choices": ["a", "b"]
-        }"##);
+        }"##,
+        );
         assert!(!result.is_valid());
     }
 
     #[test]
     fn test_tuple_missing_properties() {
         let validator = SchemaValidator::new();
-        let result = validator.validate(r##"{
+        let result = validator.validate(
+            r##"{
             "$id": "https://example.com/test",
             "name": "Test",
             "type": "tuple",
             "tuple": ["first", "second"]
-        }"##);
+        }"##,
+        );
         assert!(!result.is_valid());
     }
 
     #[test]
     fn test_tuple_not_array() {
         let validator = SchemaValidator::new();
-        let result = validator.validate(r##"{
+        let result = validator.validate(
+            r##"{
             "$id": "https://example.com/test",
             "name": "Test",
             "type": "tuple",
@@ -584,14 +1042,16 @@ mod schema_edge_cases {
                 "first": { "type": "string" }
             },
             "tuple": "first"
-        }"##);
+        }"##,
+        );
         assert!(!result.is_valid());
     }
 
     #[test]
     fn test_tuple_property_not_defined() {
         let validator = SchemaValidator::new();
-        let result = validator.validate(r##"{
+        let result = validator.validate(
+            r##"{
             "$id": "https://example.com/test",
             "name": "Test",
             "type": "tuple",
@@ -599,40 +1059,47 @@ mod schema_edge_cases {
                 "first": { "type": "string" }
             },
             "tuple": ["first", "second"]
-        }"##);
+        }"##,
+        );
         assert!(!result.is_valid());
     }
 
     #[test]
     fn test_allof_not_array() {
         let validator = SchemaValidator::new();
-        let result = validator.validate(r##"{
+        let result = validator.validate(
+            r##"{
             "$id": "https://example.com/test",
             "name": "Test",
             "allOf": { "type": "string" }
-        }"##);
+        }"##,
+        );
         assert!(!result.is_valid());
     }
 
     #[test]
     fn test_anyof_not_array() {
         let validator = SchemaValidator::new();
-        let result = validator.validate(r##"{
+        let result = validator.validate(
+            r##"{
             "$id": "https://example.com/test",
             "name": "Test",
             "anyOf": { "type": "string" }
-        }"##);
+        }"##,
+        );
         assert!(!result.is_valid());
     }
 
     #[test]
     fn test_oneof_not_array() {
         let validator = SchemaValidator::new();
-        let result = validator.validate(r##"{
+        let result = validator.validate(
+            r##"{
             "$id": "https://example.com/test",
             "name": "Test",
             "oneOf": { "type": "string" }
-        }"##);
+        }"##,
+        );
         assert!(!result.is_valid());
     }
 
@@ -640,11 +1107,13 @@ mod schema_edge_cases {
     fn test_import_in_schema() {
         // $import is an extension feature - validator may allow or ignore it
         let validator = SchemaValidator::new();
-        let result = validator.validate(r##"{
+        let result = validator.validate(
+            r##"{
             "$id": "https://example.com/test",
             "name": "Test",
             "$import": "https://example.com/other"
-        }"##);
+        }"##,
+        );
         // This test validates import is handled (may be allowed or not based on spec)
         let _ = result.all_errors().len(); // Just verify it ran
     }
@@ -652,23 +1121,27 @@ mod schema_edge_cases {
     #[test]
     fn test_set_missing_items() {
         let validator = SchemaValidator::new();
-        let result = validator.validate(r##"{
+        let result = validator.validate(
+            r##"{
             "$id": "https://example.com/test",
             "name": "Test",
             "type": "set"
-        }"##);
+        }"##,
+        );
         assert!(!result.is_valid());
     }
 
     #[test]
     fn test_properties_not_object() {
         let validator = SchemaValidator::new();
-        let result = validator.validate(r##"{
+        let result = validator.validate(
+            r##"{
             "$id": "https://example.com/test",
             "name": "Test",
             "type": "object",
             "properties": "not an object"
-        }"##);
+        }"##,
+        );
         assert!(!result.is_valid());
     }
 }
@@ -782,7 +1255,9 @@ mod instance_edge_cases {
     #[test]
     fn test_int128_string() {
         let schema = json!({ "type": "int128" });
-        assert!(validate_instance("\"170141183460469231731687303715884105727\"", schema).is_valid());
+        assert!(
+            validate_instance("\"170141183460469231731687303715884105727\"", schema).is_valid()
+        );
     }
 
     #[test]
@@ -794,7 +1269,9 @@ mod instance_edge_cases {
     #[test]
     fn test_uint128_string() {
         let schema = json!({ "type": "uint128" });
-        assert!(validate_instance("\"340282366920938463463374607431768211455\"", schema).is_valid());
+        assert!(
+            validate_instance("\"340282366920938463463374607431768211455\"", schema).is_valid()
+        );
     }
 
     #[test]
@@ -867,7 +1344,7 @@ mod instance_edge_cases {
 
     #[test]
     fn test_object_not_object() {
-        let schema = json!({ 
+        let schema = json!({
             "type": "object",
             "properties": {
                 "name": { "type": "string" }
@@ -878,7 +1355,7 @@ mod instance_edge_cases {
 
     #[test]
     fn test_array_not_array() {
-        let schema = json!({ 
+        let schema = json!({
             "type": "array",
             "items": { "type": "string" }
         });
@@ -887,7 +1364,7 @@ mod instance_edge_cases {
 
     #[test]
     fn test_map_not_object() {
-        let schema = json!({ 
+        let schema = json!({
             "type": "map",
             "values": { "type": "int32" }
         });
@@ -896,7 +1373,7 @@ mod instance_edge_cases {
 
     #[test]
     fn test_set_not_array() {
-        let schema = json!({ 
+        let schema = json!({
             "type": "set",
             "items": { "type": "string" }
         });
@@ -905,7 +1382,7 @@ mod instance_edge_cases {
 
     #[test]
     fn test_set_duplicate_values() {
-        let schema = json!({ 
+        let schema = json!({
             "type": "set",
             "items": { "type": "int32" }
         });
@@ -914,7 +1391,7 @@ mod instance_edge_cases {
 
     #[test]
     fn test_tuple_not_array() {
-        let schema = json!({ 
+        let schema = json!({
             "type": "tuple",
             "properties": {
                 "first": { "type": "string" },
@@ -927,7 +1404,7 @@ mod instance_edge_cases {
 
     #[test]
     fn test_choice_no_selector_value() {
-        let schema = json!({ 
+        let schema = json!({
             "type": "choice",
             "selector": "kind",
             "choices": {
@@ -941,7 +1418,7 @@ mod instance_edge_cases {
 
     #[test]
     fn test_choice_unknown_selector_value() {
-        let schema = json!({ 
+        let schema = json!({
             "type": "choice",
             "selector": "kind",
             "choices": {
@@ -954,7 +1431,7 @@ mod instance_edge_cases {
 
     #[test]
     fn test_choice_selector_not_string() {
-        let schema = json!({ 
+        let schema = json!({
             "type": "choice",
             "selector": "kind",
             "choices": {
@@ -977,7 +1454,7 @@ mod instance_edge_cases {
 
     #[test]
     fn test_ref_resolution() {
-        let schema = json!({ 
+        let schema = json!({
             "type": "object",
             "definitions": {
                 "Name": { "type": "string" }
@@ -1064,7 +1541,7 @@ mod instance_edge_cases {
 
     #[test]
     fn test_map_value_invalid() {
-        let schema = json!({ 
+        let schema = json!({
             "type": "map",
             "values": { "type": "int32" }
         });
@@ -1073,7 +1550,7 @@ mod instance_edge_cases {
 
     #[test]
     fn test_array_item_invalid() {
-        let schema = json!({ 
+        let schema = json!({
             "type": "array",
             "items": { "type": "int32" }
         });
@@ -1082,7 +1559,7 @@ mod instance_edge_cases {
 
     #[test]
     fn test_set_item_invalid() {
-        let schema = json!({ 
+        let schema = json!({
             "type": "set",
             "items": { "type": "int32" }
         });
@@ -1091,7 +1568,7 @@ mod instance_edge_cases {
 
     #[test]
     fn test_choice_not_object() {
-        let schema = json!({ 
+        let schema = json!({
             "type": "choice",
             "selector": "kind",
             "choices": {

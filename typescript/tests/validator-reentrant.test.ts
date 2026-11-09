@@ -255,7 +255,7 @@ describe('Validator Reentrancy and Thread Safety', () => {
       
       // Simulate async interleaving with Promise.all
       const results = await Promise.all(
-        schemas.map(async (schema, i) => {
+        schemas.map(async (schema) => {
           // Add some artificial async delay
           await new Promise(resolve => setTimeout(resolve, Math.random() * 10));
           return validator.validate(schema);
@@ -263,7 +263,7 @@ describe('Validator Reentrancy and Thread Safety', () => {
       );
       
       // All validations should succeed independently
-      results.forEach((result, i) => {
+      results.forEach((result) => {
         expect(result.isValid).toBe(true);
         expect(result.errors).toHaveLength(0);
       });
