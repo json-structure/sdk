@@ -11,6 +11,7 @@
         "plugin:@typescript-eslint/recommended"
     ],
     "rules": {
+        "@typescript-eslint/no-unused-vars": ["error", { "caughtErrors": "none" }],
         "@typescript-eslint/naming-convention": [
             "warn",
             {
@@ -18,7 +19,6 @@
                 "format": ["camelCase", "PascalCase"]
             }
         ],
-        "@typescript-eslint/semi": ["warn", "always"],
         "curly": "warn",
         "eqeqeq": "warn",
         "no-throw-literal": "warn",
