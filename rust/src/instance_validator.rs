@@ -3,16 +3,14 @@
 //! Validates JSON data instances against JSON Structure schemas.
 
 use base64::Engine;
-use chrono::{NaiveDate, NaiveTime, DateTime};
+use chrono::{DateTime, NaiveDate, NaiveTime};
 use regex::Regex;
 use serde_json::Value;
 use uuid::Uuid;
 
 use crate::error_codes::InstanceErrorCode;
 use crate::json_source_locator::JsonSourceLocator;
-use crate::types::{
-    InstanceValidatorOptions, JsonLocation, ValidationError, ValidationResult,
-};
+use crate::types::{InstanceValidatorOptions, JsonLocation, ValidationError, ValidationResult};
 
 /// Validates JSON instances against JSON Structure schemas.
 ///
@@ -152,7 +150,10 @@ impl InstanceValidator {
                     if instance_schema != expected {
                         result.add_error(ValidationError::instance_error(
                             InstanceErrorCode::InstanceSchemaMismatch,
-                            format!("$schema '{}' does not match schema $id '{}'", instance_schema, expected),
+                            format!(
+                                "$schema '{}' does not match schema $id '{}'",
+                                instance_schema, expected
+                            ),
                             "/$schema",
                             locator.get_location("/$schema"),
                         ));
@@ -242,7 +243,10 @@ impl InstanceValidator {
                 _ => {
                     result.add_error(ValidationError::instance_error(
                         InstanceErrorCode::InstanceUsesInvalid,
-                        format!("Offer '{}' must contain a JSON Pointer or an array of JSON Pointers", use_name),
+                        format!(
+                            "Offer '{}' must contain a JSON Pointer or an array of JSON Pointers",
+                            use_name
+                        ),
                         &use_path,
                         locator.get_location(&use_path),
                     ));
@@ -251,16 +255,29 @@ impl InstanceValidator {
             };
 
             for reference in refs {
-                let Some(addin) = self.resolve_ref(reference, root_schema).and_then(Value::as_object) else {
+                let Some(addin) = self
+                    .resolve_ref(reference, root_schema)
+                    .and_then(Value::as_object)
+                else {
                     result.add_error(ValidationError::instance_error(
                         InstanceErrorCode::InstanceUsesInvalid,
-                        format!("Add-in '{}' reference could not be resolved: {}", use_name, reference),
+                        format!(
+                            "Add-in '{}' reference could not be resolved: {}",
+                            use_name, reference
+                        ),
                         &use_path,
                         locator.get_location(&use_path),
                     ));
                     continue;
                 };
-                self.merge_addin(use_name, addin, effective_schema, result, &use_path, locator);
+                self.merge_addin(
+                    use_name,
+                    addin,
+                    effective_schema,
+                    result,
+                    &use_path,
+                    locator,
+                );
             }
         }
     }
@@ -369,7 +386,15 @@ impl InstanceValidator {
         if let Some(ref_val) = effective_schema_obj.get("$ref") {
             if let Value::String(ref_str) = ref_val {
                 if let Some(resolved) = self.resolve_ref(ref_str, root_schema) {
-                    self.validate_instance(instance, resolved, root_schema, result, path, locator, depth + 1);
+                    self.validate_instance(
+                        instance,
+                        resolved,
+                        root_schema,
+                        result,
+                        path,
+                        locator,
+                        depth + 1,
+                    );
                     return;
                 } else {
                     result.add_error(ValidationError::instance_error(
@@ -413,7 +438,16 @@ impl InstanceValidator {
         if let Some(type_val) = effective_schema_obj.get("type") {
             match type_val {
                 Value::String(type_name) => {
-                    self.validate_type(instance, type_name, effective_schema_obj, root_schema, result, path, locator, depth);
+                    self.validate_type(
+                        instance,
+                        type_name,
+                        effective_schema_obj,
+                        root_schema,
+                        result,
+                        path,
+                        locator,
+                        depth,
+                    );
                 }
                 Value::Array(types) => {
                     // Union type: try each type until one validates
@@ -422,7 +456,16 @@ impl InstanceValidator {
                         match t {
                             Value::String(type_name) => {
                                 let mut temp_result = ValidationResult::new();
-                                self.validate_type(instance, type_name, effective_schema_obj, root_schema, &mut temp_result, path, locator, depth);
+                                self.validate_type(
+                                    instance,
+                                    type_name,
+                                    effective_schema_obj,
+                                    root_schema,
+                                    &mut temp_result,
+                                    path,
+                                    locator,
+                                    depth,
+                                );
                                 if temp_result.is_valid() {
                                     union_valid = true;
                                     break;
@@ -432,7 +475,15 @@ impl InstanceValidator {
                                 if let Some(Value::String(ref_str)) = ref_obj.get("$ref") {
                                     if let Some(resolved) = self.resolve_ref(ref_str, root_schema) {
                                         let mut temp_result = ValidationResult::new();
-                                        self.validate_instance(instance, resolved, root_schema, &mut temp_result, path, locator, depth + 1);
+                                        self.validate_instance(
+                                            instance,
+                                            resolved,
+                                            root_schema,
+                                            &mut temp_result,
+                                            path,
+                                            locator,
+                                            depth + 1,
+                                        );
                                         if temp_result.is_valid() {
                                             union_valid = true;
                                             break;
@@ -457,7 +508,15 @@ impl InstanceValidator {
                     // Type is a $ref object
                     if let Some(Value::String(ref_str)) = ref_obj.get("$ref") {
                         if let Some(resolved) = self.resolve_ref(ref_str, root_schema) {
-                            self.validate_instance(instance, resolved, root_schema, result, path, locator, depth + 1);
+                            self.validate_instance(
+                                instance,
+                                resolved,
+                                root_schema,
+                                result,
+                                path,
+                                locator,
+                                depth + 1,
+                            );
                         } else {
                             result.add_error(ValidationError::instance_error(
                                 InstanceErrorCode::InstanceRefNotFound,
@@ -475,7 +534,15 @@ impl InstanceValidator {
 
         // Validate composition (if extended)
         if self.options.extended {
-            self.validate_composition(instance, effective_schema_obj, root_schema, result, path, locator, depth);
+            self.validate_composition(
+                instance,
+                effective_schema_obj,
+                root_schema,
+                result,
+                path,
+                locator,
+                depth,
+            );
         }
     }
 
@@ -485,7 +552,7 @@ impl InstanceValidator {
             // Handle nested namespace paths like "Namespace/TypeName"
             let parts: Vec<&str> = def_path.split('/').collect();
             let mut current = root_schema.get("definitions")?;
-            
+
             for part in parts {
                 // First try to get it directly as a definition
                 if let Some(next) = current.get(part) {
@@ -503,26 +570,28 @@ impl InstanceValidator {
     }
 
     /// Merges $extends base types into the schema and returns a new merged schema.
-    fn merge_extends(&self, schema_obj: &serde_json::Map<String, Value>, root_schema: &Value) -> Option<serde_json::Map<String, Value>> {
+    fn merge_extends(
+        &self,
+        schema_obj: &serde_json::Map<String, Value>,
+        root_schema: &Value,
+    ) -> Option<serde_json::Map<String, Value>> {
         let extends_val = schema_obj.get("$extends")?;
-        
+
         // Collect all extend references
         let refs: Vec<&str> = match extends_val {
             Value::String(s) => vec![s.as_str()],
-            Value::Array(arr) => arr.iter()
-                .filter_map(|v| v.as_str())
-                .collect(),
+            Value::Array(arr) => arr.iter().filter_map(|v| v.as_str()).collect(),
             _ => return None,
         };
-        
+
         if refs.is_empty() {
             return None;
         }
-        
+
         // Merge properties from all base types
         let mut merged_properties = serde_json::Map::new();
         let mut merged_required: Vec<Value> = Vec::new();
-        
+
         for ref_str in refs {
             if let Some(base_schema) = self.resolve_ref(ref_str, root_schema) {
                 if let Some(base_obj) = base_schema.as_object() {
@@ -538,7 +607,10 @@ impl InstanceValidator {
                     if let Some(Value::Array(base_req)) = base_obj.get("required") {
                         for r in base_req {
                             if let Value::String(s) = r {
-                                if !merged_required.iter().any(|x| x.as_str() == Some(s.as_str())) {
+                                if !merged_required
+                                    .iter()
+                                    .any(|x| x.as_str() == Some(s.as_str()))
+                                {
                                     merged_required.push(r.clone());
                                 }
                             }
@@ -547,7 +619,7 @@ impl InstanceValidator {
                 }
             }
         }
-        
+
         // Merge current schema's properties on top (current schema wins)
         if let Some(Value::Object(props)) = schema_obj.get("properties") {
             for (key, value) in props {
@@ -557,13 +629,16 @@ impl InstanceValidator {
         if let Some(Value::Array(req)) = schema_obj.get("required") {
             for r in req {
                 if let Value::String(s) = r {
-                    if !merged_required.iter().any(|x| x.as_str() == Some(s.as_str())) {
+                    if !merged_required
+                        .iter()
+                        .any(|x| x.as_str() == Some(s.as_str()))
+                    {
                         merged_required.push(r.clone());
                     }
                 }
             }
         }
-        
+
         // Build merged schema
         let mut merged = schema_obj.clone();
         if !merged_properties.is_empty() {
@@ -572,7 +647,7 @@ impl InstanceValidator {
         if !merged_required.is_empty() {
             merged.insert("required".to_string(), Value::Array(merged_required));
         }
-        
+
         Some(merged)
     }
 
@@ -603,12 +678,19 @@ impl InstanceValidator {
             "null" => self.validate_null(instance, result, path, locator),
             "number" => self.validate_number(instance, schema_obj, result, path, locator),
             "integer" | "int32" => self.validate_int32(instance, schema_obj, result, path, locator),
-            "int8" => self.validate_int_range(instance, schema_obj, result, path, locator, -128, 127, "int8"),
-            "int16" => self.validate_int_range(instance, schema_obj, result, path, locator, -32768, 32767, "int16"),
+            "int8" => self.validate_int_range(
+                instance, schema_obj, result, path, locator, -128, 127, "int8",
+            ),
+            "int16" => self.validate_int_range(
+                instance, schema_obj, result, path, locator, -32768, 32767, "int16",
+            ),
             "int64" => self.validate_int64(instance, schema_obj, result, path, locator),
             "int128" => self.validate_int128(instance, schema_obj, result, path, locator),
-            "uint8" => self.validate_uint_range(instance, schema_obj, result, path, locator, 0, 255, "uint8"),
-            "uint16" => self.validate_uint_range(instance, schema_obj, result, path, locator, 0, 65535, "uint16"),
+            "uint8" => self
+                .validate_uint_range(instance, schema_obj, result, path, locator, 0, 255, "uint8"),
+            "uint16" => self.validate_uint_range(
+                instance, schema_obj, result, path, locator, 0, 65535, "uint16",
+            ),
             "uint32" => self.validate_uint32(instance, schema_obj, result, path, locator),
             "uint64" => self.validate_uint64(instance, schema_obj, result, path, locator),
             "uint128" => self.validate_uint128(instance, schema_obj, result, path, locator),
@@ -624,12 +706,60 @@ impl InstanceValidator {
             "uri" => self.validate_uri(instance, result, path, locator),
             "binary" => self.validate_binary(instance, result, path, locator),
             "jsonpointer" => self.validate_jsonpointer(instance, result, path, locator),
-            "object" => self.validate_object(instance, schema_obj, root_schema, result, path, locator, depth),
-            "array" => self.validate_array(instance, schema_obj, root_schema, result, path, locator, depth),
-            "set" => self.validate_set(instance, schema_obj, root_schema, result, path, locator, depth),
-            "map" => self.validate_map(instance, schema_obj, root_schema, result, path, locator, depth),
-            "tuple" => self.validate_tuple(instance, schema_obj, root_schema, result, path, locator, depth),
-            "choice" => self.validate_choice(instance, schema_obj, root_schema, result, path, locator, depth),
+            "object" => self.validate_object(
+                instance,
+                schema_obj,
+                root_schema,
+                result,
+                path,
+                locator,
+                depth,
+            ),
+            "array" => self.validate_array(
+                instance,
+                schema_obj,
+                root_schema,
+                result,
+                path,
+                locator,
+                depth,
+            ),
+            "set" => self.validate_set(
+                instance,
+                schema_obj,
+                root_schema,
+                result,
+                path,
+                locator,
+                depth,
+            ),
+            "map" => self.validate_map(
+                instance,
+                schema_obj,
+                root_schema,
+                result,
+                path,
+                locator,
+                depth,
+            ),
+            "tuple" => self.validate_tuple(
+                instance,
+                schema_obj,
+                root_schema,
+                result,
+                path,
+                locator,
+                depth,
+            ),
+            "choice" => self.validate_choice(
+                instance,
+                schema_obj,
+                root_schema,
+                result,
+                path,
+                locator,
+                depth,
+            ),
             "any" => {} // Any value is valid
             _ => {
                 result.add_error(ValidationError::instance_error(
@@ -672,7 +802,11 @@ impl InstanceValidator {
                     if s.chars().count() < min as usize {
                         result.add_error(ValidationError::instance_error(
                             InstanceErrorCode::InstanceStringTooShort,
-                            format!("String length {} is less than minimum {}", s.chars().count(), min),
+                            format!(
+                                "String length {} is less than minimum {}",
+                                s.chars().count(),
+                                min
+                            ),
                             path,
                             locator.get_location(path),
                         ));
@@ -686,7 +820,11 @@ impl InstanceValidator {
                     if s.chars().count() > max as usize {
                         result.add_error(ValidationError::instance_error(
                             InstanceErrorCode::InstanceStringTooLong,
-                            format!("String length {} is greater than maximum {}", s.chars().count(), max),
+                            format!(
+                                "String length {} is greater than maximum {}",
+                                s.chars().count(),
+                                max
+                            ),
                             path,
                             locator.get_location(path),
                         ));
@@ -735,7 +873,7 @@ impl InstanceValidator {
             "idn-hostname" => self.validate_idn_hostname_format(s),
             "iri" | "iri-reference" => true, // Accept as valid, not strictly validated
             "uri-template" | "regex" | "relative-json-pointer" => true, // Accept without validation
-            _ => true, // Unknown formats are accepted
+            _ => true,                       // Unknown formats are accepted
         };
 
         if !valid {
@@ -755,8 +893,11 @@ impl InstanceValidator {
             let local = &s[..at_pos];
             let domain = &s[at_pos + 1..];
             // Local part and domain must be non-empty, domain must contain a dot
-            !local.is_empty() && !domain.is_empty() && domain.contains('.') && 
-            !domain.starts_with('.') && !domain.ends_with('.')
+            !local.is_empty()
+                && !domain.is_empty()
+                && domain.contains('.')
+                && !domain.starts_with('.')
+                && !domain.ends_with('.')
         } else {
             false
         }
@@ -796,11 +937,11 @@ impl InstanceValidator {
                 }
             }
         }
-        
+
         // Count colons and check for valid characters
         let mut colon_count = 0;
         let mut has_double_colon = false;
-        
+
         for (i, c) in s.chars().enumerate() {
             if c == ':' {
                 colon_count += 1;
@@ -814,7 +955,7 @@ impl InstanceValidator {
                 return false;
             }
         }
-        
+
         // Basic structural validation
         (2..=7).contains(&colon_count)
     }
@@ -824,17 +965,27 @@ impl InstanceValidator {
         if s.is_empty() || s.len() > 253 {
             return false;
         }
-        
+
         for label in s.split('.') {
             if label.is_empty() || label.len() > 63 {
                 return false;
             }
             // Labels must start with alphanumeric
-            if !label.chars().next().map(|c| c.is_ascii_alphanumeric()).unwrap_or(false) {
+            if !label
+                .chars()
+                .next()
+                .map(|c| c.is_ascii_alphanumeric())
+                .unwrap_or(false)
+            {
                 return false;
             }
             // Labels must end with alphanumeric
-            if !label.chars().last().map(|c| c.is_ascii_alphanumeric()).unwrap_or(false) {
+            if !label
+                .chars()
+                .last()
+                .map(|c| c.is_ascii_alphanumeric())
+                .unwrap_or(false)
+            {
                 return false;
             }
             // Labels can contain alphanumerics and hyphens
@@ -866,7 +1017,7 @@ impl InstanceValidator {
 
     /// Validates IDN email format (simplified).
     fn validate_idn_email_format(&self, s: &str) -> bool {
-        // For IDN email, we accept the basic structure with @ 
+        // For IDN email, we accept the basic structure with @
         s.contains('@') && !s.starts_with('@') && !s.ends_with('@')
     }
 
@@ -968,7 +1119,10 @@ impl InstanceValidator {
                     if value <= min {
                         result.add_error(ValidationError::instance_error(
                             InstanceErrorCode::InstanceNumberTooSmall,
-                            format!("Value {} is not greater than exclusive minimum {}", value, min),
+                            format!(
+                                "Value {} is not greater than exclusive minimum {}",
+                                value, min
+                            ),
                             path,
                             locator.get_location(path),
                         ));
@@ -1085,7 +1239,10 @@ impl InstanceValidator {
                     if value <= min {
                         result.add_error(ValidationError::instance_error(
                             InstanceErrorCode::InstanceNumberTooSmall,
-                            format!("Value {} is not greater than exclusive minimum {}", value, min),
+                            format!(
+                                "Value {} is not greater than exclusive minimum {}",
+                                value, min
+                            ),
                             path,
                             locator.get_location(path),
                         ));
@@ -1122,7 +1279,16 @@ impl InstanceValidator {
         path: &str,
         locator: &JsonSourceLocator,
     ) {
-        self.validate_int_range(instance, _schema_obj, result, path, locator, i32::MIN as i64, i32::MAX as i64, "int32")
+        self.validate_int_range(
+            instance,
+            _schema_obj,
+            result,
+            path,
+            locator,
+            i32::MIN as i64,
+            i32::MAX as i64,
+            "int32",
+        )
     }
 
     fn validate_int_range(
@@ -1153,7 +1319,10 @@ impl InstanceValidator {
             if v < min || v > max {
                 result.add_error(ValidationError::instance_error(
                     InstanceErrorCode::InstanceIntegerOutOfRange,
-                    format!("Value {} is out of range for {} ({} to {})", v, type_name, min, max),
+                    format!(
+                        "Value {} is out of range for {} ({} to {})",
+                        v, type_name, min, max
+                    ),
                     path,
                     locator.get_location(path),
                 ));
@@ -1218,7 +1387,10 @@ impl InstanceValidator {
                     if val <= min_val {
                         result.add_error(ValidationError::instance_error(
                             InstanceErrorCode::InstanceNumberTooSmall,
-                            format!("Value {} is not greater than exclusive minimum {}", val, min_val),
+                            format!(
+                                "Value {} is not greater than exclusive minimum {}",
+                                val, min_val
+                            ),
                             path,
                             locator.get_location(path),
                         ));
@@ -1232,7 +1404,10 @@ impl InstanceValidator {
                     if val >= max_val {
                         result.add_error(ValidationError::instance_error(
                             InstanceErrorCode::InstanceNumberTooLarge,
-                            format!("Value {} is not less than exclusive maximum {}", val, max_val),
+                            format!(
+                                "Value {} is not less than exclusive maximum {}",
+                                val, max_val
+                            ),
                             path,
                             locator.get_location(path),
                         ));
@@ -1284,7 +1459,10 @@ impl InstanceValidator {
             if val < min || val > max {
                 result.add_error(ValidationError::instance_error(
                     InstanceErrorCode::InstanceIntegerOutOfRange,
-                    format!("Value {} is out of range for {} ({} to {})", val, type_name, min, max),
+                    format!(
+                        "Value {} is out of range for {} ({} to {})",
+                        val, type_name, min, max
+                    ),
                     path,
                     locator.get_location(path),
                 ));
@@ -1342,7 +1520,10 @@ impl InstanceValidator {
                     if val <= min_val {
                         result.add_error(ValidationError::instance_error(
                             InstanceErrorCode::InstanceNumberTooSmall,
-                            format!("Value {} is not greater than exclusive minimum {}", val, min_val),
+                            format!(
+                                "Value {} is not greater than exclusive minimum {}",
+                                val, min_val
+                            ),
                             path,
                             locator.get_location(path),
                         ));
@@ -1356,7 +1537,10 @@ impl InstanceValidator {
                     if val >= max_val {
                         result.add_error(ValidationError::instance_error(
                             InstanceErrorCode::InstanceNumberTooLarge,
-                            format!("Value {} is not less than exclusive maximum {}", val, max_val),
+                            format!(
+                                "Value {} is not less than exclusive maximum {}",
+                                val, max_val
+                            ),
                             path,
                             locator.get_location(path),
                         ));
@@ -1460,7 +1644,16 @@ impl InstanceValidator {
         path: &str,
         locator: &JsonSourceLocator,
     ) {
-        self.validate_uint_range(instance, _schema_obj, result, path, locator, 0, u32::MAX as u64, "uint32")
+        self.validate_uint_range(
+            instance,
+            _schema_obj,
+            result,
+            path,
+            locator,
+            0,
+            u32::MAX as u64,
+            "uint32",
+        )
     }
 
     fn validate_uint64(
@@ -1668,7 +1861,9 @@ impl InstanceValidator {
         };
 
         // Simple ISO 8601 duration pattern check
-        let duration_pattern = Regex::new(r"^P(\d+Y)?(\d+M)?(\d+W)?(\d+D)?(T(\d+H)?(\d+M)?(\d+(\.\d+)?S)?)?$").unwrap();
+        let duration_pattern =
+            Regex::new(r"^P(\d+Y)?(\d+M)?(\d+W)?(\d+D)?(T(\d+H)?(\d+M)?(\d+(\.\d+)?S)?)?$")
+                .unwrap();
         if !duration_pattern.is_match(s) {
             result.add_error(ValidationError::instance_error(
                 InstanceErrorCode::InstanceDurationInvalid,
@@ -1853,7 +2048,15 @@ impl InstanceValidator {
 
             if let Some(props) = properties {
                 if let Some(prop_schema) = props.get(prop_name) {
-                    self.validate_instance(prop_value, prop_schema, root_schema, result, &prop_path, locator, depth + 1);
+                    self.validate_instance(
+                        prop_value,
+                        prop_schema,
+                        root_schema,
+                        result,
+                        &prop_path,
+                        locator,
+                        depth + 1,
+                    );
                 } else {
                     // Check additionalProperties
                     match additional_properties {
@@ -1866,7 +2069,15 @@ impl InstanceValidator {
                             ));
                         }
                         Some(Value::Object(_)) => {
-                            self.validate_instance(prop_value, additional_properties.unwrap(), root_schema, result, &prop_path, locator, depth + 1);
+                            self.validate_instance(
+                                prop_value,
+                                additional_properties.unwrap(),
+                                root_schema,
+                                result,
+                                &prop_path,
+                                locator,
+                                depth + 1,
+                            );
                         }
                         _ => {}
                     }
@@ -1914,7 +2125,10 @@ impl InstanceValidator {
                                     if !obj.contains_key(req_name) {
                                         result.add_error(ValidationError::instance_error(
                                             InstanceErrorCode::InstanceDependentRequiredMissing,
-                                            format!("Property '{}' requires '{}' to be present", prop, req_name),
+                                            format!(
+                                                "Property '{}' requires '{}' to be present",
+                                                prop, req_name
+                                            ),
                                             path,
                                             locator.get_location(path),
                                         ));
@@ -1933,7 +2147,15 @@ impl InstanceValidator {
                         if let Ok(regex) = Regex::new(pattern_str) {
                             if regex.is_match(prop_name) {
                                 let prop_path = format!("{}/{}", path, prop_name);
-                                self.validate_instance(prop_value, pattern_schema, root_schema, result, &prop_path, locator, depth + 1);
+                                self.validate_instance(
+                                    prop_value,
+                                    pattern_schema,
+                                    root_schema,
+                                    result,
+                                    &prop_path,
+                                    locator,
+                                    depth + 1,
+                                );
                             }
                         }
                     }
@@ -1950,7 +2172,10 @@ impl InstanceValidator {
                                 if !regex.is_match(prop_name) {
                                     result.add_error(ValidationError::instance_error(
                                         InstanceErrorCode::InstancePropertyNameInvalid,
-                                        format!("Property name '{}' does not match pattern '{}'", prop_name, pattern),
+                                        format!(
+                                            "Property name '{}' does not match pattern '{}'",
+                                            prop_name, pattern
+                                        ),
                                         &format!("{}/{}", path, prop_name),
                                         locator.get_location(&format!("{}/{}", path, prop_name)),
                                     ));
@@ -1965,7 +2190,10 @@ impl InstanceValidator {
                                 if prop_name.len() < min as usize {
                                     result.add_error(ValidationError::instance_error(
                                         InstanceErrorCode::InstancePropertyNameInvalid,
-                                        format!("Property name '{}' is shorter than minimum length {}", prop_name, min),
+                                        format!(
+                                            "Property name '{}' is shorter than minimum length {}",
+                                            prop_name, min
+                                        ),
                                         &format!("{}/{}", path, prop_name),
                                         locator.get_location(&format!("{}/{}", path, prop_name)),
                                     ));
@@ -1979,7 +2207,10 @@ impl InstanceValidator {
                                 if prop_name.len() > max as usize {
                                     result.add_error(ValidationError::instance_error(
                                         InstanceErrorCode::InstancePropertyNameInvalid,
-                                        format!("Property name '{}' is longer than maximum length {}", prop_name, max),
+                                        format!(
+                                            "Property name '{}' is longer than maximum length {}",
+                                            prop_name, max
+                                        ),
                                         &format!("{}/{}", path, prop_name),
                                         locator.get_location(&format!("{}/{}", path, prop_name)),
                                     ));
@@ -2019,7 +2250,15 @@ impl InstanceValidator {
         if let Some(items_schema) = schema_obj.get("items") {
             for (i, item) in arr.iter().enumerate() {
                 let item_path = format!("{}/{}", path, i);
-                self.validate_instance(item, items_schema, root_schema, result, &item_path, locator, depth + 1);
+                self.validate_instance(
+                    item,
+                    items_schema,
+                    root_schema,
+                    result,
+                    &item_path,
+                    locator,
+                    depth + 1,
+                );
             }
         }
 
@@ -2057,22 +2296,33 @@ impl InstanceValidator {
                 let mut match_count = 0;
                 for item in arr.iter() {
                     let mut temp_result = ValidationResult::new();
-                    self.validate_instance(item, contains_schema, root_schema, &mut temp_result, path, locator, depth + 1);
+                    self.validate_instance(
+                        item,
+                        contains_schema,
+                        root_schema,
+                        &mut temp_result,
+                        path,
+                        locator,
+                        depth + 1,
+                    );
                     if temp_result.is_valid() {
                         match_count += 1;
                     }
                 }
 
-                let min_contains = schema_obj.get("minContains")
+                let min_contains = schema_obj
+                    .get("minContains")
                     .and_then(Value::as_u64)
                     .unwrap_or(1);
-                let max_contains = schema_obj.get("maxContains")
-                    .and_then(Value::as_u64);
+                let max_contains = schema_obj.get("maxContains").and_then(Value::as_u64);
 
                 if match_count < min_contains as usize {
                     result.add_error(ValidationError::instance_error(
                         InstanceErrorCode::InstanceArrayContainsTooFew,
-                        format!("Array contains {} matching items, minimum is {}", match_count, min_contains),
+                        format!(
+                            "Array contains {} matching items, minimum is {}",
+                            match_count, min_contains
+                        ),
                         path,
                         locator.get_location(path),
                     ));
@@ -2082,7 +2332,10 @@ impl InstanceValidator {
                     if match_count > max as usize {
                         result.add_error(ValidationError::instance_error(
                             InstanceErrorCode::InstanceArrayContainsTooMany,
-                            format!("Array contains {} matching items, maximum is {}", match_count, max),
+                            format!(
+                                "Array contains {} matching items, maximum is {}",
+                                match_count, max
+                            ),
                             path,
                             locator.get_location(path),
                         ));
@@ -2153,7 +2406,15 @@ impl InstanceValidator {
         if let Some(items_schema) = schema_obj.get("items") {
             for (i, item) in arr.iter().enumerate() {
                 let item_path = format!("{}/{}", path, i);
-                self.validate_instance(item, items_schema, root_schema, result, &item_path, locator, depth + 1);
+                self.validate_instance(
+                    item,
+                    items_schema,
+                    root_schema,
+                    result,
+                    &item_path,
+                    locator,
+                    depth + 1,
+                );
             }
         }
     }
@@ -2185,7 +2446,15 @@ impl InstanceValidator {
         if let Some(values_schema) = schema_obj.get("values") {
             for (key, value) in obj.iter() {
                 let value_path = format!("{}/{}", path, key);
-                self.validate_instance(value, values_schema, root_schema, result, &value_path, locator, depth + 1);
+                self.validate_instance(
+                    value,
+                    values_schema,
+                    root_schema,
+                    result,
+                    &value_path,
+                    locator,
+                    depth + 1,
+                );
             }
         }
 
@@ -2228,7 +2497,10 @@ impl InstanceValidator {
                                 if !re.is_match(key) {
                                     result.add_error(ValidationError::instance_error(
                                         InstanceErrorCode::InstanceMapKeyPatternMismatch,
-                                        format!("Map key '{}' does not match pattern '{}'", key, pattern),
+                                        format!(
+                                            "Map key '{}' does not match pattern '{}'",
+                                            key, pattern
+                                        ),
                                         path,
                                         locator.get_location(path),
                                     ));
@@ -2243,7 +2515,10 @@ impl InstanceValidator {
                                 if key.len() < min as usize {
                                     result.add_error(ValidationError::instance_error(
                                         InstanceErrorCode::InstanceMapKeyPatternMismatch,
-                                        format!("Map key '{}' is shorter than minimum length {}", key, min),
+                                        format!(
+                                            "Map key '{}' is shorter than minimum length {}",
+                                            key, min
+                                        ),
                                         path,
                                         locator.get_location(path),
                                     ));
@@ -2257,7 +2532,10 @@ impl InstanceValidator {
                                 if key.len() > max as usize {
                                     result.add_error(ValidationError::instance_error(
                                         InstanceErrorCode::InstanceMapKeyPatternMismatch,
-                                        format!("Map key '{}' is longer than maximum length {}", key, max),
+                                        format!(
+                                            "Map key '{}' is longer than maximum length {}",
+                                            key, max
+                                        ),
                                         path,
                                         locator.get_location(path),
                                     ));
@@ -2275,7 +2553,15 @@ impl InstanceValidator {
                         if let Ok(regex) = Regex::new(pattern_str) {
                             if regex.is_match(key) {
                                 let value_path = format!("{}/{}", path, key);
-                                self.validate_instance(value, pattern_schema, root_schema, result, &value_path, locator, depth + 1);
+                                self.validate_instance(
+                                    value,
+                                    pattern_schema,
+                                    root_schema,
+                                    result,
+                                    &value_path,
+                                    locator,
+                                    depth + 1,
+                                );
                             }
                         }
                     }
@@ -2315,7 +2601,11 @@ impl InstanceValidator {
             if arr.len() != order.len() {
                 result.add_error(ValidationError::instance_error(
                     InstanceErrorCode::InstanceTupleLengthMismatch,
-                    format!("Tuple length {} does not match expected {}", arr.len(), order.len()),
+                    format!(
+                        "Tuple length {} does not match expected {}",
+                        arr.len(),
+                        order.len()
+                    ),
                     path,
                     locator.get_location(path),
                 ));
@@ -2327,7 +2617,15 @@ impl InstanceValidator {
                 if let Value::String(prop_name) = prop_name_val {
                     if let Some(prop_schema) = props.get(prop_name) {
                         let elem_path = format!("{}/{}", path, i);
-                        self.validate_instance(&arr[i], prop_schema, root_schema, result, &elem_path, locator, depth + 1);
+                        self.validate_instance(
+                            &arr[i],
+                            prop_schema,
+                            root_schema,
+                            result,
+                            &elem_path,
+                            locator,
+                            depth + 1,
+                        );
                     }
                 }
             }
@@ -2399,10 +2697,15 @@ impl InstanceValidator {
             };
 
             if let Some(choice_schema) = choices.get(selector_value) {
-                let Some(mut selected_schema) = self.materialize_choice_schema(choice_schema, root_schema) else {
+                let Some(mut selected_schema) =
+                    self.materialize_choice_schema(choice_schema, root_schema)
+                else {
                     result.add_error(ValidationError::instance_error(
                         InstanceErrorCode::InstanceChoiceNoMatch,
-                        format!("Inline choice '{}' does not resolve to an object schema", selector_value),
+                        format!(
+                            "Inline choice '{}' does not resolve to an object schema",
+                            selector_value
+                        ),
                         path,
                         locator.get_location(path),
                     ));
@@ -2415,7 +2718,10 @@ impl InstanceValidator {
                 let Some(properties) = properties.as_object_mut() else {
                     result.add_error(ValidationError::instance_error(
                         InstanceErrorCode::InstanceChoiceNoMatch,
-                        format!("Inline choice '{}' has invalid object properties", selector_value),
+                        format!(
+                            "Inline choice '{}' has invalid object properties",
+                            selector_value
+                        ),
                         path,
                         locator.get_location(path),
                     ));
@@ -2426,7 +2732,10 @@ impl InstanceValidator {
                     .entry(selector_prop.to_string())
                     .or_insert_with(|| serde_json::json!({ "type": "string" }));
                 if let Some(selector_schema) = selector_schema.as_object_mut() {
-                    selector_schema.insert("const".to_string(), Value::String(selector_value.to_string()));
+                    selector_schema.insert(
+                        "const".to_string(),
+                        Value::String(selector_value.to_string()),
+                    );
                 }
 
                 self.validate_instance(
@@ -2468,7 +2777,15 @@ impl InstanceValidator {
                 if let Some(choice_schema) = choices.get(tag) {
                     // Validate the wrapped value against the choice schema
                     let value_path = format!("{}/{}", path, tag);
-                    self.validate_instance(value, choice_schema, root_schema, result, &value_path, locator, depth + 1);
+                    self.validate_instance(
+                        value,
+                        choice_schema,
+                        root_schema,
+                        result,
+                        &value_path,
+                        locator,
+                        depth + 1,
+                    );
                     return;
                 }
             }
@@ -2478,7 +2795,15 @@ impl InstanceValidator {
 
             for (_choice_name, choice_schema) in choices {
                 let mut choice_result = ValidationResult::new();
-                self.validate_instance(instance, choice_schema, root_schema, &mut choice_result, path, locator, depth + 1);
+                self.validate_instance(
+                    instance,
+                    choice_schema,
+                    root_schema,
+                    &mut choice_result,
+                    path,
+                    locator,
+                    depth + 1,
+                );
                 if choice_result.is_valid() {
                     match_count += 1;
                 }
@@ -2494,7 +2819,10 @@ impl InstanceValidator {
             } else if match_count > 1 {
                 result.add_error(ValidationError::instance_error(
                     InstanceErrorCode::InstanceChoiceMultipleMatches,
-                    format!("Value matches {} choice options (should match exactly one)", match_count),
+                    format!(
+                        "Value matches {} choice options (should match exactly one)",
+                        match_count
+                    ),
                     path,
                     locator.get_location(path),
                 ));
@@ -2549,7 +2877,15 @@ impl InstanceValidator {
         if let Some(Value::Array(schemas)) = schema_obj.get("allOf") {
             for schema in schemas {
                 let mut sub_result = ValidationResult::new();
-                self.validate_instance(instance, schema, root_schema, &mut sub_result, path, locator, depth + 1);
+                self.validate_instance(
+                    instance,
+                    schema,
+                    root_schema,
+                    &mut sub_result,
+                    path,
+                    locator,
+                    depth + 1,
+                );
                 if !sub_result.is_valid() {
                     result.add_error(ValidationError::instance_error(
                         InstanceErrorCode::InstanceAllOfFailed,
@@ -2568,7 +2904,15 @@ impl InstanceValidator {
             let mut any_valid = false;
             for schema in schemas {
                 let mut sub_result = ValidationResult::new();
-                self.validate_instance(instance, schema, root_schema, &mut sub_result, path, locator, depth + 1);
+                self.validate_instance(
+                    instance,
+                    schema,
+                    root_schema,
+                    &mut sub_result,
+                    path,
+                    locator,
+                    depth + 1,
+                );
                 if sub_result.is_valid() {
                     any_valid = true;
                     break;
@@ -2589,7 +2933,15 @@ impl InstanceValidator {
             let mut match_count = 0;
             for schema in schemas {
                 let mut sub_result = ValidationResult::new();
-                self.validate_instance(instance, schema, root_schema, &mut sub_result, path, locator, depth + 1);
+                self.validate_instance(
+                    instance,
+                    schema,
+                    root_schema,
+                    &mut sub_result,
+                    path,
+                    locator,
+                    depth + 1,
+                );
                 if sub_result.is_valid() {
                     match_count += 1;
                 }
@@ -2604,7 +2956,10 @@ impl InstanceValidator {
             } else if match_count > 1 {
                 result.add_error(ValidationError::instance_error(
                     InstanceErrorCode::InstanceOneOfMultiple,
-                    format!("Value matches {} schemas in oneOf (should match exactly one)", match_count),
+                    format!(
+                        "Value matches {} schemas in oneOf (should match exactly one)",
+                        match_count
+                    ),
                     path,
                     locator.get_location(path),
                 ));
@@ -2614,7 +2969,15 @@ impl InstanceValidator {
         // not
         if let Some(not_schema) = schema_obj.get("not") {
             let mut sub_result = ValidationResult::new();
-            self.validate_instance(instance, not_schema, root_schema, &mut sub_result, path, locator, depth + 1);
+            self.validate_instance(
+                instance,
+                not_schema,
+                root_schema,
+                &mut sub_result,
+                path,
+                locator,
+                depth + 1,
+            );
             if sub_result.is_valid() {
                 result.add_error(ValidationError::instance_error(
                     InstanceErrorCode::InstanceNotFailed,
@@ -2628,14 +2991,38 @@ impl InstanceValidator {
         // if/then/else
         if let Some(if_schema) = schema_obj.get("if") {
             let mut if_result = ValidationResult::new();
-            self.validate_instance(instance, if_schema, root_schema, &mut if_result, path, locator, depth + 1);
-            
+            self.validate_instance(
+                instance,
+                if_schema,
+                root_schema,
+                &mut if_result,
+                path,
+                locator,
+                depth + 1,
+            );
+
             if if_result.is_valid() {
                 if let Some(then_schema) = schema_obj.get("then") {
-                    self.validate_instance(instance, then_schema, root_schema, result, path, locator, depth + 1);
+                    self.validate_instance(
+                        instance,
+                        then_schema,
+                        root_schema,
+                        result,
+                        path,
+                        locator,
+                        depth + 1,
+                    );
                 }
             } else if let Some(else_schema) = schema_obj.get("else") {
-                self.validate_instance(instance, else_schema, root_schema, result, path, locator, depth + 1);
+                self.validate_instance(
+                    instance,
+                    else_schema,
+                    root_schema,
+                    result,
+                    path,
+                    locator,
+                    depth + 1,
+                );
             }
         }
     }

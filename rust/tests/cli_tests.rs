@@ -20,11 +20,13 @@ fn jstruct() -> Command {
 /// Helper to create a temp directory with test files
 fn create_test_files() -> TempDir {
     let dir = TempDir::new().unwrap();
-    
+
     // Valid schema
     let schema_path = dir.path().join("valid.struct.json");
     let mut f = File::create(&schema_path).unwrap();
-    writeln!(f, r#"{{
+    writeln!(
+        f,
+        r#"{{
         "$schema": "https://json-structure.org/meta/core/v0/#",
         "$id": "https://example.com/test",
         "name": "Person",
@@ -34,31 +36,45 @@ fn create_test_files() -> TempDir {
             "age": {{ "type": "int32" }}
         }},
         "required": ["name"]
-    }}"#).unwrap();
-    
+    }}"#
+    )
+    .unwrap();
+
     // Invalid schema (missing $id)
     let invalid_schema_path = dir.path().join("invalid.struct.json");
     let mut f = File::create(&invalid_schema_path).unwrap();
-    writeln!(f, r#"{{
+    writeln!(
+        f,
+        r#"{{
         "name": "Test",
         "type": "string"
-    }}"#).unwrap();
-    
+    }}"#
+    )
+    .unwrap();
+
     // Valid instance
     let valid_instance_path = dir.path().join("valid.json");
     let mut f = File::create(&valid_instance_path).unwrap();
-    writeln!(f, r#"{{"$schema": "https://example.com/test", "name": "Alice", "age": 30}}"#).unwrap();
-    
+    writeln!(
+        f,
+        r#"{{"$schema": "https://example.com/test", "name": "Alice", "age": 30}}"#
+    )
+    .unwrap();
+
     // Invalid instance
     let invalid_instance_path = dir.path().join("invalid.json");
     let mut f = File::create(&invalid_instance_path).unwrap();
-    writeln!(f, r#"{{"$schema": "https://example.com/test", "age": "not a number"}}"#).unwrap();
-    
+    writeln!(
+        f,
+        r#"{{"$schema": "https://example.com/test", "age": "not a number"}}"#
+    )
+    .unwrap();
+
     // Invalid JSON
     let bad_json_path = dir.path().join("bad.json");
     let mut f = File::create(&bad_json_path).unwrap();
     writeln!(f, "{{ invalid json }}").unwrap();
-    
+
     dir
 }
 
@@ -106,7 +122,7 @@ fn test_validate_help() {
 fn test_check_valid_schema() {
     let dir = create_test_files();
     let schema = dir.path().join("valid.struct.json");
-    
+
     jstruct()
         .arg("check")
         .arg(&schema)
@@ -119,7 +135,7 @@ fn test_check_valid_schema() {
 fn test_check_invalid_schema() {
     let dir = create_test_files();
     let schema = dir.path().join("invalid.struct.json");
-    
+
     jstruct()
         .arg("check")
         .arg(&schema)
@@ -132,7 +148,7 @@ fn test_check_invalid_schema() {
 fn test_check_json_format() {
     let dir = create_test_files();
     let schema = dir.path().join("valid.struct.json");
-    
+
     jstruct()
         .args(["check", "--format", "json"])
         .arg(&schema)
@@ -145,7 +161,7 @@ fn test_check_json_format() {
 fn test_check_tap_format() {
     let dir = create_test_files();
     let schema = dir.path().join("valid.struct.json");
-    
+
     jstruct()
         .args(["check", "--format", "tap"])
         .arg(&schema)
@@ -159,7 +175,7 @@ fn test_check_tap_format() {
 fn test_check_quiet_mode() {
     let dir = create_test_files();
     let schema = dir.path().join("valid.struct.json");
-    
+
     jstruct()
         .args(["check", "-q"])
         .arg(&schema)
@@ -173,7 +189,7 @@ fn test_validate_valid_instance() {
     let dir = create_test_files();
     let schema = dir.path().join("valid.struct.json");
     let instance = dir.path().join("valid.json");
-    
+
     jstruct()
         .args(["validate", "-s"])
         .arg(&schema)
@@ -188,7 +204,7 @@ fn test_validate_invalid_instance() {
     let dir = create_test_files();
     let schema = dir.path().join("valid.struct.json");
     let instance = dir.path().join("invalid.json");
-    
+
     jstruct()
         .args(["validate", "-s"])
         .arg(&schema)
@@ -203,7 +219,7 @@ fn test_validate_json_format() {
     let dir = create_test_files();
     let schema = dir.path().join("valid.struct.json");
     let instance = dir.path().join("valid.json");
-    
+
     jstruct()
         .args(["validate", "-s"])
         .arg(&schema)
@@ -218,7 +234,7 @@ fn test_validate_json_format() {
 fn test_validate_missing_schema_option() {
     let dir = create_test_files();
     let instance = dir.path().join("valid.json");
-    
+
     jstruct()
         .arg("validate")
         .arg(&instance)
@@ -240,12 +256,8 @@ fn test_file_not_found() {
 fn test_invalid_json() {
     let dir = create_test_files();
     let bad_json = dir.path().join("bad.json");
-    
-    jstruct()
-        .arg("check")
-        .arg(&bad_json)
-        .assert()
-        .code(1); // Invalid schema content (parse error)
+
+    jstruct().arg("check").arg(&bad_json).assert().code(1); // Invalid schema content (parse error)
 }
 
 #[test]
@@ -253,7 +265,7 @@ fn test_check_multiple_files() {
     let dir = create_test_files();
     let schema1 = dir.path().join("valid.struct.json");
     let schema2 = dir.path().join("invalid.struct.json");
-    
+
     jstruct()
         .arg("check")
         .arg(&schema1)
@@ -267,14 +279,10 @@ fn test_command_aliases() {
     let dir = create_test_files();
     let schema = dir.path().join("valid.struct.json");
     let instance = dir.path().join("valid.json");
-    
+
     // 'c' is alias for 'check'
-    jstruct()
-        .arg("c")
-        .arg(&schema)
-        .assert()
-        .success();
-    
+    jstruct().arg("c").arg(&schema).assert().success();
+
     // 'v' is alias for 'validate'
     jstruct()
         .args(["v", "-s"])

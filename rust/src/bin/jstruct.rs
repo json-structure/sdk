@@ -10,7 +10,9 @@ use std::process::ExitCode;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use serde::Serialize;
 
-use json_structure::{InstanceValidator, SchemaValidator, SchemaValidatorOptions, ValidationResult};
+use json_structure::{
+    InstanceValidator, SchemaValidator, SchemaValidatorOptions, ValidationResult,
+};
 
 /// Exit codes
 const EXIT_SUCCESS: u8 = 0;
@@ -159,13 +161,13 @@ fn cmd_check(args: CheckArgs) -> u8 {
 
     for file in &args.files {
         let result = check_schema(&validator, file);
-        
+
         if result.error.is_some() {
             has_error = true;
         } else if !result.valid {
             has_invalid = true;
         }
-        
+
         results.push(result);
     }
 
@@ -202,7 +204,11 @@ fn cmd_validate(args: ValidateArgs) -> u8 {
         Ok(content) => content,
         Err(e) => {
             if !args.quiet {
-                eprintln!("jstruct: cannot read schema '{}': {}", args.schema.display(), e);
+                eprintln!(
+                    "jstruct: cannot read schema '{}': {}",
+                    args.schema.display(),
+                    e
+                );
             }
             return EXIT_ERROR;
         }
@@ -213,7 +219,11 @@ fn cmd_validate(args: ValidateArgs) -> u8 {
         Ok(v) => v,
         Err(e) => {
             if !args.quiet {
-                eprintln!("jstruct: invalid JSON in schema '{}': {}", args.schema.display(), e);
+                eprintln!(
+                    "jstruct: invalid JSON in schema '{}': {}",
+                    args.schema.display(),
+                    e
+                );
             }
             return EXIT_ERROR;
         }
@@ -224,10 +234,16 @@ fn cmd_validate(args: ValidateArgs) -> u8 {
     let schema_result = schema_validator.validate(&schema_content);
     if !schema_result.is_valid() {
         if !args.quiet {
-            let first_error = schema_result.errors().next()
+            let first_error = schema_result
+                .errors()
+                .next()
                 .map(|e| e.message.as_str())
                 .unwrap_or("unknown error");
-            eprintln!("jstruct: invalid schema '{}': {}", args.schema.display(), first_error);
+            eprintln!(
+                "jstruct: invalid schema '{}': {}",
+                args.schema.display(),
+                first_error
+            );
         }
         return EXIT_ERROR;
     }
@@ -239,13 +255,13 @@ fn cmd_validate(args: ValidateArgs) -> u8 {
 
     for file in &args.files {
         let result = validate_instance(&instance_validator, file, &schema);
-        
+
         if result.error.is_some() {
             has_error = true;
         } else if !result.valid {
             has_invalid = true;
         }
-        
+
         results.push(result);
     }
 
@@ -263,33 +279,44 @@ fn cmd_validate(args: ValidateArgs) -> u8 {
 }
 
 /// Load schemas from bundle files for $import resolution
-fn load_bundle_schemas(bundle_files: &[PathBuf], quiet: bool) -> Result<Vec<serde_json::Value>, ()> {
+fn load_bundle_schemas(
+    bundle_files: &[PathBuf],
+    quiet: bool,
+) -> Result<Vec<serde_json::Value>, ()> {
     let mut schemas = Vec::new();
-    
+
     for file in bundle_files {
         let content = match read_file(file) {
             Ok(c) => c,
             Err(e) => {
                 if !quiet {
-                    eprintln!("jstruct: cannot read bundle file '{}': {}", file.display(), e);
+                    eprintln!(
+                        "jstruct: cannot read bundle file '{}': {}",
+                        file.display(),
+                        e
+                    );
                 }
                 return Err(());
             }
         };
-        
+
         let schema: serde_json::Value = match serde_json::from_str(&content) {
             Ok(v) => v,
             Err(e) => {
                 if !quiet {
-                    eprintln!("jstruct: invalid JSON in bundle file '{}': {}", file.display(), e);
+                    eprintln!(
+                        "jstruct: invalid JSON in bundle file '{}': {}",
+                        file.display(),
+                        e
+                    );
                 }
                 return Err(());
             }
         };
-        
+
         schemas.push(schema);
     }
-    
+
     Ok(schemas)
 }
 
@@ -348,7 +375,11 @@ fn validate_instance(
 }
 
 /// Convert ValidationResult to FileResult
-fn validation_result_to_file_result(file: &str, result: ValidationResult, source_content: Option<String>) -> FileResult {
+fn validation_result_to_file_result(
+    file: &str,
+    result: ValidationResult,
+    source_content: Option<String>,
+) -> FileResult {
     let errors: Vec<ErrorInfo> = result
         .all_errors()
         .iter()
@@ -416,19 +447,33 @@ fn output_text(results: &[FileResult], verbose: bool) {
             println!("\u{2717} {}: invalid", result.file);
             let lines = source_lines[idx].as_ref();
             for error in &result.errors {
-                let path = if error.path.is_empty() { "/" } else { &error.path };
-                let severity_icon = if error.severity == "warning" { "\u{26A0}" } else { "\u{2717}" };
-                
+                let path = if error.path.is_empty() {
+                    "/"
+                } else {
+                    &error.path
+                };
+                let severity_icon = if error.severity == "warning" {
+                    "\u{26A0}"
+                } else {
+                    "\u{2717}"
+                };
+
                 // Always show line/column when available
-                let loc = error.line.map(|l| {
-                    format!(" (line {}, col {})", l, error.column.unwrap_or(0))
-                }).unwrap_or_default();
-                
-                println!("  {} [{}] {}: {}{}", severity_icon, error.code, path, error.message, loc);
-                
+                let loc = error
+                    .line
+                    .map(|l| format!(" (line {}, col {})", l, error.column.unwrap_or(0)))
+                    .unwrap_or_default();
+
+                println!(
+                    "  {} [{}] {}: {}{}",
+                    severity_icon, error.code, path, error.message, loc
+                );
+
                 // In verbose mode, show source excerpt with caret marker
                 if verbose {
-                    if let (Some(line_num), Some(col), Some(src_lines)) = (error.line, error.column, lines) {
+                    if let (Some(line_num), Some(col), Some(src_lines)) =
+                        (error.line, error.column, lines)
+                    {
                         if line_num > 0 && line_num <= src_lines.len() {
                             let source_line = src_lines[line_num - 1];
                             println!("    |");
@@ -458,16 +503,16 @@ fn output_json(results: &[FileResult]) {
 /// Output results in TAP format
 fn output_tap(results: &[FileResult], verbose: bool) {
     println!("1..{}", results.len());
-    
+
     // Pre-compute source lines for all results that have source content
     let source_lines: Vec<Option<Vec<&str>>> = results
         .iter()
         .map(|r| r.source_content.as_ref().map(|s| s.lines().collect()))
         .collect();
-    
+
     for (i, result) in results.iter().enumerate() {
         let n = i + 1;
-        
+
         if let Some(ref error) = result.error {
             println!("not ok {} - {}", n, result.file);
             println!("  # {}", error);
@@ -477,16 +522,28 @@ fn output_tap(results: &[FileResult], verbose: bool) {
             println!("not ok {} - {}", n, result.file);
             let lines = source_lines[i].as_ref();
             for error in &result.errors {
-                let path = if error.path.is_empty() { "/" } else { &error.path };
-                let severity = if error.severity == "warning" { "warning" } else { "error" };
-                
+                let path = if error.path.is_empty() {
+                    "/"
+                } else {
+                    &error.path
+                };
+                let severity = if error.severity == "warning" {
+                    "warning"
+                } else {
+                    "error"
+                };
+
                 // Always show line/column when available
-                let loc = error.line.map(|l| {
-                    format!(" (line {}, col {})", l, error.column.unwrap_or(0))
-                }).unwrap_or_default();
-                
-                println!("  # [{}] {} {}: {}{}", error.code, severity, path, error.message, loc);
-                
+                let loc = error
+                    .line
+                    .map(|l| format!(" (line {}, col {})", l, error.column.unwrap_or(0)))
+                    .unwrap_or_default();
+
+                println!(
+                    "  # [{}] {} {}: {}{}",
+                    error.code, severity, path, error.message, loc
+                );
+
                 // In verbose mode, show source excerpt
                 if verbose {
                     if let (Some(line_num), Some(src_lines)) = (error.line, lines) {
