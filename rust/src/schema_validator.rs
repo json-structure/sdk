@@ -497,10 +497,14 @@ impl SchemaValidator {
                     let offer_path = format!("{}/{}", offers_path, name);
                     let valid = match offer {
                         Value::String(reference) => reference.starts_with("#/definitions/"),
-                        Value::Array(references) => !references.is_empty()
-                            && references.iter().all(|reference| {
-                                reference.as_str().is_some_and(|value| value.starts_with("#/definitions/"))
-                            }),
+                        Value::Array(references) => {
+                            !references.is_empty()
+                                && references.iter().all(|reference| {
+                                    reference
+                                        .as_str()
+                                        .is_some_and(|value| value.starts_with("#/definitions/"))
+                                })
+                        }
                         _ => false,
                     };
                     if !valid {
@@ -553,51 +557,42 @@ impl SchemaValidator {
 
                 // Validate reference format
                 if ref_str.starts_with("#/definitions/") {
-                    // Local definition reference - resolve from root schema
-                    if let Some(resolved) = self.resolve_ref(ref_str, root_schema) {
-                        // Check for direct circular reference (definition is only a $ref to itself)
-                        if let Value::Object(def_obj) = resolved {
-                            let keys: Vec<&String> = def_obj.keys().collect();
-                            let is_bare_ref = keys.len() == 1 && keys[0] == "$ref";
-                            let is_type_ref_only = keys.len() == 1 && keys[0] == "type" && {
-                                if let Some(Value::Object(type_obj)) = def_obj.get("type") {
-                                    type_obj.len() == 1 && type_obj.contains_key("$ref")
-                                } else {
-                                    false
-                                }
-                            };
-
-                            if is_bare_ref || is_type_ref_only {
-                                // Check if it references itself
-                                let inner_ref = if is_bare_ref {
-                                    def_obj.get("$ref").and_then(|v| v.as_str())
-                                } else if is_type_ref_only {
-                                    def_obj
-                                        .get("type")
-                                        .and_then(|t| t.as_object())
-                                        .and_then(|o| o.get("$ref"))
-                                        .and_then(|v| v.as_str())
-                                } else {
-                                    None
-                                };
-
-                                if inner_ref == Some(ref_str) {
-                                    result.add_error(ValidationError::schema_error(
-                                        SchemaErrorCode::SchemaRefCircular,
-                                        format!("Direct circular reference: {}", ref_str),
-                                        &ref_path,
-                                        locator.get_location(&ref_path),
-                                    ));
-                                }
-                            }
+                    let mut current_ref = ref_str.as_str();
+                    let mut aliases = HashSet::new();
+                    while current_ref.starts_with("#/definitions/") {
+                        if !aliases.insert(current_ref) {
+                            result.add_error(ValidationError::schema_error(
+                                SchemaErrorCode::SchemaRefCircular,
+                                format!("Circular reference detected: {}", current_ref),
+                                &ref_path,
+                                locator.get_location(&ref_path),
+                            ));
+                            break;
                         }
-                    } else {
-                        result.add_error(ValidationError::schema_error(
-                            SchemaErrorCode::SchemaRefNotFound,
-                            format!("Reference not found: {}", ref_str),
-                            &ref_path,
-                            locator.get_location(&ref_path),
-                        ));
+                        let Some(resolved) = self.resolve_ref(current_ref, root_schema) else {
+                            result.add_error(ValidationError::schema_error(
+                                SchemaErrorCode::SchemaRefNotFound,
+                                format!("Reference not found: {}", current_ref),
+                                &ref_path,
+                                locator.get_location(&ref_path),
+                            ));
+                            break;
+                        };
+                        let Some(def_obj) = resolved.as_object().filter(|obj| obj.len() == 1)
+                        else {
+                            break;
+                        };
+                        let next_ref = def_obj.get("$ref").or_else(|| {
+                            def_obj
+                                .get("type")
+                                .and_then(Value::as_object)
+                                .filter(|obj| obj.len() == 1)
+                                .and_then(|obj| obj.get("$ref"))
+                        });
+                        match next_ref.and_then(Value::as_str) {
+                            Some(next_ref) => current_ref = next_ref,
+                            None => break,
+                        }
                     }
                 }
                 // External references would be validated here if import is enabled
@@ -1569,7 +1564,9 @@ impl SchemaValidator {
 
             let choice_bases: HashSet<&str> = match choice_obj.get("$extends") {
                 Some(Value::String(reference)) => std::iter::once(reference.as_str()).collect(),
-                Some(Value::Array(references)) => references.iter().filter_map(Value::as_str).collect(),
+                Some(Value::Array(references)) => {
+                    references.iter().filter_map(Value::as_str).collect()
+                }
                 _ => HashSet::new(),
             };
             if !base_refs.iter().all(|base| choice_bases.contains(base)) {
@@ -2068,10 +2065,16 @@ impl SchemaValidator {
                             &ref_path,
                             locator.get_location(&ref_path),
                         ));
-                    } else if resolved_type != expected_type || resolved.get("abstract") != Some(&Value::Bool(true)) {
+                    } else if resolved_type != expected_type
+                        || resolved.get("abstract") != Some(&Value::Bool(true))
+                    {
                         result.add_error(ValidationError::schema_error(
                             SchemaErrorCode::SchemaConstraintTypeMismatch,
-                            format!("$extends target '{}' must resolve to an abstract {} schema", ref_str, expected_type.unwrap_or("object")),
+                            format!(
+                                "$extends target '{}' must resolve to an abstract {} schema",
+                                ref_str,
+                                expected_type.unwrap_or("object")
+                            ),
                             &ref_path,
                             locator.get_location(&ref_path),
                         ));
@@ -2668,7 +2671,9 @@ mod tests {
         let result = validator.validate(schema);
         assert!(result.all_errors().iter().any(|err| {
             err.code == SchemaErrorCode::SchemaConstraintTypeMismatch.as_str()
-                && err.message.contains("must resolve to an abstract object schema")
+                && err
+                    .message
+                    .contains("must resolve to an abstract object schema")
         }));
     }
 

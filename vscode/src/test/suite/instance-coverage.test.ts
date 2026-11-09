@@ -234,7 +234,7 @@ suite('Instance Document Coverage Tests', () => {
                 await vscode.window.showTextDocument(doc);
                 
                 // Wait for diagnostics which should trigger findSchemaPropertyRange
-                const diagnostics = await waitForDiagnostics(doc.uri, 3000);
+                await waitForDiagnostics(doc.uri, 3000);
                 
                 // There should be a diagnostic (schema not found)
                 // This exercises findSchemaPropertyRange
@@ -311,7 +311,7 @@ suite('Instance Document Coverage Tests', () => {
                 await vscode.window.showTextDocument(doc);
                 
                 // Wait for validation
-                const diagnostics = await waitForDiagnostics(doc.uri, 3000);
+                await waitForDiagnostics(doc.uri, 3000);
                 
                 // This exercises findRangeFromPath with numeric segments (array indices)
                 assert.ok(true, 'Array path handling code was exercised');
@@ -853,7 +853,7 @@ suite('Instance Document Coverage Tests', () => {
                 const namePos = text.indexOf('"name": { "type"');
                 const position = doc.positionAt(namePos + 2);
                 
-                const references = await vscode.commands.executeCommand<vscode.Location[]>(
+                await vscode.commands.executeCommand<vscode.Location[]>(
                     'vscode.executeReferenceProvider',
                     doc.uri,
                     position
@@ -895,7 +895,7 @@ suite('Instance Document Coverage Tests', () => {
                 const defPos = text.indexOf('"Unused": {');
                 const position = doc.positionAt(defPos + 2); // Position at 'U' in "Unused"
                 
-                const references = await vscode.commands.executeCommand<vscode.Location[]>(
+                await vscode.commands.executeCommand<vscode.Location[]>(
                     'vscode.executeReferenceProvider',
                     doc.uri,
                     position
@@ -933,7 +933,7 @@ suite('Instance Document Coverage Tests', () => {
                 
                 await new Promise(resolve => setTimeout(resolve, 2000));
                 
-                const diagnostics = vscode.languages.getDiagnostics(doc.uri);
+                vscode.languages.getDiagnostics(doc.uri);
                 
                 // Should produce diagnostics for type mismatch (123 is not string)
                 // This exercises findRangeFromPath with numeric array indices

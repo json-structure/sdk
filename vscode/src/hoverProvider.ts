@@ -394,7 +394,7 @@ export class JsonStructureHoverProvider implements vscode.HoverProvider {
     private isPropertyName(lineText: string, charPosition: number, word: string): boolean {
         // Find the word in the line and check if it's followed by a colon
         const wordIndex = lineText.indexOf(`"${word}"`);
-        if (wordIndex === -1) return false;
+        if (wordIndex === -1) {return false;}
         
         const afterWord = lineText.substring(wordIndex + word.length + 2).trim();
         return afterWord.startsWith(':');

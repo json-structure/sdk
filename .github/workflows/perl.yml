@@ -18,6 +18,9 @@ on:
       - 'test-assets/**'
       - '.github/workflows/perl.yml'
 
+env:
+  PERL_CPANM_OPT: '--mirror https://cpan.metacpan.org --mirror-only'
+
 jobs:
   test:
     name: Test Perl ${{ matrix.perl-version }} (${{ matrix.json-backend }}) on ${{ matrix.os }}
@@ -52,6 +55,7 @@ jobs:
         working-directory: perl
         run: |
           cpanm --installdeps --notest .
+          cpanm --notest 'Pod::Text~>=6.1.1'
 
       - name: Install JSON backend (${{ matrix.json-backend }})
         if: matrix.json-backend != 'JSON::PP'
@@ -87,7 +91,7 @@ jobs:
           perl-version: '5.38'
 
       - name: Install Perl::Critic
-        run: cpanm --notest Perl::Critic
+        run: cpanm --notest Perl::Critic 'Pod::Text~>=6.1.1'
 
       - name: Run Perl::Critic (gentle)
         working-directory: perl
@@ -113,7 +117,7 @@ jobs:
       - name: Install build dependencies
         working-directory: perl
         run: |
-          cpanm --notest ExtUtils::MakeMaker Module::Build
+          cpanm --notest ExtUtils::MakeMaker Module::Build 'Pod::Text~>=6.1.1'
           cpanm --installdeps --notest .
 
       - name: Build distribution
@@ -163,7 +167,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          cpanm --notest ExtUtils::MakeMaker Test::More Test::Deep
+          cpanm --notest ExtUtils::MakeMaker Test::More Test::Deep 'Pod::Text~>=6.1.1'
 
       - name: Extract version from tag
         id: version
@@ -213,7 +217,7 @@ jobs:
           perl-version: '5.38'
 
       - name: Install CPAN::Uploader
-        run: cpanm --notest CPAN::Uploader
+        run: cpanm --notest CPAN::Uploader 'Pod::Text~>=6.1.1'
 
       - name: Upload to CPAN
         env:

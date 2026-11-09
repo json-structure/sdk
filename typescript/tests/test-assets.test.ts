@@ -3,6 +3,7 @@ import { readFileSync, readdirSync, statSync, existsSync } from 'fs';
 import { join, basename, resolve } from 'path';
 import { SchemaValidator } from '../src/schema-validator';
 import { InstanceValidator } from '../src/instance-validator';
+import type { JsonValue } from '../src/types';
 import * as ErrorCodes from '../src/error-codes';
 
 // Find the test-assets directory
@@ -47,7 +48,7 @@ function findSamplesDir(): string | null {
   return null;
 }
 
-function loadJson(filePath: string): any {
+function loadJson(filePath: string): JsonValue {
   try {
     return JSON.parse(readFileSync(filePath, 'utf8'));
   } catch {
@@ -76,39 +77,6 @@ function getSubDirs(dir: string): string[] {
   } catch {
     return [];
   }
-}
-
-// Resolve JSON pointer
-function resolveJsonPointer(pointer: string, doc: any): any {
-  if (!pointer.startsWith('/')) {
-    return null;
-  }
-
-  const parts = pointer.substring(1).split('/');
-  let current = doc;
-
-  for (const part of parts) {
-    const unescaped = part.replace(/~1/g, '/').replace(/~0/g, '~');
-
-    if (typeof current === 'object' && current !== null) {
-      if (Array.isArray(current)) {
-        const index = parseInt(unescaped, 10);
-        if (isNaN(index) || index < 0 || index >= current.length) {
-          return null;
-        }
-        current = current[index];
-      } else {
-        if (!(unescaped in current)) {
-          return null;
-        }
-        current = current[unescaped];
-      }
-    } else {
-      return null;
-    }
-  }
-
-  return current;
 }
 
 describe('Test Assets Integration', () => {
@@ -424,7 +392,7 @@ describe('Test Assets Integration', () => {
 });
 
 // Helper to check if schema uses extended validation keywords
-function hasExtendedKeywords(obj: any): boolean {
+function hasExtendedKeywords(obj: JsonValue): boolean {
   if (typeof obj !== 'object' || obj === null) {
     return false;
   }

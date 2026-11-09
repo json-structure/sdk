@@ -54,11 +54,6 @@ export class JsonStructureDefinitionProvider implements vscode.DefinitionProvide
         // Find the position of the definition in the source text
         // We need to find the location of the definition key in the JSON
         
-        let searchPath = '';
-        for (const part of parts) {
-            searchPath += `/${part}`;
-        }
-
         // Navigate to the definition to verify it exists
         let current: unknown = parsed;
         for (const part of parts) {

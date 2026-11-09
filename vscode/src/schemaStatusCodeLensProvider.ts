@@ -109,7 +109,7 @@ export class SchemaStatusCodeLensProvider implements vscode.CodeLensProvider {
                 tooltip = `Loading schema from ${schemaUri}`;
                 break;
             
-            case 'loaded':
+            case 'loaded': {
                 const sourceIcon = statusInfo.source === 'workspace' ? '📁' : 
                                    statusInfo.source === 'file' ? '📄' : '🌐';
                 const sourceText = statusInfo.source === 'workspace' ? 'workspace' :
@@ -126,6 +126,7 @@ export class SchemaStatusCodeLensProvider implements vscode.CodeLensProvider {
                 }
                 command = 'jsonStructure.showSchemaInfo';
                 break;
+            }
             
             case 'not-found':
                 title = '⚠️ Schema not found';

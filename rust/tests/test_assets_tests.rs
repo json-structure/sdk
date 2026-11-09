@@ -11,9 +11,9 @@ use std::path::{Path, PathBuf};
 /// Find the test-assets directory
 fn find_test_assets_dir() -> Option<PathBuf> {
     let possible_paths = [
-        PathBuf::from("../test-assets"),           // sdk/rust -> sdk/test-assets
-        PathBuf::from("../../test-assets"),        // Running from sdk/rust/tests
-        PathBuf::from("test-assets"),              // Running from sdk
+        PathBuf::from("../test-assets"),    // sdk/rust -> sdk/test-assets
+        PathBuf::from("../../test-assets"), // Running from sdk/rust/tests
+        PathBuf::from("test-assets"),       // Running from sdk
     ];
 
     for path in &possible_paths {
@@ -59,7 +59,7 @@ fn get_schema_files(dir: &Path) -> Vec<PathBuf> {
             entries
                 .filter_map(|e| e.ok())
                 .map(|e| e.path())
-                .filter(|p| p.extension().map_or(false, |ext| ext == "json"))
+                .filter(|p| p.extension().is_some_and(|ext| ext == "json"))
                 .filter(|p| p.to_string_lossy().ends_with(".struct.json"))
                 .collect()
         })
@@ -77,7 +77,7 @@ fn get_json_files(dir: &Path) -> Vec<PathBuf> {
             entries
                 .filter_map(|e| e.ok())
                 .map(|e| e.path())
-                .filter(|p| p.extension().map_or(false, |ext| ext == "json"))
+                .filter(|p| p.extension().is_some_and(|ext| ext == "json"))
                 .collect()
         })
         .unwrap_or_default()
@@ -150,7 +150,10 @@ fn test_invalid_schemas() {
         if !result.is_valid() {
             passed += 1;
         } else {
-            eprintln!("  ✗ {} - should be invalid but passed validation", test_name);
+            eprintln!(
+                "  ✗ {} - should be invalid but passed validation",
+                test_name
+            );
             failed += 1;
         }
     }
@@ -206,7 +209,11 @@ fn test_warning_schemas() {
 
         // Schema should be valid
         if !result.is_valid() {
-            eprintln!("  ✗ {} - should be valid but failed: {:?}", test_name, result.errors().next());
+            eprintln!(
+                "  ✗ {} - should be valid but failed: {:?}",
+                test_name,
+                result.errors().next()
+            );
             failed += 1;
             continue;
         }
@@ -293,17 +300,22 @@ fn test_validation_instances() {
             let instance_data = match load_json(instance_file) {
                 Some(d) => d,
                 None => {
-                    eprintln!("  ✗ {}/{} - failed to load instance", category_name, test_name);
+                    eprintln!(
+                        "  ✗ {}/{} - failed to load instance",
+                        category_name, test_name
+                    );
                     failed += 1;
                     continue;
                 }
             };
 
             // Extract expected result from metadata
-            let expected_valid = instance_data.get("_expectedValid")
+            let expected_valid = instance_data
+                .get("_expectedValid")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
-            let _expected_error = instance_data.get("_expectedError")
+            let _expected_error = instance_data
+                .get("_expectedError")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
 
@@ -317,23 +329,30 @@ fn test_validation_instances() {
                 if result.is_valid() {
                     passed += 1;
                 } else {
-                    eprintln!("  ✗ {}/{} - expected valid but got errors: {:?}", 
-                             category_name, test_name, result.errors().next());
+                    eprintln!(
+                        "  ✗ {}/{} - expected valid but got errors: {:?}",
+                        category_name,
+                        test_name,
+                        result.errors().next()
+                    );
                     failed += 1;
                 }
+            } else if !result.is_valid() {
+                passed += 1;
             } else {
-                if !result.is_valid() {
-                    // Instance is correctly invalid
-                    passed += 1;
-                } else {
-                    eprintln!("  ✗ {}/{} - expected invalid but passed", category_name, test_name);
-                    failed += 1;
-                }
+                eprintln!(
+                    "  ✗ {}/{} - expected invalid but passed",
+                    category_name, test_name
+                );
+                failed += 1;
             }
         }
     }
 
-    println!("Validation Instance Tests: {} passed, {} failed", passed, failed);
+    println!(
+        "Validation Instance Tests: {} passed, {} failed",
+        passed, failed
+    );
     // Note: Some tests fail due to incomplete extended validation support
     // assert_eq!(failed, 0, "Some validation instance tests failed");
 }
@@ -352,8 +371,8 @@ fn prepare_instance_for_validation(instance: &Value, schema: &Value) -> Value {
     // Check if schema expects a primitive/array type and instance has { value: ... } wrapper
     let schema_type = schema.get("type").and_then(|t| t.as_str()).unwrap_or("");
     let value_wrapper_types = [
-        "string", "number", "integer", "boolean", "int8", "uint8", "int16", "uint16",
-        "int32", "uint32", "float", "double", "decimal", "float8", "array", "set"
+        "string", "number", "integer", "boolean", "int8", "uint8", "int16", "uint16", "int32",
+        "uint32", "float", "double", "decimal", "float8", "array", "set",
     ];
 
     if value_wrapper_types.contains(&schema_type) {
@@ -406,7 +425,10 @@ fn test_invalid_instances() {
         let schema_file = samples_dir.join(&category_name).join("schema.struct.json");
 
         if !schema_file.exists() {
-            eprintln!("  - Skipping {} - no schema found at {:?}", category_name, schema_file);
+            eprintln!(
+                "  - Skipping {} - no schema found at {:?}",
+                category_name, schema_file
+            );
             skipped += 1;
             continue;
         }
@@ -433,7 +455,10 @@ fn test_invalid_instances() {
             let instance = match load_json(instance_file) {
                 Some(d) => d,
                 None => {
-                    eprintln!("  ✗ {}/{} - failed to load instance", category_name, test_name);
+                    eprintln!(
+                        "  ✗ {}/{} - failed to load instance",
+                        category_name, test_name
+                    );
                     failed += 1;
                     continue;
                 }
@@ -445,13 +470,19 @@ fn test_invalid_instances() {
             if !result.is_valid() {
                 passed += 1;
             } else {
-                eprintln!("  ✗ {}/{} - should be invalid but passed", category_name, test_name);
+                eprintln!(
+                    "  ✗ {}/{} - should be invalid but passed",
+                    category_name, test_name
+                );
                 failed += 1;
             }
         }
     }
 
-    println!("Invalid Instance Tests: {} passed, {} failed, {} skipped", passed, failed, skipped);
+    println!(
+        "Invalid Instance Tests: {} passed, {} failed, {} skipped",
+        passed, failed, skipped
+    );
     // Note: Some tests fail due to incomplete extended validation support
     // assert_eq!(failed, 0, "Some invalid instances were incorrectly accepted");
 }
@@ -582,7 +613,7 @@ fn test_sample_instances_are_valid() {
         }
 
         let category_name = get_test_name(sample_dir);
-        
+
         // Load the schema
         let schema = match load_json(&schema_file) {
             Some(s) => s,
@@ -616,14 +647,18 @@ fn test_sample_instances_are_valid() {
         validator.set_extended(true);
 
         for instance_file in &instance_files {
-            let instance_name = instance_file.file_name()
+            let instance_name = instance_file
+                .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_else(|| "unknown".to_string());
 
             let instance_data = match load_json(instance_file) {
                 Some(d) => d,
                 None => {
-                    eprintln!("  ✗ {}/{} - failed to load instance", category_name, instance_name);
+                    eprintln!(
+                        "  ✗ {}/{} - failed to load instance",
+                        category_name, instance_name
+                    );
                     failed += 1;
                     continue;
                 }
@@ -649,7 +684,10 @@ fn test_sample_instances_are_valid() {
         }
     }
 
-    println!("Sample Instance Tests: {} passed, {} failed, {} skipped", passed, failed, skipped);
+    println!(
+        "Sample Instance Tests: {} passed, {} failed, {} skipped",
+        passed, failed, skipped
+    );
     assert_eq!(failed, 0, "Some sample instances failed validation");
 }
 
@@ -670,7 +708,7 @@ fn test_invalid_schema_error_accuracy() {
 
     let invalid_schemas_dir = test_assets.join("schemas").join("invalid");
     let validator = SchemaValidator::new();
-    
+
     // Map of filename (without .struct.json) to expected error code substring
     let expected_errors: std::collections::HashMap<&str, &str> = [
         ("unknown-type", "SCHEMA_TYPE_INVALID"),
@@ -681,43 +719,54 @@ fn test_invalid_schema_error_accuracy() {
         ("array-missing-items", "SCHEMA_ARRAY_MISSING_ITEMS"),
         ("map-missing-values", "SCHEMA_MAP_MISSING_VALUES"),
         ("missing-type", "SCHEMA_ROOT_MISSING_TYPE"),
-        ("required-missing-property", "SCHEMA_REQUIRED_PROPERTY_NOT_DEFINED"),
+        (
+            "required-missing-property",
+            "SCHEMA_REQUIRED_PROPERTY_NOT_DEFINED",
+        ),
         ("required-not-array", "SCHEMA_REQUIRED_MUST_BE_ARRAY"),
         ("properties-not-object", "SCHEMA_PROPERTIES_MUST_BE_OBJECT"),
         ("defs-not-object", "SCHEMA_DEFINITIONS_MUST_BE_OBJECT"),
         ("allof-not-array", "SCHEMA_ALLOF_NOT_ARRAY"),
         ("tuple-missing-definition", "SCHEMA_TUPLE"),
         ("tuple-missing-prefixitems", "SCHEMA_TUPLE"),
-    ].iter().cloned().collect();
-    
+    ]
+    .iter()
+    .cloned()
+    .collect();
+
     let mut tested = 0;
     let mut accurate = 0;
-    
+
     for (filename, expected_code) in &expected_errors {
         let schema_file = invalid_schemas_dir.join(format!("{}.struct.json", filename));
         if !schema_file.exists() {
             continue;
         }
-        
+
         tested += 1;
         let schema_json = fs::read_to_string(&schema_file).unwrap();
         let result = validator.validate(&schema_json);
-        
+
         if !result.is_valid() {
             let has_expected = result.errors().any(|e| e.code().contains(expected_code));
             if has_expected {
                 accurate += 1;
             } else {
                 let codes: Vec<_> = result.errors().map(|e| e.code().to_string()).collect();
-                eprintln!("  ✗ {} - expected error containing '{}', got: {:?}", 
-                         filename, expected_code, codes);
+                eprintln!(
+                    "  ✗ {} - expected error containing '{}', got: {:?}",
+                    filename, expected_code, codes
+                );
             }
         } else {
             eprintln!("  ✗ {} - should be invalid but passed", filename);
         }
     }
-    
-    println!("Error Accuracy Tests: {} tested, {} accurate", tested, accurate);
+
+    println!(
+        "Error Accuracy Tests: {} tested, {} accurate",
+        tested, accurate
+    );
     assert_eq!(tested, accurate, "Some error codes were not as expected");
 }
 
@@ -733,11 +782,11 @@ fn test_warning_schema_message_accuracy() {
     };
 
     let warning_schemas_dir = test_assets.join("schemas").join("warnings");
-    
+
     let mut validator = SchemaValidator::new();
     validator.set_extended(true);
     validator.set_warn_on_extension_keywords(true);
-    
+
     // Map of filename pattern to expected warning keyword mention
     let expected_warnings: std::collections::HashMap<&str, &str> = [
         ("string-pattern-without-uses", "pattern"),
@@ -756,21 +805,24 @@ fn test_warning_schema_message_accuracy() {
         ("object-dependentrequired-without-uses", "dependentRequired"),
         ("object-patternproperties-without-uses", "patternProperties"),
         ("object-propertynames-without-uses", "propertyNames"),
-    ].iter().cloned().collect();
-    
+    ]
+    .iter()
+    .cloned()
+    .collect();
+
     let mut tested = 0;
     let mut accurate = 0;
-    
+
     for (filename, expected_keyword) in &expected_warnings {
         let schema_file = warning_schemas_dir.join(format!("{}.struct.json", filename));
         if !schema_file.exists() {
             continue;
         }
-        
+
         tested += 1;
         let schema_json = fs::read_to_string(&schema_file).unwrap();
         let result = validator.validate(&schema_json);
-        
+
         if result.is_valid() && result.warning_count() > 0 {
             // Check that warnings mention the expected keyword
             let has_expected = result.warnings().any(|w| {
@@ -779,19 +831,31 @@ fn test_warning_schema_message_accuracy() {
             if has_expected {
                 accurate += 1;
             } else {
-                let warnings: Vec<_> = result.warnings()
+                let warnings: Vec<_> = result
+                    .warnings()
                     .map(|w| format!("{}: {}", w.path(), w.message()))
                     .collect();
-                eprintln!("  ✗ {} - expected warning about '{}', got: {:?}", 
-                         filename, expected_keyword, warnings);
+                eprintln!(
+                    "  ✗ {} - expected warning about '{}', got: {:?}",
+                    filename, expected_keyword, warnings
+                );
             }
         } else if !result.is_valid() {
-            eprintln!("  ✗ {} - should be valid with warnings but got errors", filename);
+            eprintln!(
+                "  ✗ {} - should be valid with warnings but got errors",
+                filename
+            );
         } else {
             eprintln!("  ✗ {} - expected warnings but got none", filename);
         }
     }
-    
-    println!("Warning Accuracy Tests: {} tested, {} accurate", tested, accurate);
-    assert_eq!(tested, accurate, "Some warning messages were not as expected");
+
+    println!(
+        "Warning Accuracy Tests: {} tested, {} accurate",
+        tested, accurate
+    );
+    assert_eq!(
+        tested, accurate,
+        "Some warning messages were not as expected"
+    );
 }

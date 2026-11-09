@@ -503,10 +503,51 @@ fn test_invalid_circular_ref() {
     }"##;
     let validator = SchemaValidator::new();
     let result = validator.validate(schema);
-    // Circular refs should be detected
     assert!(
-        !result.is_valid() || result.errors().count() > 0 || true,
-        "Circular reference schema"
+        !result.is_valid(),
+        "Circular reference schema should be invalid"
+    );
+    assert!(result
+        .errors()
+        .any(|error| error.code == "SCHEMA_REF_CIRCULAR"));
+}
+
+#[test]
+fn test_valid_reference_alias_chain() {
+    let schema = r##"{
+        "$id": "urn:example:alias-chain",
+        "name": "AliasChain",
+        "definitions": {
+            "A": {"$ref": "#/definitions/B"},
+            "B": {"type": {"$ref": "#/definitions/C"}},
+            "C": {"type": "string"}
+        },
+        "$root": "#/definitions/A"
+    }"##;
+    let result = SchemaValidator::new().validate(schema);
+    assert!(
+        result.is_valid(),
+        "A terminating alias chain should be valid"
+    );
+}
+
+#[test]
+fn test_valid_recursive_object_reference() {
+    let schema = r##"{
+        "$id": "urn:example:recursive-object",
+        "name": "RecursiveObject",
+        "definitions": {
+            "Node": {
+                "type": "object",
+                "properties": {"next": {"$ref": "#/definitions/Node"}}
+            }
+        },
+        "$root": "#/definitions/Node"
+    }"##;
+    let result = SchemaValidator::new().validate(schema);
+    assert!(
+        result.is_valid(),
+        "Recursive object types should remain valid"
     );
 }
 
@@ -822,7 +863,10 @@ fn test_invalid_inline_choice_alternative_without_common_base() {
         }
     }"##;
     let result = SchemaValidator::new().validate(schema);
-    assert!(!result.is_valid(), "Inline alternatives must extend the common base");
+    assert!(
+        !result.is_valid(),
+        "Inline alternatives must extend the common base"
+    );
 }
 
 #[test]
@@ -840,7 +884,10 @@ fn test_invalid_abstract_type_with_additional_properties() {
         }
     }"##;
     let result = SchemaValidator::new().validate(schema);
-    assert!(!result.is_valid(), "Abstract types must not declare additionalProperties");
+    assert!(
+        !result.is_valid(),
+        "Abstract types must not declare additionalProperties"
+    );
 }
 
 // =============================================================================

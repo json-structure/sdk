@@ -198,7 +198,7 @@ export class InstanceValidator {
       if (extendsRefs.length > 0) {
         // Start with an empty merged object, then add base types in order (first-wins for properties)
         let mergedProperties: JsonObject = {};
-        let mergedRequired: string[] = [];
+        const mergedRequired: string[] = [];
         
         // Process base types in order - first type's properties take precedence
         for (const ref of extendsRefs) {

@@ -245,8 +245,7 @@ export class JsonStructureCompletionProvider implements vscode.CompletionItemPro
         const lastColon = beforeCursor.lastIndexOf(':');
         const lastComma = beforeCursor.lastIndexOf(',');
         const lastOpenBrace = beforeCursor.lastIndexOf('{');
-        const lastCloseBrace = beforeCursor.lastIndexOf('}');
-        
+
         if (lastColon > lastComma && lastColon > lastOpenBrace) {
             context.inPropertyValue = true;
             // Find the property name before the colon
@@ -531,7 +530,7 @@ export class JsonStructureCompletionProvider implements vscode.CompletionItemPro
             const required = Array.isArray(schemaAtPath.required) ? schemaAtPath.required : [];
 
             for (const [name, propSchema] of Object.entries(props)) {
-                if (!propSchema || typeof propSchema !== 'object') continue;
+                if (!propSchema || typeof propSchema !== 'object') {continue;}
                 
                 let resolvedSchema = propSchema as Record<string, unknown>;
                 if (resolvedSchema.$ref && typeof resolvedSchema.$ref === 'string') {

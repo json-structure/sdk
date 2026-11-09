@@ -21,7 +21,7 @@ Encoding: UTF-8
 Language: en-US
 Depends: R (>= 4.0)
 Imports:
-    jsonlite,
+    jsonlite (>= 1.8.8),
     utils
 Suggests:
     testthat (>= 3.0.0)
