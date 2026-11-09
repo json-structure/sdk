@@ -55,7 +55,7 @@ jobs:
         working-directory: perl
         run: |
           cpanm --installdeps --notest .
-          cpanm --notest 'Pod::Text~>=6.1.1'
+          cpanm --notest https://cpan.metacpan.org/authors/id/R/RR/RRA/podlators-v6.1.1.tar.gz
 
       - name: Install JSON backend (${{ matrix.json-backend }})
         if: matrix.json-backend != 'JSON::PP'
@@ -91,7 +91,7 @@ jobs:
           perl-version: '5.38'
 
       - name: Install Perl::Critic
-        run: cpanm --notest Perl::Critic 'Pod::Text~>=6.1.1'
+        run: cpanm --notest Perl::Critic https://cpan.metacpan.org/authors/id/R/RR/RRA/podlators-v6.1.1.tar.gz
 
       - name: Run Perl::Critic (gentle)
         working-directory: perl
@@ -117,7 +117,7 @@ jobs:
       - name: Install build dependencies
         working-directory: perl
         run: |
-          cpanm --notest ExtUtils::MakeMaker Module::Build 'Pod::Text~>=6.1.1'
+          cpanm --notest ExtUtils::MakeMaker Module::Build https://cpan.metacpan.org/authors/id/R/RR/RRA/podlators-v6.1.1.tar.gz
           cpanm --installdeps --notest .
 
       - name: Build distribution
@@ -167,7 +167,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          cpanm --notest ExtUtils::MakeMaker Test::More Test::Deep 'Pod::Text~>=6.1.1'
+          cpanm --notest ExtUtils::MakeMaker Test::More Test::Deep https://cpan.metacpan.org/authors/id/R/RR/RRA/podlators-v6.1.1.tar.gz
 
       - name: Extract version from tag
         id: version
@@ -217,7 +217,7 @@ jobs:
           perl-version: '5.38'
 
       - name: Install CPAN::Uploader
-        run: cpanm --notest CPAN::Uploader 'Pod::Text~>=6.1.1'
+        run: cpanm --notest CPAN::Uploader https://cpan.metacpan.org/authors/id/R/RR/RRA/podlators-v6.1.1.tar.gz
 
       - name: Upload to CPAN
         env:
